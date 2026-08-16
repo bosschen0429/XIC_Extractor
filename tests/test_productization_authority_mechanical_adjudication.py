@@ -25,9 +25,6 @@ INDEX_PATH = (
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
 CID_NL_APPROVED_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
-BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE = (
-    "backfill_expansion_clean_target_selective_activation_84_cells"
-)
 PARKED_SCOPE = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
@@ -35,6 +32,7 @@ NEGATIVE_SCOPE_IDS = {
     "width_only_clean",
     "shape_margin_clean",
     "shape_clean_reintegration_stable_writer_probe",
+    "backfill_expansion_clean_target_selective_activation_84_cells",
 }
 
 
@@ -47,7 +45,6 @@ def test_manifest_freezes_current_backfill_authority() -> None:
     assert set(policy["product_writer_allowed_scopes"]) == {
         APPROVED_SCOPE,
         CID_NL_APPROVED_SCOPE,
-        BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE,
     }
     assert "quality_blockers" in policy["forbidden_authority_sources"]
     assert "broad_backfill_candidate_universe" in (
@@ -75,28 +72,6 @@ def test_manifest_freezes_current_backfill_authority() -> None:
         == cid_nl["compact_manifest_sha256"]
     )
 
-    clean_target = manifest["current_authority"][
-        "backfill_expansion_clean_target_selective_activation"
-    ]
-    assert clean_target["current_product_authority_rows"] == 84
-    assert clean_target["candidate_peak_rows"] == 7
-    assert clean_target["projected_held_cell_rows"] == 28
-    assert clean_target["boundary_review_excluded_cell_rows"] == 37
-    assert clean_target["off_target_hold_or_remap_excluded_cell_rows"] == 29
-    assert clean_target["authority_scope"] == BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE
-    assert (
-        artifact_sha256(ROOT / clean_target["artifact"])
-        == clean_target["artifact_sha256"]
-    )
-    assert (
-        artifact_sha256(ROOT / clean_target["acceptance_artifact"])
-        == clean_target["acceptance_artifact_sha256"]
-    )
-    assert (
-        artifact_sha256(ROOT / clean_target["compact_manifest"])
-        == clean_target["compact_manifest_sha256"]
-    )
-
     broad_backfill = manifest["parked_lanes"][PARKED_SCOPE]
     assert broad_backfill["status"] == "parked"
     assert broad_backfill["may_grant_write_authority"] is False
@@ -121,7 +96,6 @@ def test_dependent_hold_does_not_change_mechanical_writer_authority() -> None:
     approved_scope_order = (
         APPROVED_SCOPE,
         CID_NL_APPROVED_SCOPE,
-        BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE,
     )
 
     assert tuple(
@@ -130,7 +104,6 @@ def test_dependent_hold_does_not_change_mechanical_writer_authority() -> None:
     assert tuple(writer_manifest["current_authority"]) == (
         "backfill",
         "cid_nl_default_activation",
-        "backfill_expansion_clean_target_selective_activation",
     )
     assert dependent_manifest["status"] == "HOLD_PENDING_VALIDATION"
     assert tuple(dependent_manifest["allowed_registered_writer_scope_ids"]) == (

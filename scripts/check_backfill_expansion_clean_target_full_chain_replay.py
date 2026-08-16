@@ -1,8 +1,8 @@
-"""Validate the retained clean-target full-chain replay artifact without rebuilding it.
+"""Validate the historical source-sealed clean-target replay packet.
 
-T5D removed the Standard Peak authority-bundle producer. This checker keeps the
-source-sealed historical packet usable as an offline falsifier, but it has no
-code path that can mint authority, run RAW, or create a new replay.
+T5D removed the Standard Peak authority-bundle producer and its ownerless
+writer. This checker validates the retained 84/112 experimental result only;
+it cannot reconstruct current owner authority, run RAW, or authorize a write.
 """
 
 from __future__ import annotations

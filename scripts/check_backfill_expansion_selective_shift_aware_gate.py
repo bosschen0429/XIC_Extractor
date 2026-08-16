@@ -23,11 +23,11 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.check_backfill_expansion_full_evidence_chain import (  # noqa: E402
-    DEFAULT_EXPECTED_DIFF_TSV,
-    DEFAULT_RAW_TRACE_CELLS_TSV,
-    DEFAULT_SHIFT_AWARE_BATCH_SUMMARY_JSON,
-    DEFAULT_SHIFT_AWARE_STANDARD_PEAK_GATE_TSV,
+from scripts.check_backfill_expansion_expected_diff_provenance import (  # noqa: E402
+    DEFAULT_OUTPUT_DIR as DEFAULT_EXPECTED_DIFF_OUTPUT_DIR,
+)
+from scripts.check_backfill_expansion_raw_overlay_trace_identity import (  # noqa: E402
+    DEFAULT_OUTPUT_DIR as DEFAULT_RAW_TRACE_OUTPUT_DIR,
 )
 from scripts.check_backfill_expansion_sample_local_ms1_evidence import (  # noqa: E402
     DEFAULT_OUTPUT_DIR as DEFAULT_SAMPLE_LOCAL_OUTPUT_DIR,
@@ -61,6 +61,25 @@ DEFAULT_DOCS_DIR = (
 )
 DEFAULT_OUTPUT_DIR = (
     ROOT / "output/validation/backfill_expansion_selective_shift_aware_gate_v1"
+)
+DEFAULT_FULL_CHAIN_OUTPUT_DIR = (
+    ROOT / "output/validation/backfill_expansion_full_evidence_chain_v1"
+)
+DEFAULT_EXPECTED_DIFF_TSV = (
+    DEFAULT_EXPECTED_DIFF_OUTPUT_DIR / "inputs/expected_diff.tsv"
+)
+DEFAULT_RAW_TRACE_CELLS_TSV = (
+    DEFAULT_RAW_TRACE_OUTPUT_DIR
+    / "backfill_expansion_raw_overlay_trace_identity_cells.tsv"
+)
+DEFAULT_SHIFT_AWARE_BATCH_SUMMARY_JSON = (
+    DEFAULT_FULL_CHAIN_OUTPUT_DIR
+    / "shift_aware_alignment_experiment/"
+    "family_ms1_alignment_experiment_batch_summary.json"
+)
+DEFAULT_SHIFT_AWARE_STANDARD_PEAK_GATE_TSV = (
+    DEFAULT_FULL_CHAIN_OUTPUT_DIR
+    / "shift_aware_standard_peak_gate/shift_aware_standard_peak_gate_calibration.tsv"
 )
 DEFAULT_SAMPLE_LOCAL_CELLS_TSV = (
     DEFAULT_SAMPLE_LOCAL_OUTPUT_DIR

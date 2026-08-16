@@ -43,7 +43,7 @@ def test_status_schema_matches_index_header() -> None:
     assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS_V3
     assert tuple(header) == STATUS_INDEX_FIELDS_V1
     assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS_V3
-    assert len(rows) == 21
+    assert len(rows) == 20
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -75,7 +75,6 @@ def test_registered_default_scopes_have_writer_authority() -> None:
     assert {row["lane_id"] for row in authority_rows} == {
         "backfill_current_write_ready_scope",
         "cid_nl_default_product_activation_v1",
-        "backfill_expansion_clean_target_selective_product_activation_v1",
     }
     authority_by_lane = {row["lane_id"]: row for row in authority_rows}
 
@@ -139,34 +138,6 @@ def test_registered_default_scopes_have_writer_authority() -> None:
         == "backfill_expansion_default_product_activation_v1"
     )
     assert "374/666 pass and 292 held" in expansion["notes"]
-
-    selective = authority_by_lane[
-        "backfill_expansion_clean_target_selective_product_activation_v1"
-    ]
-    assert selective["current_artifact"] == (
-        "docs/superpowers/validation/"
-        "backfill_expansion_clean_target_selective_product_activation_v1/"
-        "backfill_expansion_clean_target_selective_product_activation_summary.json"
-    )
-    assert selective["product_authority_scope"] == (
-        "backfill_expansion_clean_target_selective_activation_84_cells"
-    )
-    assert selective["row_count"] == "84"
-    assert selective["may_touch_matrix"] == "TRUE"
-    assert selective["may_change_quant_output"] == "TRUE"
-    assert selective["may_change_workbook"] == "FALSE"
-    assert selective["may_change_selected_peak"] == "FALSE"
-    assert selective["may_change_selected_area"] == "FALSE"
-    assert selective["may_change_counted_detection"] == "FALSE"
-    assert selective["product_effect"] == (
-        "write_backfill_expansion_clean_target_selective_default_cell"
-    )
-    assert (
-        selective["public_surface"]
-        == "backfill_expansion_clean_target_selective_product_activation_v1"
-    )
-    assert "28 projected-held clean-target cells" in selective["notes"]
-
 
 def test_peak_choice_lockbox_status_points_to_shadow_automation_design() -> None:
     _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
