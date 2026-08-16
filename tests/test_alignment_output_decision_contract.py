@@ -162,6 +162,7 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
         review_row = next(csv.DictReader(handle, delimiter="\t"))
     assert review_row["detected_count"] == "0"
     assert review_row["absent_count"] == "2"
+    assert review_row["representative_samples"] == ""
 
     assert outputs.workbook is not None
     workbook = load_workbook(outputs.workbook, read_only=True, data_only=True)

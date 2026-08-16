@@ -777,7 +777,7 @@ def _review_rows(
                 "artificial_adduct_rt_delta_min": _optional_attr(
                     cluster, "artificial_adduct_rt_delta_min"
                 ),
-                "representative_samples": _representative_samples(cells),
+                "representative_samples": _representative_samples(cells, decisions),
                 "family_evidence": _family_evidence(cluster),
                 "warning": _warning(
                     cluster,
@@ -899,20 +899,16 @@ def _write_tsv_sequences(
     return path
 
 
-def _representative_samples(cells: tuple[AlignedCell, ...]) -> str:
+def _representative_samples(
+    cells: tuple[AlignedCell, ...], decisions: ProductionDecisionSet
+) -> str:
     samples = [
-        cell.sample_stem for cell in cells if cell.status in {"detected", "rescued"}
+        cell.sample_stem
+        for cell in cells
+        if decisions.cell(cell.cluster_id, cell.sample_stem).raw_status
+        in {"detected", "rescued"}
     ]
     return _cap_semicolon(samples)
-
-
-def _representative_candidate_ids(cells: tuple[AlignedCell, ...]) -> str:
-    candidate_ids = [
-        cell.source_candidate_id
-        for cell in cells
-        if cell.status == "detected" and cell.source_candidate_id
-    ]
-    return _cap_semicolon(candidate_ids)
 
 
 def _cap_semicolon(values: list[str]) -> str:
