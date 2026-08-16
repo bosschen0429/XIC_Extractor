@@ -57,12 +57,6 @@ Lane key: `backfill_expansion_default_product_activation_v1`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
 
-### Backfill Expansion Clean-Target Selective Default Activation v1
-
-Lane key: `backfill_expansion_clean_target_selective_product_activation_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
 ### park_broad_backfill
 
 Lane key: `broad_backfill_autowrite`

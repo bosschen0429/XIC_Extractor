@@ -676,11 +676,10 @@ falsifiers/renderers. The current Backfill owners do not mint a
 ProcessingRunSpec attempt, so incomplete evidence remains unavailable and
 cannot promote or write.
 
-One source-sealed packet is not historical-only: the clean-target replay remains
-active support for the T5B-preserved registered 84-cell scope consumed by
-`scripts/build_backfill_expansion_clean_target_selective_product_activation.py`
-under the existing manifest and primary writer. It is not a Standard Peak
-diagnostic route. The final SP-001–SP-055 map is
+The clean-target replay remains source-sealed historical diagnostic/oracle
+evidence only. T5D retired its ownerless writer and registered authority scope;
+the retained counts and hashes cannot mint current authority. The final
+SP-001–SP-055 map is
 `docs/superpowers/validation/standard_peak_t5d_contraction_v1/capability_disposition_v1.tsv`.
 
 ---

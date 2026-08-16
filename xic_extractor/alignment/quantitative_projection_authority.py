@@ -83,7 +83,6 @@ _EXACT_TEXT_FIELDS = {
 _ALLOWED_REGISTERED_WRITER_SCOPE_IDS = (
     "backfill_policy_write_ready_rows",
     "cid_nl_adopt_ready_feature_inclusion_95_cells",
-    "backfill_expansion_clean_target_selective_activation_84_cells",
 )
 _EXACT_BOOLEAN_FIELDS = {
     "requires_existing_registered_write_scope": True,

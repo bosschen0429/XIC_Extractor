@@ -103,7 +103,7 @@ DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
     "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
-    "35283F11AF2DCAF6CCFAFDEF506C12568B38FEEB070FB58670A4C649EE74E619"
+    "D35E3783CEA171ACF67B69BCA04C1BA848E07810C11526617BAB6087EA2A7E89"
 )
 DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1 = (
     "lane_id",
@@ -137,9 +137,6 @@ REQUIRED_CONTROL_PLANE_ANCHORS_V3 = {
     "cid_nl_default_product_activation_v1": "CID-NL Default Product Activation v1",
     "backfill_expansion_default_product_activation_v1": (
         "Backfill Expansion Full Evidence Chain v1"
-    ),
-    "backfill_expansion_clean_target_selective_product_activation_v1": (
-        "Backfill Expansion Clean-Target Selective Default Activation v1"
     ),
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall_v1": "productization_authority_manifest_v1",
@@ -182,10 +179,6 @@ WRITER_LANE_AUTHORITY = {
     "cid_nl_default_product_activation_v1": {
         "authority_key": "cid_nl_default_activation",
         "scope": "cid_nl_adopt_ready_feature_inclusion_95_cells",
-    },
-    "backfill_expansion_clean_target_selective_product_activation_v1": {
-        "authority_key": "backfill_expansion_clean_target_selective_activation",
-        "scope": "backfill_expansion_clean_target_selective_activation_84_cells",
     },
 }
 WRITE_FORBIDDEN_STATUSES = {

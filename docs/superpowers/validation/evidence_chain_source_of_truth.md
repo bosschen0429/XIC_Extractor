@@ -292,8 +292,6 @@ Owners:
 - `xic_extractor/alignment/shared_peak_identity_explanation/machine_evidence_support.py`
 - `scripts/check_backfill_expansion_*`
 - `scripts/build_backfill_expansion_default_product_activation.py`
-- `scripts/build_backfill_expansion_clean_target_selective_product_activation.py`
-- `scripts/check_backfill_expansion_full_evidence_chain.py`
 
 Purpose: decide whether a currently blank/rescued cell has enough evidence to
 be accepted, reviewed, held, or written inside a bounded Backfill lane.
@@ -322,13 +320,10 @@ Evidence states:
   standard-peak boundary support, and per-cell own-max support. It can identify
   cells eligible for later expected-diff design, but it does not grant
   ProductWriter authority.
-- The standard-peak MS1 authority sidecar can be generated from either the
-  original machine/manual standard-peak gate or the selective source-family gate.
-  In selective mode, authority remains the same sidecar schema and stable
-  `feature_family_id + sample_stem` key, but only cells with
-  `selective_evidence_status=pass` can become product-authorized MS1 sidecar
-  rows. This consumes selective evidence; it does not create a second writer
-  system.
+- Historical standard-peak MS1 sidecars and full-chain status maps are retained
+  only as source-sealed diagnostic/oracle evidence. Their producers predate the
+  current original-owner rehydration contract, so no current tool may regenerate
+  them or treat their `pass`/`product_authorized` labels as product authority.
 - Backfill expansion peak-mode decomposition is a diagnostic gate that compares
   sample-local candidate apex RT against each family's detected/reference mode.
   It identifies mixed target/off-target RT hypotheses and boundary-bridge
@@ -351,14 +346,10 @@ Evidence states:
   ask whether peak-mode cleanup plus selective source-family evidence is enough.
   Its pass subset can inform expected-diff design, but held cells remain held
   and the replay is not ProductWriter authority.
-  A clean-target selective default activation may then filter the existing
-  expected-diff/provenance contract to only the projected-pass clean target
-  cells and replay a matrix/provenance packet through the existing
-  `ProductionAcceptanceManifest` and `QuantMatrixVersion` writer path. The
-  accepted bounded activation contract changes only its registered default
-  matrix output/provenance surface; it does not change workbook, GUI, selected
-  peak, selected area, counted detection, or broad Backfill. The status index
-  and authority manifest exclusively own the current lane, scope, and counts.
+  The historical clean-target packet recorded an 84-cell bounded experiment,
+  but it cannot be rehydrated by a current scientific owner. T5D therefore
+  retires its executable writer and registered scope; the retained packet can
+  falsify or explain an old result but cannot write or authorize current output.
   Optional manual review labels may annotate peak-mode, boundary, and review
   action for remap/boundary debugging; they are reviewer evidence, not a manual
   allowlist and not ProductWriter authority.
@@ -379,7 +370,6 @@ Owners:
 - `scripts/build_quant_matrix_default_product_activation.py`
 - `scripts/build_cid_nl_default_product_activation.py`
 - `scripts/build_backfill_expansion_default_product_activation.py`
-- `scripts/build_backfill_expansion_clean_target_selective_product_activation.py`
 
 Purpose: make matrix-writing changes explicit, replayable, and auditable.
 
