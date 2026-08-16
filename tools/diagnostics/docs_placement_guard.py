@@ -224,12 +224,75 @@ def _deleted_paths(entries: Sequence[StagedMarkdown]) -> frozenset[str]:
     )
 
 
+def _git_index_available(root: Path) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
+    if result.returncode != 0:
+        return False
+    return Path(result.stdout.strip()).resolve() == root.resolve()
+
+
+def _index_exact_referrers(root: Path, rel_path: str) -> tuple[str, ...] | None:
+    if not _git_index_available(root):
+        return None
+    normalized = _docs_scan.normalize_repo_rel_path(rel_path)
+    result = subprocess.run(
+        ["git", "grep", "--cached", "-l", "-F", "-e", normalized, "--"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    if result.returncode not in {0, 1}:
+        raise RuntimeError(result.stderr.strip() or "git grep --cached failed")
+    return tuple(
+        sorted(
+            scan_rel
+            for raw_path in result.stdout.splitlines()
+            if (scan_rel := _docs_scan.normalize_repo_rel_path(raw_path)) != normalized
+            and _docs_scan.is_local_path_scan_rel_path(scan_rel)
+            and not is_retirement_evidence_path(scan_rel)
+        )
+    )
+
+
+def _index_has_path(root: Path, rel_path: str) -> bool:
+    normalized = _docs_scan.normalize_repo_rel_path(rel_path)
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--error-unmatch", "--", normalized],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
+    if result.returncode not in {0, 1}:
+        raise RuntimeError(result.stderr.strip() or "git ls-files --cached failed")
+    return result.returncode == 0
+
+
 def _exact_referrers(
     root: Path,
     rel_path: str,
     entries: Sequence[StagedMarkdown],
 ) -> tuple[str, ...]:
     normalized = _docs_scan.normalize_repo_rel_path(rel_path)
+    index_referrers = _index_exact_referrers(root, normalized)
+    if index_referrers is not None:
+        return index_referrers
     deleted_paths = _deleted_paths(entries)
     staged_text_by_path = _staged_text_by_path(entries)
     scan_paths = set(_scan_paths(root))
@@ -277,6 +340,12 @@ def _owner_paths_exist(
     owner_paths: list[str],
     entries: Sequence[StagedMarkdown],
 ) -> bool:
+    if _git_index_available(root):
+        return all(
+            (normalized := _normalized_evidence_path(owner_path)) is not None
+            and _index_has_path(root, normalized)
+            for owner_path in owner_paths
+        )
     staged_text_by_path = _staged_text_by_path(entries)
     for owner_path in owner_paths:
         normalized = _normalized_evidence_path(owner_path)

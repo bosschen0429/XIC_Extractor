@@ -19,12 +19,45 @@ from tools.diagnostics.docs_policy import (
     source_copy_locator_note_title,
     source_copy_locator_sha256,
 )
+from tools.diagnostics.docs_scan import (
+    LOCAL_PATH_SCAN_TEXT_FILENAMES,
+    LOCAL_PATH_SCAN_TEXT_SUFFIXES,
+)
 
 
 def _write(root: Path, path: str, text: str) -> None:
     target = root / path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
+
+
+def _commit_all(root: Path) -> None:
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "add", "--all"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _stage_delete(root: Path, path: str) -> None:
+    subprocess.run(
+        ["git", "rm", "--", path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
 
 
 def _source_hash(text: str) -> str:
@@ -2118,6 +2151,180 @@ def test_lifecycle_managed_deletion_rejects_remaining_referrers(
         "retired docs lane deletion still has exact repo referrers" in problem.reason
         for problem in result.problems
     )
+
+
+def test_retired_deletion_scans_index_content_for_every_text_path(
+    tmp_path: Path,
+) -> None:
+    path = "docs/superpowers/plans/2026-04-07-old-plan.md"
+    referrers = {
+        **{
+            f"refs/referrer{suffix}": f"reference = {path!r}\n"
+            for suffix in sorted(LOCAL_PATH_SCAN_TEXT_SUFFIXES)
+        },
+        **{
+            filename: f"# Exact referrer: {path}\n"
+            for filename in sorted(LOCAL_PATH_SCAN_TEXT_FILENAMES)
+        },
+    }
+    _write(tmp_path, path, "# Retired plan\n")
+    for referrer, text in referrers.items():
+        _write(tmp_path, referrer, text)
+    _commit_all(tmp_path)
+    _stage_delete(tmp_path, path)
+    for referrer in referrers:
+        _write(tmp_path, referrer, "no reference in the unstaged worktree\n")
+
+    entries, ignored_deletions = staged_markdown(tmp_path)
+    result = check_doc_placement(
+        tmp_path,
+        entries,
+        ignored_deletions=ignored_deletions,
+    )
+
+    problem = next(
+        problem
+        for problem in result.problems
+        if "retired docs lane deletion still has exact repo referrers"
+        in problem.reason
+    )
+    assert all(referrer in problem.reason for referrer in referrers)
+
+
+def test_retired_deletion_scans_index_when_referrer_is_missing_from_worktree(
+    tmp_path: Path,
+) -> None:
+    path = "docs/superpowers/plans/2026-04-07-old-plan.md"
+    referrer = "scripts/referrer.py"
+    _write(tmp_path, path, "# Retired plan\n")
+    _write(tmp_path, referrer, f"REFERENCE = {path!r}\n")
+    _commit_all(tmp_path)
+    _stage_delete(tmp_path, path)
+    (tmp_path / referrer).unlink()
+
+    entries, ignored_deletions = staged_markdown(tmp_path)
+    result = check_doc_placement(
+        tmp_path,
+        entries,
+        ignored_deletions=ignored_deletions,
+    )
+
+    assert any(referrer in problem.reason for problem in result.problems)
+
+
+def test_retired_deletion_ignores_untracked_worktree_referrer(
+    tmp_path: Path,
+) -> None:
+    path = "docs/superpowers/plans/2026-04-07-old-plan.md"
+    _write(tmp_path, path, "# Retired plan\n")
+    _commit_all(tmp_path)
+    _stage_delete(tmp_path, path)
+    _write(tmp_path, "scripts/untracked_referrer.py", f"REFERENCE = {path!r}\n")
+
+    entries, ignored_deletions = staged_markdown(tmp_path)
+    result = check_doc_placement(
+        tmp_path,
+        entries,
+        ignored_deletions=ignored_deletions,
+    )
+
+    assert not any(
+        "retired docs lane deletion still has exact repo referrers"
+        in problem.reason
+        for problem in result.problems
+    )
+
+
+def test_retired_deletion_accepts_staged_referrer_removal(
+    tmp_path: Path,
+) -> None:
+    path = "docs/superpowers/plans/2026-04-07-old-plan.md"
+    referrer = "scripts/referrer.py"
+    _write(tmp_path, path, "# Retired plan\n")
+    _write(tmp_path, referrer, f"REFERENCE = {path!r}\n")
+    _commit_all(tmp_path)
+    _stage_delete(tmp_path, path)
+    _write(tmp_path, referrer, "REFERENCE = None\n")
+    subprocess.run(
+        ["git", "add", "--", referrer],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    entries, ignored_deletions = staged_markdown(tmp_path)
+    result = check_doc_placement(
+        tmp_path,
+        entries,
+        ignored_deletions=ignored_deletions,
+    )
+
+    assert not any(
+        "retired docs lane deletion still has exact repo referrers"
+        in problem.reason
+        for problem in result.problems
+    )
+
+
+@pytest.mark.parametrize(
+    ("owner_state", "expect_owner_problem"),
+    (("indexed_worktree_missing", False), ("worktree_only", True)),
+)
+def test_lifecycle_deletion_checks_owner_paths_in_the_index(
+    tmp_path: Path,
+    owner_state: str,
+    expect_owner_problem: bool,
+) -> None:
+    path = "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+    owner = "docs/product/backfill.md"
+    old_text = "\n".join(
+        (
+            "# Old owner contract",
+            "",
+            "Doc placement: formal_repo_doc",
+            "Doc kind: spec",
+            "Doc lifecycle: implemented",
+            f"Repo owner: {owner}",
+            "Doc exit rule: retire after owner absorption.",
+        )
+    )
+    evidence_path = (
+        "docs/superpowers/file-management/docs-cleanup/"
+        "2026-07-01-retirement-evidence.json"
+    )
+    _write(tmp_path, path, old_text)
+    _write(tmp_path, owner, "# Backfill\n")
+    _commit_all(tmp_path)
+    _stage_delete(tmp_path, path)
+    if owner_state == "indexed_worktree_missing":
+        (tmp_path / owner).unlink()
+    else:
+        subprocess.run(
+            ["git", "rm", "--cached", "--", owner],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+    _write(tmp_path, evidence_path, json.dumps(_retirement_evidence(path, old_text)))
+    subprocess.run(
+        ["git", "add", "--", evidence_path],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    entries, ignored_deletions = staged_markdown(tmp_path)
+    result = check_doc_placement(
+        tmp_path,
+        entries,
+        ignored_deletions=ignored_deletions,
+    )
+
+    has_owner_problem = any(
+        "retirement evidence owner_paths do not all exist in repo" in problem.reason
+        for problem in result.problems
+    )
+    assert has_owner_problem is expect_owner_problem
 
 
 def test_cli_reads_staged_blob_not_worktree_after_divergence(tmp_path: Path) -> None:
