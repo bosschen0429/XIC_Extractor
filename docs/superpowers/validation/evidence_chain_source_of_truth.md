@@ -321,9 +321,10 @@ Evidence states:
   cells eligible for later expected-diff design, but it does not grant
   ProductWriter authority.
 - Historical standard-peak MS1 sidecars and full-chain status maps are retained
-  only as source-sealed diagnostic/oracle evidence. Their producers predate the
-  current original-owner rehydration contract, so no current tool may regenerate
-  them or treat their `pass`/`product_authorized` labels as product authority.
+  only as diagnostic context. Their packet-local checks do not authenticate
+  historical origin or immutability, and their producers predate the current
+  original-owner rehydration contract, so no current tool may regenerate them
+  or treat their `pass`/`product_authorized` labels as product authority.
 - Backfill expansion peak-mode decomposition is a diagnostic gate that compares
   sample-local candidate apex RT against each family's detected/reference mode.
   It identifies mixed target/off-target RT hypotheses and boundary-bridge

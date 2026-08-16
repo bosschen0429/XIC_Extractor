@@ -68,16 +68,18 @@ false blockers are handled by the selective MS1 authority sidecar; the remaining
 28 cells are real method holds, not rows that need manual review just because
 the old family gate was blunt.
 
-The source-sealed 84-cell passing set records a historical bounded experiment.
-It predates current original-owner rehydration and therefore cannot create an
+The retained 84-cell passing set records a historical bounded experiment. It
+predates current original-owner rehydration and therefore cannot create an
 allowlist, authorize a Matrix write, or support a current activation route. The
-28 held cells remain useful diagnostic/oracle context for own-max,
-source-family shift, or hold/remap analysis.
+28 held cells remain useful diagnostic context for own-max, source-family
+shift, or hold/remap analysis.
 
 ## Authority Boundary
 
-This artifact is source-sealed historical diagnostic evidence. Its validator
-checks retained counts and hashes only and does not change:
+This artifact is retained historical diagnostic context. Its validator checks
+current packet self-consistency using counts and hashes declared inside the
+same packet; it does not independently authenticate historical origin or
+immutability. The validator does not change:
 
 - product tier or lane;
 - ProductWriter authority;

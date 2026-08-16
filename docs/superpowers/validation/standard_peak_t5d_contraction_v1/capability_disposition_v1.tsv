@@ -7,8 +7,8 @@ SP-005	owner_input	xic_extractor/alignment/promotion_policy.py	authority meaning
 SP-006	diagnostic_renderer	tools/diagnostics/family_ms1_backfill_review_report.py	explicit review rendering only
 SP-007	delete	deleted_by_t5d	preset reconciliation orchestration retired
 SP-008	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	explicit overlay acquisition/replay only
-SP-009	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	source-sealed overlay artifact evidence only
-SP-010	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	source-sealed overlay artifact evidence only
+SP-009	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	retained overlay artifact context only; origin not independently authenticated
+SP-010	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	retained overlay artifact context only; origin not independently authenticated
 SP-011	owner_input	xic_extractor/peak_detection/evidence_facts.py	shared trace fact retained under physical fact owner
 SP-012	owner_input	xic_extractor/peak_detection/ms1_morphology.py	shared morphology fact retained under physical fact owner
 SP-013	owner_input	xic_extractor/peak_detection/ms1_shape_identity.py	shared shape fact retained under physical fact owner
@@ -17,7 +17,7 @@ SP-015	owner_input	xic_extractor/alignment/promotion_policy.py	available family 
 SP-016	diagnostic_renderer	tools/diagnostics/family_ms1_overlay_rendering.py	manual overlay renderer only
 SP-017	delete	deleted_by_t5d	preset-owned reconciliation group assembly retired
 SP-018	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment_batch.py	explicit shift-aware batch evidence only
-SP-019	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment.py	source-sealed shift-aware falsifier
+SP-019	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment.py	retained shift-aware falsifier; origin not independently authenticated
 SP-020	diagnostic_renderer	tools/diagnostics/family_ms1_alignment_experiment.py	shift-aware review rendering only
 SP-021	diagnostic_oracle	tools/diagnostics/shift_aware_backfill_calibration_pack.py	offline calibration corpus only
 SP-022	diagnostic_oracle	tools/diagnostics/shift_aware_backfill_calibration_pack.py	historical threshold experiment; never Owner predicate

@@ -8,8 +8,8 @@ the only normal Matrix writer. Standard Peak is now represented only by:
 
 - retained low-level overlay, shift-aware, calibration, gallery, and Targeted
   oracle/rendering tools named in `capability_disposition_v1.tsv`;
-- source-sealed historical validation artifacts that can falsify or explain old
-  results but cannot mint current product authority.
+- retained historical validation artifacts that can help explain old results
+  but cannot authenticate their own origin or mint current product authority.
 
 T5D does not mint `diagnostic_eligible` from Backfill reason strings and does not
 claim that a supplied `ProcessingRunSpec` binds an independently supplied Matrix
@@ -21,9 +21,10 @@ original-owner subject/run rehydration the resulting semantic claim is
 
 T5B established that the 84-cell packet predates current typed/hash provenance
 and cannot manufacture product authority. T5D therefore keeps the packet
-validator as a historical integrity/oracle surface, deletes its ownerless
+validator as a current-file self-consistency check, deletes its ownerless
 writer, and removes the registered scope from the live authority manifests.
-The existing 511-cell Owner Backfill and 95-cell CID-NL scopes are unchanged.
+The validator does not authenticate historical origin or immutability. The
+existing 511-cell Owner Backfill and 95-cell CID-NL scopes are unchanged.
 
 Deleted live surfaces include the Standard Peak authority bundle, shadow
 activation inputs, productization transaction, activation-scope/heldout

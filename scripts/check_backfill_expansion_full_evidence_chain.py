@@ -1,9 +1,10 @@
-"""Validate the historical 666-cell Backfill full evidence-chain packet.
+"""Validate a retained historical 666-cell Backfill full-chain packet.
 
-The retained packet is a source-sealed diagnostic/falsification artifact. This
-checker validates its internal counts, hashes, and no-write boundary only. It
-does not regenerate classifications, rehydrate product authority, read RAW
-files, mutate the default matrix, or grant ProductWriter authority.
+This checker validates current packet self-consistency through internal counts,
+packet-declared hashes, and the no-write boundary. It does not independently
+authenticate historical origin or immutability, regenerate classifications,
+rehydrate product authority, read RAW files, mutate the default matrix, or
+grant ProductWriter authority.
 """
 
 from __future__ import annotations

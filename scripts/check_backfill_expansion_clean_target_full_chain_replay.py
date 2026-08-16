@@ -1,8 +1,10 @@
-"""Validate the historical source-sealed clean-target replay packet.
+"""Validate current self-consistency of a retained clean-target replay packet.
 
 T5D removed the Standard Peak authority-bundle producer and its ownerless
-writer. This checker validates the retained 84/112 experimental result only;
-it cannot reconstruct current owner authority, run RAW, or authorize a write.
+writer. This checker compares the retained 84/112 result, counts, and
+packet-declared hashes. Because the summary is not independently sealed,
+success does not authenticate historical origin or immutability. It cannot
+reconstruct current owner authority, run RAW, or authorize a write.
 """
 
 from __future__ import annotations

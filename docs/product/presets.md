@@ -58,8 +58,9 @@ not reachable from normal CLI/GUI/preset execution, and the source-Matrix
 republisher and its authority/productization chain are deleted. Retained
 Standard Peak helpers are explicit offline falsifiers/renderers only; T5D does
 not invent a new HOLD selector or product authority. The historical clean-target
-packet remains source-sealed diagnostic/oracle evidence, but its ownerless writer
-and registered scope are retired.
+packet retains diagnostic context and current-file self-consistency checks only;
+it has no independent historical seal, and its ownerless writer and registered
+scope are retired.
 The provisional full-universe runner continues to stop after its
 existing provisional diagnostic projection, and bounded ModeTrack retains its
 precursor, metadata, injection-order, namespace, and reviewed-input owners.

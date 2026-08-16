@@ -127,7 +127,7 @@ def test_t5d_does_not_invent_a_hold_eligibility_owner() -> None:
     ).exists()
 
 
-def test_historical_84_cell_packet_is_validation_only() -> None:
+def test_historical_84_cell_packet_is_self_consistency_only() -> None:
     assert validate_backfill_expansion_clean_target_full_chain_replay() == []
     assert not hasattr(
         check_backfill_expansion_full_evidence_chain,

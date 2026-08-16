@@ -148,8 +148,8 @@ cross-boundary surfaces require special protection:
 | --- | --- |
 | Retained Standard Peak overlay/shift/gallery helpers | Explicit offline falsifiers/renderers only; no integrated HOLD selector, product decision, value, or writer receipt |
 | `family_ms1_overlay_batch.py` | Imported by GUI review and full evidence-chain orchestration; owns batched RAW overlay production |
-| Retired Standard Peak authority/activation/productization/consolidation tools | Deleted by T5D; historical source-sealed artifacts remain falsification inputs only |
-| Historical clean-target 84-cell packet | Source-sealed diagnostic/oracle evidence only; its ownerless writer and registered authority scope were retired by T5D |
+| Retired Standard Peak authority/activation/productization/consolidation tools | Deleted by T5D; retained historical artifacts remain diagnostic context only and do not authenticate their own origin |
+| Historical clean-target 84-cell packet | Current-file self-consistency checks only; no independent historical seal; its ownerless writer and registered authority scope were retired by T5D |
 | `docs_policy.py` | Shared docs-governance path and classification owner used by hooks and checks |
 | `docs_management_audit.py` | CI-facing repository documentation audit |
 | `tools/testing/test_shards.py` | CI test-shard contract, not diagnostic evidence |

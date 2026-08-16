@@ -562,8 +562,8 @@ batching/cache code: `raw_xic_locality_summary` reports stage-level
 The built-in `dna_dr_product_ready` preset no longer invokes a publication
 checker. T5D deleted that historical checker and its stage replay because both
 encoded the retired Standard Peak publication contract. Historical publication
-artifacts remain source-sealed evidence only; do not use them to infer readiness
-for a current run.
+artifacts remain retained diagnostic context only; their packet-local checks do
+not authenticate historical origin or readiness for a current run.
 
 Before starting 85RAW, verify the batch index actually contains 85 samples. Do
 not reuse the historical 8RAW index by path similarity. Prefer the CLI preflight

@@ -103,7 +103,7 @@
     {
       "scope_id": "backfill_expansion_clean_target_selective_activation_84_cells",
       "status": "retired",
-      "reason": "T5D retired the ownerless Standard Peak clean-target writer; the retained source-sealed packet is historical diagnostic evidence and cannot grant ProductWriter authority."
+      "reason": "T5D retired the ownerless Standard Peak clean-target writer; the retained packet provides current-file self-consistency checks only, does not authenticate historical origin, and cannot grant ProductWriter authority."
     }
   ]
 }
