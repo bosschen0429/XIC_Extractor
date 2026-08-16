@@ -214,6 +214,105 @@ def test_owner_backfill_canonical_path_does_not_call_retired_local_helpers(
     assert result.peak_fact_observations[0].facts is not None
 
 
+def test_owner_backfill_canonical_rescues_one_offset_physical_segment(
+    tmp_path,
+) -> None:
+    source, acquisition = _owner_bound_peak_source(
+        tmp_path,
+        b"owner-backfill-unique-offset-segment",
+        center=7.65,
+    )
+
+    result = build_owner_backfill_result(
+        (_feature(rt=8.5),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": source},
+        expected_acquisition_sources={"sample-b": acquisition},
+        alignment_config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=60.0,
+        ),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    assert len(result.cells) == 1
+    cell = result.cells[0]
+    assert cell.status == "rescued"
+    assert cell.apex_rt == pytest.approx(7.65)
+    observation = result.peak_fact_observations[0]
+    assert observation.logical_request.item.preferred_rt == 8.5
+    assert observation.physical_evaluation is not None
+    assert len(observation.physical_evaluation.segment_universe.segments) == 1
+    assert observation.physical_evaluation.question.query_rt_min == pytest.approx(7.65)
+
+
+def test_owner_backfill_canonical_rejects_multiple_offset_physical_segments(
+    tmp_path,
+) -> None:
+    rt = np.linspace(7.5, 9.5, 101)
+    source, acquisition = _owner_bound_source(
+        tmp_path,
+        b"owner-backfill-ambiguous-offset-segments",
+        FakeBackfillSource(
+            rt=rt,
+            intensity=(
+                120.0 * np.exp(-((rt - 7.8) ** 2) / 0.002)
+                + 100.0 * np.exp(-((rt - 9.2) ** 2) / 0.002)
+            ),
+        ),
+    )
+
+    result = build_owner_backfill_result(
+        (_feature(rt=8.5),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": source},
+        expected_acquisition_sources={"sample-b": acquisition},
+        alignment_config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=60.0,
+        ),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    assert result.cells[0].status == "unchecked"
+    evaluation = result.peak_fact_observations[0].physical_evaluation
+    assert evaluation is not None
+    assert evaluation.reason == "no_selection"
+    assert len(evaluation.segment_universe.segments) == 2
+
+
+def test_owner_backfill_canonical_rejects_unique_segment_beyond_preferred_rt(
+    tmp_path,
+) -> None:
+    source, acquisition = _owner_bound_peak_source(
+        tmp_path,
+        b"owner-backfill-offset-beyond-preferred-rt",
+        center=6.9,
+    )
+
+    result = build_owner_backfill_result(
+        (_feature(rt=8.5),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": source},
+        expected_acquisition_sources={"sample-b": acquisition},
+        alignment_config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+        ),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    assert result.cells[0].status == "unchecked"
+    evaluation = result.peak_fact_observations[0].physical_evaluation
+    assert evaluation is not None
+    assert evaluation.reason == "no_selection"
+    assert len(evaluation.segment_universe.segments) == 1
+    assert evaluation.question.query_rt_min == 8.5
+
+
 def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -> None:
     source = _dense_peak_source(center=8.50, height=120.0)
     owner = SimpleNamespace(sample_stem="sample-a", owner_area=1000.0)
@@ -1329,7 +1428,15 @@ def _dense_peak_source(*, center: float, height: float) -> FakeBackfillSource:
     )
 
 
-def _owner_bound_peak_source(tmp_path, payload: bytes):
+def _owner_bound_peak_source(tmp_path, payload: bytes, *, center: float = 8.50):
+    return _owner_bound_source(
+        tmp_path,
+        payload,
+        _dense_peak_source(center=center, height=120.0),
+    )
+
+
+def _owner_bound_source(tmp_path, payload: bytes, source: FakeBackfillSource):
     raw_path = tmp_path / "sample-b.raw"
     raw_path.write_bytes(payload)
     acquisition = build_acquisition_source_identity(
@@ -1337,7 +1444,6 @@ def _owner_bound_peak_source(tmp_path, payload: bytes):
         acquisition_format="thermo_raw",
         observation_namespace="test-owner-backfill-shadow",
     )
-    source = _dense_peak_source(center=8.50, height=120.0)
     source.acquisition_source = acquisition
     return source, acquisition
 

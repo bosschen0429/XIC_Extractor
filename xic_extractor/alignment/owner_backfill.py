@@ -299,7 +299,10 @@ def _validate_owner_backfill_peak_fact_observation(
         question = physical_evaluation.question
         if question.selection_subject_id != expected_selection_subject_id:
             raise ValueError("peak fact observation crosses physical selection subject")
-        if question.query_rt_min != observation.logical_request.item.preferred_rt:
+        if not _physical_query_matches_owner_request(
+            physical_evaluation,
+            preferred_rt=observation.logical_request.item.preferred_rt,
+        ):
             raise ValueError("peak fact observation crosses physical query RT")
         validate_bounded_physical_peak_evaluation(physical_evaluation)
     if observation.facts is not None and observation.facts.physical_evaluation != (
@@ -313,6 +316,26 @@ def _validate_owner_backfill_peak_fact_observation(
         or observation.fact_elapsed_seconds <= 0
     ):
         raise ValueError("fact elapsed observation must be finite and positive")
+
+
+def _physical_query_matches_owner_request(
+    evaluation: PhysicalPeakEvaluation,
+    *,
+    preferred_rt: float,
+) -> bool:
+    question = evaluation.question
+    if question.query_rt_min == preferred_rt:
+        return True
+    segments = evaluation.segment_universe.segments
+    if len(segments) != 1:
+        return False
+    segment = segments[0]
+    return (
+        not segment.left_rt_min <= preferred_rt <= segment.right_rt_min
+        and question.query_rt_min == segment.apex_rt_min
+        and evaluation.answer.physical_segment_id == segment.physical_segment_id
+        and evaluation.state == "available"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -560,6 +583,9 @@ def build_owner_backfill_result(
                     request=request,
                     preferred_rt=preferred_rt,
                     peak_config=peak_config,
+                    maximum_query_delta_min=(
+                        alignment_config.preferred_rt_sec / 60.0
+                    ),
                     signal_processing_profile=signal_processing_profile,
                     prepared_signal_cache=prepared_signal_cache,
                     selection_subject_id=_selection_subject_id(
@@ -731,6 +757,9 @@ def build_owner_backfill_result(
                         request=_request,
                         preferred_rt=preferred_rt,
                         peak_config=peak_config,
+                        maximum_query_delta_min=(
+                            alignment_config.preferred_rt_sec / 60.0
+                        ),
                         signal_processing_profile=signal_processing_profile,
                         prepared_signal_cache=prepared_signal_cache,
                         selection_subject_id=_selection_subject_id(
@@ -1417,6 +1446,7 @@ def _backfill_feature_sample_trace(
     request: XICRequest,
     preferred_rt: float | None = None,
     peak_config: ExtractionConfig,
+    maximum_query_delta_min: float,
     signal_processing_profile: SignalProcessingProfile | None,
     selection_subject_id: str,
     prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult],
@@ -1441,6 +1471,7 @@ def _backfill_feature_sample_trace(
         request=request,
         preferred_rt=preferred_rt,
         peak_config=peak_config,
+        maximum_query_delta_min=maximum_query_delta_min,
         emit_region_audit=emit_region_audit,
         signal_processing_profile=signal_processing_profile,
         selection_subject_id=selection_subject_id,
@@ -1628,6 +1659,7 @@ def _backfill_feature_sample_trace_canonical(
     request: XICRequest,
     preferred_rt: float | None,
     peak_config: ExtractionConfig,
+    maximum_query_delta_min: float,
     emit_region_audit: bool,
     signal_processing_profile: SignalProcessingProfile,
     selection_subject_id: str,
@@ -1653,6 +1685,20 @@ def _backfill_feature_sample_trace_canonical(
         request_context_rt_start_min=request.rt_min,
         request_context_rt_end_min=request.rt_max,
     )
+    if (
+        physical_evaluation.state == "unavailable"
+        and physical_evaluation.reason == "no_selection"
+        and len(physical_evaluation.segment_universe.segments) == 1
+    ):
+        unique_segment = physical_evaluation.segment_universe.segments[0]
+        if abs(unique_segment.apex_rt_min - query_rt) <= maximum_query_delta_min:
+            physical_evaluation = evaluate_physical_peak(
+                prepared,
+                selection_subject_id=selection_subject_id,
+                query_rt_min=unique_segment.apex_rt_min,
+                request_context_rt_start_min=request.rt_min,
+                request_context_rt_end_min=request.rt_max,
+            )
     elapsed = _positive_elapsed(perf_counter() - started)
     facts = physical_evaluation.facts
     if physical_evaluation.state != "available" or facts is None:
