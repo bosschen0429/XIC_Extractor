@@ -10,13 +10,6 @@ from xic_extractor.alignment.production_decisions import (
 )
 
 
-def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
-    return build_production_decisions(
-        matrix,
-        AlignmentConfig(),
-    )
-
-
 def test_alignment_review_html_contains_visual_summary_not_full_cell_table(
     tmp_path: Path,
 ):
@@ -57,3 +50,10 @@ def test_alignment_review_html_reports_duplicate_ownership_pressure(
     html = path.read_text(encoding="utf-8")
     assert "duplicate_assigned" in html
     assert "1 duplicate-assigned cells" in html
+
+
+def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
+    return build_production_decisions(
+        matrix,
+        AlignmentConfig(),
+    )

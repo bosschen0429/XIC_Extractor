@@ -59,16 +59,6 @@ REVIEW_COLUMNS = [
 ]
 
 
-def _production_decisions(
-    matrix: AlignmentMatrix,
-    alignment_config: AlignmentConfig | None = None,
-) -> ProductionDecisionSet:
-    return build_production_decisions(
-        matrix,
-        alignment_config or AlignmentConfig(),
-    )
-
-
 def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Path):
     from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
 
@@ -2137,6 +2127,16 @@ def test_private_write_tsv_accepts_generator_rows(tmp_path: Path) -> None:
     path = tsv_writer._write_tsv(tmp_path / "streamed.tsv", ("name", "value"), rows)
 
     assert path.read_bytes() == b"name\tvalue\nrow-0\t0\nrow-1\t1\nrow-2\t2\n"
+
+
+def _production_decisions(
+    matrix: AlignmentMatrix,
+    alignment_config: AlignmentConfig | None = None,
+) -> ProductionDecisionSet:
+    return build_production_decisions(
+        matrix,
+        alignment_config or AlignmentConfig(),
+    )
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:

@@ -30,13 +30,6 @@ FORBIDDEN_PRIMARY_STATUSES = {
 }
 
 
-def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
-    return build_production_decisions(
-        matrix,
-        AlignmentConfig(),
-    )
-
-
 def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     tmp_path: Path,
 ):
@@ -241,6 +234,13 @@ def test_istd_fixture_records_explicit_matching_fields():
         ("245.1332/12.28", "d3-5-medC"),
         ("261.1283/8.97", "d3-5-hmdC"),
     }
+
+
+def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
+    return build_production_decisions(
+        matrix,
+        AlignmentConfig(),
+    )
 
 
 def _feature(
