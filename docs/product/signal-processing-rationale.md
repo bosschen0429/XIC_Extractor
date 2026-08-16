@@ -136,12 +136,14 @@ cannot change profile-covered physical facts. The only canonical public method
 is `gaussian`; its public point count is
 `signal_processing_window_points` (default 15, odd integer 3–999).
 
-Untargeted Owner Backfill is the first bounded consumer of the canonical
-profile and shared physical owner. Its migration does not wait for a Targeted
-cutover and does not use Targeted parity as its acceptance oracle. Discovery,
-Alignment owner-build, Targeted, Standard Peak, and diagnostic/gallery paths
-remain separately bounded migrations; their duplicate computations are visible
-debt, not permission to retain a second answer in covered Owner Backfill work.
+Untargeted Owner Backfill was the first bounded consumer of the canonical
+profile and shared physical owner. Current normal Untargeted Discovery,
+Alignment owner-build, and Owner Backfill routes are now cut over without
+waiting for Targeted parity. The former Standard Peak product route and
+source-Matrix republisher are retired; retained shape/overlay helpers are
+offline diagnostics only. The automatic GUI gallery route is parked. Targeted
+and any deliberately retained diagnostic computation remain separately
+bounded and cannot supply a second answer for profile-covered Untargeted work.
 
 The physical owner answers a closed stage-supplied peak question from the
 canonical signal. It does not choose a `PeakHypothesis`, group, feature row,

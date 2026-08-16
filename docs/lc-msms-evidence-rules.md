@@ -113,9 +113,11 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   alone.
 - Untargeted Owner Backfill is an independent first consumer of the shared
   physical signal owner; it does not require a Targeted-first migration or use
-  Targeted output parity as its acceptance baseline. Targeted, Discovery,
-  Alignment owner-build, Standard Peak, and gallery migrations remain separate
-  authority/evidence slices and must not redefine this Backfill gate.
+  Targeted output parity as its acceptance baseline. Current normal Untargeted
+  Discovery, Alignment owner-build, and Owner Backfill routes consume the
+  canonical profile-bound physical owner. Targeted remains a separately bounded
+  migration, the automatic GUI gallery is parked, and retained Standard Peak
+  diagnostics must not redefine this Backfill gate.
 - Broad Backfill candidate universes are audit/review surfaces, not writer
   pools. Quality blockers, quality explanations, round-trip reintegration
   checks, ISTD comparisons, review packets, and lockbox membership may raise
@@ -174,31 +176,21 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   they do not replace anchor MS1 same-peak evidence and are not required when
   MS1 same-peak evidence is product-authorized.
 - Wrong-peak or unresolved hypothesis blockers remain fail-closed for rescued
-  cells. In the standard-peak MS1 gate, legacy family duplicate or multi-claim
-  labels such as duplicate-loser are context warnings, not product vetoes, when
-  the row is product-authorized at the `PeakHypothesis` level, the rescued cell
-  is an accepted rescue with standard Gaussian-smoothed shape, same-peak MS1
-  support, no neighboring/global apex interference, and no conflicting primary
-  detection. Keep the duplicate/multi-claim provenance in audit fields. Explicit
-  wrong-peak, primary-loser, mode-split, cross-mode-rescue, or
-  `consolidation_no_go` provenance remains fail-closed until those rows are
-  consolidated into the product hypothesis by a reviewed production rule.
+  cells. Legacy Standard Peak family duplicate or multi-claim labels are
+  retained diagnostic context only; they cannot weaken current owner-derived
+  identity, ambiguity, primary-loser, mode-split, cross-mode-rescue, or
+  `consolidation_no_go` blockers. Keep relevant provenance in audit fields, but
+  require a current owner-valid production rule before any such row can write.
 - Scan support and trace quality remain assessability/coverage evidence. They
   may block low-quality rescue, but they are not independent identity evidence.
-- Shift-aware same-pattern evidence may become product authority only through
-  the standard-peak MS1 gate. The product-authorized source is
-  `machine_shift_aware_standard_peak_gate`; it requires
-  `standard_peak_gate_supported`, a default shift-aware best-shift shape
-  threshold of `min_shape_r >= 0.95`, a Gaussian-smoothed family overlay verdict
-  of `ms1_shape_supports_family_backfill`, a same-peak product-authority reason
-  of `shift_aware_standard_peak_gate_supported`, and trace JSON path/SHA
-  provenance validation before projection. Manual standard-peak examples are
-  calibration oracle rows, not a product whitelist. Unlabeled machine-supported
-  rows must be labeled as machine-gate scope in activation artifacts, not as
-  manual-oracle rows. Non-standard peaks, neighboring-interference cases,
-  missing overlay traces, stale hashes, duplicate trace samples, explicit
-  wrong-peak/conflict blockers, and non-`PeakHypothesis` activation units remain
-  fail-closed or review-only.
+- `machine_shift_aware_standard_peak_gate` and
+  `standard_peak_gate_supported` are historical/offline diagnostic labels, not
+  current product-authority sources. T5 retired their authority-bundle and
+  source-Matrix publication consumers. Manual Standard Peak examples remain
+  calibration oracle rows rather than a product whitelist, and current-file
+  hashes prove packet self-consistency only. Any future use in a product rule
+  requires a new owner-bound expected-diff and promotion contract; retained
+  labels cannot revive the retired writer path.
 - MS1/QC pattern conflict, wrong-peak hypothesis evidence, or unexplained RT
   outside the preferred RT band keeps the rescue review-only even if the peak is
   quantifiable inside the broader owner-backfill query window. Candidate-aligned
