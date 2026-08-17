@@ -79,6 +79,15 @@ Use the single-context domain documentation layout. See
   and matrix behavior changes, report which method-appropriate evidence was
   used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,
   method-specific real samples, or manual EIC/MS2 review.
+- For fast local feedback, `uv run --extra dev python -m tools.testing.affected
+  --run` runs only the tests a change can reach. It selects from the static
+  import graph, so it cannot see importlib loads, entry points, or subprocess
+  calls: it is feedback, never a gate, and CI still runs every shard.
+- The `ledger-manual` shard is deliberately absent from CI. Its suites assert
+  that registers under `docs/superpowers/validation/` still match a recorded
+  snapshot, so a legitimate re-analysis reds them. Run it on demand with
+  `uv run python -m tools.testing.test_shards ledger-manual`. Its removal
+  condition is on `SHARD_PATTERNS` in `tools/testing/test_shards.py`.
 - Do not launch 85RAW or likely long RAW runs through background
   `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
   command shapes in `docs/agent/parameter-settings.md`, or get explicit approval
