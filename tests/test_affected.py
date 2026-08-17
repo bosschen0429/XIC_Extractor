@@ -2,12 +2,22 @@ from pathlib import Path
 
 from tools.testing.affected import (
     BROAD_IMPACT_PATTERNS,
+    _direct_imports,
+    _tracked_python_files,
     module_name,
     select,
 )
 from tools.testing.test_shards import discover_test_files
 
 ALL_TESTS = tuple(p.as_posix() for p in discover_test_files())
+
+
+def _known_modules() -> set[str]:
+    return {
+        module_name(path)
+        for path in _tracked_python_files()
+        if path.startswith(("xic_extractor/", "scripts/", "tools/", "gui/"))
+    }
 
 
 def test_module_name_maps_paths_and_collapses_package_init() -> None:
@@ -55,6 +65,28 @@ def test_product_module_selects_its_dependents_but_not_everything() -> None:
     assert unresolved == []
     assert "tests/test_alignment_owner_backfill.py" in selected
     assert 0 < len(selected) < len(ALL_TESTS)
+
+
+def test_package_init_resolves_its_own_relative_imports() -> None:
+    # module_name() strips `.__init__`, so a naive `level` subtraction climbs
+    # one package too far and every `from .x import y` in an __init__.py
+    # silently drops out of the graph.
+    resolved = _direct_imports(
+        "xic_extractor/alignment/identity_coherence/__init__.py",
+        _known_modules(),
+    )
+
+    assert "xic_extractor.alignment.identity_coherence.models" in resolved
+    assert "xic_extractor.alignment.models" not in resolved
+
+
+def test_module_relative_imports_still_resolve_to_the_parent_package() -> None:
+    resolved = _direct_imports(
+        "xic_extractor/alignment/quant_matrix_promotion.py",
+        _known_modules(),
+    )
+
+    assert "xic_extractor.alignment.quant_matrix_report" in resolved
 
 
 def test_unrelated_modules_are_left_out() -> None:

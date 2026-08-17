@@ -61,6 +61,12 @@ def _direct_imports(path: str, known: set[str]) -> set[str]:
     except (OSError, SyntaxError):
         return set()
     me = module_name(path)
+    # `from . import x` is relative to the containing package, and for an
+    # __init__.py that package is the module itself -- module_name() already
+    # dropped the `.__init__`. Subtracting node.level from the module would
+    # climb one level too far there, resolving alignment/__init__.py's
+    # `from .models import X` as xic_extractor.alignment.models.
+    package = me if path.endswith("__init__.py") else me.rpartition(".")[0]
     found: set[str] = set()
     for node in ast.walk(tree):
         candidates: list[str] = []
@@ -68,9 +74,11 @@ def _direct_imports(path: str, known: set[str]) -> set[str]:
             candidates = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             if node.level:
-                parts = me.split(".")
-                base = ".".join(parts[: max(0, len(parts) - node.level)])
-                module = f"{base}.{node.module}" if node.module else base
+                parts = package.split(".") if package else []
+                base = ".".join(parts[: max(0, len(parts) - (node.level - 1))])
+                module = f"{base}.{node.module}" if node.module and base else (
+                    node.module or base
+                )
             else:
                 module = node.module or ""
             candidates = [module]
