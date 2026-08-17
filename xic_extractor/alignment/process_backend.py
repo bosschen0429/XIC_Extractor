@@ -658,6 +658,11 @@ def run_owner_backfill_process(
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
+    if owner_backfill_xic_backend == "ms1_index_hybrid" and max_workers > 1:
+        raise ValueError(
+            "ms1_index_hybrid Backfill requires the serial owner when "
+            "validation ranges depend on runtime pending requests"
+        )
     _validate_expected_acquisition_sources(
         sample_order=sample_order,
         raw_paths=raw_paths,

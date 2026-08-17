@@ -169,6 +169,23 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
     ]
 
 
+def test_multi_worker_hybrid_backfill_fails_closed_before_job_submission(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="ms1_index_hybrid.*serial owner"):
+        run_owner_backfill_process(
+            (_feature(),),
+            sample_order=("sample-a",),
+            raw_paths={"sample-a": tmp_path / "sample-a.raw"},
+            dll_dir=tmp_path / "dll",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            max_workers=2,
+            owner_backfill_xic_backend="ms1_index_hybrid",
+        )
+
+
 def test_spawned_child_validates_compact_backfill_projection_without_raw(
     tmp_path: Path,
 ) -> None:
