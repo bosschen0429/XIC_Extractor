@@ -33,6 +33,10 @@ def test_only_the_domain_package_is_in_scope() -> None:
         "_M5_PACKET_SCHEMA",
         "_m5_git_bytes",
         'SCHEMA = "m9_mode_track_source_v2"',
+        # Standalone and separated spellings, the ones prose actually uses.
+        '"""Executable Package 0 parity and frozen successor checks."""',
+        'raise ValueError("must be owner-minted M2 decisions")',
+        "Missing required Phase 1 trend columns",
     ],
 )
 def test_pattern_matches_phase_names_including_infixes(text: str) -> None:
@@ -52,6 +56,9 @@ def test_pattern_matches_phase_names_including_infixes(text: str) -> None:
         # Same guard in snake_case: the m-digit segment may not follow a letter.
         "atom1_value",
         "form2_row",
+        # The standalone M-rule must not swallow ordinary MS levels or words.
+        "MS2 observations from one owner-bound RAW handle",
+        "atom1abc",
         # Schema versions are legitimate.
         "schema_v1",
         "PRODUCER_VERSION = 'raw_trace_reread_v0_1'",

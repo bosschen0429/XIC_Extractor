@@ -92,7 +92,7 @@ def load_sdolek_trend_rows(path: Path) -> tuple[SDOLEKTrendRow, ...]:
         missing = sorted(SDOLEK_TREND_REQUIRED_COLUMNS - fieldnames)
         if missing:
             raise ValueError(
-                "Missing required Phase 1 trend columns: " + ", ".join(missing)
+                "Missing required SDOLEK trend columns: " + ", ".join(missing)
             )
         return tuple(_sdolek_row_from_dict(row) for row in reader)
 
@@ -320,7 +320,7 @@ def _review_bucket(
     injection_order: int | None,
 ) -> tuple[str, str]:
     if row.status != "detected":
-        return "not_detected_or_error", "Phase 1 row was not detected."
+        return "not_detected_or_error", "SDOLEK trend row was not detected."
     if median_values is None:
         return (
             "identity_evidence_insufficient",
@@ -340,7 +340,7 @@ def _review_bucket(
     if "PRIOR_WIDTH_SHIFT" in prior_flags:
         return (
             "width_definition_review",
-            "NoSplit prior width and Phase 1 integration width are not comparable.",
+            "NoSplit prior width and SDOLEK integration width are not comparable.",
         )
     return "stable_ms1_trend", "Detected row is stable relative to batch medians."
 

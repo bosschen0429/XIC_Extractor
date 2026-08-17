@@ -47,16 +47,26 @@ ROOT = Path(__file__).resolve().parent.parent
 #
 # Two spellings of a milestone, and they need different guards:
 #
-#   `\bM\d+[A-Z]` stays case-sensitive via a local flag, because a
-#   case-insensitive form matches ordinary words like atom1A and form2Bx. It
-#   targets CamelCase class prefixes such as M5SuccessorVerdictReceipt.
+#   `\bM\d+(?![a-z0-9])` stays case-sensitive via a local flag, because a
+#   case-insensitive form matches ordinary words like atom1A and form2Bx. The
+#   trailing guard admits both the CamelCase prefix M5SuccessorVerdictReceipt
+#   and the standalone M5 that prose uses ("owner-minted M2 decisions"), while
+#   still refusing atom1abc. MS2 is safe: S is not a digit.
 #
 #   `m\d+_` is the snake_case spelling -- _M5_PACKET_SCHEMA, _m5_git_bytes,
 #   m9_mode_track_source_v2. It may not follow a letter or digit, which is what
-#   keeps atom1_x and form2_y out. Adding it raised the recorded total in one
-#   step; that is the point, the names were always there.
+#   keeps atom1_x and form2_y out.
+#
+# `package`, `phase` and `issue` accept one separator, so "Package 0" and
+# "Phase 1" in a docstring count the same as package0_x. Without that the
+# checker could not see the example its own docstring quotes.
+#
+# Watch this against the tier1/tier2 rule if the domain ever adopts isotopologue
+# notation: M1 and M2 would then be real vocabulary. Today they are not -- the
+# repo contains no M+1 or M0 usage, and every standalone M-number is a milestone.
 PHASE_NAMING_PATTERN = re.compile(
-    r"(?i:package\d+|phase\d+|issue\d+|\bp\d+-|(?<![a-z0-9])m\d+_)|\bM\d+[A-Z]"
+    r"(?i:package[ _-]?\d+|phase[ _-]?\d+|issue[ _-]?\d+|\bp\d+-"
+    r"|(?<![a-z0-9])m\d+_)|\bM\d+(?![a-z0-9])"
 )
 
 SCOPE_ROOT = "xic_extractor/"
@@ -78,10 +88,17 @@ SCOPE_ROOT = "xic_extractor/"
 #      58  after the same sweep ran over what the widening exposed: 76 `_M5_*`
 #          and `_m5_*` identifiers in the comparator, and `Phase1` in
 #          instrument_qc, which is now clean.
+#     279  after review found the pattern could not match a standalone `M5` or
+#          a separated `Package 0` -- the spelling its own docstring quotes.
+#          Again nothing was added; three spellings had been unreadable.
 #
-# What stays is persisted -- schema ids, receipt fields, work-unit keys, pinned
-# evidence directory names, `p7-` version strings -- each already recorded in
-# artifacts, so renaming one changes a value existing outputs carry.
+# The 279 are two different debts. Some are persisted -- schema ids, receipt
+# fields, work-unit keys, pinned evidence directory names, `p7-` version
+# strings -- and renaming one changes a value existing outputs carry. The rest,
+# and it is now the majority, is prose: docstrings and error messages that say
+# "M2 decisions" or "Package 1 experiment" to a reader who was not there.
+# Prose costs nothing to change and breaks nothing, so it is the cheap half of
+# what remains; it was simply invisible until this pattern was corrected.
 #
 # METHOD NOTE, learned the hard way: a census that greps artifacts for the
 # literal value is necessary but not sufficient. `package2:alignment-method`
@@ -94,9 +111,9 @@ SCOPE_ROOT = "xic_extractor/"
 # instrument_qc/calibration.py's `Phase1` was checked against the tier1/tier2
 # exclusion and does not qualify. `Thermo_Stellar_IBD_Phase1_HSP` in the
 # artifacts is a sample batch name, but the loader never references it: the
-# CLI takes any `--trend-tsv` and PHASE1_TREND_REQUIRED_COLUMNS lists only
-# neutral columns (sample_name, compound, apex_rt_min ...). The name describes
-# which trend file was in play at the time, not a property of the data. Owner
+# CLI takes any `--trend-tsv` and the required-column tuple lists only neutral
+# columns (sample_name, compound, apex_rt_min ...). The name describes which
+# trend file was in play at the time, not a property of the data. Owner
 # confirmed the reading; renamed accordingly, and that file is clean.
 #
 # The m7 metric names in untargeted_cid_nl_mode_track_workflow.py are the
@@ -107,14 +124,29 @@ SCOPE_ROOT = "xic_extractor/"
 KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/backfill_evidence_contract.py": (1, "#293"),
     "xic_extractor/alignment/backfill_scope.py": (1, "#293"),
+    "xic_extractor/alignment/cid_nl_evidence_spine.py": (5, "#293"),
+    "xic_extractor/alignment/conservative_backfill.py": (14, "#293"),
+    "xic_extractor/alignment/drift_evidence.py": (1, "#293"),
+    "xic_extractor/alignment/identity_coherence/family_context.py": (2, "#293"),
+    "xic_extractor/alignment/identity_coherence/mode_track_assignment.py": (10, "#293"),
+    "xic_extractor/alignment/identity_coherence/mode_track_producer.py": (1, "#293"),
+    "xic_extractor/alignment/identity_settlement.py": (12, "#293"),
     "xic_extractor/alignment/mode_track_table_finalization.py": (2, "#293"),
     "xic_extractor/alignment/production_acceptance.py": (1, "#293"),
     "xic_extractor/alignment/quantitative_projection_authority.py": (3, "#293"),
-    "xic_extractor/alignment/untargeted_cid_nl_golden_path.py": (2, "#293"),
+    "xic_extractor/alignment/runtime_adapter.py": (1, "#293"),
+    "xic_extractor/alignment/untargeted_cid_nl_golden_path.py": (6, "#293"),
+    "xic_extractor/execution_runtime.py": (1, "#293"),
     "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
-    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (12, "#293"),
-    "xic_extractor/extraction/untargeted_cid_nl_real_data_runtime.py": (3, "#293"),
-    "xic_extractor/package0_successor_comparator.py": (31, "#293"),
+    "xic_extractor/extraction/targeted_diagnostic_method.py": (2, "#293"),
+    "xic_extractor/extraction/targeted_real_data_runtime.py": (1, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (13, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_real_data_adapter.py": (3, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_real_data_inputs.py": (2, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_real_data_runtime.py": (7, "#293"),
+    "xic_extractor/instrument_qc/decision_report.py": (2, "#293"),
+    "xic_extractor/output/target_pair_rt_auto_reselection.py": (1, "#293"),
+    "xic_extractor/package0_successor_comparator.py": (185, "#293"),
 }
 
 
