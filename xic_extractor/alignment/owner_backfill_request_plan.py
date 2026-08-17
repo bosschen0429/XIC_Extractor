@@ -4,7 +4,7 @@ import hashlib
 import json
 import math
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal, NamedTuple
@@ -48,6 +48,26 @@ class OwnerBackfillRequestItem(NamedTuple):
     sample_stem: str
     request: XICRequest
     preferred_rt: float
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillSampleRequestProjection:
+    sample_stem: str
+    features: OwnerGroupDeliveryFeatures
+    logical_request_count: int
+
+    def __post_init__(self) -> None:
+        _required_text(self.sample_stem, "sample_stem")
+        if not isinstance(self.features, tuple):
+            raise TypeError("sample request projection features must be a tuple")
+        if (
+            isinstance(self.logical_request_count, bool)
+            or not isinstance(self.logical_request_count, int)
+            or self.logical_request_count < 1
+        ):
+            raise ValueError(
+                "sample request projection count must be a positive integer"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,28 +385,26 @@ def build_owner_backfill_request_plan(
 ) -> OwnerBackfillRequestPlan:
     pending: dict[str, list[OwnerBackfillRequestItem]] = defaultdict(list)
     rt_window_min = alignment_config.max_rt_sec / 60.0
-    for feature in features:
-        seed_centers = backfill_seed_centers(feature)
-        for sample_stem in backfill_request_sample_stems(
-            feature,
-            sample_order=sample_order,
-            raw_sample_stems=raw_sample_stems,
-            alignment_config=alignment_config,
-        ):
-            for seed_mz, seed_rt in seed_centers:
-                pending[sample_stem].append(
-                    OwnerBackfillRequestItem(
-                        feature=feature,
-                        sample_stem=sample_stem,
-                        request=XICRequest(
-                            mz=seed_mz,
-                            rt_min=seed_rt - rt_window_min,
-                            rt_max=seed_rt + rt_window_min,
-                            ppm_tol=alignment_config.preferred_ppm,
-                        ),
-                        preferred_rt=seed_rt,
-                    )
+    for feature, sample_stem, seed_centers in _iter_feature_sample_request_groups(
+        features,
+        sample_order=sample_order,
+        raw_sample_stems=raw_sample_stems,
+        alignment_config=alignment_config,
+    ):
+        for seed_mz, seed_rt in seed_centers:
+            pending[sample_stem].append(
+                OwnerBackfillRequestItem(
+                    feature=feature,
+                    sample_stem=sample_stem,
+                    request=XICRequest(
+                        mz=seed_mz,
+                        rt_min=seed_rt - rt_window_min,
+                        rt_max=seed_rt + rt_window_min,
+                        ppm_tol=alignment_config.preferred_ppm,
+                    ),
+                    preferred_rt=seed_rt,
                 )
+            )
     requests_by_sample = {
         sample_stem: tuple(sample_requests)
         for sample_stem, sample_requests in pending.items()
@@ -406,6 +424,69 @@ def build_owner_backfill_request_plan(
         equivalence_context=equivalence_context,
         equivalence_unavailable_reason="",
     )
+
+
+def build_owner_backfill_sample_request_projections(
+    features: OwnerGroupDeliveryFeatures,
+    *,
+    sample_order: tuple[str, ...],
+    raw_sample_stems: frozenset[str],
+    alignment_config: AlignmentConfig,
+) -> Mapping[str, OwnerBackfillSampleRequestProjection]:
+    pending_features: dict[str, list[OwnerGroupDeliveryFeature]] = defaultdict(list)
+    request_counts: dict[str, int] = defaultdict(int)
+    seen_feature_object_ids: set[int] = set()
+    active_feature_object_id: int | None = None
+    first_feature_occurrence = False
+    for feature, sample_stem, seed_centers in _iter_feature_sample_request_groups(
+        features,
+        sample_order=sample_order,
+        raw_sample_stems=raw_sample_stems,
+        alignment_config=alignment_config,
+    ):
+        request_counts[sample_stem] += len(seed_centers)
+        feature_object_id = id(feature)
+        if feature_object_id != active_feature_object_id:
+            active_feature_object_id = feature_object_id
+            first_feature_occurrence = (
+                feature_object_id not in seen_feature_object_ids
+            )
+            seen_feature_object_ids.add(feature_object_id)
+        if not first_feature_occurrence:
+            continue
+        sample_features = pending_features[sample_stem]
+        if not sample_features or sample_features[-1] is not feature:
+            sample_features.append(feature)
+
+    projections: dict[str, OwnerBackfillSampleRequestProjection] = {}
+    for sample_stem in tuple(pending_features):
+        frozen_sample_features = tuple(pending_features.pop(sample_stem))
+        projections[sample_stem] = OwnerBackfillSampleRequestProjection(
+            sample_stem=sample_stem,
+            features=frozen_sample_features,
+            logical_request_count=request_counts[sample_stem],
+        )
+    return MappingProxyType(projections)
+
+
+def _iter_feature_sample_request_groups(
+    features: OwnerGroupDeliveryFeatures,
+    *,
+    sample_order: tuple[str, ...],
+    raw_sample_stems: frozenset[str],
+    alignment_config: AlignmentConfig,
+) -> Iterator[
+    tuple[OwnerGroupDeliveryFeature, str, tuple[tuple[float, float], ...]]
+]:
+    for feature in features:
+        seed_centers = backfill_seed_centers(feature)
+        for sample_stem in backfill_request_sample_stems(
+            feature,
+            sample_order=sample_order,
+            raw_sample_stems=raw_sample_stems,
+            alignment_config=alignment_config,
+        ):
+            yield feature, sample_stem, seed_centers
 
 
 def build_owner_backfill_request_equivalence_classes(

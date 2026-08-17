@@ -7,7 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from tests.test_alignment_owner_backfill import _feature
-from xic_extractor.alignment import backfill_transaction, owner_matrix
+from xic_extractor.alignment import (
+    backfill_transaction,
+    owner_backfill_request_plan,
+    owner_matrix,
+)
 from xic_extractor.alignment.backfill_scope import backfill_features_for_sample
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.identity_coherence.models import (
@@ -140,6 +144,99 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
         "sample-a",
         "sample-b",
     ]
+
+
+def test_process_parent_does_not_materialize_logical_backfill_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured_jobs = []
+
+    def forbidden_request_allocation(*args, **kwargs):
+        raise AssertionError("parent process materialized a logical Backfill request")
+
+    for name in ("OwnerBackfillRequestItem", "XICRequest"):
+        monkeypatch.setattr(
+            owner_backfill_request_plan,
+            name,
+            forbidden_request_allocation,
+        )
+
+    def fake_runner(jobs, *, max_workers):
+        captured_jobs.extend(jobs)
+        return []
+
+    feature = replace(
+        _confirmable_feature_for_sample_a(),
+        confirm_local_owners_with_backfill=False,
+    )
+    run_owner_backfill_process(
+        (feature,),
+        sample_order=("sample-a", "sample-b"),
+        raw_paths={
+            "sample-a": tmp_path / "sample-a.raw",
+            "sample-b": tmp_path / "sample-b.raw",
+        },
+        dll_dir=tmp_path / "dll",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        max_workers=2,
+        runner=fake_runner,
+    )
+
+    assert [job.sample_stem for job in captured_jobs] == ["sample-b"]
+    assert [job.features for job in captured_jobs] == [(feature,)]
+    assert [job.request_payload_count for job in captured_jobs] == [1]
+
+
+def test_process_parent_compact_partition_matches_full_request_owner(
+    tmp_path: Path,
+) -> None:
+    feature_a = _confirmable_feature_for_sample_a()
+    feature_b = replace(
+        _feature(),
+        feature_family_id="FAM000002",
+        backfill_seed_centers=((500.0, 8.5), (501.0, 8.75)),
+    )
+    features = (feature_a, feature_b, feature_a)
+    sample_order = ("sample-a", "sample-b")
+    raw_paths = {
+        sample_stem: tmp_path / f"{sample_stem}.raw"
+        for sample_stem in sample_order
+    }
+    alignment_config = AlignmentConfig()
+    full_plan = owner_backfill_request_plan.build_owner_backfill_request_plan(
+        features,
+        sample_order=sample_order,
+        raw_sample_stems=frozenset(raw_paths),
+        alignment_config=alignment_config,
+    )
+    captured_jobs = []
+
+    def fake_runner(jobs, *, max_workers):
+        captured_jobs.extend(jobs)
+        return []
+
+    run_owner_backfill_process(
+        features,
+        sample_order=sample_order,
+        raw_paths=raw_paths,
+        dll_dir=tmp_path / "dll",
+        alignment_config=alignment_config,
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        max_workers=2,
+        runner=fake_runner,
+    )
+
+    jobs_by_sample = {job.sample_stem: job for job in captured_jobs}
+    for sample_stem in sample_order:
+        job = jobs_by_sample[sample_stem]
+        assert job.features == full_plan.features_for_sample(sample_stem)
+        assert job.request_payload_count == full_plan.request_count_for_sample(
+            sample_stem
+        )
 
 
 def test_process_backfill_transaction_keeps_full_matrix_feature_universe(

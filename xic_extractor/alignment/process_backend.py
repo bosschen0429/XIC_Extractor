@@ -73,7 +73,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     prepare_owner_backfill_peak_fact,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
-    build_owner_backfill_request_plan,
+    build_owner_backfill_sample_request_projections,
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.alignment.ownership import (
@@ -645,7 +645,7 @@ def run_owner_backfill_process(
     )
     jobs: list[OwnerBackfillSampleJob] = []
     raw_sample_stems = frozenset(raw_paths)
-    request_plan = build_owner_backfill_request_plan(
+    sample_request_projections = build_owner_backfill_sample_request_projections(
         features,
         sample_order=sample_order,
         raw_sample_stems=raw_sample_stems,
@@ -668,9 +668,10 @@ def run_owner_backfill_process(
         raw_path = raw_paths.get(sample_stem)
         if raw_path is None:
             continue
-        sample_features = request_plan.features_for_sample(sample_stem)
-        if not sample_features:
+        sample_projection = sample_request_projections.get(sample_stem)
+        if sample_projection is None:
             continue
+        job_features = sample_projection.features
         expected_acquisition_source = _expected_acquisition_source(
             expected_acquisition_sources,
             sample_stem,
@@ -681,7 +682,7 @@ def run_owner_backfill_process(
                 sample_stem=sample_stem,
                 raw_path=raw_path,
                 dll_dir=dll_dir,
-                features=sample_features,
+                features=job_features,
                 alignment_config=alignment_config,
                 peak_config=peak_config,
                 signal_processing_profile=signal_processing_profile,
@@ -702,14 +703,12 @@ def run_owner_backfill_process(
                 audit_evidence_mode=audit_evidence_mode,
                 request_plan_id=REQUEST_PLAN_VERSION,
                 backfill_scope=backfill_scope,
-                feature_payload_count=len(sample_features),
-                request_payload_count=request_plan.request_count_for_sample(
-                    sample_stem,
-                ),
+                feature_payload_count=len(job_features),
+                request_payload_count=sample_projection.logical_request_count,
                 peak_fact_feature_order_indices=(
                     tuple(
                         peak_fact_feature_rank[feature.feature_family_id]
-                        for feature in sample_features
+                        for feature in job_features
                     )
                     if matrix_sample_order is not None
                     else ()
