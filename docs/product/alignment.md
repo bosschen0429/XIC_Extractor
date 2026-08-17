@@ -157,15 +157,17 @@ not change a productization maturity tier, active lane, public output schema,
 selected area/counting behavior, or Matrix authority, and the productization
 control plane remains unchanged.
 
-## Shadow ModeTrack Assignment
+## Diagnostic ModeTrack Review
 
-Issue #179 adds a second internal, no-write fact at the existing M3
-identity/trajectory boundary. `FamilyContextRef` describes one wide m/z/RT
+ModeTrack is an opt-in debug and batch-review diagnostic downstream of the
+existing Alignment group owner. It is not an automatic Alignment stage, a
+fallback grouping route, or a candidate product control plane. Running normal
+Alignment does not invoke it. `FamilyContextRef` describes one wide m/z/RT
 observation universe and references zero or more existing
-`group_hypothesis_id` values. Each existing group is one ModeTrack; neither the
-Family nor the ModeTrack is a chemical-identity claim. Public or legacy family
-labels, `method_subject_id`, display labels, and ordinals do not mint or replace
-the internal Family context.
+`group_hypothesis_id` values for diagnostic comparison. Each existing group is
+one ModeTrack; neither the Family nor the ModeTrack is a chemical-identity
+claim. Public or legacy family labels, `method_subject_id`, display labels, and
+ordinals do not mint or replace the internal Family context.
 
 The initial model set is fit once per Family from canonical direct-SUPPORT
 assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint
@@ -273,10 +275,16 @@ defaults, changes M1, establishes chemical identity, or grants a new writer
 authority.
 
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
-`shadow_ready / product_authority=none` structure. The inconclusive retained
-evidence does not alter Targeted behavior, Backfill, acceptance manifests,
-QuantMatrixVersion, Matrix values, public schema, workbook output, GUI, CLI,
-configuration, or defaults.
+diagnostic structures with `product_authority=none`. Their owner-specific
+`shadow_ready` token describes retained artifact validity; opt-in runner output
+is `diagnostic_only` and does not register a productization lane. The runner may
+write task-local review tables, but those tables do not replace canonical
+Alignment, Backfill,
+QuantMatrixVersion, Matrix, workbook, GUI, configuration, or default outputs.
+Retain this diagnostic only while an operator or validation gate consumes its
+crossing, ambiguity, or typed-lineage review. If those consumers disappear,
+remove the entry point and workflow, retaining only primitives reused by the
+Alignment owner.
 
 ## Retained Validation Anchors
 
@@ -322,7 +330,7 @@ Before changing alignment behavior, require the relevant subset of:
 - For shadow identity settlement, H1a/H1b/H2/H3 truth tables, missing/poor
   landmark cases, leave-one-landmark-out behavior, adversarial component
   transfer, split lifecycle/lineage, and child-local `S` recomputation.
-- For shadow ModeTrack assignment, optional occupancy, per-track local drift,
+- For diagnostic ModeTrack review, optional occupancy, per-track local drift,
   unique/both/neither interval cases, sparse anchors, missing/poor landmarks,
   bounded interpolation/extrapolation, crossing intervals, non-training
   rejection, request/attempt/physical-observation substitution, deterministic

@@ -1,4 +1,4 @@
-"""One in-process Untargeted CID-NL RAW-to-ModeTrack projection workflow."""
+"""Opt-in RAW-to-ModeTrack workflow for debug and batch review only."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def run_untargeted_cid_nl_mode_track_workflow(
     sample_identity_namespace: str,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> ModeTrackWorkflowRun:
-    """Run Discovery, current M7, ModeTrack bootstrap, and conservative Backfill."""
+    """Build a non-authoritative diagnostic projection for explicit review."""
 
     if not raw_files or len(raw_files) != len(sample_metadata):
         raise ValueError(

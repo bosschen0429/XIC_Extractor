@@ -333,7 +333,8 @@ automatically only when no Backfill acceptance row is pending; otherwise the
 run remains `diagnostic_only` until a supplied acceptance manifest passes the
 existing M6 gate.
 
-Opt-in RAW-to-ModeTrack table runner for the reviewed #180 85-sample lane:
+Opt-in ModeTrack diagnostic runner for debugging or reviewing a batch (the
+reviewed #180 85-sample lane remains the retained example):
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_mode_track `
@@ -358,7 +359,8 @@ and validate the review/replay SHA, schema, 26-cell census, and 10/11/5 family
 distribution without opening RAW files. Remove it only after the RAW run is
 explicitly authorized.
 
-This command is `diagnostic_only`. It runs Discovery, the current Untargeted
+This command is `diagnostic_only` and is not part of normal Alignment or a
+productization lane. It runs Discovery, the current Untargeted
 CID-NL RAW owner, ModeTrack bootstrap/alignment, conservative Backfill, and the
 existing acceptance/QMV owner in one process. The review bundle supplies the
 already-reviewed physical observations; its old checked manifest is not an

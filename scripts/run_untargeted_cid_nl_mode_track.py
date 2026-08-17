@@ -30,6 +30,9 @@ from xic_extractor.sample_metadata import (
 
 _MANUAL_REVIEW_FILENAME = "manual_review_v1.json"
 _REVIEW_REPLAY_FILENAME = "manual_review_observation_replay_v1.json"
+_DIAGNOSTIC_ROLE_MESSAGE = (
+    "ModeTrack role: diagnostic_only (debug or batch review; no product authority)"
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -51,6 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as exc:
             raise ValueError("output directory must stay under manifest root") from exc
         if args.preflight_only:
+            print(_DIAGNOSTIC_ROLE_MESSAGE)
             print("Preflight status: pass (no RAW opened)")
             print(f"Sample count: {len(inputs.sample_metadata)}")
             print(
@@ -126,9 +130,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 
+    print(_DIAGNOSTIC_ROLE_MESSAGE)
     print(f"Validation status: {VALIDATION_STATUS}")
-    print(f"Alignment Matrix TSV: {final.matrix_tsv}")
-    print(f"Alignment Matrix workbook: {final.matrix_xlsx}")
+    print(f"Diagnostic review matrix TSV: {final.matrix_tsv}")
+    print(f"Diagnostic review matrix workbook: {final.matrix_xlsx}")
     return 0
 
 
@@ -350,9 +355,14 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run RAW through Discovery, ModeTrack alignment, conservative Backfill, "
-            "and one diagnostic-only final table."
-        )
+            "Run an opt-in ModeTrack diagnostic for debug or batch review. "
+            "The diagnostic may replay RAW through Discovery and conservative "
+            "Backfill, but it has no product authority."
+        ),
+        epilog=(
+            "Outputs are task-local diagnostic review copies; they do not replace "
+            "canonical Alignment, Backfill, or Matrix results."
+        ),
     )
     parser.add_argument("--raw-dir", type=Path, required=True)
     parser.add_argument("--dll-dir", type=Path, required=True)
