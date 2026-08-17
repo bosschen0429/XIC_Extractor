@@ -167,7 +167,7 @@ def evaluate_quant_matrix_promotion_readiness(
         },
         "authority_statement": (
             "Contract correctness is not scientific confidence. Focused tests and "
-            "8RAW smoke evidence cannot claim production_ready without large "
+            "small-cohort smoke evidence cannot claim production_ready without large "
             "cohort, oracle/manual review, and downstream impact evidence."
         ),
     }

@@ -24,7 +24,7 @@ def build_selected_envelope_changed_row_preflight_manifest(
     dll_dir_exists: bool = False,
     worktree_root: str = "",
 ) -> dict[str, str]:
-    """Build the no-RAW gate that decides whether changed-row 8RAW may launch."""
+    """Build the no-RAW gate that decides whether a changed-row RAW run may launch."""
     changed_row_count = _parse_int(diagnostic_manifest.get("changed_row_count"))
     changed_row_denominator = _parse_int(
         diagnostic_manifest.get("changed_row_denominator")

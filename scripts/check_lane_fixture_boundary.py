@@ -77,13 +77,6 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/identity_coherence_validation/__init__.py": (1, "#290"),
     "xic_extractor/alignment/identity_coherence_validation/acceptance.py": (1, "#290"),
     "xic_extractor/alignment/identity_coherence_validation/outputs.py": (5, "#290"),
-    # -- #290 group 3: strings, and one assumption this checker cannot see -
-    # selected_envelope_changed_row_review is flagged for its docstring, but
-    # the real coupling is `expected_sample_count: int = 8` one line above:
-    # a core gate that treats any other sample count as a mismatch. `int = 8`
-    # matches no lane identifier, so the checker finds names, not assumptions.
-    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#290"),
-    "xic_extractor/alignment/quant_matrix_promotion.py": (1, "#290"),
 }
 
 
