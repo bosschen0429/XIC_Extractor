@@ -9,92 +9,10 @@ from tools.testing.test_shards import (
     shard_for_path,
 )
 
-_ALLOWED_SHARD_OVERLAPS = {
-    # ledger-manual claims these away from the product shards (it is listed
-    # first, and first match wins) so they stop running in CI. They assert that
-    # checked-in registers under docs/superpowers/validation/ still match a
-    # recorded snapshot, which a legitimate re-analysis invalidates. Removal
-    # condition is on SHARD_PATTERNS in tools/testing/test_shards.py.
-    Path("tests/test_backfill_expansion_census.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_default_product_activation.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_evidence_availability.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_expected_diff_provenance.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_full_evidence_chain.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_peak_mode_decomposition.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_raw_overlay_trace_identity.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_sample_local_ms1_evidence.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_backfill_expansion_selective_shift_aware_gate.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_bounded_product_lanes_contract.py"): (
-        "ledger-manual",
-        "docs-config",
-    ),
-    Path("tests/test_check_productization_authority.py"): (
-        "ledger-manual",
-        "docs-config",
-    ),
-    Path("tests/test_cid_nl_85raw_universe_closure.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_cid_nl_discovery_full_scope_classification.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_cid_nl_discovery_release_slice.py"): (
-        "ledger-manual",
-        "product-gates-activation",
-    ),
-    Path("tests/test_lockbox_ai_challenge_results.py"): (
-        "ledger-manual",
-        "product-gates-evidence",
-    ),
-    Path("tests/test_lockbox_label_collection_pack.py"): (
-        "ledger-manual",
-        "product-gates-evidence",
-    ),
-    Path("tests/test_production_acceptance_manifest_contract.py"): (
-        "ledger-manual",
-        "product-gates-evidence",
-    ),
-    Path("tests/test_productization_state_index.py"): (
-        "ledger-manual",
-        "docs-config",
-    ),
-    Path("tests/test_validation_artifact_cid_nl_public_claim_catalog.py"): (
-        "ledger-manual",
-        "docs-config",
-    ),
-    Path("tests/test_validation_artifact_retention.py"): (
-        "ledger-manual",
-        "docs-config",
-    ),
+# Files whose path matches more than one shard glob. First match wins, so the
+# left-hand shard is the owner and the file runs exactly once. Locking the set
+# here means a new overlap has to be an explicit decision.
+_ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
     Path("tests/test_config_hash.py"): ("docs-config", "targeted-core"),
     Path("tests/test_config_io.py"): ("docs-config", "targeted-core"),
     Path("tests/test_discovery_method_section.py"): ("gui", "alignment-core"),
@@ -111,10 +29,7 @@ _ALLOWED_SHARD_OVERLAPS = {
         "alignment-core",
         "product-gates-evidence",
     ),
-    Path("tests/test_ms1_scan_index.py"): (
-        "alignment-core",
-        "product-gates-evidence",
-    ),
+    Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
     Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),
     Path("tests/test_target_pair_expected_diff_approval_registry_tool.py"): (

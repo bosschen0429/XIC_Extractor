@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.check_cid_nl_discovery_full_scope_classification import (
     CHECK_COLUMNS,
     DEFAULT_DOCS_DIR,
@@ -13,10 +15,12 @@ from scripts.check_cid_nl_discovery_full_scope_classification import (
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 
+@pytest.mark.ledger_snapshot
 def test_current_cid_nl_discovery_full_scope_classification_is_stable() -> None:
     assert check_cid_nl_discovery_full_scope_classification() == []
 
 
+@pytest.mark.ledger_snapshot
 def test_retained_full_scope_artifacts_use_lf_line_endings() -> None:
     for name in (
         "cid_nl_discovery_full_scope_classification_checks.tsv",

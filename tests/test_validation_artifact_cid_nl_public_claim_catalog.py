@@ -3,9 +3,12 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
+
 from scripts import check_cid_nl_public_output_claim_catalog as claim_catalog
 
 
+@pytest.mark.ledger_snapshot
 def test_current_cid_nl_public_output_claim_catalog_is_valid() -> None:
     assert claim_catalog.check_cid_nl_public_output_claim_catalog() == []
 
@@ -106,6 +109,7 @@ def test_claim_catalog_marks_matrix_boundary_as_reference_only(
     )
 
 
+@pytest.mark.ledger_snapshot
 def test_reference_rows_preserve_existing_owner_boundaries() -> None:
     rows = {
         row["claim_id"]: row

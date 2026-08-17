@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_bounded_product_lanes import (
     DEFAULT_ACCEPTANCE,
     DEFAULT_SCHEMA,
@@ -11,10 +13,12 @@ from scripts.check_bounded_product_lanes import (
 )
 
 
+@pytest.mark.ledger_snapshot
 def test_bounded_product_lanes_accept_current_artifacts() -> None:
     assert check_bounded_product_lanes() == []
 
 
+@pytest.mark.ledger_snapshot
 def test_bounded_schema_matches_acceptance_header() -> None:
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
     header, rows = _read_tsv(DEFAULT_ACCEPTANCE)
@@ -23,6 +27,7 @@ def test_bounded_schema_matches_acceptance_header() -> None:
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
 
 
+@pytest.mark.ledger_snapshot
 def test_limited_targeted_ms1_scope_and_effect_are_pinned() -> None:
     _, rows = _read_tsv(DEFAULT_ACCEPTANCE)
     row = _row(rows, "targeted_ms1_shape_identity_limited_rescue_v1")
@@ -39,6 +44,7 @@ def test_limited_targeted_ms1_scope_and_effect_are_pinned() -> None:
     assert row["grants_new_product_authority"] == "FALSE"
 
 
+@pytest.mark.ledger_snapshot
 def test_acceptance_packet_does_not_include_backfill() -> None:
     _, rows = _read_tsv(DEFAULT_ACCEPTANCE)
 

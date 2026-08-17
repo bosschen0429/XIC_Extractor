@@ -18,16 +18,24 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
     }
 )
 
-# Shards listed here are matched in order; the first match wins. "ledger-manual"
-# is deliberately first so it claims its files before the broader product shards
-# (docs-config, product-gates-*) can glob them up.
+# Register-snapshot tests are excluded from CI by MARKER, not by file. They
+# assert that checked-in registers under docs/superpowers/validation/ still
+# agree with the snapshot they were written against, so they pin recorded
+# numbers and go red when an analysis is legitimately re-run.
 #
-# ledger-manual is NOT run by .github/workflows/ci.yml. Its tests assert that
-# checked-in registers under docs/superpowers/validation/ still agree with the
-# snapshot they were written against -- they pin recorded numbers, not product
-# behaviour, so they go red when an analysis is legitimately re-run. Owner runs
-# them on demand:
-#     uv run python -m tools.testing.test_shards ledger-manual
+# An earlier version of this file excluded them by moving whole test files into
+# a manual-only shard. Review found the cost: those files are 212 tests, and 175
+# of them are behavioural -- they mutate a copy under tmp_path and assert the
+# checker rejects it. Excluding by file took all 175 out of CI too, so a
+# regression that accepts caller-authored authority could merge green. The
+# marker splits at the granularity the property actually has, which is per test.
+#
+# Which tests carry the marker was decided by measurement, not by naming: a test
+# is a snapshot test when it reads a checked-in register at runtime AND does not
+# redirect the checker at a tmp_path copy. Unmarked is the safe default, because
+# an unmarked test still runs in CI.
+#
+#     uv run python -m tools.testing.test_shards --snapshots   # run only those
 #
 # EXIT RULE (required by the retirement contract; do not drop this block without
 # resolving it): revisit at the next release cut, or as soon as any of these
@@ -36,22 +44,11 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
 #   1. a register here has not been consulted in a decision for two releases;
 #   2. its test has gone red only because recorded numbers moved, twice;
 #   3. the register's owning milestone is retired.
+SNAPSHOT_MARKER = "ledger_snapshot"
+
+# Shards are matched in order; the first match wins.
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
-        "ledger-manual": (
-            "tests/test_backfill_expansion_*.py",
-            "tests/test_bounded_product_lanes_contract.py",
-            "tests/test_check_productization_authority.py",
-            "tests/test_cid_nl_85raw_universe_closure.py",
-            "tests/test_cid_nl_discovery_full_scope_classification.py",
-            "tests/test_cid_nl_discovery_release_slice.py",
-            "tests/test_lockbox_ai_challenge_results.py",
-            "tests/test_lockbox_label_collection_pack.py",
-            "tests/test_production_acceptance_manifest_contract.py",
-            "tests/test_productization_state_index.py",
-            "tests/test_validation_artifact_cid_nl_public_claim_catalog.py",
-            "tests/test_validation_artifact_retention.py",
-        ),
         "docs-config": (
             "tests/test_affected.py",
             "tests/test_agent_sandbox_doctor.py",
@@ -341,8 +338,22 @@ def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
         print(f"Shard {shard!r} has no test files", file=sys.stderr)
         return 2
     target_args = [path.as_posix() for path in targets]
+    marker_args = [] if "-m" in pytest_args else ["-m", f"not {SNAPSHOT_MARKER}"]
     print(f"Running shard {shard}: {len(target_args)} test files", flush=True)
-    return subprocess.call([*_pytest_command(), *pytest_args, *target_args])
+    return subprocess.call(
+        [*_pytest_command(), *marker_args, *pytest_args, *target_args]
+    )
+
+
+def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:
+    """Run only the register-snapshot tests, the ones CI deliberately skips."""
+    targets = [path.as_posix() for path in discover_test_files(root)]
+    if not targets:
+        print("No test files discovered", file=sys.stderr)
+        return 2
+    marker_args = [] if "-m" in pytest_args else ["-m", SNAPSHOT_MARKER]
+    print(f"Running {SNAPSHOT_MARKER} tests across {len(targets)} files", flush=True)
+    return subprocess.call([*_pytest_command(), *marker_args, *pytest_args, *targets])
 
 
 def _pytest_command() -> list[str]:
@@ -367,6 +378,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Fail if any test file is not assigned to a shard",
     )
+    parser.add_argument(
+        "--snapshots",
+        action="store_true",
+        help=f"Run only the {SNAPSHOT_MARKER} tests, which the shards exclude",
+    )
     args, rest = parser.parse_known_args(argv)
     pytest_args = rest[1:] if rest[:1] == ["--"] else rest
     root = Path(args.root)
@@ -374,6 +390,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _print_summary(root)
     if args.check:
         return _check(root)
+    if args.snapshots:
+        return _run_snapshots(pytest_args, root)
     if args.shard is None:
         parser.error("a shard name is required unless --list or --check is used")
     return _run_shard(args.shard, pytest_args, root)

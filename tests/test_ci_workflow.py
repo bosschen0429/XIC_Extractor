@@ -7,20 +7,15 @@ import pytest
 from scripts.check_pr_body import main, validate_pr_body
 from tools.testing.test_shards import SHARD_PATTERNS
 
-# Shards deliberately excluded from .github/workflows/ci.yml. Every other shard
-# must appear exactly once in each test job; membership here is the only way to
-# opt out, so the CI/shard contract still fails closed for anything unlisted.
+# Shards deliberately excluded from .github/workflows/ci.yml. Every shard must
+# appear exactly once in each test job; membership here is the only way to opt
+# out, so the CI/shard contract fails closed for anything unlisted.
 #
-# Owner: repo owner (solo developer).
-# Reason: these tests assert that checked-in registers under
-# docs/superpowers/validation/ still match the snapshot they were recorded
-# against. They pin numbers, not product behaviour, so a legitimate re-run of an
-# analysis turns them red. On a solo repo there is no second author to keep the
-# registers honest for, so the cost is not repaid.
-# Removal condition: shrink this set back to empty once the registers are either
-# deleted with their tests or promoted back into CI. See the EXIT RULE block on
-# SHARD_PATTERNS in tools/testing/test_shards.py.
-MANUAL_ONLY_SHARDS = frozenset({"ledger-manual"})
+# Empty, and it should stay that way. Register-snapshot tests are excluded by
+# the ledger_snapshot marker instead, which splits at the granularity the
+# property has: excluding whole files also removed 175 behavioural tests from
+# CI. See SNAPSHOT_MARKER in tools/testing/test_shards.py.
+MANUAL_ONLY_SHARDS: frozenset[str] = frozenset()
 
 CORE_CI_COMMANDS = (
     "uv run ruff check xic_extractor tests",

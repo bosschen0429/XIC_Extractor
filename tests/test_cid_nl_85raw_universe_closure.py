@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.check_cid_nl_85raw_universe_closure import (
     CHECK_COLUMNS,
     DEFAULT_DOCS_DIR,
@@ -13,10 +15,12 @@ from scripts.check_cid_nl_85raw_universe_closure import (
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 
+@pytest.mark.ledger_snapshot
 def test_current_cid_nl_85raw_universe_closure_is_stable() -> None:
     assert check_cid_nl_85raw_universe_closure() == []
 
 
+@pytest.mark.ledger_snapshot
 def test_retained_85raw_closure_artifacts_use_lf_line_endings() -> None:
     for name in (
         "cid_nl_85raw_universe_closure_checks.tsv",

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import check_cid_nl_discovery_release_slice as release_slice
 
 
+@pytest.mark.ledger_snapshot
 def test_current_cid_nl_discovery_release_slice_is_stable() -> None:
     assert release_slice.check_cid_nl_discovery_release_slice() == []
 
@@ -55,6 +58,7 @@ def test_release_slice_accepts_stable_compatibility_lane_registry(tmp_path) -> N
     assert problems == []
 
 
+@pytest.mark.ledger_snapshot
 def test_release_slice_propagates_artifact_retention_problems(monkeypatch) -> None:
     monkeypatch.setattr(
         release_slice,
@@ -67,6 +71,7 @@ def test_release_slice_propagates_artifact_retention_problems(monkeypatch) -> No
     assert "validation_artifact_retention: inventory drift" in problems
 
 
+@pytest.mark.ledger_snapshot
 def test_release_slice_propagates_bounded_lane_problems(monkeypatch) -> None:
     monkeypatch.setattr(
         release_slice,
@@ -79,6 +84,7 @@ def test_release_slice_propagates_bounded_lane_problems(monkeypatch) -> None:
     assert "bounded_product_lanes: lane drift" in problems
 
 
+@pytest.mark.ledger_snapshot
 def test_release_slice_propagates_85raw_universe_closure_problems(
     monkeypatch,
 ) -> None:

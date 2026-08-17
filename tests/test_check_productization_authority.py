@@ -32,6 +32,7 @@ BACKFILL_EXTERNALIZED_SUMMARY = (
 )
 
 
+@pytest.mark.ledger_snapshot
 def test_productization_authority_checker_accepts_repo_artifacts() -> None:
     assert check_productization_authority() == []
     assert main([]) == 0
@@ -127,6 +128,7 @@ def test_productization_authority_checker_rejects_noncanonical_manifest_bytes(
     assert any(expected_problem in problem for problem in problems)
 
 
+@pytest.mark.ledger_snapshot
 def test_productization_authority_checker_reads_dependent_manifest_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

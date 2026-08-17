@@ -51,6 +51,9 @@ exclude = ["tests*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider -p no:tmpdir"
+markers = [
+    "ledger_snapshot: asserts a checked-in register still matches its recorded snapshot; excluded from CI shards because a legitimate re-analysis turns it red. Run with `python -m tools.testing.test_shards --snapshots`.",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
