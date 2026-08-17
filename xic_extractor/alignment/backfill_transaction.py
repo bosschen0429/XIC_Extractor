@@ -8,11 +8,8 @@ from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillRequestReuseObservation,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    OwnerBackfillPeakFactProvenanceRow,
-    OwnerBackfillPeakFactStageProjection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
-    row_from_terminal_observation,
-    selected_integration_authority_projection,
+    PreparedOwnerBackfillPeakFact,
+    prepare_owner_backfill_peak_fact,
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.alignment.owner_matrix import OwnerAlignmentMatrixBuilder
@@ -24,13 +21,6 @@ from xic_extractor.execution_runtime_owner import RuntimePeakFactCostMetrics
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedOwnerBackfillPeakFact:
-    stage: OwnerBackfillPeakFactStageProjection
-    physical_row: OwnerBackfillPeakFactProvenanceRow
-    selected_integration_authority_content_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +78,13 @@ class OwnerBackfillSampleTransaction:
             feature.feature_family_id: index
             for index, feature in enumerate(self._features)
         }
+        self._feature_owner_identity = {
+            feature.feature_family_id: (
+                feature.group_hypothesis_id,
+                feature.public_family_id,
+            )
+            for feature in self._features
+        }
         self._sample_rank = {
             sample: index for index, sample in enumerate(matrix_sample_order)
         }
@@ -117,10 +114,22 @@ class OwnerBackfillSampleTransaction:
         if (result.sample_index, result.sample_stem) != expected:
             raise ValueError("Backfill sample result crosses expected sample identity")
         self._validate_sample_attachments(result)
-        prepared_peak_facts = tuple(
-            self._prepare_peak_fact(observation)
+        prepared_peak_facts = result.prepared_peak_facts or tuple(
+            prepare_owner_backfill_peak_fact(
+                observation,
+                feature_order_index=self._feature_rank.get(
+                    observation.cell.cluster_id,
+                    len(self._feature_rank),
+                ),
+                sample_order_index=self._sample_rank.get(
+                    observation.cell.sample_stem,
+                    len(self._sample_rank),
+                ),
+                profile=self._profile,
+            )
             for observation in result.peak_fact_observations
         )
+        self._validate_prepared_peak_facts(result, prepared_peak_facts)
         self._builder.consume_rescued_cells(result.cells)
         self._prepared_by_ordinal[ordinal] = _PreparedSample(
             candidate_audit_rows=result.candidate_audit_rows,
@@ -185,42 +194,35 @@ class OwnerBackfillSampleTransaction:
             ),
         )
 
-    def _prepare_peak_fact(self, observation) -> PreparedOwnerBackfillPeakFact:
-        feature_index = self._feature_rank.get(
-            observation.cell.cluster_id,
-            len(self._feature_rank),
-        )
-        sample_index = self._sample_rank.get(
-            observation.cell.sample_stem,
-            len(self._sample_rank),
-        )
-        stage = owner_backfill_peak_fact_stage_projection_from_observation(
-            observation,
-            feature_order_index=feature_index,
-            sample_order_index=sample_index,
-        )
-        evaluation = observation.physical_evaluation
-        if evaluation is None:
-            raise ValueError(
-                "covered Untargeted provenance requires canonical physical evaluation"
+    def _validate_prepared_peak_facts(
+        self,
+        result: OwnerBackfillSampleResult,
+        prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...],
+    ) -> None:
+        for prepared in prepared_peak_facts:
+            prepared.validate_binding()
+            expected_feature_index = self._feature_rank.get(
+                prepared.feature_family_id
             )
-        physical_row = row_from_terminal_observation(
-            stage,
-            evaluation,
-            profile=self._profile,
-        )
-        selected_integration_id = None
-        if observation.selected_for_output and evaluation.facts is not None:
-            if observation.facts is None:
-                raise ValueError("selected physical fact lacks bounded owner receipt")
-            selected_integration_id = selected_integration_authority_projection(
-                observation.facts.integration
-            ).selected_integration_authority_content_id
-        return PreparedOwnerBackfillPeakFact(
-            stage=stage,
-            physical_row=physical_row,
-            selected_integration_authority_content_id=selected_integration_id,
-        )
+            expected_sample_index = self._sample_rank.get(result.sample_stem)
+            if expected_feature_index is None or (
+                prepared.stage.feature_order_index != expected_feature_index
+            ):
+                raise ValueError("prepared Backfill peak fact crosses feature order")
+            if self._feature_owner_identity.get(prepared.feature_family_id) != (
+                prepared.stage.group_hypothesis_id,
+                prepared.stage.public_family_id,
+            ):
+                raise ValueError("prepared Backfill peak fact crosses feature identity")
+            if expected_sample_index is None or (
+                prepared.stage.sample_order_index != expected_sample_index
+            ):
+                raise ValueError("prepared Backfill peak fact crosses sample order")
+            if (
+                prepared.stage.sample_stem,
+                prepared.physical_row.sample_stem,
+            ) != (result.sample_stem, result.sample_stem):
+                raise ValueError("prepared Backfill peak fact crosses sample identity")
 
     @staticmethod
     def _validate_sample_attachments(result: OwnerBackfillSampleResult) -> None:
@@ -237,6 +239,8 @@ class OwnerBackfillSampleTransaction:
                 observation.cell.sample_stem
                 for observation in result.peak_fact_observations
             ),
+            *(fact.stage.sample_stem for fact in result.prepared_peak_facts),
+            *(fact.physical_row.sample_stem for fact in result.prepared_peak_facts),
         )
         if any(item != sample_stem for item in attachment_samples):
             raise ValueError("Backfill result attachments cross sample identity")

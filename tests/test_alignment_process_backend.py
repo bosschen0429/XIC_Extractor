@@ -157,6 +157,8 @@ def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
         assert max_workers == 2
         receipts = []
         for ordinal, job in enumerate(jobs):
+            assert job.peak_fact_feature_order_indices == (1,)
+            assert job.peak_fact_sample_order_index == (1, 0)[ordinal]
             result = OwnerBackfillSampleResult(
                 sample_index=job.sample_index,
                 sample_stem=job.sample_stem,
@@ -173,8 +175,8 @@ def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
 
     output = run_owner_backfill_process(
         (scoped_feature,),
-        matrix_features=(scoped_feature, unrequested_feature),
-        matrix_sample_order=("sample-a", "sample-b"),
+        matrix_features=(unrequested_feature, scoped_feature),
+        matrix_sample_order=("sample-b", "sample-a"),
         sample_order=("sample-a", "sample-b"),
         raw_paths={
             "sample-a": tmp_path / "sample-a.raw",
@@ -190,7 +192,7 @@ def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
 
     assert tuple(
         feature.feature_family_id for feature in output.matrix.clusters
-    ) == (scoped_feature.feature_family_id, unrequested_feature.feature_family_id)
+    ) == (unrequested_feature.feature_family_id, scoped_feature.feature_family_id)
     assert len(output.matrix.cells) == 4
 
 

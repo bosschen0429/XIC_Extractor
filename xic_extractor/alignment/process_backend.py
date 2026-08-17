@@ -68,6 +68,10 @@ from xic_extractor.alignment.owner_backfill import (
     build_owner_backfill_result,
     validate_owner_backfill_peak_fact_observation,
 )
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    PreparedOwnerBackfillPeakFact,
+    prepare_owner_backfill_peak_fact,
+)
 from xic_extractor.alignment.owner_backfill_request_plan import (
     build_owner_backfill_request_plan,
 )
@@ -185,10 +189,17 @@ class OwnerBackfillSampleJob:
     backfill_scope: str = "full-audit"
     feature_payload_count: int = 0
     request_payload_count: int = 0
+    peak_fact_feature_order_indices: tuple[int, ...] = ()
+    peak_fact_sample_order_index: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
             raise TypeError("signal_processing_profile must be owner-resolved")
+        if self.peak_fact_sample_order_index is None:
+            if self.peak_fact_feature_order_indices:
+                raise ValueError("peak-fact feature order requires sample order")
+        elif len(self.peak_fact_feature_order_indices) != len(self.features):
+            raise ValueError("peak-fact feature order must cover every job feature")
 
 
 @dataclass(frozen=True)
@@ -226,7 +237,14 @@ class OwnerBackfillSampleResult:
         OwnerBackfillPeakFactObservation,
         ...,
     ] = ()
+    prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...] = ()
     peak_fact_cost: RuntimePeakFactCostMetrics | None = None
+
+    def __post_init__(self) -> None:
+        if self.peak_fact_observations and self.prepared_peak_facts:
+            raise ValueError(
+                "Backfill result cannot carry live and prepared peak facts"
+            )
 
 
 @dataclass(frozen=True)
@@ -633,6 +651,19 @@ def run_owner_backfill_process(
         raw_sample_stems=raw_sample_stems,
         alignment_config=alignment_config,
     )
+    peak_fact_feature_rank: dict[str, int] = {}
+    peak_fact_sample_rank: dict[str, int] = {}
+    if matrix_sample_order is not None:
+        peak_fact_feature_rank = {
+            feature.feature_family_id: index
+            for index, feature in enumerate(
+                matrix_features if matrix_features is not None else features
+            )
+        }
+        peak_fact_sample_rank = {
+            sample_stem: index
+            for index, sample_stem in enumerate(matrix_sample_order)
+        }
     for index, sample_stem in enumerate(sample_order, start=1):
         raw_path = raw_paths.get(sample_stem)
         if raw_path is None:
@@ -674,6 +705,19 @@ def run_owner_backfill_process(
                 feature_payload_count=len(sample_features),
                 request_payload_count=request_plan.request_count_for_sample(
                     sample_stem,
+                ),
+                peak_fact_feature_order_indices=(
+                    tuple(
+                        peak_fact_feature_rank[feature.feature_family_id]
+                        for feature in sample_features
+                    )
+                    if matrix_sample_order is not None
+                    else ()
+                ),
+                peak_fact_sample_order_index=(
+                    peak_fact_sample_rank[sample_stem]
+                    if matrix_sample_order is not None
+                    else None
                 ),
             )
         )
@@ -897,13 +941,37 @@ def extract_owner_backfill_sample_job(
                 raw_session_capability=job.raw_session_capability,
                 raw_open_receipt=raw_open_receipt,
             )
+        peak_fact_observations = backfill_result.peak_fact_observations
+        prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...] = ()
+        if job.peak_fact_sample_order_index is not None:
+            feature_order_indices = {
+                feature.feature_family_id: feature_order_index
+                for feature, feature_order_index in zip(
+                    job.features,
+                    job.peak_fact_feature_order_indices,
+                    strict=True,
+                )
+            }
+            prepared_peak_facts = tuple(
+                prepare_owner_backfill_peak_fact(
+                    observation,
+                    feature_order_index=feature_order_indices[
+                        observation.cell.cluster_id
+                    ],
+                    sample_order_index=job.peak_fact_sample_order_index,
+                    profile=job.signal_processing_profile,
+                )
+                for observation in peak_fact_observations
+            )
+            peak_fact_observations = ()
         return OwnerBackfillSampleResult(
             sample_index=job.sample_index,
             sample_stem=job.sample_stem,
             cells=backfill_result.cells,
             candidate_audit_rows=backfill_result.candidate_audit_rows,
             request_reuse_observations=(backfill_result.request_reuse_observations),
-            peak_fact_observations=backfill_result.peak_fact_observations,
+            peak_fact_observations=peak_fact_observations,
+            prepared_peak_facts=prepared_peak_facts,
             peak_fact_cost=peak_fact_cost,
             timing_stats=(
                 OwnerBackfillTimingStats(

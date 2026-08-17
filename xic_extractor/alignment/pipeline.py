@@ -21,7 +21,6 @@ from xic_extractor.alignment.backfill_scope import (
 from xic_extractor.alignment.backfill_transaction import (
     OwnerBackfillSampleDeliveryReceipt,
     OwnerBackfillTransactionOutput,
-    PreparedOwnerBackfillPeakFact,
 )
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
@@ -65,12 +64,12 @@ from xic_extractor.alignment.owner_backfill import (
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OwnerBackfillCellProjectionV2,
+    PreparedOwnerBackfillPeakFact,
     build_owner_backfill_peak_fact_provenance_batch_from_rows,
     owner_backfill_authority_cell_projection,
     owner_backfill_cell_lineage_matches,
     owner_backfill_cell_projection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
-    row_from_terminal_observation,
+    prepare_owner_backfill_peak_fact,
     selected_integration_authority_projection,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
@@ -1146,38 +1145,18 @@ def _owner_backfill_peak_fact_provenance(
     sample_rank = {sample_stem: index for index, sample_stem in enumerate(sample_order)}
     prepared: list[PreparedOwnerBackfillPeakFact] = []
     for observation in observations:
-        evaluation = observation.physical_evaluation
-        if evaluation is None:
-            raise ValueError(
-                "covered Untargeted provenance requires canonical physical evaluation"
-            )
-        stage = owner_backfill_peak_fact_stage_projection_from_observation(
-            observation,
-            feature_order_index=feature_rank.get(
-                observation.cell.cluster_id,
-                len(feature_rank),
-            ),
-            sample_order_index=sample_rank.get(
-                observation.cell.sample_stem,
-                len(sample_rank),
-            ),
-        )
-        selected_integration_id = None
-        if observation.selected_for_output and evaluation.facts is not None:
-            if observation.facts is None:
-                raise ValueError("selected physical fact lacks bounded owner receipt")
-            selected_integration_id = selected_integration_authority_projection(
-                observation.facts.integration
-            ).selected_integration_authority_content_id
         prepared.append(
-            PreparedOwnerBackfillPeakFact(
-                stage=stage,
-                physical_row=row_from_terminal_observation(
-                    stage,
-                    evaluation,
-                    profile=signal_processing_profile,
+            prepare_owner_backfill_peak_fact(
+                observation,
+                feature_order_index=feature_rank.get(
+                    observation.cell.cluster_id,
+                    len(feature_rank),
                 ),
-                selected_integration_authority_content_id=selected_integration_id,
+                sample_order_index=sample_rank.get(
+                    observation.cell.sample_stem,
+                    len(sample_rank),
+                ),
+                profile=signal_processing_profile,
             )
         )
     return _owner_backfill_prepared_peak_fact_provenance(
@@ -1244,6 +1223,7 @@ def _owner_backfill_prepared_peak_fact_provenance(
     cell_projections: list[OwnerBackfillCellProjectionV2] = []
     selected_cell_keys: set[tuple[str, str, str]] = set()
     for prepared_peak_fact in prepared:
+        prepared_peak_fact.validate_binding()
         selected_integration_id = (
             prepared_peak_fact.selected_integration_authority_content_id
         )

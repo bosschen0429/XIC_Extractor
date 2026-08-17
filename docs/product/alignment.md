@@ -68,6 +68,11 @@ contracts for review and downstream product decisions.
   order cannot change Matrix or sidecar ordering. Any worker or delivery
   failure discards the unpublished transaction; only an all-sample success may
   freeze the Matrix and reach the existing atomic output publication seam.
+  Process workers project live peak-fact observations through the existing
+  provenance owner before IPC and send only typed physical rows, their bounded
+  selected-integration projection, and feature/sample order binding. The parent
+  revalidates those bindings; raw trace and prepared-signal graphs do not cross
+  this internal delivery boundary.
   This is an internal retention mechanism, not a public configuration value,
   persisted shard, alternate Backfill route, or second Matrix authority.
 - Runner scripts orchestrate inputs, profiles, and output locations. Reusable

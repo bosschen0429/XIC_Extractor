@@ -255,6 +255,8 @@ _REGION_AUDIT_FIELDS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class OwnerBackfillPeakFactStageProjection:
+    feature_family_id: str
+    selected_integration_authority_content_id: str | None
     work_unit_key: str
     group_hypothesis_id: str
     public_family_id: str
@@ -277,6 +279,7 @@ class OwnerBackfillPeakFactStageProjection:
                 "stage projection must be minted from a live Owner Backfill observation"
             )
         for name in (
+            "feature_family_id",
             "work_unit_key",
             "group_hypothesis_id",
             "public_family_id",
@@ -378,7 +381,16 @@ def owner_backfill_peak_fact_stage_projection_from_observation(
     ) != expected_trace_range:
         raise ValueError("live observation crosses physical question trace context")
 
+    selected_integration_id = None
+    if observation.selected_for_output and evaluation.facts is not None:
+        if observation.facts is None:
+            raise ValueError("selected physical fact lacks bounded owner receipt")
+        selected_integration_id = selected_integration_authority_projection(
+            observation.facts.integration
+        ).selected_integration_authority_content_id
     return OwnerBackfillPeakFactStageProjection(
+        feature_family_id=cell.cluster_id,
+        selected_integration_authority_content_id=selected_integration_id,
         work_unit_key=observation.work_unit_key,
         group_hypothesis_id=cell.group_hypothesis_id,
         public_family_id=cell.public_family_id,
@@ -663,6 +675,66 @@ class OwnerBackfillPeakFactProvenanceRow:
 
     def __post_init__(self) -> None:
         _validate_row(self)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedOwnerBackfillPeakFact:
+    feature_family_id: str
+    stage: OwnerBackfillPeakFactStageProjection
+    physical_row: OwnerBackfillPeakFactProvenanceRow
+    selected_integration_authority: SelectedIntegrationAuthorityProjectionV1 | None
+    selected_integration_authority_content_id: str | None
+
+    def __post_init__(self) -> None:
+        self.validate_binding()
+
+    def validate_binding(self) -> None:
+        if not self.feature_family_id:
+            raise ValueError("prepared Backfill peak fact requires feature identity")
+        if self.feature_family_id != self.stage.feature_family_id:
+            raise ValueError("prepared Backfill peak fact crosses feature identity")
+        if self.physical_row.row_kind != "physical_question":
+            raise ValueError("prepared Backfill peak fact requires a physical row")
+        try:
+            _compare_stage_to_row(self.stage, self.physical_row)
+        except ValueError as exc:
+            raise ValueError(
+                "prepared Backfill peak fact crosses stage identity"
+            ) from exc
+        integration = self.selected_integration_authority
+        if integration is None:
+            if (
+                self.selected_integration_authority_content_id is not None
+                or self.stage.selected_integration_authority_content_id is not None
+            ):
+                raise ValueError(
+                    "prepared Backfill peak fact crosses selected integration"
+                )
+            return
+        if (
+            self.selected_integration_authority_content_id
+            != integration.selected_integration_authority_content_id
+        ):
+            raise ValueError("prepared Backfill peak fact crosses selected integration")
+        if (
+            self.stage.selected_integration_authority_content_id
+            != integration.selected_integration_authority_content_id
+        ):
+            raise ValueError("prepared Backfill peak fact crosses selected integration")
+        if (
+            integration.rt_left_min,
+            integration.rt_apex_min,
+            integration.rt_right_min,
+            integration.area_ms1_morphology,
+        ) != (
+            self.physical_row.left_rt_min,
+            self.physical_row.apex_rt_min,
+            self.physical_row.right_rt_min,
+            self.physical_row.area_counts_seconds,
+        ):
+            raise ValueError(
+                "prepared Backfill peak fact crosses selected integration facts"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1052,6 +1124,47 @@ def row_from_terminal_observation(
             facts_value.relative_shape_content_hash if facts_value else ""
         ),
         fact_content_id=facts_value.fact_content_id if facts_value else "",
+    )
+
+
+def prepare_owner_backfill_peak_fact(
+    observation: LiveOwnerBackfillPeakFactObservation,
+    *,
+    feature_order_index: int,
+    sample_order_index: int,
+    profile: SignalProcessingProfile,
+) -> PreparedOwnerBackfillPeakFact:
+    stage = owner_backfill_peak_fact_stage_projection_from_observation(
+        observation,
+        feature_order_index=feature_order_index,
+        sample_order_index=sample_order_index,
+    )
+    evaluation = observation.physical_evaluation
+    if evaluation is None:
+        raise ValueError(
+            "covered Untargeted provenance requires canonical physical evaluation"
+        )
+    selected_integration = None
+    if observation.selected_for_output and evaluation.facts is not None:
+        if observation.facts is None:
+            raise ValueError("selected physical fact lacks bounded owner receipt")
+        selected_integration = selected_integration_authority_projection(
+            observation.facts.integration
+        )
+    return PreparedOwnerBackfillPeakFact(
+        feature_family_id=observation.cell.cluster_id,
+        stage=stage,
+        physical_row=row_from_terminal_observation(
+            stage,
+            evaluation,
+            profile=profile,
+        ),
+        selected_integration_authority=selected_integration,
+        selected_integration_authority_content_id=(
+            selected_integration.selected_integration_authority_content_id
+            if selected_integration is not None
+            else None
+        ),
     )
 
 
@@ -2205,12 +2318,14 @@ __all__ = [
     "OwnerBackfillPeakFactProvenanceReadResult",
     "OwnerBackfillPeakFactProvenanceRow",
     "OwnerBackfillPeakFactStageProjection",
+    "PreparedOwnerBackfillPeakFact",
     "SelectedIntegrationAuthorityProjectionV1",
     "build_owner_backfill_peak_fact_provenance_batch",
     "compose_owner_backfill_peak_fact_provenance",
     "owner_backfill_authority_cell_projection",
     "owner_backfill_cell_lineage_matches",
     "owner_backfill_cell_projection",
+    "prepare_owner_backfill_peak_fact",
     "build_owner_backfill_peak_fact_provenance_batch_from_rows",
     "read_owner_backfill_peak_fact_provenance_tsv",
     "render_owner_backfill_peak_fact_provenance_tsv",

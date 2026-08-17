@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import pickle
 import weakref
 from dataclasses import replace
 from pathlib import Path
@@ -258,3 +259,278 @@ def test_sample_transaction_rejects_cross_sample_attachments_before_mutation(
 
     with pytest.raises(ValueError, match="incomplete samples"):
         transaction.finish()
+
+
+def test_sample_transaction_consumes_worker_prepared_peak_facts_without_live_graph(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    source.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            sample_index=2,
+            sample_stem="sample-b",
+            cells=(live.observation.cell,),
+            peak_fact_observations=(live.observation,),
+        ),
+    )
+    prepared = source.finish().prepared_peak_facts
+    compact_result = OwnerBackfillSampleResult(
+        sample_index=2,
+        sample_stem="sample-b",
+        cells=(live.observation.cell,),
+        prepared_peak_facts=prepared,
+    )
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    transaction.deliver(0, compact_result)
+    output = transaction.finish()
+
+    assert output.prepared_peak_facts == prepared
+    assert not compact_result.peak_fact_observations
+    assert len(pickle.dumps(compact_result)) < len(
+        pickle.dumps(
+            OwnerBackfillSampleResult(
+                sample_index=2,
+                sample_stem="sample-b",
+                cells=(live.observation.cell,),
+                peak_fact_observations=(live.observation,),
+            )
+        )
+    )
+
+
+def test_sample_transaction_rejects_worker_prepared_peak_fact_order_misbinding(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    crossed_source = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-b", "sample-a"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    crossed_source.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            2,
+            "sample-b",
+            (live.observation.cell,),
+            peak_fact_observations=(live.observation,),
+        ),
+    )
+    crossed = crossed_source.finish().prepared_peak_facts[0]
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    with pytest.raises(ValueError, match="crosses sample order"):
+        transaction.deliver(
+            0,
+            OwnerBackfillSampleResult(
+                2,
+                "sample-b",
+                (live.observation.cell,),
+                prepared_peak_facts=(crossed,),
+            ),
+        )
+
+
+def test_sample_transaction_revalidates_worker_prepared_feature_binding(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    source.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            2,
+            "sample-b",
+            (live.observation.cell,),
+            peak_fact_observations=(live.observation,),
+        ),
+    )
+    crossed = source.finish().prepared_peak_facts[0]
+    object.__setattr__(crossed, "feature_family_id", "forged-feature")
+    forged_feature = replace(live.feature, feature_family_id="forged-feature")
+    transaction = OwnerBackfillSampleTransaction(
+        (forged_feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    with pytest.raises(ValueError, match="crosses feature identity"):
+        transaction.deliver(
+            0,
+            OwnerBackfillSampleResult(
+                2,
+                "sample-b",
+                (),
+                prepared_peak_facts=(crossed,),
+            ),
+        )
+
+
+def test_sample_transaction_revalidates_worker_prepared_stage_row_binding(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    source.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            2,
+            "sample-b",
+            (live.observation.cell,),
+            peak_fact_observations=(live.observation,),
+        ),
+    )
+    crossed = source.finish().prepared_peak_facts[0]
+    object.__setattr__(
+        crossed,
+        "physical_row",
+        replace(crossed.physical_row, group_hypothesis_id="forged-group"),
+    )
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    with pytest.raises(ValueError, match="crosses stage identity"):
+        transaction.deliver(
+            0,
+            OwnerBackfillSampleResult(
+                2,
+                "sample-b",
+                (),
+                prepared_peak_facts=(crossed,),
+            ),
+        )
+
+
+def test_sample_transaction_revalidates_selected_integration_binding(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    source.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            2,
+            "sample-b",
+            (live.observation.cell,),
+            peak_fact_observations=(live.observation,),
+        ),
+    )
+    crossed = source.finish().prepared_peak_facts[0]
+    assert crossed.selected_integration_authority_content_id is not None
+    object.__setattr__(
+        crossed,
+        "selected_integration_authority_content_id",
+        "selected-integration-v1:forged",
+    )
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    with pytest.raises(ValueError, match="crosses selected integration"):
+        transaction.deliver(
+            0,
+            OwnerBackfillSampleResult(
+                2,
+                "sample-b",
+                (),
+                prepared_peak_facts=(crossed,),
+            ),
+        )
+
+
+def test_sample_transaction_rejects_coordinated_selected_integration_replacement(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    source.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            2,
+            "sample-b",
+            (live.observation.cell,),
+            peak_fact_observations=(live.observation,),
+        ),
+    )
+    crossed = source.finish().prepared_peak_facts[0]
+    assert crossed.selected_integration_authority is not None
+    forged_integration = replace(
+        crossed.selected_integration_authority,
+        rt_apex_min=crossed.selected_integration_authority.rt_apex_min + 0.1,
+    )
+    forged_id = forged_integration.selected_integration_authority_content_id
+    object.__setattr__(
+        crossed.stage,
+        "selected_integration_authority_content_id",
+        forged_id,
+    )
+    object.__setattr__(crossed, "selected_integration_authority", forged_integration)
+    object.__setattr__(
+        crossed,
+        "selected_integration_authority_content_id",
+        forged_id,
+    )
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    with pytest.raises(ValueError, match="crosses selected integration facts"):
+        transaction.deliver(
+            0,
+            OwnerBackfillSampleResult(
+                2,
+                "sample-b",
+                (),
+                prepared_peak_facts=(crossed,),
+            ),
+        )

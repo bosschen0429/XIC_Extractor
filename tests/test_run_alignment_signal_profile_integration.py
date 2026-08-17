@@ -24,13 +24,11 @@ from tests.alignment_pipeline_helpers import write_owner_closed_partial_batch
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.output_levels import artifact_names_for_output_level
-from xic_extractor.alignment.owner_backfill import OwnerBackfillExtractionResult
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
     compose_owner_backfill_peak_fact_provenance,
     owner_backfill_authority_cell_projection,
     owner_backfill_cell_projection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
     read_owner_backfill_peak_fact_provenance_tsv,
     selected_integration_authority_projection,
 )
@@ -456,7 +454,7 @@ def test_highest_entry_signal_profile_serial_process_oracle(
         tuple(_InlineTypedExecutor.jobs),
         tuple(_InlineTypedExecutor.results),
     )
-    _assert_process_live_owner_composition(
+    _assert_process_compact_projection(
         process_15,
         matrix=process_matrix,
         alignment_config=process_config,
@@ -715,16 +713,18 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         not _contains_trace_payload(result)
         for result in (*captured_build_results, *captured_backfill_results)
     )
-    observations = tuple(
-        observation
+    prepared_peak_facts = tuple(
+        prepared
         for result in captured_backfill_results
-        for observation in result.peak_fact_observations
+        for prepared in result.prepared_peak_facts
+    )
+    assert all(
+        not result.peak_fact_observations for result in captured_backfill_results
     )
     assert any(
-        observation.physical_evaluation is not None
-        and observation.physical_evaluation.state == "available"
-        and observation.physical_evaluation.prepared.profile_id == profile.profile_id
-        for observation in observations
+        prepared.physical_row.state == "available"
+        and prepared.physical_row.profile_id == profile.profile_id
+        for prepared in prepared_peak_facts
     )
     assert build_outputs and build_outputs[0].ownership.owners
     assert backfill_outputs and backfill_outputs[0].prepared_peak_facts
@@ -1080,20 +1080,22 @@ def _assert_audit_field_class_matrix(
                 _matrix_with_cell(full_matrix, audited_index, mutated_cell),
             )
 
-    observation = next(
+    prepared_peak_fact = next(
         item
         for result in full_results
         if isinstance(result, OwnerBackfillSampleResult)
-        for item in result.peak_fact_observations
-        if item.selected_for_output
-        and item.physical_evaluation is not None
-        and item.physical_evaluation.state == "available"
+        for item in result.prepared_peak_facts
+        if item.selected_integration_authority_content_id is not None
+        and item.physical_row.state == "available"
     )
     matching_indexes = tuple(
         index
         for index, cell in enumerate(full_matrix.cells)
         if (cell.cluster_id, cell.sample_stem)
-        == (observation.cell.cluster_id, observation.cell.sample_stem)
+        == (
+            prepared_peak_fact.feature_family_id,
+            prepared_peak_fact.stage.sample_stem,
+        )
     )
     assert len(matching_indexes) == 1
     target_index = matching_indexes[0]
@@ -1141,11 +1143,11 @@ def _assert_audit_field_class_matrix(
         == _EXCLUDED_SELECTED_INTEGRATION_AUDIT_FIELDS
     )
 
-    stage = owner_backfill_peak_fact_stage_projection_from_observation(observation)
+    stage = prepared_peak_fact.stage
     base_authority_ids = _audit_authority_ids(
         base_matrix,
         target_index=target_index,
-        observation=observation,
+        prepared_peak_fact=prepared_peak_fact,
         stage=stage,
         alignment_config=full_config,
     )
@@ -1168,7 +1170,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1212,7 +1214,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1227,7 +1229,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1245,7 +1247,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1269,24 +1271,22 @@ def _audit_authority_ids(
     matrix: AlignmentMatrix,
     *,
     target_index: int,
-    observation: Any,
+    prepared_peak_fact: Any,
     stage: Any,
     alignment_config: Any,
 ) -> tuple[str, str, str, str]:
     cell = matrix.cells[target_index]
-    evaluation = observation.physical_evaluation
-    assert evaluation is not None
-    assert evaluation.facts is not None
+    physical_row = prepared_peak_fact.physical_row
     integration = cell.selected_integration
     assert isinstance(integration, IntegrationResult)
     selected_integration = selected_integration_authority_projection(integration)
     authority_cell = owner_backfill_authority_cell_projection(
         stage=stage,
         cell=cell,
-        profile_id=evaluation.prepared.profile_id,
-        selected_fact_content_id=evaluation.facts.fact_content_id,
-        physical_answer_id=evaluation.answer.physical_answer_id,
-        physical_segment_id=evaluation.facts.physical_segment_id,
+        profile_id=physical_row.profile_id,
+        selected_fact_content_id=physical_row.fact_content_id,
+        physical_answer_id=physical_row.physical_answer_id,
+        physical_segment_id=physical_row.physical_segment_id,
     )
     production_decisions = build_live_production_decisions(
         matrix,
@@ -1652,99 +1652,44 @@ def _assert_workbook_semantic_parity(
     assert observed_value_pairs == allowed_value_pairs
 
 
-def _assert_process_live_owner_composition(
+def _assert_process_compact_projection(
     run: _Run,
     *,
     matrix: AlignmentMatrix,
     alignment_config: Any,
 ) -> None:
-    process_observations = tuple(
-        observation
+    process_results = tuple(
+        result
         for result in _InlineTypedExecutor.results
         if isinstance(result, OwnerBackfillSampleResult)
-        for observation in result.peak_fact_observations
     )
-    observation = next(
+    assert process_results
+    assert all(not result.peak_fact_observations for result in process_results)
+    prepared = next(
         item
-        for item in process_observations
-        if item.selected_for_output
-        and item.physical_evaluation is not None
-        and item.physical_evaluation.state == "available"
-    )
-    request = observation.request_identity.request
-    extraction = OwnerBackfillExtractionResult(
-        request_identity=observation.request_identity,
-        trace=XICTrace.from_arrays(*_trace_arrays(request.rt_min, request.rt_max)),
-    )
-    profile = resolve_signal_processing_profile(
-        signal_processing_method="gaussian",
-        signal_processing_window_points=15,
+        for result in process_results
+        for item in result.prepared_peak_facts
+        if item.physical_row.state == "available"
     )
     read_result = read_owner_backfill_peak_fact_provenance_tsv(
         run.output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
-    physical_inputs = {
-        "live_observation_by_work": {observation.work_unit_key: observation},
-        "live_extraction_by_work": {observation.work_unit_key: extraction},
-        "profile": profile,
-    }
+    assert prepared.physical_row in read_result.rows
     production_decisions = build_live_production_decisions(
         matrix,
         alignment_config,
     )
-    final_inputs = {
-        "live_matrix": matrix,
-        "alignment_config": alignment_config,
-        "production_decisions": production_decisions,
-    }
     composed = compose_owner_backfill_peak_fact_provenance(
         read_result,
-        **physical_inputs,
-        **final_inputs,
+        live_matrix=matrix,
+        alignment_config=alignment_config,
+        production_decisions=production_decisions,
     )
-    assert any(claim.physical_claim == "verified" for claim in composed.physical_claims)
-    assert any(
-        claim.cell_projection_claim == "verified" for claim in composed.cell_claims
+    assert all(
+        claim.physical_claim == "unavailable_without_live_owner"
+        for claim in composed.physical_claims
     )
-
-    for missing in physical_inputs:
-        incomplete = compose_owner_backfill_peak_fact_provenance(
-            read_result,
-            **{key: value for key, value in physical_inputs.items() if key != missing},
-            **final_inputs,
-        )
-        assert all(
-            claim.physical_claim == "unavailable_without_live_owner"
-            for claim in incomplete.physical_claims
-        )
-        assert all(
-            claim.cell_projection_claim == "unavailable_without_live_owner"
-            for claim in incomplete.cell_claims
-        )
-
-    crossed_extraction = OwnerBackfillExtractionResult(
-        request_identity=observation.request_identity,
-        trace=XICTrace.from_arrays(
-            *_trace_arrays(request.rt_min + 0.01, request.rt_max)
-        ),
+    assert all(
+        claim.cell_projection_claim == "unavailable_without_live_owner"
+        for claim in composed.cell_claims
     )
-    with pytest.raises(ValueError, match="trace range crosses Alignment stage"):
-        compose_owner_backfill_peak_fact_provenance(
-            read_result,
-            live_observation_by_work={observation.work_unit_key: observation},
-            live_extraction_by_work={observation.work_unit_key: crossed_extraction},
-            profile=profile,
-        )
-    for missing in final_inputs:
-        incomplete = compose_owner_backfill_peak_fact_provenance(
-            read_result,
-            **physical_inputs,
-            **{key: value for key, value in final_inputs.items() if key != missing},
-        )
-        assert any(
-            claim.physical_claim == "verified" for claim in incomplete.physical_claims
-        )
-        assert all(
-            claim.cell_projection_claim == "unavailable_without_live_owner"
-            for claim in incomplete.cell_claims
-        )
