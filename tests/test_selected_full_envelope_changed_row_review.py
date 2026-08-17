@@ -146,6 +146,17 @@ def test_changed_row_preflight_defers_on_raw_runner_or_sample_count_gap() -> Non
     assert "raw_input_sample_count_mismatch:85!=8" in manifest["blocked_reasons"]
 
 
+def test_changed_row_preflight_skips_cohort_size_check_without_expectation() -> None:
+    manifest = _ready_preflight(
+        raw_input_sample_count=85,
+        expected_sample_count=None,
+    )
+
+    assert manifest["gate_decision"] == "promote"
+    assert manifest["raw_launch_allowed"] == "TRUE"
+    assert "raw_input_sample_count_mismatch" not in manifest["blocked_reasons"]
+
+
 def test_changed_row_preflight_requires_artifact_existence_and_hash_facts() -> None:
     manifest = _ready_preflight(
         changed_row_artifact_exists=False,

@@ -19,7 +19,7 @@ def build_selected_envelope_changed_row_preflight_manifest(
     output_root: str = "",
     raw_runner_contract_checked: bool = False,
     raw_input_sample_count: int | None = None,
-    expected_sample_count: int = 8,
+    expected_sample_count: int | None = None,
     raw_dir_exists: bool = False,
     dll_dir_exists: bool = False,
     worktree_root: str = "",
@@ -80,7 +80,10 @@ def build_selected_envelope_changed_row_preflight_manifest(
         blockers.append("raw_runner_contract_not_checked")
     if raw_input_sample_count is None:
         blockers.append("raw_input_sample_count_not_checked")
-    elif raw_input_sample_count != expected_sample_count:
+    elif (
+        expected_sample_count is not None
+        and raw_input_sample_count != expected_sample_count
+    ):
         blockers.append(
             f"raw_input_sample_count_mismatch:{raw_input_sample_count}!="
             f"{expected_sample_count}"
