@@ -18,8 +18,40 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
     }
 )
 
+# Shards listed here are matched in order; the first match wins. "ledger-manual"
+# is deliberately first so it claims its files before the broader product shards
+# (docs-config, product-gates-*) can glob them up.
+#
+# ledger-manual is NOT run by .github/workflows/ci.yml. Its tests assert that
+# checked-in registers under docs/superpowers/validation/ still agree with the
+# snapshot they were written against -- they pin recorded numbers, not product
+# behaviour, so they go red when an analysis is legitimately re-run. Owner runs
+# them on demand:
+#     uv run python -m tools.testing.test_shards ledger-manual
+#
+# EXIT RULE (required by the retirement contract; do not drop this block without
+# resolving it): revisit at the next release cut, or as soon as any of these
+# holds, and then either delete the register plus its test or promote it back
+# into CI --
+#   1. a register here has not been consulted in a decision for two releases;
+#   2. its test has gone red only because recorded numbers moved, twice;
+#   3. the register's owning milestone is retired.
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
+        "ledger-manual": (
+            "tests/test_backfill_expansion_*.py",
+            "tests/test_bounded_product_lanes_contract.py",
+            "tests/test_check_productization_authority.py",
+            "tests/test_cid_nl_85raw_universe_closure.py",
+            "tests/test_cid_nl_discovery_full_scope_classification.py",
+            "tests/test_cid_nl_discovery_release_slice.py",
+            "tests/test_lockbox_ai_challenge_results.py",
+            "tests/test_lockbox_label_collection_pack.py",
+            "tests/test_production_acceptance_manifest_contract.py",
+            "tests/test_productization_state_index.py",
+            "tests/test_validation_artifact_cid_nl_public_claim_catalog.py",
+            "tests/test_validation_artifact_retention.py",
+        ),
         "docs-config": (
             "tests/test_agent_sandbox_doctor.py",
             "tests/test_bootstrap_worktree.py",

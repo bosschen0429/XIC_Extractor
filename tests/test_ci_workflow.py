@@ -7,6 +7,21 @@ import pytest
 from scripts.check_pr_body import main, validate_pr_body
 from tools.testing.test_shards import SHARD_PATTERNS
 
+# Shards deliberately excluded from .github/workflows/ci.yml. Every other shard
+# must appear exactly once in each test job; membership here is the only way to
+# opt out, so the CI/shard contract still fails closed for anything unlisted.
+#
+# Owner: repo owner (solo developer).
+# Reason: these tests assert that checked-in registers under
+# docs/superpowers/validation/ still match the snapshot they were recorded
+# against. They pin numbers, not product behaviour, so a legitimate re-run of an
+# analysis turns them red. On a solo repo there is no second author to keep the
+# registers honest for, so the cost is not repaid.
+# Removal condition: shrink this set back to empty once the registers are either
+# deleted with their tests or promoted back into CI. See the EXIT RULE block on
+# SHARD_PATTERNS in tools/testing/test_shards.py.
+MANUAL_ONLY_SHARDS = frozenset({"ledger-manual"})
+
 CORE_CI_COMMANDS = (
     "uv run ruff check xic_extractor tests",
     "uv run lint-imports --no-cache",
@@ -110,7 +125,8 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
             in block
         )
         for shard in SHARD_PATTERNS:
-            assert block.count(f'"{shard}"') == 1
+            expected = 0 if shard in MANUAL_ONLY_SHARDS else 1
+            assert block.count(f'"{shard}"') == expected, shard
         assert "install_seconds=" in block
         assert "test_seconds=" in block
         assert "$env:GITHUB_STEP_SUMMARY" in block
