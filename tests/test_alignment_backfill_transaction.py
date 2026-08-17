@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_owner_backfill_peak_fact_provenance import _live_available_inputs
+from xic_extractor.alignment import owner_matrix
 from xic_extractor.alignment.backfill_transaction import (
     OwnerBackfillSampleTransaction,
 )
@@ -53,6 +54,62 @@ def _audit_row(cell, *, candidate_index: int = 1):
         reason=cell.reason,
         selection_note="selected",
     )
+
+
+def test_sample_transaction_defers_matrix_cell_allocation_until_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    allocations: list[str] = []
+    median_calls = 0
+    for name in (
+        "_absent_cell",
+        "_ambiguous_cell",
+        "_feature_ambiguous_cell",
+        "_detected_cell",
+        "_rescued_cell",
+    ):
+        original = getattr(owner_matrix, name)
+
+        def counted(*args, _name=name, _original=original, **kwargs):
+            allocations.append(_name)
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(owner_matrix, name, counted)
+    original_median = owner_matrix.median_owner_area
+
+    def counted_median(feature):
+        nonlocal median_calls
+        median_calls += 1
+        return original_median(feature)
+
+    monkeypatch.setattr(owner_matrix, "median_owner_area", counted_median)
+
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    assert allocations == []
+    assert transaction._builder._cells_by_sample == {}
+
+    transaction.deliver(
+        0,
+        OwnerBackfillSampleResult(
+            sample_index=2,
+            sample_stem="sample-b",
+            cells=(live.observation.cell,),
+        ),
+    )
+
+    assert allocations == ["_rescued_cell"]
+    assert tuple(transaction._builder._cells_by_sample) == ("sample-b",)
+    assert len(transaction.finish().matrix.cells) == 2
+    assert allocations == ["_rescued_cell", "_detected_cell"]
+    assert median_calls == 0
 
 
 def test_sample_transaction_preserves_every_backfill_attachment(
@@ -196,6 +253,64 @@ def test_sample_transaction_freezes_in_owner_order_after_reverse_completion(
         "sample-c",
     )
     assert output.timing_stats == (timing_b, timing_c)
+
+
+def test_sample_transaction_freezes_feature_major_order_with_multiple_features(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    second_feature = replace(
+        live.feature,
+        feature_family_id="FAM000002",
+        group_hypothesis_id="GRP000002",
+        public_family_id="PUB000002",
+    )
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature, second_feature),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((1, "sample-a"), (2, "sample-b")),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    transaction.deliver(1, OwnerBackfillSampleResult(2, "sample-b", ()))
+    transaction.deliver(0, OwnerBackfillSampleResult(1, "sample-a", ()))
+
+    assert tuple(
+        (cell.cluster_id, cell.sample_stem, cell.status)
+        for cell in transaction.finish().matrix.cells
+    ) == (
+        ("FAM000001", "sample-a", "detected"),
+        ("FAM000001", "sample-b", "absent"),
+        ("FAM000002", "sample-a", "detected"),
+        ("FAM000002", "sample-b", "absent"),
+    )
+
+
+def test_sample_transaction_rejects_duplicate_rescued_cell_before_mutation(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    duplicate = replace(live.observation.cell, area=live.observation.cell.area + 1.0)
+    transaction = OwnerBackfillSampleTransaction(
+        (live.feature,),
+        matrix_sample_order=("sample-a", "sample-b"),
+        expected_samples=((2, "sample-b"),),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    with pytest.raises(ValueError, match="duplicate rescued owner Matrix cell"):
+        transaction.deliver(
+            0,
+            OwnerBackfillSampleResult(
+                2,
+                "sample-b",
+                (live.observation.cell, duplicate),
+            ),
+        )
+
+    assert transaction._builder._cells_by_sample == {}
+    with pytest.raises(ValueError, match="incomplete samples"):
+        transaction.finish()
 
 
 def test_candidate_audit_keeps_batch_order_when_matrix_order_differs(

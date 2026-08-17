@@ -52,9 +52,15 @@ class OwnerAlignmentMatrixBuilder:
         self._feature_by_id = {
             feature.feature_family_id: feature for feature in self._features
         }
-        self._feature_rank = {
-            feature.feature_family_id: index
-            for index, feature in enumerate(self._features)
+        self._owners_by_feature_id = {
+            feature.feature_family_id: {
+                owner.sample_stem: owner for owner in feature.owners
+            }
+            for feature in self._features
+        }
+        self._group_projection_by_feature_id = {
+            feature.feature_family_id: delivery_group_projection(feature)
+            for feature in self._features
         }
         self._sample_rank = {
             sample_stem: index for index, sample_stem in enumerate(sample_order)
@@ -63,81 +69,113 @@ class OwnerAlignmentMatrixBuilder:
             raise ValueError("owner Matrix features must have unique identities")
         if len(self._sample_rank) != len(sample_order):
             raise ValueError("owner Matrix sample_order must be unique")
-        self._cells: list[AlignedCell] = []
-        self._consumed_keys: set[tuple[str, str]] = set()
-        for feature in self._features:
-            owners_by_sample = {owner.sample_stem: owner for owner in feature.owners}
-            group_projection = delivery_group_projection(feature)
-            for sample_stem in sample_order:
-                if feature.ambiguous_sample_stem == sample_stem:
-                    cell = _feature_ambiguous_cell(
-                        feature,
-                        sample_stem,
-                        group_projection=group_projection,
-                    )
-                elif (owner := owners_by_sample.get(sample_stem)) is not None:
-                    cell = _detected_cell(
-                        feature,
-                        owner,
-                        group_projection=group_projection,
-                    )
-                elif (records := ambiguous_by_sample.get(sample_stem, ())):
-                    cell = _ambiguous_cell(
-                        feature.feature_family_id,
-                        sample_stem,
-                        records,
-                        group_projection=group_projection,
-                    )
-                else:
-                    cell = _absent_cell(
-                        feature.feature_family_id,
-                        sample_stem,
-                        group_projection=group_projection,
-                    )
-                self._cells.append(cell)
+        self._ambiguous_by_sample = {
+            sample_stem: tuple(records)
+            for sample_stem, records in ambiguous_by_sample.items()
+        }
+        self._cells_by_sample: dict[str, tuple[AlignedCell, ...]] = {}
 
     def consume_rescued_cells(self, rescued_cells: tuple[AlignedCell, ...]) -> None:
-        replacements: list[tuple[int, tuple[str, str], AlignedCell]] = []
         batch_keys: set[tuple[str, str]] = set()
+        rescued_by_sample: dict[str, list[AlignedCell]] = {}
         for rescued in rescued_cells:
             key = (rescued.cluster_id, rescued.sample_stem)
-            if key in batch_keys or key in self._consumed_keys:
+            if key in batch_keys:
                 raise ValueError("duplicate rescued owner Matrix cell")
             batch_keys.add(key)
-            feature = self._feature_by_id.get(rescued.cluster_id)
-            sample_index = self._sample_rank.get(rescued.sample_stem)
-            if feature is None or sample_index is None:
-                raise ValueError("rescued cell falls outside owner Matrix universe")
-            feature_index = self._feature_rank[rescued.cluster_id]
-            position = feature_index * len(self._sample_order) + sample_index
-            current = self._cells[position]
-            group_projection = delivery_group_projection(feature)
-            if feature.ambiguous_sample_stem == rescued.sample_stem:
-                replacement = current
-            elif any(
-                owner.sample_stem == rescued.sample_stem for owner in feature.owners
+            if (
+                rescued.cluster_id not in self._feature_by_id
+                or rescued.sample_stem not in self._sample_rank
             ):
+                raise ValueError("rescued cell falls outside owner Matrix universe")
+            rescued_by_sample.setdefault(rescued.sample_stem, []).append(rescued)
+        for sample_stem, sample_cells in rescued_by_sample.items():
+            self.consume_sample_rescued_cells(sample_stem, tuple(sample_cells))
+
+    def consume_sample_rescued_cells(
+        self,
+        sample_stem: str,
+        rescued_cells: tuple[AlignedCell, ...],
+    ) -> None:
+        if sample_stem not in self._sample_rank:
+            raise ValueError("rescued sample falls outside owner Matrix universe")
+        if sample_stem in self._cells_by_sample:
+            raise ValueError("owner Matrix sample was consumed more than once")
+        rescued_by_feature: dict[str, AlignedCell] = {}
+        for rescued in rescued_cells:
+            if rescued.sample_stem != sample_stem:
+                raise ValueError("rescued cells cross owner Matrix sample identity")
+            if rescued.cluster_id not in self._feature_by_id:
+                raise ValueError("rescued cell falls outside owner Matrix universe")
+            if rescued.cluster_id in rescued_by_feature:
+                raise ValueError("duplicate rescued owner Matrix cell")
+            rescued_by_feature[rescued.cluster_id] = rescued
+
+        sample_cells: list[AlignedCell] = []
+        for feature in self._features:
+            rescued_cell = rescued_by_feature.get(feature.feature_family_id)
+            group_projection = self._group_projection_by_feature_id[
+                feature.feature_family_id
+            ]
+            owner = self._owners_by_feature_id[feature.feature_family_id].get(
+                sample_stem
+            )
+            if feature.ambiguous_sample_stem == sample_stem:
+                replacement = _feature_ambiguous_cell(
+                    feature,
+                    sample_stem,
+                    group_projection=group_projection,
+                )
+            elif owner is not None:
+                detected = _detected_cell(
+                    feature,
+                    owner,
+                    group_projection=group_projection,
+                )
                 replacement = _detected_or_confirmed_cell(
                     feature,
-                    current,
-                    rescued,
-                    family_area=median_owner_area(feature),
+                    detected,
+                    rescued_cell,
+                    family_area=(
+                        median_owner_area(feature)
+                        if rescued_cell is not None
+                        and feature.confirm_local_owners_with_backfill
+                        else None
+                    ),
+                    group_projection=group_projection,
+                )
+            elif rescued_cell is not None:
+                replacement = _rescued_cell(
+                    rescued_cell,
+                    group_projection=group_projection,
+                )
+            elif records := self._ambiguous_by_sample.get(sample_stem, ()):
+                replacement = _ambiguous_cell(
+                    feature.feature_family_id,
+                    sample_stem,
+                    records,
                     group_projection=group_projection,
                 )
             else:
-                replacement = _rescued_cell(
-                    rescued,
+                replacement = _absent_cell(
+                    feature.feature_family_id,
+                    sample_stem,
                     group_projection=group_projection,
                 )
-            replacements.append((position, key, replacement))
-        for position, key, replacement in replacements:
-            self._cells[position] = replacement
-            self._consumed_keys.add(key)
+            sample_cells.append(replacement)
+        self._cells_by_sample[sample_stem] = tuple(sample_cells)
 
     def finish(self) -> AlignmentMatrix:
+        for sample_stem in self._sample_order:
+            if sample_stem not in self._cells_by_sample:
+                self.consume_sample_rescued_cells(sample_stem, ())
         return AlignmentMatrix(
             clusters=self._features,
-            cells=tuple(self._cells),
+            cells=tuple(
+                self._cells_by_sample[sample_stem][feature_index]
+                for feature_index in range(len(self._features))
+                for sample_stem in self._sample_order
+            ),
             sample_order=self._sample_order,
         )
 

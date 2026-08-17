@@ -130,7 +130,7 @@ class OwnerBackfillSampleTransaction:
             for observation in result.peak_fact_observations
         )
         self._validate_prepared_peak_facts(result, prepared_peak_facts)
-        self._builder.consume_rescued_cells(result.cells)
+        self._builder.consume_sample_rescued_cells(result.sample_stem, result.cells)
         self._prepared_by_ordinal[ordinal] = _PreparedSample(
             candidate_audit_rows=result.candidate_audit_rows,
             timing_stats=result.timing_stats,

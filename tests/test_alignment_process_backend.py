@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.test_alignment_owner_backfill import _feature
+from xic_extractor.alignment import backfill_transaction, owner_matrix
 from xic_extractor.alignment.backfill_scope import backfill_features_for_sample
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.identity_coherence.models import (
@@ -142,10 +143,20 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
 
 
 def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     scoped_feature = _confirmable_feature_for_sample_a()
     unrequested_feature = replace(_feature(), feature_family_id="FAM000002")
+    allocated_cells = 0
+    original_cell_type = owner_matrix.AlignedCell
+
+    def counted_cell(*args, **kwargs):
+        nonlocal allocated_cells
+        allocated_cells += 1
+        return original_cell_type(*args, **kwargs)
+
+    monkeypatch.setattr(owner_matrix, "AlignedCell", counted_cell)
 
     def fake_runner(
         jobs,
@@ -154,6 +165,7 @@ def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
         progress_callback,
         success_result_delivery,
     ):
+        assert allocated_cells == 0
         assert max_workers == 2
         receipts = []
         for ordinal, job in enumerate(jobs):
@@ -193,7 +205,15 @@ def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
     assert tuple(
         feature.feature_family_id for feature in output.matrix.clusters
     ) == (unrequested_feature.feature_family_id, scoped_feature.feature_family_id)
-    assert len(output.matrix.cells) == 4
+    assert tuple(
+        (cell.cluster_id, cell.sample_stem) for cell in output.matrix.cells
+    ) == (
+        (unrequested_feature.feature_family_id, "sample-b"),
+        (unrequested_feature.feature_family_id, "sample-a"),
+        (scoped_feature.feature_family_id, "sample-b"),
+        (scoped_feature.feature_family_id, "sample-a"),
+    )
+    assert allocated_cells > 0
 
 
 def test_process_jobs_carry_discovery_acquisition_source_to_raw_workers(
@@ -497,6 +517,78 @@ def test_owner_backfill_process_raises_worker_errors(tmp_path: Path) -> None:
             max_workers=2,
             runner=fake_runner,
         )
+
+
+def test_owner_backfill_transaction_discards_success_after_late_worker_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    feature = _confirmable_feature_for_sample_a()
+    finish_calls = 0
+    original_finish = backfill_transaction.OwnerBackfillSampleTransaction.finish
+
+    def tracked_finish(self):
+        nonlocal finish_calls
+        finish_calls += 1
+        return original_finish(self)
+
+    monkeypatch.setattr(
+        backfill_transaction.OwnerBackfillSampleTransaction,
+        "finish",
+        tracked_finish,
+    )
+
+    def fake_runner(
+        jobs,
+        *,
+        max_workers,
+        progress_callback,
+        success_result_delivery,
+    ):
+        first, second = jobs
+        receipt = success_result_delivery(
+            0,
+            OwnerBackfillSampleResult(
+                first.sample_index,
+                first.sample_stem,
+                tuple(
+                    _cell(
+                        cluster_id=item.feature_family_id,
+                        sample_stem=first.sample_stem,
+                    )
+                    for item in first.features
+                ),
+            ),
+        )
+        return [
+            receipt,
+            OwnerBackfillWorkerError(
+                sample_index=second.sample_index,
+                sample_stem=second.sample_stem,
+                raw_name=second.raw_path.name,
+                message="RuntimeError: late boom",
+            ),
+        ]
+
+    with pytest.raises(AlignmentProcessExecutionError, match="late boom"):
+        run_owner_backfill_process(
+            (feature,),
+            matrix_features=(feature,),
+            matrix_sample_order=("sample-a", "sample-b", "sample-c"),
+            sample_order=("sample-a", "sample-b", "sample-c"),
+            raw_paths={
+                sample: tmp_path / f"{sample}.raw"
+                for sample in ("sample-a", "sample-b", "sample-c")
+            },
+            dll_dir=tmp_path / "dll",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            max_workers=2,
+            runner=fake_runner,
+        )
+
+    assert finish_calls == 0
 
 
 def test_owner_build_process_builds_pickleable_sample_jobs_and_merges_output(
