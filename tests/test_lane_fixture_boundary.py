@@ -35,6 +35,7 @@ def test_evidence_layers_are_out_of_scope() -> None:
         "    raw_reader.open(path)",
         "    expected = 85",
         "    raw8bit_decode(payload)",
+        "    withdraw85_total = 3",
     ],
 )
 def test_pattern_ignores_unrelated_numbers_and_words(line: str) -> None:
@@ -42,7 +43,17 @@ def test_pattern_ignores_unrelated_numbers_and_words(line: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "line", ["x = '8raw'", "# 85RAW gate", "raw85 lane", "2raw set"]
+    "line",
+    [
+        "x = '8raw'",
+        "# 85RAW gate",
+        "raw85 lane",
+        "2raw set",
+        # Snake_case infixes: where the persisted lane names actually live.
+        '    "85raw_alignment_cells",',
+        '    scope = "all_available_85raw"',
+        "def infer_85raw_assessed_rows(",
+    ],
 )
 def test_pattern_matches_lane_fixture_names(line: str) -> None:
     assert boundary.LANE_FIXTURE_PATTERN.search(line) is not None

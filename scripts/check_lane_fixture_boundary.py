@@ -7,9 +7,10 @@ Owner: AGENTS.md "Product North Star".
     8RAW and 85RAW are lane-specific validation fixtures and stress oracles,
     not architecture boundaries or universal Discovery gates.
 
-That rule had no enforcement, and the domain package drifted: a public type now
-lists "8raw" beside genuine method categories, and one subpackage is named for
-the fixture it was first validated against. Architecture Guardrails, which sits
+That rule had no enforcement, and the domain package drifted: a public type
+lists "8raw" beside genuine method categories, and persisted artifact ids, scope
+values and config keys are named for the lane they were first validated against.
+Architecture Guardrails, which sits
 in the same file, held perfectly over the same period -- it has import-linter
 and an architecture census watching it. This checker is the missing half.
 
@@ -45,10 +46,14 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Lane fixture identifiers. Word-bounded so ordinary numbers and unrelated
-# identifiers do not trip the check.
+# Lane fixture identifiers. Delimited by non-alphanumerics rather than \b, so a
+# snake_case segment counts: `85raw_alignment_cells` and `all_available_85raw`
+# are hits. \b treated `_` as a word character and missed every infix, which is
+# where most of the persisted lane names live. Letters and digits still guard
+# both ends, so `raw8bit_decode` and `withdraw85` stay clean.
 LANE_FIXTURE_PATTERN = re.compile(
-    r"\b(?:85raw|raw85|8raw|raw8|2raw|raw2)\b", re.IGNORECASE
+    r"(?<![A-Za-z0-9])(?:85raw|raw85|8raw|raw8|2raw|raw2)(?![A-Za-z0-9])",
+    re.IGNORECASE,
 )
 
 SCOPE_ROOT = "xic_extractor/"
@@ -58,19 +63,50 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 
 # path -> (max_hits, owning issue)
 # Budgets are ceilings, not targets. Lower one when you remove a leak; never
-# raise one to make this checker pass.
+# raise one to make this checker pass. Regenerate this map from scan(); a
+# hand-built set was wrong in four files the last time one was written.
+#
+# Sorted by path so a regenerated map diffs cleanly against this one.
+#
+# 95 of the 100 lines below were invisible while the pattern was \b-anchored,
+# because `_` counts as a word character and every one of them is a snake_case
+# infix: `85raw_alignment_cells` (an artifact_id), `all_available_85raw` (a
+# scope value), `max_projected_85raw_identity_xic_requests` (a config key).
+# Most are persisted values, so clearing a file is a contract decision about
+# existing artifacts, not a rename. #290 owns the set; its group 1 is the four
+# files whose leak was visible before the pattern widened --
+# model_selection.py, model_selection_approval_registry.py,
+# review_actions_schema.py and identity_coherence/output_summary_model.py.
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
-    # -- #290 group 1: lane names on public surface -----------------------
-    # ExpectedDiffValidationTier and its schema mirror list "8raw" beside real
-    # method categories (synthetic_fixture, targeted_benchmark,
-    # manual_eic_ms2_review); the tier value reaches review-action TSVs.
-    # output_summary_model carries the projected_85raw_identity_xic_requests
-    # config field, asserted in tests/alignment/identity_coherence/
-    # test_schema_contract.py. Renaming either needs a contract change.
+    "xic_extractor/alignment/identity_coherence/adapter.py": (3, "#290"),
+    "xic_extractor/alignment/identity_coherence/models.py": (3, "#290"),
+    "xic_extractor/alignment/identity_coherence/output_models.py": (4, "#290"),
+    "xic_extractor/alignment/identity_coherence/output_summary.py": (2, "#290"),
+    "xic_extractor/alignment/identity_coherence/output_summary_model.py": (11, "#290"),
+    "xic_extractor/alignment/identity_coherence_validation/models.py": (1, "#290"),
+    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (2, "#290"),
+    "xic_extractor/alignment/quant_matrix_promotion.py": (4, "#290"),
+    "xic_extractor/alignment/quant_matrix_validation_packet.py": (6, "#290"),
+    "xic_extractor/alignment/shared_peak_identity_explanation/activation_contract.py": (
+        8,
+        "#290",
+    ),
+    "xic_extractor/alignment/shared_peak_identity_explanation/blast_radius.py": (
+        28,
+        "#290",
+    ),
+    "xic_extractor/alignment/shared_peak_identity_explanation/classifier.py": (
+        14,
+        "#290",
+    ),
+    "xic_extractor/alignment/shared_peak_identity_explanation/schema.py": (5, "#290"),
+    "xic_extractor/package0_successor_comparator.py": (1, "#290"),
     "xic_extractor/peak_detection/model_selection.py": (1, "#290"),
     "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "#290"),
+    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#290"),
+    "xic_extractor/peak_detection/selected_envelope_oracle.py": (2, "#290"),
+    "xic_extractor/peak_detection/selected_envelope_oracle_artifacts.py": (2, "#290"),
     "xic_extractor/review_actions_schema.py": (1, "#290"),
-    "xic_extractor/alignment/identity_coherence/output_summary_model.py": (2, "#290"),
 }
 
 
