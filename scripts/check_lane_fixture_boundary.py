@@ -84,10 +84,6 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     # matches no lane identifier, so the checker finds names, not assumptions.
     "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#290"),
     "xic_extractor/alignment/quant_matrix_promotion.py": (1, "#290"),
-    "xic_extractor/alignment/shared_peak_identity_explanation/activation_contract.py": (
-        1,
-        "#290",
-    ),
 }
 
 
