@@ -26,8 +26,13 @@ layer rather than the long-term architecture is a statement about where the
 code lives, not about whether it is worth keeping.
 
 Existing violations are recorded in KNOWN_LEAKAGE with a hit budget rather than
-being ignored wholesale, so debt cannot grow silently while it waits for an
-owner. Budgets ratchet down only.
+being ignored wholesale, so debt cannot grow silently while it waits to be
+paid down. Each entry carries the issue that owns it. Budgets ratchet down
+only: removing a leak without lowering its budget fails, and emptying a file
+requires deleting its entry.
+
+Names are all this checker can see. An assumption expressed as a number --
+`expected_sample_count: int = 8` -- passes it untouched. See #292.
 """
 from __future__ import annotations
 
@@ -51,47 +56,37 @@ SCOPE_ROOT = "xic_extractor/"
 # lane they replay. Everything else under xic_extractor/ must stay neutral.
 EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 
-# path -> (max_hits, owner_note)
+# path -> (max_hits, owning issue)
 # Budgets are ceilings, not targets. Lower one when you remove a leak; never
 # raise one to make this checker pass.
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
-    # Public type + its schema mirror list "8raw" as a validation tier beside
-    # real method categories (synthetic_fixture, targeted_benchmark,
-    # manual_eic_ms2_review). The lane name should be a method category such as
-    # a real-data subset tier. Public surface: changing it moves a value that
-    # reaches review-action TSVs, so it needs its own contract change.
-    "xic_extractor/peak_detection/model_selection.py": (1, "unowned"),
-    "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "unowned"),
-    "xic_extractor/review_actions_schema.py": (1, "unowned"),
-    # A no-RAW launch gate whose default sample count and docstring are written
-    # for one lane.
-    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (
-        1,
-        "unowned",
-    ),
-    # Subpackage named and worded for the fixture it was first validated
-    # against; the logic itself is not lane-specific.
-    "xic_extractor/alignment/identity_coherence_validation/__init__.py": (
-        1,
-        "unowned",
-    ),
-    "xic_extractor/alignment/identity_coherence_validation/acceptance.py": (
-        1,
-        "unowned",
-    ),
-    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (
-        5,
-        "unowned",
-    ),
-    # Report and message strings naming a lane.
-    "xic_extractor/alignment/identity_coherence/output_summary_model.py": (
-        2,
-        "unowned",
-    ),
-    "xic_extractor/alignment/quant_matrix_promotion.py": (1, "unowned"),
+    # -- #290: lane names on public surface -------------------------------
+    # ExpectedDiffValidationTier and its schema mirror list "8raw" beside real
+    # method categories (synthetic_fixture, targeted_benchmark,
+    # manual_eic_ms2_review); the tier value reaches review-action TSVs.
+    # output_summary_model carries the projected_85raw_identity_xic_requests
+    # config field, asserted in tests/alignment/identity_coherence/
+    # test_schema_contract.py. Renaming either needs a contract change.
+    "xic_extractor/peak_detection/model_selection.py": (1, "#290"),
+    "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "#290"),
+    "xic_extractor/review_actions_schema.py": (1, "#290"),
+    "xic_extractor/alignment/identity_coherence/output_summary_model.py": (2, "#290"),
+    # -- #291: subpackage named for its fixture ---------------------------
+    # Named and worded for the lane it was first validated against; the logic
+    # itself is not lane-specific, so this is a rename plus report wording.
+    "xic_extractor/alignment/identity_coherence_validation/__init__.py": (1, "#291"),
+    "xic_extractor/alignment/identity_coherence_validation/acceptance.py": (1, "#291"),
+    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (5, "#291"),
+    # -- #292: strings, and one assumption this checker cannot see --------
+    # selected_envelope_changed_row_review is flagged for its docstring, but
+    # the real coupling is `expected_sample_count: int = 8` one line above:
+    # a core gate that treats any other sample count as a mismatch. `int = 8`
+    # matches no lane identifier, so the checker finds names, not assumptions.
+    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#292"),
+    "xic_extractor/alignment/quant_matrix_promotion.py": (1, "#292"),
     "xic_extractor/alignment/shared_peak_identity_explanation/activation_contract.py": (
         1,
-        "unowned",
+        "#292",
     ),
 }
 
@@ -192,10 +187,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     budgeted = sum(b for b, _ in KNOWN_LEAKAGE.values())
+    issues = sorted({owner for _, owner in KNOWN_LEAKAGE.values()})
     print(
         f"Lane fixture boundary held "
         f"(domain files scanned outside diagnostics; "
-        f"{budgeted} known leak(s) in {len(KNOWN_LEAKAGE)} file(s) awaiting an owner)."
+        f"{budgeted} known leak(s) in {len(KNOWN_LEAKAGE)} file(s), "
+        f"tracked in {', '.join(issues)})."
     )
     return 0
 
