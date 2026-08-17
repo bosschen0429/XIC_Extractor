@@ -60,6 +60,16 @@ contracts for review and downstream product decisions.
   compatibility fields, but they do not promote rows into production authority.
 - Output filenames, row ordering, column schema, schema-version signals, and
   identity/provenance sidecars are public contracts.
+- Multi-process Owner Backfill delivers each complete sample result into one
+  private Alignment transaction. The transaction replaces rescued cells in the
+  feature-major/sample-major Matrix builder, projects live peak facts through
+  the existing provenance owner, and retains audit/runtime attachments in
+  canonical owner order before releasing the worker result graph. Completion
+  order cannot change Matrix or sidecar ordering. Any worker or delivery
+  failure discards the unpublished transaction; only an all-sample success may
+  freeze the Matrix and reach the existing atomic output publication seam.
+  This is an internal retention mechanism, not a public configuration value,
+  persisted shard, alternate Backfill route, or second Matrix authority.
 - Runner scripts orchestrate inputs, profiles, and output locations. Reusable
   grouping, ownership, identity, writer, and sidecar behavior belongs in
   package modules or explicit specs.

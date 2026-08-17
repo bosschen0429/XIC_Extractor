@@ -587,6 +587,7 @@ def extract_owner_build_sample_job(
 def run_owner_backfill_process(
     features: OwnerGroupDeliveryFeatures,
     *,
+    matrix_features: OwnerGroupDeliveryFeatures | None = None,
     sample_order: tuple[str, ...],
     raw_paths: Mapping[str, Path],
     dll_dir: Path,
@@ -609,7 +610,8 @@ def run_owner_backfill_process(
     audit_evidence_mode: str = "full",
     runner: Callable[..., list[OwnerBackfillWorkerResult]] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
-) -> OwnerBackfillProcessOutput:
+    matrix_sample_order: tuple[str, ...] | None = None,
+) -> Any:
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be owner-resolved")
     if max_workers < 1:
@@ -675,9 +677,38 @@ def run_owner_backfill_process(
                 ),
             )
         )
-    if not jobs:
+    if not jobs and matrix_sample_order is None:
         return OwnerBackfillProcessOutput(cells=(), timing_stats=())
     active_runner = runner or run_owner_backfill_jobs
+    if matrix_sample_order is not None:
+        from xic_extractor.alignment.backfill_transaction import (
+            OwnerBackfillSampleTransaction,
+        )
+
+        transaction = OwnerBackfillSampleTransaction(
+            matrix_features if matrix_features is not None else features,
+            matrix_sample_order=matrix_sample_order,
+            expected_samples=tuple(
+                (job.sample_index, job.sample_stem) for job in jobs
+            ),
+            signal_processing_profile=signal_processing_profile,
+        )
+        results = active_runner(
+            jobs,
+            max_workers=max_workers,
+            progress_callback=progress_callback,
+            success_result_delivery=transaction.deliver,
+        )
+        errors = tuple(
+            result for result in results if isinstance(result, OwnerBackfillWorkerError)
+        )
+        if errors:
+            messages = "; ".join(
+                f"{error.raw_name}: {error.message}"
+                for error in sorted(errors, key=lambda item: item.sample_index)
+            )
+            raise AlignmentProcessExecutionError(messages)
+        return transaction.finish()
     if progress_callback is None:
         results = active_runner(jobs, max_workers=max_workers)
     else:
@@ -770,7 +801,8 @@ def run_owner_backfill_jobs(
     max_workers: int,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
-) -> list[OwnerBackfillWorkerResult]:
+    success_result_delivery: Callable[[int, Any], Any] | None = None,
+) -> list[Any]:
     return _run_process_jobs(
         jobs,
         worker=extract_owner_backfill_sample_job,
@@ -779,6 +811,7 @@ def run_owner_backfill_jobs(
         executor_factory=executor_factory,
         progress_callback=progress_callback,
         is_terminal_failure=lambda result: isinstance(result, OwnerBackfillWorkerError),
+        success_result_delivery=success_result_delivery,
     )
 
 

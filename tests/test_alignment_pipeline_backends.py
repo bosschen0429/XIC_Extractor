@@ -5,7 +5,6 @@ import pytest
 
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
-from tests.alignment_pipeline_helpers import cell as _cell
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
@@ -13,9 +12,11 @@ from tests.alignment_pipeline_helpers import (
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillTransactionOutput,
+)
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.process_backend import (
-    OwnerBackfillProcessOutput,
     OwnerBackfillTimingStats,
     OwnerBuildProcessOutput,
     OwnerBuildTimingStats,
@@ -419,15 +420,15 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     opener = FakeRawOpener()
     calls = {}
-    rescued = _cell("Sample_A", cluster_id="ALN000001")
     recorder = TimingRecorder("alignment", run_id="test-process-backfill")
 
     def fake_process_backfill(features, **kwargs):
         calls["features"] = features
         calls.update(kwargs)
         assert opener.calls == []
-        return OwnerBackfillProcessOutput(
-            cells=(rescued,),
+        return OwnerBackfillTransactionOutput(
+            matrix=_matrix(("Sample_A",)),
+            candidate_audit_rows=(),
             timing_stats=(
                 OwnerBackfillTimingStats(
                     sample_stem="Sample_A",
@@ -436,6 +437,9 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
                     point_count=40,
                 ),
             ),
+            request_reuse_observations=(),
+            prepared_peak_facts=(),
+            peak_fact_cost_receipts=(),
         )
 
     def fake_process_build(candidates, **kwargs):
@@ -480,16 +484,6 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
         fake_process_backfill,
     )
 
-    def fake_owner_matrix(features, *, sample_order, rescued_cells, **kwargs):
-        calls["rescued_cells"] = rescued_cells
-        return _matrix(sample_order)
-
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_owner_alignment_matrix",
-        fake_owner_matrix,
-    )
-
     pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
@@ -506,7 +500,7 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
 
     assert calls["max_workers"] == 2
     assert calls["raw_paths"] == {"Sample_A": raw_dir / "Sample_A.raw"}
-    assert calls["rescued_cells"] == (rescued,)
+    assert calls["matrix_sample_order"] == ("Sample_A",)
     assert calls["build_kwargs"]["max_workers"] == 2
     assert calls["raw_xic_batch_size"] == 1
     assert calls["owner_backfill_xic_backend"] == "ms1_index"

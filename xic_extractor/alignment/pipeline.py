@@ -18,6 +18,11 @@ from xic_extractor.alignment.backfill_scope import (
     select_backfill_features,
     skipped_evidence_summary,
 )
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillSampleDeliveryReceipt,
+    OwnerBackfillTransactionOutput,
+    PreparedOwnerBackfillPeakFact,
+)
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
@@ -60,16 +65,13 @@ from xic_extractor.alignment.owner_backfill import (
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OwnerBackfillCellProjectionV2,
-    OwnerBackfillPeakFactStageProjection,
-    build_owner_backfill_peak_fact_provenance_batch,
+    build_owner_backfill_peak_fact_provenance_batch_from_rows,
     owner_backfill_authority_cell_projection,
     owner_backfill_cell_lineage_matches,
     owner_backfill_cell_projection,
     owner_backfill_peak_fact_stage_projection_from_observation,
+    row_from_terminal_observation,
     selected_integration_authority_projection,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    OwnerBackfillPeakFactObservation as ProvenanceObservation,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_owner_build_route_receipt,
@@ -729,6 +731,12 @@ def run_alignment(
                     **request_summary,
                 }
             )
+        matrix_sample_order = batch.sample_order
+        if injection_order is not None:
+            matrix_sample_order = order_sample_columns_by_injection(
+                batch.sample_order,
+                injection_order,
+            )
         with recorder.stage("alignment.owner_backfill") as owner_backfill_stage:
             owner_backfill_candidate_audit_rows: tuple[
                 OwnerBackfillCandidateAuditRow,
@@ -742,9 +750,12 @@ def run_alignment(
                 OwnerBackfillRequestReuseObservation,
                 ...,
             ] = ()
+            rescued_cells: tuple[AlignedCell, ...] = ()
+            backfill_transaction_output: OwnerBackfillTransactionOutput | None = None
             if raw_workers > 1:
                 process_output = run_owner_backfill_process(
                     backfill_features,
+                    matrix_features=owner_features,
                     sample_order=batch.sample_order,
                     raw_paths=raw_paths,
                     dll_dir=dll_dir,
@@ -767,15 +778,15 @@ def run_alignment(
                         recorder,
                         result,
                     ),
+                    matrix_sample_order=matrix_sample_order,
                 )
-                rescued_cells = process_output.cells
+                if not isinstance(process_output, OwnerBackfillTransactionOutput):
+                    raise TypeError("process Backfill must return a transaction output")
+                backfill_transaction_output = process_output
                 owner_backfill_candidate_audit_rows = (
                     process_output.candidate_audit_rows
                 )
                 request_reuse_observations = process_output.request_reuse_observations
-                owner_backfill_peak_fact_observations = (
-                    process_output.peak_fact_observations
-                )
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(process_output.timing_stats),
                 )
@@ -844,19 +855,16 @@ def run_alignment(
             owner_backfill_stage.metrics.update(
                 _request_reuse_summary(request_reuse_observations)
             )
-        matrix_sample_order = batch.sample_order
-        if injection_order is not None:
-            matrix_sample_order = order_sample_columns_by_injection(
-                batch.sample_order,
-                injection_order,
-            )
         with recorder.stage("alignment.build_matrix"):
-            matrix = build_owner_alignment_matrix(
-                owner_features,
-                sample_order=matrix_sample_order,
-                ambiguous_by_sample={},
-                rescued_cells=rescued_cells,
-            )
+            if backfill_transaction_output is None:
+                matrix = build_owner_alignment_matrix(
+                    owner_features,
+                    sample_order=matrix_sample_order,
+                    ambiguous_by_sample={},
+                    rescued_cells=rescued_cells,
+                )
+            else:
+                matrix = backfill_transaction_output.matrix
         with recorder.stage("alignment.claim_registry"):
             matrix = apply_ms1_peak_claim_registry(matrix, alignment_config)
         with recorder.stage("alignment.primary_consolidation"):
@@ -864,19 +872,28 @@ def run_alignment(
         with recorder.stage("alignment.pre_backfill_recenter"):
             matrix = recenter_pre_backfill_identity_families(matrix)
         production_decisions = build_production_decisions(matrix, alignment_config)
-        peak_fact_provenance = _owner_backfill_peak_fact_provenance(
-            owner_backfill_peak_fact_observations,
-            matrix=matrix,
-            alignment_config=alignment_config,
-            production_decisions=production_decisions,
-            feature_order=tuple(
-                feature_id
-                for feature in owner_features
-                if (feature_id := getattr(feature, "feature_family_id", None))
-            ),
-            sample_order=matrix_sample_order,
-            signal_processing_profile=signal_processing_profile,
-        )
+        if backfill_transaction_output is None:
+            peak_fact_provenance = _owner_backfill_peak_fact_provenance(
+                owner_backfill_peak_fact_observations,
+                matrix=matrix,
+                alignment_config=alignment_config,
+                production_decisions=production_decisions,
+                feature_order=tuple(
+                    feature_id
+                    for feature in owner_features
+                    if (feature_id := getattr(feature, "feature_family_id", None))
+                ),
+                sample_order=matrix_sample_order,
+                signal_processing_profile=signal_processing_profile,
+            )
+        else:
+            peak_fact_provenance = _owner_backfill_prepared_peak_fact_provenance(
+                backfill_transaction_output.prepared_peak_facts,
+                matrix=matrix,
+                alignment_config=alignment_config,
+                production_decisions=production_decisions,
+                signal_processing_profile=signal_processing_profile,
+            )
         early_loser_shadow_report: EarlyLoserShadowReport | None = None
         if early_loser_shadow_proposal is not None:
             with recorder.stage("alignment.early_loser_shadow.compare") as stage:
@@ -1127,6 +1144,59 @@ def _owner_backfill_peak_fact_provenance(
 ):
     feature_rank = {feature_id: index for index, feature_id in enumerate(feature_order)}
     sample_rank = {sample_stem: index for index, sample_stem in enumerate(sample_order)}
+    prepared: list[PreparedOwnerBackfillPeakFact] = []
+    for observation in observations:
+        evaluation = observation.physical_evaluation
+        if evaluation is None:
+            raise ValueError(
+                "covered Untargeted provenance requires canonical physical evaluation"
+            )
+        stage = owner_backfill_peak_fact_stage_projection_from_observation(
+            observation,
+            feature_order_index=feature_rank.get(
+                observation.cell.cluster_id,
+                len(feature_rank),
+            ),
+            sample_order_index=sample_rank.get(
+                observation.cell.sample_stem,
+                len(sample_rank),
+            ),
+        )
+        selected_integration_id = None
+        if observation.selected_for_output and evaluation.facts is not None:
+            if observation.facts is None:
+                raise ValueError("selected physical fact lacks bounded owner receipt")
+            selected_integration_id = selected_integration_authority_projection(
+                observation.facts.integration
+            ).selected_integration_authority_content_id
+        prepared.append(
+            PreparedOwnerBackfillPeakFact(
+                stage=stage,
+                physical_row=row_from_terminal_observation(
+                    stage,
+                    evaluation,
+                    profile=signal_processing_profile,
+                ),
+                selected_integration_authority_content_id=selected_integration_id,
+            )
+        )
+    return _owner_backfill_prepared_peak_fact_provenance(
+        prepared,
+        matrix=matrix,
+        alignment_config=alignment_config,
+        production_decisions=production_decisions,
+        signal_processing_profile=signal_processing_profile,
+    )
+
+
+def _owner_backfill_prepared_peak_fact_provenance(
+    prepared_peak_facts: Iterable[PreparedOwnerBackfillPeakFact],
+    *,
+    matrix,
+    alignment_config: AlignmentConfig,
+    production_decisions: ProductionDecisionSet,
+    signal_processing_profile: SignalProcessingProfile,
+):
     final_cells: dict[tuple[str, str, str], AlignedCell] = {}
     rescued_cells_by_integration: dict[tuple[str, str], list[AlignedCell]] = {}
     rescued_cells_by_source_group: dict[tuple[str, str], list[AlignedCell]] = {}
@@ -1159,50 +1229,28 @@ def _owner_backfill_peak_fact_provenance(
                     (cell.sample_stem, source_group_id),
                     [],
                 ).append(cell)
-    projected: list[ProvenanceObservation] = []
-    selected: list[
-        tuple[
-            OwnerBackfillPeakFactObservation,
-            OwnerBackfillPeakFactStageProjection,
-        ]
-    ] = []
-    for observation in observations:
-        evaluation = observation.physical_evaluation
-        if evaluation is None:
-            raise ValueError(
-                "covered Untargeted provenance requires canonical physical evaluation"
-            )
-        stage = owner_backfill_peak_fact_stage_projection_from_observation(
-            observation,
-            feature_order_index=feature_rank.get(
-                observation.cell.cluster_id,
-                len(feature_rank),
-            ),
-            sample_order_index=sample_rank.get(
-                observation.cell.sample_stem,
-                len(sample_rank),
+    prepared = tuple(
+        sorted(
+            prepared_peak_facts,
+            key=lambda item: (
+                item.stage.feature_order_index,
+                item.stage.sample_order_index,
+                item.stage.candidate_index,
+                item.stage.candidate_phase,
             ),
         )
-        projected.append(ProvenanceObservation(stage, evaluation))
-        if observation.selected_for_output:
-            selected.append((observation, stage))
+    )
 
     cell_projections: list[OwnerBackfillCellProjectionV2] = []
     selected_cell_keys: set[tuple[str, str, str]] = set()
-    for observation, stage in selected:
-        evaluation = observation.physical_evaluation
-        if evaluation is None:
-            raise ValueError(
-                "selected Untargeted provenance requires canonical physical evaluation"
-            )
-        facts = evaluation.facts
-        if facts is None or evaluation.answer.physical_segment_id is None:
+    for prepared_peak_fact in prepared:
+        selected_integration_id = (
+            prepared_peak_fact.selected_integration_authority_content_id
+        )
+        if selected_integration_id is None:
             continue
-        if observation.facts is None:
-            raise ValueError("selected physical fact lacks bounded owner receipt")
-        selected_integration_id = selected_integration_authority_projection(
-            observation.facts.integration
-        ).selected_integration_authority_content_id
+        stage = prepared_peak_fact.stage
+        physical_row = prepared_peak_fact.physical_row
         integration_candidates = rescued_cells_by_integration.get(
             (stage.sample_stem, selected_integration_id),
             (),
@@ -1244,9 +1292,9 @@ def _owner_backfill_peak_fact_provenance(
             stage=stage,
             cell=final_cell,
             profile_id=signal_processing_profile.profile_id,
-            selected_fact_content_id=facts.fact_content_id,
-            physical_answer_id=evaluation.answer.physical_answer_id,
-            physical_segment_id=evaluation.answer.physical_segment_id,
+            selected_fact_content_id=physical_row.fact_content_id,
+            physical_answer_id=physical_row.physical_answer_id,
+            physical_segment_id=physical_row.physical_segment_id,
         )
         decision_projection = production_cell_decision_projection(
             decision,
@@ -1279,8 +1327,8 @@ def _owner_backfill_peak_fact_provenance(
             "final written rescued cells require exact provenance coverage; "
             f"missing={missing!r}; unexpected={unexpected!r}"
         )
-    return build_owner_backfill_peak_fact_provenance_batch(
-        projected,
+    return build_owner_backfill_peak_fact_provenance_batch_from_rows(
+        tuple(item.physical_row for item in prepared),
         profile=signal_processing_profile,
         cell_projections=cell_projections,
     )
@@ -1419,7 +1467,11 @@ def _record_owner_build_progress(
 
 def _record_owner_backfill_progress(
     recorder: TimingRecorder,
-    result: OwnerBackfillSampleResult | OwnerBackfillWorkerError,
+    result: (
+        OwnerBackfillSampleResult
+        | OwnerBackfillSampleDeliveryReceipt
+        | OwnerBackfillWorkerError
+    ),
 ) -> None:
     if isinstance(result, OwnerBackfillWorkerError):
         recorder.record(
@@ -1435,7 +1487,11 @@ def _record_owner_backfill_progress(
         return
     metrics: dict[str, object] = {
         "sample_index": result.sample_index,
-        "rescued_cell_count": len(result.cells),
+        "rescued_cell_count": (
+            result.cell_count
+            if isinstance(result, OwnerBackfillSampleDeliveryReceipt)
+            else len(result.cells)
+        ),
     }
     metrics.update(_request_reuse_summary(result.request_reuse_observations))
     if result.timing_stats:

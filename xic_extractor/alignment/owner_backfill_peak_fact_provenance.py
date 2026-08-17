@@ -1136,6 +1136,25 @@ def build_owner_backfill_peak_fact_provenance_batch(
     )
 
 
+def build_owner_backfill_peak_fact_provenance_batch_from_rows(
+    physical_rows: Sequence[OwnerBackfillPeakFactProvenanceRow],
+    *,
+    profile: SignalProcessingProfile,
+    cell_projections: Sequence[OwnerBackfillCellProjectionV2] = (),
+) -> OwnerBackfillPeakFactProvenanceBatch:
+    """Freeze already owner-projected physical rows with final cell authority."""
+
+    if any(row.row_kind != "physical_question" for row in physical_rows):
+        raise ValueError("prepared Backfill rows must be physical-question rows")
+    return OwnerBackfillPeakFactProvenanceBatch(
+        rows=(
+            _run_profile_row(profile),
+            *physical_rows,
+            *(_cell_projection_row(item, profile) for item in cell_projections),
+        )
+    )
+
+
 def write_owner_backfill_peak_fact_provenance_tsv(
     path: Path,
     batch: OwnerBackfillPeakFactProvenanceBatch,
@@ -2192,6 +2211,7 @@ __all__ = [
     "owner_backfill_authority_cell_projection",
     "owner_backfill_cell_lineage_matches",
     "owner_backfill_cell_projection",
+    "build_owner_backfill_peak_fact_provenance_batch_from_rows",
     "read_owner_backfill_peak_fact_provenance_tsv",
     "render_owner_backfill_peak_fact_provenance_tsv",
     "rehydrate_owner_backfill_peak_fact_provenance_row",

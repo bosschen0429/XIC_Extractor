@@ -141,6 +141,59 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
     ]
 
 
+def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
+    tmp_path: Path,
+) -> None:
+    scoped_feature = _confirmable_feature_for_sample_a()
+    unrequested_feature = replace(_feature(), feature_family_id="FAM000002")
+
+    def fake_runner(
+        jobs,
+        *,
+        max_workers,
+        progress_callback,
+        success_result_delivery,
+    ):
+        assert max_workers == 2
+        receipts = []
+        for ordinal, job in enumerate(jobs):
+            result = OwnerBackfillSampleResult(
+                sample_index=job.sample_index,
+                sample_stem=job.sample_stem,
+                cells=tuple(
+                    _cell(
+                        cluster_id=feature.feature_family_id,
+                        sample_stem=job.sample_stem,
+                    )
+                    for feature in job.features
+                ),
+            )
+            receipts.append(success_result_delivery(ordinal, result))
+        return receipts
+
+    output = run_owner_backfill_process(
+        (scoped_feature,),
+        matrix_features=(scoped_feature, unrequested_feature),
+        matrix_sample_order=("sample-a", "sample-b"),
+        sample_order=("sample-a", "sample-b"),
+        raw_paths={
+            "sample-a": tmp_path / "sample-a.raw",
+            "sample-b": tmp_path / "sample-b.raw",
+        },
+        dll_dir=tmp_path / "dll",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        max_workers=2,
+        runner=fake_runner,
+    )
+
+    assert tuple(
+        feature.feature_family_id for feature in output.matrix.clusters
+    ) == (scoped_feature.feature_family_id, unrequested_feature.feature_family_id)
+    assert len(output.matrix.cells) == 4
+
+
 def test_process_jobs_carry_discovery_acquisition_source_to_raw_workers(
     tmp_path: Path,
 ) -> None:

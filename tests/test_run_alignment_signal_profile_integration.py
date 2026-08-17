@@ -15,6 +15,7 @@ import numpy as np
 import openpyxl
 import pytest
 
+import xic_extractor.alignment.backfill_transaction as backfill_transaction_module
 import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.process_backend as process_backend_module
 import xic_extractor.alignment.process_execution as process_execution_module
@@ -46,7 +47,6 @@ from xic_extractor.alignment.primary_consolidation import (
     consolidate_primary_family_rows,
 )
 from xic_extractor.alignment.process_backend import (
-    OwnerBackfillProcessOutput,
     OwnerBackfillSampleJob,
     OwnerBackfillSampleResult,
     OwnerBuildProcessOutput,
@@ -619,9 +619,16 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
     captured_build_results: list[OwnerBuildSampleResult] = []
     captured_backfill_results: list[OwnerBackfillSampleResult] = []
     build_outputs: list[OwnerBuildProcessOutput] = []
-    backfill_outputs: list[OwnerBackfillProcessOutput] = []
+    backfill_outputs: list[
+        backfill_transaction_module.OwnerBackfillTransactionOutput
+    ] = []
     real_build_collector = process_backend_module.collect_owner_build_results
-    real_backfill_collector = process_backend_module.collect_owner_backfill_results
+    real_backfill_delivery = (
+        backfill_transaction_module.OwnerBackfillSampleTransaction.deliver
+    )
+    real_backfill_finish = (
+        backfill_transaction_module.OwnerBackfillSampleTransaction.finish
+    )
 
     def capture_job(job: object) -> None:
         size = process_execution_module.process_job_payload_size_bytes(job)
@@ -634,10 +641,12 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         build_outputs.append(output)
         return output
 
-    def capture_backfill_collector(results, **kwargs):
-        materialized = tuple(results)
-        captured_backfill_results.extend(materialized)
-        output = real_backfill_collector(materialized, **kwargs)
+    def capture_backfill_delivery(self, ordinal, result):
+        captured_backfill_results.append(result)
+        return real_backfill_delivery(self, ordinal, result)
+
+    def capture_backfill_finish(self):
+        output = real_backfill_finish(self)
         backfill_outputs.append(output)
         return output
 
@@ -662,9 +671,14 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         capture_build_collector,
     )
     monkeypatch.setattr(
-        process_backend_module,
-        "collect_owner_backfill_results",
-        capture_backfill_collector,
+        backfill_transaction_module.OwnerBackfillSampleTransaction,
+        "deliver",
+        capture_backfill_delivery,
+    )
+    monkeypatch.setattr(
+        backfill_transaction_module.OwnerBackfillSampleTransaction,
+        "finish",
+        capture_backfill_finish,
     )
 
     run = _run_cli(
@@ -713,7 +727,7 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         for observation in observations
     )
     assert build_outputs and build_outputs[0].ownership.owners
-    assert backfill_outputs and backfill_outputs[0].peak_fact_observations
+    assert backfill_outputs and backfill_outputs[0].prepared_peak_facts
     assert run.profile_rows[0].profile_id == profile.profile_id
 
     markers = tuple(raw_dir.glob("*.spawn"))

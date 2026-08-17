@@ -31,6 +31,7 @@ def execute_process_jobs(
     max_workers: int,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: Callable[[Any], None] | None = None,
+    success_result_delivery: Callable[[int, Any], Any] | None = None,
 ) -> ProcessJobExecutionReport:
     """Run a bounded process batch and stop submitting after owner failure."""
 
@@ -72,6 +73,11 @@ def execute_process_jobs(
             result = future.result()
         except Exception as exc:
             result = error_factory(job, exc)
+        if success_result_delivery is not None and not is_terminal_failure(result):
+            try:
+                result = success_result_delivery(ordinal, result)
+            except Exception as exc:
+                result = error_factory(job, exc)
         _record_result(ordinal, result)
 
     def _submit_until_capacity() -> None:

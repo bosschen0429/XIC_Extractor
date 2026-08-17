@@ -28,6 +28,7 @@ def run_process_jobs(
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
     is_terminal_failure: Callable[[Any], bool] | None = None,
+    success_result_delivery: Callable[[int, Any], Any] | None = None,
 ) -> list[Any]:
     pending_jobs = list(jobs)
     for job in pending_jobs:
@@ -40,6 +41,7 @@ def run_process_jobs(
         max_workers=max_workers,
         executor_factory=executor_factory,
         progress_callback=progress_callback,
+        success_result_delivery=success_result_delivery,
     )
     if report.first_failure is None and (
         report.cancelled_job_ordinals
