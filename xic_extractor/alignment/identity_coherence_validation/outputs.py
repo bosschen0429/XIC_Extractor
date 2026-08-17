@@ -32,11 +32,11 @@ def write_validation_outputs(
     output_root.mkdir(parents=True, exist_ok=True)
     metadata = run_metadata if run_metadata else result.run_metadata
     _write_summary_tsv(
-        output_root / "identity_coherence_8raw_validation_summary.tsv",
+        output_root / "identity_coherence_validation_summary.tsv",
         result,
     )
     _write_report_md(
-        output_root / "identity_coherence_8raw_validation_report.md",
+        output_root / "identity_coherence_validation_report.md",
         result=result,
         controls_manifest=controls_manifest,
         run_metadata=metadata,

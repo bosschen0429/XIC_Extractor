@@ -59,7 +59,7 @@ ACCEPTANCE_SUMMARY_COLUMNS = (
 
 V04_ACCEPTANCE_PASS_PREFIX = (
     "PASS identity_coherence_v04_acceptance "
-    "scope=8raw_method_review_only not_85raw_ready"
+    "scope=method_review_only not_full_cohort_ready"
 )
 
 SIDECAR_PARITY_CHECKS = (

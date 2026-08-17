@@ -76,8 +76,6 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 # artifacts, not a rename: a census of output/ before each removal is what says
 # whether a rename is free. #290 owns the set, and its group 1 is closed.
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
-    "xic_extractor/alignment/identity_coherence_validation/models.py": (1, "#290"),
-    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (2, "#290"),
     "xic_extractor/alignment/quant_matrix_promotion.py": (4, "#290"),
     "xic_extractor/alignment/quant_matrix_validation_packet.py": (6, "#290"),
     "xic_extractor/alignment/shared_peak_identity_explanation/activation_contract.py": (
