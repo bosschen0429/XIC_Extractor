@@ -235,5 +235,5 @@ def test_load_phase1_rows_fails_on_missing_columns(tmp_path: Path) -> None:
     trend = tmp_path / "trend.tsv"
     trend.write_text("sample_name\tcompound\nS1\tSDO\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Missing required Phase 1 trend columns"):
+    with pytest.raises(ValueError, match="Missing required SDOLEK trend columns"):
         load_sdolek_trend_rows(trend)
