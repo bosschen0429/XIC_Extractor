@@ -29,6 +29,10 @@ def test_only_the_domain_package_is_in_scope() -> None:
         "class M5SuccessorVerdictReceipt:",
         'VERSION = "p7-backfill-scope-v1"',
         "issue256_quantitative_projection_authority_v1.json",
+        # The snake_case milestone spelling, invisible until `m\d+_` was added.
+        "_M5_PACKET_SCHEMA",
+        "_m5_git_bytes",
+        'SCHEMA = "m9_mode_track_source_v2"',
     ],
 )
 def test_pattern_matches_phase_names_including_infixes(text: str) -> None:
@@ -45,6 +49,9 @@ def test_pattern_matches_phase_names_including_infixes(text: str) -> None:
         # Ordinary CamelCase that a case-insensitive M-rule would catch.
         "atom1Abc",
         "form2Bx",
+        # Same guard in snake_case: the m-digit segment may not follow a letter.
+        "atom1_value",
+        "form2_row",
         # Schema versions are legitimate.
         "schema_v1",
         "PRODUCER_VERSION = 'raw_trace_reread_v0_1'",

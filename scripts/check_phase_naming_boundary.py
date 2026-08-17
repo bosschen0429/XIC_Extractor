@@ -41,15 +41,22 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Names tied to a development phase, work-package split, milestone, or ticket.
 #
-# No leading \b on the first group: the worst cases are infixes, such as
-# MULTI_SEED_REQUIRES_PHASE2 and its persisted value
-# "multi_seed_requires_phase2". A word boundary would skip exactly those.
+# No leading \b on the first group: the worst cases are infixes, such as the
+# persisted schema id "issue180_m9_gate_c_manual_review_v1". A word boundary
+# would skip exactly those.
 #
-# The M-prefix group stays case-sensitive via a local flag, because a
-# case-insensitive `m\d+[A-Z]` matches ordinary words like atom1A and form2Bx.
-# It targets CamelCase class prefixes such as M5SuccessorVerdictReceipt.
+# Two spellings of a milestone, and they need different guards:
+#
+#   `\bM\d+[A-Z]` stays case-sensitive via a local flag, because a
+#   case-insensitive form matches ordinary words like atom1A and form2Bx. It
+#   targets CamelCase class prefixes such as M5SuccessorVerdictReceipt.
+#
+#   `m\d+_` is the snake_case spelling -- _M5_PACKET_SCHEMA, _m5_git_bytes,
+#   m9_mode_track_source_v2. It may not follow a letter or digit, which is what
+#   keeps atom1_x and form2_y out. Adding it raised the recorded total in one
+#   step; that is the point, the names were always there.
 PHASE_NAMING_PATTERN = re.compile(
-    r"(?i:package\d+|phase\d+|issue\d+|\bp\d+-)|\bM\d+[A-Z]"
+    r"(?i:package\d+|phase\d+|issue\d+|\bp\d+-|(?<![a-z0-9])m\d+_)|\bM\d+[A-Z]"
 )
 
 SCOPE_ROOT = "xic_extractor/"
@@ -60,10 +67,14 @@ SCOPE_ROOT = "xic_extractor/"
 #
 # Sorted by path so a regenerated map diffs cleanly against this one.
 #
-# The 355 recorded at filing are now 52. What went was every phase name that
-# was only an identifier: `Package0ComparatorError` alone accounted for 194
-# lines, and it, the `Package1*`/`M5*` classes and the `_PACKAGE1_*` constants
-# were all internal to a module no production code imports.
+# The number moved twice, for opposite reasons:
+#
+#     355  at filing
+#      52  after the identifier sweep. `Package0ComparatorError` alone was 194
+#          lines; it, the `Package1*`/`M5*` classes and the `_PACKAGE1_*`
+#          constants were all internal to a module no production code imports.
+#     281  after `m\d+_` joined the pattern. Nothing was added to the codebase
+#          -- the snake_case milestone spelling had simply never been visible.
 #
 # What stays is persisted -- schema ids, receipt fields, work-unit keys, pinned
 # evidence directory names, `p7-` version strings -- each already recorded in
@@ -77,23 +88,26 @@ SCOPE_ROOT = "xic_extractor/"
 # A value can reach an artifact through composition or hashing, where no string
 # search will find it. Run the tests before believing a census.
 #
-# UNRESOLVED: instrument_qc/calibration.py's 18 lines name `Phase1` --
-# `Phase1SDOLEKTrendRow`, `load_phase1_trend_rows`. Artifacts carry both
-# readings: `Thermo_Stellar_IBD_Phase1_HSP` is a sample batch (study phase,
-# domain vocabulary, must not be renamed) while `phase10_product_ready_closeout`
-# is a development phase. docs/product/instrument-qc-calibration.md does not
-# define the term. Owner decision required before either renaming these or
-# excluding them the way tier1/tier2/tier3 are excluded.
+# instrument_qc/calibration.py's `Phase1` was checked against the tier1/tier2
+# exclusion and does not qualify. `Thermo_Stellar_IBD_Phase1_HSP` in the
+# artifacts is a sample batch name, but the loader never references it: the
+# CLI takes any `--trend-tsv` and PHASE1_TREND_REQUIRED_COLUMNS lists only
+# neutral columns (sample_name, compound, apex_rt_min ...). The name describes
+# which trend file was in play at the time, not a property of the data. Owner
+# confirmed the reading; renamed accordingly.
 KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/backfill_evidence_contract.py": (1, "#293"),
     "xic_extractor/alignment/backfill_scope.py": (1, "#293"),
     "xic_extractor/alignment/mode_track_table_finalization.py": (2, "#293"),
     "xic_extractor/alignment/production_acceptance.py": (1, "#293"),
     "xic_extractor/alignment/quantitative_projection_authority.py": (3, "#293"),
+    "xic_extractor/alignment/untargeted_cid_nl_golden_path.py": (2, "#293"),
     "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (12, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_real_data_runtime.py": (3, "#293"),
     "xic_extractor/instrument_qc/calibration.py": (18, "#293"),
     "xic_extractor/instrument_qc/calibration_writers.py": (1, "#293"),
-    "xic_extractor/package0_successor_comparator.py": (23, "#293"),
+    "xic_extractor/package0_successor_comparator.py": (235, "#293"),
 }
 
 
