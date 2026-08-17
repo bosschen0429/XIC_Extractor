@@ -7,9 +7,9 @@ Owner: AGENTS.md "Product North Star".
     8RAW and 85RAW are lane-specific validation fixtures and stress oracles,
     not architecture boundaries or universal Discovery gates.
 
-That rule had no enforcement, and the domain package drifted: a public type
-lists "8raw" beside genuine method categories, and persisted artifact ids, scope
-values and config keys are named for the lane they were first validated against.
+That rule had no enforcement, and the domain package drifted: persisted artifact
+ids, scope values and config keys across the domain are named for the lane they
+were first validated against.
 Architecture Guardrails, which sits
 in the same file, held perfectly over the same period -- it has import-linter
 and an architecture census watching it. This checker is the missing half.
@@ -68,15 +68,14 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 #
 # Sorted by path so a regenerated map diffs cleanly against this one.
 #
-# 95 of the 100 lines below were invisible while the pattern was \b-anchored,
-# because `_` counts as a word character and every one of them is a snake_case
-# infix: `85raw_alignment_cells` (an artifact_id), `all_available_85raw` (a
-# scope value), `max_projected_85raw_identity_xic_requests` (a config key).
-# Most are persisted values, so clearing a file is a contract decision about
-# existing artifacts, not a rename. #290 owns the set; its group 1 is the four
-# files whose leak was visible before the pattern widened --
-# model_selection.py, model_selection_approval_registry.py,
-# review_actions_schema.py and identity_coherence/output_summary_model.py.
+# Nearly every line below was invisible while the pattern was \b-anchored,
+# because `_` counts as a word character and these are snake_case infixes:
+# `85raw_alignment_cells` (an artifact_id), `all_available_85raw` (a scope
+# value), `max_projected_85raw_identity_xic_requests` (a config key). Most are
+# persisted values, so clearing a file is a contract decision about existing
+# artifacts, not a rename. #290 owns the set. Of its group 1 only
+# identity_coherence/output_summary_model.py remains; the other three carried
+# the ExpectedDiffValidationTier value "8raw", now "real_raw_subset".
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/identity_coherence/adapter.py": (3, "#290"),
     "xic_extractor/alignment/identity_coherence/models.py": (3, "#290"),
@@ -101,12 +100,9 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     ),
     "xic_extractor/alignment/shared_peak_identity_explanation/schema.py": (5, "#290"),
     "xic_extractor/package0_successor_comparator.py": (1, "#290"),
-    "xic_extractor/peak_detection/model_selection.py": (1, "#290"),
-    "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "#290"),
     "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#290"),
     "xic_extractor/peak_detection/selected_envelope_oracle.py": (2, "#290"),
     "xic_extractor/peak_detection/selected_envelope_oracle_artifacts.py": (2, "#290"),
-    "xic_extractor/review_actions_schema.py": (1, "#290"),
 }
 
 

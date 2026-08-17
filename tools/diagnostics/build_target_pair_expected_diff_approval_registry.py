@@ -213,7 +213,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--validation-tier",
         default="manual_eic_ms2_review",
-        choices=("targeted_benchmark", "8raw", "manual_eic_ms2_review"),
+        choices=("targeted_benchmark", "real_raw_subset", "manual_eic_ms2_review"),
     )
     parser.add_argument(
         "--reviewer-role",
