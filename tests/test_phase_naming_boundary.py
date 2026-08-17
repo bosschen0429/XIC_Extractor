@@ -68,15 +68,22 @@ def test_pattern_leaves_domain_vocabulary_alone(text: str) -> None:
     assert boundary.PHASE_NAMING_PATTERN.search(text) is None
 
 
-def test_scan_counts_lines_not_matches(tmp_path: Path, monkeypatch) -> None:
+def test_scan_counts_matches_not_lines(tmp_path: Path, monkeypatch) -> None:
     target = tmp_path / "sample.py"
-    # Two matches on one line must count once, or budgets drift from reality.
+    # Two names on one line are two names. Counting the line once let a second
+    # token join an already-counted line without moving the budget, so debt
+    # could grow while this ratchet stayed green.
     target.write_text("a = 1\npackage1 = package2\n", encoding="utf-8")
     monkeypatch.setattr(boundary, "ROOT", tmp_path)
 
     hits = boundary.scan(["sample.py"])
 
-    assert hits == {"sample.py": [(2, "package1 = package2")]}
+    assert hits == {
+        "sample.py": [
+            (2, "package1 = package2"),
+            (2, "package1 = package2"),
+        ]
+    }
 
 
 def test_new_unbudgeted_file_fails(monkeypatch) -> None:

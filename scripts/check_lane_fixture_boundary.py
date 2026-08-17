@@ -113,11 +113,11 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
         "#290",
     ),
     "xic_extractor/alignment/shared_peak_identity_explanation/blast_radius.py": (
-        28,
+        30,
         "#290",
     ),
     "xic_extractor/alignment/shared_peak_identity_explanation/classifier.py": (
-        14,
+        16,
         "#290",
     ),
     "xic_extractor/alignment/shared_peak_identity_explanation/schema.py": (5, "#290"),
@@ -149,17 +149,19 @@ def scan(paths: Sequence[str] | None = None) -> dict[str, list[tuple[int, str]]]
             text = (ROOT / path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        # Line 0 is the module path itself; a lane-named filename leaks just as
-        # much as a lane-named identifier inside it. Nothing in scope carries
-        # one today, so this guards against the next one rather than recording
-        # a debt.
-        found: list[tuple[int, str]] = []
-        if LANE_FIXTURE_PATTERN.search(path):
-            found.append((0, f"<module path> {path}"))
+        # One entry per match, not per line: counting lines let a second token
+        # join an already-counted line without moving the number, so debt could
+        # grow while this ratchet stayed green. Line 0 is the module path
+        # itself, because a lane-named filename leaks as much as a lane-named
+        # identifier inside it.
+        found: list[tuple[int, str]] = [
+            (0, f"<module path> {path}")
+            for _ in LANE_FIXTURE_PATTERN.finditer(path)
+        ]
         found += [
             (n, line.strip())
             for n, line in enumerate(text.split("\n"), start=1)
-            if LANE_FIXTURE_PATTERN.search(line)
+            for _ in LANE_FIXTURE_PATTERN.finditer(line)
         ]
         if found:
             hits[path] = found

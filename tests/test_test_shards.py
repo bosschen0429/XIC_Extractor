@@ -3,8 +3,10 @@ from pathlib import Path
 from tools.testing import test_shards
 from tools.testing.test_shards import (
     SHARD_PATTERNS,
+    SNAPSHOT_TESTS,
     assign_shards,
     check_coverage,
+    discover_snapshot_tests,
     discover_test_files,
     shard_for_path,
 )
@@ -163,3 +165,20 @@ def _matching_shards(path: Path) -> tuple[str, ...]:
         for shard in SHARD_PATTERNS
         if test_shards._shard_matches_path(shard, path)
     )
+
+
+def test_snapshot_marker_cannot_grow_without_a_recorded_decision() -> None:
+    # The marker removes a test from CI, so it gets the ratchet the shard
+    # budgets have. Marking a test without recording it here fails, which is
+    # the gate the file-level exclusion never had.
+    assert discover_snapshot_tests() == SNAPSHOT_TESTS
+
+
+def test_recorded_snapshot_tests_still_exist() -> None:
+    # A registry entry for a renamed or deleted test would silently stop
+    # protecting anything.
+    discovered = discover_snapshot_tests()
+    for path, names in SNAPSHOT_TESTS.items():
+        assert path in discovered, path
+        for name in names:
+            assert name in discovered[path], f"{path}::{name}"

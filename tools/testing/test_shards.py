@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,76 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
 #   2. its test has gone red only because recorded numbers moved, twice;
 #   3. the register's owning milestone is retired.
 SNAPSHOT_MARKER = "ledger_snapshot"
+
+# Every test carrying that marker, locked. The marker takes a test out of CI, so
+# it needs the same ratchet the shard budgets have: adding one is a decision,
+# and an unrecorded marker fails test_test_shards.py. Without this the exclusion
+# grows silently, which is exactly how a batch of behavioural tests left CI the
+# first time -- the file-level exclusion had no gate either.
+#
+# Add an entry only for a test that pins a recorded value from
+# docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
+# an invariant that survives a consistent re-analysis belongs in CI unmarked.
+SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
+    "tests/test_backfill_expansion_census.py": (
+        "test_current_backfill_expansion_census_is_stable",
+    ),
+    "tests/test_backfill_expansion_default_product_activation.py": (
+        "test_current_backfill_expansion_default_activation_is_stable",
+    ),
+    "tests/test_backfill_expansion_evidence_availability.py": (
+        "test_current_backfill_expansion_evidence_availability_is_stable",
+    ),
+    "tests/test_backfill_expansion_expected_diff_provenance.py": (
+        "test_current_backfill_expansion_expected_diff_provenance_is_stable",
+    ),
+    "tests/test_backfill_expansion_full_evidence_chain.py": (
+        "test_current_backfill_expansion_full_evidence_chain_is_held",
+        "test_require_full_chain_blocks_current_666_packet",
+    ),
+    "tests/test_backfill_expansion_raw_overlay_trace_identity.py": (
+        "test_current_backfill_expansion_raw_overlay_trace_identity_is_stable",
+    ),
+    "tests/test_backfill_expansion_sample_local_ms1_evidence.py": (
+        "test_current_backfill_expansion_sample_local_ms1_evidence_is_stable",
+    ),
+    "tests/test_bounded_product_lanes_contract.py": (
+        "test_bounded_product_lanes_accept_current_artifacts",
+        "test_limited_targeted_ms1_scope_and_effect_are_pinned",
+    ),
+    "tests/test_check_productization_authority.py": (
+        "test_productization_authority_checker_accepts_repo_artifacts",
+    ),
+    "tests/test_cid_nl_85raw_universe_closure.py": (
+        "test_current_cid_nl_85raw_universe_closure_is_stable",
+    ),
+    "tests/test_cid_nl_discovery_full_scope_classification.py": (
+        "test_current_cid_nl_discovery_full_scope_classification_is_stable",
+    ),
+    "tests/test_cid_nl_discovery_release_slice.py": (
+        "test_current_cid_nl_discovery_release_slice_is_stable",
+    ),
+    "tests/test_lockbox_ai_challenge_results.py": (
+        "test_current_ai_challenge_result_summary_is_non_authoritative",
+        "test_current_lockbox_ai_challenge_results_validate",
+    ),
+    "tests/test_lockbox_label_collection_pack.py": (
+        "test_current_label_collection_pack_validates",
+    ),
+    "tests/test_productization_state_index.py": (
+        "test_dependent_effect_lane_is_exact_hold_package_binding",
+        "test_peak_choice_lockbox_status_points_to_shadow_automation_design",
+        "test_productization_state_index_accepts_current_artifacts",
+        "test_registered_default_scopes_have_writer_authority",
+    ),
+    "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
+        "test_current_cid_nl_public_output_claim_catalog_is_valid",
+        "test_reference_rows_preserve_existing_owner_boundaries",
+    ),
+    "tests/test_validation_artifact_retention.py": (
+        "test_current_validation_retention_inventory_accepts_worktree",
+    ),
+}
 
 # Shards are matched in order; the first match wins.
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
@@ -247,6 +318,37 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         ),
     }
 )
+
+
+def discover_snapshot_tests(
+    root: Path = Path("tests"),
+) -> dict[str, tuple[str, ...]]:
+    """Return every test carrying SNAPSHOT_MARKER, read from the source.
+
+    Parsed rather than collected so the ratchet costs nothing and cannot be
+    skewed by which shard happens to be running.
+    """
+    found: dict[str, tuple[str, ...]] = {}
+    for path in discover_test_files(root):
+        source = path.read_text(encoding="utf-8", errors="replace")
+        if SNAPSHOT_MARKER not in source:
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        names = sorted(
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and any(
+                SNAPSHOT_MARKER in ast.unparse(decorator)
+                for decorator in node.decorator_list
+            )
+        )
+        if names:
+            found[path.as_posix()] = tuple(names)
+    return found
 
 
 def discover_test_files(root: Path = Path("tests")) -> tuple[Path, ...]:

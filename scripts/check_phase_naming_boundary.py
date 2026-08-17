@@ -132,13 +132,13 @@ KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/backfill_evidence_contract.py": (1, "#293"),
     "xic_extractor/alignment/backfill_scope.py": (1, "#293"),
     "xic_extractor/alignment/cid_nl_evidence_spine.py": (5, "#293"),
-    "xic_extractor/alignment/conservative_backfill.py": (14, "#293"),
+    "xic_extractor/alignment/conservative_backfill.py": (16, "#293"),
     "xic_extractor/alignment/drift_evidence.py": (1, "#293"),
     "xic_extractor/alignment/identity_coherence/family_context.py": (2, "#293"),
     "xic_extractor/alignment/identity_coherence/mode_track_assignment.py": (10, "#293"),
-    "xic_extractor/alignment/identity_coherence/mode_track_producer.py": (1, "#293"),
-    "xic_extractor/alignment/identity_settlement.py": (12, "#293"),
-    "xic_extractor/alignment/mode_track_table_finalization.py": (2, "#293"),
+    "xic_extractor/alignment/identity_coherence/mode_track_producer.py": (2, "#293"),
+    "xic_extractor/alignment/identity_settlement.py": (13, "#293"),
+    "xic_extractor/alignment/mode_track_table_finalization.py": (4, "#293"),
     "xic_extractor/alignment/production_acceptance.py": (1, "#293"),
     "xic_extractor/alignment/quantitative_projection_authority.py": (3, "#293"),
     "xic_extractor/alignment/runtime_adapter.py": (1, "#293"),
@@ -147,13 +147,13 @@ KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
     "xic_extractor/extraction/targeted_diagnostic_method.py": (2, "#293"),
     "xic_extractor/extraction/targeted_real_data_runtime.py": (1, "#293"),
-    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (13, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (20, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_adapter.py": (3, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_inputs.py": (2, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_runtime.py": (7, "#293"),
     "xic_extractor/instrument_qc/decision_report.py": (2, "#293"),
     "xic_extractor/output/target_pair_rt_auto_reselection.py": (1, "#293"),
-    "xic_extractor/package0_successor_comparator.py": (185, "#293"),
+    "xic_extractor/package0_successor_comparator.py": (187, "#293"),
 }
 
 
@@ -185,13 +185,17 @@ def scan(paths: Sequence[str] | None = None) -> dict[str, list[tuple[int, str]]]
         # Line 0 is the module path itself. A file called package0_gate.py is
         # the exact form this checker exists to prevent, and scanning only the
         # bytes inside it would let a new one through with a clean body.
-        found: list[tuple[int, str]] = []
-        if PHASE_NAMING_PATTERN.search(path):
-            found.append((0, f"<module path> {path}"))
+        # One entry per match, not per line. Counting lines let a second token
+        # join an already-counted line without moving the number, so the debt
+        # could grow while this ratchet stayed green.
+        found: list[tuple[int, str]] = [
+            (0, f"<module path> {path}")
+            for _ in PHASE_NAMING_PATTERN.finditer(path)
+        ]
         found += [
             (n, line.strip())
             for n, line in enumerate(text.split("\n"), start=1)
-            if PHASE_NAMING_PATTERN.search(line)
+            for _ in PHASE_NAMING_PATTERN.finditer(line)
         ]
         if found:
             hits[path] = found
