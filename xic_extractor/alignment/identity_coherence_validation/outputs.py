@@ -128,9 +128,10 @@ def _write_acceptance_md(
         "# Identity Coherence V0.4 Acceptance",
         "",
         (
-            "This report closes the V0.4 8RAW diagnostic acceptance loop. It is "
+            "This report closes the V0.4 diagnostic acceptance loop. It is "
             "diagnostic-only and does not validate final matrix filtering, "
-            "background filtering, normalization, statistics, or 85RAW execution."
+            "background filtering, normalization, statistics, or full-cohort "
+            "execution."
         ),
         "",
         f"**Verdict:** `{verdict}`",
@@ -153,10 +154,10 @@ def _write_acceptance_md(
             "",
             (
                 "- A PASS means the V0.4 diagnostic is ready for human method "
-                "review on the 8RAW subset."
+                "review on the diagnostic subset."
             ),
             (
-                "- A PASS does not authorize 85RAW execution; 85RAW still "
+                "- A PASS does not authorize full-cohort execution; that still "
                 "requires a reviewed count/fraction policy and request-budget "
                 "ceiling."
             ),
@@ -192,7 +193,7 @@ def _write_report_md(
         "provided_not_assessed" if controls_manifest is not None else "not_assessed"
     )
     lines = [
-        "# Identity Coherence 8RAW Validation",
+        "# Identity Coherence Validation",
         "",
         f"Parity result: {parity_result}",
         "",

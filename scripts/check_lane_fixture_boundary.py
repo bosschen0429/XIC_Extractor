@@ -71,12 +71,6 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "#290"),
     "xic_extractor/review_actions_schema.py": (1, "#290"),
     "xic_extractor/alignment/identity_coherence/output_summary_model.py": (2, "#290"),
-    # -- #290 group 2: subpackage named for its fixture -------------------
-    # Named and worded for the lane it was first validated against; the logic
-    # itself is not lane-specific, so this is a rename plus report wording.
-    "xic_extractor/alignment/identity_coherence_validation/__init__.py": (1, "#290"),
-    "xic_extractor/alignment/identity_coherence_validation/acceptance.py": (1, "#290"),
-    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (5, "#290"),
 }
 
 

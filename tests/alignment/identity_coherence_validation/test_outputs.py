@@ -150,7 +150,7 @@ def test_write_validation_outputs_writes_acceptance_artifacts(
     markdown = acceptance_md.read_text(encoding="utf-8")
     assert "# Identity Coherence V0.4 Acceptance" in markdown
     assert "| `v04_acceptance` | `pass` |" in markdown
-    assert "does not clear 85RAW execution" in markdown
+    assert "does not clear full-cohort execution" in markdown
 
 
 def test_write_validation_outputs_keeps_parity_report_pass_when_controls_fail(
