@@ -91,6 +91,13 @@ SCOPE_ROOT = "xic_extractor/"
 #     279  after review found the pattern could not match a standalone `M5` or
 #          a separated `Package 0` -- the spelling its own docstring quotes.
 #          Again nothing was added; three spellings had been unreadable.
+#     279  still, after two offsetting corrections from the same review. The
+#          scan read file *contents* only, so a module called package0_gate.py
+#          with a clean body passed -- the exact form the docstring above says
+#          this checker prevents; line 0 of a file's hits is now the path
+#          itself, which added one. Rewriting the comparator's own docstring,
+#          the "Executable Package 0 parity" line this file quotes, removed
+#          one.
 #
 # The 279 are two different debts. Some are persisted -- schema ids, receipt
 # fields, work-unit keys, pinned evidence directory names, `p7-` version
@@ -175,7 +182,13 @@ def scan(paths: Sequence[str] | None = None) -> dict[str, list[tuple[int, str]]]
             text = (ROOT / path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        found = [
+        # Line 0 is the module path itself. A file called package0_gate.py is
+        # the exact form this checker exists to prevent, and scanning only the
+        # bytes inside it would let a new one through with a clean body.
+        found: list[tuple[int, str]] = []
+        if PHASE_NAMING_PATTERN.search(path):
+            found.append((0, f"<module path> {path}"))
+        found += [
             (n, line.strip())
             for n, line in enumerate(text.split("\n"), start=1)
             if PHASE_NAMING_PATTERN.search(line)

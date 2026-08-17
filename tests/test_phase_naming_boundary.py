@@ -127,3 +127,23 @@ def test_fully_cleaned_file_must_lose_its_entry(monkeypatch) -> None:
 
     assert len(problems) == 1
     assert "Delete this KNOWN_PHASE_NAMES entry" in problems[0]
+
+
+def test_scan_flags_a_phase_named_module_path(tmp_path: Path, monkeypatch) -> None:
+    # A clean body is not enough: the filename is the form this checker exists
+    # to prevent, and package0_successor_comparator.py is the live example.
+    target = tmp_path / "package2_gate.py"
+    target.write_text("VALUE = 1", encoding="utf-8")
+    monkeypatch.setattr(boundary, "ROOT", tmp_path)
+
+    hits = boundary.scan(["package2_gate.py"])
+
+    assert hits["package2_gate.py"] == [(0, "<module path> package2_gate.py")]
+
+
+def test_scan_leaves_a_neutral_module_path_alone(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "successor_comparator.py"
+    target.write_text("VALUE = 1", encoding="utf-8")
+    monkeypatch.setattr(boundary, "ROOT", tmp_path)
+
+    assert boundary.scan(["successor_comparator.py"]) == {}

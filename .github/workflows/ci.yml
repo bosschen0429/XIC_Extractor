@@ -101,7 +101,7 @@ jobs:
           $failed = @()
           foreach ($shard in $shards) {
             $started = Get-Date
-            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x
+            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10
             $exitCode = $LASTEXITCODE
             $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
             "- $shard test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -155,7 +155,7 @@ jobs:
           $failed = @()
           foreach ($shard in $shards) {
             $started = Get-Date
-            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x
+            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10
             $exitCode = $LASTEXITCODE
             $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
             "- $shard test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append

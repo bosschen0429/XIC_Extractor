@@ -20,7 +20,6 @@ def test_current_cid_nl_85raw_universe_closure_is_stable() -> None:
     assert check_cid_nl_85raw_universe_closure() == []
 
 
-@pytest.mark.ledger_snapshot
 def test_retained_85raw_closure_artifacts_use_lf_line_endings() -> None:
     for name in (
         "cid_nl_85raw_universe_closure_checks.tsv",

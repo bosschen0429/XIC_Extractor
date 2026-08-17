@@ -18,7 +18,6 @@ def test_bounded_product_lanes_accept_current_artifacts() -> None:
     assert check_bounded_product_lanes() == []
 
 
-@pytest.mark.ledger_snapshot
 def test_bounded_schema_matches_acceptance_header() -> None:
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
     header, rows = _read_tsv(DEFAULT_ACCEPTANCE)
@@ -44,7 +43,6 @@ def test_limited_targeted_ms1_scope_and_effect_are_pinned() -> None:
     assert row["grants_new_product_authority"] == "FALSE"
 
 
-@pytest.mark.ledger_snapshot
 def test_acceptance_packet_does_not_include_backfill() -> None:
     _, rows = _read_tsv(DEFAULT_ACCEPTANCE)
 

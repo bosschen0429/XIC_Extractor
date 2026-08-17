@@ -100,7 +100,6 @@ def test_current_label_collection_pack_validates() -> None:
     assert check_lockbox_label_schema() == []
 
 
-@pytest.mark.ledger_snapshot
 def test_packets_have_visual_evidence_or_explicit_missing_reason() -> None:
     packet_rows = _read_tsv(PACKET_DIR / "packet_index.tsv")
 
@@ -116,7 +115,6 @@ def test_packets_have_visual_evidence_or_explicit_missing_reason() -> None:
         assert row["hypothesis_png_sha256"]
 
 
-@pytest.mark.ledger_snapshot
 def test_empty_label_template_fails_complete_mode() -> None:
     problems = check_lockbox_label_schema(require_complete=True)
 

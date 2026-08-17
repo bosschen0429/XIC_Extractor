@@ -1,4 +1,14 @@
-"""Executable Package 0 parity and frozen successor-comparison receipt checks."""
+"""Prove a successor implementation matches the legacy one it replaces.
+
+Runs the same request through both paths in one controlled parity window, mints
+CLI and GUI parity receipts, requires the successor's artifact inventory to
+equal a frozen membership receipt exactly, and validates the sealed verdict and
+rollback-rehearsal packets that record the decision.
+
+The frozen validation packets under docs/superpowers/validation/ describe these
+entry points by their pre-rename identifiers. Those packets are hash-pinned
+records of what was run at the time and are not edited; read the names here.
+"""
 
 from __future__ import annotations
 

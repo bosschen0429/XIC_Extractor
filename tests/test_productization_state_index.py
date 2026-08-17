@@ -32,7 +32,6 @@ def test_productization_state_index_accepts_current_artifacts() -> None:
     assert check_productization_state() == []
 
 
-@pytest.mark.ledger_snapshot
 def test_status_schema_matches_index_header() -> None:
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
     header, rows = _read_tsv(DEFAULT_STATUS_INDEX)
@@ -168,7 +167,6 @@ def test_peak_choice_lockbox_status_points_to_shadow_automation_design() -> None
     assert row["write_authority"] == "FALSE"
 
 
-@pytest.mark.ledger_snapshot
 def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
     headings = markdown_headings(text)
@@ -310,7 +308,6 @@ def test_checker_derives_narrative_mutable_fields_from_schema(
     assert any("duplicates mutable structured state" in problem for problem in problems)
 
 
-@pytest.mark.ledger_snapshot
 def test_checker_rejects_predecessor_control_plane_schema() -> None:
     predecessor = (
         DEFAULT_SCHEMA.parent / "productization_control_plane_schema.v2.json"

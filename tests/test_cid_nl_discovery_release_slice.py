@@ -58,7 +58,6 @@ def test_release_slice_accepts_stable_compatibility_lane_registry(tmp_path) -> N
     assert problems == []
 
 
-@pytest.mark.ledger_snapshot
 def test_release_slice_propagates_artifact_retention_problems(monkeypatch) -> None:
     monkeypatch.setattr(
         release_slice,
@@ -71,7 +70,6 @@ def test_release_slice_propagates_artifact_retention_problems(monkeypatch) -> No
     assert "validation_artifact_retention: inventory drift" in problems
 
 
-@pytest.mark.ledger_snapshot
 def test_release_slice_propagates_bounded_lane_problems(monkeypatch) -> None:
     monkeypatch.setattr(
         release_slice,
@@ -84,7 +82,6 @@ def test_release_slice_propagates_bounded_lane_problems(monkeypatch) -> None:
     assert "bounded_product_lanes: lane drift" in problems
 
 
-@pytest.mark.ledger_snapshot
 def test_release_slice_propagates_85raw_universe_closure_problems(
     monkeypatch,
 ) -> None:

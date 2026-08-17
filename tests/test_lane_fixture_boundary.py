@@ -126,3 +126,15 @@ def test_budgeted_file_at_exactly_its_budget_passes(monkeypatch) -> None:
     monkeypatch.setattr(boundary, "KNOWN_LEAKAGE", {path: (2, "issue-1")})
 
     assert boundary.check_lane_fixture_boundary() == []
+
+
+def test_scan_flags_a_lane_named_module_path(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "identity_8raw_validation.py"
+    target.write_text("VALUE = 1", encoding="utf-8")
+    monkeypatch.setattr(boundary, "ROOT", tmp_path)
+
+    hits = boundary.scan(["identity_8raw_validation.py"])
+
+    assert hits["identity_8raw_validation.py"] == [
+        (0, "<module path> identity_8raw_validation.py")
+    ]

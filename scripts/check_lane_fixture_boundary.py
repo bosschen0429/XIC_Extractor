@@ -149,7 +149,14 @@ def scan(paths: Sequence[str] | None = None) -> dict[str, list[tuple[int, str]]]
             text = (ROOT / path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        found = [
+        # Line 0 is the module path itself; a lane-named filename leaks just as
+        # much as a lane-named identifier inside it. Nothing in scope carries
+        # one today, so this guards against the next one rather than recording
+        # a debt.
+        found: list[tuple[int, str]] = []
+        if LANE_FIXTURE_PATTERN.search(path):
+            found.append((0, f"<module path> {path}"))
+        found += [
             (n, line.strip())
             for n, line in enumerate(text.split("\n"), start=1)
             if LANE_FIXTURE_PATTERN.search(line)

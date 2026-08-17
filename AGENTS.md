@@ -83,11 +83,13 @@ Use the single-context domain documentation layout. See
   --run` runs only the tests a change can reach. It selects from the static
   import graph, so it cannot see importlib loads, entry points, or subprocess
   calls: it is feedback, never a gate, and CI still runs every shard.
-- The `ledger-manual` shard is deliberately absent from CI. Its suites assert
-  that registers under `docs/superpowers/validation/` still match a recorded
-  snapshot, so a legitimate re-analysis reds them. Run it on demand with
-  `uv run python -m tools.testing.test_shards ledger-manual`. Its removal
-  condition is on `SHARD_PATTERNS` in `tools/testing/test_shards.py`.
+- Tests marked `ledger_snapshot` are deliberately absent from CI. They pin a
+  recorded value from `docs/superpowers/validation/`, so a legitimate
+  re-analysis reds them. Run them on demand with
+  `uv run python -m tools.testing.test_shards --snapshots`. The exclusion is
+  per test, not per file: a rejection path or a monkeypatched dependency in the
+  same file stays unmarked and runs in CI. Its removal condition is on
+  `SNAPSHOT_MARKER` in `tools/testing/test_shards.py`.
 - Do not launch 85RAW or likely long RAW runs through background
   `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
   command shapes in `docs/agent/parameter-settings.md`, or get explicit approval

@@ -115,7 +115,7 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
         )
         assert (
             r"& .\.venv\Scripts\python.exe "
-            "-m tools.testing.test_shards $shard -- -v --tb=short -x"
+            "-m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10"
         ) in block
         assert (
             r'$env:PATH = "$venvScripts;$env:PATH"'
