@@ -171,7 +171,7 @@ def test_summary_renderer_reports_required_sections_and_counts():
             input_source="pre_backfill_ownership",
             input_hashes=(("ownership.pkl", "sha256:def"),),
             control_manifest_path="not_provided",
-            projected_85raw_identity_request_count=255,
+            projected_full_cohort_identity_request_count=255,
         ),
         control_rows=(),
     )
@@ -206,7 +206,7 @@ def test_summary_renderer_reports_required_sections_and_counts():
     assert "| `would_primary_provisional_identity_family_support` | 1 |" in markdown
     assert "| raw_xic_request_count | not_assessed |" in markdown
     assert "| xic_point_count | not_assessed |" in markdown
-    assert "| projected_85raw_identity_request_count | 255 |" in markdown
+    assert "| projected_full_cohort_identity_request_count | 255 |" in markdown
 
 
 def test_summary_renderer_reports_evaluated_identity_controls():
@@ -293,8 +293,8 @@ def test_summary_model_computes_counts_controls_and_go_no_go_rows():
             input_source="pre_backfill",
             raw_xic_request_count=5,
             xic_point_count=123,
-            projected_85raw_identity_request_count=10,
-            max_projected_85raw_identity_xic_requests=20,
+            projected_full_cohort_identity_request_count=10,
+            max_projected_full_cohort_identity_xic_requests=20,
         ),
         control_rows=(
             {
@@ -327,7 +327,7 @@ def test_summary_model_computes_counts_controls_and_go_no_go_rows():
     assert model.control_type_counts["identity_decoy"] == 1
     assert model.decoy_generation_method_counts["mz_shift"] == 1
     assert any(
-        "| projected_85raw_identity_xic_requests | Proceed |" in row
+        "| projected_full_cohort_identity_xic_requests | Proceed |" in row
         for row in model.engineering_go_no_go_rows
     )
 
@@ -341,7 +341,7 @@ def test_write_identity_coherence_outputs_writes_all_frozen_paths(tmp_path):
             mode="inline_pre_backfill",
             input_source="synthetic",
             input_hashes=(("synthetic.tsv", "sha256:abc"),),
-            projected_85raw_identity_request_count=255,
+            projected_full_cohort_identity_request_count=255,
         ),
         control_rows=(),
     )
@@ -393,8 +393,8 @@ def test_summary_renders_engineering_go_no_go_rows():
             firewall_fixture_status="pass",
             spawn_payload_smoke_status="pass",
             max_infrastructure_blocked_fraction=0.05,
-            projected_85raw_identity_request_count=10,
-            max_projected_85raw_identity_xic_requests=20,
+            projected_full_cohort_identity_request_count=10,
+            max_projected_full_cohort_identity_xic_requests=20,
         ),
     )
 
@@ -404,7 +404,7 @@ def test_summary_renders_engineering_go_no_go_rows():
     assert "| firewall_fixture | Proceed |" in markdown
     assert "| spawn_payload_smoke | Proceed |" in markdown
     assert "| infrastructure_blocked_fraction | Proceed |" in markdown
-    assert "| projected_85raw_identity_xic_requests | Proceed |" in markdown
+    assert "| projected_full_cohort_identity_xic_requests | Proceed |" in markdown
 
 
 def test_summary_marks_engineering_no_go_when_85raw_budget_missing():
@@ -416,14 +416,14 @@ def test_summary_marks_engineering_no_go_when_85raw_budget_missing():
             input_source="pre_backfill_owner_state.jsonl",
             firewall_fixture_status="pass",
             spawn_payload_smoke_status="pass",
-            projected_85raw_identity_request_count=10,
-            max_projected_85raw_identity_xic_requests=None,
+            projected_full_cohort_identity_request_count=10,
+            max_projected_full_cohort_identity_xic_requests=None,
         ),
     )
 
     assert (
-        "| projected_85raw_identity_xic_requests | No-Go for 85RAW | "
-        "`max_projected_85raw_identity_xic_requests` not provided |"
+        "| projected_full_cohort_identity_xic_requests | No-Go for full cohort | "
+        "`max_projected_full_cohort_identity_xic_requests` not provided |"
     ) in markdown
 
 
@@ -581,16 +581,16 @@ def test_summary_rejects_forbidden_evidence_used_before_go_no_go_render():
             "max_infrastructure_blocked_fraction must be <= 1",
         ),
         (
-            {"projected_85raw_identity_request_count": True},
-            "projected_85raw_identity_request_count must be nonnegative",
+            {"projected_full_cohort_identity_request_count": True},
+            "projected_full_cohort_identity_request_count must be nonnegative",
         ),
         (
-            {"projected_85raw_identity_request_count": -1},
-            "projected_85raw_identity_request_count must be nonnegative",
+            {"projected_full_cohort_identity_request_count": -1},
+            "projected_full_cohort_identity_request_count must be nonnegative",
         ),
         (
-            {"max_projected_85raw_identity_xic_requests": -1},
-            "max_projected_85raw_identity_xic_requests must be nonnegative",
+            {"max_projected_full_cohort_identity_xic_requests": -1},
+            "max_projected_full_cohort_identity_xic_requests must be nonnegative",
         ),
         (
             {"raw_xic_request_count": -1},

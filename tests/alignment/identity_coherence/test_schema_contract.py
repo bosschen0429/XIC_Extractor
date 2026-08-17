@@ -1063,7 +1063,7 @@ def test_identity_coherence_config_defaults_match_v04_review_values():
     assert config.width.max_ratio == 2.00
     assert isinstance(config.engineering, EngineeringConfig)
     assert config.engineering.max_infrastructure_blocked_fraction == 0.05
-    assert config.engineering.max_projected_85raw_identity_xic_requests is None
+    assert config.engineering.max_projected_full_cohort_identity_xic_requests is None
 
 
 @pytest.mark.parametrize(
@@ -1078,12 +1078,12 @@ def test_identity_coherence_config_defaults_match_v04_review_values():
             "max_infrastructure_blocked_fraction must be <= 1",
         ),
         (
-            {"max_projected_85raw_identity_xic_requests": True},
-            "max_projected_85raw_identity_xic_requests must be nonnegative",
+            {"max_projected_full_cohort_identity_xic_requests": True},
+            "max_projected_full_cohort_identity_xic_requests must be nonnegative",
         ),
         (
-            {"max_projected_85raw_identity_xic_requests": -1},
-            "max_projected_85raw_identity_xic_requests must be nonnegative",
+            {"max_projected_full_cohort_identity_xic_requests": -1},
+            "max_projected_full_cohort_identity_xic_requests must be nonnegative",
         ),
     ),
 )

@@ -73,15 +73,9 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 # `85raw_alignment_cells` (an artifact_id), `all_available_85raw` (a scope
 # value), `max_projected_85raw_identity_xic_requests` (a config key). Most are
 # persisted values, so clearing a file is a contract decision about existing
-# artifacts, not a rename. #290 owns the set. Of its group 1 only
-# identity_coherence/output_summary_model.py remains; the other three carried
-# the ExpectedDiffValidationTier value "8raw", now "real_raw_subset".
+# artifacts, not a rename: a census of output/ before each removal is what says
+# whether a rename is free. #290 owns the set, and its group 1 is closed.
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
-    "xic_extractor/alignment/identity_coherence/adapter.py": (3, "#290"),
-    "xic_extractor/alignment/identity_coherence/models.py": (3, "#290"),
-    "xic_extractor/alignment/identity_coherence/output_models.py": (4, "#290"),
-    "xic_extractor/alignment/identity_coherence/output_summary.py": (2, "#290"),
-    "xic_extractor/alignment/identity_coherence/output_summary_model.py": (11, "#290"),
     "xic_extractor/alignment/identity_coherence_validation/models.py": (1, "#290"),
     "xic_extractor/alignment/identity_coherence_validation/outputs.py": (2, "#290"),
     "xic_extractor/alignment/quant_matrix_promotion.py": (4, "#290"),

@@ -206,9 +206,9 @@ def run_identity_coherence_diagnostic(
             result.raw_xic_request_count for result in trace_results
         ),
         xic_point_count=sum(result.xic_point_count for result in trace_results),
-        projected_85raw_identity_request_count=None,
-        max_projected_85raw_identity_xic_requests=(
-            identity_config.engineering.max_projected_85raw_identity_xic_requests
+        projected_full_cohort_identity_request_count=None,
+        max_projected_full_cohort_identity_xic_requests=(
+            identity_config.engineering.max_projected_full_cohort_identity_xic_requests
         ),
         max_infrastructure_blocked_fraction=(
             identity_config.engineering.max_infrastructure_blocked_fraction

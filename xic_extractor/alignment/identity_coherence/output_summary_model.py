@@ -20,7 +20,7 @@ from .output_validation import validate_output_record
 @dataclass(frozen=True)
 class IdentityCoherenceSummaryModel:
     input_row_count: int
-    projected_85raw_identity_request_count: int | str
+    projected_full_cohort_identity_request_count: int | str
     raw_xic_request_count: int | str
     xic_point_count: int | str
     forbidden_seen_count: int
@@ -89,8 +89,8 @@ def build_identity_coherence_summary_model(
 
     return IdentityCoherenceSummaryModel(
         input_row_count=len(validated),
-        projected_85raw_identity_request_count=_not_assessed_if_none(
-            context.projected_85raw_identity_request_count
+        projected_full_cohort_identity_request_count=_not_assessed_if_none(
+            context.projected_full_cohort_identity_request_count
         ),
         raw_xic_request_count=_not_assessed_if_none(context.raw_xic_request_count),
         xic_point_count=_not_assessed_if_none(context.xic_point_count),
@@ -268,26 +268,26 @@ def engineering_go_no_go_rows(
                 f"{blocked_basis} exceeds `{max_blocked_fraction}` |"
             )
 
-    projected = context.projected_85raw_identity_request_count
-    max_projected = context.max_projected_85raw_identity_xic_requests
+    projected = context.projected_full_cohort_identity_request_count
+    max_projected = context.max_projected_full_cohort_identity_xic_requests
     if projected is None:
         rows.append(
-            "| projected_85raw_identity_xic_requests | No-Go for 85RAW | "
-            "`projected_85raw_identity_request_count` not assessed |"
+            "| projected_full_cohort_identity_xic_requests | No-Go for full cohort | "
+            "`projected_full_cohort_identity_request_count` not assessed |"
         )
     elif max_projected is None:
         rows.append(
-            "| projected_85raw_identity_xic_requests | No-Go for 85RAW | "
-            "`max_projected_85raw_identity_xic_requests` not provided |"
+            "| projected_full_cohort_identity_xic_requests | No-Go for full cohort | "
+            "`max_projected_full_cohort_identity_xic_requests` not provided |"
         )
     elif projected <= max_projected:
         rows.append(
-            "| projected_85raw_identity_xic_requests | Proceed | "
+            "| projected_full_cohort_identity_xic_requests | Proceed | "
             f"`{projected}` <= `{max_projected}` |"
         )
     else:
         rows.append(
-            "| projected_85raw_identity_xic_requests | Pivot | "
+            "| projected_full_cohort_identity_xic_requests | Pivot | "
             f"`{projected}` exceeds `{max_projected}` |"
         )
     rows.append("")
