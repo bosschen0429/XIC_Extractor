@@ -56,25 +56,44 @@ SCOPE_ROOT = "xic_extractor/"
 
 # path -> (max_hits, owning issue)
 # Ceilings, not targets. Lower one when you remove a name; never raise one to
-# make this checker pass.
+# make this checker pass. Regenerate from scan(), never by hand.
+#
+# Sorted by path so a regenerated map diffs cleanly against this one.
+#
+# The 355 recorded at filing are now 52. What went was every phase name that
+# was only an identifier: `Package0ComparatorError` alone accounted for 194
+# lines, and it, the `Package1*`/`M5*` classes and the `_PACKAGE1_*` constants
+# were all internal to a module no production code imports.
+#
+# What stays is persisted -- schema ids, receipt fields, work-unit keys, pinned
+# evidence directory names, `p7-` version strings -- each already recorded in
+# artifacts, so renaming one changes a value existing outputs carry.
+#
+# METHOD NOTE, learned the hard way: a census that greps artifacts for the
+# literal value is necessary but not sufficient. `package2:alignment-method`
+# returned zero literal hits, yet renaming it changed a derived evidence
+# artifact id and broke the sha256 recorded in
+# docs/superpowers/validation/m5_successor_verdict_v1/rollback_rehearsal.json.
+# A value can reach an artifact through composition or hashing, where no string
+# search will find it. Run the tests before believing a census.
+#
+# UNRESOLVED: instrument_qc/calibration.py's 18 lines name `Phase1` --
+# `Phase1SDOLEKTrendRow`, `load_phase1_trend_rows`. Artifacts carry both
+# readings: `Thermo_Stellar_IBD_Phase1_HSP` is a sample batch (study phase,
+# domain vocabulary, must not be renamed) while `phase10_product_ready_closeout`
+# is a development phase. docs/product/instrument-qc-calibration.md does not
+# define the term. Owner decision required before either renaming these or
+# excluding them the way tier1/tier2/tier3 are excluded.
 KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
-    # 91% of the total. Naming this module for what it does would resolve most
-    # of #293 on its own.
-    "xic_extractor/package0_successor_comparator.py": (323, "#293"),
-    "xic_extractor/instrument_qc/calibration.py": (18, "#293"),
-    # MULTI_SEED_REQUIRES_PHASE2 and its persisted value.
-    "xic_extractor/alignment/identity_coherence/schema.py": (3, "#293"),
-    # Loads issue256_quantitative_projection_authority_v1.json -- a ticket
-    # number that became a real filename.
-    "xic_extractor/alignment/quantitative_projection_authority.py": (3, "#293"),
-    # package2: work-unit keys, persisted.
-    "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
+    "xic_extractor/alignment/backfill_evidence_contract.py": (1, "#293"),
+    "xic_extractor/alignment/backfill_scope.py": (1, "#293"),
     "xic_extractor/alignment/mode_track_table_finalization.py": (2, "#293"),
     "xic_extractor/alignment/production_acceptance.py": (1, "#293"),
+    "xic_extractor/alignment/quantitative_projection_authority.py": (3, "#293"),
+    "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
+    "xic_extractor/instrument_qc/calibration.py": (18, "#293"),
     "xic_extractor/instrument_qc/calibration_writers.py": (1, "#293"),
-    # p7- version strings, persisted.
-    "xic_extractor/alignment/backfill_scope.py": (1, "#293"),
-    "xic_extractor/alignment/backfill_evidence_contract.py": (1, "#293"),
+    "xic_extractor/package0_successor_comparator.py": (23, "#293"),
 }
 
 

@@ -27,9 +27,9 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.package0_successor_comparator import (
-    M5RollbackRehearsalReceipt,
-    M5SuccessorVerdictReceipt,
-    Package0ComparatorError,
+    RollbackRehearsalReceipt,
+    SuccessorComparatorError,
+    SuccessorVerdictReceipt,
     validate_m5_rollback_rehearsal,
     validate_m5_successor_verdict_packet,
 )
@@ -88,7 +88,7 @@ def test_m5_packet_rejects_non_utf8_sealed_text(tmp_path: Path) -> None:
     packet = _copy_packet(tmp_path / "non-utf8-packet")
     (packet / "candidate_manifest.json").write_bytes(b"\xff")
 
-    with pytest.raises(Package0ComparatorError, match="must be valid UTF-8 text"):
+    with pytest.raises(SuccessorComparatorError, match="must be valid UTF-8 text"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -121,7 +121,7 @@ def test_m5_packet_rejects_duplicate_top_level_json_keys(
     )
     _refresh_index(packet, filename)
 
-    with pytest.raises(Package0ComparatorError, match="duplicate key"):
+    with pytest.raises(SuccessorComparatorError, match="duplicate key"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -144,7 +144,7 @@ def test_m5_packet_rejects_duplicate_nested_json_keys(tmp_path: Path) -> None:
     )
     _refresh_index(packet, "candidate_manifest.json")
 
-    with pytest.raises(Package0ComparatorError, match="duplicate key"):
+    with pytest.raises(SuccessorComparatorError, match="duplicate key"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -162,7 +162,7 @@ def test_m5_packet_rejects_reindexed_human_summary(tmp_path: Path) -> None:
     )
     _refresh_index(packet, "README.md")
 
-    with pytest.raises(Package0ComparatorError, match="package-code trust root"):
+    with pytest.raises(SuccessorComparatorError, match="package-code trust root"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -177,7 +177,7 @@ def test_m5_packet_rejects_rewritten_artifact_role(tmp_path: Path) -> None:
     rows[0]["role"] = "product_authority"
     _write_tsv(index_path, rows)
 
-    with pytest.raises(Package0ComparatorError, match="artifact roles differ"):
+    with pytest.raises(SuccessorComparatorError, match="artifact roles differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -203,8 +203,8 @@ def test_m5_packet_binds_frozen_candidate_legacy_rollback_and_narrow_verdict() -
 
 
 def test_m5_verdict_receipt_requires_comparator_minting() -> None:
-    with pytest.raises(Package0ComparatorError, match="must be minted by"):
-        M5SuccessorVerdictReceipt(
+    with pytest.raises(SuccessorComparatorError, match="must be minted by"):
+        SuccessorVerdictReceipt(
             candidate_merge_sha=FROZEN_CANDIDATE_SHA,
             verdict="GO",
             evaluated_scope="forged",
@@ -218,8 +218,8 @@ def test_m5_verdict_receipt_requires_comparator_minting() -> None:
 
 
 def test_m5_rollback_receipt_requires_comparator_minting() -> None:
-    with pytest.raises(Package0ComparatorError, match="must be minted by"):
-        M5RollbackRehearsalReceipt(
+    with pytest.raises(SuccessorComparatorError, match="must be minted by"):
+        RollbackRehearsalReceipt(
             status_transition="staged_candidate->rolled_back",
             processing_attempt_id="forged-attempt",
             prior_current_delivery_id="forged-delivery",
@@ -267,7 +267,7 @@ def test_m5_packet_rejects_verdict_contract_semantic_drift(
     )
     _refresh_index(packet, "verdict_contract.json")
 
-    with pytest.raises(Package0ComparatorError, match=message):
+    with pytest.raises(SuccessorComparatorError, match=message):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -299,7 +299,7 @@ def test_m5_packet_rejects_undeclared_json_contract_fields(
     )
     _refresh_index(packet, filename)
 
-    with pytest.raises(Package0ComparatorError, match=message):
+    with pytest.raises(SuccessorComparatorError, match=message):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -366,7 +366,7 @@ def test_m5_packet_rejects_undeclared_nested_json_contract_fields(
     )
     _refresh_index(packet, filename)
 
-    with pytest.raises(Package0ComparatorError, match=message):
+    with pytest.raises(SuccessorComparatorError, match=message):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -397,7 +397,7 @@ def test_m5_packet_rejects_legacy_baseline_identity_drift(
     )
     _refresh_index(packet, "legacy_baseline_receipt.json")
 
-    with pytest.raises(Package0ComparatorError, match="baseline identity differs"):
+    with pytest.raises(SuccessorComparatorError, match="baseline identity differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -406,7 +406,7 @@ def test_m5_packet_rejects_legacy_baseline_identity_drift(
 
 
 def test_m5_packet_rejects_stale_candidate_sha() -> None:
-    with pytest.raises(Package0ComparatorError, match="stale frozen candidate"):
+    with pytest.raises(SuccessorComparatorError, match="stale frozen candidate"):
         validate_m5_successor_verdict_packet(
             PACKET,
             repo_root=Path("."),
@@ -417,7 +417,7 @@ def test_m5_packet_rejects_stale_candidate_sha() -> None:
 def test_m5_packet_rejects_missing_or_tampered_artifact(tmp_path: Path) -> None:
     missing = _copy_packet(tmp_path / "missing")
     (missing / "selective_scientific_cases.tsv").unlink()
-    with pytest.raises(Package0ComparatorError, match="artifact inventory"):
+    with pytest.raises(SuccessorComparatorError, match="artifact inventory"):
         validate_m5_successor_verdict_packet(
             missing,
             repo_root=Path("."),
@@ -427,7 +427,7 @@ def test_m5_packet_rejects_missing_or_tampered_artifact(tmp_path: Path) -> None:
     tampered = _copy_packet(tmp_path / "tampered")
     with (tampered / "README.md").open("a", encoding="utf-8") as handle:
         handle.write("tampered\n")
-    with pytest.raises(Package0ComparatorError, match="artifact digest"):
+    with pytest.raises(SuccessorComparatorError, match="artifact digest"):
         validate_m5_successor_verdict_packet(
             tampered,
             repo_root=Path("."),
@@ -455,7 +455,7 @@ def test_m5_packet_rejects_path_escape(
     rows[0]["path"] = escaped_path
     _write_tsv(index_path, rows)
 
-    with pytest.raises(Package0ComparatorError, match="safe relative paths"):
+    with pytest.raises(SuccessorComparatorError, match="safe relative paths"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -471,7 +471,7 @@ def test_m5_packet_rejects_drifted_external_evidence_seal(tmp_path: Path) -> Non
     _write_tsv(evidence_path, rows)
     _refresh_index(packet, "evidence_manifest.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="evidence file drift"):
+    with pytest.raises(SuccessorComparatorError, match="evidence file drift"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -487,7 +487,7 @@ def test_m5_packet_rejects_unsealed_evidence_locator(tmp_path: Path) -> None:
     _write_tsv(diff_path, rows)
     _refresh_index(packet, "public_expected_diff.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="hard-zero semantics differ"):
+    with pytest.raises(SuccessorComparatorError, match="hard-zero semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -508,7 +508,7 @@ def test_m5_packet_rejects_narrow_verdict_without_exact_excluded_scope(
     )
     _refresh_index(packet, "verdict.json")
 
-    with pytest.raises(Package0ComparatorError, match="excluded scope differs"):
+    with pytest.raises(SuccessorComparatorError, match="excluded scope differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -550,7 +550,7 @@ def test_m5_packet_rejects_rewritten_verdict_semantic_boundary(
     )
     _refresh_index(packet, "verdict.json")
 
-    with pytest.raises(Package0ComparatorError, match=error):
+    with pytest.raises(SuccessorComparatorError, match=error):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -585,7 +585,7 @@ def test_m5_packet_rejects_rewritten_candidate_scope_boundary(
     )
     _refresh_index(packet, "candidate_manifest.json")
 
-    with pytest.raises(Package0ComparatorError, match=error):
+    with pytest.raises(SuccessorComparatorError, match=error):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -603,7 +603,7 @@ def test_m5_packet_rejects_changed_preregistered_selective_case(
     _write_tsv(cases_path, rows)
     _refresh_index(packet, "selective_scientific_cases.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="preregistered selective"):
+    with pytest.raises(SuccessorComparatorError, match="preregistered selective"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -672,7 +672,7 @@ def test_m5_packet_rejects_go_when_package4_gates_are_incomplete(
     )
     _refresh_index(packet, "verdict.json")
 
-    with pytest.raises(Package0ComparatorError, match="GO is unreachable"):
+    with pytest.raises(SuccessorComparatorError, match="GO is unreachable"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -701,7 +701,7 @@ def test_m5_packet_rejects_coordinated_go_rewrite(
     _refresh_index(packet, "verdict.json")
     _refresh_index(packet, "comparison_dimensions.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="dimension semantics differ"):
+    with pytest.raises(SuccessorComparatorError, match="dimension semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -732,7 +732,7 @@ def test_m5_packet_rejects_comparison_dimension_semantic_drift(
     _write_tsv(dimension_path, rows)
     _refresh_index(packet, "comparison_dimensions.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="dimension semantics differ"):
+    with pytest.raises(SuccessorComparatorError, match="dimension semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -751,7 +751,7 @@ def test_m5_packet_requires_exact_candidate_source_set(tmp_path: Path) -> None:
     )
     _refresh_index(packet, "candidate_manifest.json")
 
-    with pytest.raises(Package0ComparatorError, match="candidate source set differs"):
+    with pytest.raises(SuccessorComparatorError, match="candidate source set differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -770,7 +770,7 @@ def test_m5_packet_rejects_candidate_git_tree_drift(tmp_path: Path) -> None:
     )
     _refresh_index(packet, "candidate_manifest.json")
 
-    with pytest.raises(Package0ComparatorError, match="candidate Git tree differs"):
+    with pytest.raises(SuccessorComparatorError, match="candidate Git tree differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -790,7 +790,7 @@ def test_m5_packet_requires_exact_legacy_tracked_set(tmp_path: Path) -> None:
     _refresh_index(packet, "legacy_baseline_receipt.json")
 
     with pytest.raises(
-        Package0ComparatorError,
+        SuccessorComparatorError,
         match="legacy tracked file set differs",
     ):
         validate_m5_successor_verdict_packet(
@@ -811,7 +811,7 @@ def test_m5_packet_rejects_candidate_source_drift(tmp_path: Path) -> None:
     )
     _refresh_index(packet, "candidate_manifest.json")
 
-    with pytest.raises(Package0ComparatorError, match="candidate source drift"):
+    with pytest.raises(SuccessorComparatorError, match="candidate source drift"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -828,7 +828,7 @@ def test_m5_packet_rejects_unapproved_public_diff(tmp_path: Path) -> None:
     _write_tsv(diff_path, rows)
     _refresh_index(packet, "public_expected_diff.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="public hard-zero"):
+    with pytest.raises(SuccessorComparatorError, match="public hard-zero"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -844,7 +844,7 @@ def test_m5_packet_rejects_public_hard_zero_locator_drift(tmp_path: Path) -> Non
     _write_tsv(diff_path, rows)
     _refresh_index(packet, "public_expected_diff.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="hard-zero semantics differ"):
+    with pytest.raises(SuccessorComparatorError, match="hard-zero semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -884,7 +884,7 @@ def test_m5_packet_rejects_authority_audit_semantic_drift(
     _write_tsv(audit_path, rows)
     _refresh_index(packet, "architecture_authority_audit.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="authority audit set differs"):
+    with pytest.raises(SuccessorComparatorError, match="authority audit set differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -903,7 +903,7 @@ def test_m5_packet_rejects_recorded_rollback_receipt_drift(tmp_path: Path) -> No
     )
     _refresh_index(packet, "rollback_rehearsal.json")
 
-    with pytest.raises(Package0ComparatorError, match="receipt identity is invalid"):
+    with pytest.raises(SuccessorComparatorError, match="receipt identity is invalid"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -971,7 +971,7 @@ def test_m5_rehearses_whole_attempt_rollback_without_mixed_authority(
     assert packet_rollback["evidence_locator"].endswith(
         "::test_m5_rehearses_whole_attempt_rollback_without_mixed_authority"
     )
-    with pytest.raises(Package0ComparatorError, match="must be minted by"):
+    with pytest.raises(SuccessorComparatorError, match="must be minted by"):
         replace(
             receipt,
             active_authority="forged_successor_authority",

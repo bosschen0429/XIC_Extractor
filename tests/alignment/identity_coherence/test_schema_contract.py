@@ -886,7 +886,7 @@ def test_seed_gate_enum_values_are_stable_strings():
         "low_ms1_scan_support",
         "request_candidate_identity_mismatch",
         "unsupported_fragment_observation_mode",
-        "multi_seed_requires_phase2",
+        "multi_seed_unresolved",
     }
 
 
@@ -1024,7 +1024,7 @@ def test_decision_and_center_enum_values_are_stable_strings():
         "review_only_center_unstable",
         "review_only_weak_basis_tier3_only",
         "review_only_weak_basis_single_tier12_plus_tier3",
-        "review_only_multi_seed_requires_phase2",
+        "review_only_multi_seed_unresolved",
         "blocked_infrastructure",
     }
     assert {value.value for value in WeakBasisReason} == {

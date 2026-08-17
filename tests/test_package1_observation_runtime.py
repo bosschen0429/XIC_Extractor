@@ -71,11 +71,11 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.package0_successor_comparator import (
-    Package0ComparatorError,
-    Package1ObservationExperimentJob,
-    Package1ObservationTraceFixture,
-    run_package1_observation_experiment,
-    validate_package1_difference_manifest,
+    RuntimeObservationExperimentJob,
+    RuntimeObservationTraceFixture,
+    SuccessorComparatorError,
+    run_runtime_observation_experiment,
+    validate_runtime_difference_manifest,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observation_batch import (
@@ -108,7 +108,7 @@ DIFFERENCE_PACKET = Path(
 FROZEN_COMPARATOR = Path(
     "docs/superpowers/validation/package0_smallest_strangler_contract_v1/contract.json"
 )
-_ObservationJob = Package1ObservationExperimentJob
+_ObservationJob = RuntimeObservationExperimentJob
 
 
 @dataclass(frozen=True)
@@ -816,7 +816,7 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
     reservations = _reservations(owners.attempt, (job,))
     experiment_workspace = tmp_path / "difference-experiment"
     experiment_workspace.mkdir()
-    observation = run_package1_observation_experiment(
+    observation = run_runtime_observation_experiment(
         experiment_workspace=experiment_workspace,
         targeted_request=build_targeted_application_request(
             _config(tmp_path / "caller-placeholder-output"),
@@ -829,14 +829,14 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         max_workers=1,
     )
 
-    digest = validate_package1_difference_manifest(
+    digest = validate_runtime_difference_manifest(
         contract,
         rows,
         observation=observation,
     )
     assert len(digest) == 64
-    with pytest.raises(Package0ComparatorError, match="must not already exist"):
-        run_package1_observation_experiment(
+    with pytest.raises(SuccessorComparatorError, match="must not already exist"):
+        run_runtime_observation_experiment(
             experiment_workspace=experiment_workspace,
             targeted_request=build_targeted_application_request(
                 _config(tmp_path / "second-caller-placeholder-output"),
@@ -850,8 +850,8 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         )
     tampered = [dict(row) for row in rows]
     tampered[1]["new_value"] = "sha256:" + "F" * 64
-    with pytest.raises(Package0ComparatorError, match="frozen exact-zero"):
-        validate_package1_difference_manifest(
+    with pytest.raises(SuccessorComparatorError, match="frozen exact-zero"):
+        validate_runtime_difference_manifest(
             contract,
             tampered,
             observation=observation,
@@ -859,18 +859,18 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
 
     reset_contract = json.loads(json.dumps(contract))
     reset_contract["canonical_output_inventory_sha256"] = "F" * 64
-    reset_digest = comparator_module._package1_frozen_surface_digest(reset_contract)
+    reset_digest = comparator_module._runtime_frozen_surface_digest(reset_contract)
     consistently_reset = [dict(row) for row in rows]
     consistently_reset[1]["old_value"] = f"sha256:{reset_digest}"
     consistently_reset[1]["new_value"] = f"sha256:{reset_digest}"
-    with pytest.raises(Package0ComparatorError, match="immutable baseline"):
-        validate_package1_difference_manifest(
+    with pytest.raises(SuccessorComparatorError, match="immutable baseline"):
+        validate_runtime_difference_manifest(
             reset_contract,
             consistently_reset,
             observation=observation,
         )
 
-    with pytest.raises(Package0ComparatorError, match="must be minted"):
+    with pytest.raises(SuccessorComparatorError, match="must be minted"):
         replace(observation, _mint_token=object())
     assert not hasattr(comparator_module, "begin_package1_no_write_probe")
     assert not hasattr(comparator_module, "mint_package1_difference_observation")
@@ -895,8 +895,8 @@ def test_package1_experiment_owns_legacy_runner_wiring(
         "execute_runtime_lifecycle",
         invoke_legacy_runner,
     )
-    with pytest.raises(Package0ComparatorError, match="forbidden legacy runner"):
-        run_package1_observation_experiment(
+    with pytest.raises(SuccessorComparatorError, match="forbidden legacy runner"):
+        run_runtime_observation_experiment(
             experiment_workspace=experiment_workspace,
             targeted_request=build_targeted_application_request(
                 _config(),
@@ -935,7 +935,7 @@ def test_package1_experiment_owns_and_overwrites_product_output_root(
         "execute_runtime_lifecycle",
         observe_bound_request,
     )
-    run_package1_observation_experiment(
+    run_runtime_observation_experiment(
         experiment_workspace=experiment_workspace,
         targeted_request=build_targeted_application_request(
             _config(caller_root),
@@ -988,8 +988,8 @@ def test_package1_experiment_rejects_any_product_output_entry(
         write_product_entry,
     )
 
-    with pytest.raises(Package0ComparatorError, match="changed product output"):
-        run_package1_observation_experiment(
+    with pytest.raises(SuccessorComparatorError, match="changed product output"):
+        run_runtime_observation_experiment(
             experiment_workspace=experiment_workspace,
             targeted_request=build_targeted_application_request(
                 _config(),
@@ -1028,8 +1028,8 @@ def test_package1_experiment_rejects_output_root_replacement(
         "execute_runtime_lifecycle",
         replace_output_root,
     )
-    with pytest.raises(Package0ComparatorError, match="root identity"):
-        run_package1_observation_experiment(
+    with pytest.raises(SuccessorComparatorError, match="root identity"):
+        run_runtime_observation_experiment(
             experiment_workspace=experiment_workspace,
             targeted_request=build_targeted_application_request(
                 _config(),
@@ -1055,7 +1055,7 @@ def test_package1_experiment_has_no_generic_result_provider_seams(
         "alignment_executor_factory",
     }
     assert not forbidden_parameters & set(
-        inspect.signature(run_package1_observation_experiment).parameters
+        inspect.signature(run_runtime_observation_experiment).parameters
     )
 
     owners, sample = _identity_fixture(tmp_path)
@@ -1066,10 +1066,10 @@ def test_package1_experiment_has_no_generic_result_provider_seams(
     experiment_workspace = tmp_path / "prebuilt-result-experiment"
     experiment_workspace.mkdir()
     with pytest.raises(
-        Package0ComparatorError,
-        match="Package1ObservationExperimentJob",
+        SuccessorComparatorError,
+        match="RuntimeObservationExperimentJob",
     ):
-        run_package1_observation_experiment(
+        run_runtime_observation_experiment(
             experiment_workspace=experiment_workspace,
             targeted_request=build_targeted_application_request(
                 _config(),
@@ -1094,8 +1094,8 @@ def test_package1_experiment_binds_primitive_jobs_to_manifest(
     experiment_workspace = tmp_path / "cross-work-key-experiment"
     experiment_workspace.mkdir()
 
-    with pytest.raises(Package0ComparatorError, match="manifest work"):
-        run_package1_observation_experiment(
+    with pytest.raises(SuccessorComparatorError, match="manifest work"):
+        run_runtime_observation_experiment(
             experiment_workspace=experiment_workspace,
             targeted_request=build_targeted_application_request(
                 _config(),
@@ -1393,13 +1393,13 @@ def _trace_for_request(request: XICRequest) -> XICTrace:
 
 def _trace_fixtures(
     plans: tuple[PeakObservationPlan, ...],
-) -> tuple[Package1ObservationTraceFixture, ...]:
-    fixtures: list[Package1ObservationTraceFixture] = []
+) -> tuple[RuntimeObservationTraceFixture, ...]:
+    fixtures: list[RuntimeObservationTraceFixture] = []
     for plan in plans:
         trace = _trace_for_request(plan.request)
         offset = int(plan.request.mz - 500.0) * 10
         fixtures.append(
-            Package1ObservationTraceFixture(
+            RuntimeObservationTraceFixture(
                 request=plan.request,
                 rt=tuple(float(value) for value in trace.rt),
                 intensity=tuple(float(value) for value in trace.intensity),

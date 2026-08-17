@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.package0_successor_comparator import (
-    Package0ComparatorError,
+    SuccessorComparatorError,
     assert_targeted_adapter_parity,
     mint_targeted_adapter_parity_receipt,
-    validate_package0_successor_output,
+    validate_successor_output,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -30,7 +30,7 @@ def test_cli_gui_and_actual_successor_output_match_synthetic_frozen_gate(
     gui = _adapter_receipt("gui", request, output_root)
 
     parity_digest = assert_targeted_adapter_parity(cli, gui)
-    comparator_digest = validate_package0_successor_output(
+    comparator_digest = validate_successor_output(
         contract,
         membership,
         output_root=output_root,
@@ -61,7 +61,7 @@ def test_equal_adapter_gate_rejects_actual_scientific_byte_difference(
         final_stage_xic_results=output_root / "final/output/xic_results.csv",
     )
 
-    with pytest.raises(Package0ComparatorError, match="scientific_results"):
+    with pytest.raises(SuccessorComparatorError, match="scientific_results"):
         assert_targeted_adapter_parity(cli, gui)
 
 
@@ -77,8 +77,8 @@ def test_successor_gate_rejects_drift_in_produced_output_bytes(
         encoding="utf-8",
     )
 
-    with pytest.raises(Package0ComparatorError, match="successor differs"):
-        validate_package0_successor_output(
+    with pytest.raises(SuccessorComparatorError, match="successor differs"):
+        validate_successor_output(
             contract,
             membership,
             output_root=output_root,
@@ -96,8 +96,8 @@ def test_successor_gate_rejects_membership_or_path_escape(tmp_path: Path) -> Non
         "ordered_final_header": ["SampleName", "DifferentArea"],
     }
 
-    with pytest.raises(Package0ComparatorError, match="ordered_final_header"):
-        validate_package0_successor_output(
+    with pytest.raises(SuccessorComparatorError, match="ordered_final_header"):
+        validate_successor_output(
             contract,
             changed_membership,
             output_root=output_root,
@@ -111,8 +111,8 @@ def test_successor_gate_rejects_membership_or_path_escape(tmp_path: Path) -> Non
             [*membership["canonical_artifact_paths"], "../outside.csv"]
         ),
     }
-    with pytest.raises(Package0ComparatorError, match="normalized relative"):
-        validate_package0_successor_output(
+    with pytest.raises(SuccessorComparatorError, match="normalized relative"):
+        validate_successor_output(
             contract,
             escaped_membership,
             output_root=output_root,
@@ -130,8 +130,8 @@ def test_successor_gate_rejects_partial_package0_contract(tmp_path: Path) -> Non
     request = _request(tmp_path)
     cli = _adapter_receipt("cli", request, output_root)
 
-    with pytest.raises(Package0ComparatorError, match="formally complete"):
-        validate_package0_successor_output(
+    with pytest.raises(SuccessorComparatorError, match="formally complete"):
+        validate_successor_output(
             contract,
             membership,
             output_root=output_root,

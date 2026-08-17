@@ -77,23 +77,23 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
-class Package0ComparatorError(ValueError):
+class SuccessorComparatorError(ValueError):
     """Raised when an adapter or successor receipt differs from the frozen gate."""
 
 
 _SHA256_RE = re.compile(r"^[0-9A-F]{64}$")
-_PACKAGE1_DIFFERENCE_SCHEMA = "package1_runtime_observation_difference_v1"
-_FROZEN_PACKAGE1_SURFACE_SHA256 = (
+_RUNTIME_DIFFERENCE_SCHEMA = "package1_runtime_observation_difference_v1"
+_FROZEN_RUNTIME_SURFACE_SHA256 = (
     "70099C0412D9301736CA479F05BEBF1D7F928C248407ED062D1EFBBA0D045B6B"
 )
-_PACKAGE1_OBSERVATION_MINT_TOKEN = object()
-_PACKAGE1_PROBE_MINT_TOKEN = object()
+_RUNTIME_OBSERVATION_MINT_TOKEN = object()
+_RUNTIME_PROBE_MINT_TOKEN = object()
 _M5_VERDICT_RECEIPT_MINT_TOKEN = object()
 _M5_ROLLBACK_RECEIPT_MINT_TOKEN = object()
-_PACKAGE1_EXPERIMENT_DIR = "package1-runtime-observation-experiment"
-_PACKAGE1_PRODUCT_OUTPUT_DIR = "product-output"
-_PACKAGE1_ROOT_IDENTITY_MARKER = ".package1-root-identity"
-_PACKAGE1_DIFFERENCE_FIELDS = (
+_RUNTIME_EXPERIMENT_DIR = "package1-runtime-observation-experiment"
+_RUNTIME_PRODUCT_OUTPUT_DIR = "product-output"
+_RUNTIME_ROOT_IDENTITY_MARKER = ".package1-root-identity"
+_RUNTIME_DIFFERENCE_FIELDS = (
     "schema_version",
     "stage",
     "stable_subject_or_cell",
@@ -549,7 +549,7 @@ _COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 @final
 @dataclass(frozen=True, slots=True)
-class Package1ObservationTraceFixture:
+class RuntimeObservationTraceFixture:
     """Exact no-RAW trace input for one Package 1 experiment request."""
 
     request: XICRequest
@@ -559,19 +559,21 @@ class Package1ObservationTraceFixture:
     last_scan: int
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Package1ObservationTraceFixture is final")
+        raise TypeError("RuntimeObservationTraceFixture is final")
 
     def __post_init__(self) -> None:
         if not isinstance(self.request, XICRequest):
-            raise Package0ComparatorError("trace fixture request must be an XICRequest")
+            raise SuccessorComparatorError(
+                "trace fixture request must be an XICRequest"
+            )
         if not isinstance(self.rt, tuple) or not isinstance(self.intensity, tuple):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "trace fixture rt and intensity must be exact tuples"
             )
         try:
             XICTrace.from_arrays(self.rt, self.intensity)
         except (TypeError, ValueError) as exc:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "trace fixture must contain one valid finite XIC trace"
             ) from exc
         if (
@@ -582,14 +584,14 @@ class Package1ObservationTraceFixture:
             or self.first_scan < 1
             or self.last_scan < self.first_scan
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "trace fixture scan window must be ordered positive integers"
             )
 
 
 @final
 @dataclass(frozen=True, slots=True)
-class Package1ObservationExperimentJob:
+class RuntimeObservationExperimentJob:
     """Primitive, pickleable input to the fixed Package 1 experiment workers."""
 
     owners: ProcessingOwnerReferences
@@ -598,50 +600,50 @@ class Package1ObservationExperimentJob:
     resource_key: str
     coordinate_kind: TraceCoordinateKind
     plans: tuple[PeakObservationPlan, ...]
-    trace_fixtures: tuple[Package1ObservationTraceFixture, ...]
+    trace_fixtures: tuple[RuntimeObservationTraceFixture, ...]
     delay_sec: float = 0.0
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Package1ObservationExperimentJob is final")
+        raise TypeError("RuntimeObservationExperimentJob is final")
 
     def __post_init__(self) -> None:
         if not isinstance(self.owners, ProcessingOwnerReferences):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job owners must be ProcessingOwnerReferences"
             )
         if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job sample must be a resolved canonical identity"
             )
         if not isinstance(self.work_unit_key, str) or not self.work_unit_key:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job work_unit_key must be non-empty"
             )
         if not isinstance(self.resource_key, str) or not self.resource_key:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job resource_key must be non-empty"
             )
         if not isinstance(self.coordinate_kind, TraceCoordinateKind):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job coordinate_kind must be a TraceCoordinateKind"
             )
         if not isinstance(self.plans, tuple) or not self.plans or any(
             not isinstance(plan, PeakObservationPlan) for plan in self.plans
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job plans must be a non-empty PeakObservationPlan tuple"
             )
         if not isinstance(self.trace_fixtures, tuple) or any(
-            type(fixture) is not Package1ObservationTraceFixture
+            type(fixture) is not RuntimeObservationTraceFixture
             for fixture in self.trace_fixtures
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job trace_fixtures must be an exact fixture tuple"
             )
         if tuple(plan.request for plan in self.plans) != tuple(
             fixture.request for fixture in self.trace_fixtures
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment trace fixtures must match plan requests in order"
             )
         if (
@@ -650,14 +652,14 @@ class Package1ObservationExperimentJob:
             or not math.isfinite(float(self.delay_sec))
             or self.delay_sec < 0
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment job delay_sec must be finite and non-negative"
             )
 
 
 @dataclass(frozen=True, slots=True)
-class _Package1NoRawBatchAdapter:
-    fixtures: tuple[Package1ObservationTraceFixture, ...]
+class _RuntimeNoRawBatchAdapter:
+    fixtures: tuple[RuntimeObservationTraceFixture, ...]
 
     @property
     def raw_chromatogram_call_count(self) -> int:
@@ -668,7 +670,7 @@ class _Package1NoRawBatchAdapter:
         requests: Sequence[XICRequest],
     ) -> tuple[XICTrace, ...]:
         if tuple(requests) != tuple(fixture.request for fixture in self.fixtures):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "experiment adapter requests must match the fixed trace fixtures"
             )
         return tuple(
@@ -680,7 +682,7 @@ class _Package1NoRawBatchAdapter:
         for fixture in self.fixtures:
             if fixture.request == request:
                 return fixture.first_scan, fixture.last_scan
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "experiment adapter request is absent from the fixed trace fixtures"
         )
 
@@ -698,9 +700,9 @@ class _TargetedAdapterParityReceipt:
 
     def __post_init__(self) -> None:
         if self.adapter_name not in {"cli", "gui"}:
-            raise Package0ComparatorError("adapter_name must be cli or gui")
+            raise SuccessorComparatorError("adapter_name must be cli or gui")
         if not self.processing_request_id.startswith("xic.processing-request.v1:"):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "processing_request_id must be owner-minted"
             )
         for field in (
@@ -715,7 +717,7 @@ class _TargetedAdapterParityReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class _Package0SuccessorObservation:
+class _SuccessorObservation:
     baseline_id: str
     canonical_output_inventory_sha256: str
     canonical_artifact_path_sha256: str
@@ -726,7 +728,7 @@ class _Package0SuccessorObservation:
 
     def __post_init__(self) -> None:
         if not isinstance(self.baseline_id, str) or not self.baseline_id.strip():
-            raise Package0ComparatorError("baseline_id must be non-empty")
+            raise SuccessorComparatorError("baseline_id must be non-empty")
         for field in (
             "canonical_output_inventory_sha256",
             "canonical_artifact_path_sha256",
@@ -740,7 +742,7 @@ class _Package0SuccessorObservation:
 
 @final
 @dataclass(frozen=True, slots=True)
-class Package1DifferenceObservation:
+class RuntimeDifferenceObservation:
     """Owner-derived final-state and runner receipt for one Package 1 run."""
 
     frozen_surface_sha256: str
@@ -762,12 +764,12 @@ class Package1DifferenceObservation:
     _mint_token: InitVar[object] = dataclass_field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("Package1DifferenceObservation is final")
+        raise TypeError("RuntimeDifferenceObservation is final")
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _PACKAGE1_OBSERVATION_MINT_TOKEN:
-            raise Package0ComparatorError(
-                "Package1DifferenceObservation must be minted by the comparator"
+        if _mint_token is not _RUNTIME_OBSERVATION_MINT_TOKEN:
+            raise SuccessorComparatorError(
+                "RuntimeDifferenceObservation must be minted by the comparator"
             )
         for field in (
             "frozen_surface_sha256",
@@ -780,11 +782,11 @@ class Package1DifferenceObservation:
         ):
             _sha256(getattr(self, field), field)
         if not self.processing_request_id.startswith("xic.processing-request.v1:"):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "Package 1 observation must bind an owner request"
             )
         if not self.processing_attempt_id.startswith("xic.processing-attempt.v1:"):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "Package 1 observation must bind an owner attempt"
             )
         for field in (
@@ -796,19 +798,19 @@ class Package1DifferenceObservation:
         ):
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise Package0ComparatorError(f"{field} must be non-negative")
+                raise SuccessorComparatorError(f"{field} must be non-negative")
         if not isinstance(self.successor_product_output_paths, tuple) or any(
             not isinstance(path, str) or not path
             for path in self.successor_product_output_paths
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "successor_product_output_paths must be a text tuple"
             )
 
 
 @final
 @dataclass(frozen=True, slots=True)
-class M5SuccessorVerdictReceipt:
+class SuccessorVerdictReceipt:
     """Sealed diagnostic receipt for one exact frozen successor verdict packet."""
 
     candidate_merge_sha: str
@@ -822,18 +824,18 @@ class M5SuccessorVerdictReceipt:
     _mint_token: InitVar[object] = dataclass_field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("M5SuccessorVerdictReceipt is final")
+        raise TypeError("SuccessorVerdictReceipt is final")
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _M5_VERDICT_RECEIPT_MINT_TOKEN:
-            raise Package0ComparatorError(
-                "M5SuccessorVerdictReceipt must be minted by the comparator"
+            raise SuccessorComparatorError(
+                "SuccessorVerdictReceipt must be minted by the comparator"
             )
 
 
 @final
 @dataclass(frozen=True, slots=True)
-class M5RollbackRehearsalReceipt:
+class RollbackRehearsalReceipt:
     """Owner-derived proof that rollback retains legacy current authority."""
 
     status_transition: str
@@ -849,17 +851,17 @@ class M5RollbackRehearsalReceipt:
     _mint_token: InitVar[object] = dataclass_field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("M5RollbackRehearsalReceipt is final")
+        raise TypeError("RollbackRehearsalReceipt is final")
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _M5_ROLLBACK_RECEIPT_MINT_TOKEN:
-            raise Package0ComparatorError(
-                "M5RollbackRehearsalReceipt must be minted by the comparator"
+            raise SuccessorComparatorError(
+                "RollbackRehearsalReceipt must be minted by the comparator"
             )
 
 
 @final
-class _Package1ProductOutputProbe:
+class _RuntimeProductOutputProbe:
     """Comparator-owned final-state parity window for product outputs."""
 
     __slots__ = (
@@ -878,8 +880,8 @@ class _Package1ProductOutputProbe:
         root_identity: tuple[int, int, int, int, int, str],
         _mint_token: object,
     ) -> None:
-        if _mint_token is not _PACKAGE1_PROBE_MINT_TOKEN:
-            raise Package0ComparatorError(
+        if _mint_token is not _RUNTIME_PROBE_MINT_TOKEN:
+            raise SuccessorComparatorError(
                 "Package 1 product-output probe must be minted by the comparator"
             )
         self._output_root = output_root
@@ -899,21 +901,21 @@ class _Package1ProductOutputProbe:
         """Fail immediately if the Package 1 path enters the legacy runner."""
 
         self._legacy_runner_call_count += 1
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 observation path invoked the forbidden legacy runner"
         )
 
     def _finish(self) -> tuple[int, tuple[str, ...]]:
         if self._consumed:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "Package 1 product-output probe may finalize exactly one observation"
             )
         self._consumed = True
-        if _package1_output_root_identity(self._output_root) != self._root_identity:
-            raise Package0ComparatorError(
+        if _runtime_output_root_identity(self._output_root) != self._root_identity:
+            raise SuccessorComparatorError(
                 "Package 1 comparator-owned output root identity changed"
             )
-        after_inventory = _package1_product_output_inventory(self._output_root)
+        after_inventory = _runtime_product_output_inventory(self._output_root)
         before_by_path = dict(self._before_inventory)
         after_by_path = dict(after_inventory)
         changed_paths = tuple(
@@ -924,59 +926,59 @@ class _Package1ProductOutputProbe:
             )
         )
         try:
-            (self._output_root / _PACKAGE1_ROOT_IDENTITY_MARKER).unlink()
+            (self._output_root / _RUNTIME_ROOT_IDENTITY_MARKER).unlink()
         except OSError as exc:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "Package 1 comparator-owned output root identity marker changed"
             ) from exc
         return self._legacy_runner_call_count, changed_paths
 
 
-def run_package1_observation_experiment(
+def run_runtime_observation_experiment(
     *,
     experiment_workspace: Path,
     targeted_request: TargetedApplicationRequest,
     runtime: AttemptRuntime,
     resource_reservations: Sequence[RuntimeResourceReservation],
     telemetry_provider: RuntimeTelemetryProvider,
-    jobs: tuple[Package1ObservationExperimentJob, ...],
+    jobs: tuple[RuntimeObservationExperimentJob, ...],
     max_workers: int,
-) -> Package1DifferenceObservation:
+) -> RuntimeDifferenceObservation:
     """Run fixed Package 1 consumers inside one comparator-owned parity window."""
 
     if not isinstance(experiment_workspace, Path) or not experiment_workspace.is_dir():
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "experiment_workspace must be an existing directory"
         )
     if not isinstance(targeted_request, TargetedApplicationRequest):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "targeted_request must be a TargetedApplicationRequest"
         )
-    _validate_package1_experiment_jobs(
+    _validate_runtime_experiment_jobs(
         jobs,
         runtime=runtime,
         resource_reservations=resource_reservations,
         max_workers=max_workers,
     )
-    experiment_root = experiment_workspace / _PACKAGE1_EXPERIMENT_DIR
+    experiment_root = experiment_workspace / _RUNTIME_EXPERIMENT_DIR
     try:
         experiment_root.mkdir()
     except FileExistsError as exc:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 experiment root must not already exist"
         ) from exc
-    product_output_root = experiment_root / _PACKAGE1_PRODUCT_OUTPUT_DIR
+    product_output_root = experiment_root / _RUNTIME_PRODUCT_OUTPUT_DIR
     product_output_root.mkdir()
-    (product_output_root / _PACKAGE1_ROOT_IDENTITY_MARKER).write_bytes(
+    (product_output_root / _RUNTIME_ROOT_IDENTITY_MARKER).write_bytes(
         secrets.token_bytes(32)
     )
-    probe = _Package1ProductOutputProbe(
+    probe = _RuntimeProductOutputProbe(
         output_root=product_output_root,
-        before_inventory=_package1_product_output_inventory(product_output_root),
-        root_identity=_package1_output_root_identity(product_output_root),
-        _mint_token=_PACKAGE1_PROBE_MINT_TOKEN,
+        before_inventory=_runtime_product_output_inventory(product_output_root),
+        root_identity=_runtime_output_root_identity(product_output_root),
+        _mint_token=_RUNTIME_PROBE_MINT_TOKEN,
     )
-    bound_targeted_request = _bind_package1_targeted_output_root(
+    bound_targeted_request = _bind_runtime_targeted_output_root(
         targeted_request,
         product_output_root=product_output_root,
     )
@@ -986,7 +988,7 @@ def run_package1_observation_experiment(
         aggregate: RuntimeAttemptAggregate,
     ) -> TargetedRuntimeWorkerBatch:
         del request, aggregate
-        return _execute_package1_targeted_jobs(jobs, max_workers=max_workers)
+        return _execute_runtime_targeted_jobs(jobs, max_workers=max_workers)
 
     targeted_service = TargetedApplicationService(
         probe._forbidden_legacy_runner,
@@ -1005,8 +1007,8 @@ def run_package1_observation_experiment(
     alignment = execute_alignment_process_runtime(
         runtime,
         jobs,
-        worker=_run_package1_alignment_job,
-        error_factory=_package1_alignment_error,
+        worker=_run_runtime_alignment_job,
+        error_factory=_runtime_alignment_error,
         max_workers=max_workers,
         resource_reservations=resource_reservations,
         telemetry_provider=telemetry_provider,
@@ -1015,14 +1017,14 @@ def run_package1_observation_experiment(
             "package1-alignment-runtime-observation:v1",
         ),
     )
-    return _mint_package1_difference_observation(
+    return _mint_runtime_difference_observation(
         probe=probe,
         targeted=targeted,
         alignment=alignment,
     )
 
 
-def _validate_package1_experiment_jobs(
+def _validate_runtime_experiment_jobs(
     jobs: object,
     *,
     runtime: AttemptRuntime,
@@ -1030,25 +1032,25 @@ def _validate_package1_experiment_jobs(
     max_workers: int,
 ) -> None:
     if not isinstance(runtime, AttemptRuntime):
-        raise Package0ComparatorError("runtime must be an AttemptRuntime")
+        raise SuccessorComparatorError("runtime must be an AttemptRuntime")
     if not isinstance(jobs, tuple) or not jobs or any(
-        type(job) is not Package1ObservationExperimentJob for job in jobs
+        type(job) is not RuntimeObservationExperimentJob for job in jobs
     ):
-        raise Package0ComparatorError(
-            "jobs must be a non-empty Package1ObservationExperimentJob tuple"
+        raise SuccessorComparatorError(
+            "jobs must be a non-empty RuntimeObservationExperimentJob tuple"
         )
     if (
         isinstance(max_workers, bool)
         or not isinstance(max_workers, int)
         or max_workers < 1
     ):
-        raise Package0ComparatorError("max_workers must be a positive integer")
+        raise SuccessorComparatorError("max_workers must be a positive integer")
     if tuple(job.work_unit_key for job in jobs) != runtime.manifest.work_unit_keys:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "experiment jobs must match runtime manifest work in order"
         )
     if any(job.owners.attempt != runtime.manifest.attempt for job in jobs):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "experiment jobs must bind the runtime processing attempt"
         )
     reservations = tuple(resource_reservations)
@@ -1056,18 +1058,18 @@ def _validate_package1_experiment_jobs(
         not isinstance(reservation, RuntimeResourceReservation)
         for reservation in reservations
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "resource_reservations must contain RuntimeResourceReservation values"
         )
     if tuple(reservation.resource_key for reservation in reservations) != tuple(
         job.resource_key for job in jobs
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "experiment resource reservations must match jobs in order"
         )
 
 
-def _bind_package1_targeted_output_root(
+def _bind_runtime_targeted_output_root(
     request: TargetedApplicationRequest,
     *,
     product_output_root: Path,
@@ -1086,14 +1088,14 @@ def _bind_package1_targeted_output_root(
         bound.config.output_csv != output_csv
         or bound.config.diagnostics_csv != diagnostics_csv
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Targeted product outputs must use the comparator-owned output root"
         )
     return bound
 
 
-def _execute_package1_targeted_jobs(
-    jobs: tuple[Package1ObservationExperimentJob, ...],
+def _execute_runtime_targeted_jobs(
+    jobs: tuple[RuntimeObservationExperimentJob, ...],
     *,
     max_workers: int,
 ) -> TargetedRuntimeWorkerBatch:
@@ -1103,7 +1105,7 @@ def _execute_package1_targeted_jobs(
         mp_context=get_context("spawn"),
     ) as executor:
         futures = tuple(
-            executor.submit(_run_package1_targeted_job, job) for job in jobs
+            executor.submit(_run_runtime_targeted_job, job) for job in jobs
         )
         results = tuple(future.result() for future in futures)
     envelopes = tuple(envelope for envelope, _report in results)
@@ -1118,10 +1120,10 @@ def _execute_package1_targeted_jobs(
     )
 
 
-def _run_package1_targeted_job(
-    job: Package1ObservationExperimentJob,
+def _run_runtime_targeted_job(
+    job: RuntimeObservationExperimentJob,
 ) -> tuple[TargetedProcessWorkerResultEnvelope, TargetedProcessResourceReport]:
-    batch = _produce_package1_observation_batch(job)
+    batch = _produce_runtime_observation_batch(job)
     payload = canonical_peak_observation_batch_bytes(batch)
     reference = mint_targeted_process_result_ref(
         processing_attempt=job.owners.attempt,
@@ -1146,10 +1148,10 @@ def _run_package1_targeted_job(
     )
 
 
-def _run_package1_alignment_job(
-    job: Package1ObservationExperimentJob,
+def _run_runtime_alignment_job(
+    job: RuntimeObservationExperimentJob,
 ) -> AlignmentRuntimeProcessResult:
-    batch = _produce_package1_observation_batch(job)
+    batch = _produce_runtime_observation_batch(job)
     payload = canonical_peak_observation_batch_bytes(batch)
     artifact = mint_alignment_process_result_artifact(
         processing_attempt=job.owners.attempt,
@@ -1172,8 +1174,8 @@ def _run_package1_alignment_job(
     )
 
 
-def _package1_alignment_error(
-    job: Package1ObservationExperimentJob,
+def _runtime_alignment_error(
+    job: RuntimeObservationExperimentJob,
     error: Exception,
 ) -> AlignmentRuntimeProcessResult:
     return AlignmentRuntimeProcessResult(
@@ -1194,8 +1196,8 @@ def _package1_alignment_error(
     )
 
 
-def _produce_package1_observation_batch(
-    job: Package1ObservationExperimentJob,
+def _produce_runtime_observation_batch(
+    job: RuntimeObservationExperimentJob,
 ) -> PeakObservationBatch:
     if job.delay_sec:
         time.sleep(job.delay_sec)
@@ -1213,22 +1215,22 @@ def _produce_package1_observation_batch(
         sample=job.sample,
         capability=capability,
         plans=job.plans,
-        adapter=_Package1NoRawBatchAdapter(job.trace_fixtures),
+        adapter=_RuntimeNoRawBatchAdapter(job.trace_fixtures),
     )
 
 
-def _mint_package1_difference_observation(
+def _mint_runtime_difference_observation(
     *,
-    probe: _Package1ProductOutputProbe,
+    probe: _RuntimeProductOutputProbe,
     targeted: TargetedRuntimeLifecycleApplicationResult,
     alignment: AlignmentRuntimeApplicationResult,
-) -> Package1DifferenceObservation:
+) -> RuntimeDifferenceObservation:
     """Derive one receipt from the comparator-owned experiment results."""
 
     targeted_attempt = targeted.settlement.runtime.manifest.attempt
     alignment_attempt = alignment.runtime.manifest.attempt
     if targeted_attempt != alignment_attempt:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Targeted and Alignment results must bind one request and attempt"
         )
     if (
@@ -1241,7 +1243,7 @@ def _mint_package1_difference_observation(
         or alignment.finalization_record.terminal_outcome
         is not AttemptTerminalOutcome.SUCCEEDED
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 difference receipt requires successful terminal results"
         )
     targeted_batches = tuple(
@@ -1253,7 +1255,7 @@ def _mint_package1_difference_observation(
         for key, batch in alignment.successful_observation_batches
     )
     if not targeted_batches or targeted_batches != alignment_batches:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Targeted and Alignment observation batch receipts must preserve work keys "
             "and be canonical-equal"
         )
@@ -1269,7 +1271,7 @@ def _mint_package1_difference_observation(
     ) or not expected_observation_ids.issubset(
         {artifact_id for artifact_id, _disposition in alignment_dispositions}
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "terminal results must disposition every observation artifact"
         )
     non_offered = sum(
@@ -1285,16 +1287,16 @@ def _mint_package1_difference_observation(
     )
     legacy_runner_call_count, product_output_paths = probe._finish()
     if legacy_runner_call_count != 0:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 observation path invoked the forbidden legacy runner"
         )
     if product_output_paths:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 observation path changed product output files: "
             + ", ".join(product_output_paths)
         )
-    return Package1DifferenceObservation(
-        frozen_surface_sha256=_FROZEN_PACKAGE1_SURFACE_SHA256,
+    return RuntimeDifferenceObservation(
+        frozen_surface_sha256=_FROZEN_RUNTIME_SURFACE_SHA256,
         processing_request_id=targeted_attempt.processing_request_id,
         processing_attempt_id=targeted_attempt.processing_attempt_id,
         targeted_coordinator_sha256=hashlib.sha256(
@@ -1354,7 +1356,7 @@ def _mint_package1_difference_observation(
         targeted_legacy_runner_call_count=legacy_runner_call_count,
         successor_product_output_paths=product_output_paths,
         validation_status="diagnostic_only",
-        _mint_token=_PACKAGE1_OBSERVATION_MINT_TOKEN,
+        _mint_token=_RUNTIME_OBSERVATION_MINT_TOKEN,
     )
 
 
@@ -1372,7 +1374,7 @@ def mint_targeted_adapter_parity_receipt(
     """Mint one parity receipt only from owner identity and actual bytes/files."""
 
     if not isinstance(processing_request, ProcessingRequestIdentity):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "processing_request must be an owner-minted ProcessingRequestIdentity"
         )
     return _TargetedAdapterParityReceipt(
@@ -1404,22 +1406,22 @@ def assert_targeted_adapter_parity(
     gui: _TargetedAdapterParityReceipt,
 ) -> str:
     if not isinstance(cli, _TargetedAdapterParityReceipt) or cli.adapter_name != "cli":
-        raise Package0ComparatorError("cli must be a CLI parity receipt")
+        raise SuccessorComparatorError("cli must be a CLI parity receipt")
     if not isinstance(gui, _TargetedAdapterParityReceipt) or gui.adapter_name != "gui":
-        raise Package0ComparatorError("gui must be a GUI parity receipt")
+        raise SuccessorComparatorError("gui must be a GUI parity receipt")
     cli_basis = _adapter_basis(cli)
     gui_basis = _adapter_basis(gui)
     if cli_basis != gui_basis:
         differences = sorted(
             key for key in cli_basis if cli_basis[key] != gui_basis[key]
         )
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             f"CLI/GUI adapter parity differs: {', '.join(differences)}"
         )
     return _canonical_sha256(cli_basis)
 
 
-def validate_package0_successor_output(
+def validate_successor_output(
     contract: Mapping[str, object],
     membership_receipt: Mapping[str, object],
     *,
@@ -1429,12 +1431,12 @@ def validate_package0_successor_output(
 ) -> str:
     """Derive and validate the frozen comparator from actual successor files."""
 
-    observation = _observe_package0_successor_output(
+    observation = _observe_successor_output(
         contract,
         membership_receipt,
         output_root=output_root,
     )
-    return _validate_package0_successor_observation(
+    return _validate_successor_observation(
         contract,
         observation,
         cli=cli,
@@ -1442,9 +1444,9 @@ def validate_package0_successor_output(
     )
 
 
-def _validate_package0_successor_observation(
+def _validate_successor_observation(
     contract: Mapping[str, object],
-    observation: _Package0SuccessorObservation,
+    observation: _SuccessorObservation,
     *,
     cli: _TargetedAdapterParityReceipt,
     gui: _TargetedAdapterParityReceipt,
@@ -1453,7 +1455,7 @@ def _validate_package0_successor_observation(
         "product_authority_granted": False,
         "validation_status": "diagnostic_only",
     }:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 0 comparator must remain diagnostic_only"
         )
     delivery_scope = contract.get("delivery_scope")
@@ -1461,12 +1463,12 @@ def _validate_package0_successor_observation(
         delivery_scope.get("issue_149_completion") != "complete"
         or delivery_scope.get("deferred") != []
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 0 comparator contract is not formally complete"
         )
     comparator = contract.get("legacy_comparator")
     if not isinstance(comparator, Mapping):
-        raise Package0ComparatorError("legacy_comparator contract is missing")
+        raise SuccessorComparatorError("legacy_comparator contract is missing")
     expected = {
         "baseline_id": contract.get("baseline_id"),
         "canonical_output_inventory_sha256": contract.get(
@@ -1494,7 +1496,7 @@ def _validate_package0_successor_observation(
         field for field, value in expected.items() if observed[field] != value
     )
     if differences:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             f"successor differs from frozen comparator: {', '.join(differences)}"
         )
     adapter_digest = assert_targeted_adapter_parity(cli, gui)
@@ -1504,7 +1506,7 @@ def _validate_package0_successor_observation(
         or cli.final_stage_xic_results_sha256
         != observation.final_stage_xic_results_sha256
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "adapter receipts do not bind the frozen Targeted CSV digests"
         )
     return _canonical_sha256(
@@ -1512,11 +1514,11 @@ def _validate_package0_successor_observation(
     )
 
 
-def validate_package1_difference_manifest(
+def validate_runtime_difference_manifest(
     contract: Mapping[str, object],
     rows: Sequence[Mapping[str, str]],
     *,
-    observation: Package1DifferenceObservation,
+    observation: RuntimeDifferenceObservation,
 ) -> str:
     """Validate Package 1's internal diff and frozen exact-zero comparator row."""
 
@@ -1524,16 +1526,16 @@ def validate_package1_difference_manifest(
         "product_authority_granted": False,
         "validation_status": "diagnostic_only",
     }:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 difference gate must reuse the diagnostic-only comparator"
         )
-    frozen_digest = _package1_frozen_surface_digest(contract)
-    if frozen_digest != _FROZEN_PACKAGE1_SURFACE_SHA256:
-        raise Package0ComparatorError(
+    frozen_digest = _runtime_frozen_surface_digest(contract)
+    if frozen_digest != _FROZEN_RUNTIME_SURFACE_SHA256:
+        raise SuccessorComparatorError(
             "Package 1 comparator contract differs from the immutable baseline anchor"
         )
-    if not isinstance(observation, Package1DifferenceObservation) or (
-        observation.frozen_surface_sha256 != _FROZEN_PACKAGE1_SURFACE_SHA256
+    if not isinstance(observation, RuntimeDifferenceObservation) or (
+        observation.frozen_surface_sha256 != _FROZEN_RUNTIME_SURFACE_SHA256
         or observation.targeted_observation_batches_sha256
         != observation.alignment_observation_batches_sha256
         or observation.observation_batch_count < 1
@@ -1545,12 +1547,12 @@ def validate_package1_difference_manifest(
         or observation.successor_product_output_paths
         or observation.validation_status != "diagnostic_only"
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 run emitted or invoked a frozen product surface"
         )
     expected = (
         {
-            "schema_version": _PACKAGE1_DIFFERENCE_SCHEMA,
+            "schema_version": _RUNTIME_DIFFERENCE_SCHEMA,
             "stage": "package1_runtime_observation",
             "stable_subject_or_cell": (
                 "targeted_alignment_process_result_carrier"
@@ -1566,13 +1568,13 @@ def validate_package1_difference_manifest(
             "disposition": "accept_diagnostic_only",
         },
         {
-            "schema_version": _PACKAGE1_DIFFERENCE_SCHEMA,
+            "schema_version": _RUNTIME_DIFFERENCE_SCHEMA,
             "stage": "package1_runtime_observation",
             "stable_subject_or_cell": (
                 "frozen_legacy_product_scientific_matrix_writer"
             ),
-            "old_value": f"sha256:{_FROZEN_PACKAGE1_SURFACE_SHA256}",
-            "new_value": f"sha256:{_FROZEN_PACKAGE1_SURFACE_SHA256}",
+            "old_value": f"sha256:{_FROZEN_RUNTIME_SURFACE_SHA256}",
+            "new_value": f"sha256:{_FROZEN_RUNTIME_SURFACE_SHA256}",
             "reason": "package1_path_does_not_invoke_legacy_runner_or_writer",
             "preserved_invariant": (
                 "frozen_package0_inventory_membership_and_csv_bytes_exact"
@@ -1585,20 +1587,20 @@ def validate_package1_difference_manifest(
         },
     )
     normalized = tuple(
-        {field: row.get(field, "") for field in _PACKAGE1_DIFFERENCE_FIELDS}
+        {field: row.get(field, "") for field in _RUNTIME_DIFFERENCE_FIELDS}
         for row in rows
     )
-    if any(set(row) != set(_PACKAGE1_DIFFERENCE_FIELDS) for row in rows):
-        raise Package0ComparatorError(
+    if any(set(row) != set(_RUNTIME_DIFFERENCE_FIELDS) for row in rows):
+        raise SuccessorComparatorError(
             "Package 1 DifferenceManifest fields do not match the reviewed schema"
         )
     if normalized != expected:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 DifferenceManifest differs from the frozen exact-zero gate"
         )
     return _canonical_sha256(
         {
-            "schema_version": _PACKAGE1_DIFFERENCE_SCHEMA,
+            "schema_version": _RUNTIME_DIFFERENCE_SCHEMA,
             "observation": {
                 "frozen_surface_sha256": observation.frozen_surface_sha256,
                 "processing_request_id": observation.processing_request_id,
@@ -1647,15 +1649,15 @@ def validate_m5_successor_verdict_packet(
     *,
     repo_root: Path,
     expected_candidate_sha: str,
-) -> M5SuccessorVerdictReceipt:
+) -> SuccessorVerdictReceipt:
     """Validate one sealed feature-free M5 comparison and verdict packet."""
 
     if not isinstance(packet_root, Path) or not packet_root.is_dir():
-        raise Package0ComparatorError("M5 packet_root must be an existing directory")
+        raise SuccessorComparatorError("M5 packet_root must be an existing directory")
     if packet_root.is_symlink():
-        raise Package0ComparatorError("M5 packet_root cannot be a symlink")
+        raise SuccessorComparatorError("M5 packet_root cannot be a symlink")
     if not isinstance(repo_root, Path) or not repo_root.is_dir():
-        raise Package0ComparatorError("M5 repo_root must be an existing directory")
+        raise SuccessorComparatorError("M5 repo_root must be an existing directory")
     _m5_commit_sha(expected_candidate_sha, field="expected_candidate_sha")
 
     inventory = _validate_m5_packet_inventory(packet_root)
@@ -1742,7 +1744,7 @@ def validate_m5_successor_verdict_packet(
     )
     _validate_m5_static_inventory_contract(inventory)
 
-    return M5SuccessorVerdictReceipt(
+    return SuccessorVerdictReceipt(
         candidate_merge_sha=str(candidate["candidate_merge_sha"]),
         verdict=derived_verdict,
         evaluated_scope=str(verdict["evaluated_scope"]),
@@ -1766,7 +1768,7 @@ def validate_m5_successor_verdict_packet(
 
 def validate_m5_rollback_rehearsal(
     staged: object,
-) -> M5RollbackRehearsalReceipt:
+) -> RollbackRehearsalReceipt:
     """Invoke the whole-attempt rollback owner and derive its receipt."""
 
     from xic_extractor.extraction.targeted_diagnostic_delivery import (
@@ -1777,14 +1779,14 @@ def validate_m5_rollback_rehearsal(
     if not isinstance(staged, TargetedDiagnosticDeliveryCandidate) or (
         staged.status != "staged_candidate"
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 rollback rehearsal requires one staged delivery candidate"
         )
     rolled_back = rollback_targeted_diagnostic_delivery_candidate(staged)
     if not isinstance(rolled_back, TargetedDiagnosticDeliveryCandidate) or (
         rolled_back.status != "rolled_back"
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 rollback rehearsal requires one rolled-back delivery candidate"
         )
     expected = replace(
@@ -1793,11 +1795,11 @@ def validate_m5_rollback_rehearsal(
         quarantine_reason="whole attempt rolled back to authoritative legacy current",
     )
     if rolled_back != expected or rolled_back.active_output is not staged.active_output:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 rollback rehearsal changed candidate evidence or active authority"
         )
     if staged.stage_candidate is None or staged.seal_candidate is None:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 rollback rehearsal lacks the staged candidate lineage"
         )
     lineage_artifact_ids = tuple(
@@ -1818,7 +1820,7 @@ def validate_m5_rollback_rehearsal(
             staged.seal_candidate.delivery_seal_candidate_id
         ),
     }
-    return M5RollbackRehearsalReceipt(
+    return RollbackRehearsalReceipt(
         status_transition="staged_candidate->rolled_back",
         processing_attempt_id=staged.attempt.processing_attempt_id,
         prior_current_delivery_id=staged.prior_current_delivery_id,
@@ -1843,7 +1845,7 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
         for row in rows
     )
     if declared_paths != _M5_PACKET_FILES:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 artifact inventory must declare the exact ordered packet"
         )
     actual_entries = tuple(sorted(packet_root.iterdir(), key=lambda path: path.name))
@@ -1851,7 +1853,7 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
     if tuple(path.name for path in actual_entries) != expected_names or any(
         not path.is_file() or path.is_symlink() for path in actual_entries
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 artifact inventory differs from the sealed packet"
         )
     normalized: list[dict[str, object]] = []
@@ -1870,15 +1872,15 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
         try:
             size_bytes = int(row["size_bytes"])
         except ValueError as exc:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"M5 artifact {relative} size_bytes must be an integer"
             ) from exc
         if digest != expected_digest or size_bytes != len(payload):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"M5 artifact digest or size differs: {relative}"
             )
         if not row["role"]:
-            raise Package0ComparatorError(f"M5 artifact role is missing: {relative}")
+            raise SuccessorComparatorError(f"M5 artifact role is missing: {relative}")
         normalized.append(
             {
                 "path": str(relative),
@@ -1891,7 +1893,7 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
     if tuple(
         (str(row["path"]), str(row["role"])) for row in normalized_inventory
     ) != _M5_REQUIRED_PACKET_ROLES:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 artifact roles differ from the packet contract"
         )
     return normalized_inventory
@@ -1907,7 +1909,7 @@ def _validate_m5_static_inventory_contract(
         _canonical_value_sha256(static_inventory)
         != _M5_STATIC_INVENTORY_CONTRACT_SHA256
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 frozen packet payload differs from its package-code trust root"
         )
 
@@ -1919,15 +1921,15 @@ def _validate_m5_candidate_manifest(
     expected_candidate_sha: str,
 ) -> None:
     if set(candidate) != _M5_CANDIDATE_FIELDS:
-        raise Package0ComparatorError("M5 candidate manifest field set differs")
+        raise SuccessorComparatorError("M5 candidate manifest field set differs")
     if candidate.get("schema_version") != _M5_CANDIDATE_SCHEMA:
-        raise Package0ComparatorError("M5 candidate manifest schema differs")
+        raise SuccessorComparatorError("M5 candidate manifest schema differs")
     candidate_sha = _m5_commit_sha(
         candidate.get("candidate_merge_sha"),
         field="candidate_merge_sha",
     )
     if candidate_sha != expected_candidate_sha:
-        raise Package0ComparatorError("M5 packet references a stale frozen candidate")
+        raise SuccessorComparatorError("M5 packet references a stale frozen candidate")
     declared_tree_sha = _m5_commit_sha(
         candidate.get("candidate_tree_sha"),
         field="candidate_tree_sha",
@@ -1938,12 +1940,12 @@ def _validate_m5_candidate_manifest(
         f"{candidate_sha}^{{tree}}",
     ).decode("ascii").strip()
     if actual_tree_sha != declared_tree_sha:
-        raise Package0ComparatorError("M5 candidate Git tree differs")
+        raise SuccessorComparatorError("M5 candidate Git tree differs")
     if any(
         _m5_commit_sha(candidate.get(field), field=field) != candidate_sha
         for field in ("design_base_sha", "activation_base_sha")
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 design and activation bases must equal the frozen candidate"
         )
     if (
@@ -1952,18 +1954,18 @@ def _validate_m5_candidate_manifest(
         or candidate.get("product_authority_granted") is not False
         or candidate.get("canonical_package4_go_reachable") is not False
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 candidate manifest overclaims scope or product authority"
         )
     milestones = candidate.get("included_milestones")
     if not isinstance(milestones, list):
-        raise Package0ComparatorError("M5 included milestones are missing")
+        raise SuccessorComparatorError("M5 included milestones are missing")
     if any(
         not isinstance(item, Mapping)
         or set(item) != _M5_CANDIDATE_MILESTONE_FIELDS
         for item in milestones
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 candidate milestone record field set differs"
         )
     observed_milestones = {
@@ -1981,14 +1983,14 @@ def _validate_m5_candidate_manifest(
         observed_milestones != expected_milestones
         or len(milestones) != len(expected_milestones)
     ):
-        raise Package0ComparatorError("M5 candidate milestone set differs")
+        raise SuccessorComparatorError("M5 candidate milestone set differs")
     excluded = candidate.get("excluded_milestones")
     if not isinstance(excluded, list) or any(
         not isinstance(item, Mapping)
         or set(item) != _M5_CANDIDATE_EXCLUDED_MILESTONE_FIELDS
         for item in excluded
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 candidate excluded milestone record field set differs"
         )
     if tuple(
@@ -2003,14 +2005,14 @@ def _validate_m5_candidate_manifest(
     ) != _M5_REQUIRED_EXCLUDED_MILESTONES or len(excluded) != len(
         _M5_REQUIRED_EXCLUDED_MILESTONES
     ):
-        raise Package0ComparatorError("M5 candidate excluded milestone set differs")
+        raise SuccessorComparatorError("M5 candidate excluded milestone set differs")
     followups = candidate.get("known_preexisting_followups")
     if not isinstance(followups, list) or any(
         not isinstance(item, Mapping)
         or set(item) != _M5_CANDIDATE_FOLLOWUP_FIELDS
         for item in followups
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 candidate follow-up record field set differs"
         )
     if tuple(
@@ -2020,16 +2022,16 @@ def _validate_m5_candidate_manifest(
     ) != _M5_REQUIRED_CANDIDATE_FOLLOWUPS or len(followups) != len(
         _M5_REQUIRED_CANDIDATE_FOLLOWUPS
     ):
-        raise Package0ComparatorError("M5 candidate known follow-up set differs")
+        raise SuccessorComparatorError("M5 candidate known follow-up set differs")
     sources = candidate.get("source_files")
     if not isinstance(sources, list) or not sources:
-        raise Package0ComparatorError("M5 candidate source file seal is missing")
+        raise SuccessorComparatorError("M5 candidate source file seal is missing")
     seen: set[str] = set()
     for item in sources:
         if not isinstance(item, Mapping):
-            raise Package0ComparatorError("M5 candidate source row is malformed")
+            raise SuccessorComparatorError("M5 candidate source row is malformed")
         if set(item) != _M5_FILE_SEAL_FIELDS:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "M5 candidate source record field set differs"
             )
         relative = _m5_safe_relative_path(
@@ -2037,7 +2039,7 @@ def _validate_m5_candidate_manifest(
             field="candidate source path",
         )
         if str(relative) in seen:
-            raise Package0ComparatorError("M5 candidate source paths must be unique")
+            raise SuccessorComparatorError("M5 candidate source paths must be unique")
         seen.add(str(relative))
         expected_digest = _sha256(
             item.get("sha256"),
@@ -2051,9 +2053,9 @@ def _validate_m5_candidate_manifest(
             field=f"candidate Git source {relative}",
         )
         if candidate_digest != expected_digest:
-            raise Package0ComparatorError(f"M5 candidate source drift: {relative}")
+            raise SuccessorComparatorError(f"M5 candidate source drift: {relative}")
     if seen != _M5_REQUIRED_CANDIDATE_SOURCE_PATHS:
-        raise Package0ComparatorError("M5 candidate source set differs")
+        raise SuccessorComparatorError("M5 candidate source set differs")
 
 
 def _validate_m5_legacy_receipt(
@@ -2063,9 +2065,9 @@ def _validate_m5_legacy_receipt(
     evidence_revision: str,
 ) -> None:
     if set(legacy) != _M5_LEGACY_FIELDS:
-        raise Package0ComparatorError("M5 legacy receipt field set differs")
+        raise SuccessorComparatorError("M5 legacy receipt field set differs")
     if legacy.get("schema_version") != _M5_LEGACY_SCHEMA:
-        raise Package0ComparatorError("M5 legacy receipt schema differs")
+        raise SuccessorComparatorError("M5 legacy receipt schema differs")
     if (
         legacy.get("validation_status") != "diagnostic_only"
         or legacy.get("legacy_is_scientific_truth") is not False
@@ -2073,7 +2075,7 @@ def _validate_m5_legacy_receipt(
         or legacy.get("external_legacy_replay_performed") is not False
         or legacy.get("baseline_replay_status") != "sealed_receipt_reused_no_raw_rerun"
     ):
-        raise Package0ComparatorError("M5 legacy receipt overclaims replay authority")
+        raise SuccessorComparatorError("M5 legacy receipt overclaims replay authority")
     source_commit_sha = _m5_commit_sha(
         legacy.get("source_commit_sha"),
         field="M5 legacy source_commit_sha",
@@ -2084,28 +2086,28 @@ def _validate_m5_legacy_receipt(
         or legacy.get("canonical_output_inventory_sha256")
         != _M5_REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256
     ):
-        raise Package0ComparatorError("M5 legacy baseline identity differs")
+        raise SuccessorComparatorError("M5 legacy baseline identity differs")
     if (
         _m5_git_bytes(repo_root, "cat-file", "-t", source_commit_sha)
         .decode("ascii")
         .strip()
         != "commit"
     ):
-        raise Package0ComparatorError("M5 legacy source Git object is not a commit")
+        raise SuccessorComparatorError("M5 legacy source Git object is not a commit")
     tracked_files = legacy.get("tracked_files")
     if not isinstance(tracked_files, list) or not tracked_files:
-        raise Package0ComparatorError("M5 legacy tracked file seal is missing")
+        raise SuccessorComparatorError("M5 legacy tracked file seal is missing")
     tracked: dict[str, Mapping[str, object]] = {}
     for item in tracked_files:
         if not isinstance(item, Mapping):
-            raise Package0ComparatorError("M5 legacy tracked file row is malformed")
+            raise SuccessorComparatorError("M5 legacy tracked file row is malformed")
         if set(item) != _M5_FILE_SEAL_FIELDS:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "M5 legacy tracked file record field set differs"
             )
         relative = _m5_safe_relative_path(item.get("path"), field="legacy file path")
         if str(relative) in tracked:
-            raise Package0ComparatorError("M5 legacy tracked files must be unique")
+            raise SuccessorComparatorError("M5 legacy tracked files must be unique")
         tracked[str(relative)] = item
         if _bytes_sha256(
             _m5_canonical_text_bytes(
@@ -2121,14 +2123,14 @@ def _validate_m5_legacy_receipt(
             item.get("sha256"),
             f"legacy file {relative} sha256",
         ):
-            raise Package0ComparatorError(f"M5 legacy tracked file drift: {relative}")
+            raise SuccessorComparatorError(f"M5 legacy tracked file drift: {relative}")
     if frozenset(tracked) != _M5_REQUIRED_LEGACY_TRACKED_PATHS:
-        raise Package0ComparatorError("M5 legacy tracked file set differs")
+        raise SuccessorComparatorError("M5 legacy tracked file set differs")
     baseline_path = (
         "docs/superpowers/validation/cid_nl_legacy_baseline_v1/baseline_summary.json"
     )
     if baseline_path not in tracked:
-        raise Package0ComparatorError("M5 legacy receipt lacks the baseline pointer")
+        raise SuccessorComparatorError("M5 legacy receipt lacks the baseline pointer")
     baseline = _m5_json_bytes_mapping(
         _m5_git_bytes(
             repo_root,
@@ -2144,7 +2146,7 @@ def _validate_m5_legacy_receipt(
         or legacy.get("canonical_output_inventory_sha256")
         != canonical.get("output_inventory_sha256")
     ):
-        raise Package0ComparatorError("M5 legacy receipt differs from sealed baseline")
+        raise SuccessorComparatorError("M5 legacy receipt differs from sealed baseline")
 
 
 def _validate_m5_evidence_manifest(
@@ -2158,7 +2160,7 @@ def _validate_m5_evidence_manifest(
         relative = _m5_safe_relative_path(row["path"], field="evidence file path")
         normalized = str(relative)
         if normalized in observed:
-            raise Package0ComparatorError("M5 evidence file paths must be unique")
+            raise SuccessorComparatorError("M5 evidence file paths must be unique")
         observed.add(normalized)
         expected_digest = _sha256(
             row["sha256"],
@@ -2175,13 +2177,13 @@ def _validate_m5_evidence_manifest(
             ),
             field=f"M5 evidence file {relative}",
         ) != expected_digest:
-            raise Package0ComparatorError(f"M5 evidence file drift: {relative}")
+            raise SuccessorComparatorError(f"M5 evidence file drift: {relative}")
         if not row["role"]:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"M5 evidence file role is missing: {relative}"
             )
     if observed != _M5_REQUIRED_EVIDENCE_PATHS:
-        raise Package0ComparatorError("M5 evidence file set differs")
+        raise SuccessorComparatorError("M5 evidence file set differs")
     return frozenset(observed)
 
 
@@ -2204,13 +2206,13 @@ def _validate_m5_evidence_locator_coverage(
     used_paths: set[str] = set()
     for locator in locators:
         if not isinstance(locator, str):
-            raise Package0ComparatorError("M5 evidence locator is missing")
+            raise SuccessorComparatorError("M5 evidence locator is missing")
         path_text, _separator, _symbol = locator.partition("::")
         used_paths.add(
             str(_m5_safe_relative_path(path_text, field="evidence locator"))
         )
     if used_paths != evidence_paths:
-        raise Package0ComparatorError("M5 evidence locator set differs from its seal")
+        raise SuccessorComparatorError("M5 evidence locator set differs from its seal")
 
 
 def _validate_m5_authority_audit(
@@ -2223,7 +2225,7 @@ def _validate_m5_authority_audit(
         tuple(row[field] for field in _M5_AUTHORITY_AUDIT_FIELDS) for row in rows
     )
     if observed_rows != _M5_REQUIRED_AUTHORITY_AUDIT_ROWS:
-        raise Package0ComparatorError("M5 architecture/authority audit set differs")
+        raise SuccessorComparatorError("M5 architecture/authority audit set differs")
     for row in rows:
         _validate_m5_locator(
             repo_root,
@@ -2241,7 +2243,7 @@ def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:
         "validation_status",
         "verdict_states",
     }:
-        raise Package0ComparatorError("M5 verdict contract field set differs")
+        raise SuccessorComparatorError("M5 verdict contract field set differs")
     if (
         contract.get("schema_version") != _M5_VERDICT_CONTRACT_SCHEMA
         or contract.get("validation_status") != "diagnostic_only"
@@ -2249,10 +2251,10 @@ def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:
         or contract.get("go_requirements") != list(_M5_REQUIRED_GO_REQUIREMENTS)
         or contract.get("verdict_states") != list(_M5_REQUIRED_VERDICT_STATES)
     ):
-        raise Package0ComparatorError("M5 verdict contract semantics differ")
+        raise SuccessorComparatorError("M5 verdict contract semantics differ")
     rules = contract.get("rules")
     if not isinstance(rules, Mapping) or dict(rules) != _M5_REQUIRED_VERDICT_RULES:
-        raise Package0ComparatorError("M5 verdict contract rules differ")
+        raise SuccessorComparatorError("M5 verdict contract rules differ")
 
 
 def _validate_m5_dimensions(
@@ -2262,10 +2264,10 @@ def _validate_m5_dimensions(
     evidence_revision: str,
 ) -> None:
     if _canonical_value_sha256(rows) != _M5_DIMENSION_CONTRACT_SHA256:
-        raise Package0ComparatorError("M5 comparison dimension semantics differ")
+        raise SuccessorComparatorError("M5 comparison dimension semantics differ")
     dimensions = {row["dimension"] for row in rows}
     if dimensions != _M5_REQUIRED_DIMENSIONS or len(dimensions) != len(rows):
-        raise Package0ComparatorError("M5 comparison dimension set differs")
+        raise SuccessorComparatorError("M5 comparison dimension set differs")
     for row in rows:
         if row["schema_version"] != _M5_PACKET_SCHEMA or row["outcome"] not in {
             "pass",
@@ -2274,7 +2276,7 @@ def _validate_m5_dimensions(
             "not_applicable",
             "fail",
         }:
-            raise Package0ComparatorError("M5 comparison dimension row is malformed")
+            raise SuccessorComparatorError("M5 comparison dimension row is malformed")
         if not all(
             row[field]
             for field in (
@@ -2284,7 +2286,7 @@ def _validate_m5_dimensions(
                 "claim_limit",
             )
         ):
-            raise Package0ComparatorError("M5 comparison dimension lacks evidence")
+            raise SuccessorComparatorError("M5 comparison dimension lacks evidence")
         _validate_m5_locator(
             repo_root,
             row["evidence_locator"],
@@ -2300,7 +2302,7 @@ def _validate_m5_selective_cases(
 ) -> None:
     case_ids = {row["case_id"] for row in rows}
     if len(case_ids) != len(rows) or len(rows) != 12:
-        raise Package0ComparatorError("M5 selective case set is incomplete")
+        raise SuccessorComparatorError("M5 selective case set is incomplete")
     contract_rows = tuple(
         {
             field: row[field]
@@ -2316,7 +2318,7 @@ def _validate_m5_selective_cases(
         for row in sorted(rows, key=lambda item: item["case_id"])
     )
     if _canonical_value_sha256(contract_rows) != _M5_SELECTIVE_CASE_CONTRACT_SHA256:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 preregistered selective case contract differs"
         )
     for row in rows:
@@ -2326,7 +2328,7 @@ def _validate_m5_selective_cases(
             or (row["observed"] == row["expected"]) != (row["status"] == "pass")
             or row["verdict_effect"] not in {"failure_narrows", "failure_kills"}
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"M5 candidate selective case result is malformed: {row['case_id']}"
             )
         if (
@@ -2334,7 +2336,7 @@ def _validate_m5_selective_cases(
             or not row["evidence_maturity"]
             or not row["verdict_effect"]
         ):
-            raise Package0ComparatorError("M5 selective case lacks evidence")
+            raise SuccessorComparatorError("M5 selective case lacks evidence")
         _validate_m5_locator(
             repo_root,
             row["evidence_locator"],
@@ -2349,10 +2351,10 @@ def _validate_m5_public_diffs(
     evidence_revision: str,
 ) -> None:
     if _canonical_value_sha256(rows) != _M5_PUBLIC_DIFF_CONTRACT_SHA256:
-        raise Package0ComparatorError("M5 public hard-zero semantics differ")
+        raise SuccessorComparatorError("M5 public hard-zero semantics differ")
     surfaces = {row["surface"] for row in rows}
     if surfaces != _M5_REQUIRED_PUBLIC_SURFACES or len(surfaces) != len(rows):
-        raise Package0ComparatorError("M5 public surface set differs")
+        raise SuccessorComparatorError("M5 public surface set differs")
     for row in rows:
         if (
             row["schema_version"] != _M5_PACKET_SCHEMA
@@ -2361,7 +2363,7 @@ def _validate_m5_public_diffs(
             or row["status"] != "pass"
             or row["authority"] != "unchanged_existing_owner"
         ):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"M5 public hard-zero gate failed: {row['surface']}"
             )
         _validate_m5_locator(
@@ -2378,7 +2380,7 @@ def _validate_m5_rollback_packet(
     evidence_revision: str,
 ) -> None:
     if set(rollback) != _M5_ROLLBACK_FIELDS:
-        raise Package0ComparatorError("M5 rollback packet field set differs")
+        raise SuccessorComparatorError("M5 rollback packet field set differs")
     if rollback.get("schema_version") != _M5_ROLLBACK_SCHEMA or (
         rollback.get("status") != "pass"
         or rollback.get("status_transition") != "staged_candidate->rolled_back"
@@ -2389,10 +2391,10 @@ def _validate_m5_rollback_packet(
         or rollback.get("candidate_evidence_retained") is not True
         or rollback.get("product_output_changed") is not False
     ):
-        raise Package0ComparatorError("M5 rollback packet permits mixed authority")
+        raise SuccessorComparatorError("M5 rollback packet permits mixed authority")
     locator = rollback.get("evidence_locator")
     if not isinstance(locator, str):
-        raise Package0ComparatorError("M5 rollback evidence locator is missing")
+        raise SuccessorComparatorError("M5 rollback evidence locator is missing")
     _validate_m5_locator(
         repo_root,
         locator,
@@ -2400,9 +2402,9 @@ def _validate_m5_rollback_packet(
     )
     recorded = rollback.get("recorded_owner_receipt")
     if not isinstance(recorded, Mapping):
-        raise Package0ComparatorError("M5 rollback owner receipt is missing")
+        raise SuccessorComparatorError("M5 rollback owner receipt is missing")
     if set(recorded) != _M5_ROLLBACK_OWNER_RECEIPT_FIELDS:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 rollback owner receipt field set differs"
         )
     for field in (
@@ -2414,7 +2416,7 @@ def _validate_m5_rollback_packet(
     for field in ("lineage_artifact_count", "delivery_revision_count"):
         value = recorded.get(field)
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise Package0ComparatorError("M5 rollback owner receipt count is invalid")
+            raise SuccessorComparatorError("M5 rollback owner receipt count is invalid")
     typed_prefixes = {
         "processing_attempt_id": "xic.processing-attempt.v1:",
         "delivery_stage_id": "xic.targeted-delivery-stage-candidate.v1:",
@@ -2423,13 +2425,13 @@ def _validate_m5_rollback_packet(
     for field, prefix in typed_prefixes.items():
         value = recorded.get(field)
         if not isinstance(value, str) or not value.startswith(prefix):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "M5 rollback owner receipt identity is invalid"
             )
     if recorded.get("prior_current_delivery_id") != "legacy-seal:prior-current":
-        raise Package0ComparatorError("M5 rollback prior current identity differs")
+        raise SuccessorComparatorError("M5 rollback prior current identity differs")
     if _canonical_value_sha256(recorded) != _M5_ROLLBACK_RECEIPT_SUMMARY_SHA256:
-        raise Package0ComparatorError("M5 recorded rollback owner receipt differs")
+        raise SuccessorComparatorError("M5 recorded rollback owner receipt differs")
 
 
 def _validate_m5_verdict(
@@ -2442,7 +2444,7 @@ def _validate_m5_verdict(
     rollback: Mapping[str, object],
 ) -> str:
     if set(verdict) != _M5_VERDICT_FIELDS:
-        raise Package0ComparatorError("M5 verdict field set differs")
+        raise SuccessorComparatorError("M5 verdict field set differs")
     if verdict.get("schema_version") != _M5_PACKET_SCHEMA or (
         verdict.get("validation_status") != "diagnostic_only"
         or verdict.get("evaluated_scope") != "cid_nl_successor_shadow_substrate"
@@ -2452,7 +2454,7 @@ def _validate_m5_verdict(
         or verdict.get("legacy_retirement_authorized") is not False
         or verdict.get("writer_expansion_authorized") is not False
     ):
-        raise Package0ComparatorError("M5 verdict overclaims scope or authority")
+        raise SuccessorComparatorError("M5 verdict overclaims scope or authority")
     defects = verdict.get("candidate_defects")
     missing = verdict.get("missing_evidence")
     retained = verdict.get("retained_scope")
@@ -2472,21 +2474,21 @@ def _validate_m5_verdict(
             for item in values
         )
     ):
-        raise Package0ComparatorError("M5 verdict evidence state is malformed")
+        raise SuccessorComparatorError("M5 verdict evidence state is malformed")
     if set(gates) != _M5_VERDICT_GATE_STATUS_FIELDS:
-        raise Package0ComparatorError("M5 verdict gate status field set differs")
+        raise SuccessorComparatorError("M5 verdict gate status field set differs")
     if defects != []:
-        raise Package0ComparatorError("M5 candidate defect set differs")
+        raise SuccessorComparatorError("M5 candidate defect set differs")
     if tuple(missing) != _M5_REQUIRED_MISSING_EVIDENCE:
-        raise Package0ComparatorError("M5 missing-evidence set differs")
+        raise SuccessorComparatorError("M5 missing-evidence set differs")
     if tuple(retained) != _M5_REQUIRED_RETAINED_SCOPE:
-        raise Package0ComparatorError("M5 retained scope differs")
+        raise SuccessorComparatorError("M5 retained scope differs")
     if tuple(followups) != _M5_REQUIRED_KNOWN_FOLLOWUPS:
-        raise Package0ComparatorError("M5 known follow-up set differs")
+        raise SuccessorComparatorError("M5 known follow-up set differs")
     if tuple(excluded) != _M5_REQUIRED_NARROW_EXCLUSION_ORDER:
-        raise Package0ComparatorError("M5 excluded scope differs")
+        raise SuccessorComparatorError("M5 excluded scope differs")
     if dict(gates) != _M5_REQUIRED_GATE_STATUS:
-        raise Package0ComparatorError("M5 gate status differs")
+        raise SuccessorComparatorError("M5 gate status differs")
     has_dimension_failure = any(row["outcome"] == "fail" for row in dimensions)
     has_case_kill = any(
         row["status"] == "fail" and row["verdict_effect"] == "failure_kills"
@@ -2509,7 +2511,7 @@ def _validate_m5_verdict(
         canonical_complete
         and candidate.get("canonical_package4_go_reachable") is not True
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 GO is unreachable for the frozen candidate scope"
         )
     if has_case_kill or has_dimension_failure:
@@ -2522,7 +2524,7 @@ def _validate_m5_verdict(
         derived = "INCONCLUSIVE"
     declared = verdict.get("verdict")
     if declared == "GO" and not canonical_complete:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 GO is unreachable while canonical Package 4 gates are incomplete"
         )
     contract_states = contract.get("verdict_states")
@@ -2531,7 +2533,7 @@ def _validate_m5_verdict(
         or not isinstance(contract_states, list)
         or declared not in contract_states
     ):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             f"M5 declared verdict differs from evidence-derived verdict: {derived}"
         )
     return derived
@@ -2541,7 +2543,7 @@ def _m5_json_mapping(path: Path) -> Mapping[str, object]:
     try:
         payload = path.read_bytes()
     except OSError as exc:
-        raise Package0ComparatorError(f"M5 JSON is unreadable: {path}") from exc
+        raise SuccessorComparatorError(f"M5 JSON is unreadable: {path}") from exc
     return _m5_json_bytes_mapping(payload, source=str(path))
 
 
@@ -2556,9 +2558,9 @@ def _m5_json_bytes_mapping(
             object_pairs_hook=_m5_unique_json_mapping,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise Package0ComparatorError(f"M5 JSON is unreadable: {source}") from exc
+        raise SuccessorComparatorError(f"M5 JSON is unreadable: {source}") from exc
     if not isinstance(value, Mapping):
-        raise Package0ComparatorError(f"M5 JSON must contain an object: {source}")
+        raise SuccessorComparatorError(f"M5 JSON must contain an object: {source}")
     return value
 
 
@@ -2568,7 +2570,7 @@ def _m5_unique_json_mapping(
     mapping: dict[str, object] = {}
     for key, value in pairs:
         if key in mapping:
-            raise Package0ComparatorError(f"M5 JSON contains duplicate key: {key}")
+            raise SuccessorComparatorError(f"M5 JSON contains duplicate key: {key}")
         mapping[key] = value
     return mapping
 
@@ -2582,18 +2584,18 @@ def _m5_tsv_rows(
         with path.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             if tuple(reader.fieldnames or ()) != fields:
-                raise Package0ComparatorError(f"M5 TSV fields differ: {path}")
+                raise SuccessorComparatorError(f"M5 TSV fields differ: {path}")
             rows = tuple(dict(row) for row in reader)
     except OSError as exc:
-        raise Package0ComparatorError(f"M5 TSV is unreadable: {path}") from exc
+        raise SuccessorComparatorError(f"M5 TSV is unreadable: {path}") from exc
     if not rows or any(set(row) != set(fields) for row in rows):
-        raise Package0ComparatorError(f"M5 TSV rows are malformed: {path}")
+        raise SuccessorComparatorError(f"M5 TSV rows are malformed: {path}")
     return rows
 
 
 def _m5_safe_relative_path(value: object, *, field: str) -> PurePosixPath:
     if not isinstance(value, str) or not value:
-        raise Package0ComparatorError(f"{field} must contain safe relative paths")
+        raise SuccessorComparatorError(f"{field} must contain safe relative paths")
     path = PurePosixPath(value)
     windows_path = PureWindowsPath(value)
     if (
@@ -2604,7 +2606,7 @@ def _m5_safe_relative_path(value: object, *, field: str) -> PurePosixPath:
         or any(part in {"", ".", ".."} for part in path.parts)
         or any(part in {"", ".", ".."} for part in windows_path.parts)
     ):
-        raise Package0ComparatorError(f"{field} must contain safe relative paths")
+        raise SuccessorComparatorError(f"{field} must contain safe relative paths")
     return path
 
 
@@ -2615,7 +2617,7 @@ def _validate_m5_locator(
     evidence_revision: str,
 ) -> None:
     if not isinstance(locator, str) or not locator:
-        raise Package0ComparatorError("M5 evidence locator is missing")
+        raise SuccessorComparatorError("M5 evidence locator is missing")
     path_text, separator, symbol = locator.partition("::")
     relative = _m5_safe_relative_path(path_text, field="evidence locator")
     try:
@@ -2624,18 +2626,18 @@ def _validate_m5_locator(
             "show",
             f"{evidence_revision}:{relative}",
         ).decode("utf-8")
-    except (Package0ComparatorError, UnicodeDecodeError):
-        raise Package0ComparatorError(f"M5 evidence locator is missing: {locator}")
+    except (SuccessorComparatorError, UnicodeDecodeError):
+        raise SuccessorComparatorError(f"M5 evidence locator is missing: {locator}")
     if separator:
         if not symbol or f"def {symbol}(" not in source:
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"M5 evidence locator symbol is missing: {locator}"
             )
 
 
 def _m5_commit_sha(value: object, *, field: str) -> str:
     if not isinstance(value, str) or _COMMIT_SHA_RE.fullmatch(value) is None:
-        raise Package0ComparatorError(f"{field} must be a lower-case commit SHA")
+        raise SuccessorComparatorError(f"{field} must be a lower-case commit SHA")
     return value
 
 
@@ -2647,18 +2649,18 @@ def _m5_git_bytes(repo_root: Path, *args: str) -> bytes:
             capture_output=True,
         )
     except OSError as exc:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "M5 candidate Git repository is unavailable"
         ) from exc
     if completed.returncode != 0:
-        raise Package0ComparatorError("M5 candidate Git object is unavailable")
+        raise SuccessorComparatorError("M5 candidate Git object is unavailable")
     return completed.stdout
 
 
-def _package1_frozen_surface_digest(contract: Mapping[str, object]) -> str:
+def _runtime_frozen_surface_digest(contract: Mapping[str, object]) -> str:
     comparator = contract.get("legacy_comparator")
     if not isinstance(comparator, Mapping):
-        raise Package0ComparatorError("legacy_comparator contract is missing")
+        raise SuccessorComparatorError("legacy_comparator contract is missing")
     fields = (
         "baseline_stage_xic_results_sha256",
         "final_stage_xic_results_sha256",
@@ -2679,23 +2681,23 @@ def _package1_frozen_surface_digest(contract: Mapping[str, object]) -> str:
         **{field: comparator.get(field) for field in fields},
     }
     if any(value is None for value in basis.values()):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "frozen comparator lacks Package 1 exact-zero surface membership"
         )
     return _canonical_sha256(basis)
 
 
-def _observe_package0_successor_output(
+def _observe_successor_output(
     contract: Mapping[str, object],
     membership_receipt: Mapping[str, object],
     *,
     output_root: Path,
-) -> _Package0SuccessorObservation:
+) -> _SuccessorObservation:
     if not isinstance(membership_receipt, Mapping) or (
         membership_receipt.get("schema_version")
         != "package0_legacy_membership_receipt_v1"
     ):
-        raise Package0ComparatorError("membership receipt schema is invalid")
+        raise SuccessorComparatorError("membership receipt schema is invalid")
     paths = _membership_text_sequence(
         membership_receipt,
         "canonical_artifact_paths",
@@ -2709,12 +2711,12 @@ def _observe_package0_successor_output(
         "ordered_final_header",
     )
     if paths != tuple(sorted(paths)) or len(paths) != len(set(paths)):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "canonical_artifact_paths must be unique and ordered"
         )
     normalized_paths = tuple(_normalized_relative_path(path) for path in paths)
     if not isinstance(output_root, Path) or not output_root.is_dir():
-        raise Package0ComparatorError("output_root must be an existing directory")
+        raise SuccessorComparatorError("output_root must be an existing directory")
     resolved_root = output_root.resolve()
     actual_paths = tuple(
         sorted(
@@ -2724,7 +2726,7 @@ def _observe_package0_successor_output(
         )
     )
     if actual_paths != paths:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "successor differs from frozen comparator: canonical_artifact_paths"
         )
     output_artifacts: list[dict[str, object]] = []
@@ -2733,7 +2735,7 @@ def _observe_package0_successor_output(
         path = output_root / relative_path
         resolved_path = path.resolve()
         if not resolved_path.is_relative_to(resolved_root) or not path.is_file():
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 f"successor artifact escapes or is missing: {relative_path}"
             )
         exact_bytes = path.read_bytes()
@@ -2751,7 +2753,7 @@ def _observe_package0_successor_output(
         baseline_bytes = bytes_by_path[baseline_path]
         final_bytes = bytes_by_path[final_path]
     except KeyError as exc:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "membership receipt must include both Targeted xic_results.csv files"
         ) from exc
     baseline_header, baseline_samples = _csv_membership(
@@ -2768,13 +2770,13 @@ def _observe_package0_successor_output(
     if baseline_samples != samples or final_samples != samples:
         differences.append("ordered_sample")
     if differences:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "successor differs from frozen comparator: " + ", ".join(differences)
         )
     baseline_id = contract.get("baseline_id")
     if not isinstance(baseline_id, str) or not baseline_id:
-        raise Package0ComparatorError("baseline_id must be non-empty")
-    return _Package0SuccessorObservation(
+        raise SuccessorComparatorError("baseline_id must be non-empty")
+    return _SuccessorObservation(
         baseline_id=baseline_id,
         canonical_output_inventory_sha256=_canonical_value_sha256(
             output_artifacts
@@ -2791,33 +2793,33 @@ def _observe_package0_successor_output(
     )
 
 
-def _package1_output_root_identity(
+def _runtime_output_root_identity(
     output_root: Path,
 ) -> tuple[int, int, int, int, int, str]:
     if not isinstance(output_root, Path):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 probe output_root must be a Path"
         )
     try:
         observed = os.lstat(output_root)
     except OSError as exc:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 comparator-owned output root is unavailable"
         ) from exc
     if not stat.S_ISDIR(observed.st_mode):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 comparator-owned output root must remain one directory"
         )
-    marker_path = output_root / _PACKAGE1_ROOT_IDENTITY_MARKER
+    marker_path = output_root / _RUNTIME_ROOT_IDENTITY_MARKER
     try:
         marker = os.lstat(marker_path)
         marker_sha256 = hashlib.sha256(marker_path.read_bytes()).hexdigest()
     except OSError as exc:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 comparator-owned output root identity marker changed"
         ) from exc
     if not stat.S_ISREG(marker.st_mode):
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 comparator-owned output root identity marker changed"
         )
     return (
@@ -2830,11 +2832,11 @@ def _package1_output_root_identity(
     )
 
 
-def _package1_product_output_inventory(
+def _runtime_product_output_inventory(
     output_root: Path,
 ) -> tuple[tuple[str, str], ...]:
     if not isinstance(output_root, Path) or not output_root.is_dir():
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "Package 1 probe output_root must be an existing directory"
         )
     resolved_root = output_root.resolve()
@@ -2842,7 +2844,7 @@ def _package1_product_output_inventory(
     for path in output_root.rglob("*"):
         resolved_path = path.resolve()
         if not resolved_path.is_relative_to(resolved_root):
-            raise Package0ComparatorError(
+            raise SuccessorComparatorError(
                 "Package 1 product output path escapes the observed root"
             )
         if path.is_symlink():
@@ -2894,23 +2896,23 @@ def _ordered_sha256(values: Sequence[str]) -> str:
 
 def _bytes_sha256(value: object, *, field: str) -> str:
     if not isinstance(value, bytes):
-        raise Package0ComparatorError(f"{field} must be exact bytes")
+        raise SuccessorComparatorError(f"{field} must be exact bytes")
     return hashlib.sha256(value).hexdigest().upper()
 
 
 def _m5_canonical_text_bytes(value: object, *, field: str) -> bytes:
     if not isinstance(value, bytes):
-        raise Package0ComparatorError(f"{field} must be UTF-8 text bytes")
+        raise SuccessorComparatorError(f"{field} must be UTF-8 text bytes")
     try:
         text = value.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise Package0ComparatorError(f"{field} must be valid UTF-8 text") from exc
+        raise SuccessorComparatorError(f"{field} must be valid UTF-8 text") from exc
     return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
 
 
 def _file_sha256(path: object, *, field: str) -> str:
     if not isinstance(path, Path) or not path.is_file():
-        raise Package0ComparatorError(f"{field} must be an existing file")
+        raise SuccessorComparatorError(f"{field} must be an existing file")
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
@@ -2924,14 +2926,14 @@ def _membership_text_sequence(
         or not value
         or any(not isinstance(item, str) or not item for item in value)
     ):
-        raise Package0ComparatorError(f"{field} must be a non-empty text list")
+        raise SuccessorComparatorError(f"{field} must be a non-empty text list")
     return tuple(value)
 
 
 def _normalized_relative_path(value: str) -> str:
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts or path.as_posix() != value:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             "canonical artifact paths must be normalized relative POSIX paths"
         )
     return value
@@ -2950,32 +2952,32 @@ def _csv_membership(
             )
         )
     except (UnicodeDecodeError, csv.Error) as exc:
-        raise Package0ComparatorError(f"{field} must be a UTF-8 CSV") from exc
+        raise SuccessorComparatorError(f"{field} must be a UTF-8 CSV") from exc
     if len(rows) < 2 or not rows[0] or any(len(row) != len(rows[0]) for row in rows):
-        raise Package0ComparatorError(f"{field} must be a rectangular non-empty CSV")
+        raise SuccessorComparatorError(f"{field} must be a rectangular non-empty CSV")
     return rows[0], tuple(row[0] for row in rows[1:])
 
 
 def _sha256(value: object, field: str) -> str:
     if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise Package0ComparatorError(
+        raise SuccessorComparatorError(
             f"{field} must be an upper-case SHA-256 digest"
         )
     return value
 
 
 __all__ = [
-    "M5RollbackRehearsalReceipt",
-    "M5SuccessorVerdictReceipt",
-    "Package0ComparatorError",
-    "Package1DifferenceObservation",
-    "Package1ObservationExperimentJob",
-    "Package1ObservationTraceFixture",
+    "RollbackRehearsalReceipt",
+    "SuccessorVerdictReceipt",
+    "SuccessorComparatorError",
+    "RuntimeDifferenceObservation",
+    "RuntimeObservationExperimentJob",
+    "RuntimeObservationTraceFixture",
     "assert_targeted_adapter_parity",
     "mint_targeted_adapter_parity_receipt",
-    "run_package1_observation_experiment",
+    "run_runtime_observation_experiment",
     "validate_m5_rollback_rehearsal",
     "validate_m5_successor_verdict_packet",
-    "validate_package1_difference_manifest",
-    "validate_package0_successor_output",
+    "validate_runtime_difference_manifest",
+    "validate_successor_output",
 ]
