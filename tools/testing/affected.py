@@ -21,6 +21,7 @@ import subprocess
 import sys
 from collections import defaultdict, deque
 from fnmatch import fnmatchcase
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -89,8 +90,15 @@ def _direct_imports(path: str, known: set[str]) -> set[str]:
     return found
 
 
+@lru_cache(maxsize=1)
 def build_reverse_index() -> tuple[dict[str, set[str]], dict[str, str]]:
-    """Map each internal module to the test files that can reach it."""
+    """Map each internal module to the test files that can reach it.
+
+    Cached because building it AST-parses every tracked Python file. A CLI run
+    calls this once, so the cache is invisible there; a test module that calls
+    select() several times would otherwise pay the whole parse each time, which
+    measured at 6-8 seconds per call.
+    """
     files = _tracked_python_files()
     modules = {
         module_name(f): f for f in files if f.startswith(SOURCE_ROOTS)
