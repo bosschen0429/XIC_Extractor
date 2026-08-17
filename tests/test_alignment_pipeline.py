@@ -582,9 +582,10 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         calls["owner_audit_evidence_mode"] = audit_evidence_mode
         return SimpleNamespace(owners=("owner",), ambiguous_records=())
 
-    def fake_cluster_owners(owners, *, config):
+    def fake_cluster_owners(owners, *, config, sample_universe=None):
         calls["owners"] = owners
         calls["cluster_config"] = config
+        calls["sample_universe"] = sample_universe
         return ("feature",)
 
     def fake_owner_backfill(
@@ -657,6 +658,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     assert calls["owners"] == ("owner",)
     assert calls["features"] == ("feature",)
     assert calls["sample_order"] == ("Sample_A", "Sample_B")
+    assert calls["sample_universe"] == frozenset({"Sample_A", "Sample_B"})
     assert set(calls["raw_sources"]) == {"Sample_A", "Sample_B"}
     assert calls["owner_raw_xic_batch_size"] == 1
     assert calls["owner_emit_region_audit"] is False
@@ -742,7 +744,7 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config: (),
+        lambda owners, *, config, sample_universe=None: (),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -824,6 +826,7 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
         owners,
         *,
         config,
+        sample_universe=None,
         drift_lookup=None,
         edge_evidence_sink=None,
     ):
@@ -923,7 +926,7 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             feature,
         ),
     )
@@ -1139,6 +1142,7 @@ def test_run_alignment_passes_drift_lookup_to_owner_clustering(
         owners,
         *,
         config,
+        sample_universe=None,
         drift_lookup=None,
         edge_evidence_sink=None,
     ):

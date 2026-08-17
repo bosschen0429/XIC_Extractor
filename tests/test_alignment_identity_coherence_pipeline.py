@@ -188,7 +188,7 @@ def test_identity_coherence_diagnostic_does_not_change_backfill_inputs(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             sentinel_feature,
         ),
     )

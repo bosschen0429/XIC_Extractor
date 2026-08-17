@@ -3,11 +3,19 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import xic_extractor.alignment.pipeline as pipeline_module
+from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+    DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    discovery_receipt_index_fields,
+    mint_discovery_candidate_universe_receipt,
+)
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.processing_identity import build_acquisition_source_identity
 
 
 def patch_owner_pipeline_to_matrix(monkeypatch) -> None:
@@ -23,7 +31,7 @@ def patch_owner_pipeline_to_matrix(monkeypatch) -> None:
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -122,9 +130,7 @@ def write_partial_batch(
         sample_dir.mkdir(exist_ok=True)
         candidates_csv = sample_dir / "discovery_candidates.csv"
         candidate_rows = (
-            [candidate_row(sample_stem)]
-            if sample_stem in candidate_samples
-            else []
+            [candidate_row(sample_stem)] if sample_stem in candidate_samples else []
         )
         write_csv(candidates_csv, DISCOVERY_CANDIDATE_COLUMNS, candidate_rows)
         rows.append(
@@ -139,6 +145,64 @@ def write_partial_batch(
     write_csv(
         batch_index,
         ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        rows,
+    )
+    return batch_index
+
+
+def write_owner_closed_partial_batch(
+    tmp_path: Path,
+    *,
+    sample_order: tuple[str, ...],
+    candidate_samples: tuple[str, ...],
+    raw_files: dict[str, Path],
+) -> Path:
+    batch_dir = tmp_path / "batch"
+    batch_dir.mkdir(exist_ok=True)
+    rows = []
+    for sample_stem in sample_order:
+        sample_dir = batch_dir / sample_stem
+        sample_dir.mkdir(exist_ok=True)
+        candidates_csv = sample_dir / "discovery_candidates.csv"
+        candidate_rows = (
+            [candidate_row(sample_stem)] if sample_stem in candidate_samples else []
+        )
+        write_csv(candidates_csv, DISCOVERY_CANDIDATE_COLUMNS, candidate_rows)
+        candidates = read_discovery_candidates_csv(candidates_csv)
+        acquisition_source = build_acquisition_source_identity(
+            raw_files[sample_stem],
+            acquisition_format="thermo_raw",
+            observation_namespace="thermo_raw_file_reader:Device.MS:1",
+        )
+        receipt = mint_discovery_candidate_universe_receipt(
+            sample_stem=sample_stem,
+            acquisition_source=acquisition_source,
+            candidate_csv=candidates_csv,
+            candidates=candidates,
+        )
+        rows.append(
+            {
+                "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+                "sample_stem": sample_stem,
+                "raw_file": str(raw_files[sample_stem]),
+                "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
+                "review_csv": "",
+                "candidate_count": str(len(candidates)),
+                **discovery_receipt_index_fields(receipt),
+            }
+        )
+    batch_index = batch_dir / "discovery_batch_index.csv"
+    write_csv(
+        batch_index,
+        (
+            "schema_version",
+            "sample_stem",
+            "raw_file",
+            "candidate_csv",
+            "review_csv",
+            "candidate_count",
+            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+        ),
         rows,
     )
     return batch_index

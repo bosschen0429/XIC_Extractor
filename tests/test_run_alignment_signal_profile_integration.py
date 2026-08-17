@@ -19,7 +19,7 @@ import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.process_backend as process_backend_module
 import xic_extractor.alignment.process_execution as process_execution_module
 from scripts import run_alignment
-from tests.alignment_pipeline_helpers import write_partial_batch
+from tests.alignment_pipeline_helpers import write_owner_closed_partial_batch
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.output_levels import artifact_names_for_output_level
@@ -296,15 +296,19 @@ class _InlineTypedExecutor:
 
 @pytest.fixture
 def _highest_entry_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    batch_index = write_partial_batch(
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_files: dict[str, Path] = {}
+    for sample_stem in _SAMPLE_ORDER:
+        raw_path = raw_dir / f"{sample_stem}.raw"
+        raw_path.write_bytes(sample_stem.encode("utf-8"))
+        raw_files[sample_stem] = raw_path
+    batch_index = write_owner_closed_partial_batch(
         tmp_path,
         sample_order=_SAMPLE_ORDER,
         candidate_samples=("Sample_A", "Sample_B", "Sample_C"),
+        raw_files=raw_files,
     )
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    for sample_stem in _SAMPLE_ORDER:
-        (raw_dir / f"{sample_stem}.raw").write_bytes(sample_stem.encode("utf-8"))
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 

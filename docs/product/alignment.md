@@ -13,6 +13,17 @@ contracts for review and downstream product decisions.
   cross-sample owner/group hypotheses based on evidence. It does not create the
   first sample-local Discovery hit and does not treat a single method match as
   cross-sample identity proof by itself.
+- Cross-sample grouping uses all-pairs strong-edge complete-link by default. A
+  connected RT/mass continuum may replace the split only when it contains one
+  clean detected owner from every sample in the explicit Alignment batch,
+  every accepted local edge passes the pair hard gates, and complete-link would
+  otherwise split it. Incomplete groups, same-sample recurrences, weak-quality
+  owners, and RT discontinuities remain on complete-link. The recovered family
+  is `owner_full_batch_continuity`; Matrix identity evaluates it through the
+  existing `multi_sample_detected` policy rather than treating it as all-pairs
+  `owner_complete_link` evidence. A later owner may extend one bounded
+  continuity group, but it does not bridge and merge two existing groups;
+  single-link chaining is not family identity authority.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional

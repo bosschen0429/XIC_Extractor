@@ -65,6 +65,25 @@ def test_owner_complete_link_with_two_detected_cells_is_production_family() -> N
     assert decision.quantifiable_detected_count == 2
 
 
+def test_full_batch_continuity_uses_existing_multi_sample_identity_policy() -> None:
+    matrix = _matrix(
+        _feature("FAM001", evidence="owner_full_batch_continuity;owner_count=3"),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 90.0),
+            _cell("s3", "FAM001", "detected", 80.0),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is True
+    assert decision.identity_decision == "production_family"
+    assert decision.identity_confidence == "medium"
+    assert decision.primary_evidence == "multi_sample_detected"
+    assert decision.identity_reason == "multi_sample_detected"
+
+
 def test_matrix_identity_decision_record_explains_row_projection_policy() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
@@ -162,10 +181,7 @@ def test_scan_support_only_high_backfill_retains_seed_identity() -> None:
     assert decision.include_in_primary_matrix is True
     assert decision.identity_decision == "production_family"
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "backfill_rescue_review_only" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
@@ -385,8 +401,7 @@ def test_weak_seed_dr_backfill_dependency_with_cell_evidence_is_supported() -> N
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -522,10 +537,7 @@ def test_unexplained_rt_delta_beyond_preferred_blocks_backfill_promotion() -> No
     assert decision.identity_confidence == "review"
     assert decision.quantifiable_rescue_count == 0
     assert decision.review_rescue_count == 6
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
 
@@ -564,8 +576,7 @@ def test_adequate_seed_dr_backfill_dependency_remains_production() -> None:
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -614,8 +625,7 @@ def test_owner_events_tolerate_single_weak_seed_with_two_trusted() -> None:
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -686,10 +696,7 @@ def test_high_score_low_event_seeds_do_not_bypass_weak_seed_gate() -> None:
     assert decision.include_in_primary_matrix is True
     assert decision.identity_decision == "production_family"
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "weak_seed_backfill_dependency" in decision.row_flags
     assert "backfill_cell_evidence_required" in decision.row_flags
 
@@ -706,9 +713,7 @@ def test_matrix_identity_decision_record_ignores_seed_evidence_score_payload() -
     assert base_record.blockers == adversarial_record.blockers
     assert base_record.support == adversarial_record.support
     assert all("evidence_score" not in name for name, _value in base_record.gate)
-    assert all(
-        "evidence_score" not in name for name, _value in base_record.tie_break
-    )
+    assert all("evidence_score" not in name for name, _value in base_record.tie_break)
     assert not hasattr(base_record, "key")
 
 
@@ -780,8 +785,7 @@ def test_weak_seed_gate_reads_owner_events_when_trusted_support_is_thin() -> Non
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -821,10 +825,7 @@ def test_rt_local_apex_low_interference_alone_does_not_promote() -> None:
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
 
@@ -857,10 +858,7 @@ def test_owner_backfill_label_without_independent_support_does_not_promote() -> 
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
 
@@ -888,10 +886,7 @@ def test_neighboring_ms1_interference_blocks_backfill_promotion() -> None:
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "neighboring_ms1_interference" in decision.row_flags
 

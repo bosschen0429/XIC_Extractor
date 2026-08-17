@@ -155,8 +155,7 @@ class CrossSamplePeakGroupHypothesis:
     edge_facts: tuple[CrossSamplePeakGroupEdgeFact, ...] = ()
     review_facts: tuple[CrossSamplePeakGroupReviewFact, ...] = ()
     hard_gate_challenge_facts: tuple[
-        CrossSamplePeakGroupHardGateChallengeFact,
-        ...
+        CrossSamplePeakGroupHardGateChallengeFact, ...
     ] = ()
 
     @property
@@ -230,6 +229,7 @@ def construct_cross_sample_peak_group_hypotheses(
     owners: tuple[SampleLocalMS1Owner, ...] | list[SampleLocalMS1Owner],
     *,
     config: AlignmentConfig,
+    sample_universe: frozenset[str] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
     edge_evaluator: OwnerEdgeEvaluator = evaluate_owner_edge,
@@ -253,20 +253,47 @@ def construct_cross_sample_peak_group_hypotheses(
         )
     )
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence] = {}
-    groups = _complete_link_groups(
-        sorted(clean, key=_owner_sort_key),
-        config,
-        drift_lookup=drift_lookup,
-        edge_evidence_sink=edge_evidence_sink,
-        edge_cache=edge_cache,
-        edge_evaluator=edge_evaluator,
-    )
+    connected_owner_sets: frozenset[frozenset[str]] = frozenset()
+    if sample_universe is None:
+        groups = _complete_link_groups(
+            sorted(clean, key=_owner_sort_key),
+            config,
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=edge_evidence_sink,
+            edge_cache=edge_cache,
+            edge_evaluator=edge_evaluator,
+        )
+    else:
+        if any(owner.sample_stem not in sample_universe for owner in clean):
+            raise ValueError("sample_universe omits an owner sample")
+        groups = _connected_link_groups(
+            sorted(clean, key=_owner_rt_sort_key),
+            config,
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=edge_evidence_sink,
+            edge_cache=edge_cache,
+            edge_evaluator=edge_evaluator,
+        )
+        groups, connected_owner_sets = _restore_sparse_complete_link_groups(
+            groups,
+            sample_universe=sample_universe,
+            config=config,
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=edge_evidence_sink,
+            edge_cache=edge_cache,
+            edge_evaluator=edge_evaluator,
+        )
     clean_hypotheses = tuple(
         _hypothesis_from_owner_group(
             tuple(group),
             group_hypothesis_id=f"FAM{index + len(conflict_hypotheses):06d}",
             public_family_id=f"FAM{index + len(conflict_hypotheses):06d}",
-            evidence=_group_evidence(group),
+            evidence=_group_evidence(
+                group,
+                full_batch_continuity=(
+                    frozenset(owner.owner_id for owner in group) in connected_owner_sets
+                ),
+            ),
         )
         for index, group in enumerate(groups, start=1)
     )
@@ -320,9 +347,7 @@ def cross_sample_peak_group_hypothesis_from_owner_feature(
     edge_evidence: Sequence[OwnerEdgeEvidence] = (),
 ) -> CrossSamplePeakGroupHypothesis:
     event_ids = tuple(
-        event_id
-        for owner in feature.owners
-        for event_id in owner.event_candidate_ids
+        event_id for owner in feature.owners for event_id in owner.event_candidate_ids
     )
     edge_facts = cross_sample_peak_group_edge_facts_from_owner_edges(
         edge_evidence,
@@ -352,9 +377,7 @@ def cross_sample_peak_group_hypothesis_from_owner_feature(
         evidence=feature.evidence,
         identity_conflict=feature.identity_conflict,
         review_only=feature.review_only,
-        confirm_local_owners_with_backfill=(
-            feature.confirm_local_owners_with_backfill
-        ),
+        confirm_local_owners_with_backfill=(feature.confirm_local_owners_with_backfill),
         backfill_seed_centers=feature.backfill_seed_centers,
         ambiguous_sample_stem=feature.ambiguous_sample_stem,
         ambiguous_candidate_ids=feature.ambiguous_candidate_ids,
@@ -479,8 +502,27 @@ def _edge_matches_owner_ids(
     owner_id_set: frozenset[str] | None,
 ) -> bool:
     return owner_id_set is None or (
-        edge.left_owner_id in owner_id_set
-        and edge.right_owner_id in owner_id_set
+        edge.left_owner_id in owner_id_set and edge.right_owner_id in owner_id_set
+    )
+
+
+def _connected_link_groups(
+    owners: list[SampleLocalMS1Owner],
+    config: AlignmentConfig,
+    *,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+    return _link_groups(
+        owners,
+        config,
+        drift_lookup=drift_lookup,
+        edge_evidence_sink=edge_evidence_sink,
+        edge_cache=edge_cache,
+        edge_evaluator=edge_evaluator,
+        require_complete_link=False,
     )
 
 
@@ -492,6 +534,27 @@ def _complete_link_groups(
     edge_evidence_sink: list[OwnerEdgeEvidence] | None,
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
     edge_evaluator: OwnerEdgeEvaluator,
+) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+    return _link_groups(
+        owners,
+        config,
+        drift_lookup=drift_lookup,
+        edge_evidence_sink=edge_evidence_sink,
+        edge_cache=edge_cache,
+        edge_evaluator=edge_evaluator,
+        require_complete_link=True,
+    )
+
+
+def _link_groups(
+    owners: list[SampleLocalMS1Owner],
+    config: AlignmentConfig,
+    *,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+    require_complete_link: bool,
 ) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
     groups: list[list[SampleLocalMS1Owner]] = []
     envelopes: list[_GroupHardGateEnvelope] = []
@@ -508,19 +571,16 @@ def _complete_link_groups(
             index
             for index in candidate_group_indexes
             for group in (groups[index],)
-            if _group_can_pass_hard_gates(owner, envelopes[index], config)
-            and all(
-                _edge_for_pair(
-                    owner,
-                    existing,
-                    config=config,
-                    drift_lookup=drift_lookup,
-                    edge_evidence_sink=edge_evidence_sink,
-                    edge_cache=edge_cache,
-                    edge_evaluator=edge_evaluator,
-                ).decision
-                == "strong_edge"
-                for existing in group
+            if _group_accepts_owner(
+                owner,
+                group,
+                envelope=envelopes[index],
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+                require_complete_link=require_complete_link,
             )
         ]
         if not compatible_group_indexes:
@@ -549,6 +609,107 @@ def _complete_link_groups(
             group_indexes_by_precursor_bucket,
         )
     return tuple(tuple(group) for group in groups)
+
+
+def _group_accepts_owner(
+    owner: SampleLocalMS1Owner,
+    group: list[SampleLocalMS1Owner],
+    *,
+    envelope: _GroupHardGateEnvelope,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+    require_complete_link: bool,
+) -> bool:
+    if require_complete_link:
+        if not _group_can_pass_hard_gates(owner, envelope, config):
+            return False
+        return all(
+            _edge_for_pair(
+                owner,
+                existing,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ).decision
+            == "strong_edge"
+            for existing in group
+        )
+    if owner.sample_stem in envelope.sample_stems:
+        return False
+    return any(
+        _is_full_batch_continuity_edge(
+            _edge_for_pair(
+                owner,
+                existing,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ),
+            config=config,
+        )
+        for existing in group
+    )
+
+
+def _is_full_batch_continuity_edge(
+    edge: OwnerEdgeEvidence,
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    if edge.decision == "strong_edge":
+        return True
+    return (
+        edge.decision == "weak_edge"
+        and not edge.failure_reason
+        and edge.drift_prior_source == "none"
+        and edge.rt_raw_delta_sec <= config.preferred_rt_sec
+        and edge.owner_quality == "clean"
+        and edge.seed_support_level == "moderate"
+    )
+
+
+def _restore_sparse_complete_link_groups(
+    connected_groups: tuple[tuple[SampleLocalMS1Owner, ...], ...],
+    *,
+    sample_universe: frozenset[str],
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> tuple[
+    tuple[tuple[SampleLocalMS1Owner, ...], ...],
+    frozenset[frozenset[str]],
+]:
+    groups: list[tuple[SampleLocalMS1Owner, ...]] = []
+    connected_owner_sets: set[frozenset[str]] = set()
+    for connected_group in connected_groups:
+        group_samples = frozenset(owner.sample_stem for owner in connected_group)
+        complete_groups = _complete_link_groups(
+            sorted(connected_group, key=_owner_sort_key),
+            config,
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=edge_evidence_sink,
+            edge_cache=edge_cache,
+            edge_evaluator=edge_evaluator,
+        )
+        if group_samples == sample_universe and len(complete_groups) > 1:
+            ordered = tuple(sorted(connected_group, key=_owner_sort_key))
+            groups.append(ordered)
+            connected_owner_sets.add(
+                frozenset(owner.owner_id for owner in ordered),
+            )
+            continue
+        groups.extend(complete_groups)
+    groups.sort(key=lambda group: _owner_sort_key(group[0]))
+    return tuple(groups), frozenset(connected_owner_sets)
 
 
 def _candidate_group_indexes_for_owner(
@@ -796,10 +957,19 @@ def _hypothesis_from_owner_group(
     )
 
 
-def _group_evidence(group: tuple[SampleLocalMS1Owner, ...]) -> str:
+def _group_evidence(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    full_batch_continuity: bool,
+) -> str:
     if len(group) == 1:
         return "single_sample_local_owner"
-    return f"owner_complete_link;owner_count={len(group)}"
+    policy = (
+        "owner_full_batch_continuity"
+        if full_batch_continuity
+        else "owner_complete_link"
+    )
+    return f"{policy};owner_count={len(group)}"
 
 
 def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
@@ -808,6 +978,19 @@ def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
         owner.neutral_loss_tag,
         owner.precursor_mz,
         owner.owner_apex_rt,
+        owner.sample_stem,
+        -event.evidence_score,
+        -event.seed_event_count,
+        owner.owner_id,
+    )
+
+
+def _owner_rt_sort_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
+    event = owner.primary_identity_event
+    return (
+        owner.neutral_loss_tag,
+        owner.owner_apex_rt,
+        owner.precursor_mz,
         owner.sample_stem,
         -event.evidence_score,
         -event.seed_event_count,

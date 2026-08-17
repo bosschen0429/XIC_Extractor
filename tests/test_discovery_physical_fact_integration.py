@@ -408,7 +408,7 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     )
 
 
-def test_product_inferred_single_seed_keeps_bounded_review_context(
+def test_product_inferred_single_seed_uses_widened_initial_context(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
@@ -450,13 +450,14 @@ def test_product_inferred_single_seed_keeps_bounded_review_context(
 
     assert result.measurements.reacquisition_request_count == 0
     candidate = result.candidates[0]
-    assert candidate.ms1_peak_found is False
-    assert candidate.ms1_trace_quality == "physical_unavailable"
-    assert candidate.ms1_search_rt_min == pytest.approx(11.863)
-    assert candidate.ms1_search_rt_max == pytest.approx(12.263)
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_trace_quality == "clean"
+    assert candidate.ms1_search_rt_min == pytest.approx(11.713)
+    assert candidate.ms1_search_rt_max == pytest.approx(12.413)
+    assert candidate.ms1_apex_rt == pytest.approx(12.14)
 
 
-def test_strong_product_inferred_seed_group_reacquires_physical_context(
+def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
@@ -497,21 +498,17 @@ def test_strong_product_inferred_seed_group_reacquires_physical_context(
         signal_processing_profile=profile,
     )
 
-    assert len(result.measurements.acquisition_batches) == 2
-    assert result.measurements.reacquisition_request_count == 1
-    initial, reacquired = result.measurements.acquisition_batches
-    assert initial.traces[0].coordinate.trace_point_count < profile.window_points
-    assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    assert len(result.measurements.acquisition_batches) == 1
+    assert result.measurements.reacquisition_request_count == 0
+    initial = result.measurements.acquisition_batches[0]
+    assert initial.traces[0].coordinate.trace_point_count >= profile.window_points
     initial_request = initial.traces[0].coordinate.request
-    final_request = reacquired.traces[0].coordinate.request
-    assert initial_request.rt_min == pytest.approx(11.863)
-    assert initial_request.rt_max == pytest.approx(12.300)
-    assert final_request.rt_min < initial_request.rt_min
-    assert final_request.rt_max > initial_request.rt_max
+    assert initial_request.rt_min == pytest.approx(11.713)
+    assert initial_request.rt_max == pytest.approx(12.450)
     work = result.physical_work_manifest[0]
     assert work.query_rt_min == pytest.approx(12.063)
-    assert work.xic_rt_min == final_request.rt_min
-    assert work.xic_rt_max == final_request.rt_max
+    assert work.xic_rt_min == initial_request.rt_min
+    assert work.xic_rt_max == initial_request.rt_max
     assert work.xic_rt_min <= work.context_rt_start_min <= work.query_rt_min
     assert work.query_rt_min <= work.context_rt_end_min <= work.xic_rt_max
     candidate = result.candidates[0]

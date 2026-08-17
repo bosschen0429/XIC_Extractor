@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,7 +47,7 @@ def test_pipeline_applies_single_worker_hybrid_owner_backfill_backend(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -150,7 +149,7 @@ def test_pipeline_applies_single_worker_owner_build_backend(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -207,7 +206,7 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -295,7 +294,7 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             source_features
         ),
     )
@@ -468,7 +467,7 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -480,6 +479,7 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
         "run_owner_backfill_process",
         fake_process_backfill,
     )
+
     def fake_owner_matrix(features, *, sample_order, rescued_cells, **kwargs):
         calls["rescued_cells"] = rescued_cells
         return _matrix(sample_order)
@@ -563,7 +563,7 @@ def test_pipeline_uses_raw_dir_as_authority_and_fallbacks_to_sample_stem(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,

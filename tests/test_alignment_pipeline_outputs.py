@@ -910,7 +910,7 @@ def test_pipeline_enables_region_audit_only_when_alignment_cells_are_emitted(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -971,7 +971,7 @@ def test_pipeline_enables_region_audit_when_integration_sidecar_is_emitted(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1034,7 +1034,7 @@ def test_pipeline_backfill_seed_sidecar_does_not_force_alignment_cells_or_region
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1099,7 +1099,7 @@ def test_pipeline_backfill_candidate_audit_requires_own_flag(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1268,7 +1268,7 @@ def test_validation_minimal_auto_mode_does_not_enable_heavy_region_audit(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1323,6 +1323,7 @@ def test_run_alignment_validation_level_writes_owner_edge_evidence_tsv(
         owners,
         *,
         config,
+        sample_universe=None,
         drift_lookup=None,
         edge_evidence_sink=None,
     ):

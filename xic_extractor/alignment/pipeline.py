@@ -597,11 +597,13 @@ def run_alignment(
                 owner_features = cluster_sample_local_owners(
                     ownership.owners,
                     config=alignment_config,
+                    sample_universe=frozenset(batch.sample_order),
                 )
             else:
                 owner_features = cluster_sample_local_owners(
                     ownership.owners,
                     config=alignment_config,
+                    sample_universe=frozenset(batch.sample_order),
                     drift_lookup=drift_lookup,
                     edge_evidence_sink=edge_evidence,
                 )

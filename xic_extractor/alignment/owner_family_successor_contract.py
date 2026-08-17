@@ -28,7 +28,7 @@ from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
 OwnerFamilyInvariant: TypeAlias = Literal[
     "stable_cross_sample_family_membership",
     "owner_edge_evidence_projection",
-    "complete_link_edge_semantics",
+    "bounded_grouping_edge_semantics",
     "hard_family_split_gates",
     "review_only_owner_records",
     "backfill_seed_and_matrix_delivery",
@@ -51,7 +51,7 @@ OwnerClusteringDisposition: TypeAlias = Literal[
 OWNER_FAMILY_INVARIANTS: tuple[OwnerFamilyInvariant, ...] = (
     "stable_cross_sample_family_membership",
     "owner_edge_evidence_projection",
-    "complete_link_edge_semantics",
+    "bounded_grouping_edge_semantics",
     "hard_family_split_gates",
     "review_only_owner_records",
     "backfill_seed_and_matrix_delivery",
@@ -62,8 +62,9 @@ OWNER_CLUSTERING_GROUP_MIGRATION_FINAL_DISPOSITION: OwnerClusteringDisposition =
 OWNER_CLUSTERING_GROUP_MIGRATION_REASON = (
     "Owner-family migration disposition is compatibility_adapter_candidate: "
     "successor "
-    "cross-sample peak group construction owns complete-link family "
-    "construction, hard split gates, review-only construction records, and "
+    "cross-sample peak group construction owns complete-link by default plus "
+    "full-batch continuity recovery, hard split gates, review-only "
+    "construction records, and "
     "delivery metadata; owner_group_delivery.OwnerGroupDeliveryFeature now "
     "defines the successor-owned backfill/matrix/process delivery shape, while "
     "owner_clustering.py preserves the public OwnerAlignedFeature facade and "
@@ -141,7 +142,7 @@ def owner_family_successor_mapping(
             ),
             exit_rule=(
                 "Cross-sample group identity owns membership parity. Keep "
-                "owner_clustering.py active until complete-link edge semantics, "
+                "owner_clustering.py active until bounded grouping semantics, "
                 "hard split gates, review-only records, and backfill/matrix "
                 "delivery are successor-owned with alignment_matrix.tsv, "
                 "alignment_cells.tsv, and alignment_review.tsv parity."
@@ -178,33 +179,31 @@ def owner_family_successor_mapping(
                 "before using it as migration evidence."
                 if not projected_edge_facts and len(feature.owners) >= 2
                 else "Cross-sample group evidence owns projection of current "
-                "owner edge facts. Complete-link construction policy, hard gates, "
+                "owner edge facts. Bounded grouping policy, hard gates, "
                 "review-only owner records, and backfill/matrix delivery keep "
                 "their existing live dispositions until later parity proves "
                 "migration."
             ),
         ),
         OwnerFamilyInvariantMapping(
-            invariant="complete_link_edge_semantics",
+            invariant="bounded_grouping_edge_semantics",
             current_owner=(
                 "cross_sample_peak_groups."
                 "construct_cross_sample_peak_group_hypotheses / "
-                "all-pairs strong-edge complete-link rule"
+                "complete-link default with full-batch continuity recovery"
             ),
             current_state=(
                 f"family_evidence={feature.evidence};"
                 f"shadow_edge_fact_count={len(projected_edge_facts)}"
             ),
-            successor_surface=(
-                "CrossSamplePeakGroupHypothesis successor constructor"
-            ),
+            successor_surface=("CrossSamplePeakGroupHypothesis successor constructor"),
             disposition="successor_owned",
             public_oracle=(
                 "tests/test_alignment_owner_family_successor_contract.py::"
                 "test_successor_constructor_matches_owner_adapter_delivery_fields"
             ),
             exit_rule=(
-                "The successor constructor owns complete-link membership "
+                "The successor constructor owns bounded cross-sample membership "
                 "construction, but owner_clustering.py remains the public "
                 "OwnerAlignedFeature adapter until concrete adapter consumers "
                 "migrate."
@@ -268,7 +267,7 @@ def owner_family_successor_mapping(
                 if not review_facts
                 else "Cross-sample group evidence owns the review-only fact projection "
                 "for this feature. Keep owner_clustering.py active until "
-                "complete-link construction, hard split gates, and "
+                "bounded grouping construction, hard split gates, and "
                 "backfill/matrix delivery are also successor-owned with "
                 "public writer parity."
             ),
@@ -368,10 +367,7 @@ def _review_fact_state(
         1 for fact in review_facts if fact.reason == "ambiguous_owner"
     )
     candidate_details = ";".join(
-        (
-            f"{fact.ambiguous_sample_stem or ''}:"
-            f"{','.join(fact.ambiguous_candidate_ids)}"
-        )
+        (f"{fact.ambiguous_sample_stem or ''}:{','.join(fact.ambiguous_candidate_ids)}")
         for fact in review_facts
         if fact.ambiguous_sample_stem is not None or fact.ambiguous_candidate_ids
     )
@@ -387,10 +383,7 @@ def _review_fact_state(
 
 def _hard_gate_challenge_state(
     feature: OwnerAlignedFeature,
-    hard_gate_challenge_facts: tuple[
-        CrossSamplePeakGroupHardGateChallengeFact,
-        ...
-    ],
+    hard_gate_challenge_facts: tuple[CrossSamplePeakGroupHardGateChallengeFact, ...],
 ) -> str:
     base = (
         f"neutral_loss_tag={feature.neutral_loss_tag};"
@@ -418,15 +411,11 @@ def _edge_fact_state(
     if not edge_facts:
         return f"family_evidence={feature.evidence};edge_fact_count=0"
 
-    support_count = sum(
-        1 for fact in edge_facts if fact.role == "membership_support"
-    )
+    support_count = sum(1 for fact in edge_facts if fact.role == "membership_support")
     challenge_count = sum(
         1 for fact in edge_facts if fact.role == "membership_challenge"
     )
-    blocked_count = sum(
-        1 for fact in edge_facts if fact.decision == "blocked_edge"
-    )
+    blocked_count = sum(1 for fact in edge_facts if fact.decision == "blocked_edge")
     edge_pairs = ";".join(
         (
             f"{fact.owner_pair_ids[0]}|{fact.owner_pair_ids[1]}:"

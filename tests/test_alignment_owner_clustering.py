@@ -66,54 +66,252 @@ def test_owner_clustering_collapses_5medc_like_class_drift() -> None:
     assert features[0].evidence == "owner_complete_link;owner_count=5"
 
 
-def test_owner_clustering_does_not_bridge_three_owner_complete_link_group() -> None:
+def test_owner_clustering_connects_dense_rt_chain_without_external_drift() -> None:
     edge_evidence = []
     owners = (
         _owner("sample-a", "a", apex_rt=10.00),
         _owner("sample-b", "b", apex_rt=10.75),
         _owner("sample-c", "c", apex_rt=11.50),
     )
-    config = AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0)
-    drift_lookup = _DriftLookup(
-        deltas={
-            "sample-a": 0.00,
-            "sample-b": 0.50,
-            "sample-c": 0.90,
-        },
-        orders={
-            "sample-a": 1,
-            "sample-b": 2,
-            "sample-c": 3,
-        },
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        edge_evidence_sink=edge_evidence,
+    )
+
+    assert (
+        evaluate_owner_edge(
+            owners[0],
+            owners[1],
+            config=config,
+        ).decision
+        == "strong_edge"
+    )
+    assert (
+        evaluate_owner_edge(
+            owners[1],
+            owners[2],
+            config=config,
+        ).decision
+        == "strong_edge"
+    )
+    grouped_owner_ids = [feature.event_cluster_ids for feature in features]
+    assert grouped_owner_ids == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+        )
+    ]
+    assert (
+        _edge_decisions_by_pair(edge_evidence)[("OWN-sample-a-a", "OWN-sample-c-c")]
+        == "weak_edge"
+    )
+    assert features[0].evidence == "owner_full_batch_continuity;owner_count=3"
+
+
+def test_owner_clustering_does_not_connect_incomplete_rt_chain() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.75),
+            _owner("sample-c", "c", apex_rt=11.50),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-c-c",),
+    ]
+    assert features[0].evidence == "owner_complete_link;owner_count=2"
+
+
+def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=10.10,
+            evidence_score=53,
+            seed_event_count=1,
+        ),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    assert evaluate_owner_edge(owners[0], owners[1], config=config).decision == (
+        "weak_edge"
+    )
+    assert len(cluster_sample_local_owners(owners, config=config)) == 2
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        )
+    ]
+    assert features[0].evidence == "owner_full_batch_continuity;owner_count=2"
+
+
+def test_owner_clustering_keeps_complete_full_batch_on_complete_link() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.10),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        )
+    ]
+    assert features[0].evidence == "owner_complete_link;owner_count=2"
+
+
+def test_owner_clustering_connects_full_batch_across_local_mz_continuum() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            precursor_mz=500.000,
+            product_mz=383.9526,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            precursor_mz=500.004,
+            product_mz=383.9566,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            precursor_mz=500.008,
+            product_mz=383.9606,
+        ),
+    )
+    config = AlignmentConfig(
+        preferred_ppm=10.0,
+        max_ppm=10.0,
+        product_mz_tolerance_ppm=15.0,
+    )
+
+    assert evaluate_owner_edge(owners[0], owners[1], config=config).decision == (
+        "strong_edge"
+    )
+    assert evaluate_owner_edge(owners[1], owners[2], config=config).decision == (
+        "strong_edge"
+    )
+    assert evaluate_owner_edge(owners[0], owners[2], config=config).decision == (
+        "blocked_edge"
     )
 
     features = cluster_sample_local_owners(
         owners,
         config=config,
-        drift_lookup=drift_lookup,
-        edge_evidence_sink=edge_evidence,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
     )
 
-    assert evaluate_owner_edge(
-        owners[0],
-        owners[1],
-        config=config,
-        drift_lookup=drift_lookup,
-    ).decision == "strong_edge"
-    assert evaluate_owner_edge(
-        owners[1],
-        owners[2],
-        config=config,
-        drift_lookup=drift_lookup,
-    ).decision == "strong_edge"
-    grouped_owner_ids = [feature.event_cluster_ids for feature in features]
-    assert grouped_owner_ids == [
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+        )
+    ]
+
+
+def test_owner_clustering_does_not_single_link_merge_bridge_groups() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            precursor_mz=500.000,
+            product_mz=383.9526,
+            apex_rt=10.00,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            precursor_mz=500.004,
+            product_mz=383.9566,
+            apex_rt=10.20,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            precursor_mz=500.008,
+            product_mz=383.9606,
+            apex_rt=10.10,
+        ),
+    )
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+            preferred_ppm=10.0,
+            max_ppm=10.0,
+            product_mz_tolerance_ppm=15.0,
+        ),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a",),
+        ("OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+
+
+def test_owner_clustering_keeps_rt_discontinuity_separate() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.75),
+            _owner("sample-c", "c", apex_rt=11.90),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
         ("OWN-sample-a-a", "OWN-sample-b-b"),
         ("OWN-sample-c-c",),
     ]
-    assert _edge_decisions_by_pair(edge_evidence)[
-        ("OWN-sample-a-a", "OWN-sample-c-c")
-    ] == "weak_edge"
+
+
+def test_owner_clustering_keeps_same_sample_recurrence_separate() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.75),
+            _owner("sample-a", "c", apex_rt=11.50),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-a-c",),
+    ]
 
 
 def test_owner_clustering_uses_drift_prior_for_strong_edge_over_strict_rt() -> None:
@@ -448,20 +646,14 @@ def test_owner_family_construction_is_writer_visible(tmp_path: Path) -> None:
 
     assert len(cell_rows) == 3
     assert cell_rows[("FAM000001", "sample-a")]["status"] == "detected"
-    assert (
-        cell_rows[("FAM000001", "sample-a")]["source_candidate_id"]
-        == "sample-a#a"
-    )
+    assert cell_rows[("FAM000001", "sample-a")]["source_candidate_id"] == "sample-a#a"
     assert (
         cell_rows[("FAM000001", "sample-a")]["trace_quality"]
         == "owner_exact_apex_match"
     )
     assert cell_rows[("FAM000001", "sample-b")]["status"] == "detected"
     assert cell_rows[("FAM000001", "sample-c")]["status"] == "absent"
-    assert (
-        cell_rows[("FAM000001", "sample-c")]["reason"]
-        == "no local MS1 owner"
-    )
+    assert cell_rows[("FAM000001", "sample-c")]["reason"] == "no local MS1 owner"
 
     assert review_rows["FAM000001"]["event_cluster_count"] == "2"
     assert review_rows["FAM000001"]["event_cluster_ids"] == (
@@ -501,6 +693,8 @@ def _owner(
     precursor_mz: float = 500.0,
     product_mz: float = 383.9526,
     observed_loss: float = 116.0474,
+    evidence_score: int = 80,
+    seed_event_count: int = 2,
     identity_conflict: bool = False,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
@@ -512,8 +706,8 @@ def _owner(
         product_mz=product_mz,
         observed_neutral_loss_da=observed_loss,
         seed_rt=apex_rt,
-        evidence_score=80,
-        seed_event_count=2,
+        evidence_score=evidence_score,
+        seed_event_count=seed_event_count,
     )
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
