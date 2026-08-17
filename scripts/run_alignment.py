@@ -212,6 +212,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if args.preflight_only:
+        try:
+            discovery_batch = read_discovery_batch_index(
+                discovery_batch_index,
+                require_owner_closure=True,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         _print_preflight_summary(
             args,
             discovery_batch_index=discovery_batch_index,
@@ -307,6 +315,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "audit_evidence_mode": args.audit_evidence_mode,
             "selected_family_ids": selected_family_ids,
             "selected_family_source": selected_family_source,
+            "require_discovery_owner_closure": True,
             **timing_kwargs,
         }
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
@@ -933,7 +942,7 @@ def _print_preflight_summary(
     sample_count = len(discovery_batch.sample_order)
     print("Alignment launch preflight OK (diagnostic_only; no validation completed)")
     print(
-        "Preflight scope: shared discovery-batch parser, candidate CSV existence, "
+        "Preflight scope: owner-closed discovery batch, candidate CSV existence, "
         "RAW path existence; no candidate CSVs loaded; no RAW files opened."
     )
     print(f"Discovery batch index: {discovery_batch_index}")
