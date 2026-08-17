@@ -266,7 +266,7 @@ def _verdict(
 
 def _next_gate(decision: OracleGateDecision) -> str:
     if decision == "promote":
-        return "8raw_changed_row_review"
+        return "changed_row_review"
     if decision == "no_go":
         return "stop_selected_envelope_product_path"
     if decision == "externalize":

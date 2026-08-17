@@ -75,6 +75,36 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 # persisted values, so clearing a file is a contract decision about existing
 # artifacts, not a rename: a census of output/ before each removal is what says
 # whether a rename is free. #290 owns the set, and its group 1 is closed.
+#
+# ACCEPTED DEBT -- owner decision, 2026-08-17. Everything still listed here
+# survived the #290 sweep for one reason: a census over output/, tmp_runtime/,
+# local_validation_artifacts/ and docs/superpowers/validation/ found the value
+# already recorded in artifacts. Counts at census time, 1,221 files total:
+#
+#     8raw_smoke                                          11,076
+#     candidate_gate_8raw + candidate_gate_85raw           2,148
+#     manual_2raw                                          1,373
+#     *_alignment_cells + *_alignment_review (8/85raw)        254
+#     all_available_8raw + all_available_85raw               190
+#     85raw_large_cohort                                       50
+#     cid_nl_legacy_baseline_6d3b18ef_8raw_v2                   6
+#
+# These are read back, not just written: activation_contract.py filters
+# blast-radius summary rows on `scope == "all_available_85raw"` and
+# `artifact_id == "85raw_alignment_cells"`, so renaming makes recorded
+# artifacts unreadable. Renaming would not even fix the coupling -- blast_radius
+# models exactly two lanes as paired constants, so a third dataset still has no
+# scope value to use. The fix is parameterisation, and that is a product
+# decision, not a cleanup.
+#
+# EXIT RULE (do not drop this block without resolving it): revisit when any of
+# these holds --
+#   1. blast-radius scope/artifact_id values are derived from the run instead of
+#      enumerated per lane;
+#   2. a migration exists that rewrites the recorded artifacts, or the readers
+#      accept both spellings from outside xic_extractor/;
+#   3. a re-run census shows one of these values in zero artifacts -- it is then
+#      free, and belongs in a rename commit rather than in this block.
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/quant_matrix_promotion.py": (4, "#290"),
     "xic_extractor/alignment/quant_matrix_validation_packet.py": (6, "#290"),
@@ -92,8 +122,7 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     ),
     "xic_extractor/alignment/shared_peak_identity_explanation/schema.py": (5, "#290"),
     "xic_extractor/package0_successor_comparator.py": (1, "#290"),
-    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#290"),
-    "xic_extractor/peak_detection/selected_envelope_oracle.py": (2, "#290"),
+    "xic_extractor/peak_detection/selected_envelope_oracle.py": (1, "#290"),
     "xic_extractor/peak_detection/selected_envelope_oracle_artifacts.py": (2, "#290"),
 }
 

@@ -166,7 +166,7 @@ def _parse_int(value: str | None) -> int:
 
 def _next_gate(decision: GateDecision) -> str:
     if decision == "promote":
-        return "8raw_changed_row_diagnostic_run"
+        return "changed_row_diagnostic_run"
     if decision == "no_go":
         return "stop_selected_envelope_product_path"
     if decision == "externalize":

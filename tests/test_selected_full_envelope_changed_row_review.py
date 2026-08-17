@@ -33,7 +33,7 @@ def _oracle_manifest(
         "selected_envelope_closer_count": "1",
         "resolver_interval_closer_count": "0",
         "blocked_reasons": blocked_reasons,
-        "next_gate": "8raw_changed_row_review",
+        "next_gate": "changed_row_review",
     }
 
 
@@ -71,7 +71,7 @@ def test_changed_row_preflight_allows_raw_only_after_real_oracle_promote() -> No
     assert manifest["boundary_oracle_artifact_present"] == "TRUE"
     assert manifest["boundary_oracle_artifact_sha256"] == "b" * 64
     assert manifest["blocked_reasons"] == ""
-    assert manifest["next_gate"] == "8raw_changed_row_diagnostic_run"
+    assert manifest["next_gate"] == "changed_row_diagnostic_run"
 
 
 def test_changed_row_preflight_defers_without_boundary_oracle_rows() -> None:
