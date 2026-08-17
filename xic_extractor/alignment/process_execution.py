@@ -4,9 +4,10 @@ import io
 import pickle
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields, is_dataclass
+from enum import Enum
 from pathlib import Path
 from time import perf_counter
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 from xic_extractor.process_job_execution import execute_process_jobs
@@ -31,8 +32,7 @@ def run_process_jobs(
     success_result_delivery: Callable[[int, Any], Any] | None = None,
 ) -> list[Any]:
     pending_jobs = list(jobs)
-    for job in pending_jobs:
-        validate_process_job_payload(job)
+    _validate_process_job_payloads(pending_jobs)
     report = execute_process_jobs(
         pending_jobs,
         worker=worker,
@@ -61,8 +61,20 @@ def validate_process_job_payload(job: Any) -> None:
     process_job_payload_size_bytes(job)
 
 
+def _validate_process_job_payloads(jobs: Iterable[Any]) -> None:
+    """Validate one batch without materializing transport bytes."""
+
+    seen_object_ids: set[int] = set()
+    for index, job in enumerate(jobs):
+        _validate_payload_value(
+            job,
+            path=f"jobs[{index}]",
+            seen_object_ids=seen_object_ids,
+        )
+
+
 def process_job_payload_size_bytes(job: Any) -> int:
-    _validate_payload_value(job, path="job")
+    _validate_payload_value(job, path="job", seen_object_ids=set())
     try:
         return len(pickle.dumps(job))
     except Exception as exc:
@@ -175,27 +187,72 @@ def _raw_call_delta(before: int | None, after: int | None) -> int:
     return max(0, after - before)
 
 
-def _validate_payload_value(value: Any, *, path: str) -> None:
-    if value is None or isinstance(value, (str, int, float, bool, bytes, Path)):
-        return
+def _validate_payload_value(
+    value: Any,
+    *,
+    path: str,
+    seen_object_ids: set[int],
+) -> None:
     if callable(value):
         raise TypeError(f"{path} contains callable value")
+    if value is None or isinstance(
+        value,
+        (str, int, float, bool, bytes, Path),
+    ):
+        return
     if isinstance(value, io.IOBase):
         raise TypeError(f"{path} contains file handle")
     if isinstance(value, ModuleType):
         raise TypeError(f"{path} contains module object")
+    if isinstance(value, Enum):
+        enum_value = value.value
+        if enum_value is None or isinstance(
+            enum_value,
+            (str, int, float, bool, bytes),
+        ):
+            return
+        raise TypeError(f"{path} contains unsupported enum value")
+    value_id = id(value)
+    if value_id in seen_object_ids:
+        return
+    seen_object_ids.add(value_id)
     if is_dataclass(value) and not isinstance(value, type):
         for field in fields(value):
             _validate_payload_value(
                 getattr(value, field.name),
                 path=f"{path}.{field.name}",
+                seen_object_ids=seen_object_ids,
             )
+        return
+    if isinstance(value, SimpleNamespace):
+        _validate_payload_value(
+            vars(value),
+            path=f"{path}.__dict__",
+            seen_object_ids=seen_object_ids,
+        )
         return
     if isinstance(value, dict):
         for key, item in value.items():
-            _validate_payload_value(key, path=f"{path}.<key>")
-            _validate_payload_value(item, path=f"{path}[{key!r}]")
+            _validate_payload_value(
+                key,
+                path=f"{path}.<key>",
+                seen_object_ids=seen_object_ids,
+            )
+            _validate_payload_value(
+                item,
+                path=f"{path}[{key!r}]",
+                seen_object_ids=seen_object_ids,
+            )
         return
     if isinstance(value, (list, tuple, set, frozenset)):
         for index, item in enumerate(value):
-            _validate_payload_value(item, path=f"{path}[{index}]")
+            _validate_payload_value(
+                item,
+                path=f"{path}[{index}]",
+                seen_object_ids=seen_object_ids,
+            )
+        return
+    raise TypeError(
+        f"{path} contains unsupported payload value "
+        f"{type(value).__module__}.{type(value).__qualname__}"
+    )

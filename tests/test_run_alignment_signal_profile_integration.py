@@ -621,6 +621,7 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         backfill_transaction_module.OwnerBackfillTransactionOutput
     ] = []
     real_build_collector = process_backend_module.collect_owner_build_results
+    real_job_validator = process_execution_module._validate_process_job_payloads
     real_backfill_delivery = (
         backfill_transaction_module.OwnerBackfillSampleTransaction.deliver
     )
@@ -631,6 +632,11 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
     def capture_job(job: object) -> None:
         size = process_execution_module.process_job_payload_size_bytes(job)
         captured_jobs.append((job, size))
+
+    def capture_jobs(jobs) -> None:
+        real_job_validator(jobs)
+        for job in jobs:
+            capture_job(job)
 
     def capture_build_collector(results):
         materialized = tuple(results)
@@ -660,8 +666,8 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
     )
     monkeypatch.setattr(
         process_execution_module,
-        "validate_process_job_payload",
-        capture_job,
+        "_validate_process_job_payloads",
+        capture_jobs,
     )
     monkeypatch.setattr(
         process_backend_module,
