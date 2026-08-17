@@ -10,6 +10,7 @@ from tests.test_alignment_owner_backfill import _feature
 from xic_extractor.alignment import (
     backfill_transaction,
     owner_backfill_request_plan,
+    owner_backfill_runtime_projection,
     owner_matrix,
 )
 from xic_extractor.alignment.backfill_scope import backfill_features_for_sample
@@ -28,6 +29,7 @@ from xic_extractor.alignment.process_backend import (
     AlignmentProcessExecutionError,
     IdentityTraceSampleJob,
     IdentityTraceSampleResult,
+    OwnerBackfillSampleJob,
     OwnerBackfillSampleResult,
     OwnerBackfillTimingStats,
     OwnerBackfillWorkerError,
@@ -36,13 +38,16 @@ from xic_extractor.alignment.process_backend import (
     OwnerBuildTimingStats,
     OwnerBuildWorkerError,
     extract_identity_trace_sample_job,
+    extract_owner_backfill_sample_job,
     owner_backfill_job_payload_metrics,
     process_job_payload_size_bytes,
     run_identity_trace_process,
     run_owner_backfill_process,
     run_owner_build_jobs,
     run_owner_build_process,
+    validate_owner_backfill_job_payload,
 )
+from xic_extractor.alignment.process_execution import run_process_jobs
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -53,6 +58,24 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
+
+
+def _spawn_validate_compact_backfill_job(
+    job: OwnerBackfillSampleJob,
+) -> tuple[str, str, int]:
+    validate_owner_backfill_job_payload(job)
+    return (
+        job.sample_stem,
+        job.sample_projection.runtime_projection_id,
+        len(job.features),
+    )
+
+
+def _spawn_compact_backfill_error(
+    job: OwnerBackfillSampleJob,
+    exc: Exception,
+) -> tuple[str, str]:
+    return job.sample_stem, f"{type(exc).__name__}: {exc}"
 
 
 def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
@@ -146,6 +169,48 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
     ]
 
 
+def test_spawned_child_validates_compact_backfill_projection_without_raw(
+    tmp_path: Path,
+) -> None:
+    source_feature = _feature()
+    feature_with_unavailable_area = replace(
+        source_feature,
+        owners=(replace(source_feature.owners[0], owner_area=0.0),),
+    )
+    projection = (
+        owner_backfill_request_plan.build_owner_backfill_sample_runtime_projections(
+            (feature_with_unavailable_area,),
+            sample_order=("sample-a", "sample-b"),
+            raw_sample_stems=frozenset({"sample-b"}),
+            alignment_config=AlignmentConfig(),
+        )["sample-b"]
+    )
+    job = OwnerBackfillSampleJob(
+        sample_index=1,
+        sample_stem="sample-b",
+        raw_path=tmp_path / "never-opened.raw",
+        dll_dir=tmp_path / "never-opened-dll",
+        sample_projection=projection,
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        feature_payload_count=1,
+        request_payload_count=1,
+    )
+
+    receipts = run_process_jobs(
+        (job,),
+        worker=_spawn_validate_compact_backfill_job,
+        error_factory=_spawn_compact_backfill_error,
+        is_terminal_failure=lambda _result: False,
+        max_workers=1,
+    )
+
+    assert receipts == [
+        ("sample-b", projection.runtime_projection_id, len(projection.features))
+    ]
+
+
 def test_process_parent_does_not_materialize_logical_backfill_requests(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -186,8 +251,106 @@ def test_process_parent_does_not_materialize_logical_backfill_requests(
     )
 
     assert [job.sample_stem for job in captured_jobs] == ["sample-b"]
-    assert [job.features for job in captured_jobs] == [(feature,)]
+    assert [
+        tuple(item.feature_family_id for item in job.features) for job in captured_jobs
+    ] == [(feature.feature_family_id,)]
+    assert all(
+        not hasattr(item, "owners") for job in captured_jobs for item in job.features
+    )
     assert [job.request_payload_count for job in captured_jobs] == [1]
+
+
+def test_process_parent_deep_validates_each_compact_feature_only_when_minted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    feature_a = _feature(feature_family_id="FAM000001")
+    feature_b = _feature(feature_family_id="FAM000002", mz=510.0)
+    validation_calls: list[str] = []
+    real_validate = (
+        owner_backfill_runtime_projection._validate_runtime_feature_projection
+    )
+
+    def counted_validate(feature):
+        validation_calls.append(feature.runtime_feature_id)
+        return real_validate(feature)
+
+    monkeypatch.setattr(
+        owner_backfill_runtime_projection,
+        "_validate_runtime_feature_projection",
+        counted_validate,
+    )
+
+    captured_jobs: list[OwnerBackfillSampleJob] = []
+
+    def fake_runner(jobs, *, max_workers):
+        captured_jobs.extend(jobs)
+        return []
+
+    run_owner_backfill_process(
+        (feature_a, feature_b, feature_a),
+        sample_order=("sample-a", "sample-b", "sample-c"),
+        raw_paths={
+            "sample-a": tmp_path / "sample-a.raw",
+            "sample-b": tmp_path / "sample-b.raw",
+            "sample-c": tmp_path / "sample-c.raw",
+        },
+        dll_dir=tmp_path / "dll",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        max_workers=1,
+        runner=fake_runner,
+    )
+
+    assert len(captured_jobs) == 2
+    assert [job.feature_payload_count for job in captured_jobs] == [3, 3]
+    assert len(validation_calls) == 2
+    assert len(set(validation_calls)) == 2
+
+
+def test_forged_compact_projection_fails_before_worker_opens_raw(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    feature = _feature()
+    projection = (
+        owner_backfill_request_plan.build_owner_backfill_sample_runtime_projections(
+            (feature,),
+            sample_order=("sample-a", "sample-b"),
+            raw_sample_stems=frozenset({"sample-b"}),
+            alignment_config=AlignmentConfig(),
+        )["sample-b"]
+    )
+    object.__setattr__(projection.features[0], "group_hypothesis_id", "forged")
+    job = OwnerBackfillSampleJob(
+        sample_index=1,
+        sample_stem="sample-b",
+        raw_path=tmp_path / "never-opened.raw",
+        dll_dir=tmp_path / "never-opened-dll",
+        sample_projection=projection,
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        feature_payload_count=1,
+        request_payload_count=1,
+    )
+    raw_open_calls: list[object] = []
+
+    def forbidden_open_raw(*args, **kwargs):
+        raw_open_calls.append((args, kwargs))
+        raise AssertionError("forged payload must fail before RAW opens")
+
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", forbidden_open_raw)
+
+    with pytest.raises(ValueError, match="runtime_feature_id mismatches"):
+        validate_owner_backfill_job_payload(job)
+
+    result = extract_owner_backfill_sample_job(job)
+
+    assert isinstance(result, OwnerBackfillWorkerError)
+    assert "runtime_feature_id mismatches" in result.message
+    assert raw_open_calls == []
 
 
 def test_process_parent_compact_partition_matches_full_request_owner(
@@ -202,8 +365,7 @@ def test_process_parent_compact_partition_matches_full_request_owner(
     features = (feature_a, feature_b, feature_a)
     sample_order = ("sample-a", "sample-b")
     raw_paths = {
-        sample_stem: tmp_path / f"{sample_stem}.raw"
-        for sample_stem in sample_order
+        sample_stem: tmp_path / f"{sample_stem}.raw" for sample_stem in sample_order
     }
     alignment_config = AlignmentConfig()
     full_plan = owner_backfill_request_plan.build_owner_backfill_request_plan(
@@ -233,7 +395,16 @@ def test_process_parent_compact_partition_matches_full_request_owner(
     jobs_by_sample = {job.sample_stem: job for job in captured_jobs}
     for sample_stem in sample_order:
         job = jobs_by_sample[sample_stem]
-        assert job.features == full_plan.features_for_sample(sample_stem)
+        compact_plan = owner_backfill_request_plan.build_owner_backfill_request_plan(
+            job.features,
+            sample_order=(sample_stem,),
+            raw_sample_stems=frozenset({sample_stem}),
+            alignment_config=alignment_config,
+        )
+        assert _request_plan_projection(
+            compact_plan.requests_for_sample(sample_stem)
+        ) == _request_plan_projection(full_plan.requests_for_sample(sample_stem))
+        assert all(not hasattr(feature, "owners") for feature in job.features)
         assert job.request_payload_count == full_plan.request_count_for_sample(
             sample_stem
         )
@@ -299,9 +470,10 @@ def test_process_backfill_transaction_keeps_full_matrix_feature_universe(
         runner=fake_runner,
     )
 
-    assert tuple(
-        feature.feature_family_id for feature in output.matrix.clusters
-    ) == (unrequested_feature.feature_family_id, scoped_feature.feature_family_id)
+    assert tuple(feature.feature_family_id for feature in output.matrix.clusters) == (
+        unrequested_feature.feature_family_id,
+        scoped_feature.feature_family_id,
+    )
     assert tuple(
         (cell.cluster_id, cell.sample_stem) for cell in output.matrix.cells
     ) == (
@@ -469,9 +641,8 @@ def test_process_job_payload_size_still_rejects_callable_leaf() -> None:
 def test_owner_backfill_process_per_sample_features_match_legacy_scan(
     tmp_path: Path,
 ) -> None:
-    # The per-feature bucketing optimization must produce per-sample job
-    # features byte-identical to the original per-sample
-    # backfill_features_for_sample scan it replaced.
+    # The compact worker projection must retain the feature partition selected
+    # by the original per-sample Backfill eligibility scan.
     feature_a = _confirmable_feature_for_sample_a()
     feature_b = replace(_feature(), feature_family_id="FAM000002")
     features = (feature_a, feature_b)
@@ -509,7 +680,11 @@ def test_owner_backfill_process_per_sample_features_match_legacy_scan(
             raw_sample_stems=raw_sample_stems,
             alignment_config=alignment_config,
         )
-        assert by_sample.get(sample_stem, ()) == expected
+        actual = by_sample.get(sample_stem, ())
+        assert tuple(feature.feature_family_id for feature in actual) == tuple(
+            feature.feature_family_id for feature in expected
+        )
+        assert all(not hasattr(feature, "owners") for feature in actual)
 
 
 def test_owner_backfill_process_accepts_delivery_contract_payload(
@@ -539,7 +714,8 @@ def test_owner_backfill_process_accepts_delivery_contract_payload(
 
     assert len(captured_jobs) == 1
     assert captured_jobs[0].sample_stem == "sample-b"
-    assert captured_jobs[0].features == (feature,)
+    assert len(captured_jobs[0].features) == 1
+    assert not hasattr(captured_jobs[0].features[0], "owners")
     assert captured_jobs[0].features[0].group_hypothesis_id == "GROUP_CONTRACT"
     assert captured_jobs[0].features[0].public_family_id == "FAM_CONTRACT"
     assert captured_jobs[0].features[0].group_delivery_role == (
@@ -1375,3 +1551,17 @@ def test_identity_trace_process_returns_blocked_results_on_extraction_error(
     assert first.status == "blocked_infrastructure"
     assert first.blocked_reason == "raw_xic_extraction_error"
     assert second.status == "pass"
+
+
+def _request_plan_projection(
+    items: tuple[object, ...],
+) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        (
+            item.feature.feature_family_id,
+            item.sample_stem,
+            item.request,
+            item.preferred_rt,
+        )
+        for item in items
+    )

@@ -1,10 +1,14 @@
+import pickle
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import xic_extractor.alignment.owner_backfill as owner_backfill_module
+import xic_extractor.alignment.owner_backfill_request_plan as request_plan_module
 from tests.test_alignment_owner_backfill import _feature, _peak_config
+from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
@@ -21,10 +25,19 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
     OwnerBackfillRequestEquivalenceContext,
     OwnerBackfillRequestIdentity,
+    OwnerBackfillSampleRequestProjection,
     OwnerBackfillValidationMode,
     OwnerBackfillWindowStrategy,
     build_owner_backfill_request_plan,
+    build_owner_backfill_sample_runtime_projections,
     mint_owner_backfill_request_identity,
+    validate_owner_backfill_sample_runtime_projection,
+)
+from xic_extractor.alignment.owner_backfill_runtime_projection import (
+    OwnerBackfillOwnerEligibility,
+    backfill_runtime_owner_eligibility,
+    mint_owner_backfill_runtime_feature,
+    validate_owner_backfill_runtime_feature,
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.primary_consolidation import (
@@ -102,6 +115,198 @@ class _FailingOwnerBoundWindowSource(_OwnerBoundWindowSource):
         return tuple(
             _trace_for_request(request, height=self.height) for request in requests
         )
+
+
+def test_compact_runtime_projection_rebuilds_full_request_plan_and_roundtrips() -> None:
+    feature_with_multiple_seeds = replace(
+        _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+        backfill_seed_centers=((500.0, 8.5), (500.2, 8.7)),
+    )
+    feature_with_confirmed_owner = replace(
+        _feature(feature_family_id="FAM000002", mz=510.0, rt=9.0),
+        owners=(
+            replace(_owner("sample-a", "a"), owner_area=1000.0),
+            replace(_owner("sample-b", "b"), owner_area=100.0),
+        ),
+        confirm_local_owners_with_backfill=True,
+    )
+    features = (feature_with_multiple_seeds, feature_with_confirmed_owner)
+    sample_order = ("sample-a", "sample-b", "sample-c")
+    raw_sample_stems = frozenset(sample_order)
+    alignment_config = AlignmentConfig(max_rt_sec=60.0)
+
+    full_plan = build_owner_backfill_request_plan(
+        features,
+        sample_order=sample_order,
+        raw_sample_stems=raw_sample_stems,
+        alignment_config=alignment_config,
+    )
+    runtime_projections = build_owner_backfill_sample_runtime_projections(
+        features,
+        sample_order=sample_order,
+        raw_sample_stems=raw_sample_stems,
+        alignment_config=alignment_config,
+    )
+
+    assert set(runtime_projections) == {"sample-b", "sample-c"}
+    assert all(
+        not hasattr(feature, "owners") and not hasattr(feature, "members")
+        for projection in runtime_projections.values()
+        for feature in projection.features
+    )
+    for sample_stem, runtime_projection in runtime_projections.items():
+        restored = pickle.loads(pickle.dumps(runtime_projection))
+        assert restored == runtime_projection
+        compact_plan = build_owner_backfill_request_plan(
+            restored.features,
+            sample_order=(sample_stem,),
+            raw_sample_stems=frozenset({sample_stem}),
+            alignment_config=alignment_config,
+        )
+        assert _request_plan_projection(
+            compact_plan.requests_for_sample(sample_stem)
+        ) == _request_plan_projection(full_plan.requests_for_sample(sample_stem))
+
+
+@pytest.mark.parametrize("owner_area", (True, float("nan"), 0.0, -1.0))
+def test_compact_runtime_projection_rejects_noncanonical_direct_owner_eligibility(
+    owner_area: object,
+) -> None:
+    assert OwnerBackfillOwnerEligibility("sample-a", None).owner_area is None
+    with pytest.raises(ValueError, match="owner eligibility owner_area"):
+        OwnerBackfillOwnerEligibility("sample-a", owner_area)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("owner_area", (0.0, float("nan"), -1.0))
+def test_compact_runtime_projection_preserves_unavailable_owner_area_parity(
+    owner_area: float,
+) -> None:
+    source_feature = _feature()
+    feature = replace(
+        source_feature,
+        owners=(replace(source_feature.owners[0], owner_area=owner_area),),
+    )
+    sample_order = ("sample-a", "sample-b")
+    alignment_config = AlignmentConfig()
+    full_plan = build_owner_backfill_request_plan(
+        (feature,),
+        sample_order=sample_order,
+        raw_sample_stems=frozenset(sample_order),
+        alignment_config=alignment_config,
+    )
+    runtime_projection = build_owner_backfill_sample_runtime_projections(
+        (feature,),
+        sample_order=sample_order,
+        raw_sample_stems=frozenset(sample_order),
+        alignment_config=alignment_config,
+    )["sample-b"]
+
+    assert runtime_projection.features[0].owner_eligibility == (
+        OwnerBackfillOwnerEligibility("sample-a", None),
+    )
+    restored = pickle.loads(pickle.dumps(runtime_projection))
+    compact_plan = build_owner_backfill_request_plan(
+        restored.features,
+        sample_order=("sample-b",),
+        raw_sample_stems=frozenset({"sample-b"}),
+        alignment_config=alignment_config,
+    )
+    assert _request_plan_projection(
+        compact_plan.requests_for_sample("sample-b")
+    ) == _request_plan_projection(full_plan.requests_for_sample("sample-b"))
+
+
+def test_full_feature_missing_owners_preserves_attribute_error_sentinel() -> None:
+    with pytest.raises(AttributeError, match="owners"):
+        backfill_runtime_owner_eligibility(SimpleNamespace())
+
+    with pytest.raises(TypeError, match="requires non-empty owner tuple"):
+        backfill_runtime_owner_eligibility(SimpleNamespace(owners=()))
+
+
+def test_compact_runtime_projection_mints_each_source_feature_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    feature_a = _feature(feature_family_id="FAM000001")
+    feature_b = _feature(feature_family_id="FAM000002", mz=510.0)
+    mint_calls: list[str] = []
+    real_mint = request_plan_module.mint_owner_backfill_runtime_feature
+
+    def counted_mint(feature):
+        mint_calls.append(feature.feature_family_id)
+        return real_mint(feature)
+
+    monkeypatch.setattr(
+        "xic_extractor.alignment.owner_backfill_request_plan.mint_owner_backfill_runtime_feature",
+        counted_mint,
+    )
+
+    projections = build_owner_backfill_sample_runtime_projections(
+        (feature_a, feature_b, feature_a),
+        sample_order=("sample-a", "sample-b", "sample-c"),
+        raw_sample_stems=frozenset({"sample-a", "sample-b", "sample-c"}),
+        alignment_config=AlignmentConfig(),
+    )
+
+    assert set(projections) == {"sample-b", "sample-c"}
+    assert mint_calls == ["FAM000001", "FAM000002"]
+
+
+def test_compact_runtime_projection_rejects_empty_owner_sample_and_feature_id() -> None:
+    with pytest.raises(ValueError, match="owner eligibility sample_stem"):
+        OwnerBackfillOwnerEligibility("", 1.0)
+
+    feature = mint_owner_backfill_runtime_feature(_feature())
+    with pytest.raises(ValueError, match="feature_family_id"):
+        replace(feature, feature_family_id="")
+
+
+def test_compact_runtime_projection_rejects_relabelled_feature_or_sample_binding() -> (
+    None
+):
+    feature = mint_owner_backfill_runtime_feature(_feature())
+    with pytest.raises(ValueError, match="runtime_feature_id mismatches"):
+        replace(feature, group_hypothesis_id="other-group")
+
+    sample_projection = build_owner_backfill_sample_runtime_projections(
+        (_feature(),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sample_stems=frozenset({"sample-b"}),
+        alignment_config=AlignmentConfig(),
+    )["sample-b"]
+    with pytest.raises(ValueError, match="runtime_projection_id mismatches"):
+        replace(sample_projection, sample_stem="other-sample")
+
+    validate_owner_backfill_runtime_feature(feature)
+    validate_owner_backfill_sample_runtime_projection(sample_projection)
+
+
+def test_compact_runtime_projection_reduces_material_request_payload() -> None:
+    features = tuple(
+        _feature(
+            feature_family_id=f"FAM{index:06d}",
+            mz=500.0 + index * 0.01,
+            rt=8.5 + index * 0.001,
+        )
+        for index in range(64)
+    )
+    sample_projection = OwnerBackfillSampleRequestProjection(
+        sample_stem="sample-b",
+        features=features,
+        logical_request_count=len(features),
+    )
+    runtime_projection = build_owner_backfill_sample_runtime_projections(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sample_stems=frozenset({"sample-b"}),
+        alignment_config=AlignmentConfig(),
+    )["sample-b"]
+
+    full_bytes = len(pickle.dumps(sample_projection))
+    compact_bytes = len(pickle.dumps(runtime_projection))
+
+    assert compact_bytes < full_bytes
+    assert compact_bytes / full_bytes < 0.75
 
 
 def test_request_plan_mints_complete_partition_in_first_logical_order(
@@ -752,7 +957,12 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
         sample_stem="sample-b",
         raw_path=tmp_path / "sample-b.raw",
         dll_dir=tmp_path / "dll",
-        features=features,
+        sample_projection=build_owner_backfill_sample_runtime_projections(
+            features,
+            sample_order=("sample-a", "sample-b"),
+            raw_sample_stems=frozenset({"sample-b"}),
+            alignment_config=AlignmentConfig(),
+        )["sample-b"],
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
@@ -760,6 +970,8 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
         raw_session_capability=raw_session_capability,
         raw_xic_batch_size=64,
         owner_backfill_xic_backend="raw",
+        feature_payload_count=2,
+        request_payload_count=2,
     )
 
     result = extract_owner_backfill_sample_job(job)
@@ -767,11 +979,30 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
     assert isinstance(result, OwnerBackfillSampleResult)
     assert source.batch_sizes == [1]
     assert len(result.cells) == 2
+    assert result.cells == serial_result.cells
+    assert result.candidate_audit_rows == serial_result.candidate_audit_rows
     assert [
         (item.logical_request_count, item.canonical_request_class_count)
         for item in result.request_reuse_observations
     ] == [(2, 1)]
     assert len(result.peak_fact_observations) == 2
+    assert [
+        (
+            observation.logical_request.logical_request_id,
+            observation.logical_request.group_hypothesis_id,
+            observation.request_identity.request_identity_id,
+            observation.cell,
+        )
+        for observation in result.peak_fact_observations
+    ] == [
+        (
+            observation.logical_request.logical_request_id,
+            observation.logical_request.group_hypothesis_id,
+            observation.request_identity.request_identity_id,
+            observation.cell,
+        )
+        for observation in serial_result.peak_fact_observations
+    ]
     assert [
         (
             observation.work_unit_key,
@@ -893,4 +1124,18 @@ def _trace_for_request(request: XICRequest, *, height: float) -> XICTrace:
     return XICTrace.from_arrays(
         [center - 0.10, center - 0.01, center, center + 0.01, center + 0.10],
         [0.0, height / 2.0, height, height / 2.0, 0.0],
+    )
+
+
+def _request_plan_projection(
+    items: tuple[object, ...],
+) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        (
+            item.feature.feature_family_id,
+            item.sample_stem,
+            item.request,
+            item.preferred_rt,
+        )
+        for item in items
     )

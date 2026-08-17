@@ -15,8 +15,14 @@ from xic_extractor.alignment.backfill_scope import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
+from xic_extractor.alignment.owner_backfill_runtime_projection import (
+    BackfillRuntimeFeature,
+    OwnerBackfillRuntimeFeatureProjection,
+    OwnerBackfillRuntimeFeatures,
+    mint_owner_backfill_runtime_feature,
+    validate_owner_backfill_runtime_feature,
+)
 from xic_extractor.alignment.owner_group_delivery import (
-    OwnerGroupDeliveryFeature,
     OwnerGroupDeliveryFeatures,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -41,10 +47,11 @@ OWNER_BACKFILL_XIC_BACKENDS: tuple[OwnerBackfillXicBackend, ...] = (
 OWNER_BACKFILL_TRACE_RESULT_SEMANTICS = "owner_backfill_xic_trace_v1"
 _REQUEST_IDENTITY_PREFIX = "xic.owner-backfill-request.v1:"
 _LOGICAL_REQUEST_PREFIX = "xic.owner-backfill-logical-request.v1:"
+_RUNTIME_SAMPLE_PROJECTION_PREFIX = "xic.owner-backfill-runtime-sample.v1:"
 
 
 class OwnerBackfillRequestItem(NamedTuple):
-    feature: OwnerGroupDeliveryFeature
+    feature: BackfillRuntimeFeature
     sample_stem: str
     request: XICRequest
     preferred_rt: float
@@ -53,7 +60,7 @@ class OwnerBackfillRequestItem(NamedTuple):
 @dataclass(frozen=True, slots=True)
 class OwnerBackfillSampleRequestProjection:
     sample_stem: str
-    features: OwnerGroupDeliveryFeatures
+    features: tuple[BackfillRuntimeFeature, ...]
     logical_request_count: int
 
     def __post_init__(self) -> None:
@@ -67,6 +74,50 @@ class OwnerBackfillSampleRequestProjection:
         ):
             raise ValueError(
                 "sample request projection count must be a positive integer"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillSampleRuntimeProjection:
+    """Sample-bound compact feature payload minted by the request-plan owner."""
+
+    runtime_projection_id: str
+    sample_stem: str
+    features: OwnerBackfillRuntimeFeatures
+    logical_request_count: int
+
+    def __post_init__(self) -> None:
+        sample_stem = _required_text(self.sample_stem, "sample_stem")
+        if not isinstance(self.features, tuple) or not self.features:
+            raise ValueError(
+                "runtime sample projection features must be a non-empty tuple"
+            )
+        if any(
+            not isinstance(feature, OwnerBackfillRuntimeFeatureProjection)
+            for feature in self.features
+        ):
+            raise TypeError(
+                "runtime sample projection features must be compact owner projections"
+            )
+        if (
+            isinstance(self.logical_request_count, bool)
+            or not isinstance(self.logical_request_count, int)
+            or self.logical_request_count < 1
+        ):
+            raise ValueError(
+                "runtime sample projection count must be a positive integer"
+            )
+        expected = _typed_id(
+            _RUNTIME_SAMPLE_PROJECTION_PREFIX,
+            _runtime_sample_projection_basis(
+                sample_stem=sample_stem,
+                features=self.features,
+                logical_request_count=self.logical_request_count,
+            ),
+        )
+        if self.runtime_projection_id != expected:
+            raise ValueError(
+                "runtime_projection_id mismatches sample-bound Backfill semantics"
             )
 
 
@@ -225,10 +276,13 @@ class OwnerBackfillRequestEquivalenceClass:
 @dataclass(frozen=True)
 class OwnerBackfillRequestPlan:
     requests_by_sample: Mapping[str, tuple[OwnerBackfillRequestItem, ...]]
-    equivalence_classes_by_sample: Mapping[
-        str,
-        tuple[OwnerBackfillRequestEquivalenceClass, ...],
-    ] | None = None
+    equivalence_classes_by_sample: (
+        Mapping[
+            str,
+            tuple[OwnerBackfillRequestEquivalenceClass, ...],
+        ]
+        | None
+    ) = None
     equivalence_context: OwnerBackfillRequestEquivalenceContext | None = None
     equivalence_unavailable_reason: str = "owner_equivalence_context_not_supplied"
 
@@ -268,9 +322,7 @@ class OwnerBackfillRequestPlan:
             )
         if not isinstance(self.equivalence_classes_by_sample, Mapping):
             raise TypeError("equivalence_classes_by_sample must be a mapping")
-        equivalence_classes_by_sample = dict(
-            self.equivalence_classes_by_sample
-        )
+        equivalence_classes_by_sample = dict(self.equivalence_classes_by_sample)
         for classes in equivalence_classes_by_sample.values():
             if not isinstance(classes, tuple) or any(
                 not isinstance(item, OwnerBackfillRequestEquivalenceClass)
@@ -309,9 +361,7 @@ class OwnerBackfillRequestPlan:
                         "equivalence member is not bound to its logical request"
                     )
             for equivalence_class in classes:
-                source = self.equivalence_context.acquisition_sources.get(
-                    sample_stem
-                )
+                source = self.equivalence_context.acquisition_sources.get(sample_stem)
                 if not isinstance(source, AcquisitionSourceIdentity):
                     raise ValueError(
                         "equivalence context does not bind every request sample"
@@ -346,8 +396,8 @@ class OwnerBackfillRequestPlan:
     def features_for_sample(
         self,
         sample_stem: str,
-    ) -> OwnerGroupDeliveryFeatures:
-        features: list[OwnerGroupDeliveryFeature] = []
+    ) -> tuple[BackfillRuntimeFeature, ...]:
+        features: list[BackfillRuntimeFeature] = []
         seen_feature_ids: set[int] = set()
         for item in self.requests_for_sample(sample_stem):
             feature_id = id(item.feature)
@@ -376,7 +426,7 @@ class OwnerBackfillRequestPlan:
 
 
 def build_owner_backfill_request_plan(
-    features: OwnerGroupDeliveryFeatures,
+    features: tuple[BackfillRuntimeFeature, ...],
     *,
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
@@ -433,11 +483,8 @@ def build_owner_backfill_sample_request_projections(
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
 ) -> Mapping[str, OwnerBackfillSampleRequestProjection]:
-    pending_features: dict[str, list[OwnerGroupDeliveryFeature]] = defaultdict(list)
+    pending_features: dict[str, list[BackfillRuntimeFeature]] = defaultdict(list)
     request_counts: dict[str, int] = defaultdict(int)
-    seen_feature_object_ids: set[int] = set()
-    active_feature_object_id: int | None = None
-    first_feature_occurrence = False
     for feature, sample_stem, seed_centers in _iter_feature_sample_request_groups(
         features,
         sample_order=sample_order,
@@ -445,18 +492,7 @@ def build_owner_backfill_sample_request_projections(
         alignment_config=alignment_config,
     ):
         request_counts[sample_stem] += len(seed_centers)
-        feature_object_id = id(feature)
-        if feature_object_id != active_feature_object_id:
-            active_feature_object_id = feature_object_id
-            first_feature_occurrence = (
-                feature_object_id not in seen_feature_object_ids
-            )
-            seen_feature_object_ids.add(feature_object_id)
-        if not first_feature_occurrence:
-            continue
-        sample_features = pending_features[sample_stem]
-        if not sample_features or sample_features[-1] is not feature:
-            sample_features.append(feature)
+        pending_features[sample_stem].append(feature)
 
     projections: dict[str, OwnerBackfillSampleRequestProjection] = {}
     for sample_stem in tuple(pending_features):
@@ -469,15 +505,106 @@ def build_owner_backfill_sample_request_projections(
     return MappingProxyType(projections)
 
 
-def _iter_feature_sample_request_groups(
+def build_owner_backfill_sample_runtime_projections(
     features: OwnerGroupDeliveryFeatures,
     *,
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
-) -> Iterator[
-    tuple[OwnerGroupDeliveryFeature, str, tuple[tuple[float, float], ...]]
-]:
+) -> Mapping[str, OwnerBackfillSampleRuntimeProjection]:
+    """Mint compact, sample-bound worker inputs from the canonical request plan."""
+
+    request_projections = build_owner_backfill_sample_request_projections(
+        features,
+        sample_order=sample_order,
+        raw_sample_stems=raw_sample_stems,
+        alignment_config=alignment_config,
+    )
+    runtime_features_by_object_id: dict[
+        int,
+        OwnerBackfillRuntimeFeatureProjection,
+    ] = {}
+    runtime_projections: dict[str, OwnerBackfillSampleRuntimeProjection] = {}
+    for sample_stem, projection in request_projections.items():
+        compact_features: list[OwnerBackfillRuntimeFeatureProjection] = []
+        for feature in projection.features:
+            feature_object_id = id(feature)
+            compact_feature = runtime_features_by_object_id.get(feature_object_id)
+            if compact_feature is None:
+                compact_feature = mint_owner_backfill_runtime_feature(feature)
+                runtime_features_by_object_id[feature_object_id] = compact_feature
+            compact_features.append(compact_feature)
+        runtime_projections[sample_stem] = (
+            _mint_owner_backfill_sample_runtime_projection(
+                sample_stem=sample_stem,
+                features=tuple(compact_features),
+                logical_request_count=projection.logical_request_count,
+            )
+        )
+    return MappingProxyType(runtime_projections)
+
+
+def validate_owner_backfill_sample_runtime_projection(
+    projection: OwnerBackfillSampleRuntimeProjection,
+) -> None:
+    validate_owner_backfill_sample_runtime_projection_shape(projection)
+    for feature in projection.features:
+        validate_owner_backfill_runtime_feature(feature)
+
+
+def validate_owner_backfill_sample_runtime_projection_shape(
+    projection: OwnerBackfillSampleRuntimeProjection,
+) -> None:
+    """Validate the parent-safe envelope without rehashing every feature."""
+
+    if not isinstance(projection, OwnerBackfillSampleRuntimeProjection):
+        raise TypeError("Backfill sample runtime projection must be owner-minted")
+    projection.__post_init__()
+
+
+def _mint_owner_backfill_sample_runtime_projection(
+    *,
+    sample_stem: str,
+    features: OwnerBackfillRuntimeFeatures,
+    logical_request_count: int,
+) -> OwnerBackfillSampleRuntimeProjection:
+    basis = _runtime_sample_projection_basis(
+        sample_stem=sample_stem,
+        features=features,
+        logical_request_count=logical_request_count,
+    )
+    return OwnerBackfillSampleRuntimeProjection(
+        runtime_projection_id=_typed_id(_RUNTIME_SAMPLE_PROJECTION_PREFIX, basis),
+        sample_stem=sample_stem,
+        features=features,
+        logical_request_count=logical_request_count,
+    )
+
+
+def _runtime_sample_projection_basis(
+    *,
+    sample_stem: str,
+    features: OwnerBackfillRuntimeFeatures,
+    logical_request_count: int,
+) -> dict[str, object]:
+    return {
+        "schema": "owner_backfill_runtime_sample_v1",
+        "sample_stem": _required_text(sample_stem, "sample_stem"),
+        "runtime_feature_ids": tuple(
+            _required_text(feature.runtime_feature_id, "runtime_feature_id")
+            for feature in features
+        ),
+        "logical_request_count": logical_request_count,
+    }
+
+
+def _iter_feature_sample_request_groups(
+    features: tuple[BackfillRuntimeFeature, ...],
+    *,
+    sample_order: tuple[str, ...],
+    raw_sample_stems: frozenset[str],
+    alignment_config: AlignmentConfig,
+) -> Iterator[tuple[BackfillRuntimeFeature, str, tuple[tuple[float, float], ...]]]:
     for feature in features:
         seed_centers = backfill_seed_centers(feature)
         for sample_stem in backfill_request_sample_stems(

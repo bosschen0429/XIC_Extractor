@@ -39,9 +39,10 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     build_owner_backfill_request_plan,
     mint_owner_backfill_request_identity,
 )
+from xic_extractor.alignment.owner_backfill_runtime_projection import (
+    BackfillRuntimeFeature,
+)
 from xic_extractor.alignment.owner_group_delivery import (
-    OwnerGroupDeliveryFeature,
-    OwnerGroupDeliveryFeatures,
     delivery_cell_projection,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -420,7 +421,7 @@ class _OwnerBackfillTraceEvaluation:
 
 
 def build_owner_backfill_cells(
-    features: OwnerGroupDeliveryFeatures,
+    features: tuple[BackfillRuntimeFeature, ...],
     *,
     sample_order: tuple[str, ...],
     raw_sources: Mapping[str, OwnerBackfillSource],
@@ -457,7 +458,7 @@ def build_owner_backfill_cells(
 
 
 def build_owner_backfill_result(
-    features: OwnerGroupDeliveryFeatures,
+    features: tuple[BackfillRuntimeFeature, ...],
     *,
     sample_order: tuple[str, ...],
     raw_sources: Mapping[str, OwnerBackfillSource],
@@ -583,9 +584,7 @@ def build_owner_backfill_result(
                     request=request,
                     preferred_rt=preferred_rt,
                     peak_config=peak_config,
-                    maximum_query_delta_min=(
-                        alignment_config.preferred_rt_sec / 60.0
-                    ),
+                    maximum_query_delta_min=(alignment_config.preferred_rt_sec / 60.0),
                     signal_processing_profile=signal_processing_profile,
                     prepared_signal_cache=prepared_signal_cache,
                     selection_subject_id=_selection_subject_id(
@@ -1439,7 +1438,7 @@ def _source_retention_time_for_scan(
 
 
 def _backfill_feature_sample_trace(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     sample_stem: str,
     trace: XICTrace,
     *,
@@ -1480,7 +1479,7 @@ def _backfill_feature_sample_trace(
 
 
 def _backfill_feature_sample_trace_legacy_audit(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     sample_stem: str,
     trace: XICTrace,
     *,
@@ -1652,7 +1651,7 @@ def _backfill_feature_sample_trace_legacy_audit(
 
 
 def _backfill_feature_sample_trace_canonical(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     sample_stem: str,
     trace: XICTrace,
     *,
@@ -1837,7 +1836,7 @@ def _canonical_region_audit(
 
 
 def _backfill_unchecked_cell(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     sample_stem: str,
     *,
     request: XICRequest,
@@ -1875,20 +1874,20 @@ def _backfill_unchecked_cell(
 
 
 def _backfill_seed_centers(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
 ) -> tuple[tuple[float, float], ...]:
     return backfill_seed_centers(feature)
 
 
 def _any_detected_owner_can_be_superseded(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     owners: Sequence[SampleLocalMS1Owner] | None,
 ) -> bool:
     return any_detected_owner_can_be_superseded(feature, owners)
 
 
 def _detected_owner_can_be_superseded(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     owner: SampleLocalMS1Owner,
 ) -> bool:
     detected_area = positive_finite(owner.owner_area)
@@ -2131,7 +2130,7 @@ def _logical_binding_for_result(
 
 def _selection_subject_id(
     *,
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     sample_stem: str,
     request: XICRequest,
     candidate_index: int,

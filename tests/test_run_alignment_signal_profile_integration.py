@@ -32,7 +32,6 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     read_owner_backfill_peak_fact_provenance_tsv,
     selected_integration_authority_projection,
 )
-from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
@@ -365,9 +364,22 @@ def test_highest_entry_signal_profile_serial_process_oracle(
     _InlineTypedExecutor.payload_sizes.clear()
     _InlineTypedExecutor.results.clear()
 
+    process_outputs = []
+    real_run_owner_backfill_process = pipeline_module.run_owner_backfill_process
+
+    def capture_process_output(*args: Any, **kwargs: Any):
+        output = real_run_owner_backfill_process(*args, **kwargs)
+        process_outputs.append(output)
+        return output
+
     monkeypatch.setattr(
         "xic_extractor.process_job_execution.ProcessPoolExecutor",
         _InlineTypedExecutor,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_owner_backfill_process",
+        capture_process_output,
     )
     process_15 = _run_cli(
         batch_index,
@@ -450,9 +462,10 @@ def test_highest_entry_signal_profile_serial_process_oracle(
         serial_15.output_dir / "alignment_results.xlsx",
         process_15.output_dir / "alignment_results.xlsx",
     )
+    assert len(process_outputs) == 1
     process_matrix, process_config = _rebuild_process_matrix(
+        process_outputs[0],
         tuple(_InlineTypedExecutor.jobs),
-        tuple(_InlineTypedExecutor.results),
     )
     _assert_process_compact_projection(
         process_15,
@@ -472,6 +485,20 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
         _InlineTypedExecutor,
     )
 
+    process_outputs = []
+    real_run_owner_backfill_process = pipeline_module.run_owner_backfill_process
+
+    def capture_process_output(*args: Any, **kwargs: Any):
+        output = real_run_owner_backfill_process(*args, **kwargs)
+        process_outputs.append(output)
+        return output
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_owner_backfill_process",
+        capture_process_output,
+    )
+
     _clear_inline_executor_captures()
     _run_cli(
         batch_index,
@@ -483,7 +510,6 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
         audit_mode="none",
     )
     none_jobs = tuple(_InlineTypedExecutor.jobs)
-    none_results = tuple(_InlineTypedExecutor.results)
 
     _clear_inline_executor_captures()
     _run_cli(
@@ -500,8 +526,9 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
 
     _assert_audit_field_class_matrix(
         tmp_path / "audit-field-mutations",
+        none_process_output=process_outputs[0],
+        full_process_output=process_outputs[1],
         none_jobs=none_jobs,
-        none_results=none_results,
         full_jobs=full_jobs,
         full_results=full_results,
     )
@@ -998,36 +1025,16 @@ def _clear_inline_executor_captures() -> None:
 
 
 def _rebuild_process_matrix(
+    process_output: Any,
     jobs: tuple[OwnerBuildSampleJob | OwnerBackfillSampleJob, ...],
-    results: tuple[OwnerBuildSampleResult | OwnerBackfillSampleResult, ...],
 ) -> tuple[AlignmentMatrix, Any]:
     backfill_jobs = tuple(
         job for job in jobs if isinstance(job, OwnerBackfillSampleJob)
     )
-    backfill_results = tuple(
-        result for result in results if isinstance(result, OwnerBackfillSampleResult)
-    )
     assert backfill_jobs
-    assert backfill_results
     alignment_config = backfill_jobs[0].alignment_config
     assert all(job.alignment_config == alignment_config for job in backfill_jobs)
-    features_by_id = {
-        feature.feature_family_id: feature
-        for job in backfill_jobs
-        for feature in job.features
-    }
-    feature_order = tuple(features_by_id)
-    process_output = process_backend_module.collect_owner_backfill_results(
-        backfill_results,
-        feature_order=feature_order,
-        sample_order=_SAMPLE_ORDER,
-    )
-    matrix = build_owner_alignment_matrix(
-        tuple(features_by_id.values()),
-        sample_order=_SAMPLE_ORDER,
-        ambiguous_by_sample={},
-        rescued_cells=process_output.cells,
-    )
+    matrix = process_output.matrix
     matrix = apply_ms1_peak_claim_registry(matrix, alignment_config)
     matrix = consolidate_primary_family_rows(matrix, alignment_config)
     matrix = recenter_pre_backfill_identity_families(matrix)
@@ -1037,13 +1044,20 @@ def _rebuild_process_matrix(
 def _assert_audit_field_class_matrix(
     output_root: Path,
     *,
+    none_process_output: Any,
+    full_process_output: Any,
     none_jobs: tuple[OwnerBuildSampleJob | OwnerBackfillSampleJob, ...],
-    none_results: tuple[OwnerBuildSampleResult | OwnerBackfillSampleResult, ...],
     full_jobs: tuple[OwnerBuildSampleJob | OwnerBackfillSampleJob, ...],
     full_results: tuple[OwnerBuildSampleResult | OwnerBackfillSampleResult, ...],
 ) -> None:
-    none_matrix, none_config = _rebuild_process_matrix(none_jobs, none_results)
-    full_matrix, full_config = _rebuild_process_matrix(full_jobs, full_results)
+    none_matrix, none_config = _rebuild_process_matrix(
+        none_process_output,
+        none_jobs,
+    )
+    full_matrix, full_config = _rebuild_process_matrix(
+        full_process_output,
+        full_jobs,
+    )
     assert none_config == full_config
     _assert_live_audit_mode_semantic_parity(none_matrix, full_matrix)
 

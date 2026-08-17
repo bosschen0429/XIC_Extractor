@@ -18,12 +18,16 @@ from xic_extractor.alignment.family_compatibility import (
     family_center_rt,
     loose_compatible_primary_family,
 )
-from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
+from xic_extractor.alignment.owner_area import positive_finite
+from xic_extractor.alignment.owner_backfill_runtime_projection import (
+    BackfillRuntimeFeature,
+    backfill_runtime_owner_eligibility,
+    median_backfill_runtime_owner_area,
+)
 from xic_extractor.alignment.owner_group_delivery import (
     OwnerGroupDeliveryFeature,
     OwnerGroupDeliveryFeatures,
 )
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.tabular_io import write_tsv
 
 BackfillScope = Literal["full-audit", "production-equivalent", "selected-families"]
@@ -113,7 +117,7 @@ def select_backfill_features(
 
 
 def backfill_request_sample_stems(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
     *,
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
@@ -121,16 +125,17 @@ def backfill_request_sample_stems(
 ) -> tuple[str, ...]:
     if bool(getattr(feature, "review_only", False)):
         return ()
-    detected_samples = {owner.sample_stem for owner in feature.owners}
+    owner_eligibility = backfill_runtime_owner_eligibility(feature)
+    detected_samples = {owner.sample_stem for owner in owner_eligibility}
     if len(detected_samples) < alignment_config.owner_backfill_min_detected_samples:
         return ()
-    owners_by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
-    for owner in feature.owners:
+    owners_by_sample: dict[str, list[object]] = defaultdict(list)
+    for owner in owner_eligibility:
         owners_by_sample[owner.sample_stem].append(owner)
 
     requested: list[str] = []
     family_area = (
-        median_owner_area(feature)
+        median_backfill_runtime_owner_area(feature)
         if bool(getattr(feature, "confirm_local_owners_with_backfill", False))
         else None
     )
@@ -174,7 +179,7 @@ def backfill_features_for_sample(
 
 
 def backfill_seed_centers(
-    feature: OwnerGroupDeliveryFeature,
+    feature: BackfillRuntimeFeature,
 ) -> tuple[tuple[float, float], ...]:
     return feature.backfill_seed_centers or (
         (feature.family_center_mz, feature.family_center_rt),
@@ -182,8 +187,8 @@ def backfill_seed_centers(
 
 
 def any_detected_owner_can_be_superseded(
-    feature: OwnerGroupDeliveryFeature,
-    owners: Sequence[SampleLocalMS1Owner] | None,
+    feature: BackfillRuntimeFeature,
+    owners: Sequence[object] | None,
     *,
     family_area: float | None = None,
 ) -> bool:
@@ -194,16 +199,16 @@ def any_detected_owner_can_be_superseded(
 
 
 def detected_owner_can_be_superseded(
-    feature: OwnerGroupDeliveryFeature,
-    owner: SampleLocalMS1Owner,
+    feature: BackfillRuntimeFeature,
+    owner: object,
     *,
     family_area: float | None = None,
 ) -> bool:
-    detected_area = positive_finite(owner.owner_area)
+    detected_area = positive_finite(getattr(owner, "owner_area", None))
     if detected_area is None:
         return False
     if family_area is None:
-        family_area = median_owner_area(feature)
+        family_area = median_backfill_runtime_owner_area(feature)
     if family_area is None:
         return False
     return detected_area <= family_area * 0.25

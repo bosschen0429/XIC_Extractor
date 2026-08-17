@@ -73,7 +73,12 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     prepare_owner_backfill_peak_fact,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
-    build_owner_backfill_sample_request_projections,
+    OwnerBackfillSampleRuntimeProjection,
+    build_owner_backfill_sample_runtime_projections,
+    validate_owner_backfill_sample_runtime_projection,
+)
+from xic_extractor.alignment.owner_backfill_runtime_projection import (
+    OwnerBackfillRuntimeFeatures,
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.alignment.ownership import (
@@ -172,7 +177,7 @@ class OwnerBackfillSampleJob:
     sample_stem: str
     raw_path: Path
     dll_dir: Path
-    features: OwnerGroupDeliveryFeatures
+    sample_projection: OwnerBackfillSampleRuntimeProjection
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     signal_processing_profile: SignalProcessingProfile
@@ -195,11 +200,26 @@ class OwnerBackfillSampleJob:
     def __post_init__(self) -> None:
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
             raise TypeError("signal_processing_profile must be owner-resolved")
+        if not isinstance(
+            self.sample_projection,
+            OwnerBackfillSampleRuntimeProjection,
+        ):
+            raise TypeError("sample_projection must be owner-minted")
+        if self.sample_projection.sample_stem != self.sample_stem:
+            raise ValueError("Backfill job crosses sample-bound runtime projection")
+        if self.feature_payload_count != len(self.features):
+            raise ValueError("Backfill job feature payload count mismatches projection")
+        if self.request_payload_count != self.sample_projection.logical_request_count:
+            raise ValueError("Backfill job request payload count mismatches projection")
         if self.peak_fact_sample_order_index is None:
             if self.peak_fact_feature_order_indices:
                 raise ValueError("peak-fact feature order requires sample order")
         elif len(self.peak_fact_feature_order_indices) != len(self.features):
             raise ValueError("peak-fact feature order must cover every job feature")
+
+    @property
+    def features(self) -> OwnerBackfillRuntimeFeatures:
+        return self.sample_projection.features
 
 
 @dataclass(frozen=True)
@@ -645,7 +665,7 @@ def run_owner_backfill_process(
     )
     jobs: list[OwnerBackfillSampleJob] = []
     raw_sample_stems = frozenset(raw_paths)
-    sample_request_projections = build_owner_backfill_sample_request_projections(
+    sample_runtime_projections = build_owner_backfill_sample_runtime_projections(
         features,
         sample_order=sample_order,
         raw_sample_stems=raw_sample_stems,
@@ -661,14 +681,13 @@ def run_owner_backfill_process(
             )
         }
         peak_fact_sample_rank = {
-            sample_stem: index
-            for index, sample_stem in enumerate(matrix_sample_order)
+            sample_stem: index for index, sample_stem in enumerate(matrix_sample_order)
         }
     for index, sample_stem in enumerate(sample_order, start=1):
         raw_path = raw_paths.get(sample_stem)
         if raw_path is None:
             continue
-        sample_projection = sample_request_projections.get(sample_stem)
+        sample_projection = sample_runtime_projections.get(sample_stem)
         if sample_projection is None:
             continue
         job_features = sample_projection.features
@@ -682,7 +701,7 @@ def run_owner_backfill_process(
                 sample_stem=sample_stem,
                 raw_path=raw_path,
                 dll_dir=dll_dir,
-                features=job_features,
+                sample_projection=sample_projection,
                 alignment_config=alignment_config,
                 peak_config=peak_config,
                 signal_processing_profile=signal_processing_profile,
@@ -731,9 +750,7 @@ def run_owner_backfill_process(
         transaction = OwnerBackfillSampleTransaction(
             matrix_features if matrix_features is not None else features,
             matrix_sample_order=matrix_sample_order,
-            expected_samples=tuple(
-                (job.sample_index, job.sample_stem) for job in jobs
-            ),
+            expected_samples=tuple((job.sample_index, job.sample_stem) for job in jobs),
             signal_processing_profile=signal_processing_profile,
         )
         results = active_runner(
@@ -888,6 +905,9 @@ def extract_owner_backfill_sample_job(
     from xic_extractor.raw_reader import open_raw
 
     try:
+        validate_owner_backfill_sample_runtime_projection(job.sample_projection)
+        if job.sample_projection.sample_stem != job.sample_stem:
+            raise ValueError("Backfill job crosses sample-bound runtime projection")
         with open_raw(
             job.raw_path,
             job.dll_dir,
@@ -1070,6 +1090,7 @@ def _runtime_peak_fact_operations(
 
 def validate_owner_backfill_job_payload(job: OwnerBackfillSampleJob) -> None:
     validate_process_job_payload(job)
+    validate_owner_backfill_sample_runtime_projection(job.sample_projection)
 
 
 def owner_backfill_job_payload_metrics(
