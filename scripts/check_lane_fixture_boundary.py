@@ -32,7 +32,7 @@ only: removing a leak without lowering its budget fails, and emptying a file
 requires deleting its entry.
 
 Names are all this checker can see. An assumption expressed as a number --
-`expected_sample_count: int = 8` -- passes it untouched. See #292.
+`expected_sample_count: int = 8` -- passes it untouched. See #290 group 3.
 """
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 # Budgets are ceilings, not targets. Lower one when you remove a leak; never
 # raise one to make this checker pass.
 KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
-    # -- #290: lane names on public surface -------------------------------
+    # -- #290 group 1: lane names on public surface -----------------------
     # ExpectedDiffValidationTier and its schema mirror list "8raw" beside real
     # method categories (synthetic_fixture, targeted_benchmark,
     # manual_eic_ms2_review); the tier value reaches review-action TSVs.
@@ -71,22 +71,22 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "#290"),
     "xic_extractor/review_actions_schema.py": (1, "#290"),
     "xic_extractor/alignment/identity_coherence/output_summary_model.py": (2, "#290"),
-    # -- #291: subpackage named for its fixture ---------------------------
+    # -- #290 group 2: subpackage named for its fixture -------------------
     # Named and worded for the lane it was first validated against; the logic
     # itself is not lane-specific, so this is a rename plus report wording.
-    "xic_extractor/alignment/identity_coherence_validation/__init__.py": (1, "#291"),
-    "xic_extractor/alignment/identity_coherence_validation/acceptance.py": (1, "#291"),
-    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (5, "#291"),
-    # -- #292: strings, and one assumption this checker cannot see --------
+    "xic_extractor/alignment/identity_coherence_validation/__init__.py": (1, "#290"),
+    "xic_extractor/alignment/identity_coherence_validation/acceptance.py": (1, "#290"),
+    "xic_extractor/alignment/identity_coherence_validation/outputs.py": (5, "#290"),
+    # -- #290 group 3: strings, and one assumption this checker cannot see -
     # selected_envelope_changed_row_review is flagged for its docstring, but
     # the real coupling is `expected_sample_count: int = 8` one line above:
     # a core gate that treats any other sample count as a mismatch. `int = 8`
     # matches no lane identifier, so the checker finds names, not assumptions.
-    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#292"),
-    "xic_extractor/alignment/quant_matrix_promotion.py": (1, "#292"),
+    "xic_extractor/peak_detection/selected_envelope_changed_row_review.py": (1, "#290"),
+    "xic_extractor/alignment/quant_matrix_promotion.py": (1, "#290"),
     "xic_extractor/alignment/shared_peak_identity_explanation/activation_contract.py": (
         1,
-        "#292",
+        "#290",
     ),
 }
 
