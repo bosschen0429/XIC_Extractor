@@ -540,7 +540,12 @@ def build_owner_backfill_result(
     )
     candidate_index_offset_by_sample: dict[str, int] = {}
     validation_candidate_index_offset_by_sample: dict[str, int] = {}
-    request_ordinal_by_item_id_by_sample: dict[str, dict[int, int]] = {}
+    # Direct owner calls keep the historical append-order identity.  Process
+    # jobs pass explicit offsets so each sample can mint collision-free local
+    # identities without seeing another sample's candidate records.
+    partition_candidate_identity = (
+        candidate_index_offset != 0 or validation_candidate_index_offset is not None
+    )
     total_logical_request_count = sum(
         request_plan.request_count_for_sample(sample_stem)
         for sample_stem in sample_order
@@ -567,10 +572,6 @@ def build_owner_backfill_result(
             + logical_request_offset
             - candidate_index_offset
         )
-        request_ordinal_by_item_id_by_sample[sample_stem] = {
-            id(request_item): request_ordinal
-            for request_ordinal, request_item in enumerate(sample_requests, start=1)
-        }
         logical_request_offset += len(sample_requests)
     backfill_by_feature_sample: dict[tuple[str, str], AlignedCell] = {}
     validation_pending: dict[str, list[_RequestItem]] = defaultdict(list)
@@ -580,7 +581,6 @@ def build_owner_backfill_result(
         if not sample_requests:
             continue
         sample_candidate_index_offset = candidate_index_offset_by_sample[sample_stem]
-        request_ordinal_by_item_id = request_ordinal_by_item_id_by_sample[sample_stem]
         equivalence_classes = (
             request_plan.equivalence_classes_for_sample(sample_stem)
             if request_plan.exact_equivalence_available
@@ -621,8 +621,10 @@ def build_owner_backfill_result(
                     if validation_raw_sources is not None
                     else "primary_query"
                 )
-                candidate_index = sample_candidate_index_offset + (
-                    request_ordinal_by_item_id[id(request_item)]
+                candidate_index = (
+                    sample_candidate_index_offset + len(candidate_records) + 1
+                    if partition_candidate_identity
+                    else len(candidate_records) + 1
                 )
                 evaluation = _backfill_feature_sample_trace(
                     feature,
@@ -674,7 +676,7 @@ def build_owner_backfill_result(
                     validation_pending_keys.add(
                         (feature.feature_family_id, requested_sample)
                     )
-        for request_ordinal, request_item in enumerate(sample_requests, start=1):
+        for request_item in sample_requests:
             feature, requested_sample, request, preferred_rt = request_item
             key = (feature.feature_family_id, requested_sample)
             if (
@@ -693,7 +695,11 @@ def build_owner_backfill_result(
                     candidate_records,
                     cell,
                     phase="primary_fallback",
-                    candidate_index=sample_candidate_index_offset + request_ordinal,
+                    candidate_index=(
+                        sample_candidate_index_offset + len(candidate_records) + 1
+                        if partition_candidate_identity
+                        else len(candidate_records) + 1
+                    ),
                 )
                 _keep_best_backfill_outcome_cell(
                     backfill_by_feature_sample,
@@ -708,9 +714,7 @@ def build_owner_backfill_result(
                 sample_candidate_index_offset = (
                     validation_candidate_index_offset_by_sample[sample_stem]
                 )
-                request_ordinal_by_item_id = request_ordinal_by_item_id_by_sample[
-                    sample_stem
-                ]
+                validation_candidate_count = 0
                 for request_item in validation_requests:
                     feature, requested_sample, request, preferred_rt = request_item
                     cell = _backfill_unchecked_cell(
@@ -724,12 +728,16 @@ def build_owner_backfill_result(
                             "source was not available"
                         ),
                     )
+                    validation_candidate_count += 1
                     _append_candidate_record(
                         candidate_records,
                         cell,
                         phase="validation_unavailable",
-                        candidate_index=sample_candidate_index_offset
-                        + request_ordinal_by_item_id[id(request_item)],
+                        candidate_index=(
+                            sample_candidate_index_offset + validation_candidate_count
+                            if partition_candidate_identity
+                            else len(candidate_records) + 1
+                        ),
                     )
                     _keep_best_backfill_outcome_cell(
                         backfill_by_feature_sample,
@@ -740,9 +748,7 @@ def build_owner_backfill_result(
             sample_candidate_index_offset = (
                 validation_candidate_index_offset_by_sample[sample_stem]
             )
-            request_ordinal_by_item_id = request_ordinal_by_item_id_by_sample[
-                sample_stem
-            ]
+            validation_candidate_count = 0
             validation_items = tuple(validation_requests)
             validation_context = _request_equivalence_context(
                 expected_acquisition_sources=(
@@ -793,8 +799,11 @@ def build_owner_backfill_result(
                         ),
                         result,
                     )
-                    candidate_index = sample_candidate_index_offset + (
-                        request_ordinal_by_item_id[id(request_item)]
+                    validation_candidate_count += 1
+                    candidate_index = (
+                        sample_candidate_index_offset + validation_candidate_count
+                        if partition_candidate_identity
+                        else len(candidate_records) + 1
                     )
                     evaluation = _backfill_feature_sample_trace(
                         feature,
@@ -842,32 +851,37 @@ def build_owner_backfill_result(
                         backfill_by_feature_sample,
                         cell,
                     )
-                for request_item in validation_requests:
-                    feature, requested_sample, request, preferred_rt = request_item
-                    key = (feature.feature_family_id, requested_sample)
-                    if key not in backfill_by_feature_sample:
-                        cell = _backfill_unchecked_cell(
-                            feature,
-                            requested_sample,
-                            request=request,
-                            preferred_rt=preferred_rt,
-                            trace_quality="owner_backfill_unassessable",
-                            reason=(
-                                "owner-centered MS1 backfill validation "
-                                "query was not assessable"
-                            ),
-                        )
-                        _append_candidate_record(
-                            candidate_records,
-                            cell,
-                            phase="validation_fallback",
-                            candidate_index=sample_candidate_index_offset
-                            + request_ordinal_by_item_id[id(request_item)],
-                        )
-                        _keep_best_backfill_outcome_cell(
-                            backfill_by_feature_sample,
-                            cell,
-                        )
+            for request_item in validation_requests:
+                feature, requested_sample, request, preferred_rt = request_item
+                key = (feature.feature_family_id, requested_sample)
+                if key not in backfill_by_feature_sample:
+                    cell = _backfill_unchecked_cell(
+                        feature,
+                        requested_sample,
+                        request=request,
+                        preferred_rt=preferred_rt,
+                        trace_quality="owner_backfill_unassessable",
+                        reason=(
+                            "owner-centered MS1 backfill validation "
+                            "query was not assessable"
+                        ),
+                    )
+                    validation_candidate_count += 1
+                    _append_candidate_record(
+                        candidate_records,
+                        cell,
+                        phase="validation_fallback",
+                        candidate_index=(
+                            sample_candidate_index_offset
+                            + validation_candidate_count
+                            if partition_candidate_identity
+                            else len(candidate_records) + 1
+                        ),
+                    )
+                    _keep_best_backfill_outcome_cell(
+                        backfill_by_feature_sample,
+                        cell,
+                    )
     for feature in features:
         if feature.review_only:
             continue

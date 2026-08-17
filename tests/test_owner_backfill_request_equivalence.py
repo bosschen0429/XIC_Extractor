@@ -95,6 +95,32 @@ class _OwnerBoundBatchSource:
         raise AssertionError("batch-capable source should not call extract_xic")
 
 
+class _VariableHeightBatchSource(_OwnerBoundBatchSource):
+    def __init__(
+        self,
+        acquisition_source: AcquisitionSourceIdentity | None,
+        heights_by_mz: dict[float, float],
+        *,
+        default_height: float = 120.0,
+    ) -> None:
+        super().__init__(acquisition_source, height=default_height)
+        self.heights_by_mz = heights_by_mz
+
+    def extract_xic_many(
+        self,
+        requests: tuple[XICRequest, ...],
+    ) -> tuple[XICTrace, ...]:
+        requests = tuple(requests)
+        self.batch_sizes.append(len(requests))
+        return tuple(
+            _trace_for_request(
+                request,
+                height=self.heights_by_mz.get(request.mz, self.height),
+            )
+            for request in requests
+        )
+
+
 class _OwnerBoundWindowSource(_OwnerBoundBatchSource):
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return int(round(request.rt_min * 100)), int(round(request.rt_max * 100))
@@ -892,6 +918,42 @@ def test_hybrid_validation_keeps_phases_in_separate_exact_classes(
     assert {cell.height for cell in result.cells} == {260.0}
 
 
+def test_hybrid_partial_rescue_preserves_serial_append_order_identity(
+    tmp_path: Path,
+) -> None:
+    source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
+    prefilter = _VariableHeightBatchSource(
+        source_identity,
+        {500.0: 0.0, 501.0: 120.0},
+    )
+    validator = _OwnerBoundBatchSource(source_identity, height=260.0)
+    features = (
+        _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+        _feature(feature_family_id="FAM000002", mz=501.0, rt=8.6),
+    )
+
+    result = build_owner_backfill_result(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": prefilter},
+        validation_raw_sources={"sample-b": validator},
+        expected_acquisition_sources={"sample-b": source_identity},
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        raw_xic_batch_size=1,
+        owner_backfill_xic_backend="ms1_index_hybrid",
+    )
+
+    assert [
+        (observation.candidate_phase, observation.candidate_index)
+        for observation in result.peak_fact_observations
+    ] == [
+        ("prefilter_query", 1),
+        ("prefilter_query", 2),
+        ("validation_query", 3),
+    ]
+
+
 def test_owner_bound_identity_is_required_and_must_match_source(
     tmp_path: Path,
 ) -> None:
@@ -1212,7 +1274,7 @@ def test_process_worker_preserves_global_candidate_identity_for_hybrid_rescue(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
-        raw_xic_batch_size=64,
+        raw_xic_batch_size=1,
         owner_backfill_xic_backend="ms1_index_hybrid",
     )
     projection = build_owner_backfill_sample_runtime_projections(
@@ -1232,7 +1294,7 @@ def test_process_worker_preserves_global_candidate_identity_for_hybrid_rescue(
         signal_processing_profile=SignalProcessingProfile(window_points=3),
         expected_acquisition_source=source_b_identity,
         raw_session_capability=raw_session_capability,
-        raw_xic_batch_size=64,
+        raw_xic_batch_size=1,
         owner_backfill_xic_backend="ms1_index_hybrid",
         feature_payload_count=len(projection.features),
         request_payload_count=projection.logical_request_count,
@@ -1246,6 +1308,14 @@ def test_process_worker_preserves_global_candidate_identity_for_hybrid_rescue(
     )
 
     assert isinstance(result, OwnerBackfillSampleResult), result
+    assert [
+        observation.candidate_phase for observation in result.peak_fact_observations
+    ] == [
+        "prefilter_query",
+        "prefilter_query",
+        "validation_query",
+        "validation_query",
+    ]
     assert [
         observation.work_unit_key for observation in result.peak_fact_observations
     ] == [observation.work_unit_key for observation in serial_sample_b]
