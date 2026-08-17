@@ -477,7 +477,7 @@ def test_discovery_settings_require_neutral_loss_profile() -> None:
     assert settings.product_search_ppm == 50.0
     assert settings.nl_min_intensity_ratio == 0.01
     assert settings.seed_rt_gap_min == 0.20
-    assert settings.ms1_search_padding_min == 0.20
+    assert settings.ms1_search_padding_min == 0.35
     assert settings.rt_min == 0.0
     assert settings.rt_max == 999.0
     assert settings.resolver_mode == "local_minimum"

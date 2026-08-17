@@ -63,7 +63,7 @@ These values apply unless overridden in the `[discovery]` section.
 | `ms2_precursor_tol_da` | 1.6 | MS2 precursor tolerance (Da) |
 | `nl_min_intensity_ratio` | 0.01 | Minimum NL intensity ratio (1%) |
 | `seed_rt_gap_min` | 0.20 | Minimum RT gap between seeds (min) |
-| `ms1_search_padding_min` | 0.20 | MS1 search window padding (min) |
+| `ms1_search_padding_min` | 0.35 | MS1 search window padding (min) |
 | `rt_min` | 0.0 | Minimum RT filter (min) |
 | `rt_max` | 999.0 | Maximum RT filter (min) |
 | `resolver_mode` | `local_minimum` | Peak resolver algorithm |
