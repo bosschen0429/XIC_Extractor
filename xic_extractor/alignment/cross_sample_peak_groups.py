@@ -13,7 +13,7 @@ decisions within the pipeline.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
@@ -230,6 +230,7 @@ def construct_cross_sample_peak_group_hypotheses(
     *,
     config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
+    injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
     edge_evaluator: OwnerEdgeEvaluator = evaluate_owner_edge,
@@ -253,7 +254,8 @@ def construct_cross_sample_peak_group_hypotheses(
         )
     )
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence] = {}
-    connected_owner_sets: frozenset[frozenset[str]] = frozenset()
+    full_batch_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
+    injection_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
     if sample_universe is None:
         groups = _complete_link_groups(
             sorted(clean, key=_owner_sort_key),
@@ -274,9 +276,14 @@ def construct_cross_sample_peak_group_hypotheses(
             edge_cache=edge_cache,
             edge_evaluator=edge_evaluator,
         )
-        groups, connected_owner_sets = _restore_sparse_complete_link_groups(
+        (
+            groups,
+            full_batch_continuity_owner_sets,
+            injection_trajectory_owner_sets,
+        ) = _restore_sparse_complete_link_groups(
             groups,
             sample_universe=sample_universe,
+            injection_order=injection_order,
             config=config,
             drift_lookup=drift_lookup,
             edge_evidence_sink=edge_evidence_sink,
@@ -291,7 +298,12 @@ def construct_cross_sample_peak_group_hypotheses(
             evidence=_group_evidence(
                 group,
                 full_batch_continuity=(
-                    frozenset(owner.owner_id for owner in group) in connected_owner_sets
+                    frozenset(owner.owner_id for owner in group)
+                    in full_batch_continuity_owner_sets
+                ),
+                injection_trajectory=(
+                    frozenset(owner.owner_id for owner in group)
+                    in injection_trajectory_owner_sets
                 ),
             ),
         )
@@ -679,6 +691,7 @@ def _restore_sparse_complete_link_groups(
     connected_groups: tuple[tuple[SampleLocalMS1Owner, ...], ...],
     *,
     sample_universe: frozenset[str],
+    injection_order: Mapping[str, int] | None,
     config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None,
@@ -687,9 +700,11 @@ def _restore_sparse_complete_link_groups(
 ) -> tuple[
     tuple[tuple[SampleLocalMS1Owner, ...], ...],
     frozenset[frozenset[str]],
+    frozenset[frozenset[str]],
 ]:
     groups: list[tuple[SampleLocalMS1Owner, ...]] = []
-    connected_owner_sets: set[frozenset[str]] = set()
+    full_batch_continuity_owner_sets: set[frozenset[str]] = set()
+    injection_trajectory_owner_sets: set[frozenset[str]] = set()
     for connected_group in connected_groups:
         group_samples = frozenset(owner.sample_stem for owner in connected_group)
         complete_groups = _complete_link_groups(
@@ -703,13 +718,129 @@ def _restore_sparse_complete_link_groups(
         if group_samples == sample_universe and len(complete_groups) > 1:
             ordered = tuple(sorted(connected_group, key=_owner_sort_key))
             groups.append(ordered)
-            connected_owner_sets.add(
+            full_batch_continuity_owner_sets.add(
+                frozenset(owner.owner_id for owner in ordered),
+            )
+            continue
+        if (
+            len(complete_groups) > 1
+            and len(group_samples) + 1 == len(sample_universe)
+            and _is_injection_trajectory(
+                connected_group,
+                injection_order=injection_order,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            )
+        ):
+            ordered = tuple(sorted(connected_group, key=_owner_sort_key))
+            groups.append(ordered)
+            injection_trajectory_owner_sets.add(
                 frozenset(owner.owner_id for owner in ordered),
             )
             continue
         groups.extend(complete_groups)
     groups.sort(key=lambda group: _owner_sort_key(group[0]))
-    return tuple(groups), frozenset(connected_owner_sets)
+    return (
+        tuple(groups),
+        frozenset(full_batch_continuity_owner_sets),
+        frozenset(injection_trajectory_owner_sets),
+    )
+
+
+def _is_injection_trajectory(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    injection_order: Mapping[str, int] | None,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> bool:
+    if not _group_passes_hard_envelope(group, config=config):
+        return False
+    ordered = _owners_in_injection_order(
+        group,
+        injection_order=injection_order,
+    )
+    if ordered is None:
+        return False
+    return all(
+        _is_full_batch_continuity_edge(
+            _edge_for_pair(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ),
+            config=config,
+        )
+        for left, right in zip(ordered, ordered[1:])
+    )
+
+
+def _group_passes_hard_envelope(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    if (
+        len({owner.sample_stem for owner in group}) != len(group)
+        or not group[0].neutral_loss_tag
+        or any(
+            owner.neutral_loss_tag != group[0].neutral_loss_tag
+            for owner in group[1:]
+        )
+    ):
+        return False
+    envelope = _group_envelope_for_owner(group[0])
+    for owner in group[1:]:
+        envelope = _extend_group_envelope(envelope, owner)
+    return all(
+        not _range_exceeds_ppm(
+            owner.precursor_mz,
+            envelope.precursor_mz_min,
+            envelope.precursor_mz_max,
+            config.max_ppm,
+        )
+        and not _range_exceeds_ppm(
+            owner.primary_identity_event.product_mz,
+            envelope.product_mz_min,
+            envelope.product_mz_max,
+            config.product_mz_tolerance_ppm,
+        )
+        and not _range_exceeds_ppm(
+            owner.primary_identity_event.observed_neutral_loss_da,
+            envelope.observed_loss_min,
+            envelope.observed_loss_max,
+            config.observed_loss_tolerance_ppm,
+        )
+        for owner in group
+    )
+
+
+def _owners_in_injection_order(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    injection_order: Mapping[str, int] | None,
+) -> tuple[SampleLocalMS1Owner, ...] | None:
+    if injection_order is None:
+        return None
+    orders: list[tuple[int, SampleLocalMS1Owner]] = []
+    for owner in group:
+        order = injection_order.get(owner.sample_stem)
+        if order is None:
+            return None
+        orders.append((order, owner))
+    if len({order for order, _ in orders}) != len(orders):
+        return None
+    return tuple(owner for _, owner in sorted(orders, key=lambda item: item[0]))
 
 
 def _candidate_group_indexes_for_owner(
@@ -961,14 +1092,16 @@ def _group_evidence(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
     full_batch_continuity: bool,
+    injection_trajectory: bool,
 ) -> str:
     if len(group) == 1:
         return "single_sample_local_owner"
-    policy = (
-        "owner_full_batch_continuity"
-        if full_batch_continuity
-        else "owner_complete_link"
-    )
+    if full_batch_continuity:
+        policy = "owner_full_batch_continuity"
+    elif injection_trajectory:
+        policy = "owner_injection_trajectory"
+    else:
+        policy = "owner_complete_link"
     return f"{policy};owner_count={len(group)}"
 
 

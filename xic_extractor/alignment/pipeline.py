@@ -587,6 +587,28 @@ def run_alignment(
                     audit_evidence_mode=resolved_audit_evidence_mode,
                 )
                 record_timed_raw_sources(timed_raw_sources_, recorder=recorder)
+        injection_order: dict[str, int] | None = None
+        injection_order_source_schema: str | None = None
+        if sample_column_injection_order is not None:
+            injection_order, injection_order_source_schema = (
+                _read_sample_column_injection_order(sample_column_injection_order)
+            )
+            recorder.record(
+                "alignment.sample_column_injection_order",
+                elapsed_sec=0.0,
+                metrics={
+                    "ordered_samples": sum(
+                        1 for sample in batch.sample_order if sample in injection_order
+                    ),
+                    "unordered_samples": sum(
+                        1
+                        for sample in batch.sample_order
+                        if sample not in injection_order
+                    ),
+                    "source": str(sample_column_injection_order),
+                    "source_schema": injection_order_source_schema,
+                },
+            )
         edge_evidence: list[OwnerEdgeEvidence] | None = (
             []
             if outputs.edge_evidence_tsv is not None or drift_lookup is not None
@@ -598,12 +620,14 @@ def run_alignment(
                     ownership.owners,
                     config=alignment_config,
                     sample_universe=frozenset(batch.sample_order),
+                    injection_order=injection_order,
                 )
             else:
                 owner_features = cluster_sample_local_owners(
                     ownership.owners,
                     config=alignment_config,
                     sample_universe=frozenset(batch.sample_order),
+                    injection_order=injection_order,
                     drift_lookup=drift_lookup,
                     edge_evidence_sink=edge_evidence,
                 )
@@ -821,29 +845,10 @@ def run_alignment(
                 _request_reuse_summary(request_reuse_observations)
             )
         matrix_sample_order = batch.sample_order
-        if sample_column_injection_order is not None:
-            injection_order, injection_order_source_schema = (
-                _read_sample_column_injection_order(sample_column_injection_order)
-            )
+        if injection_order is not None:
             matrix_sample_order = order_sample_columns_by_injection(
                 batch.sample_order,
                 injection_order,
-            )
-            recorder.record(
-                "alignment.sample_column_injection_order",
-                elapsed_sec=0.0,
-                metrics={
-                    "ordered_samples": sum(
-                        1 for sample in batch.sample_order if sample in injection_order
-                    ),
-                    "unordered_samples": sum(
-                        1
-                        for sample in batch.sample_order
-                        if sample not in injection_order
-                    ),
-                    "source": str(sample_column_injection_order),
-                    "source_schema": injection_order_source_schema,
-                },
             )
         with recorder.stage("alignment.build_matrix"):
             matrix = build_owner_alignment_matrix(

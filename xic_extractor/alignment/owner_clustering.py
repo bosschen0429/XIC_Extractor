@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -90,6 +91,7 @@ def cluster_sample_local_owners(
     *,
     config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
+    injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
 ) -> tuple[OwnerAlignedFeature, ...]:
@@ -97,6 +99,7 @@ def cluster_sample_local_owners(
         owners,
         config=config,
         sample_universe=sample_universe,
+        injection_order=injection_order,
         drift_lookup=drift_lookup,
         edge_evidence_sink=edge_evidence_sink,
         edge_evaluator=evaluate_owner_edge,

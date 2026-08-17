@@ -15,6 +15,7 @@ from tests.alignment_pipeline_helpers import (
 )
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
+from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment import artifact_write_receipts as receipts_module
 from xic_extractor.alignment.artifact_write_receipts import (
@@ -764,6 +765,85 @@ def test_pipeline_orders_sample_columns_by_injection_order(
     ) == ["Sample_A", "Sample_B", "Sample_C", "Sample_X"]
 
 
+def test_pipeline_reads_injection_order_once_for_grouping_and_matrix_columns(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    samples = ("Sample_C", "Sample_A", "Sample_X", "Sample_B")
+    batch_index = _write_batch(tmp_path, samples)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    for stem in samples:
+        (raw_dir / f"{stem}.raw").write_text("raw", encoding="utf-8")
+    injection_csv = tmp_path / "instrument_qc_injection_order.csv"
+    injection_order = {"Sample_A": 1, "Sample_B": 2, "Sample_C": 3}
+    read_paths = []
+    captured = {}
+    real_cluster_owners = pipeline_module.cluster_sample_local_owners
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+    owners = (
+        _owner("Sample_A", "a", apex_rt=10.00),
+        _owner("Sample_B", "b", apex_rt=10.75),
+        _owner("Sample_C", "c", apex_rt=11.50),
+    )
+
+    def fake_read_injection_order(path: Path):
+        read_paths.append(path)
+        return injection_order, "test_injection_order"
+
+    def fake_owner_matrix(features, *, sample_order, **kwargs):
+        captured["features"] = features
+        return _matrix(sample_order)
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "_read_sample_column_injection_order",
+        fake_read_injection_order,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        lambda candidates, **kwargs: SimpleNamespace(
+            owners=owners,
+            assignments=(),
+            ambiguous_records=(),
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "cluster_sample_local_owners",
+        real_cluster_owners,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_owner_alignment_matrix",
+        fake_owner_matrix,
+    )
+
+    outputs = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        emit_alignment_status_matrix=True,
+        sample_column_injection_order=injection_csv,
+        raw_opener=FakeRawOpener(),
+    )
+
+    assert read_paths == [injection_csv]
+    assert len(captured["features"]) == 1
+    assert (
+        captured["features"][0].evidence
+        == "owner_injection_trajectory;owner_count=3"
+    )
+    assert _status_matrix_sample_columns(
+        outputs.status_matrix_tsv,
+        set(samples),
+    ) == ["Sample_A", "Sample_B", "Sample_C", "Sample_X"]
+
+
 def test_pipeline_orders_sample_columns_by_sample_metadata_v1(
     tmp_path: Path,
     monkeypatch,
@@ -1324,6 +1404,7 @@ def test_run_alignment_validation_level_writes_owner_edge_evidence_tsv(
         *,
         config,
         sample_universe=None,
+        injection_order=None,
         drift_lookup=None,
         edge_evidence_sink=None,
     ):

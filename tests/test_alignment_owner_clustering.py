@@ -133,6 +133,275 @@ def test_owner_clustering_does_not_connect_incomplete_rt_chain() -> None:
     assert features[0].evidence == "owner_complete_link;owner_count=2"
 
 
+def test_owner_clustering_restores_incomplete_injection_trajectory() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset(
+        {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+    )
+
+    without_order = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+    )
+    with_order = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+        },
+    )
+
+    assert [feature.event_cluster_ids for feature in without_order] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-c-c", "OWN-sample-d-d"),
+    ]
+    assert [feature.event_cluster_ids for feature in with_order] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+            "OWN-sample-d-d",
+        )
+    ]
+    assert with_order[0].evidence == "owner_injection_trajectory;owner_count=4"
+
+
+def test_owner_clustering_requires_complete_unique_injection_order() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset(
+        {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+    )
+
+    for injection_order in (
+        {"sample-a": 1, "sample-b": 2, "sample-c": 3},
+        {"sample-a": 1, "sample-b": 2, "sample-c": 2, "sample-d": 4},
+    ):
+        features = cluster_sample_local_owners(
+            owners,
+            config=config,
+            sample_universe=sample_universe,
+            injection_order=injection_order,
+        )
+
+        assert [feature.event_cluster_ids for feature in features] == [
+            ("OWN-sample-a-a", "OWN-sample-b-b"),
+            ("OWN-sample-c-c", "OWN-sample-d-d"),
+        ]
+
+
+def test_owner_clustering_keeps_sparse_trajectory_as_candidates() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {
+                "sample-a",
+                "sample-b",
+                "sample-c",
+                "sample-d",
+                "sample-e",
+                "sample-f",
+            },
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+            "sample-f": 6,
+        },
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-c-c", "OWN-sample-d-d"),
+    ]
+
+
+def test_owner_clustering_does_not_use_drift_lookup_order_for_trajectory() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+        ),
+        drift_lookup=_DriftLookup(
+            deltas={},
+            orders={
+                "sample-a": 1,
+                "sample-b": 2,
+                "sample-c": 3,
+                "sample-d": 4,
+            },
+        ),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-c-c", "OWN-sample-d-d"),
+    ]
+
+
+def test_trajectory_hard_envelope_is_permutation_invariant_at_ppm_boundary() -> None:
+    low = _owner("sample-a", "low", precursor_mz=100.0)
+    high = _owner("sample-b", "high", precursor_mz=100.001000005)
+    config = AlignmentConfig(preferred_ppm=10.0, max_ppm=10.0)
+
+    assert not peak_groups_module._group_passes_hard_envelope(
+        (low, high),
+        config=config,
+    )
+    assert not peak_groups_module._group_passes_hard_envelope(
+        (high, low),
+        config=config,
+    )
+
+
+def test_owner_clustering_does_not_restore_trajectory_across_hard_bridge() -> None:
+    sample_universe = frozenset({"sample-a", "sample-b", "sample-c", "sample-d"})
+    injection_order = {
+        "sample-a": 1,
+        "sample-b": 2,
+        "sample-c": 3,
+        "sample-d": 4,
+    }
+    cases = (
+        (
+            (
+                _owner("sample-a", "a", apex_rt=10.00, precursor_mz=500.0000),
+                _owner("sample-b", "b", apex_rt=10.10, precursor_mz=500.0040),
+                _owner("sample-c", "c", apex_rt=10.20, precursor_mz=500.0080),
+            ),
+            AlignmentConfig(preferred_ppm=10.0, max_ppm=10.0),
+        ),
+        (
+            (
+                _owner("sample-a", "a", apex_rt=10.00, product_mz=383.9526),
+                _owner("sample-b", "b", apex_rt=10.10, product_mz=383.9566),
+                _owner("sample-c", "c", apex_rt=10.20, product_mz=383.9606),
+            ),
+            AlignmentConfig(product_mz_tolerance_ppm=15.0),
+        ),
+        (
+            (
+                _owner("sample-a", "a", apex_rt=10.00, observed_loss=116.0474),
+                _owner("sample-b", "b", apex_rt=10.10, observed_loss=116.0486),
+                _owner("sample-c", "c", apex_rt=10.20, observed_loss=116.0498),
+            ),
+            AlignmentConfig(observed_loss_tolerance_ppm=15.0),
+        ),
+    )
+
+    for owners, config in cases:
+        features = cluster_sample_local_owners(
+            owners,
+            config=config,
+            sample_universe=sample_universe,
+            injection_order=injection_order,
+        )
+
+        assert [feature.event_cluster_ids for feature in features] == [
+            ("OWN-sample-a-a", "OWN-sample-b-b"),
+            ("OWN-sample-c-c",),
+        ]
+
+
+def test_owner_clustering_keeps_parallel_injection_trajectories_separate() -> None:
+    owners = (
+        _owner("sample-a", "low", apex_rt=10.00),
+        _owner("sample-b", "low", apex_rt=10.75),
+        _owner("sample-c", "low", apex_rt=11.50),
+        _owner("sample-d", "low", apex_rt=12.25),
+        _owner("sample-a", "high", apex_rt=12.50),
+        _owner("sample-b", "high", apex_rt=13.25),
+        _owner("sample-c", "high", apex_rt=14.00),
+        _owner("sample-d", "high", apex_rt=14.75),
+    )
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+        },
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-low",
+            "OWN-sample-b-low",
+            "OWN-sample-c-low",
+            "OWN-sample-d-low",
+        ),
+        (
+            "OWN-sample-a-high",
+            "OWN-sample-b-high",
+            "OWN-sample-c-high",
+            "OWN-sample-d-high",
+        ),
+    ]
+    assert {feature.evidence for feature in features} == {
+        "owner_injection_trajectory;owner_count=4",
+    }
+
+
+def test_owner_clustering_keeps_8raw_like_rt_outlier_separate_with_order() -> None:
+    owners = tuple(
+        _owner(f"sample-{index}", "main", apex_rt=10.0 + index / 10.0)
+        for index in range(1, 8)
+    ) + (_owner("sample-8", "outlier", apex_rt=20.0),)
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(owner.sample_stem for owner in owners),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners)
+        },
+    )
+
+    assert [len(feature.owners) for feature in features] == [7, 1]
+    assert features[1].event_cluster_ids == ("OWN-sample-8-outlier",)
+
+
 def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
     owners = (
         _owner("sample-a", "a", apex_rt=10.00),
@@ -289,6 +558,7 @@ def test_owner_clustering_keeps_rt_discontinuity_separate() -> None:
         ),
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
         sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
     )
 
     assert [feature.event_cluster_ids for feature in features] == [
@@ -306,6 +576,7 @@ def test_owner_clustering_keeps_same_sample_recurrence_separate() -> None:
         ),
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
         sample_universe=frozenset({"sample-a", "sample-b"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
     )
 
     assert [feature.event_cluster_ids for feature in features] == [

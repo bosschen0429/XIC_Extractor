@@ -24,6 +24,17 @@ contracts for review and downstream product decisions.
   `owner_complete_link` evidence. A later owner may extend one bounded
   continuity group, but it does not bridge and merge two existing groups;
   single-link chaining is not family identity authority.
+- A near-full connected component with exactly one batch sample absent may also
+  replace its complete-link split when Alignment received the same explicit,
+  injection-order mapping used to order Matrix columns, with a unique order for
+  every owner in that component. The whole component must pass the symmetric
+  precursor/product/loss hard envelope,
+  and every adjacent injection-order edge must pass bounded RT continuity. The
+  recovered family is `owner_injection_trajectory`. Missing or duplicate order,
+  a second absent sample, same-sample occupancy, a hard-envelope conflict, or an
+  RT discontinuity remains on complete-link; `drift_lookup` is not an alternate
+  order source. Parallel connected components remain separate groups, and this
+  rule does not bridge existing groups.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional
