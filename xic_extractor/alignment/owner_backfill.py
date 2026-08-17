@@ -434,6 +434,8 @@ def build_owner_backfill_cells(
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
+    candidate_index_offset: int = 0,
+    validation_candidate_index_offset: int | None = None,
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
@@ -451,6 +453,8 @@ def build_owner_backfill_cells(
         owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
         owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
+        candidate_index_offset=candidate_index_offset,
+        validation_candidate_index_offset=validation_candidate_index_offset,
         emit_region_audit=emit_region_audit,
         region_audit_family_ids=region_audit_family_ids,
         audit_evidence_mode=audit_evidence_mode,
@@ -471,6 +475,8 @@ def build_owner_backfill_result(
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
+    candidate_index_offset: int = 0,
+    validation_candidate_index_offset: int | None = None,
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
@@ -484,6 +490,12 @@ def build_owner_backfill_result(
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
+    if (
+        isinstance(candidate_index_offset, bool)
+        or not isinstance(candidate_index_offset, int)
+        or candidate_index_offset < 0
+    ):
+        raise ValueError("candidate_index_offset must be a non-negative integer")
     if owner_backfill_window_strategy not in OWNER_BACKFILL_WINDOW_STRATEGIES:
         raise ValueError(
             "owner_backfill_window_strategy must be exact or super-window",
@@ -526,6 +538,40 @@ def build_owner_backfill_result(
         alignment_config=alignment_config,
         equivalence_context=primary_equivalence_context,
     )
+    candidate_index_offset_by_sample: dict[str, int] = {}
+    validation_candidate_index_offset_by_sample: dict[str, int] = {}
+    request_ordinal_by_item_id_by_sample: dict[str, dict[int, int]] = {}
+    total_logical_request_count = sum(
+        request_plan.request_count_for_sample(sample_stem)
+        for sample_stem in sample_order
+    )
+    if validation_candidate_index_offset is None:
+        validation_candidate_index_offset = (
+            candidate_index_offset + total_logical_request_count
+        )
+    elif (
+        isinstance(validation_candidate_index_offset, bool)
+        or not isinstance(validation_candidate_index_offset, int)
+        or validation_candidate_index_offset
+        < candidate_index_offset + total_logical_request_count
+    ):
+        raise ValueError(
+            "validation candidate index offset must follow the primary request range"
+        )
+    logical_request_offset = candidate_index_offset
+    for sample_stem in sample_order:
+        sample_requests = request_plan.requests_for_sample(sample_stem)
+        candidate_index_offset_by_sample[sample_stem] = logical_request_offset
+        validation_candidate_index_offset_by_sample[sample_stem] = (
+            validation_candidate_index_offset
+            + logical_request_offset
+            - candidate_index_offset
+        )
+        request_ordinal_by_item_id_by_sample[sample_stem] = {
+            id(request_item): request_ordinal
+            for request_ordinal, request_item in enumerate(sample_requests, start=1)
+        }
+        logical_request_offset += len(sample_requests)
     backfill_by_feature_sample: dict[tuple[str, str], AlignedCell] = {}
     validation_pending: dict[str, list[_RequestItem]] = defaultdict(list)
     validation_pending_keys: set[tuple[str, str]] = set()
@@ -533,6 +579,8 @@ def build_owner_backfill_result(
         sample_requests = request_plan.requests_for_sample(sample_stem)
         if not sample_requests:
             continue
+        sample_candidate_index_offset = candidate_index_offset_by_sample[sample_stem]
+        request_ordinal_by_item_id = request_ordinal_by_item_id_by_sample[sample_stem]
         equivalence_classes = (
             request_plan.equivalence_classes_for_sample(sample_stem)
             if request_plan.exact_equivalence_available
@@ -556,11 +604,8 @@ def build_owner_backfill_result(
             superwindow_span_factor=owner_backfill_superwindow_span_factor,
             equivalence_classes=equivalence_classes,
         ):
-            for (feature, requested_sample, request, preferred_rt), result in zip(
-                chunk,
-                traces,
-                strict=True,
-            ):
+            for request_item, result in zip(chunk, traces, strict=True):
+                feature, requested_sample, request, preferred_rt = request_item
                 logical_request, request_identity = _logical_binding_for_result(result)
                 trace = _trace_for_logical_request_result(
                     OwnerBackfillRequestItem(
@@ -576,7 +621,9 @@ def build_owner_backfill_result(
                     if validation_raw_sources is not None
                     else "primary_query"
                 )
-                candidate_index = len(candidate_records) + 1
+                candidate_index = sample_candidate_index_offset + (
+                    request_ordinal_by_item_id[id(request_item)]
+                )
                 evaluation = _backfill_feature_sample_trace(
                     feature,
                     requested_sample,
@@ -607,6 +654,7 @@ def build_owner_backfill_result(
                     candidate_records,
                     cell,
                     phase=candidate_phase,
+                    candidate_index=candidate_index,
                     trace_evaluated=True,
                     peak_facts=evaluation.peak_facts,
                     peak_fact_elapsed_seconds=evaluation.peak_fact_elapsed_seconds,
@@ -622,18 +670,12 @@ def build_owner_backfill_result(
                         cell,
                     )
                 else:
-                    validation_pending[requested_sample].append(
-                        OwnerBackfillRequestItem(
-                            feature,
-                            requested_sample,
-                            request,
-                            preferred_rt,
-                        )
-                    )
+                    validation_pending[requested_sample].append(request_item)
                     validation_pending_keys.add(
                         (feature.feature_family_id, requested_sample)
                     )
-        for feature, requested_sample, request, preferred_rt in sample_requests:
+        for request_ordinal, request_item in enumerate(sample_requests, start=1):
+            feature, requested_sample, request, preferred_rt = request_item
             key = (feature.feature_family_id, requested_sample)
             if (
                 key not in backfill_by_feature_sample
@@ -651,6 +693,7 @@ def build_owner_backfill_result(
                     candidate_records,
                     cell,
                     phase="primary_fallback",
+                    candidate_index=sample_candidate_index_offset + request_ordinal,
                 )
                 _keep_best_backfill_outcome_cell(
                     backfill_by_feature_sample,
@@ -662,12 +705,14 @@ def build_owner_backfill_result(
             if not validation_requests:
                 continue
             if sample_stem not in validation_raw_sources:
-                for (
-                    feature,
-                    requested_sample,
-                    request,
-                    preferred_rt,
-                ) in validation_requests:
+                sample_candidate_index_offset = (
+                    validation_candidate_index_offset_by_sample[sample_stem]
+                )
+                request_ordinal_by_item_id = request_ordinal_by_item_id_by_sample[
+                    sample_stem
+                ]
+                for request_item in validation_requests:
+                    feature, requested_sample, request, preferred_rt = request_item
                     cell = _backfill_unchecked_cell(
                         feature,
                         requested_sample,
@@ -683,6 +728,8 @@ def build_owner_backfill_result(
                         candidate_records,
                         cell,
                         phase="validation_unavailable",
+                        candidate_index=sample_candidate_index_offset
+                        + request_ordinal_by_item_id[id(request_item)],
                     )
                     _keep_best_backfill_outcome_cell(
                         backfill_by_feature_sample,
@@ -690,6 +737,12 @@ def build_owner_backfill_result(
                     )
                 continue
             source = validation_raw_sources[sample_stem]
+            sample_candidate_index_offset = (
+                validation_candidate_index_offset_by_sample[sample_stem]
+            )
+            request_ordinal_by_item_id = request_ordinal_by_item_id_by_sample[
+                sample_stem
+            ]
             validation_items = tuple(validation_requests)
             validation_context = _request_equivalence_context(
                 expected_acquisition_sources=(
@@ -726,16 +779,8 @@ def build_owner_backfill_result(
                 superwindow_span_factor=owner_backfill_superwindow_span_factor,
                 equivalence_classes=validation_classes,
             ):
-                for (
-                    feature,
-                    requested_sample,
-                    _request,
-                    preferred_rt,
-                ), result in zip(
-                    chunk,
-                    traces,
-                    strict=True,
-                ):
+                for request_item, result in zip(chunk, traces, strict=True):
+                    feature, requested_sample, _request, preferred_rt = request_item
                     logical_request, request_identity = _logical_binding_for_result(
                         result
                     )
@@ -748,7 +793,9 @@ def build_owner_backfill_result(
                         ),
                         result,
                     )
-                    candidate_index = len(candidate_records) + 1
+                    candidate_index = sample_candidate_index_offset + (
+                        request_ordinal_by_item_id[id(request_item)]
+                    )
                     evaluation = _backfill_feature_sample_trace(
                         feature,
                         requested_sample,
@@ -781,6 +828,7 @@ def build_owner_backfill_result(
                         candidate_records,
                         cell,
                         phase="validation_query",
+                        candidate_index=candidate_index,
                         trace_evaluated=True,
                         peak_facts=evaluation.peak_facts,
                         peak_fact_elapsed_seconds=evaluation.peak_fact_elapsed_seconds,
@@ -794,34 +842,32 @@ def build_owner_backfill_result(
                         backfill_by_feature_sample,
                         cell,
                     )
-            for (
-                feature,
-                requested_sample,
-                request,
-                preferred_rt,
-            ) in validation_requests:
-                key = (feature.feature_family_id, requested_sample)
-                if key not in backfill_by_feature_sample:
-                    cell = _backfill_unchecked_cell(
-                        feature,
-                        requested_sample,
-                        request=request,
-                        preferred_rt=preferred_rt,
-                        trace_quality="owner_backfill_unassessable",
-                        reason=(
-                            "owner-centered MS1 backfill validation "
-                            "query was not assessable"
-                        ),
-                    )
-                    _append_candidate_record(
-                        candidate_records,
-                        cell,
-                        phase="validation_fallback",
-                    )
-                    _keep_best_backfill_outcome_cell(
-                        backfill_by_feature_sample,
-                        cell,
-                    )
+                for request_item in validation_requests:
+                    feature, requested_sample, request, preferred_rt = request_item
+                    key = (feature.feature_family_id, requested_sample)
+                    if key not in backfill_by_feature_sample:
+                        cell = _backfill_unchecked_cell(
+                            feature,
+                            requested_sample,
+                            request=request,
+                            preferred_rt=preferred_rt,
+                            trace_quality="owner_backfill_unassessable",
+                            reason=(
+                                "owner-centered MS1 backfill validation "
+                                "query was not assessable"
+                            ),
+                        )
+                        _append_candidate_record(
+                            candidate_records,
+                            cell,
+                            phase="validation_fallback",
+                            candidate_index=sample_candidate_index_offset
+                            + request_ordinal_by_item_id[id(request_item)],
+                        )
+                        _keep_best_backfill_outcome_cell(
+                            backfill_by_feature_sample,
+                            cell,
+                        )
     for feature in features:
         if feature.review_only:
             continue
@@ -973,6 +1019,8 @@ def _append_candidate_record(
     cell: AlignedCell,
     *,
     phase: str,
+    candidate_index: int | None = None,
+    candidate_index_offset: int = 0,
     trace_evaluated: bool = False,
     peak_facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None = None,
     peak_fact_elapsed_seconds: float | None = None,
@@ -984,6 +1032,14 @@ def _append_candidate_record(
 ) -> None:
     if (logical_request is None) != (request_identity is None):
         raise ValueError("logical request and request identity must stay paired")
+    if candidate_index is None:
+        candidate_index = candidate_index_offset + len(records) + 1
+    elif (
+        isinstance(candidate_index, bool)
+        or not isinstance(candidate_index, int)
+        or candidate_index < 1
+    ):
+        raise ValueError("candidate_index must be a positive integer")
     peak_fact_receipt = _bounded_peak_fact_receipt(
         peak_facts,
         physical_evaluation,
@@ -991,7 +1047,7 @@ def _append_candidate_record(
     records.append(
         _OwnerBackfillCandidateRecord(
             cell=cell,
-            candidate_index=len(records) + 1,
+            candidate_index=candidate_index,
             candidate_phase=phase,
             trace_evaluated=trace_evaluated,
             peak_facts=peak_fact_receipt,

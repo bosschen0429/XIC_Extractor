@@ -950,6 +950,10 @@ def extract_owner_backfill_sample_job(
                 owner_backfill_superwindow_span_factor=(
                     job.owner_backfill_superwindow_span_factor
                 ),
+                candidate_index_offset=job.sample_projection.logical_request_offset,
+                validation_candidate_index_offset=(
+                    job.sample_projection.validation_request_offset
+                ),
                 emit_region_audit=job.emit_region_audit,
                 region_audit_family_ids=job.region_audit_family_ids,
                 audit_evidence_mode=job.audit_evidence_mode,

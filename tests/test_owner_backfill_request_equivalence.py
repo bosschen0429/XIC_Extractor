@@ -276,6 +276,8 @@ def test_compact_runtime_projection_rejects_relabelled_feature_or_sample_binding
     )["sample-b"]
     with pytest.raises(ValueError, match="runtime_projection_id mismatches"):
         replace(sample_projection, sample_stem="other-sample")
+    with pytest.raises(ValueError, match="runtime_projection_id mismatches"):
+        replace(sample_projection, logical_request_offset=1)
 
     validate_owner_backfill_runtime_feature(feature)
     validate_owner_backfill_sample_runtime_projection(sample_projection)
@@ -1069,6 +1071,184 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
     assert unavailable.peak_fact_cost.integration_count == 0
     assert unavailable.peak_fact_cost.normalization_count == 0
     assert unavailable.peak_fact_cost.raw_descriptor_projection_count == 0
+
+
+def test_process_worker_preserves_global_candidate_identity_across_samples(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_a_identity = _acquisition_source(tmp_path, "sample-a", b"sample-a")
+    source_b_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
+    source_b = _OwnerBoundBatchSource(source_b_identity)
+    raw_session_capability = mint_raw_acquisition_session_capability(
+        source_b_identity
+    )
+    source_b.raw_open_receipt = _mint_raw_acquisition_session_receipt(
+        raw_session_capability
+    )
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader.open_raw",
+        lambda *_args, **_kwargs: source_b,
+    )
+    features = (
+        replace(
+            _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+            confirm_local_owners_with_backfill=True,
+            owners=(
+                replace(_owner("sample-a", "a", apex_rt=8.5), owner_area=10.0),
+                _owner("sample-x", "x", apex_rt=8.5),
+            ),
+        ),
+        replace(
+            _feature(feature_family_id="FAM000002", mz=501.0, rt=8.6),
+            confirm_local_owners_with_backfill=True,
+            owners=(
+                replace(_owner("sample-b", "b", apex_rt=8.6), owner_area=10.0),
+                _owner("sample-x", "x", apex_rt=8.6),
+            ),
+        ),
+    )
+    serial_result = build_owner_backfill_result(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={
+            "sample-a": _OwnerBoundBatchSource(source_a_identity),
+            "sample-b": _OwnerBoundBatchSource(source_b_identity),
+        },
+        expected_acquisition_sources={
+            "sample-a": source_a_identity,
+            "sample-b": source_b_identity,
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        raw_xic_batch_size=64,
+        owner_backfill_xic_backend="raw",
+    )
+    job = OwnerBackfillSampleJob(
+        sample_index=2,
+        sample_stem="sample-b",
+        raw_path=tmp_path / "sample-b.raw",
+        dll_dir=tmp_path / "dll",
+        sample_projection=build_owner_backfill_sample_runtime_projections(
+            features,
+            sample_order=("sample-a", "sample-b"),
+            raw_sample_stems=frozenset({"sample-a", "sample-b"}),
+            alignment_config=AlignmentConfig(),
+        )["sample-b"],
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        expected_acquisition_source=source_b_identity,
+        raw_session_capability=raw_session_capability,
+        raw_xic_batch_size=64,
+        owner_backfill_xic_backend="raw",
+        feature_payload_count=2,
+        request_payload_count=2,
+    )
+
+    result = extract_owner_backfill_sample_job(job)
+    serial_sample_b = tuple(
+        observation
+        for observation in serial_result.peak_fact_observations
+        if observation.cell.sample_stem == "sample-b"
+    )
+
+    assert isinstance(result, OwnerBackfillSampleResult), result
+    assert [
+        observation.work_unit_key for observation in result.peak_fact_observations
+    ] == [observation.work_unit_key for observation in serial_sample_b]
+
+
+def test_process_worker_preserves_global_candidate_identity_for_hybrid_rescue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_a_identity = _acquisition_source(tmp_path, "sample-a", b"sample-a")
+    source_b_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
+    prefilter_a = _OwnerBoundBatchSource(source_a_identity, height=120.0)
+    prefilter_b = _OwnerBoundBatchSource(source_b_identity, height=120.0)
+    validator_a = _OwnerBoundBatchSource(source_a_identity, height=260.0)
+    validator_b = _OwnerBoundBatchSource(source_b_identity, height=260.0)
+    raw_session_capability = mint_raw_acquisition_session_capability(source_b_identity)
+    validator_b.raw_open_receipt = _mint_raw_acquisition_session_receipt(
+        raw_session_capability
+    )
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader.open_raw",
+        lambda *_args, **_kwargs: validator_b,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.alignment.process_backend.source_for_owner_backfill_backend",
+        lambda _raw, _backend: prefilter_b,
+    )
+    features = (
+        replace(
+            _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+            confirm_local_owners_with_backfill=True,
+            owners=(
+                replace(_owner("sample-a", "a", apex_rt=8.5), owner_area=10.0),
+                _owner("sample-x", "x", apex_rt=8.5),
+            ),
+        ),
+        replace(
+            _feature(feature_family_id="FAM000002", mz=501.0, rt=8.6),
+            confirm_local_owners_with_backfill=True,
+            owners=(
+                replace(_owner("sample-b", "b", apex_rt=8.6), owner_area=10.0),
+                _owner("sample-x", "x", apex_rt=8.6),
+            ),
+        ),
+    )
+    serial_result = build_owner_backfill_result(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-a": prefilter_a, "sample-b": prefilter_b},
+        validation_raw_sources={"sample-a": validator_a, "sample-b": validator_b},
+        expected_acquisition_sources={
+            "sample-a": source_a_identity,
+            "sample-b": source_b_identity,
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        raw_xic_batch_size=64,
+        owner_backfill_xic_backend="ms1_index_hybrid",
+    )
+    projection = build_owner_backfill_sample_runtime_projections(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sample_stems=frozenset({"sample-a", "sample-b"}),
+        alignment_config=AlignmentConfig(),
+    )["sample-b"]
+    job = OwnerBackfillSampleJob(
+        sample_index=2,
+        sample_stem="sample-b",
+        raw_path=tmp_path / "sample-b.raw",
+        dll_dir=tmp_path / "dll",
+        sample_projection=projection,
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        expected_acquisition_source=source_b_identity,
+        raw_session_capability=raw_session_capability,
+        raw_xic_batch_size=64,
+        owner_backfill_xic_backend="ms1_index_hybrid",
+        feature_payload_count=len(projection.features),
+        request_payload_count=projection.logical_request_count,
+    )
+
+    result = extract_owner_backfill_sample_job(job)
+    serial_sample_b = tuple(
+        observation
+        for observation in serial_result.peak_fact_observations
+        if observation.cell.sample_stem == "sample-b"
+    )
+
+    assert isinstance(result, OwnerBackfillSampleResult), result
+    assert [
+        observation.work_unit_key for observation in result.peak_fact_observations
+    ] == [observation.work_unit_key for observation in serial_sample_b]
 
 
 def _context(

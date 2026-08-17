@@ -85,6 +85,8 @@ class OwnerBackfillSampleRuntimeProjection:
     sample_stem: str
     features: OwnerBackfillRuntimeFeatures
     logical_request_count: int
+    logical_request_offset: int
+    validation_request_offset: int
 
     def __post_init__(self) -> None:
         sample_stem = _required_text(self.sample_stem, "sample_stem")
@@ -107,12 +109,30 @@ class OwnerBackfillSampleRuntimeProjection:
             raise ValueError(
                 "runtime sample projection count must be a positive integer"
             )
+        if (
+            isinstance(self.logical_request_offset, bool)
+            or not isinstance(self.logical_request_offset, int)
+            or self.logical_request_offset < 0
+        ):
+            raise ValueError(
+                "runtime sample projection offset must be a non-negative integer"
+            )
+        if (
+            isinstance(self.validation_request_offset, bool)
+            or not isinstance(self.validation_request_offset, int)
+            or self.validation_request_offset < 0
+        ):
+            raise ValueError(
+                "runtime sample validation offset must be a non-negative integer"
+            )
         expected = _typed_id(
             _RUNTIME_SAMPLE_PROJECTION_PREFIX,
             _runtime_sample_projection_basis(
                 sample_stem=sample_stem,
                 features=self.features,
                 logical_request_count=self.logical_request_count,
+                logical_request_offset=self.logical_request_offset,
+                validation_request_offset=self.validation_request_offset,
             ),
         )
         if self.runtime_projection_id != expected:
@@ -525,7 +545,16 @@ def build_owner_backfill_sample_runtime_projections(
         OwnerBackfillRuntimeFeatureProjection,
     ] = {}
     runtime_projections: dict[str, OwnerBackfillSampleRuntimeProjection] = {}
-    for sample_stem, projection in request_projections.items():
+    logical_request_counts = {
+        sample_stem: projection.logical_request_count
+        for sample_stem, projection in request_projections.items()
+    }
+    total_logical_request_count = sum(logical_request_counts.values())
+    logical_request_offset = 0
+    for sample_stem in sample_order:
+        projection = request_projections.get(sample_stem)
+        if projection is None:
+            continue
         compact_features: list[OwnerBackfillRuntimeFeatureProjection] = []
         for feature in projection.features:
             feature_object_id = id(feature)
@@ -539,8 +568,13 @@ def build_owner_backfill_sample_runtime_projections(
                 sample_stem=sample_stem,
                 features=tuple(compact_features),
                 logical_request_count=projection.logical_request_count,
+                logical_request_offset=logical_request_offset,
+                validation_request_offset=(
+                    total_logical_request_count + logical_request_offset
+                ),
             )
         )
+        logical_request_offset += projection.logical_request_count
     return MappingProxyType(runtime_projections)
 
 
@@ -567,17 +601,23 @@ def _mint_owner_backfill_sample_runtime_projection(
     sample_stem: str,
     features: OwnerBackfillRuntimeFeatures,
     logical_request_count: int,
+    logical_request_offset: int,
+    validation_request_offset: int,
 ) -> OwnerBackfillSampleRuntimeProjection:
     basis = _runtime_sample_projection_basis(
         sample_stem=sample_stem,
         features=features,
         logical_request_count=logical_request_count,
+        logical_request_offset=logical_request_offset,
+        validation_request_offset=validation_request_offset,
     )
     return OwnerBackfillSampleRuntimeProjection(
         runtime_projection_id=_typed_id(_RUNTIME_SAMPLE_PROJECTION_PREFIX, basis),
         sample_stem=sample_stem,
         features=features,
         logical_request_count=logical_request_count,
+        logical_request_offset=logical_request_offset,
+        validation_request_offset=validation_request_offset,
     )
 
 
@@ -586,6 +626,8 @@ def _runtime_sample_projection_basis(
     sample_stem: str,
     features: OwnerBackfillRuntimeFeatures,
     logical_request_count: int,
+    logical_request_offset: int,
+    validation_request_offset: int,
 ) -> dict[str, object]:
     return {
         "schema": "owner_backfill_runtime_sample_v1",
@@ -595,6 +637,8 @@ def _runtime_sample_projection_basis(
             for feature in features
         ),
         "logical_request_count": logical_request_count,
+        "logical_request_offset": logical_request_offset,
+        "validation_request_offset": validation_request_offset,
     }
 
 
