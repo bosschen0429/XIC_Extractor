@@ -427,7 +427,11 @@ def test_product_inferred_single_seed_keeps_bounded_review_context(
     group = _group(
         (
             replace(
-                _seed(scan_number=10, rt=12.063),
+                _seed(
+                    scan_number=10,
+                    rt=12.063,
+                    product_intensity=1_000_000.0,
+                ),
                 precursor_mz_basis="product_plus_neutral_loss",
             ),
         )
@@ -450,6 +454,69 @@ def test_product_inferred_single_seed_keeps_bounded_review_context(
     assert candidate.ms1_trace_quality == "physical_unavailable"
     assert candidate.ms1_search_rt_min == pytest.approx(11.863)
     assert candidate.ms1_search_rt_max == pytest.approx(12.263)
+
+
+def test_strong_product_inferred_seed_group_reacquires_physical_context(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
+    )
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group(
+        tuple(
+            replace(
+                _seed(
+                    scan_number=scan_number,
+                    rt=rt,
+                    product_intensity=1_000_000.0,
+                ),
+                precursor_mz_basis="product_plus_neutral_loss",
+            )
+            for scan_number, rt in ((10, 12.063), (11, 12.100))
+        )
+    )
+    assert group.precursor_mz_basis == "product_plus_neutral_loss"
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert len(result.measurements.acquisition_batches) == 2
+    assert result.measurements.reacquisition_request_count == 1
+    initial, reacquired = result.measurements.acquisition_batches
+    assert initial.traces[0].coordinate.trace_point_count < profile.window_points
+    assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    initial_request = initial.traces[0].coordinate.request
+    final_request = reacquired.traces[0].coordinate.request
+    assert initial_request.rt_min == pytest.approx(11.863)
+    assert initial_request.rt_max == pytest.approx(12.300)
+    assert final_request.rt_min < initial_request.rt_min
+    assert final_request.rt_max > initial_request.rt_max
+    work = result.physical_work_manifest[0]
+    assert work.query_rt_min == pytest.approx(12.063)
+    assert work.xic_rt_min == final_request.rt_min
+    assert work.xic_rt_max == final_request.rt_max
+    assert work.xic_rt_min <= work.context_rt_start_min <= work.query_rt_min
+    assert work.query_rt_min <= work.context_rt_end_min <= work.xic_rt_max
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(

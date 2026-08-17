@@ -255,6 +255,7 @@ def _backfill_ms1_candidates_with_acquisition(
                     plan,
                     acquired,
                     profile=signal_processing_profile,
+                    settings=settings,
                 )
             )
             is not None
@@ -419,8 +420,16 @@ def _expanded_physical_request_plan(
     acquired: AcquiredTrace,
     *,
     profile: SignalProcessingProfile,
+    settings: DiscoverySettings,
 ) -> _DiscoveryMs1RequestPlan | None:
-    if plan.group.precursor_mz_basis not in {"scan_precursor", "mixed"}:
+    precursor_mz_basis = plan.group.precursor_mz_basis
+    if precursor_mz_basis == "product_plus_neutral_loss":
+        if not _has_strong_inferred_precursor_support(
+            plan.group,
+            settings=settings,
+        ):
+            return None
+    elif precursor_mz_basis not in {"scan_precursor", "mixed"}:
         return None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
@@ -457,6 +466,16 @@ def _expanded_physical_request_plan(
             ppm_tol=plan.request.ppm_tol,
         ),
     )
+
+
+def _has_strong_inferred_precursor_support(
+    group: DiscoverySeedGroup,
+    *,
+    settings: DiscoverySettings,
+) -> bool:
+    return len(group.seeds) >= 2 and max(
+        seed.product_intensity for seed in group.seeds
+    ) >= settings.evidence_profile.thresholds.product_intensity_high_min
 
 
 def _validate_acquired_plan_chunk(

@@ -17,6 +17,14 @@ workflow projection and Backfill/ProductWriter authority path.
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
   isolation precursor. The installed CLI exposes the same setting as
   `--ms2-precursor-tol-da`.
+- Physical trace context and precursor-identity confidence are separate. A
+  `product_mz + neutral_loss` group starts with the bounded configured RT
+  context; when that trace is too short for the active signal-processing
+  profile, Discovery may reacquire enough context only when at least two MS2
+  seeds agree and their maximum product intensity reaches the profile's existing
+  high-intensity threshold. Reacquisition keeps the original MS2 query RT and
+  m/z tolerance. It supplies enough points to answer the physical peak question;
+  it does not upgrade inferred precursor identity or grant Matrix authority.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
