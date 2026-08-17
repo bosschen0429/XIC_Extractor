@@ -232,7 +232,7 @@ REVIEW_ACTION_EXPECTED_DIFF_VALIDATION_TIERS = frozenset(
     {
         "synthetic_fixture",
         "targeted_benchmark",
-        "real_raw_subset",
+        "8raw",
         "manual_eic_ms2_review",
         "not_validated",
     }

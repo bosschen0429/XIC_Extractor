@@ -74,7 +74,15 @@ EXEMPT_PREFIXES = ("xic_extractor/diagnostics/",)
 # value), `max_projected_85raw_identity_xic_requests` (a config key). Most are
 # persisted values, so clearing a file is a contract decision about existing
 # artifacts, not a rename: a census of output/ before each removal is what says
-# whether a rename is free. #290 owns the set, and its group 1 is closed.
+# whether a rename is free. #290 owns the set, and its group 1 is still open.
+#
+# Group 1's `ExpectedDiffValidationTier` value was renamed and then reverted.
+# The census said zero artifacts carried "8raw", so the rename looked free --
+# but review pointed out that is the data risk, not the contract one. The
+# schema declares review_action_expected_diff_v1 and the loader accepted that
+# literal under v1; changing the accepted vocabulary in place makes v1 mean
+# something new. Clearing it needs a v2 plus a migration, which is the contract
+# decision the spec review flagged before any of this started.
 #
 # ACCEPTED DEBT -- owner decision, 2026-08-17. Everything still listed here
 # survived the #290 sweep for one reason: a census over output/, tmp_runtime/,
@@ -122,8 +130,11 @@ KNOWN_LEAKAGE: dict[str, tuple[int, str]] = {
     ),
     "xic_extractor/alignment/shared_peak_identity_explanation/schema.py": (5, "#290"),
     "xic_extractor/package0_successor_comparator.py": (1, "#290"),
+    "xic_extractor/peak_detection/model_selection.py": (1, "#290"),
+    "xic_extractor/peak_detection/model_selection_approval_registry.py": (1, "#290"),
     "xic_extractor/peak_detection/selected_envelope_oracle.py": (1, "#290"),
     "xic_extractor/peak_detection/selected_envelope_oracle_artifacts.py": (2, "#290"),
+    "xic_extractor/review_actions_schema.py": (1, "#290"),
 }
 
 
