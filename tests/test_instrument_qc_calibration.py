@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.instrument_qc.calibration import (
-    Phase1SDOLEKTrendRow,
+    SDOLEKTrendRow,
     calibrate_sdolek_rows,
-    load_phase1_metadata_source_status,
-    load_phase1_trend_rows,
+    load_metadata_source_status,
+    load_sdolek_trend_rows,
 )
 
 
@@ -22,8 +22,8 @@ def _row(
     width: float | None = 0.2,
     rt_ref_delta: float | None = 0.0,
     width_ref_ratio: float | None = 1.0,
-) -> Phase1SDOLEKTrendRow:
-    return Phase1SDOLEKTrendRow(
+) -> SDOLEKTrendRow:
+    return SDOLEKTrendRow(
         sample_name=sample,
         compound=compound,
         identity_evidence="MS1_ONLY",
@@ -216,7 +216,7 @@ def test_load_phase1_rows_and_metadata(tmp_path: Path) -> None:
                 "base_width_ratio_to_reference": "0.25",
             }
         )
-    rows = load_phase1_trend_rows(trend)
+    rows = load_sdolek_trend_rows(trend)
 
     assert rows[0].sample_name == "S1"
     assert rows[0].base_width_ratio_to_reference == 0.25
@@ -226,7 +226,7 @@ def test_load_phase1_rows_and_metadata(tmp_path: Path) -> None:
         json.dumps({"metadata_source_status": {"injection_order_status": "missing"}}),
         encoding="utf-8",
     )
-    assert load_phase1_metadata_source_status(summary) == {
+    assert load_metadata_source_status(summary) == {
         "injection_order_status": "missing"
     }
 
@@ -236,4 +236,4 @@ def test_load_phase1_rows_fails_on_missing_columns(tmp_path: Path) -> None:
     trend.write_text("sample_name\tcompound\nS1\tSDO\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="Missing required Phase 1 trend columns"):
-        load_phase1_trend_rows(trend)
+        load_sdolek_trend_rows(trend)

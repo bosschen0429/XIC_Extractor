@@ -58,7 +58,7 @@ def write_calibration_summary_json(
     payload = {
         "verdict": calibration_verdict(result),
         "summary": calibration_summary(result.rows),
-        "phase1_metadata_source_status": result.phase1_metadata_source_status,
+        "metadata_source_status": result.metadata_source_status,
         "calibration_metadata_status": _metadata_status_to_dict(
             result.calibration_metadata_status
         ),

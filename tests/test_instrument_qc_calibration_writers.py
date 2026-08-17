@@ -4,8 +4,8 @@ from pathlib import Path
 
 from xic_extractor.instrument_qc.calibration import (
     CalibrationMetadataStatus,
-    Phase1SDOLEKTrendRow,
     SDOLEKCalibrationResult,
+    SDOLEKTrendRow,
     calibrate_sdolek_rows,
 )
 from xic_extractor.instrument_qc.calibration_writers import (
@@ -23,8 +23,8 @@ def _row(
     *,
     area: float | None = 100.0,
     rt_ref_delta: float | None = 0.0,
-) -> Phase1SDOLEKTrendRow:
-    return Phase1SDOLEKTrendRow(
+) -> SDOLEKTrendRow:
+    return SDOLEKTrendRow(
         sample_name=sample,
         compound="SDO",
         identity_evidence="MS1_ONLY",
@@ -47,7 +47,7 @@ def _result() -> SDOLEKCalibrationResult:
             _row("S3", area=100),
             _row("S4", area=300, rt_ref_delta=-0.55),
         ],
-        phase1_metadata_source_status={"injection_order_status": "missing"},
+        metadata_source_status={"injection_order_status": "missing"},
     )
 
 
@@ -91,7 +91,7 @@ def test_write_calibration_summary_json_includes_metadata_and_counts(
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["verdict"] == "review_ready"
-    assert payload["phase1_metadata_source_status"] == {
+    assert payload["metadata_source_status"] == {
         "injection_order_status": "missing"
     }
     assert payload["calibration_metadata_status"]["source_contract"] == (
@@ -132,7 +132,7 @@ def test_top_review_rows_excludes_stable_rows() -> None:
 def test_calibration_verdict_reports_metadata_incomplete_for_invalid_source() -> None:
     result = SDOLEKCalibrationResult(
         rows=_result().rows,
-        phase1_metadata_source_status={},
+        metadata_source_status={},
         calibration_metadata_status=CalibrationMetadataStatus(
             injection_order_source="SampleInfo.xlsx",
             injection_order_status="invalid",
@@ -149,7 +149,7 @@ def test_calibration_verdict_reports_metadata_incomplete_for_invalid_source() ->
 def test_calibration_verdict_reports_insufficient_evidence_for_empty_result() -> None:
     result = SDOLEKCalibrationResult(
         rows=(),
-        phase1_metadata_source_status={},
+        metadata_source_status={},
         calibration_metadata_status=CalibrationMetadataStatus(
             injection_order_source="",
             injection_order_status="missing",

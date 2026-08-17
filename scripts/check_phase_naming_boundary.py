@@ -75,6 +75,9 @@ SCOPE_ROOT = "xic_extractor/"
 #          constants were all internal to a module no production code imports.
 #     281  after `m\d+_` joined the pattern. Nothing was added to the codebase
 #          -- the snake_case milestone spelling had simply never been visible.
+#      58  after the same sweep ran over what the widening exposed: 76 `_M5_*`
+#          and `_m5_*` identifiers in the comparator, and `Phase1` in
+#          instrument_qc, which is now clean.
 #
 # What stays is persisted -- schema ids, receipt fields, work-unit keys, pinned
 # evidence directory names, `p7-` version strings -- each already recorded in
@@ -94,7 +97,13 @@ SCOPE_ROOT = "xic_extractor/"
 # CLI takes any `--trend-tsv` and PHASE1_TREND_REQUIRED_COLUMNS lists only
 # neutral columns (sample_name, compound, apex_rt_min ...). The name describes
 # which trend file was in play at the time, not a property of the data. Owner
-# confirmed the reading; renamed accordingly.
+# confirmed the reading; renamed accordingly, and that file is clean.
+#
+# The m7 metric names in untargeted_cid_nl_mode_track_workflow.py are the
+# opposite call: five of the seven (m7_raw_open_count, m7_xic_batch_count,
+# m7_trace_point_count, m7_logical_xic_request_count,
+# m7_adapter_chromatogram_call_count) are already in artifacts. Renaming part of
+# a field family would leave two schemas where there is one, so all seven stay.
 KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/alignment/backfill_evidence_contract.py": (1, "#293"),
     "xic_extractor/alignment/backfill_scope.py": (1, "#293"),
@@ -105,9 +114,7 @@ KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (12, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_runtime.py": (3, "#293"),
-    "xic_extractor/instrument_qc/calibration.py": (18, "#293"),
-    "xic_extractor/instrument_qc/calibration_writers.py": (1, "#293"),
-    "xic_extractor/package0_successor_comparator.py": (235, "#293"),
+    "xic_extractor/package0_successor_comparator.py": (31, "#293"),
 }
 
 

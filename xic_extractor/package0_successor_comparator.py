@@ -88,8 +88,8 @@ _FROZEN_RUNTIME_SURFACE_SHA256 = (
 )
 _RUNTIME_OBSERVATION_MINT_TOKEN = object()
 _RUNTIME_PROBE_MINT_TOKEN = object()
-_M5_VERDICT_RECEIPT_MINT_TOKEN = object()
-_M5_ROLLBACK_RECEIPT_MINT_TOKEN = object()
+_VERDICT_RECEIPT_MINT_TOKEN = object()
+_ROLLBACK_RECEIPT_MINT_TOKEN = object()
 _RUNTIME_EXPERIMENT_DIR = "package1-runtime-observation-experiment"
 _RUNTIME_PRODUCT_OUTPUT_DIR = "product-output"
 _RUNTIME_ROOT_IDENTITY_MARKER = ".package1-root-identity"
@@ -105,16 +105,16 @@ _RUNTIME_DIFFERENCE_FIELDS = (
     "classification",
     "disposition",
 )
-_M5_PACKET_SCHEMA = "m5_successor_verdict_packet_v1"
-_M5_CANDIDATE_SCHEMA = "m5_frozen_candidate_manifest_v1"
-_M5_LEGACY_SCHEMA = "m5_legacy_baseline_receipt_v1"
-_M5_VERDICT_CONTRACT_SCHEMA = "m5_scoped_verdict_contract_v1"
-_M5_ROLLBACK_SCHEMA = "m5_rollback_rehearsal_v1"
+_PACKET_SCHEMA = "m5_successor_verdict_packet_v1"
+_CANDIDATE_SCHEMA = "m5_frozen_candidate_manifest_v1"
+_LEGACY_SCHEMA = "m5_legacy_baseline_receipt_v1"
+_VERDICT_CONTRACT_SCHEMA = "m5_scoped_verdict_contract_v1"
+_ROLLBACK_SCHEMA = "m5_rollback_rehearsal_v1"
 # The evaluated candidate predates the M5 packet. Evidence and locators therefore
 # resolve against the merge that first made the complete reviewed packet durable,
 # never against whichever checkout happens to replay the verdict later.
-_M5_FROZEN_EVIDENCE_REVISION = "5f3ca8ace68b2205c7bf96dd62b08aef7809e79e"
-_M5_PACKET_FILES = (
+_FROZEN_EVIDENCE_REVISION = "5f3ca8ace68b2205c7bf96dd62b08aef7809e79e"
+_PACKET_FILES = (
     "README.md",
     "architecture_authority_audit.tsv",
     "candidate_manifest.json",
@@ -127,13 +127,13 @@ _M5_PACKET_FILES = (
     "verdict.json",
     "verdict_contract.json",
 )
-_M5_DYNAMIC_RESULT_FILES = frozenset(
+_DYNAMIC_RESULT_FILES = frozenset(
     {
         "selective_scientific_cases.tsv",
         "verdict.json",
     }
 )
-_M5_REQUIRED_PACKET_ROLES = (
+_REQUIRED_PACKET_ROLES = (
     ("README.md", "packet_summary"),
     ("architecture_authority_audit.tsv", "architecture_authority_audit"),
     ("candidate_manifest.json", "frozen_candidate"),
@@ -151,12 +151,12 @@ _M5_REQUIRED_PACKET_ROLES = (
 # NARROW/KILL outcomes from preregistered observations; their roles and schemas
 # are still exact. This digest is over normalized artifact-index rows excluding
 # those two result files, not over the mutable index file itself.
-_M5_STATIC_INVENTORY_CONTRACT_SHA256 = (
+_STATIC_INVENTORY_CONTRACT_SHA256 = (
     "EDDD6E13990E00A5F010860709F7117C7662BAECA8277D84D7E72A08B26A8F66"
 )
-_M5_INDEX_FIELDS = ("path", "sha256", "size_bytes", "role")
-_M5_EVIDENCE_FIELDS = ("path", "sha256", "role")
-_M5_AUTHORITY_AUDIT_FIELDS = (
+_INDEX_FIELDS = ("path", "sha256", "size_bytes", "role")
+_EVIDENCE_FIELDS = ("path", "sha256", "role")
+_AUTHORITY_AUDIT_FIELDS = (
     "schema_version",
     "audit_id",
     "audit_kind",
@@ -168,7 +168,7 @@ _M5_AUTHORITY_AUDIT_FIELDS = (
     "evidence_locator",
     "claim_limit",
 )
-_M5_DIMENSION_FIELDS = (
+_DIMENSION_FIELDS = (
     "schema_version",
     "dimension",
     "baseline_status",
@@ -178,7 +178,7 @@ _M5_DIMENSION_FIELDS = (
     "evidence_locator",
     "claim_limit",
 )
-_M5_CASE_FIELDS = (
+_CASE_FIELDS = (
     "schema_version",
     "case_id",
     "question",
@@ -189,7 +189,7 @@ _M5_CASE_FIELDS = (
     "evidence_locator",
     "verdict_effect",
 )
-_M5_PUBLIC_DIFF_FIELDS = (
+_PUBLIC_DIFF_FIELDS = (
     "schema_version",
     "surface",
     "expected_diff",
@@ -198,7 +198,7 @@ _M5_PUBLIC_DIFF_FIELDS = (
     "evidence_locator",
     "authority",
 )
-_M5_CANDIDATE_FIELDS = frozenset(
+_CANDIDATE_FIELDS = frozenset(
     {
         "activation_base_sha",
         "candidate_merge_sha",
@@ -215,7 +215,7 @@ _M5_CANDIDATE_FIELDS = frozenset(
         "validation_status",
     }
 )
-_M5_LEGACY_FIELDS = frozenset(
+_LEGACY_FIELDS = frozenset(
     {
         "baseline_id",
         "baseline_replay_status",
@@ -229,7 +229,7 @@ _M5_LEGACY_FIELDS = frozenset(
         "validation_status",
     }
 )
-_M5_ROLLBACK_FIELDS = frozenset(
+_ROLLBACK_FIELDS = frozenset(
     {
         "active_authority_after",
         "active_authority_before",
@@ -244,7 +244,7 @@ _M5_ROLLBACK_FIELDS = frozenset(
         "successor_product_authority",
     }
 )
-_M5_VERDICT_FIELDS = frozenset(
+_VERDICT_FIELDS = frozenset(
     {
         "automatic_cutover_authorized",
         "candidate_defects",
@@ -263,13 +263,13 @@ _M5_VERDICT_FIELDS = frozenset(
         "writer_expansion_authorized",
     }
 )
-_M5_CANDIDATE_MILESTONE_FIELDS = frozenset({"issue", "merge_sha", "milestone"})
-_M5_CANDIDATE_EXCLUDED_MILESTONE_FIELDS = frozenset(
+_CANDIDATE_MILESTONE_FIELDS = frozenset({"issue", "merge_sha", "milestone"})
+_CANDIDATE_EXCLUDED_MILESTONE_FIELDS = frozenset(
     {"issue", "milestone", "reason", "status"}
 )
-_M5_CANDIDATE_FOLLOWUP_FIELDS = frozenset({"issue", "scope"})
-_M5_FILE_SEAL_FIELDS = frozenset({"path", "sha256"})
-_M5_ROLLBACK_OWNER_RECEIPT_FIELDS = frozenset(
+_CANDIDATE_FOLLOWUP_FIELDS = frozenset({"issue", "scope"})
+_FILE_SEAL_FIELDS = frozenset({"path", "sha256"})
+_ROLLBACK_OWNER_RECEIPT_FIELDS = frozenset(
     {
         "delivery_revision_count",
         "delivery_revision_ids_sha256",
@@ -282,7 +282,7 @@ _M5_ROLLBACK_OWNER_RECEIPT_FIELDS = frozenset(
         "processing_attempt_id",
     }
 )
-_M5_VERDICT_GATE_STATUS_FIELDS = frozenset(
+_VERDICT_GATE_STATUS_FIELDS = frozenset(
     {
         "bounded_substrate_pass",
         "canonical_package4_complete",
@@ -290,7 +290,7 @@ _M5_VERDICT_GATE_STATUS_FIELDS = frozenset(
         "rollback_pass",
     }
 )
-_M5_REQUIRED_DIMENSIONS = frozenset(
+_REQUIRED_DIMENSIONS = frozenset(
     {
         "dependency_crossings",
         "duplicate_authorities",
@@ -306,7 +306,7 @@ _M5_REQUIRED_DIMENSIONS = frozenset(
         "evidence_maturity",
     }
 )
-_M5_REQUIRED_PUBLIC_SURFACES = frozenset(
+_REQUIRED_PUBLIC_SURFACES = frozenset(
     {
         "activation",
         "cli_config",
@@ -318,61 +318,61 @@ _M5_REQUIRED_PUBLIC_SURFACES = frozenset(
         "writer",
     }
 )
-_M5_REQUIRED_NARROW_EXCLUSION_ORDER = (
+_REQUIRED_NARROW_EXCLUSION_ORDER = (
     "canonical Package 4 GO",
     "general Untargeted identity readiness",
     "M4 comparable scan-set MS2 profile evidence",
     "Matrix or writer activation",
     "legacy retirement",
 )
-_M5_REQUIRED_NARROW_EXCLUSIONS = frozenset(
-    _M5_REQUIRED_NARROW_EXCLUSION_ORDER
+_REQUIRED_NARROW_EXCLUSIONS = frozenset(
+    _REQUIRED_NARROW_EXCLUSION_ORDER
 )
-_M5_REQUIRED_RETAINED_SCOPE = (
+_REQUIRED_RETAINED_SCOPE = (
     "owner-backed evidence and observation spine",
     "conservative workflow-neutral Backfill eligibility",
     "shadow identity and split lineage",
     "Targeted CID-NL diagnostic adapter and rollback substrate",
 )
-_M5_REQUIRED_KNOWN_FOLLOWUPS = (
+_REQUIRED_KNOWN_FOLLOWUPS = (
     "Issue #105 RT/time-window precision",
     "Issue #156 Gap 10 complete-group ownership",
 )
-_M5_REQUIRED_LEGACY_BASELINE_ID = "cid_nl_legacy_baseline_6d3b18ef_8raw_v2"
-_M5_REQUIRED_LEGACY_SOURCE_COMMIT_SHA = (
+_REQUIRED_LEGACY_BASELINE_ID = "cid_nl_legacy_baseline_6d3b18ef_8raw_v2"
+_REQUIRED_LEGACY_SOURCE_COMMIT_SHA = (
     "6d3b18efd88971ffb6d96412a8d8ee47e8ed4742"
 )
-_M5_REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256 = (
+_REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256 = (
     "CC25A6A731C822F9147FECAB5949EAABB79D0415FCA67436365CEC035B4293B1"
 )
-_M5_REQUIRED_MISSING_EVIDENCE = (
+_REQUIRED_MISSING_EVIDENCE = (
     "complete #126/#127 Package 4 scientific gate revalidation",
     "comparable legacy and candidate RAW/vendor/point instrumentation",
     "representative candidate elapsed and peak-memory sample",
     "method-specific real-sample and manual EIC/MS2 acceptance",
 )
-_M5_REQUIRED_GATE_STATUS = {
+_REQUIRED_GATE_STATUS = {
     "bounded_substrate_pass": True,
     "canonical_package4_complete": False,
     "public_hard_zero_pass": True,
     "rollback_pass": True,
 }
-_M5_REQUIRED_GO_REQUIREMENTS = (
+_REQUIRED_GO_REQUIREMENTS = (
     "complete #126/#127 candidate gates revalidated",
     "Targeted lifecycle and broadened Discovery use the same downstream core",
     "public expected diff explained and accepted",
     "selective scientific and operational gates pass",
     "whole-attempt rollback preserves one active authority",
 )
-_M5_REQUIRED_VERDICT_STATES = ("GO", "NARROW", "KILL", "INCONCLUSIVE")
-_M5_REQUIRED_VERDICT_RULES = {
+_REQUIRED_VERDICT_STATES = ("GO", "NARROW", "KILL", "INCONCLUSIVE")
+_REQUIRED_VERDICT_RULES = {
     "candidate_defect_is_not_repaired_in_m5": True,
     "m2_or_m3_only_cannot_go": True,
     "missing_evidence_never_promotes": True,
     "rollback_requires_legacy_only_active_authority": True,
     "selective_failure_uses_preregistered_effect": True,
 }
-_M5_REQUIRED_EXCLUDED_MILESTONES = (
+_REQUIRED_EXCLUDED_MILESTONES = (
     (
         "M4",
         164,
@@ -380,13 +380,13 @@ _M5_REQUIRED_EXCLUDED_MILESTONES = (
         "conditional_inactive",
     ),
 )
-_M5_REQUIRED_CANDIDATE_FOLLOWUPS = (
+_REQUIRED_CANDIDATE_FOLLOWUPS = (
     (105, "RT/time-window serialization and lookup precision"),
     (156, "Gap 10 complete same-target group ownership"),
 )
-_M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
+_REQUIRED_AUTHORITY_AUDIT_ROWS = (
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "forbidden_dependency_crossings",
         "dependency_crossing",
         "frozen candidate dependency direction",
@@ -399,7 +399,7 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "Current frozen tree only; no historical improvement claim",
     ),
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "runtime_authority_bypasses",
         "dependency_crossing",
         "runtime partial-lifecycle authority bypass",
@@ -412,7 +412,7 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "Named runtime boundary only",
     ),
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "cell_observation_owner",
         "duplicate_authority",
         "cell observation minting",
@@ -424,7 +424,7 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "One named owner in frozen CID-NL scope; no behavior-equivalence proof",
     ),
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "candidate_set_relation_owner",
         "duplicate_authority",
         "CID-NL candidate set relation",
@@ -437,7 +437,7 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "One named owner in frozen CID-NL scope; no behavior-equivalence proof",
     ),
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "method_assessment_owner",
         "duplicate_authority",
         "CID-NL method assessment",
@@ -450,7 +450,7 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "One named owner in frozen CID-NL scope; no behavior-equivalence proof",
     ),
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "identity_settlement_owner",
         "duplicate_authority",
         "identity model settlement",
@@ -462,7 +462,7 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "One named owner in frozen CID-NL scope; no repo-wide identity authority claim",
     ),
     (
-        _M5_PACKET_SCHEMA,
+        _PACKET_SCHEMA,
         "targeted_delivery_owner",
         "duplicate_authority",
         "Targeted delivery and whole-attempt rollback",
@@ -475,19 +475,19 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
         "One named owner in frozen Targeted diagnostic scope; no product cutover",
     ),
 )
-_M5_SELECTIVE_CASE_CONTRACT_SHA256 = (
+_SELECTIVE_CASE_CONTRACT_SHA256 = (
     "A87650AE84E941F9B882B4178B5212E42F6443272F6528F136BAE4745C10560A"
 )
-_M5_DIMENSION_CONTRACT_SHA256 = (
+_DIMENSION_CONTRACT_SHA256 = (
     "A807C100B9912C65880DC268E4DF50A111E08170506AC4C73BA86B4890FD88C1"
 )
-_M5_PUBLIC_DIFF_CONTRACT_SHA256 = (
+_PUBLIC_DIFF_CONTRACT_SHA256 = (
     "50CD83049117B3231FFCE0645B8212834E910ACE0753587CF52C8000D007DE99"
 )
-_M5_ROLLBACK_RECEIPT_SUMMARY_SHA256 = (
+_ROLLBACK_RECEIPT_SUMMARY_SHA256 = (
     "4729692AC09F285B51D68A9332CDC0554E9A2E764E13CEF7D3E94089BD2DB3D9"
 )
-_M5_REQUIRED_CANDIDATE_SOURCE_PATHS = frozenset(
+_REQUIRED_CANDIDATE_SOURCE_PATHS = frozenset(
     {
         "xic_extractor/alignment/cell_observations.py",
         "xic_extractor/alignment/cid_nl_evidence_spine.py",
@@ -504,7 +504,7 @@ _M5_REQUIRED_CANDIDATE_SOURCE_PATHS = frozenset(
         "xic_extractor/peak_detection/cid_nl_method_assessment.py",
     }
 )
-_M5_REQUIRED_LEGACY_TRACKED_PATHS = frozenset(
+_REQUIRED_LEGACY_TRACKED_PATHS = frozenset(
     {
         "docs/superpowers/validation/cid_nl_legacy_baseline_v1/"
         "baseline_summary.json",
@@ -516,7 +516,7 @@ _M5_REQUIRED_LEGACY_TRACKED_PATHS = frozenset(
         "membership_receipt.json",
     }
 )
-_M5_REQUIRED_EVIDENCE_PATHS = frozenset(
+_REQUIRED_EVIDENCE_PATHS = frozenset(
     {
         "docs/product/alignment.md",
         "docs/superpowers/validation/m5_successor_verdict_v1/"
@@ -827,7 +827,7 @@ class SuccessorVerdictReceipt:
         raise TypeError("SuccessorVerdictReceipt is final")
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _M5_VERDICT_RECEIPT_MINT_TOKEN:
+        if _mint_token is not _VERDICT_RECEIPT_MINT_TOKEN:
             raise SuccessorComparatorError(
                 "SuccessorVerdictReceipt must be minted by the comparator"
             )
@@ -854,7 +854,7 @@ class RollbackRehearsalReceipt:
         raise TypeError("RollbackRehearsalReceipt is final")
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _M5_ROLLBACK_RECEIPT_MINT_TOKEN:
+        if _mint_token is not _ROLLBACK_RECEIPT_MINT_TOKEN:
             raise SuccessorComparatorError(
                 "RollbackRehearsalReceipt must be minted by the comparator"
             )
@@ -1644,7 +1644,7 @@ def validate_runtime_difference_manifest(
     )
 
 
-def validate_m5_successor_verdict_packet(
+def validate_successor_verdict_packet(
     packet_root: Path,
     *,
     repo_root: Path,
@@ -1658,74 +1658,74 @@ def validate_m5_successor_verdict_packet(
         raise SuccessorComparatorError("M5 packet_root cannot be a symlink")
     if not isinstance(repo_root, Path) or not repo_root.is_dir():
         raise SuccessorComparatorError("M5 repo_root must be an existing directory")
-    _m5_commit_sha(expected_candidate_sha, field="expected_candidate_sha")
+    _commit_sha(expected_candidate_sha, field="expected_candidate_sha")
 
-    inventory = _validate_m5_packet_inventory(packet_root)
-    candidate = _m5_json_mapping(packet_root / "candidate_manifest.json")
-    _validate_m5_candidate_manifest(
+    inventory = _validate_packet_inventory(packet_root)
+    candidate = _json_mapping(packet_root / "candidate_manifest.json")
+    _validate_candidate_manifest(
         candidate,
         repo_root=repo_root,
         expected_candidate_sha=expected_candidate_sha,
     )
-    legacy = _m5_json_mapping(packet_root / "legacy_baseline_receipt.json")
-    _validate_m5_legacy_receipt(
+    legacy = _json_mapping(packet_root / "legacy_baseline_receipt.json")
+    _validate_legacy_receipt(
         legacy,
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    evidence_paths = _validate_m5_evidence_manifest(
-        _m5_tsv_rows(
+    evidence_paths = _validate_evidence_manifest(
+        _tsv_rows(
             packet_root / "evidence_manifest.tsv",
-            fields=_M5_EVIDENCE_FIELDS,
+            fields=_EVIDENCE_FIELDS,
         ),
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    contract = _m5_json_mapping(packet_root / "verdict_contract.json")
-    _validate_m5_verdict_contract(contract)
-    authority_audit = _m5_tsv_rows(
+    contract = _json_mapping(packet_root / "verdict_contract.json")
+    _validate_verdict_contract(contract)
+    authority_audit = _tsv_rows(
         packet_root / "architecture_authority_audit.tsv",
-        fields=_M5_AUTHORITY_AUDIT_FIELDS,
+        fields=_AUTHORITY_AUDIT_FIELDS,
     )
-    _validate_m5_authority_audit(
+    _validate_authority_audit(
         authority_audit,
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    dimensions = _m5_tsv_rows(
+    dimensions = _tsv_rows(
         packet_root / "comparison_dimensions.tsv",
-        fields=_M5_DIMENSION_FIELDS,
+        fields=_DIMENSION_FIELDS,
     )
-    _validate_m5_dimensions(
+    _validate_dimensions(
         dimensions,
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    cases = _m5_tsv_rows(
+    cases = _tsv_rows(
         packet_root / "selective_scientific_cases.tsv",
-        fields=_M5_CASE_FIELDS,
+        fields=_CASE_FIELDS,
     )
-    _validate_m5_selective_cases(
+    _validate_selective_cases(
         cases,
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    public_diffs = _m5_tsv_rows(
+    public_diffs = _tsv_rows(
         packet_root / "public_expected_diff.tsv",
-        fields=_M5_PUBLIC_DIFF_FIELDS,
+        fields=_PUBLIC_DIFF_FIELDS,
     )
-    _validate_m5_public_diffs(
+    _validate_public_diffs(
         public_diffs,
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    rollback = _m5_json_mapping(packet_root / "rollback_rehearsal.json")
-    _validate_m5_rollback_packet(
+    rollback = _json_mapping(packet_root / "rollback_rehearsal.json")
+    _validate_rollback_packet(
         rollback,
         repo_root=repo_root,
-        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+        evidence_revision=_FROZEN_EVIDENCE_REVISION,
     )
-    _validate_m5_evidence_locator_coverage(
+    _validate_evidence_locator_coverage(
         evidence_paths,
         authority_audit=authority_audit,
         dimensions=dimensions,
@@ -1733,8 +1733,8 @@ def validate_m5_successor_verdict_packet(
         public_diffs=public_diffs,
         rollback=rollback,
     )
-    verdict = _m5_json_mapping(packet_root / "verdict.json")
-    derived_verdict = _validate_m5_verdict(
+    verdict = _json_mapping(packet_root / "verdict.json")
+    derived_verdict = _validate_verdict(
         verdict,
         contract=contract,
         candidate=candidate,
@@ -1742,7 +1742,7 @@ def validate_m5_successor_verdict_packet(
         cases=cases,
         rollback=rollback,
     )
-    _validate_m5_static_inventory_contract(inventory)
+    _validate_static_inventory_contract(inventory)
 
     return SuccessorVerdictReceipt(
         candidate_merge_sha=str(candidate["candidate_merge_sha"]),
@@ -1756,17 +1756,17 @@ def validate_m5_successor_verdict_packet(
         ),
         packet_sha256=_canonical_value_sha256(
             {
-                "schema_version": _M5_PACKET_SCHEMA,
+                "schema_version": _PACKET_SCHEMA,
                 "candidate_merge_sha": candidate["candidate_merge_sha"],
                 "inventory": inventory,
                 "verdict": derived_verdict,
             }
         ),
-        _mint_token=_M5_VERDICT_RECEIPT_MINT_TOKEN,
+        _mint_token=_VERDICT_RECEIPT_MINT_TOKEN,
     )
 
 
-def validate_m5_rollback_rehearsal(
+def validate_rollback_rehearsal(
     staged: object,
 ) -> RollbackRehearsalReceipt:
     """Invoke the whole-attempt rollback owner and derive its receipt."""
@@ -1807,7 +1807,7 @@ def validate_m5_rollback_rehearsal(
     )
     revision_ids = tuple(revision.delivery_revision_id for revision in staged.revisions)
     basis = {
-        "schema_version": _M5_ROLLBACK_SCHEMA,
+        "schema_version": _ROLLBACK_SCHEMA,
         "status_transition": "staged_candidate->rolled_back",
         "processing_attempt_id": staged.attempt.processing_attempt_id,
         "prior_current_delivery_id": staged.prior_current_delivery_id,
@@ -1831,25 +1831,25 @@ def validate_m5_rollback_rehearsal(
         delivery_stage_id=staged.stage_candidate.delivery_stage_id,
         delivery_seal_candidate_id=(staged.seal_candidate.delivery_seal_candidate_id),
         receipt_sha256=_canonical_value_sha256(basis),
-        _mint_token=_M5_ROLLBACK_RECEIPT_MINT_TOKEN,
+        _mint_token=_ROLLBACK_RECEIPT_MINT_TOKEN,
     )
 
 
-def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object], ...]:
-    rows = _m5_tsv_rows(
+def _validate_packet_inventory(packet_root: Path) -> tuple[dict[str, object], ...]:
+    rows = _tsv_rows(
         packet_root / "artifact_index.tsv",
-        fields=_M5_INDEX_FIELDS,
+        fields=_INDEX_FIELDS,
     )
     declared_paths = tuple(
-        str(_m5_safe_relative_path(row["path"], field="artifact index path"))
+        str(_safe_relative_path(row["path"], field="artifact index path"))
         for row in rows
     )
-    if declared_paths != _M5_PACKET_FILES:
+    if declared_paths != _PACKET_FILES:
         raise SuccessorComparatorError(
             "M5 artifact inventory must declare the exact ordered packet"
         )
     actual_entries = tuple(sorted(packet_root.iterdir(), key=lambda path: path.name))
-    expected_names = tuple(sorted((*_M5_PACKET_FILES, "artifact_index.tsv")))
+    expected_names = tuple(sorted((*_PACKET_FILES, "artifact_index.tsv")))
     if tuple(path.name for path in actual_entries) != expected_names or any(
         not path.is_file() or path.is_symlink() for path in actual_entries
     ):
@@ -1860,7 +1860,7 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
     for row in rows:
         relative = PurePosixPath(row["path"])
         payload_path = packet_root / relative
-        payload = _m5_canonical_text_bytes(
+        payload = _canonical_text_bytes(
             payload_path.read_bytes(),
             field=f"M5 artifact {relative}",
         )
@@ -1892,49 +1892,49 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
     normalized_inventory = tuple(normalized)
     if tuple(
         (str(row["path"]), str(row["role"])) for row in normalized_inventory
-    ) != _M5_REQUIRED_PACKET_ROLES:
+    ) != _REQUIRED_PACKET_ROLES:
         raise SuccessorComparatorError(
             "M5 artifact roles differ from the packet contract"
         )
     return normalized_inventory
 
 
-def _validate_m5_static_inventory_contract(
+def _validate_static_inventory_contract(
     inventory: tuple[dict[str, object], ...],
 ) -> None:
     static_inventory = tuple(
-        row for row in inventory if row["path"] not in _M5_DYNAMIC_RESULT_FILES
+        row for row in inventory if row["path"] not in _DYNAMIC_RESULT_FILES
     )
     if (
         _canonical_value_sha256(static_inventory)
-        != _M5_STATIC_INVENTORY_CONTRACT_SHA256
+        != _STATIC_INVENTORY_CONTRACT_SHA256
     ):
         raise SuccessorComparatorError(
             "M5 frozen packet payload differs from its package-code trust root"
         )
 
 
-def _validate_m5_candidate_manifest(
+def _validate_candidate_manifest(
     candidate: Mapping[str, object],
     *,
     repo_root: Path,
     expected_candidate_sha: str,
 ) -> None:
-    if set(candidate) != _M5_CANDIDATE_FIELDS:
+    if set(candidate) != _CANDIDATE_FIELDS:
         raise SuccessorComparatorError("M5 candidate manifest field set differs")
-    if candidate.get("schema_version") != _M5_CANDIDATE_SCHEMA:
+    if candidate.get("schema_version") != _CANDIDATE_SCHEMA:
         raise SuccessorComparatorError("M5 candidate manifest schema differs")
-    candidate_sha = _m5_commit_sha(
+    candidate_sha = _commit_sha(
         candidate.get("candidate_merge_sha"),
         field="candidate_merge_sha",
     )
     if candidate_sha != expected_candidate_sha:
         raise SuccessorComparatorError("M5 packet references a stale frozen candidate")
-    declared_tree_sha = _m5_commit_sha(
+    declared_tree_sha = _commit_sha(
         candidate.get("candidate_tree_sha"),
         field="candidate_tree_sha",
     )
-    actual_tree_sha = _m5_git_bytes(
+    actual_tree_sha = _git_bytes(
         repo_root,
         "rev-parse",
         f"{candidate_sha}^{{tree}}",
@@ -1942,7 +1942,7 @@ def _validate_m5_candidate_manifest(
     if actual_tree_sha != declared_tree_sha:
         raise SuccessorComparatorError("M5 candidate Git tree differs")
     if any(
-        _m5_commit_sha(candidate.get(field), field=field) != candidate_sha
+        _commit_sha(candidate.get(field), field=field) != candidate_sha
         for field in ("design_base_sha", "activation_base_sha")
     ):
         raise SuccessorComparatorError(
@@ -1962,7 +1962,7 @@ def _validate_m5_candidate_manifest(
         raise SuccessorComparatorError("M5 included milestones are missing")
     if any(
         not isinstance(item, Mapping)
-        or set(item) != _M5_CANDIDATE_MILESTONE_FIELDS
+        or set(item) != _CANDIDATE_MILESTONE_FIELDS
         for item in milestones
     ):
         raise SuccessorComparatorError(
@@ -1987,7 +1987,7 @@ def _validate_m5_candidate_manifest(
     excluded = candidate.get("excluded_milestones")
     if not isinstance(excluded, list) or any(
         not isinstance(item, Mapping)
-        or set(item) != _M5_CANDIDATE_EXCLUDED_MILESTONE_FIELDS
+        or set(item) != _CANDIDATE_EXCLUDED_MILESTONE_FIELDS
         for item in excluded
     ):
         raise SuccessorComparatorError(
@@ -2002,14 +2002,14 @@ def _validate_m5_candidate_manifest(
         )
         for item in excluded
         if isinstance(item, Mapping)
-    ) != _M5_REQUIRED_EXCLUDED_MILESTONES or len(excluded) != len(
-        _M5_REQUIRED_EXCLUDED_MILESTONES
+    ) != _REQUIRED_EXCLUDED_MILESTONES or len(excluded) != len(
+        _REQUIRED_EXCLUDED_MILESTONES
     ):
         raise SuccessorComparatorError("M5 candidate excluded milestone set differs")
     followups = candidate.get("known_preexisting_followups")
     if not isinstance(followups, list) or any(
         not isinstance(item, Mapping)
-        or set(item) != _M5_CANDIDATE_FOLLOWUP_FIELDS
+        or set(item) != _CANDIDATE_FOLLOWUP_FIELDS
         for item in followups
     ):
         raise SuccessorComparatorError(
@@ -2019,8 +2019,8 @@ def _validate_m5_candidate_manifest(
         (item.get("issue"), item.get("scope"))
         for item in followups
         if isinstance(item, Mapping)
-    ) != _M5_REQUIRED_CANDIDATE_FOLLOWUPS or len(followups) != len(
-        _M5_REQUIRED_CANDIDATE_FOLLOWUPS
+    ) != _REQUIRED_CANDIDATE_FOLLOWUPS or len(followups) != len(
+        _REQUIRED_CANDIDATE_FOLLOWUPS
     ):
         raise SuccessorComparatorError("M5 candidate known follow-up set differs")
     sources = candidate.get("source_files")
@@ -2030,11 +2030,11 @@ def _validate_m5_candidate_manifest(
     for item in sources:
         if not isinstance(item, Mapping):
             raise SuccessorComparatorError("M5 candidate source row is malformed")
-        if set(item) != _M5_FILE_SEAL_FIELDS:
+        if set(item) != _FILE_SEAL_FIELDS:
             raise SuccessorComparatorError(
                 "M5 candidate source record field set differs"
             )
-        relative = _m5_safe_relative_path(
+        relative = _safe_relative_path(
             item.get("path"),
             field="candidate source path",
         )
@@ -2046,27 +2046,27 @@ def _validate_m5_candidate_manifest(
             f"candidate source {relative} sha256",
         )
         candidate_digest = _bytes_sha256(
-            _m5_canonical_text_bytes(
-                _m5_git_bytes(repo_root, "show", f"{candidate_sha}:{relative}"),
+            _canonical_text_bytes(
+                _git_bytes(repo_root, "show", f"{candidate_sha}:{relative}"),
                 field=f"candidate Git source {relative}",
             ),
             field=f"candidate Git source {relative}",
         )
         if candidate_digest != expected_digest:
             raise SuccessorComparatorError(f"M5 candidate source drift: {relative}")
-    if seen != _M5_REQUIRED_CANDIDATE_SOURCE_PATHS:
+    if seen != _REQUIRED_CANDIDATE_SOURCE_PATHS:
         raise SuccessorComparatorError("M5 candidate source set differs")
 
 
-def _validate_m5_legacy_receipt(
+def _validate_legacy_receipt(
     legacy: Mapping[str, object],
     *,
     repo_root: Path,
     evidence_revision: str,
 ) -> None:
-    if set(legacy) != _M5_LEGACY_FIELDS:
+    if set(legacy) != _LEGACY_FIELDS:
         raise SuccessorComparatorError("M5 legacy receipt field set differs")
-    if legacy.get("schema_version") != _M5_LEGACY_SCHEMA:
+    if legacy.get("schema_version") != _LEGACY_SCHEMA:
         raise SuccessorComparatorError("M5 legacy receipt schema differs")
     if (
         legacy.get("validation_status") != "diagnostic_only"
@@ -2076,19 +2076,19 @@ def _validate_m5_legacy_receipt(
         or legacy.get("baseline_replay_status") != "sealed_receipt_reused_no_raw_rerun"
     ):
         raise SuccessorComparatorError("M5 legacy receipt overclaims replay authority")
-    source_commit_sha = _m5_commit_sha(
+    source_commit_sha = _commit_sha(
         legacy.get("source_commit_sha"),
         field="M5 legacy source_commit_sha",
     )
     if (
-        legacy.get("baseline_id") != _M5_REQUIRED_LEGACY_BASELINE_ID
-        or source_commit_sha != _M5_REQUIRED_LEGACY_SOURCE_COMMIT_SHA
+        legacy.get("baseline_id") != _REQUIRED_LEGACY_BASELINE_ID
+        or source_commit_sha != _REQUIRED_LEGACY_SOURCE_COMMIT_SHA
         or legacy.get("canonical_output_inventory_sha256")
-        != _M5_REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256
+        != _REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256
     ):
         raise SuccessorComparatorError("M5 legacy baseline identity differs")
     if (
-        _m5_git_bytes(repo_root, "cat-file", "-t", source_commit_sha)
+        _git_bytes(repo_root, "cat-file", "-t", source_commit_sha)
         .decode("ascii")
         .strip()
         != "commit"
@@ -2101,17 +2101,17 @@ def _validate_m5_legacy_receipt(
     for item in tracked_files:
         if not isinstance(item, Mapping):
             raise SuccessorComparatorError("M5 legacy tracked file row is malformed")
-        if set(item) != _M5_FILE_SEAL_FIELDS:
+        if set(item) != _FILE_SEAL_FIELDS:
             raise SuccessorComparatorError(
                 "M5 legacy tracked file record field set differs"
             )
-        relative = _m5_safe_relative_path(item.get("path"), field="legacy file path")
+        relative = _safe_relative_path(item.get("path"), field="legacy file path")
         if str(relative) in tracked:
             raise SuccessorComparatorError("M5 legacy tracked files must be unique")
         tracked[str(relative)] = item
         if _bytes_sha256(
-            _m5_canonical_text_bytes(
-                _m5_git_bytes(
+            _canonical_text_bytes(
+                _git_bytes(
                     repo_root,
                     "show",
                     f"{evidence_revision}:{relative}",
@@ -2124,15 +2124,15 @@ def _validate_m5_legacy_receipt(
             f"legacy file {relative} sha256",
         ):
             raise SuccessorComparatorError(f"M5 legacy tracked file drift: {relative}")
-    if frozenset(tracked) != _M5_REQUIRED_LEGACY_TRACKED_PATHS:
+    if frozenset(tracked) != _REQUIRED_LEGACY_TRACKED_PATHS:
         raise SuccessorComparatorError("M5 legacy tracked file set differs")
     baseline_path = (
         "docs/superpowers/validation/cid_nl_legacy_baseline_v1/baseline_summary.json"
     )
     if baseline_path not in tracked:
         raise SuccessorComparatorError("M5 legacy receipt lacks the baseline pointer")
-    baseline = _m5_json_bytes_mapping(
-        _m5_git_bytes(
+    baseline = _json_bytes_mapping(
+        _git_bytes(
             repo_root,
             "show",
             f"{evidence_revision}:{baseline_path}",
@@ -2149,7 +2149,7 @@ def _validate_m5_legacy_receipt(
         raise SuccessorComparatorError("M5 legacy receipt differs from sealed baseline")
 
 
-def _validate_m5_evidence_manifest(
+def _validate_evidence_manifest(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
@@ -2157,7 +2157,7 @@ def _validate_m5_evidence_manifest(
 ) -> frozenset[str]:
     observed: set[str] = set()
     for row in rows:
-        relative = _m5_safe_relative_path(row["path"], field="evidence file path")
+        relative = _safe_relative_path(row["path"], field="evidence file path")
         normalized = str(relative)
         if normalized in observed:
             raise SuccessorComparatorError("M5 evidence file paths must be unique")
@@ -2167,8 +2167,8 @@ def _validate_m5_evidence_manifest(
             f"M5 evidence file {relative} sha256",
         )
         if _bytes_sha256(
-            _m5_canonical_text_bytes(
-                _m5_git_bytes(
+            _canonical_text_bytes(
+                _git_bytes(
                     repo_root,
                     "show",
                     f"{evidence_revision}:{relative}",
@@ -2182,12 +2182,12 @@ def _validate_m5_evidence_manifest(
             raise SuccessorComparatorError(
                 f"M5 evidence file role is missing: {relative}"
             )
-    if observed != _M5_REQUIRED_EVIDENCE_PATHS:
+    if observed != _REQUIRED_EVIDENCE_PATHS:
         raise SuccessorComparatorError("M5 evidence file set differs")
     return frozenset(observed)
 
 
-def _validate_m5_evidence_locator_coverage(
+def _validate_evidence_locator_coverage(
     evidence_paths: frozenset[str],
     *,
     authority_audit: tuple[dict[str, str], ...],
@@ -2209,32 +2209,32 @@ def _validate_m5_evidence_locator_coverage(
             raise SuccessorComparatorError("M5 evidence locator is missing")
         path_text, _separator, _symbol = locator.partition("::")
         used_paths.add(
-            str(_m5_safe_relative_path(path_text, field="evidence locator"))
+            str(_safe_relative_path(path_text, field="evidence locator"))
         )
     if used_paths != evidence_paths:
         raise SuccessorComparatorError("M5 evidence locator set differs from its seal")
 
 
-def _validate_m5_authority_audit(
+def _validate_authority_audit(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
     evidence_revision: str,
 ) -> None:
     observed_rows = tuple(
-        tuple(row[field] for field in _M5_AUTHORITY_AUDIT_FIELDS) for row in rows
+        tuple(row[field] for field in _AUTHORITY_AUDIT_FIELDS) for row in rows
     )
-    if observed_rows != _M5_REQUIRED_AUTHORITY_AUDIT_ROWS:
+    if observed_rows != _REQUIRED_AUTHORITY_AUDIT_ROWS:
         raise SuccessorComparatorError("M5 architecture/authority audit set differs")
     for row in rows:
-        _validate_m5_locator(
+        _validate_locator(
             repo_root,
             row["evidence_locator"],
             evidence_revision=evidence_revision,
         )
 
 
-def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:
+def _validate_verdict_contract(contract: Mapping[str, object]) -> None:
     if set(contract) != {
         "go_requirements",
         "product_authority_granted",
@@ -2245,31 +2245,31 @@ def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:
     }:
         raise SuccessorComparatorError("M5 verdict contract field set differs")
     if (
-        contract.get("schema_version") != _M5_VERDICT_CONTRACT_SCHEMA
+        contract.get("schema_version") != _VERDICT_CONTRACT_SCHEMA
         or contract.get("validation_status") != "diagnostic_only"
         or contract.get("product_authority_granted") is not False
-        or contract.get("go_requirements") != list(_M5_REQUIRED_GO_REQUIREMENTS)
-        or contract.get("verdict_states") != list(_M5_REQUIRED_VERDICT_STATES)
+        or contract.get("go_requirements") != list(_REQUIRED_GO_REQUIREMENTS)
+        or contract.get("verdict_states") != list(_REQUIRED_VERDICT_STATES)
     ):
         raise SuccessorComparatorError("M5 verdict contract semantics differ")
     rules = contract.get("rules")
-    if not isinstance(rules, Mapping) or dict(rules) != _M5_REQUIRED_VERDICT_RULES:
+    if not isinstance(rules, Mapping) or dict(rules) != _REQUIRED_VERDICT_RULES:
         raise SuccessorComparatorError("M5 verdict contract rules differ")
 
 
-def _validate_m5_dimensions(
+def _validate_dimensions(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
     evidence_revision: str,
 ) -> None:
-    if _canonical_value_sha256(rows) != _M5_DIMENSION_CONTRACT_SHA256:
+    if _canonical_value_sha256(rows) != _DIMENSION_CONTRACT_SHA256:
         raise SuccessorComparatorError("M5 comparison dimension semantics differ")
     dimensions = {row["dimension"] for row in rows}
-    if dimensions != _M5_REQUIRED_DIMENSIONS or len(dimensions) != len(rows):
+    if dimensions != _REQUIRED_DIMENSIONS or len(dimensions) != len(rows):
         raise SuccessorComparatorError("M5 comparison dimension set differs")
     for row in rows:
-        if row["schema_version"] != _M5_PACKET_SCHEMA or row["outcome"] not in {
+        if row["schema_version"] != _PACKET_SCHEMA or row["outcome"] not in {
             "pass",
             "narrow",
             "unknown",
@@ -2287,14 +2287,14 @@ def _validate_m5_dimensions(
             )
         ):
             raise SuccessorComparatorError("M5 comparison dimension lacks evidence")
-        _validate_m5_locator(
+        _validate_locator(
             repo_root,
             row["evidence_locator"],
             evidence_revision=evidence_revision,
         )
 
 
-def _validate_m5_selective_cases(
+def _validate_selective_cases(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
@@ -2317,13 +2317,13 @@ def _validate_m5_selective_cases(
         }
         for row in sorted(rows, key=lambda item: item["case_id"])
     )
-    if _canonical_value_sha256(contract_rows) != _M5_SELECTIVE_CASE_CONTRACT_SHA256:
+    if _canonical_value_sha256(contract_rows) != _SELECTIVE_CASE_CONTRACT_SHA256:
         raise SuccessorComparatorError(
             "M5 preregistered selective case contract differs"
         )
     for row in rows:
         if (
-            row["schema_version"] != _M5_PACKET_SCHEMA
+            row["schema_version"] != _PACKET_SCHEMA
             or row["status"] not in {"pass", "fail"}
             or (row["observed"] == row["expected"]) != (row["status"] == "pass")
             or row["verdict_effect"] not in {"failure_narrows", "failure_kills"}
@@ -2337,27 +2337,27 @@ def _validate_m5_selective_cases(
             or not row["verdict_effect"]
         ):
             raise SuccessorComparatorError("M5 selective case lacks evidence")
-        _validate_m5_locator(
+        _validate_locator(
             repo_root,
             row["evidence_locator"],
             evidence_revision=evidence_revision,
         )
 
 
-def _validate_m5_public_diffs(
+def _validate_public_diffs(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
     evidence_revision: str,
 ) -> None:
-    if _canonical_value_sha256(rows) != _M5_PUBLIC_DIFF_CONTRACT_SHA256:
+    if _canonical_value_sha256(rows) != _PUBLIC_DIFF_CONTRACT_SHA256:
         raise SuccessorComparatorError("M5 public hard-zero semantics differ")
     surfaces = {row["surface"] for row in rows}
-    if surfaces != _M5_REQUIRED_PUBLIC_SURFACES or len(surfaces) != len(rows):
+    if surfaces != _REQUIRED_PUBLIC_SURFACES or len(surfaces) != len(rows):
         raise SuccessorComparatorError("M5 public surface set differs")
     for row in rows:
         if (
-            row["schema_version"] != _M5_PACKET_SCHEMA
+            row["schema_version"] != _PACKET_SCHEMA
             or row["expected_diff"] != "hard_zero"
             or row["observed_diff"] != "hard_zero"
             or row["status"] != "pass"
@@ -2366,22 +2366,22 @@ def _validate_m5_public_diffs(
             raise SuccessorComparatorError(
                 f"M5 public hard-zero gate failed: {row['surface']}"
             )
-        _validate_m5_locator(
+        _validate_locator(
             repo_root,
             row["evidence_locator"],
             evidence_revision=evidence_revision,
         )
 
 
-def _validate_m5_rollback_packet(
+def _validate_rollback_packet(
     rollback: Mapping[str, object],
     *,
     repo_root: Path,
     evidence_revision: str,
 ) -> None:
-    if set(rollback) != _M5_ROLLBACK_FIELDS:
+    if set(rollback) != _ROLLBACK_FIELDS:
         raise SuccessorComparatorError("M5 rollback packet field set differs")
-    if rollback.get("schema_version") != _M5_ROLLBACK_SCHEMA or (
+    if rollback.get("schema_version") != _ROLLBACK_SCHEMA or (
         rollback.get("status") != "pass"
         or rollback.get("status_transition") != "staged_candidate->rolled_back"
         or rollback.get("active_authority_before") != "authoritative_legacy_current"
@@ -2395,7 +2395,7 @@ def _validate_m5_rollback_packet(
     locator = rollback.get("evidence_locator")
     if not isinstance(locator, str):
         raise SuccessorComparatorError("M5 rollback evidence locator is missing")
-    _validate_m5_locator(
+    _validate_locator(
         repo_root,
         locator,
         evidence_revision=evidence_revision,
@@ -2403,7 +2403,7 @@ def _validate_m5_rollback_packet(
     recorded = rollback.get("recorded_owner_receipt")
     if not isinstance(recorded, Mapping):
         raise SuccessorComparatorError("M5 rollback owner receipt is missing")
-    if set(recorded) != _M5_ROLLBACK_OWNER_RECEIPT_FIELDS:
+    if set(recorded) != _ROLLBACK_OWNER_RECEIPT_FIELDS:
         raise SuccessorComparatorError(
             "M5 rollback owner receipt field set differs"
         )
@@ -2430,11 +2430,11 @@ def _validate_m5_rollback_packet(
             )
     if recorded.get("prior_current_delivery_id") != "legacy-seal:prior-current":
         raise SuccessorComparatorError("M5 rollback prior current identity differs")
-    if _canonical_value_sha256(recorded) != _M5_ROLLBACK_RECEIPT_SUMMARY_SHA256:
+    if _canonical_value_sha256(recorded) != _ROLLBACK_RECEIPT_SUMMARY_SHA256:
         raise SuccessorComparatorError("M5 recorded rollback owner receipt differs")
 
 
-def _validate_m5_verdict(
+def _validate_verdict(
     verdict: Mapping[str, object],
     *,
     contract: Mapping[str, object],
@@ -2443,9 +2443,9 @@ def _validate_m5_verdict(
     cases: tuple[dict[str, str], ...],
     rollback: Mapping[str, object],
 ) -> str:
-    if set(verdict) != _M5_VERDICT_FIELDS:
+    if set(verdict) != _VERDICT_FIELDS:
         raise SuccessorComparatorError("M5 verdict field set differs")
-    if verdict.get("schema_version") != _M5_PACKET_SCHEMA or (
+    if verdict.get("schema_version") != _PACKET_SCHEMA or (
         verdict.get("validation_status") != "diagnostic_only"
         or verdict.get("evaluated_scope") != "cid_nl_successor_shadow_substrate"
         or verdict.get("candidate_merge_sha") != candidate.get("candidate_merge_sha")
@@ -2475,19 +2475,19 @@ def _validate_m5_verdict(
         )
     ):
         raise SuccessorComparatorError("M5 verdict evidence state is malformed")
-    if set(gates) != _M5_VERDICT_GATE_STATUS_FIELDS:
+    if set(gates) != _VERDICT_GATE_STATUS_FIELDS:
         raise SuccessorComparatorError("M5 verdict gate status field set differs")
     if defects != []:
         raise SuccessorComparatorError("M5 candidate defect set differs")
-    if tuple(missing) != _M5_REQUIRED_MISSING_EVIDENCE:
+    if tuple(missing) != _REQUIRED_MISSING_EVIDENCE:
         raise SuccessorComparatorError("M5 missing-evidence set differs")
-    if tuple(retained) != _M5_REQUIRED_RETAINED_SCOPE:
+    if tuple(retained) != _REQUIRED_RETAINED_SCOPE:
         raise SuccessorComparatorError("M5 retained scope differs")
-    if tuple(followups) != _M5_REQUIRED_KNOWN_FOLLOWUPS:
+    if tuple(followups) != _REQUIRED_KNOWN_FOLLOWUPS:
         raise SuccessorComparatorError("M5 known follow-up set differs")
-    if tuple(excluded) != _M5_REQUIRED_NARROW_EXCLUSION_ORDER:
+    if tuple(excluded) != _REQUIRED_NARROW_EXCLUSION_ORDER:
         raise SuccessorComparatorError("M5 excluded scope differs")
-    if dict(gates) != _M5_REQUIRED_GATE_STATUS:
+    if dict(gates) != _REQUIRED_GATE_STATUS:
         raise SuccessorComparatorError("M5 gate status differs")
     has_dimension_failure = any(row["outcome"] == "fail" for row in dimensions)
     has_case_kill = any(
@@ -2539,15 +2539,15 @@ def _validate_m5_verdict(
     return derived
 
 
-def _m5_json_mapping(path: Path) -> Mapping[str, object]:
+def _json_mapping(path: Path) -> Mapping[str, object]:
     try:
         payload = path.read_bytes()
     except OSError as exc:
         raise SuccessorComparatorError(f"M5 JSON is unreadable: {path}") from exc
-    return _m5_json_bytes_mapping(payload, source=str(path))
+    return _json_bytes_mapping(payload, source=str(path))
 
 
-def _m5_json_bytes_mapping(
+def _json_bytes_mapping(
     payload: bytes,
     *,
     source: str,
@@ -2555,7 +2555,7 @@ def _m5_json_bytes_mapping(
     try:
         value = json.loads(
             payload.decode("utf-8"),
-            object_pairs_hook=_m5_unique_json_mapping,
+            object_pairs_hook=_unique_json_mapping,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise SuccessorComparatorError(f"M5 JSON is unreadable: {source}") from exc
@@ -2564,7 +2564,7 @@ def _m5_json_bytes_mapping(
     return value
 
 
-def _m5_unique_json_mapping(
+def _unique_json_mapping(
     pairs: list[tuple[str, object]],
 ) -> dict[str, object]:
     mapping: dict[str, object] = {}
@@ -2575,7 +2575,7 @@ def _m5_unique_json_mapping(
     return mapping
 
 
-def _m5_tsv_rows(
+def _tsv_rows(
     path: Path,
     *,
     fields: tuple[str, ...],
@@ -2593,7 +2593,7 @@ def _m5_tsv_rows(
     return rows
 
 
-def _m5_safe_relative_path(value: object, *, field: str) -> PurePosixPath:
+def _safe_relative_path(value: object, *, field: str) -> PurePosixPath:
     if not isinstance(value, str) or not value:
         raise SuccessorComparatorError(f"{field} must contain safe relative paths")
     path = PurePosixPath(value)
@@ -2610,7 +2610,7 @@ def _m5_safe_relative_path(value: object, *, field: str) -> PurePosixPath:
     return path
 
 
-def _validate_m5_locator(
+def _validate_locator(
     repo_root: Path,
     locator: str,
     *,
@@ -2619,9 +2619,9 @@ def _validate_m5_locator(
     if not isinstance(locator, str) or not locator:
         raise SuccessorComparatorError("M5 evidence locator is missing")
     path_text, separator, symbol = locator.partition("::")
-    relative = _m5_safe_relative_path(path_text, field="evidence locator")
+    relative = _safe_relative_path(path_text, field="evidence locator")
     try:
-        source = _m5_git_bytes(
+        source = _git_bytes(
             repo_root,
             "show",
             f"{evidence_revision}:{relative}",
@@ -2635,13 +2635,13 @@ def _validate_m5_locator(
             )
 
 
-def _m5_commit_sha(value: object, *, field: str) -> str:
+def _commit_sha(value: object, *, field: str) -> str:
     if not isinstance(value, str) or _COMMIT_SHA_RE.fullmatch(value) is None:
         raise SuccessorComparatorError(f"{field} must be a lower-case commit SHA")
     return value
 
 
-def _m5_git_bytes(repo_root: Path, *args: str) -> bytes:
+def _git_bytes(repo_root: Path, *args: str) -> bytes:
     try:
         completed = subprocess.run(
             ("git", "-C", str(repo_root), *args),
@@ -2900,7 +2900,7 @@ def _bytes_sha256(value: object, *, field: str) -> str:
     return hashlib.sha256(value).hexdigest().upper()
 
 
-def _m5_canonical_text_bytes(value: object, *, field: str) -> bytes:
+def _canonical_text_bytes(value: object, *, field: str) -> bytes:
     if not isinstance(value, bytes):
         raise SuccessorComparatorError(f"{field} must be UTF-8 text bytes")
     try:
@@ -2976,8 +2976,8 @@ __all__ = [
     "assert_targeted_adapter_parity",
     "mint_targeted_adapter_parity_receipt",
     "run_runtime_observation_experiment",
-    "validate_m5_rollback_rehearsal",
-    "validate_m5_successor_verdict_packet",
+    "validate_rollback_rehearsal",
+    "validate_successor_verdict_packet",
     "validate_runtime_difference_manifest",
     "validate_successor_output",
 ]
