@@ -105,6 +105,15 @@ Get-Content .env.xic-local |
 | retired：accepted P8b 8RAW / 85RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/discovery_batch_index.csv` | **v1，`scripts.run_alignment` 直接拒絕**：`discovery_batch_index_v2 owner closure is required`（`--preflight-only` exit 2）。兩者皆為絕對 locator、0 個 physical-facts sidecar。85RAW 目前**沒有**可用的 v2 accepted input。 |
 | targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx` | SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7`；`targeted_gt_alignment_audit.py` 的 8RAW default positive checkpoint workbook；不要用 85-sample workbook 對 8RAW alignment，否則會產生 off-scope `MISS`。 |
 
+標準 DNA dR Alignment run shape 必須成對提供 `--sample-info` 與
+`--targeted-istd-workbook`。兩者一起建立 targeted ISTD drift prior，讓
+Alignment 使用既有 injection-order／RT evidence path；CLI 仍會拒絕只給其中
+一個。這兩個檔案是 lane-owned inputs，路徑依該批資料指定，不在 repo 內
+硬編碼；以下 command shape 的 placeholders 必須替換成實際檔案。
+`--sample-column-injection-order` 則是獨立的 optional input；它不只是重新排欄，
+也會參與 Alignment 的 injection-trajectory rescue，可能改變 family partition
+與 Matrix content。
+
 `local_validation_artifacts/` 是 gitignored，所以新 worktree 不會自動帶到
 accepted input。開跑前先 `Test-Path`；缺了就從既有 v2 Discovery 目錄複製，
 不要退回 `accepted_p8b`。
@@ -475,6 +484,8 @@ timing heartbeat`:
   --raw-dir $env:XIC_RAW_ROOT `
   --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
   --output-dir <task-specific-output-dir> `
+  --sample-info <sample-info.csv> `
+  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
   --expected-sample-count 85 `
   --output-level validation-minimal `
   --backfill-scope production-equivalent `
@@ -537,6 +548,8 @@ settings to the single Owner Backfill/Matrix transaction:
   --raw-dir $env:XIC_RAW_ROOT `
   --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
   --output-dir <task-specific-output-dir> `
+  --sample-info <sample-info.csv> `
+  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
   --expected-sample-count 85 `
   --output-level validation-minimal `
   --backfill-scope production-equivalent `
@@ -598,6 +611,8 @@ candidate CSV rows or opening RAW files:
   --raw-dir $env:XIC_RAW_ROOT `
   --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
   --output-dir <task-specific-output-dir> `
+  --sample-info <sample-info.csv> `
+  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
   --expected-sample-count 85 `
   --output-level validation-minimal `
   --backfill-scope production-equivalent `

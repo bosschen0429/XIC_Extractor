@@ -687,7 +687,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "instrument_qc_sample_metadata.tsv derived from the method .docx). "
             "When given, final matrix sample columns are ordered earliest- to "
             "latest-injected; samples not listed keep their order at the end. "
-            "Reorders columns only; values are unchanged."
+            "The order also participates in Alignment trajectory rescue and "
+            "can change family partitioning and Matrix content."
         ),
     )
     parser.add_argument(
