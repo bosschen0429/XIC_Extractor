@@ -12,7 +12,7 @@ import io
 import json
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import InitVar, dataclass
 from pathlib import Path
@@ -1268,22 +1268,72 @@ def build_owner_backfill_peak_fact_provenance_batch_from_rows(
     )
 
 
+_PROVENANCE_ROWS_PER_CHUNK = 2048
+_PROVENANCE_VERIFY_BLOCK_BYTES = 1 << 20
+
+
 def write_owner_backfill_peak_fact_provenance_tsv(
     path: Path,
     batch: OwnerBackfillPeakFactProvenanceBatch,
 ) -> Path:
-    payload = render_owner_backfill_peak_fact_provenance_tsv(batch)
+    # One provenance row per Backfill request, so this artifact scales with the
+    # request population: an 85-sample full-audit batch renders to several GB.
+    # Rendering it into one payload and then reading the whole temporary file
+    # back to compare held three copies of the artifact in the Alignment parent
+    # at once.  Stream the same bytes instead and verify the landed file by
+    # digest, so peak memory is one chunk rather than one artifact.
+    if not isinstance(batch, OwnerBackfillPeakFactProvenanceBatch):
+        raise TypeError("batch must be a typed provenance batch")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     try:
-        temporary.write_bytes(payload)
-        if temporary.read_bytes() != payload:
+        expected = hashlib.sha256()
+        expected_size = 0
+        with temporary.open("wb") as handle:
+            for chunk in _iter_owner_backfill_peak_fact_provenance_chunks(batch):
+                handle.write(chunk)
+                expected.update(chunk)
+                expected_size += len(chunk)
+        landed = hashlib.sha256()
+        landed_size = 0
+        with temporary.open("rb") as handle:
+            for block in iter(lambda: handle.read(_PROVENANCE_VERIFY_BLOCK_BYTES), b""):
+                landed.update(block)
+                landed_size += len(block)
+        if landed_size != expected_size or landed.digest() != expected.digest():
             raise OSError("provenance temporary write verification failed")
         temporary.replace(path)
         return path
     finally:
         with suppress(OSError):
             temporary.unlink(missing_ok=True)
+
+
+def _iter_owner_backfill_peak_fact_provenance_chunks(
+    batch: OwnerBackfillPeakFactProvenanceBatch,
+) -> Iterator[bytes]:
+    """Yield exactly the bytes render_...() returns, in row-aligned chunks."""
+
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
+        delimiter="\t",
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    pending = 0
+    for row in batch.rows:
+        writer.writerow(_row_projection(row))
+        pending += 1
+        if pending >= _PROVENANCE_ROWS_PER_CHUNK:
+            yield buffer.getvalue().encode("utf-8")
+            buffer.seek(0)
+            buffer.truncate(0)
+            pending = 0
+    tail = buffer.getvalue()
+    if tail:
+        yield tail.encode("utf-8")
 
 
 def render_owner_backfill_peak_fact_provenance_tsv(

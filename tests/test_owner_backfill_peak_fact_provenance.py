@@ -27,6 +27,7 @@ from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillPeakFactObservation as LiveOwnerBackfillPeakFactObservation,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    _PROVENANCE_ROWS_PER_CHUNK,
     OWNER_BACKFILL_AUTHORITY_CELL_FIELDS,
     OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
     OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
@@ -34,7 +35,9 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
     OwnerBackfillCellProjectionV2,
     OwnerBackfillPeakFactObservation,
+    OwnerBackfillPeakFactProvenanceBatch,
     OwnerBackfillPeakFactStageProjection,
+    _iter_owner_backfill_peak_fact_provenance_chunks,
     build_owner_backfill_peak_fact_provenance_batch,
     compose_owner_backfill_peak_fact_provenance,
     owner_backfill_authority_cell_projection,
@@ -42,6 +45,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     owner_backfill_cell_projection,
     owner_backfill_peak_fact_stage_projection_from_observation,
     read_owner_backfill_peak_fact_provenance_tsv,
+    render_owner_backfill_peak_fact_provenance_tsv,
     selected_integration_authority_projection,
     write_owner_backfill_peak_fact_provenance_tsv,
 )
@@ -261,14 +265,17 @@ def test_standalone_writer_cleans_its_temp_on_verification_failure(
 ) -> None:
     path = tmp_path / "standalone.tsv"
     temporary = tmp_path / ".standalone.tsv.tmp"
-    original_read_bytes = Path.read_bytes
+    original_open = Path.open
 
-    def fail_temp_verification(candidate: Path) -> bytes:
-        if candidate == temporary:
+    def fail_temp_verification(candidate: Path, *args: object, **kwargs: object):
+        # The writer streams the artifact out, then reopens the temp file to
+        # verify what landed.  Fail that read-back leg only.
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if candidate == temporary and "r" in str(mode):
             raise OSError("injected temp verification failure")
-        return original_read_bytes(candidate)
+        return original_open(candidate, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(Path, "read_bytes", fail_temp_verification)
+    monkeypatch.setattr(Path, "open", fail_temp_verification)
 
     with pytest.raises(OSError, match="injected temp verification failure"):
         write_owner_backfill_peak_fact_provenance_tsv(
@@ -1199,3 +1206,94 @@ def _changed_value(value: object) -> object:
             return (*value, 1)
         return (*value, "changed")
     raise AssertionError(type(value))
+
+
+def test_provenance_writer_streams_bytes_identical_to_single_shot_render(
+    tmp_path: Path,
+) -> None:
+    """The streaming writer must produce exactly render_...()'s bytes.
+
+    One provenance row per Backfill request means an 85-sample full-audit batch
+    renders to several GB, so the writer streams instead of holding the whole
+    artifact.  This pins the streamed bytes to the single-shot rendering across
+    several chunk boundaries.
+    """
+
+    live = _live_available_inputs(tmp_path)
+    base = build_owner_backfill_peak_fact_provenance_batch(
+        (OwnerBackfillPeakFactObservation(live.stage, live.evaluation),),
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    profile_row, physical_row = base.rows[0], base.rows[1]
+    row_count = _PROVENANCE_ROWS_PER_CHUNK * 2 + 7
+    batch = OwnerBackfillPeakFactProvenanceBatch(
+        rows=(
+            profile_row,
+            *(
+                replace(
+                    physical_row,
+                    work_unit_key=f"{physical_row.work_unit_key}:{index}",
+                )
+                for index in range(row_count)
+            ),
+        )
+    )
+
+    expected = render_owner_backfill_peak_fact_provenance_tsv(batch)
+    chunks = list(_iter_owner_backfill_peak_fact_provenance_chunks(batch))
+
+    assert len(chunks) > 2, "batch must cross several chunk boundaries"
+    assert b"".join(chunks) == expected
+    assert max(len(chunk) for chunk in chunks) < len(expected)
+
+    path = write_owner_backfill_peak_fact_provenance_tsv(tmp_path / "big.tsv", batch)
+
+    assert path.read_bytes() == expected
+    # header + the run_profile row + every physical_question row
+    assert path.read_bytes().count(b"\n") == row_count + 2
+    assert not (tmp_path / ".big.tsv.tmp").exists()
+
+
+def test_provenance_writer_detects_a_temp_file_that_does_not_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The read-back leg must actually compare, not just re-read.
+
+    Nothing else pins the comparison itself: the temp-cleanup test injects an
+    OSError, so it stays green even if the verification branch is removed.
+    """
+
+    live = _live_available_inputs(tmp_path)
+    batch = build_owner_backfill_peak_fact_provenance_batch(
+        (OwnerBackfillPeakFactObservation(live.stage, live.evaluation),),
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    path = tmp_path / "corrupt.tsv"
+    temporary = tmp_path / ".corrupt.tsv.tmp"
+    original_open = Path.open
+
+    def corrupting_open(candidate: Path, *args: object, **kwargs: object):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        handle = original_open(candidate, *args, **kwargs)  # type: ignore[arg-type]
+        if candidate == temporary and "r" in str(mode):
+            with handle:
+                landed = handle.read()
+            return io.BytesIO(landed[:-1])
+        return handle
+
+    monkeypatch.setattr(Path, "open", corrupting_open)
+
+    with pytest.raises(OSError, match="verification failed"):
+        write_owner_backfill_peak_fact_provenance_tsv(path, batch)
+
+    assert not path.exists()
+    assert not temporary.exists()
+
+
+def test_provenance_writer_rejects_a_batch_of_the_wrong_type(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="typed provenance batch"):
+        write_owner_backfill_peak_fact_provenance_tsv(
+            tmp_path / "bad.tsv",
+            cast(OwnerBackfillPeakFactProvenanceBatch, object()),
+        )
