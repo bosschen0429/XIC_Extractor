@@ -884,6 +884,7 @@ def run_alignment(
                 ),
                 sample_order=matrix_sample_order,
                 signal_processing_profile=signal_processing_profile,
+                audit_evidence_mode=resolved_audit_evidence_mode,
             )
         else:
             peak_fact_provenance = _owner_backfill_prepared_peak_fact_provenance(
@@ -892,6 +893,7 @@ def run_alignment(
                 alignment_config=alignment_config,
                 production_decisions=production_decisions,
                 signal_processing_profile=signal_processing_profile,
+                audit_evidence_mode=resolved_audit_evidence_mode,
             )
         early_loser_shadow_report: EarlyLoserShadowReport | None = None
         if early_loser_shadow_proposal is not None:
@@ -1140,6 +1142,7 @@ def _owner_backfill_peak_fact_provenance(
     feature_order: tuple[str, ...],
     sample_order: tuple[str, ...],
     signal_processing_profile: SignalProcessingProfile,
+    audit_evidence_mode: str,
 ):
     feature_rank = {feature_id: index for index, feature_id in enumerate(feature_order)}
     sample_rank = {sample_stem: index for index, sample_stem in enumerate(sample_order)}
@@ -1165,6 +1168,7 @@ def _owner_backfill_peak_fact_provenance(
         alignment_config=alignment_config,
         production_decisions=production_decisions,
         signal_processing_profile=signal_processing_profile,
+        audit_evidence_mode=audit_evidence_mode,
     )
 
 
@@ -1175,6 +1179,7 @@ def _owner_backfill_prepared_peak_fact_provenance(
     alignment_config: AlignmentConfig,
     production_decisions: ProductionDecisionSet,
     signal_processing_profile: SignalProcessingProfile,
+    audit_evidence_mode: str,
 ):
     final_cells: dict[tuple[str, str, str], AlignedCell] = {}
     rescued_cells_by_integration: dict[tuple[str, str], list[AlignedCell]] = {}
@@ -1307,8 +1312,21 @@ def _owner_backfill_prepared_peak_fact_provenance(
             "final written rescued cells require exact provenance coverage; "
             f"missing={missing!r}; unexpected={unexpected!r}"
         )
+    # One physical_question row per Backfill request, but only the rows a
+    # cell_projection selects carry a written Matrix value; 8RAW observed 853 of
+    # 43,126 (1.98%).  The unselected remainder is audit evidence, so it follows
+    # audit_evidence_mode like every other heavy audit artifact instead of being
+    # emitted unconditionally at every output level.
+    physical_rows = tuple(item.physical_row for item in prepared)
+    if audit_evidence_mode == "none":
+        selected_work_unit_keys = {
+            projection.selected_work_unit_key for projection in cell_projections
+        }
+        physical_rows = tuple(
+            row for row in physical_rows if row.work_unit_key in selected_work_unit_keys
+        )
     return build_owner_backfill_peak_fact_provenance_batch_from_rows(
-        tuple(item.physical_row for item in prepared),
+        physical_rows,
         profile=signal_processing_profile,
         cell_projections=cell_projections,
     )
