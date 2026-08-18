@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -10,6 +10,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 @dataclass(frozen=True)
@@ -390,3 +391,77 @@ def test_adjacent_hard_gate_precedence_edges(
 
     assert edge.decision == "blocked_edge"
     assert edge.failure_reason == expected_reason
+
+
+def _resolved_owner(
+    sample_stem: str,
+    *,
+    snr: float,
+    evidence_score: int = 18,
+    seed_event_count: int = 2,
+    owner_apex_rt: float = 10.00,
+) -> SampleLocalMS1Owner:
+    """An owner carrying the peak Alignment actually resolved for it."""
+    owner = _owner(
+        sample_stem,
+        evidence_score=evidence_score,
+        seed_event_count=seed_event_count,
+        owner_apex_rt=owner_apex_rt,
+    )
+    return replace(
+        owner,
+        selected_integration=IntegrationResult(
+            rt_left_min=owner_apex_rt - 0.05,
+            rt_apex_min=owner_apex_rt,
+            rt_right_min=owner_apex_rt + 0.05,
+            raw_apex_rt_min=owner_apex_rt,
+            rt_width_min=0.1,
+            height_raw=snr * 10.0,
+            height_smoothed=snr * 10.0,
+            area_raw_counts_seconds=1000.0,
+            baseline_residual_mad=10.0,
+        ),
+    )
+
+
+def test_resolved_peak_snr_admits_owners_discovery_scored_low() -> None:
+    edge = evaluate_owner_edge(
+        _resolved_owner("s1", snr=50.0),
+        _resolved_owner("s2", snr=50.0, owner_apex_rt=10.10),
+        config=AlignmentConfig(),
+    )
+
+    assert edge.seed_support_level == "strong"
+    assert edge.decision == "strong_edge"
+
+
+def test_resolved_peak_snr_between_lod_and_loq_is_moderate() -> None:
+    edge = evaluate_owner_edge(
+        _resolved_owner("s1", snr=5.0),
+        _resolved_owner("s2", snr=5.0, owner_apex_rt=10.10),
+        config=AlignmentConfig(),
+    )
+
+    assert edge.seed_support_level == "moderate"
+
+
+def test_resolved_peak_below_detection_limit_stays_weak() -> None:
+    edge = evaluate_owner_edge(
+        _resolved_owner("s1", snr=50.0),
+        _resolved_owner("s2", snr=1.5, owner_apex_rt=10.10),
+        config=AlignmentConfig(),
+    )
+
+    assert edge.seed_support_level == "weak"
+    assert edge.decision == "weak_edge"
+
+
+def test_owner_without_baseline_residual_keeps_discovery_rating() -> None:
+    edge = evaluate_owner_edge(
+        _owner("s1", evidence_score=18),
+        _owner("s2", evidence_score=18, owner_apex_rt=10.10),
+        config=AlignmentConfig(),
+    )
+
+    assert edge.seed_support_level == "weak"
+    assert edge.decision == "weak_edge"
