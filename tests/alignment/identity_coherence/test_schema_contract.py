@@ -129,6 +129,8 @@ FORBIDDEN_OUTPUT_ABSOLUTE_IMPORT_PREFIXES = (
     "xic_extractor.raw_reader",
     "xic_extractor.output",
     "xic_extractor.gui",
+    # The root-level identity_coherence_* shims were deleted; keep them
+    # forbidden so the flat spelling cannot come back as an import target.
     "xic_extractor.alignment.identity_coherence_adapter",
     "xic_extractor.alignment.identity_coherence_source_mapping",
     "xic_extractor.alignment.identity_coherence_trace_retrieval",
@@ -220,8 +222,14 @@ def test_identity_coherence_domain_does_not_import_inline_adapter() -> None:
 
 def test_inline_adapter_does_not_modify_raw_or_backfill_modules() -> None:
     root = Path(__file__).resolve().parents[3]
+    # The flat identity_coherence_adapter.py shim is gone; hold the invariant
+    # on the module that actually carries the adapter behaviour.
     adapter_text = (
-        root / "xic_extractor" / "alignment" / "identity_coherence_adapter.py"
+        root
+        / "xic_extractor"
+        / "alignment"
+        / "identity_coherence"
+        / "adapter.py"
     ).read_text(encoding="utf-8")
     forbidden = (
         "from xic_extractor.raw_reader import",

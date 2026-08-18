@@ -3,14 +3,6 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from xic_extractor import peak_scoring
-from xic_extractor.peak_detection import (
-    candidate_scoring,
-    scoring_cwt_support,
-    scoring_metrics,
-    scoring_quality,
-    scoring_reason,
-)
 from xic_extractor.peak_detection.candidate_scoring import (
     score_candidate,
 )
@@ -45,69 +37,6 @@ from xic_extractor.signal_processing import PeakCandidate, PeakResult
 )
 def test_confidence_from_total(total: int, expected: Confidence) -> None:
     assert confidence_from_total(total) == expected
-
-
-def test_peak_scoring_public_import_surface_is_complete() -> None:
-    expected_names = [
-        "Confidence",
-        "ScoredCandidate",
-        "ScoringContext",
-        "build_evidence_reason",
-        "build_reason",
-        "confidence_from_total",
-        "local_sn_severity",
-        "nl_support_severity",
-        "noise_shape_severity",
-        "peak_width_severity",
-        "rt_centrality_severity",
-        "rt_prior_severity",
-        "score_breakdown_fields",
-        "score_candidate",
-        "select_candidate_with_confidence",
-        "symmetry_severity",
-        "candidate_quality_penalty",
-        "candidate_selection_quality_penalty",
-        "compute_local_sn_cache",
-        "hard_quality_flags",
-    ]
-
-    for name in expected_names:
-        assert hasattr(peak_scoring, name), name
-
-
-def test_peak_scoring_reexports_successor_selection_models() -> None:
-    assert peak_scoring.Confidence is Confidence
-    assert peak_scoring.ScoredCandidate is ScoredCandidate
-    assert peak_scoring.ScoringContext is ScoringContext
-    assert peak_scoring.score_candidate is candidate_scoring.score_candidate
-    assert peak_scoring.confidence_from_total is confidence_from_total
-    assert peak_scoring.select_candidate_with_confidence is (
-        select_candidate_with_confidence
-    )
-    assert peak_scoring.candidate_quality_penalty is (
-        scoring_quality.candidate_quality_penalty
-    )
-    assert peak_scoring.candidate_selection_quality_penalty is (
-        scoring_quality.candidate_selection_quality_penalty
-    )
-    assert peak_scoring.hard_quality_flags is scoring_quality.hard_quality_flags
-    assert peak_scoring.build_evidence_reason is scoring_reason.build_evidence_reason
-    assert peak_scoring.build_reason is scoring_reason.build_reason
-    assert peak_scoring.score_breakdown_fields is scoring_reason.score_breakdown_fields
-    assert peak_scoring.compute_local_sn_cache is scoring_metrics.compute_local_sn_cache
-    assert peak_scoring.local_sn_severity is scoring_metrics.local_sn_severity
-    assert peak_scoring.nl_support_severity is scoring_metrics.nl_support_severity
-    assert peak_scoring.noise_shape_severity is scoring_metrics.noise_shape_severity
-    assert peak_scoring.peak_width_severity is scoring_metrics.peak_width_severity
-    assert (
-        peak_scoring.rt_centrality_severity
-        is scoring_metrics.rt_centrality_severity
-    )
-    assert peak_scoring.rt_prior_severity is scoring_metrics.rt_prior_severity
-    assert peak_scoring.symmetry_severity is scoring_metrics.symmetry_severity
-    assert peak_scoring._has_same_apex_cwt_support is (
-        scoring_cwt_support.has_same_apex_cwt_support
-    )
 
 
 def _make_candidate(apex_rt: float, apex_intensity: float) -> PeakCandidate:
