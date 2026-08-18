@@ -129,7 +129,7 @@ def mint_owner_backfill_runtime_feature(
     owner_eligibility = tuple(
         OwnerBackfillOwnerEligibility(
             sample_stem=cast(str, getattr(owner, "sample_stem", None)),
-            owner_area=_normalized_owner_area(getattr(owner, "owner_area", None)),
+            owner_area=_owner_backfill_area(owner),
         )
         for owner in _full_feature_owners(feature)
     )
@@ -215,7 +215,7 @@ def backfill_runtime_owner_eligibility(
     return tuple(
         OwnerBackfillOwnerEligibility(
             sample_stem=cast(str, getattr(owner, "sample_stem", None)),
-            owner_area=_normalized_owner_area(getattr(owner, "owner_area", None)),
+            owner_area=_owner_backfill_area(owner),
         )
         for owner in _full_feature_owners(feature)
     )
@@ -424,6 +424,12 @@ def _validated_owner_area(value: object, field: str) -> float | None:
     if normalized is None:
         raise ValueError(f"{field} must be None or finite and positive")
     return normalized
+
+
+def _owner_backfill_area(owner: object) -> float | None:
+    if not bool(getattr(owner, "quantification_eligible", True)):
+        return None
+    return _normalized_owner_area(getattr(owner, "owner_area", None))
 
 
 def _normalized_owner_area(value: object) -> float | None:

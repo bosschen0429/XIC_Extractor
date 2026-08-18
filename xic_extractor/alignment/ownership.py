@@ -80,6 +80,8 @@ class _ResolvedCandidate:
     height: float
     region_audit: PeakRegionAuditSummary | None = None
     selected_integration: IntegrationResult | None = None
+    quantification_eligible: bool = True
+    quantification_exclusion_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -164,6 +166,16 @@ def build_sample_local_owners_from_discovery_bindings(
                     area=integration.area_raw_counts_seconds,
                     height=integration.height_raw,
                     selected_integration=integration,
+                    quantification_eligible=_quantification_eligible(
+                        integration.rt_apex_min,
+                        integration.rt_left_min,
+                        integration.rt_right_min,
+                    ),
+                    quantification_exclusion_reason=_quantification_exclusion_reason(
+                        integration.rt_apex_min,
+                        integration.rt_left_min,
+                        integration.rt_right_min,
+                    ),
                 ),
                 unresolved=None,
             )
@@ -336,6 +348,16 @@ def _resolve_candidate(
             height=peak.intensity,
             region_audit=peak.region_audit,
             selected_integration=peak.selected_integration,
+            quantification_eligible=_quantification_eligible(
+                peak.rt,
+                peak.peak_start,
+                peak.peak_end,
+            ),
+            quantification_exclusion_reason=_quantification_exclusion_reason(
+                peak.rt,
+                peak.peak_start,
+                peak.peak_end,
+            ),
         ),
         unresolved=None,
     )
@@ -375,6 +397,16 @@ def _resolve_candidate_trace(
             height=peak.intensity,
             region_audit=peak.region_audit,
             selected_integration=peak.selected_integration,
+            quantification_eligible=_quantification_eligible(
+                peak.rt,
+                peak.peak_start,
+                peak.peak_end,
+            ),
+            quantification_exclusion_reason=_quantification_exclusion_reason(
+                peak.rt,
+                peak.peak_start,
+                peak.peak_end,
+            ),
         ),
         unresolved=None,
     )
@@ -493,6 +525,16 @@ def _unresolved_outcome(candidate: Any, reason: str) -> _ResolutionOutcome:
             reason,
         ),
     )
+
+
+def _quantification_eligible(apex: float, left: float, right: float) -> bool:
+    return left < apex < right
+
+
+def _quantification_exclusion_reason(apex: float, left: float, right: float) -> str:
+    if _quantification_eligible(apex, left, right):
+        return ""
+    return "owner_apex_on_integration_boundary"
 
 
 def _emit_region_audit_for_candidate(
@@ -650,6 +692,10 @@ def _owners_for_sample(
                 assignment_reason="owner_exact_apex_match",
                 region_audit=primary.region_audit,
                 selected_integration=primary.selected_integration,
+                quantification_eligible=primary.quantification_eligible,
+                quantification_exclusion_reason=(
+                    primary.quantification_exclusion_reason
+                ),
             ),
         )
         assignments.append(

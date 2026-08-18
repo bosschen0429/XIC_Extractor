@@ -25,6 +25,7 @@ def median_positive_owner_area(owners: Iterable[object]) -> float | None:
     areas = [
         area
         for owner in owners
+        if bool(getattr(owner, "quantification_eligible", True))
         for area in (positive_finite(getattr(owner, "owner_area", None)),)
         if area is not None
     ]

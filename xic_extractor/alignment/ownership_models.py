@@ -40,6 +40,8 @@ class SampleLocalMS1Owner:
     assignment_reason: str
     region_audit: PeakRegionAuditSummary | None = None
     selected_integration: IntegrationResult | None = None
+    quantification_eligible: bool = True
+    quantification_exclusion_reason: str = ""
 
     @property
     def all_events(self) -> tuple[IdentityEvent, ...]:

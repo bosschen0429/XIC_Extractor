@@ -13,6 +13,7 @@ from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
 )
+from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
@@ -240,6 +241,56 @@ def test_compact_runtime_projection_preserves_unavailable_owner_area_parity(
     assert _request_plan_projection(
         compact_plan.requests_for_sample("sample-b")
     ) == _request_plan_projection(full_plan.requests_for_sample("sample-b"))
+
+
+def test_compact_runtime_projection_excludes_censored_owner_area() -> None:
+    source_feature = replace(
+        _feature(),
+        owners=(
+            replace(
+                _owner("sample-a", "edge"),
+                owner_area=1.0,
+                quantification_eligible=False,
+                quantification_exclusion_reason=(
+                    "owner_apex_on_integration_boundary"
+                ),
+            ),
+            replace(_owner("sample-b", "normal"), owner_area=1000.0),
+        ),
+        confirm_local_owners_with_backfill=True,
+    )
+
+    projection = mint_owner_backfill_runtime_feature(source_feature)
+
+    assert projection.owner_eligibility == (
+        OwnerBackfillOwnerEligibility("sample-a", None),
+        OwnerBackfillOwnerEligibility("sample-b", 1000.0),
+    )
+
+
+def test_censored_owner_does_not_become_automatic_backfill_target() -> None:
+    feature = replace(
+        _feature(),
+        owners=(
+            replace(
+                _owner("sample-a", "edge"),
+                owner_area=1.0,
+                quantification_eligible=False,
+                quantification_exclusion_reason=(
+                    "owner_apex_on_integration_boundary"
+                ),
+            ),
+            replace(_owner("sample-b", "normal"), owner_area=1000.0),
+        ),
+        confirm_local_owners_with_backfill=True,
+    )
+
+    assert backfill_request_sample_stems(
+        feature,
+        sample_order=("sample-a", "sample-b", "sample-c"),
+        raw_sample_stems=frozenset({"sample-a", "sample-b", "sample-c"}),
+        alignment_config=AlignmentConfig(),
+    ) == ("sample-c",)
 
 
 def test_full_feature_missing_owners_preserves_attribute_error_sentinel() -> None:

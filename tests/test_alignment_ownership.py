@@ -32,6 +32,7 @@ def test_same_sample_same_resolved_peak_becomes_one_owner():
     assert owner.primary_identity_event.candidate_id == "s1#6095"
     assert [event.candidate_id for event in owner.supporting_events] == ["s1#6096"]
     assert owner.assignment_reason == "owner_exact_apex_match"
+    assert owner.quantification_eligible is True
     assert [(a.candidate_id, a.assignment_status) for a in result.assignments] == [
         ("s1#6095", "primary"),
         ("s1#6096", "supporting"),
@@ -461,6 +462,44 @@ def test_sample_local_owner_region_audit_honors_candidate_allowlist() -> None:
 
     assert len(result.owners) == 1
     assert result.owners[0].region_audit is None
+
+
+def test_endpoint_apex_owner_is_retained_but_not_quantification_eligible() -> None:
+    result = build_sample_local_owners(
+        (_candidate("s1#edge-apex", seed_rt=8.0),),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([7.8, 7.9, 8.0, 8.1, 8.2, 8.3], dtype=float),
+                intensity=np.array([100.0, 80.0, 50.0, 20.0, 10.0, 8.0]),
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+    )
+
+    assert len(result.owners) == 1
+    owner = result.owners[0]
+    assert owner.quantification_eligible is False
+    assert owner.quantification_exclusion_reason == (
+        "owner_apex_on_integration_boundary"
+    )
+
+
+def test_right_endpoint_apex_owner_is_not_quantification_eligible() -> None:
+    result = build_sample_local_owners(
+        (_candidate("s1#right-edge", seed_rt=8.0),),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([7.8, 7.9, 8.0, 8.1, 8.2, 8.3], dtype=float),
+                intensity=np.array([8.0, 10.0, 20.0, 50.0, 80.0, 100.0]),
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+    )
+
+    assert len(result.owners) == 1
+    assert result.owners[0].quantification_eligible is False
 
 
 def test_custom_peak_resolver_without_region_audit_remains_supported() -> None:

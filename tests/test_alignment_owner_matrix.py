@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from tests.test_alignment_owner_backfill import _feature
 from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment.matrix import AlignedCell
+from xic_extractor.alignment.owner_area import median_owner_area
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
 from xic_extractor.alignment.owner_matrix import (
     ambiguous_records_by_sample,
@@ -86,6 +87,47 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
     assert by_sample["sample-d"].source_raw_file is None
     assert matrix.clusters == (feature,)
     assert matrix.sample_order == ("sample-a", "sample-b", "sample-c", "sample-d")
+
+
+def test_owner_matrix_censors_endpoint_apex_owner_without_backfill_request() -> None:
+    owner = replace(
+        _owner("sample-a", "edge"),
+        quantification_eligible=False,
+        quantification_exclusion_reason="owner_apex_on_integration_boundary",
+    )
+    feature = replace(_feature(), owners=(owner,))
+
+    matrix = build_owner_alignment_matrix(
+        (feature,),
+        sample_order=("sample-a",),
+        ambiguous_by_sample={},
+        rescued_cells=(),
+    )
+
+    cell = matrix.cells[0]
+    assert cell.status == "unchecked"
+    assert cell.area is None
+    assert cell.matrix_area is None
+    assert cell.selected_integration is None
+    assert cell.trace_quality == "owner_apex_on_integration_boundary"
+    assert cell.gap_fill_reason == "owner_quantification_excluded"
+    assert cell.missing_observation_state == "missing_unchecked"
+
+
+def test_owner_area_median_ignores_censored_owner() -> None:
+    feature = replace(
+        _feature(),
+        owners=(
+            replace(
+                _owner("sample-a", "edge"),
+                owner_area=1.0,
+                quantification_eligible=False,
+            ),
+            replace(_owner("sample-b", "normal"), owner_area=1000.0),
+        ),
+    )
+
+    assert median_owner_area(feature) == 1000.0
 
 
 def test_owner_matrix_accepts_delivery_contract_feature_without_legacy_dto() -> None:

@@ -196,6 +196,34 @@ def _detected_cell(
     group_projection: GroupProjection,
 ) -> AlignedCell:
     event = owner.primary_identity_event
+    if not getattr(owner, "quantification_eligible", True):
+        exclusion_reason = (
+            getattr(owner, "quantification_exclusion_reason", "")
+            or "owner_quantification_excluded"
+        )
+        return AlignedCell(
+            sample_stem=owner.sample_stem,
+            cluster_id=feature.feature_family_id,
+            status="unchecked",
+            area=None,
+            apex_rt=owner.owner_apex_rt,
+            height=None,
+            peak_start_rt=owner.owner_peak_start_rt,
+            peak_end_rt=owner.owner_peak_end_rt,
+            rt_delta_sec=(owner.owner_apex_rt - feature.family_center_rt) * 60.0,
+            trace_quality=exclusion_reason,
+            scan_support_score=None,
+            source_candidate_id=event.candidate_id,
+            source_raw_file=None,
+            reason=f"local owner excluded from quantification: {exclusion_reason}",
+            selected_integration=None,
+            **delivery_cell_projection_from_group(
+                group_projection,
+                gap_fill_state="not_filled",
+                gap_fill_reason="owner_quantification_excluded",
+                missing_observation_state="missing_unchecked",
+            ),
+        )
     cell = AlignedCell(
         sample_stem=owner.sample_stem,
         cluster_id=feature.feature_family_id,
