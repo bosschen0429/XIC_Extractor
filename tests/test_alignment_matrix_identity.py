@@ -1331,3 +1331,80 @@ def _owner(
             ),
         ),
     )
+
+
+def _quantitation_owner(sample_stem: str, *, snr: float) -> SimpleNamespace:
+    return SimpleNamespace(
+        sample_stem=sample_stem,
+        selected_integration=IntegrationResult(
+            rt_left_min=8.45,
+            rt_apex_min=8.5,
+            rt_right_min=8.55,
+            raw_apex_rt_min=8.5,
+            rt_width_min=0.1,
+            height_raw=snr * 10.0,
+            height_smoothed=snr * 10.0,
+            area_raw_counts_seconds=1000.0,
+            baseline_residual_mad=10.0,
+        ),
+    )
+
+
+def _bounded_continuity_matrix(*, snr: float, evidence: str) -> AlignmentMatrix:
+    return _matrix(
+        _feature(
+            "FAM001",
+            evidence=evidence,
+            owners=(
+                _quantitation_owner("s1", snr=snr),
+                _quantitation_owner("s2", snr=snr),
+            ),
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 110.0),
+        ),
+    )
+
+
+def test_bounded_continuity_publishes_quantifiable_peaks() -> None:
+    decisions = build_matrix_identity_decisions(
+        _bounded_continuity_matrix(
+            snr=50.0,
+            evidence="owner_bounded_continuity;owner_count=2",
+        ),
+        AlignmentConfig(),
+    )
+
+    decision = decisions.row("FAM001")
+    assert decision.include_in_primary_matrix
+    assert decision.identity_decision == "production_family"
+
+
+def test_bounded_continuity_holds_peaks_below_quantitation_limit() -> None:
+    decisions = build_matrix_identity_decisions(
+        _bounded_continuity_matrix(
+            snr=4.0,
+            evidence="owner_bounded_continuity;owner_count=2",
+        ),
+        AlignmentConfig(),
+    )
+
+    decision = decisions.row("FAM001")
+    assert not decision.include_in_primary_matrix
+    assert decision.identity_decision == "provisional_discovery"
+    assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
+
+
+def test_quantitation_gate_does_not_reach_other_grouping_policies() -> None:
+    decisions = build_matrix_identity_decisions(
+        _bounded_continuity_matrix(
+            snr=4.0,
+            evidence="owner_full_batch_continuity;owner_count=2",
+        ),
+        AlignmentConfig(),
+    )
+
+    decision = decisions.row("FAM001")
+    assert decision.include_in_primary_matrix
+    assert decision.identity_reason != "bounded_continuity_below_quantitation_limit"

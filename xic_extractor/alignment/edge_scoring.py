@@ -296,6 +296,11 @@ def _min_owner_peak_snr(
 
 
 def _owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
+    return owner_peak_snr(owner)
+
+
+def owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
+    """Signal-to-noise of the peak Alignment resolved for this owner."""
     integration = owner.selected_integration
     if integration is None:
         return None
@@ -303,6 +308,12 @@ def _owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
     if residual is None or residual <= 0.0:
         return None
     return integration.height_raw / residual
+
+
+def owner_peak_meets_quantitation_limit(owner: SampleLocalMS1Owner) -> bool:
+    """Whether the resolved peak clears the quantitation-limit convention."""
+    snr = owner_peak_snr(owner)
+    return snr is not None and snr >= _QUANTITATION_LIMIT_SNR
 
 
 def _owner_quality(

@@ -73,6 +73,15 @@ contracts for review and downstream product decisions.
   whose integration recorded no baseline residual keeps the Discovery-score
   rating, so paths that do not measure a residual are unchanged. This changes
   the `seed_support_level` column in the edge evidence artifact.
+- An `owner_bounded_continuity` family reaches the primary matrix only when at
+  least two of its owners carry a resolved peak at or above the quantitation
+  limit. Bounded continuity admits a group on detection-grade evidence, which is
+  the right bar for deciding two peaks are the same entity and the wrong one for
+  publishing a quantity; a family that misses it stays `provisional_discovery`
+  with `bounded_continuity_below_quantitation_limit` and keeps its grouping, so
+  Backfill scope and family identity are unaffected. The gate reads the family
+  evidence, not the primary evidence token, because `promotion_policy` scopes
+  itself on that token; it does not apply to any other grouping policy.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional
