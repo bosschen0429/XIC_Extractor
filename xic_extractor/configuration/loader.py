@@ -11,10 +11,28 @@ from xic_extractor.configuration.settings import (
     _validate_settings,
     migrate_settings_dict,
 )
+from xic_extractor.configuration.target_identity import (
+    TargetListSnapshot,
+    mint_target_list_snapshot,
+)
 from xic_extractor.configuration.targets import _read_targets
 from xic_extractor.target_pair_rt_calibration import load_target_pair_rt_calibration
 
 LOGGER = logging.getLogger(__name__)
+
+
+def load_target_list_snapshot(
+    config_dir: Path,
+    *,
+    identity_namespace: str,
+) -> TargetListSnapshot:
+    """Load and owner-mint the exact target-list snapshot for one run."""
+
+    targets_path = _config_input_path(config_dir, "targets")
+    return mint_target_list_snapshot(
+        tuple(_read_targets(targets_path)),
+        identity_namespace=identity_namespace,
+    )
 
 
 def load_config(

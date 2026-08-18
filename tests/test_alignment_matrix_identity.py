@@ -65,6 +65,48 @@ def test_owner_complete_link_with_two_detected_cells_is_production_family() -> N
     assert decision.quantifiable_detected_count == 2
 
 
+def test_targeted_istd_trajectory_does_not_promote_one_detected_owner() -> None:
+    matrix = _matrix(
+        _feature(
+            "FAM001",
+            evidence="owner_targeted_istd_trajectory;owner_count=8",
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "rescued", 90.0, backfill_evidence=False),
+            _cell("s3", "FAM001", "rescued", 80.0, backfill_evidence=False),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is False
+    assert decision.identity_decision == "provisional_discovery"
+    assert decision.primary_evidence == "owner_targeted_istd_trajectory"
+    assert decision.identity_reason == "insufficient_detected_identity_support"
+
+
+def test_targeted_istd_trajectory_with_two_detected_uses_existing_multi_sample_policy(
+) -> None:
+    matrix = _matrix(
+        _feature(
+            "FAM001",
+            evidence="owner_targeted_istd_trajectory;owner_count=8",
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 90.0),
+            _cell("s3", "FAM001", "rescued", 80.0),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is True
+    assert decision.primary_evidence == "multi_sample_detected"
+    assert decision.identity_reason == "multi_sample_detected"
+
+
 def test_full_batch_continuity_uses_existing_multi_sample_identity_policy() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_full_batch_continuity;owner_count=3"),

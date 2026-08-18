@@ -361,6 +361,7 @@ def run_alignment(
             "or selected-families"
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
+    targeted_istd_anchor = getattr(drift_lookup, "istd_identity_anchor", None)
     recorder.record(
         "alignment.run_config",
         elapsed_sec=0.0,
@@ -383,6 +384,16 @@ def run_alignment(
             "emit_early_loser_shadow": emit_early_loser_shadow,
             "drift_prior_source": (
                 drift_lookup.source if drift_lookup is not None else "none"
+            ),
+            "targeted_istd_anchor_identity": getattr(
+                targeted_istd_anchor,
+                "target_config_identity",
+                "none",
+            ),
+            "targeted_istd_target_snapshot_id": getattr(
+                getattr(targeted_istd_anchor, "target_snapshot", None),
+                "snapshot_id",
+                "none",
             ),
         },
     )
@@ -451,6 +462,7 @@ def run_alignment(
             emit_alignment_backfill_candidate_audit
         ),
         emit_skipped_evidence_ledger=backfill_scope != "full-audit",
+        emit_target_snapshot_metadata=targeted_istd_anchor is not None,
         emit_provisional_matrix=emit_provisional_matrix,
         emit_early_loser_shadow=emit_early_loser_shadow,
     )
@@ -983,6 +995,16 @@ def run_alignment(
                     signal_processing_profile=signal_processing_profile,
                     owner_backfill_peak_fact_provenance_row_count=len(
                         peak_fact_provenance.rows
+                    ),
+                    targeted_istd_anchor_identity=getattr(
+                        targeted_istd_anchor,
+                        "target_config_identity",
+                        "",
+                    ),
+                    targeted_istd_target_snapshot_id=getattr(
+                        getattr(targeted_istd_anchor, "target_snapshot", None),
+                        "snapshot_id",
+                        "",
                     ),
                 ),
                 ownership=ownership,

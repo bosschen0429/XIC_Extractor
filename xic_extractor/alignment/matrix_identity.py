@@ -567,6 +567,16 @@ def _primary_evidence(
     )
     if evidence == "single_sample_local_owner":
         return "single_sample_local_owner"
+    if evidence.startswith("owner_targeted_istd_trajectory"):
+        # The targeted trajectory is a grouping-only reconciliation.  It may
+        # expose the same already-supported multi-sample path when two real
+        # owners are detected, but it can never turn one detected owner plus
+        # review/backfill cells into Matrix identity authority.
+        return (
+            "multi_sample_detected"
+            if q_detected >= 2
+            else "owner_targeted_istd_trajectory"
+        )
     if evidence.startswith("owner_complete_link"):
         return "owner_complete_link"
     if evidence.startswith("owner_identity"):

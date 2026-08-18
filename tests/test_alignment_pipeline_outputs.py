@@ -200,6 +200,20 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
 
 
+def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
+    tmp_path: Path,
+) -> None:
+    outputs = output_paths(
+        tmp_path,
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+        emit_target_snapshot_metadata=True,
+    )
+
+    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
+
+
 def test_writer_timing_observations_are_truthful_with_live_output(
     tmp_path: Path,
 ) -> None:

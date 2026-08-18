@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     DriftPriorSource,
@@ -227,6 +228,13 @@ class _GroupHardGateEnvelope:
     observed_loss_max: float
 
 
+@dataclass(frozen=True, slots=True)
+class _TargetedIstdFamilyView:
+    neutral_loss_tag: str
+    family_center_mz: float
+    family_center_rt: float
+
+
 def construct_cross_sample_peak_group_hypotheses(
     owners: tuple[SampleLocalMS1Owner, ...] | list[SampleLocalMS1Owner],
     *,
@@ -259,6 +267,7 @@ def construct_cross_sample_peak_group_hypotheses(
     full_batch_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
     injection_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
     bounded_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
+    targeted_istd_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
     if sample_universe is None:
         groups = _complete_link_groups(
             sorted(clean, key=_owner_sort_key),
@@ -294,6 +303,17 @@ def construct_cross_sample_peak_group_hypotheses(
             edge_cache=edge_cache,
             edge_evaluator=edge_evaluator,
         )
+        groups, targeted_istd_trajectory_owner_sets = (
+            _merge_targeted_istd_trajectory_groups(
+                groups,
+                injection_order=injection_order,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            )
+        )
     resolved_duplicate_owner_groups = (
         _resolve_duplicate_owner_groups(groups, config=config)
         if sample_universe is not None
@@ -321,6 +341,9 @@ def construct_cross_sample_peak_group_hypotheses(
                 owner_id_set in injection_trajectory_owner_sets
             ),
             bounded_continuity=(owner_id_set in bounded_continuity_owner_sets),
+            targeted_istd_trajectory=(
+                owner_id_set in targeted_istd_trajectory_owner_sets
+            ),
         )
         winner_index = resolved_duplicate_owner_groups.get(index)
         if winner_index is not None:
@@ -900,6 +923,179 @@ def _restore_sparse_complete_link_groups(
     )
 
 
+def _merge_targeted_istd_trajectory_groups(
+    groups: tuple[tuple[SampleLocalMS1Owner, ...], ...],
+    *,
+    injection_order: Mapping[str, int] | None,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> tuple[tuple[tuple[SampleLocalMS1Owner, ...], ...], frozenset[frozenset[str]]]:
+    """Merge only owner groups proven to be one configured ISTD trajectory.
+
+    This is still a CrossSamplePeakGroupHypothesis construction rule.  It uses
+    the existing target/workbook anchor only to nominate the configured DNA dR
+    lane; all-sample occupancy, all-pairs hard gates, and injection-order
+    continuity remain the grouping owner’s authority.  It never selects a
+    Matrix value or promotes a Backfill cell.
+    """
+
+    anchor = getattr(drift_lookup, "istd_identity_anchor", None)
+    if (
+        injection_order is None
+        or not isinstance(anchor, TargetedIstdIdentityAnchor)
+    ):
+        return groups, frozenset()
+
+    def target_label(group: tuple[SampleLocalMS1Owner, ...]) -> str | None:
+        if not group:
+            return None
+        view = _TargetedIstdFamilyView(
+            neutral_loss_tag=group[0].neutral_loss_tag,
+            family_center_mz=sum(owner.precursor_mz for owner in group) / len(group),
+            family_center_rt=sum(owner.owner_apex_rt for owner in group) / len(group),
+        )
+        target = anchor.matching_target(view)
+        if target is None or not all(
+            anchor.matches_observation(
+                target,
+                neutral_loss_tag=owner.neutral_loss_tag,
+                precursor_mz=owner.precursor_mz,
+                apex_rt=owner.owner_apex_rt,
+            )
+            for owner in group
+        ):
+            return None
+        label = getattr(target, "label", None)
+        return label if isinstance(label, str) and label else None
+
+    pending = [tuple(sorted(group, key=_owner_sort_key)) for group in groups]
+    merged_owner_sets: set[frozenset[str]] = set()
+    changed = True
+    while changed:
+        changed = False
+        candidate_edges: dict[int, set[int]] = {}
+        for left_index, left in enumerate(pending):
+            left_target = target_label(left)
+            if left_target is None:
+                continue
+            for right_index in range(left_index + 1, len(pending)):
+                right = pending[right_index]
+                if target_label(right) != left_target:
+                    continue
+                candidate = tuple(
+                    sorted((*left, *right), key=_owner_sort_key),
+                )
+                if not _targeted_istd_candidate_is_valid(
+                    candidate,
+                    injection_order=injection_order,
+                    config=config,
+                    drift_lookup=drift_lookup,
+                    edge_evidence_sink=edge_evidence_sink,
+                    edge_cache=edge_cache,
+                    edge_evaluator=edge_evaluator,
+                ):
+                    continue
+                candidate_edges.setdefault(left_index, set()).add(right_index)
+                candidate_edges.setdefault(right_index, set()).add(left_index)
+
+        components = _candidate_edge_components(candidate_edges)
+        for component in components:
+            if len(component) < 2:
+                continue
+            candidate = tuple(
+                sorted(
+                    (
+                        owner
+                        for index in component
+                        for owner in pending[index]
+                    ),
+                    key=_owner_sort_key,
+                )
+            )
+            # A connected component is merged only when the complete
+            # candidate itself is valid.  If two incompatible tracks share a
+            # locally compatible fragment, the component stays unresolved
+            # instead of inheriting list-order semantics.
+            if not _targeted_istd_candidate_is_valid(
+                candidate,
+                injection_order=injection_order,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ):
+                continue
+            selected = set(component)
+            first = min(selected)
+            pending[first] = candidate
+            pending = [
+                group
+                for index, group in enumerate(pending)
+                if index == first or index not in selected
+            ]
+            merged_owner_sets.add(
+                frozenset(owner.owner_id for owner in candidate),
+            )
+            changed = True
+            break
+    pending.sort(key=lambda group: _owner_sort_key(group[0]))
+    return tuple(pending), frozenset(merged_owner_sets)
+
+
+def _targeted_istd_candidate_is_valid(
+    candidate: tuple[SampleLocalMS1Owner, ...],
+    *,
+    injection_order: Mapping[str, int],
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> bool:
+    if len({owner.sample_stem for owner in candidate}) != len(candidate):
+        return False
+    return _merged_group_passes_hard_gates(
+        candidate,
+        config=config,
+        drift_lookup=drift_lookup,
+        edge_evidence_sink=edge_evidence_sink,
+        edge_cache=edge_cache,
+        edge_evaluator=edge_evaluator,
+    ) and _is_injection_trajectory(
+        candidate,
+        injection_order=injection_order,
+        config=config,
+        drift_lookup=drift_lookup,
+        edge_evidence_sink=edge_evidence_sink,
+        edge_cache=edge_cache,
+        edge_evaluator=edge_evaluator,
+    )
+
+
+def _candidate_edge_components(
+    edges: Mapping[int, set[int]],
+) -> tuple[tuple[int, ...], ...]:
+    components: list[tuple[int, ...]] = []
+    remaining = set(edges)
+    while remaining:
+        start = min(remaining)
+        component: set[int] = set()
+        frontier = [start]
+        while frontier:
+            index = frontier.pop()
+            if index in component:
+                continue
+            component.add(index)
+            frontier.extend(edges.get(index, set()) - component)
+        remaining -= component
+        components.append(tuple(sorted(component)))
+    return tuple(components)
+
+
 def _group_passes_bounded_continuity(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
@@ -1451,10 +1647,13 @@ def _group_evidence(
     full_batch_continuity: bool,
     injection_trajectory: bool,
     bounded_continuity: bool = False,
+    targeted_istd_trajectory: bool = False,
 ) -> str:
     if len(group) == 1:
         return "single_sample_local_owner"
-    if full_batch_continuity:
+    if targeted_istd_trajectory:
+        policy = "owner_targeted_istd_trajectory"
+    elif full_batch_continuity:
         policy = "owner_full_batch_continuity"
     elif injection_trajectory:
         policy = "owner_injection_trajectory"

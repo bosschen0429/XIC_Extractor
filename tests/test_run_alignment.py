@@ -1906,11 +1906,10 @@ def test_run_alignment_cli_builds_and_passes_drift_lookup(
     )
 
     assert code == 0
-    assert captured["drift_kwargs"] == {
-        "targeted_workbook": targeted_workbook.resolve(),
-        "sample_info": sample_info.resolve(),
-        "local_window": 40,
-    }
+    assert captured["drift_kwargs"]["targeted_workbook"] == targeted_workbook.resolve()
+    assert captured["drift_kwargs"]["sample_info"] == sample_info.resolve()
+    assert captured["drift_kwargs"]["local_window"] == 40
+    assert captured["drift_kwargs"]["target_snapshot"] is not None
     assert captured["run_kwargs"]["drift_lookup"] is drift_lookup
     assert captured["run_kwargs"]["raw_workers"] == 3
     assert captured["run_kwargs"]["raw_xic_batch_size"] == 16

@@ -26,6 +26,7 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 )
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.loader import load_target_list_snapshot
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -255,6 +256,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 targeted_workbook=targeted_istd_workbook,
                 sample_info=sample_info,
                 local_window=args.drift_local_window,
+                target_snapshot=load_target_list_snapshot(
+                    Path(__file__).resolve().parents[1] / "config",
+                    identity_namespace="alignment-targeted-istd",
+                ),
             )
             if sample_info is not None and targeted_istd_workbook is not None
             else None
@@ -660,12 +665,20 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--sample-info",
         type=Path,
-        help="Sample metadata CSV used with --targeted-istd-workbook for drift priors.",
+        help=(
+            "Sample metadata CSV used with --targeted-istd-workbook for drift "
+            "priors and bounded configured DNA dR ISTD trajectory grouping; "
+            "trajectory grouping also requires --sample-column-injection-order."
+        ),
     )
     parser.add_argument(
         "--targeted-istd-workbook",
         type=Path,
-        help="Targeted ISTD workbook used with --sample-info for drift priors.",
+        help=(
+            "Targeted ISTD workbook used with --sample-info for drift priors "
+            "and bounded configured DNA dR ISTD trajectory grouping; "
+            "trajectory grouping also requires --sample-column-injection-order."
+        ),
     )
     parser.add_argument(
         "--drift-local-window",

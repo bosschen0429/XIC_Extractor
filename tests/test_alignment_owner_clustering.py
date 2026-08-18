@@ -8,6 +8,10 @@ from xic_extractor.alignment.backfill_scope import (
     backfill_request_sample_stems,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import (
+    DriftEvidenceLookup,
+    build_targeted_istd_identity_anchor,
+)
 from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
 from xic_extractor.alignment.owner_clustering import (
     cluster_sample_local_owners,
@@ -20,6 +24,8 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
@@ -690,6 +696,196 @@ def test_owner_clustering_keeps_incomplete_merge_on_complete_link_partition() ->
         ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
     ]
     assert "owner_bounded_continuity" in hypotheses[0].evidence
+
+
+def test_targeted_istd_trajectory_merges_complete_link_fragments_at_group_owner(
+) -> None:
+    owners = tuple(
+        _owner(
+            f"sample-{index}",
+            f"o{index}",
+            apex_rt=8.0 + 0.8 * index,
+            neutral_loss_tag="DNA_dR",
+        )
+        for index in range(8)
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset({f"sample-{index}" for index in range(10)})
+    injection_order = {f"sample-{index}": index + 1 for index in range(8)}
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.sample_stem, right.sample_stem} == {
+            "sample-3",
+            "sample-4",
+        }:
+            return replace(
+                edge,
+                decision="weak_edge",
+                failure_reason="",
+                owner_quality="clean",
+                seed_support_level="moderate",
+                reason="weak: complete-link trajectory boundary",
+            )
+        return edge
+
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=20.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=(target.label,),
+    )
+    without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(points=()),
+        edge_evaluator=evaluator,
+    )
+    with_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert len(without_anchor) >= 2
+    assert len(with_anchor) == 1
+    assert "owner_targeted_istd_trajectory" in with_anchor[0].evidence
+    assert len(with_anchor[0].owners) == 8
+
+
+def test_targeted_istd_trajectory_keeps_same_sample_or_blocked_edge_separate() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=8.0, neutral_loss_tag="DNA_dR"),
+        _owner("sample-a", "a2", apex_rt=8.8, neutral_loss_tag="DNA_dR"),
+        _owner("sample-b", "b", apex_rt=9.6, neutral_loss_tag="DNA_dR"),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=(target.label,),
+    )
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) >= 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in hypotheses
+    )
+
+
+def test_targeted_istd_trajectory_keeps_crossing_partition_unresolved() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=8.0, neutral_loss_tag="DNA_dR"),
+        _owner("sample-b", "b", apex_rt=8.4, neutral_loss_tag="DNA_dR"),
+        _owner("sample-c", "c", apex_rt=8.8, neutral_loss_tag="DNA_dR"),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.sample_stem, right.sample_stem} == {"sample-b", "sample-c"}:
+            return replace(
+                edge,
+                decision="blocked_edge",
+                failure_reason="identity_conflict",
+                reason="blocked: crossing trajectory",
+            )
+        return replace(
+            edge,
+            decision="weak_edge",
+            failure_reason="",
+            owner_quality="clean",
+            seed_support_level="moderate",
+            reason="weak: crossing candidate",
+        )
+
+    merged, _ = peak_groups_module._merge_targeted_istd_trajectory_groups(
+        tuple((owner,) for owner in owners),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+        },
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        drift_lookup=DriftEvidenceLookup(points=(), istd_identity_anchor=anchor),
+        edge_evidence_sink=[],
+        edge_cache={},
+        edge_evaluator=evaluator,
+    )
+
+    assert [len(group) for group in merged] == [1, 1, 1]
 
 
 def test_owner_clustering_keeps_rt_discontinuity_separate() -> None:

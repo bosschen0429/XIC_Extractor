@@ -115,6 +115,7 @@ def output_paths(
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
     emit_skipped_evidence_ledger: bool = False,
+    emit_target_snapshot_metadata: bool = False,
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
@@ -206,7 +207,7 @@ def output_paths(
         ),
         run_metadata_json=(
             output_dir / "alignment_run_metadata.json"
-            if emit_skipped_evidence_ledger
+            if emit_skipped_evidence_ledger or emit_target_snapshot_metadata
             else None
         ),
         provisional_matrix_tsv=(
@@ -264,6 +265,8 @@ def alignment_metadata(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
     owner_backfill_peak_fact_provenance_row_count: int = 0,
+    targeted_istd_anchor_identity: str = "",
+    targeted_istd_target_snapshot_id: str = "",
 ) -> dict[str, str]:
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
@@ -275,7 +278,7 @@ def alignment_metadata(
         raise ValueError(
             "owner_backfill_peak_fact_provenance_row_count must be non-negative"
         )
-    return {
+    metadata = {
         "schema_version": "alignment-results-v3",
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),
@@ -328,6 +331,13 @@ def alignment_metadata(
             owner_backfill_peak_fact_provenance_row_count
         ),
     }
+    if targeted_istd_anchor_identity:
+        metadata["targeted_istd_anchor_identity"] = targeted_istd_anchor_identity
+    if targeted_istd_target_snapshot_id:
+        metadata["targeted_istd_target_snapshot_id"] = (
+            targeted_istd_target_snapshot_id
+        )
+    return metadata
 
 
 def write_outputs_atomic(

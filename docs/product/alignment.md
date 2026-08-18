@@ -90,6 +90,18 @@ contracts for review and downstream product decisions.
   boundaries are both interior and its primary Matrix area is valid; an
   endpoint or incomplete rescue is censored by the same rule. This is a
   quantification-authority guard, not a new peak-selection or Backfill route.
+- For the observed, configured DNA dR ISTD lane only, the existing Alignment
+  grouping owner may use an owner-minted targeted ISTD anchor from the current
+  run's target-list snapshot to reconcile
+  otherwise complete-link-fragmented owner groups. The combined owners must
+  match one observed target's configured m/z/RT envelope and dR loss, have
+  unique samples, pass all-pairs hard gates, and form a bounded injection-order
+  trajectory using the explicit `--sample-column-injection-order` mapping.
+  Without that mapping or typed snapshot the anchor is absent and the existing
+  drift-prior path remains unchanged. This is grouping evidence only:
+  it reduces fragmented family and Backfill request work, but it does not
+  promote a rescued cell, write a Matrix value, infer unknown-family chemical
+  identity, add a public knob, or create a second owner/control plane.
 - An `owner_bounded_continuity` family reaches the primary matrix only when at
   least two of its owners carry a resolved peak at or above the quantitation
   limit. Bounded continuity admits a group on detection-grade evidence, which is
