@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, field, replace
 from itertools import groupby
 from time import perf_counter
-from typing import Protocol
+from typing import Protocol, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -58,7 +58,6 @@ from xic_extractor.peak_detection.evidence_facts import (
     PreparedSignalResult,
     TraceWindowEvidenceFacts,
     evaluate_physical_peak,
-    mint_physical_trace_content_id,
     peak_trace_evidence,
     prepare_physical_signal,
     validate_bounded_physical_peak_evaluation,
@@ -77,6 +76,10 @@ from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 _RequestItem = OwnerBackfillRequestItem
+# One extraction chunk's prepared signals, keyed by the identity of the trace
+# object request equivalence fanned out.  The cache holds the trace itself so a
+# recycled id() can never alias a different trace.
+_ChunkPreparedSignalCache: TypeAlias = dict[int, tuple[XICTrace, PreparedSignalResult]]
 _RequestGroupKey = tuple[str, int | float, int | float]
 _OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN = object()
 
@@ -516,7 +519,6 @@ def build_owner_backfill_result(
     effective_emit_region_audit = emit_region_audit and audit_evidence_mode != "none"
     cells: list[AlignedCell] = []
     candidate_records: list[_OwnerBackfillCandidateRecord] = []
-    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
     request_reuse_observations: list[OwnerBackfillRequestReuseObservation] = []
     primary_validation_mode: OwnerBackfillValidationMode = (
         "prefilter" if validation_raw_sources is not None else "primary"
@@ -604,6 +606,7 @@ def build_owner_backfill_result(
             superwindow_span_factor=owner_backfill_superwindow_span_factor,
             equivalence_classes=equivalence_classes,
         ):
+            prepared_signal_cache = _chunk_prepared_signal_cache()
             for request_item, result in zip(chunk, traces, strict=True):
                 feature, requested_sample, request, preferred_rt = request_item
                 logical_request, request_identity = _logical_binding_for_result(result)
@@ -785,6 +788,7 @@ def build_owner_backfill_result(
                 superwindow_span_factor=owner_backfill_superwindow_span_factor,
                 equivalence_classes=validation_classes,
             ):
+                prepared_signal_cache = _chunk_prepared_signal_cache()
                 for request_item, result in zip(chunk, traces, strict=True):
                     feature, requested_sample, _request, preferred_rt = request_item
                     logical_request, request_identity = _logical_binding_for_result(
@@ -1507,6 +1511,12 @@ def _source_retention_time_for_scan(
     )
 
 
+def _chunk_prepared_signal_cache() -> _ChunkPreparedSignalCache:
+    """Start one extraction chunk with no carried-over prepared signals."""
+
+    return {}
+
+
 def _backfill_feature_sample_trace(
     feature: BackfillRuntimeFeature,
     sample_stem: str,
@@ -1518,7 +1528,7 @@ def _backfill_feature_sample_trace(
     maximum_query_delta_min: float,
     signal_processing_profile: SignalProcessingProfile | None,
     selection_subject_id: str,
-    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult],
+    prepared_signal_cache: _ChunkPreparedSignalCache,
     require_sealed_facts: bool = False,
     emit_region_audit: bool = False,
 ) -> _OwnerBackfillTraceEvaluation:
@@ -1732,21 +1742,26 @@ def _backfill_feature_sample_trace_canonical(
     emit_region_audit: bool,
     signal_processing_profile: SignalProcessingProfile,
     selection_subject_id: str,
-    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult],
+    prepared_signal_cache: _ChunkPreparedSignalCache,
 ) -> _OwnerBackfillTraceEvaluation:
     query_rt = feature.family_center_rt if preferred_rt is None else preferred_rt
     started = perf_counter()
-    trace_content_id = mint_physical_trace_content_id(trace.rt, trace.intensity)
-    prepared_cache_key = (trace_content_id, signal_processing_profile.profile_id)
-    prepared = prepared_signal_cache.get(prepared_cache_key)
+    # Request equivalence fans one extracted trace object out to every logical
+    # request in its class, so keying on that object reuses the prepared signal
+    # exactly where reuse is structural.  Keying on a pre-minted trace content id
+    # instead cost one full canonical hash per request to re-derive an identity
+    # the physical owner mints anyway, and retained one prepared signal per
+    # distinct trace for the whole call.
+    cache_key = id(trace)
+    cached = prepared_signal_cache.get(cache_key)
+    prepared = cached[1] if cached is not None and cached[0] is trace else None
     if prepared is None:
         prepared = prepare_physical_signal(
             trace.rt,
             trace.intensity,
-            trace_content_id=trace_content_id,
             profile=signal_processing_profile,
         )
-        prepared_signal_cache[prepared_cache_key] = prepared
+        prepared_signal_cache[cache_key] = (trace, prepared)
     physical_evaluation = evaluate_physical_peak(
         prepared,
         selection_subject_id=selection_subject_id,
