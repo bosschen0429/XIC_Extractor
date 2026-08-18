@@ -1321,6 +1321,95 @@ def test_process_worker_preserves_global_candidate_identity_for_hybrid_rescue(
     ] == [observation.work_unit_key for observation in serial_sample_b]
 
 
+@pytest.mark.parametrize("audit_mode", ("none", "full"))
+def test_worker_ships_only_usable_prepared_facts_under_audit_mode_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    audit_mode: str,
+) -> None:
+    """`none` publishes only selected rows, so the rest need not cross IPC.
+
+    A cell_projection can only come from a fact carrying a selected integration
+    authority, and `none` keeps only rows a cell_projection selects. Everything
+    else is filtered out in the parent, after paying to ship it.
+    """
+
+    source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
+    batch_source = _OwnerBoundBatchSource(source_identity)
+    capability = mint_raw_acquisition_session_capability(source_identity)
+    batch_source.raw_open_receipt = _mint_raw_acquisition_session_receipt(capability)
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader.open_raw",
+        lambda *_args, **_kwargs: batch_source,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.alignment.process_backend.source_for_owner_backfill_backend",
+        lambda _raw, _backend: batch_source,
+    )
+    # Two seed centres per feature means two candidates per (feature, sample) and
+    # only one of them can be selected_for_output, so the population genuinely
+    # contains facts with no selected integration authority.
+    features = tuple(
+        replace(
+            _feature(feature_family_id="FAM%06d" % index, mz=500.0 + index, rt=8.5),
+            backfill_seed_centers=((500.0 + index, 8.5), (500.0 + index, 8.9)),
+        )
+        for index in range(4)
+    )
+    projection = build_owner_backfill_sample_runtime_projections(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sample_stems=frozenset({"sample-b"}),
+        alignment_config=AlignmentConfig(),
+    )["sample-b"]
+    job = OwnerBackfillSampleJob(
+        sample_index=1,
+        sample_stem="sample-b",
+        raw_path=tmp_path / "sample-b.raw",
+        dll_dir=tmp_path / "dll",
+        sample_projection=projection,
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        expected_acquisition_source=source_identity,
+        raw_session_capability=capability,
+        raw_xic_batch_size=1,
+        audit_evidence_mode=audit_mode,
+        feature_payload_count=len(projection.features),
+        request_payload_count=projection.logical_request_count,
+        peak_fact_feature_order_indices=tuple(range(len(projection.features))),
+        peak_fact_sample_order_index=0,
+    )
+
+    result = extract_owner_backfill_sample_job(job)
+
+    assert isinstance(result, OwnerBackfillSampleResult), result
+    shipped = result.prepared_peak_facts
+    assert shipped, "the worker must still ship the facts the parent can use"
+    usable = [
+        fact
+        for fact in shipped
+        if fact.selected_integration_authority_content_id is not None
+    ]
+    unusable = [
+        fact
+        for fact in shipped
+        if fact.selected_integration_authority_content_id is None
+    ]
+    assert usable, "the fixture must produce facts a cell_projection can use"
+    if audit_mode == "none":
+        assert unusable == [], "none must not ship facts no cell_projection can use"
+        assert len(shipped) == len(usable)
+    else:
+        assert unusable, (
+            "full must keep every physical row, including unselected candidates"
+        )
+        assert len(shipped) > len(usable)
+    # every shipped fact keeps its full binding in both modes
+    for fact in shipped:
+        fact.validate_binding()
+
+
 def _context(
     acquisition_sources: dict[str, AcquisitionSourceIdentity],
 ) -> OwnerBackfillRequestEquivalenceContext:

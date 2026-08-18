@@ -985,7 +985,7 @@ def extract_owner_backfill_sample_job(
                     strict=True,
                 )
             }
-            prepared_peak_facts = tuple(
+            prepared = (
                 prepare_owner_backfill_peak_fact(
                     observation,
                     feature_order_index=feature_order_indices[
@@ -996,6 +996,19 @@ def extract_owner_backfill_sample_job(
                 )
                 for observation in peak_fact_observations
             )
+            # Under audit_evidence_mode "none" the published provenance keeps only
+            # rows a cell_projection selects, and a cell_projection can only come
+            # from a fact that carries a selected integration authority.  Shipping
+            # the rest to the parent costs one 61-column row per Backfill request
+            # for something that is then filtered out.
+            if job.audit_evidence_mode == "none":
+                prepared_peak_facts = tuple(
+                    fact
+                    for fact in prepared
+                    if fact.selected_integration_authority_content_id is not None
+                )
+            else:
+                prepared_peak_facts = tuple(prepared)
             peak_fact_observations = ()
         return OwnerBackfillSampleResult(
             sample_index=job.sample_index,
