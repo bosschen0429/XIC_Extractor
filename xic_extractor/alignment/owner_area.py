@@ -24,6 +24,11 @@ def owner_quantification_eligible(owner: object) -> bool:
     apex = getattr(owner, "owner_apex_rt", missing)
     left = getattr(owner, "owner_peak_start_rt", missing)
     right = getattr(owner, "owner_peak_end_rt", missing)
+    integration = getattr(owner, "selected_integration", missing)
+    if integration is not missing and integration is not None:
+        apex = getattr(integration, "rt_apex_min", missing)
+        left = getattr(integration, "rt_left_min", missing)
+        right = getattr(integration, "rt_right_min", missing)
     if any(value is missing for value in (apex, left, right)):
         return True
     if not all(

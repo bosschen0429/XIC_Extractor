@@ -44,10 +44,16 @@ class SampleLocalMS1Owner:
     quantification_exclusion_reason: str = ""
 
     def __post_init__(self) -> None:
+        integration = self.selected_integration
+        apex = self.owner_apex_rt
+        left = self.owner_peak_start_rt
+        right = self.owner_peak_end_rt
+        if integration is not None:
+            apex = integration.rt_apex_min
+            left = integration.rt_left_min
+            right = integration.rt_right_min
         if not (
-            self.owner_peak_start_rt
-            < self.owner_apex_rt
-            < self.owner_peak_end_rt
+            left < apex < right
         ):
             object.__setattr__(self, "quantification_eligible", False)
             if not self.quantification_exclusion_reason:

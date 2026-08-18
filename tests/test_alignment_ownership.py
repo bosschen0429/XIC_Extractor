@@ -7,6 +7,7 @@ import pytest
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ownership import build_sample_local_owners
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 def test_same_sample_same_resolved_peak_becomes_one_owner():
@@ -521,6 +522,28 @@ def test_custom_peak_resolver_without_region_audit_remains_supported() -> None:
     assert result.owners[0].region_audit is None
 
 
+def test_selected_integration_endpoint_censors_scalar_interior_owner() -> None:
+    result = build_sample_local_owners(
+        (_candidate("s1#integration-edge", seed_rt=8.0),),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([7.9, 8.0, 8.1], dtype=float),
+                intensity=np.array([0.0, 100.0, 0.0], dtype=float),
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        peak_resolver=_scalar_interior_endpoint_integration,
+    )
+
+    assert len(result.owners) == 1
+    owner = result.owners[0]
+    assert owner.quantification_eligible is False
+    assert owner.quantification_exclusion_reason == (
+        "owner_apex_on_integration_boundary"
+    )
+
+
 class FakeXICSource:
     def __init__(self, *, rt, intensity):
         self.rt = rt
@@ -558,6 +581,35 @@ def _always_peak_at_seed(candidate, rt_array, intensity_array, peak_config, seed
         peak_end=float(rt_array[-1]),
         area=100.0,
         intensity=100.0,
+    )
+
+
+def _scalar_interior_endpoint_integration(
+    candidate,
+    rt_array,
+    intensity_array,
+    peak_config,
+    seed_rt,
+):
+    from xic_extractor.alignment.ownership import ResolvedPeak
+
+    return ResolvedPeak(
+        rt=8.05,
+        peak_start=8.0,
+        peak_end=8.1,
+        area=100.0,
+        intensity=100.0,
+        selected_integration=IntegrationResult(
+            rt_left_min=8.0,
+            rt_apex_min=8.0,
+            rt_right_min=8.1,
+            raw_apex_rt_min=8.0,
+            rt_width_min=0.1,
+            height_raw=100.0,
+            height_smoothed=100.0,
+            area_raw_counts_seconds=100.0,
+            boundary_sources=("test_endpoint_integration",),
+        ),
     )
 
 

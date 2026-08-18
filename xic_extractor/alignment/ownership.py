@@ -337,6 +337,9 @@ def _resolve_candidate(
     )
     if peak is None:
         return _unresolved_outcome(candidate, "peak_not_found")
+    quantification_apex, quantification_left, quantification_right = (
+        _resolved_peak_quantification_bounds(peak)
+    )
     return _ResolutionOutcome(
         resolved=_ResolvedCandidate(
             candidate=candidate,
@@ -349,14 +352,14 @@ def _resolve_candidate(
             region_audit=peak.region_audit,
             selected_integration=peak.selected_integration,
             quantification_eligible=_quantification_eligible(
-                peak.rt,
-                peak.peak_start,
-                peak.peak_end,
+                quantification_apex,
+                quantification_left,
+                quantification_right,
             ),
             quantification_exclusion_reason=_quantification_exclusion_reason(
-                peak.rt,
-                peak.peak_start,
-                peak.peak_end,
+                quantification_apex,
+                quantification_left,
+                quantification_right,
             ),
         ),
         unresolved=None,
@@ -386,6 +389,9 @@ def _resolve_candidate_trace(
     )
     if peak is None:
         return _unresolved_outcome(candidate, "peak_not_found")
+    quantification_apex, quantification_left, quantification_right = (
+        _resolved_peak_quantification_bounds(peak)
+    )
     return _ResolutionOutcome(
         resolved=_ResolvedCandidate(
             candidate=candidate,
@@ -398,14 +404,14 @@ def _resolve_candidate_trace(
             region_audit=peak.region_audit,
             selected_integration=peak.selected_integration,
             quantification_eligible=_quantification_eligible(
-                peak.rt,
-                peak.peak_start,
-                peak.peak_end,
+                quantification_apex,
+                quantification_left,
+                quantification_right,
             ),
             quantification_exclusion_reason=_quantification_exclusion_reason(
-                peak.rt,
-                peak.peak_start,
-                peak.peak_end,
+                quantification_apex,
+                quantification_left,
+                quantification_right,
             ),
         ),
         unresolved=None,
@@ -529,6 +535,19 @@ def _unresolved_outcome(candidate: Any, reason: str) -> _ResolutionOutcome:
 
 def _quantification_eligible(apex: float, left: float, right: float) -> bool:
     return left < apex < right
+
+
+def _resolved_peak_quantification_bounds(
+    peak: ResolvedPeak,
+) -> tuple[float, float, float]:
+    integration = peak.selected_integration
+    if integration is not None:
+        return (
+            integration.rt_apex_min,
+            integration.rt_left_min,
+            integration.rt_right_min,
+        )
+    return peak.rt, peak.peak_start, peak.peak_end
 
 
 def _quantification_exclusion_reason(apex: float, left: float, right: float) -> str:

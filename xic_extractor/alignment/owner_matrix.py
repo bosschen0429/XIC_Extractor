@@ -281,7 +281,6 @@ def _detected_or_confirmed_cell(
     )
     if (
         rescued is not None
-        and feature.confirm_local_owners_with_backfill
         and detected.status == "unchecked"
         and rescued.status == "rescued"
         and rescued_exclusion_reason is None

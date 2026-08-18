@@ -171,7 +171,7 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
     feature = replace(
         _feature(),
         owners=(owner,),
-        confirm_local_owners_with_backfill=True,
+        confirm_local_owners_with_backfill=False,
     )
     rescued = AlignedCell(
         sample_stem="sample-a",
