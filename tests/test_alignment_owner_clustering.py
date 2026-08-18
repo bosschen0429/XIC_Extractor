@@ -257,41 +257,30 @@ def test_owner_clustering_requires_complete_unique_injection_order() -> None:
         )
 
 
-def test_owner_clustering_keeps_sparse_trajectory_as_candidates() -> None:
-    owners = (
-        _owner("sample-a", "a", apex_rt=10.00),
-        _owner("sample-b", "b", apex_rt=10.75),
-        _owner("sample-c", "c", apex_rt=11.50),
-        _owner("sample-d", "d", apex_rt=12.25),
+def test_owner_clustering_restores_partial_injection_trajectory_beyond_bounded_span(
+) -> None:
+    owners = tuple(
+        _owner(
+            f"sample-{index}",
+            f"o{index}",
+            apex_rt=10.00 + 0.9 * (index - 1),
+        )
+        for index in range(1, 8)
     )
 
     features = cluster_sample_local_owners(
         owners,
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
         sample_universe=frozenset(
-            {
-                "sample-a",
-                "sample-b",
-                "sample-c",
-                "sample-d",
-                "sample-e",
-                "sample-f",
-            },
+            f"sample-{index}" for index in range(1, 13)
         ),
-        injection_order={
-            "sample-a": 1,
-            "sample-b": 2,
-            "sample-c": 3,
-            "sample-d": 4,
-            "sample-e": 5,
-            "sample-f": 6,
-        },
+        injection_order={f"sample-{index}": index for index in range(1, 13)},
     )
 
-    assert all(
-        "owner_injection_trajectory" not in feature.evidence
-        for feature in features
-    )
+    assert [feature.event_cluster_ids for feature in features] == [
+        tuple(f"OWN-sample-{index}-o{index}" for index in range(1, 8)),
+    ]
+    assert features[0].evidence == "owner_injection_trajectory;owner_count=7"
 
 
 def test_owner_clustering_does_not_use_drift_lookup_order_for_trajectory() -> None:
@@ -698,7 +687,7 @@ def test_owner_clustering_keeps_incomplete_merge_on_complete_link_partition() ->
     assert "owner_bounded_continuity" in hypotheses[0].evidence
 
 
-def test_targeted_istd_trajectory_merges_complete_link_fragments_at_group_owner(
+def test_targeted_istd_anchor_binds_generic_injection_trajectory_provenance(
 ) -> None:
     owners = tuple(
         _owner(
@@ -773,9 +762,13 @@ def test_targeted_istd_trajectory_merges_complete_link_fragments_at_group_owner(
         edge_evaluator=evaluator,
     )
 
-    assert len(without_anchor) >= 2
+    assert len(without_anchor) == 1
+    assert without_anchor[0].evidence == "owner_injection_trajectory;owner_count=8"
     assert len(with_anchor) == 1
-    assert "owner_targeted_istd_trajectory" in with_anchor[0].evidence
+    assert [item.owner_ids for item in with_anchor] == [
+        item.owner_ids for item in without_anchor
+    ]
+    assert with_anchor[0].evidence == "owner_targeted_istd_trajectory;owner_count=8"
     assert len(with_anchor[0].owners) == 8
 
 
@@ -822,7 +815,7 @@ def test_targeted_istd_trajectory_keeps_same_sample_or_blocked_edge_separate() -
     )
 
 
-def test_targeted_istd_trajectory_keeps_crossing_partition_unresolved() -> None:
+def test_targeted_istd_anchor_keeps_blocked_trajectory_membership_and_label() -> None:
     owners = (
         _owner("sample-a", "a", apex_rt=8.0, neutral_loss_tag="DNA_dR"),
         _owner("sample-b", "b", apex_rt=8.4, neutral_loss_tag="DNA_dR"),
@@ -871,21 +864,41 @@ def test_targeted_istd_trajectory_keeps_crossing_partition_unresolved() -> None:
             reason="weak: crossing candidate",
         )
 
-    merged, _ = peak_groups_module._merge_targeted_istd_trajectory_groups(
-        tuple((owner,) for owner in owners),
+    without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c", "sample-d"}),
         injection_order={
             "sample-a": 1,
             "sample-b": 2,
             "sample-c": 3,
         },
+        drift_lookup=DriftEvidenceLookup(points=()),
+        edge_evaluator=evaluator,
+    )
+    with_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
-        drift_lookup=DriftEvidenceLookup(points=(), istd_identity_anchor=anchor),
-        edge_evidence_sink=[],
-        edge_cache={},
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c", "sample-d"}),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+        },
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
         edge_evaluator=evaluator,
     )
 
-    assert [len(group) for group in merged] == [1, 1, 1]
+    assert [item.owner_ids for item in with_anchor] == [
+        item.owner_ids for item in without_anchor
+    ]
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in with_anchor
+    )
 
 
 def test_owner_clustering_keeps_rt_discontinuity_separate() -> None:

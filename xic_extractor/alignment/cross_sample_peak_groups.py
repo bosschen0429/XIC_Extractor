@@ -304,8 +304,9 @@ def construct_cross_sample_peak_group_hypotheses(
             edge_evaluator=edge_evaluator,
         )
         groups, targeted_istd_trajectory_owner_sets = (
-            _merge_targeted_istd_trajectory_groups(
+            _bind_targeted_istd_trajectory_provenance(
                 groups,
+                injection_trajectory_owner_sets=injection_trajectory_owner_sets,
                 injection_order=injection_order,
                 config=config,
                 drift_lookup=drift_lookup,
@@ -888,7 +889,6 @@ def _restore_sparse_complete_link_groups(
             continue
         if (
             len(complete_groups) > 1
-            and len(group_samples) + 1 == len(sample_universe)
             and _is_injection_trajectory(
                 connected_group,
                 injection_order=injection_order,
@@ -923,9 +923,10 @@ def _restore_sparse_complete_link_groups(
     )
 
 
-def _merge_targeted_istd_trajectory_groups(
+def _bind_targeted_istd_trajectory_provenance(
     groups: tuple[tuple[SampleLocalMS1Owner, ...], ...],
     *,
+    injection_trajectory_owner_sets: frozenset[frozenset[str]],
     injection_order: Mapping[str, int] | None,
     config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None,
@@ -933,13 +934,10 @@ def _merge_targeted_istd_trajectory_groups(
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
     edge_evaluator: OwnerEdgeEvaluator,
 ) -> tuple[tuple[tuple[SampleLocalMS1Owner, ...], ...], frozenset[frozenset[str]]]:
-    """Merge only owner groups proven to be one configured ISTD trajectory.
+    """Bind typed ISTD provenance to already-minted injection trajectories.
 
-    This is still a CrossSamplePeakGroupHypothesis construction rule.  It uses
-    the existing target/workbook anchor only to nominate the configured DNA dR
-    lane; all-sample occupancy, all-pairs hard gates, and injection-order
-    continuity remain the grouping owner’s authority.  It never selects a
-    Matrix value or promotes a Backfill cell.
+    The typed anchor may only classify an existing generic injection trajectory;
+    it never changes group membership, order, Matrix values, or Backfill scope.
     """
 
     anchor = getattr(drift_lookup, "istd_identity_anchor", None)
@@ -949,9 +947,9 @@ def _merge_targeted_istd_trajectory_groups(
     ):
         return groups, frozenset()
 
-    def target_label(group: tuple[SampleLocalMS1Owner, ...]) -> str | None:
+    def matches_targeted_anchor(group: tuple[SampleLocalMS1Owner, ...]) -> bool:
         if not group:
-            return None
+            return False
         view = _TargetedIstdFamilyView(
             neutral_loss_tag=group[0].neutral_loss_tag,
             family_center_mz=sum(owner.precursor_mz for owner in group) / len(group),
@@ -967,83 +965,28 @@ def _merge_targeted_istd_trajectory_groups(
             )
             for owner in group
         ):
-            return None
-        label = getattr(target, "label", None)
-        return label if isinstance(label, str) and label else None
+            return False
+        return True
 
-    pending = [tuple(sorted(group, key=_owner_sort_key)) for group in groups]
-    merged_owner_sets: set[frozenset[str]] = set()
-    changed = True
-    while changed:
-        changed = False
-        candidate_edges: dict[int, set[int]] = {}
-        for left_index, left in enumerate(pending):
-            left_target = target_label(left)
-            if left_target is None:
-                continue
-            for right_index in range(left_index + 1, len(pending)):
-                right = pending[right_index]
-                if target_label(right) != left_target:
-                    continue
-                candidate = tuple(
-                    sorted((*left, *right), key=_owner_sort_key),
-                )
-                if not _targeted_istd_candidate_is_valid(
-                    candidate,
-                    injection_order=injection_order,
-                    config=config,
-                    drift_lookup=drift_lookup,
-                    edge_evidence_sink=edge_evidence_sink,
-                    edge_cache=edge_cache,
-                    edge_evaluator=edge_evaluator,
-                ):
-                    continue
-                candidate_edges.setdefault(left_index, set()).add(right_index)
-                candidate_edges.setdefault(right_index, set()).add(left_index)
-
-        components = _candidate_edge_components(candidate_edges)
-        for component in components:
-            if len(component) < 2:
-                continue
-            candidate = tuple(
-                sorted(
-                    (
-                        owner
-                        for index in component
-                        for owner in pending[index]
-                    ),
-                    key=_owner_sort_key,
-                )
-            )
-            # A connected component is merged only when the complete
-            # candidate itself is valid.  If two incompatible tracks share a
-            # locally compatible fragment, the component stays unresolved
-            # instead of inheriting list-order semantics.
-            if not _targeted_istd_candidate_is_valid(
-                candidate,
+    targeted_owner_sets: set[frozenset[str]] = set()
+    for group in groups:
+        owner_set = frozenset(owner.owner_id for owner in group)
+        if (
+            owner_set not in injection_trajectory_owner_sets
+            or not matches_targeted_anchor(group)
+            or not _targeted_istd_candidate_is_valid(
+                group,
                 injection_order=injection_order,
                 config=config,
                 drift_lookup=drift_lookup,
                 edge_evidence_sink=edge_evidence_sink,
                 edge_cache=edge_cache,
                 edge_evaluator=edge_evaluator,
-            ):
-                continue
-            selected = set(component)
-            first = min(selected)
-            pending[first] = candidate
-            pending = [
-                group
-                for index, group in enumerate(pending)
-                if index == first or index not in selected
-            ]
-            merged_owner_sets.add(
-                frozenset(owner.owner_id for owner in candidate),
             )
-            changed = True
-            break
-    pending.sort(key=lambda group: _owner_sort_key(group[0]))
-    return tuple(pending), frozenset(merged_owner_sets)
+        ):
+            continue
+        targeted_owner_sets.add(owner_set)
+    return groups, frozenset(targeted_owner_sets)
 
 
 def _targeted_istd_candidate_is_valid(
@@ -1076,40 +1019,17 @@ def _targeted_istd_candidate_is_valid(
     )
 
 
-def _candidate_edge_components(
-    edges: Mapping[int, set[int]],
-) -> tuple[tuple[int, ...], ...]:
-    components: list[tuple[int, ...]] = []
-    remaining = set(edges)
-    while remaining:
-        start = min(remaining)
-        component: set[int] = set()
-        frontier = [start]
-        while frontier:
-            index = frontier.pop()
-            if index in component:
-                continue
-            component.add(index)
-            frontier.extend(edges.get(index, set()) - component)
-        remaining -= component
-        components.append(tuple(sorted(component)))
-    return tuple(components)
-
-
 def _group_passes_bounded_continuity(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
     config: AlignmentConfig,
 ) -> bool:
-    """Keep a connected component whole on bounded evidence, not on coverage.
+    """Keep a component whole only after higher-priority trajectory rescues fail.
 
-    The two coverage rescues above only fire at full batch coverage or one
-    sample short of it, so a component that a real compound produced over any
-    smaller share of the batch is re-split however continuous it is.  A
-    component instead survives here when the whole of it stays inside the
-    symmetric precursor/product/loss hard envelope and its apex RT span stays
-    within the group span bound, which is what separates one compound drifting
-    across the batch from two compounds the chromatography resolved.
+    Full-batch and arbitrary partial injection trajectories run first. This
+    fallback instead requires the symmetric precursor/product/loss hard envelope
+    and the bounded apex-RT span that separates one drifting compound from two
+    chromatography-resolved compounds.
     """
     if not _group_passes_hard_envelope(group, config=config):
         return False

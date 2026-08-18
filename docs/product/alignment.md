@@ -34,27 +34,21 @@ contracts for review and downstream product decisions.
   passes the hard envelope and every pair is free of a blocked edge.
   Complete-link remains the downstream hard partition; single-link chaining is
   not family identity authority.
-- A near-full connected component with exactly one batch sample absent may also
-  replace its complete-link split when Alignment received the same explicit,
-  injection-order mapping used to order Matrix columns, with a unique order for
-  every owner in that component. The whole component must pass the symmetric
-  precursor/product/loss hard envelope,
-  and every adjacent injection-order edge must pass bounded RT continuity. The
-  recovered family is `owner_injection_trajectory`. Missing or duplicate order,
-  a second absent sample, same-sample occupancy, a hard-envelope conflict, or an
-  RT discontinuity remains on complete-link; `drift_lookup` is not an alternate
-  order source. Parallel connected components remain separate groups, and this
-  rule does not bridge existing groups or bypass the connected-link hard gates.
-- A connected component that neither coverage rescue admits may still replace
-  its complete-link split when the whole component stays inside the symmetric
-  precursor/product/loss hard envelope and its apex RT span stays within the
-  group span bound. The recovered family is `owner_bounded_continuity`. The two
-  coverage rescues above fire only at full batch coverage or one sample short of
-  it, so without this a component a real compound produced over any smaller
-  share of the batch is re-split however continuous it is; the envelope and the
-  span bound are what separate one compound drifting across the batch from two
-  the chromatography resolved. Coverage rescues keep priority, so a full-batch
-  or injection-trajectory component keeps its own policy label.
+- A partial connected component may replace its complete-link split only with
+  complete unique explicit injection order for every owner, the symmetric
+  precursor/product/loss hard envelope, and bounded RT continuity on every
+  adjacent injection-order edge. The recovered family is
+  `owner_injection_trajectory`; the full-batch rescue keeps priority. Missing or
+  duplicate order, a hard-envelope conflict, or an RT discontinuity remains on
+  complete-link; `drift_lookup` is not an alternate order source. Parallel
+  connected components remain separate, and this rule does not bridge groups or
+  add a control plane.
+- A connected component that neither full-batch nor injection-trajectory rescue
+  admits may still replace its complete-link split when the whole component
+  stays inside the symmetric precursor/product/loss hard envelope and its apex
+  RT span stays within the group span bound. The recovered family is
+  `owner_bounded_continuity`; full-batch and injection-trajectory rescues keep
+  priority and their own policy labels.
 - After the partition settles, the grouping owner resolves duplicate-owner
   groups. A group is resolved into another group only when every one of its
   samples is already owned by that group, that group holds more owners and at
@@ -90,18 +84,19 @@ contracts for review and downstream product decisions.
   boundaries are both interior and its primary Matrix area is valid; an
   endpoint or incomplete rescue is censored by the same rule. This is a
   quantification-authority guard, not a new peak-selection or Backfill route.
-- For the observed, configured DNA dR ISTD lane only, the existing Alignment
-  grouping owner may use an owner-minted targeted ISTD anchor from the current
-  run's target-list snapshot to reconcile
-  otherwise complete-link-fragmented owner groups. The combined owners must
-  match one observed target's configured m/z/RT envelope and dR loss, have
+- For the observed, configured DNA dR ISTD lane only, an owner-minted targeted
+  ISTD anchor from the current run's target-list snapshot may bind typed
+  provenance only to an already-valid generic injection trajectory. The owners
+  must match one observed target's configured m/z/RT envelope and dR loss, have
   unique samples, pass all-pairs hard gates, and form a bounded injection-order
-  trajectory using the explicit `--sample-column-injection-order` mapping.
-  Without that mapping or typed snapshot the anchor is absent and the existing
-  drift-prior path remains unchanged. This is grouping evidence only:
-  it reduces fragmented family and Backfill request work, but it does not
-  promote a rescued cell, write a Matrix value, infer unknown-family chemical
-  identity, add a public knob, or create a second owner/control plane.
+  trajectory using the explicit `--sample-column-injection-order` mapping. The
+  anchor never changes membership, order, or Backfill census; the generic
+  injection-trajectory rule is what resolves fragmentation and reduces requests.
+  Without the mapping or typed snapshot, this binding is absent. The separate
+  targeted drift prior may still affect edge scoring as before. This remains
+  grouping evidence only: it does not promote a rescued cell, write a Matrix
+  value, infer unknown-family chemical identity, add a public knob, or create a
+  second owner/control plane.
 - An `owner_bounded_continuity` family reaches the primary matrix only when at
   least two of its owners carry a resolved peak at or above the quantitation
   limit. Bounded continuity admits a group on detection-grade evidence, which is
