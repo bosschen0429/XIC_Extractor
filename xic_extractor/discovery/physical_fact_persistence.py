@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -69,6 +70,9 @@ _RECORD_KEYS = (
 )
 
 
+_SIDECAR_VERIFY_BLOCK_BYTES = 1 << 20
+
+
 def write_discovery_physical_fact_sidecar(
     path: Path,
     *,
@@ -91,13 +95,25 @@ def write_discovery_physical_fact_sidecar(
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.tmp")
     try:
-        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write(payload.decode("utf-8"))
+        # One sidecar per sample runs 34-36 MB in the 8RAW lane.  Decoding the
+        # payload to write it and then reading the whole temporary file back to
+        # compare held three full copies at once; write the canonical bytes
+        # directly and verify what landed by digest instead.
+        with temporary.open("wb") as handle:
+            handle.write(payload)
             handle.flush()
-        persisted = temporary.read_bytes()
-        _verify_canonical_payload_bytes(persisted)
-        if persisted != payload:
+        expected = hashlib.sha256(payload).digest()
+        landed = hashlib.sha256()
+        landed_size = 0
+        with temporary.open("rb") as handle:
+            for block in iter(lambda: handle.read(_SIDECAR_VERIFY_BLOCK_BYTES), b""):
+                landed.update(block)
+                landed_size += len(block)
+        if landed_size != len(payload) or landed.digest() != expected:
             raise ValueError("Discovery physical sidecar verification changed bytes")
+        # The landed bytes are now proven equal to payload, so the canonical
+        # check runs once against the copy already in hand.
+        _verify_canonical_payload_bytes(payload)
         temporary.replace(path)
     except Exception:
         temporary.unlink(missing_ok=True)

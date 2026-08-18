@@ -448,3 +448,72 @@ def test_discovery_sidecar_rejects_fully_resealed_replacement_trace_record(
             expected_acquisition_input=acquisition_input,
             expected_work_manifest=manifest,
         )
+
+
+def test_discovery_sidecar_writer_detects_a_temp_file_that_does_not_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The read-back leg must actually compare the landed bytes.
+
+    Nothing else pins it: the tamper tests all mutate the published file and go
+    through the reader, so the writer's own verification could be removed
+    without reddening them.
+    """
+
+    import io
+
+    _, spec, acquisition_input = _spec(tmp_path)
+    manifest, records = _population(spec, acquisition_input)
+    path = tmp_path / "out" / "discovery_physical_facts.v1.json"
+    temporary = path.with_name(f"{path.name}.tmp")
+    original_open = Path.open
+
+    def corrupting_open(candidate: Path, *args: object, **kwargs: object):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        handle = original_open(candidate, *args, **kwargs)  # type: ignore[arg-type]
+        if candidate == temporary and "r" in str(mode):
+            with handle:
+                landed = handle.read()
+            return io.BytesIO(landed[:-1])
+        return handle
+
+    monkeypatch.setattr(Path, "open", corrupting_open)
+
+    with pytest.raises(ValueError, match="verification changed bytes"):
+        write_discovery_physical_fact_sidecar(
+            path,
+            run_spec=spec,
+            acquisition_input=acquisition_input,
+            work_manifest=manifest,
+            records=records,
+        )
+
+    assert not path.exists()
+    assert not temporary.exists()
+
+
+def test_discovery_sidecar_writer_publishes_exact_serializer_bytes(
+    tmp_path: Path,
+) -> None:
+    _, spec, acquisition_input = _spec(tmp_path)
+    manifest, records = _population(spec, acquisition_input)
+    path = tmp_path / "out" / "discovery_physical_facts.v1.json"
+
+    write_discovery_physical_fact_sidecar(
+        path,
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    )
+
+    expected = serialize_discovery_physical_fact_sidecar(
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    )
+    assert path.read_bytes() == expected
+    assert b"\r" not in path.read_bytes()
+    assert not path.with_name(f"{path.name}.tmp").exists()
