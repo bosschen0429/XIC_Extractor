@@ -442,6 +442,7 @@ def build_owner_backfill_cells(
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
+    emit_candidate_audit_rows: bool = True,
 ) -> tuple[AlignedCell, ...]:
     return build_owner_backfill_result(
         features,
@@ -461,6 +462,7 @@ def build_owner_backfill_cells(
         emit_region_audit=emit_region_audit,
         region_audit_family_ids=region_audit_family_ids,
         audit_evidence_mode=audit_evidence_mode,
+        emit_candidate_audit_rows=emit_candidate_audit_rows,
     ).cells
 
 
@@ -483,6 +485,7 @@ def build_owner_backfill_result(
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
+    emit_candidate_audit_rows: bool = True,
 ) -> OwnerBackfillResult:
     if signal_processing_profile is not None and not isinstance(
         signal_processing_profile,
@@ -902,11 +905,21 @@ def build_owner_backfill_result(
     )
     return OwnerBackfillResult(
         cells=tuple(cells),
-        candidate_audit_rows=_candidate_audit_rows(
-            candidate_records,
-            selected_cell_ids=selected_cell_ids,
-            feature_order=tuple(feature.feature_family_id for feature in features),
-            sample_order=sample_order,
+        # These rows only ever reach alignment_owner_backfill_candidate_audit.tsv,
+        # which no output level emits by default.  Building and shipping one row
+        # per Backfill request when nothing will write them costs the Alignment
+        # parent 657 B/request of retention for an artifact it then discards.
+        candidate_audit_rows=(
+            _candidate_audit_rows(
+                candidate_records,
+                selected_cell_ids=selected_cell_ids,
+                feature_order=tuple(
+                    feature.feature_family_id for feature in features
+                ),
+                sample_order=sample_order,
+            )
+            if emit_candidate_audit_rows
+            else ()
         ),
         request_reuse_observations=tuple(request_reuse_observations),
         peak_fact_observations=peak_fact_observations,

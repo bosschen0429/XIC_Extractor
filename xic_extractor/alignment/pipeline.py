@@ -773,6 +773,9 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    emit_candidate_audit_rows=(
+                        outputs.backfill_candidate_audit_tsv is not None
+                    ),
                     progress_callback=lambda result: _record_owner_backfill_progress(
                         recorder,
                         result,
@@ -838,6 +841,9 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    emit_candidate_audit_rows=(
+                        outputs.backfill_candidate_audit_tsv is not None
+                    ),
                 )
                 rescued_cells = backfill_result.cells
                 owner_backfill_candidate_audit_rows = (
@@ -1126,6 +1132,7 @@ def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResu
         legacy_kwargs.pop("expected_acquisition_sources", None)
         legacy_kwargs.pop("owner_backfill_xic_backend", None)
         legacy_kwargs.pop("signal_processing_profile", None)
+        legacy_kwargs.pop("emit_candidate_audit_rows", None)
         return OwnerBackfillResult(
             cells=tuple(build_owner_backfill_cells(*args, **legacy_kwargs)),
             candidate_audit_rows=(),

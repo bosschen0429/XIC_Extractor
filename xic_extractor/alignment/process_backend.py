@@ -190,6 +190,7 @@ class OwnerBackfillSampleJob:
     emit_region_audit: bool = False
     region_audit_family_ids: frozenset[str] | None = None
     audit_evidence_mode: str = "full"
+    emit_candidate_audit_rows: bool = True
     request_plan_id: str = REQUEST_PLAN_VERSION
     backfill_scope: str = "full-audit"
     feature_payload_count: int = 0
@@ -646,6 +647,7 @@ def run_owner_backfill_process(
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
+    emit_candidate_audit_rows: bool = True,
     runner: Callable[..., list[OwnerBackfillWorkerResult]] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
     matrix_sample_order: tuple[str, ...] | None = None,
@@ -726,6 +728,7 @@ def run_owner_backfill_process(
                 emit_region_audit=emit_region_audit,
                 region_audit_family_ids=region_audit_family_ids,
                 audit_evidence_mode=audit_evidence_mode,
+                emit_candidate_audit_rows=emit_candidate_audit_rows,
                 request_plan_id=REQUEST_PLAN_VERSION,
                 backfill_scope=backfill_scope,
                 feature_payload_count=len(job_features),
@@ -963,6 +966,7 @@ def extract_owner_backfill_sample_job(
                 emit_region_audit=job.emit_region_audit,
                 region_audit_family_ids=job.region_audit_family_ids,
                 audit_evidence_mode=job.audit_evidence_mode,
+                emit_candidate_audit_rows=job.emit_candidate_audit_rows,
             )
             peak_fact_cost = _runtime_peak_fact_cost_metrics(
                 backfill_result,

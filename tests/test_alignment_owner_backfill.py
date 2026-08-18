@@ -1448,6 +1448,46 @@ def _owner_bound_source(tmp_path, payload: bytes, source: FakeBackfillSource):
     return source, acquisition
 
 
+def test_candidate_audit_rows_follow_their_only_destination(tmp_path) -> None:
+    """These rows exist only for alignment_owner_backfill_candidate_audit.tsv.
+
+    No output level emits that artifact by default, so collecting one row per
+    Backfill request costs the Alignment parent retention for something it then
+    discards. The flag must gate collection without touching anything else.
+    """
+
+    source, acquisition = _owner_bound_peak_source(tmp_path, b"sample-b")
+    features = (_feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),)
+
+    def run(emit: bool):
+        return build_owner_backfill_result(
+            features,
+            sample_order=("sample-b",),
+            raw_sources={"sample-b": source},
+            expected_acquisition_sources={"sample-b": acquisition},
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            signal_processing_profile=SignalProcessingProfile(window_points=3),
+            emit_candidate_audit_rows=emit,
+        )
+
+    emitted = run(True)
+    suppressed = run(False)
+
+    assert emitted.candidate_audit_rows, "collection must still work when wanted"
+    assert suppressed.candidate_audit_rows == ()
+
+    # everything the Matrix and provenance depend on is unchanged
+    assert emitted.cells == suppressed.cells
+    assert len(emitted.peak_fact_observations) == len(
+        suppressed.peak_fact_observations
+    )
+    assert [o.work_unit_key for o in emitted.peak_fact_observations] == [
+        o.work_unit_key for o in suppressed.peak_fact_observations
+    ]
+    assert emitted.request_reuse_observations == suppressed.request_reuse_observations
+
+
 def _feature(
     *,
     review_only: bool = False,
