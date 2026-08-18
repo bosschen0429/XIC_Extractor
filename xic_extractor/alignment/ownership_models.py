@@ -43,6 +43,20 @@ class SampleLocalMS1Owner:
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
 
+    def __post_init__(self) -> None:
+        if not (
+            self.owner_peak_start_rt
+            < self.owner_apex_rt
+            < self.owner_peak_end_rt
+        ):
+            object.__setattr__(self, "quantification_eligible", False)
+            if not self.quantification_exclusion_reason:
+                object.__setattr__(
+                    self,
+                    "quantification_exclusion_reason",
+                    "owner_apex_on_integration_boundary",
+                )
+
     @property
     def all_events(self) -> tuple[IdentityEvent, ...]:
         return (self.primary_identity_event, *self.supporting_events)

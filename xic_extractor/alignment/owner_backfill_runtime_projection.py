@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Protocol, TypeAlias, cast
 
+from xic_extractor.alignment.owner_area import owner_quantification_eligible
+
 _RUNTIME_FEATURE_ID_PREFIX = "xic.owner-backfill-runtime-feature.v1:"
 
 
@@ -74,6 +76,7 @@ class OwnerBackfillOwnerEligibility:
 
     sample_stem: str
     owner_area: float | None
+    quantification_eligible: bool = True
 
     def __post_init__(self) -> None:
         _required_text(self.sample_stem, "owner eligibility sample_stem")
@@ -85,6 +88,8 @@ class OwnerBackfillOwnerEligibility:
                 "owner eligibility owner_area",
             ),
         )
+        if not isinstance(self.quantification_eligible, bool):
+            raise TypeError("owner eligibility quantification_eligible must be bool")
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +135,7 @@ def mint_owner_backfill_runtime_feature(
         OwnerBackfillOwnerEligibility(
             sample_stem=cast(str, getattr(owner, "sample_stem", None)),
             owner_area=_owner_backfill_area(owner),
+            quantification_eligible=owner_quantification_eligible(owner),
         )
         for owner in _full_feature_owners(feature)
     )
@@ -216,6 +222,7 @@ def backfill_runtime_owner_eligibility(
         OwnerBackfillOwnerEligibility(
             sample_stem=cast(str, getattr(owner, "sample_stem", None)),
             owner_area=_owner_backfill_area(owner),
+            quantification_eligible=owner_quantification_eligible(owner),
         )
         for owner in _full_feature_owners(feature)
     )
@@ -258,6 +265,8 @@ def _validate_runtime_feature_projection(
     for item in feature.owner_eligibility:
         _required_text(item.sample_stem, "owner eligibility sample_stem")
         _validated_owner_area(item.owner_area, "owner eligibility owner_area")
+        if not isinstance(item.quantification_eligible, bool):
+            raise TypeError("owner eligibility quantification_eligible must be bool")
     _required_text(feature.group_hypothesis_id, "group_hypothesis_id")
     _required_text(feature.public_family_id, "public_family_id")
     _required_text(feature.group_construction_role, "group_construction_role")
@@ -328,6 +337,7 @@ def _runtime_feature_basis(
                     item.owner_area,
                     "owner eligibility owner_area",
                 ),
+                "quantification_eligible": item.quantification_eligible,
             }
             for item in owner_eligibility
         ),
@@ -427,7 +437,7 @@ def _validated_owner_area(value: object, field: str) -> float | None:
 
 
 def _owner_backfill_area(owner: object) -> float | None:
-    if not bool(getattr(owner, "quantification_eligible", True)):
+    if not owner_quantification_eligible(owner):
         return None
     return _normalized_owner_area(getattr(owner, "owner_area", None))
 

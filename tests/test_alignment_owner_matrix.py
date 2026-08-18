@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from tests.test_alignment_owner_backfill import _feature
 from tests.test_alignment_owner_clustering import _owner
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.owner_area import median_owner_area
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
@@ -13,8 +14,32 @@ from xic_extractor.alignment.owner_matrix import (
     build_owner_alignment_matrix,
 )
 from xic_extractor.alignment.ownership_models import AmbiguousOwnerRecord
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
+
+
+def _rescue_integration(
+    *,
+    area: float,
+    apex: float = 8.55,
+    left: float = 8.50,
+    right: float = 8.60,
+) -> IntegrationResult:
+    return IntegrationResult(
+        rt_left_min=left,
+        rt_apex_min=apex,
+        rt_right_min=right,
+        raw_apex_rt_min=apex,
+        rt_width_min=right - left,
+        height_raw=90.0,
+        height_smoothed=90.0,
+        area_raw_counts_seconds=area,
+        boundary_sources=("test_owner_backfill",),
+        area_ms1_morphology=area,
+        ms1_morphology_area_source="gaussian15_positive_asls_residual",
+    )
 
 
 def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> None:
@@ -34,6 +59,7 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
+        selected_integration=_rescue_integration(area=90.0),
     )
     ambiguous = AmbiguousOwnerRecord(
         ambiguity_id="AMB-sample-c-000001",
@@ -112,6 +138,12 @@ def test_owner_matrix_censors_endpoint_apex_owner_without_backfill_request() -> 
     assert cell.trace_quality == "owner_apex_on_integration_boundary"
     assert cell.gap_fill_reason == "owner_quantification_excluded"
     assert cell.missing_observation_state == "missing_unchecked"
+    decision = build_production_decisions(matrix, AlignmentConfig()).cell(
+        feature.feature_family_id,
+        "sample-a",
+    )
+    assert decision.write_matrix_value is False
+    assert decision.matrix_value is None
 
 
 def test_owner_area_median_ignores_censored_owner() -> None:
@@ -156,6 +188,7 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
+        selected_integration=_rescue_integration(area=900.0),
     )
 
     matrix = build_owner_alignment_matrix(
@@ -167,6 +200,57 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
 
     assert matrix.cells[0].status == "rescued"
     assert matrix.cells[0].area == 900.0
+    assert matrix.cells[0].matrix_area == 900.0
+
+
+def test_owner_matrix_censors_endpoint_rescue_before_matrix_write() -> None:
+    feature = replace(
+        _feature(),
+        owners=(),
+        confirm_local_owners_with_backfill=False,
+    )
+    rescued = AlignedCell(
+        sample_stem="sample-a",
+        cluster_id=feature.feature_family_id,
+        status="rescued",
+        area=900.0,
+        apex_rt=8.50,
+        height=90.0,
+        peak_start_rt=8.50,
+        peak_end_rt=8.60,
+        rt_delta_sec=0.0,
+        trace_quality="owner_backfill",
+        scan_support_score=None,
+        source_candidate_id=None,
+        source_raw_file=None,
+        reason="owner-centered MS1 backfill",
+        selected_integration=_rescue_integration(
+            area=900.0,
+            apex=8.50,
+            left=8.50,
+            right=8.60,
+        ),
+    )
+
+    matrix = build_owner_alignment_matrix(
+        (feature,),
+        sample_order=("sample-a",),
+        ambiguous_by_sample={},
+        rescued_cells=(rescued,),
+    )
+
+    cell = matrix.cells[0]
+    assert cell.status == "unchecked"
+    assert cell.area is None
+    assert cell.matrix_area is None
+    assert cell.trace_quality == "owner_apex_on_integration_boundary"
+    assert cell.gap_fill_reason == "owner_quantification_excluded"
+    decision = build_production_decisions(matrix, AlignmentConfig()).cell(
+        feature.feature_family_id,
+        "sample-a",
+    )
+    assert decision.write_matrix_value is False
+    assert decision.matrix_value is None
 
 
 def test_owner_matrix_accepts_delivery_contract_feature_without_legacy_dto() -> None:
@@ -376,6 +460,7 @@ def test_owner_matrix_uses_backfill_confirmation_for_severe_low_local_owner() ->
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
+        selected_integration=_rescue_integration(area=900.0),
     )
 
     matrix = build_owner_alignment_matrix(
@@ -410,6 +495,7 @@ def test_owner_matrix_keeps_detected_cell_when_local_owner_is_not_low_outlier() 
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
+        selected_integration=_rescue_integration(area=4000.0),
     )
 
     matrix = build_owner_alignment_matrix(

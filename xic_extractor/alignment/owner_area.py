@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from statistics import median
+from typing import cast
 
 
 def positive_finite(value: object) -> float | None:
@@ -16,6 +17,25 @@ def positive_finite(value: object) -> float | None:
     return None
 
 
+def owner_quantification_eligible(owner: object) -> bool:
+    if not bool(getattr(owner, "quantification_eligible", True)):
+        return False
+    missing = object()
+    apex = getattr(owner, "owner_apex_rt", missing)
+    left = getattr(owner, "owner_peak_start_rt", missing)
+    right = getattr(owner, "owner_peak_end_rt", missing)
+    if any(value is missing for value in (apex, left, right)):
+        return True
+    if not all(
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        for value in (apex, left, right)
+    ):
+        return False
+    return cast(float, left) < cast(float, apex) < cast(float, right)
+
+
 def median_owner_area(feature: object) -> float | None:
     owners = getattr(feature, "owners", ())
     return median_positive_owner_area(owners)
@@ -25,7 +45,7 @@ def median_positive_owner_area(owners: Iterable[object]) -> float | None:
     areas = [
         area
         for owner in owners
-        if bool(getattr(owner, "quantification_eligible", True))
+        if owner_quantification_eligible(owner)
         for area in (positive_finite(getattr(owner, "owner_area", None)),)
         if area is not None
     ]

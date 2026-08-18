@@ -126,7 +126,11 @@ def backfill_request_sample_stems(
     if bool(getattr(feature, "review_only", False)):
         return ()
     owner_eligibility = backfill_runtime_owner_eligibility(feature)
-    detected_samples = {owner.sample_stem for owner in owner_eligibility}
+    detected_samples = {
+        owner.sample_stem
+        for owner in owner_eligibility
+        if owner.quantification_eligible
+    }
     if len(detected_samples) < alignment_config.owner_backfill_min_detected_samples:
         return ()
     owners_by_sample: dict[str, list[object]] = defaultdict(list)

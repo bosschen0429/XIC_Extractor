@@ -263,12 +263,12 @@ def test_compact_runtime_projection_excludes_censored_owner_area() -> None:
     projection = mint_owner_backfill_runtime_feature(source_feature)
 
     assert projection.owner_eligibility == (
-        OwnerBackfillOwnerEligibility("sample-a", None),
+        OwnerBackfillOwnerEligibility("sample-a", None, False),
         OwnerBackfillOwnerEligibility("sample-b", 1000.0),
     )
 
 
-def test_censored_owner_does_not_become_automatic_backfill_target() -> None:
+def test_censored_owner_becomes_bounded_backfill_target_after_valid_quorum() -> None:
     feature = replace(
         _feature(),
         owners=(
@@ -290,7 +290,32 @@ def test_censored_owner_does_not_become_automatic_backfill_target() -> None:
         sample_order=("sample-a", "sample-b", "sample-c"),
         raw_sample_stems=frozenset({"sample-a", "sample-b", "sample-c"}),
         alignment_config=AlignmentConfig(),
-    ) == ("sample-c",)
+    ) == ("sample-a", "sample-c")
+
+
+def test_censored_owner_does_not_satisfy_detected_sample_quorum() -> None:
+    feature = replace(
+        _feature(),
+        owners=(
+            replace(
+                _owner("sample-a", "edge"),
+                owner_area=1.0,
+                quantification_eligible=False,
+                quantification_exclusion_reason=(
+                    "owner_apex_on_integration_boundary"
+                ),
+            ),
+            replace(_owner("sample-b", "normal"), owner_area=1000.0),
+        ),
+        confirm_local_owners_with_backfill=True,
+    )
+
+    assert backfill_request_sample_stems(
+        feature,
+        sample_order=("sample-a", "sample-b", "sample-c"),
+        raw_sample_stems=frozenset({"sample-a", "sample-b", "sample-c"}),
+        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=2),
+    ) == ()
 
 
 def test_full_feature_missing_owners_preserves_attribute_error_sentinel() -> None:

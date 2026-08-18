@@ -6,7 +6,11 @@ from dataclasses import replace
 from xic_extractor.alignment.cell_region_audit import with_region_audit
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_handoff import integration_from_values
-from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
+from xic_extractor.alignment.owner_area import (
+    median_owner_area,
+    owner_quantification_eligible,
+    positive_finite,
+)
 from xic_extractor.alignment.owner_group_delivery import (
     GroupProjection,
     OwnerGroupDeliveryFeature,
@@ -196,7 +200,7 @@ def _detected_cell(
     group_projection: GroupProjection,
 ) -> AlignedCell:
     event = owner.primary_identity_event
-    if not getattr(owner, "quantification_eligible", True):
+    if not owner_quantification_eligible(owner):
         exclusion_reason = (
             getattr(owner, "quantification_exclusion_reason", "")
             or "owner_quantification_excluded"
@@ -270,11 +274,17 @@ def _detected_or_confirmed_cell(
     family_area: float | None,
     group_projection: GroupProjection,
 ) -> AlignedCell:
+    rescued_exclusion_reason = (
+        _rescued_quantification_exclusion_reason(rescued)
+        if rescued is not None and rescued.status == "rescued"
+        else None
+    )
     if (
         rescued is not None
         and feature.confirm_local_owners_with_backfill
         and detected.status == "unchecked"
         and rescued.status == "rescued"
+        and rescued_exclusion_reason is None
     ):
         return replace(
             rescued,
@@ -292,6 +302,7 @@ def _detected_or_confirmed_cell(
     if (
         rescued is not None
         and feature.confirm_local_owners_with_backfill
+        and rescued_exclusion_reason is None
         and _rescued_supersedes_detected(detected, rescued, family_area=family_area)
     ):
         return replace(
@@ -331,6 +342,13 @@ def _rescued_cell(
                 ),
             ),
         )
+    exclusion_reason = _rescued_quantification_exclusion_reason(rescued)
+    if exclusion_reason is not None:
+        return _censored_rescued_cell(
+            rescued,
+            exclusion_reason=exclusion_reason,
+            group_projection=group_projection,
+        )
     return replace(
         rescued,
         **delivery_cell_projection_from_group(
@@ -338,6 +356,70 @@ def _rescued_cell(
             gap_fill_state="gap_fill_rescued",
             gap_fill_reason="group_centered_query_detected",
             missing_observation_state="queried_and_detected",
+        ),
+    )
+
+
+def _rescued_quantification_exclusion_reason(
+    rescued: AlignedCell,
+) -> str | None:
+    if not _strictly_interior(
+        rescued.apex_rt,
+        rescued.peak_start_rt,
+        rescued.peak_end_rt,
+    ):
+        return "owner_apex_on_integration_boundary"
+    integration = rescued.selected_integration
+    if integration is None:
+        return "owner_backfill_missing_selected_integration"
+    if not _strictly_interior(
+        integration.rt_apex_min,
+        integration.rt_left_min,
+        integration.rt_right_min,
+    ):
+        return "owner_apex_on_integration_boundary"
+    if positive_finite(rescued.area) is None:
+        return "owner_backfill_invalid_area"
+    if positive_finite(rescued.matrix_area) is None:
+        return "owner_backfill_invalid_matrix_area"
+    return None
+
+
+def _strictly_interior(
+    apex: float | None,
+    left: float | None,
+    right: float | None,
+) -> bool:
+    return (
+        apex is not None
+        and left is not None
+        and right is not None
+        and left < apex < right
+    )
+
+
+def _censored_rescued_cell(
+    rescued: AlignedCell,
+    *,
+    exclusion_reason: str,
+    group_projection: GroupProjection,
+) -> AlignedCell:
+    return replace(
+        rescued,
+        status="unchecked",
+        area=None,
+        height=None,
+        trace_quality=exclusion_reason,
+        selected_integration=None,
+        reason=(
+            "owner backfill excluded from quantification: "
+            f"{exclusion_reason}"
+        ),
+        **delivery_cell_projection_from_group(
+            group_projection,
+            gap_fill_state="not_filled",
+            gap_fill_reason="owner_quantification_excluded",
+            missing_observation_state="missing_unchecked",
         ),
     )
 

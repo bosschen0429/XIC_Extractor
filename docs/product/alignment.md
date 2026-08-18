@@ -81,6 +81,15 @@ contracts for review and downstream product decisions.
   whose integration recorded no baseline residual keeps the Discovery-score
   rating, so paths that do not measure a residual are unchanged. This changes
   the `seed_support_level` column in the edge evidence artifact.
+- Owner quantification is eligible only when the selected integration apex is
+  strictly inside its selected left/right bounds. An endpoint apex remains an
+  owner and remains visible in diagnostics, but its Matrix cell is
+  `unchecked` with no area or selected integration, and it does not count as a
+  detected owner for the Backfill sample-quorum gate. A Backfill rescue may
+  replace that censored owner only when its scalar and selected-integration
+  boundaries are both interior and its primary Matrix area is valid; an
+  endpoint or incomplete rescue is censored by the same rule. This is a
+  quantification-authority guard, not a new peak-selection or Backfill route.
 - An `owner_bounded_continuity` family reaches the primary matrix only when at
   least two of its owners carry a resolved peak at or above the quantitation
   limit. Bounded continuity admits a group on detection-grade evidence, which is
