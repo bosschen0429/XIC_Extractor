@@ -273,6 +273,25 @@ def _detected_or_confirmed_cell(
     if (
         rescued is not None
         and feature.confirm_local_owners_with_backfill
+        and detected.status == "unchecked"
+        and rescued.status == "rescued"
+    ):
+        return replace(
+            rescued,
+            reason=(
+                "owner-centered MS1 backfill replaced a local owner excluded "
+                f"from quantification; source_reason={detected.reason}"
+            ),
+            **delivery_cell_projection_from_group(
+                group_projection,
+                gap_fill_state="gap_fill_rescued",
+                gap_fill_reason="group_centered_query_detected",
+                missing_observation_state="queried_and_detected",
+            ),
+        )
+    if (
+        rescued is not None
+        and feature.confirm_local_owners_with_backfill
         and _rescued_supersedes_detected(detected, rescued, family_area=family_area)
     ):
         return replace(

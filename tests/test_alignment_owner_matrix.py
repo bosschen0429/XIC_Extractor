@@ -130,6 +130,45 @@ def test_owner_area_median_ignores_censored_owner() -> None:
     assert median_owner_area(feature) == 1000.0
 
 
+def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
+    owner = replace(
+        _owner("sample-a", "edge"),
+        quantification_eligible=False,
+        quantification_exclusion_reason="owner_apex_on_integration_boundary",
+    )
+    feature = replace(
+        _feature(),
+        owners=(owner,),
+        confirm_local_owners_with_backfill=True,
+    )
+    rescued = AlignedCell(
+        sample_stem="sample-a",
+        cluster_id=feature.feature_family_id,
+        status="rescued",
+        area=900.0,
+        apex_rt=8.55,
+        height=90.0,
+        peak_start_rt=8.50,
+        peak_end_rt=8.60,
+        rt_delta_sec=3.0,
+        trace_quality="owner_backfill",
+        scan_support_score=None,
+        source_candidate_id=None,
+        source_raw_file=None,
+        reason="owner-centered MS1 backfill",
+    )
+
+    matrix = build_owner_alignment_matrix(
+        (feature,),
+        sample_order=("sample-a",),
+        ambiguous_by_sample={},
+        rescued_cells=(rescued,),
+    )
+
+    assert matrix.cells[0].status == "rescued"
+    assert matrix.cells[0].area == 900.0
+
+
 def test_owner_matrix_accepts_delivery_contract_feature_without_legacy_dto() -> None:
     owner = _owner("sample-a", "a", apex_rt=8.5)
     feature = SimpleNamespace(
