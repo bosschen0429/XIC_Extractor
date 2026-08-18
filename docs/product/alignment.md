@@ -13,6 +13,14 @@ contracts for review and downstream product decisions.
   cross-sample owner/group hypotheses based on evidence. It does not create the
   first sample-local Discovery hit and does not treat a single method match as
   cross-sample identity proof by itself.
+- Two resolved peaks in one sample count as an unresolved doublet only when
+  their apex separation is chromatographically meaningful against the narrower
+  of them, not on an absolute bound alone. One MS1 peak spans many scans and its
+  neutral loss can be seeded from several, and each seed opens its own
+  resolution window, so the same peak returns with apexes a few seconds apart
+  while the seeds sit tens of seconds apart. Below roughly half a peak width the
+  trace does not show two apexes, so the pair is not a doublet and its component
+  is not discarded. `owner_apex_close_sec` still applies as the lower bound.
 - Cross-sample grouping uses all-pairs strong-edge complete-link by default. A
   connected RT/mass continuum may replace the split only when it contains one
   clean detected owner from every sample in the explicit Alignment batch,

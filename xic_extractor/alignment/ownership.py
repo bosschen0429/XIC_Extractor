@@ -88,6 +88,7 @@ class _ResolutionOutcome:
     unresolved: OwnerAssignment | None
 
 
+_DOUBLET_APEX_SEPARATION_WIDTH_FRACTION = 0.5
 _ResolutionRequestItem = tuple[int, Any, float, XICRequest, bool]
 _ResolutionRequestGroupKey = tuple[str, int | float, int | float]
 
@@ -742,12 +743,35 @@ def _looks_like_unresolved_doublet(
     right: _ResolvedCandidate,
     config: AlignmentConfig,
 ) -> bool:
+    """Two peaks, or one peak seeded by more than one MS2 scan?
+
+    One MS1 peak spans many scans and its neutral loss can be seeded from
+    several of them.  Each seed opens its own resolution window, so the same
+    peak comes back with apexes a few seconds apart while the seeds themselves
+    sit tens of seconds apart.  An apex separation measured only against
+    ``owner_apex_close_sec`` cannot tell that from a real doublet, because the
+    bound carries no sense of how wide the peaks are.  Require the separation to
+    also be chromatographically meaningful against the narrower peak: below
+    roughly half a peak width the trace does not show two apexes at all, so
+    calling it an unresolved doublet is not supportable.
+    """
     apex_delta_sec = abs(left.apex_rt - right.apex_rt) * 60.0
+    if apex_delta_sec <= config.owner_apex_close_sec:
+        return False
+    narrower_width_sec = min(
+        (left.peak_end_rt - left.peak_start_rt) * 60.0,
+        (right.peak_end_rt - right.peak_start_rt) * 60.0,
+    )
+    if (
+        narrower_width_sec > 0.0
+        and apex_delta_sec
+        < narrower_width_sec * _DOUBLET_APEX_SEPARATION_WIDTH_FRACTION
+    ):
+        return False
     lower_height = min(left.height, right.height)
     higher_height = max(left.height, right.height)
     return (
-        apex_delta_sec > config.owner_apex_close_sec
-        and lower_height / max(higher_height, 1e-12)
+        lower_height / max(higher_height, 1e-12)
         > config.owner_tail_max_secondary_ratio
     )
 

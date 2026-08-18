@@ -581,3 +581,60 @@ def _peak_config():
         resolver_peak_duration_max=2.0,
         resolver_min_scans=1,
     )
+
+
+def test_one_peak_seeded_by_two_ms2_scans_is_not_an_unresolved_doublet():
+    """Seeds 42 s apart across one 27 s peak resolve 5 s apart, not as two peaks."""
+    candidates = (
+        _candidate("s1#9001", mz=269.1436, seed_rt=25.40, evidence_score=80),
+        _candidate("s1#9002", mz=269.1437, seed_rt=26.10, evidence_score=78),
+    )
+    source = FakeXICSource(
+        rt=np.array([25.5, 25.7, 25.8, 25.9, 26.1], dtype=float),
+        intensity=np.array([0.0, 100.0, 90.0, 78.0, 0.0], dtype=float),
+    )
+
+    result = build_sample_local_owners(
+        candidates,
+        raw_sources={"s1": source},
+        alignment_config=AlignmentConfig(owner_apex_close_sec=2.0),
+        peak_config=_peak_config(),
+        peak_resolver=FakePeakResolver(
+            {
+                "s1#9001": (25.75, 25.52, 25.98, 1000.0, 100.0),
+                "s1#9002": (25.83, 25.60, 26.06, 950.0, 78.0),
+            },
+        ),
+    )
+
+    assert result.ambiguous_records == ()
+    assert result.owners != ()
+
+
+def test_apex_separation_near_a_full_peak_width_stays_ambiguous():
+    """The rule still fires where the trace could actually show two apexes."""
+    candidates = (
+        _candidate("s1#9101", mz=269.1436, seed_rt=25.40, evidence_score=80),
+        _candidate("s1#9102", mz=269.1437, seed_rt=25.60, evidence_score=78),
+    )
+    source = FakeXICSource(
+        rt=np.array([25.5, 25.7, 25.8, 25.9, 26.1], dtype=float),
+        intensity=np.array([0.0, 100.0, 90.0, 78.0, 0.0], dtype=float),
+    )
+
+    result = build_sample_local_owners(
+        candidates,
+        raw_sources={"s1": source},
+        alignment_config=AlignmentConfig(owner_apex_close_sec=2.0),
+        peak_config=_peak_config(),
+        peak_resolver=FakePeakResolver(
+            {
+                "s1#9101": (25.75, 25.70, 25.80, 1000.0, 100.0),
+                "s1#9102": (25.83, 25.78, 25.88, 950.0, 78.0),
+            },
+        ),
+    )
+
+    assert result.owners == ()
+    assert len(result.ambiguous_records) == 1
+    assert result.ambiguous_records[0].reason == "owner_multiplet_ambiguity"
