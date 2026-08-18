@@ -55,6 +55,8 @@ CrossSamplePeakGroupConstructionRole: TypeAlias = Literal[
 ]
 
 _PRECURSOR_BUCKET_WIDTH_DA = 1.0
+_DUPLICATE_OWNER_GROUP_POLICY = "owner_duplicate_group_resolved"
+_BOUNDED_CONTINUITY_RT_SPAN_SEC = 300.0
 
 
 class OwnerEdgeEvaluator(Protocol):
@@ -256,6 +258,7 @@ def construct_cross_sample_peak_group_hypotheses(
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence] = {}
     full_batch_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
     injection_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
+    bounded_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
     if sample_universe is None:
         groups = _complete_link_groups(
             sorted(clean, key=_owner_sort_key),
@@ -280,6 +283,7 @@ def construct_cross_sample_peak_group_hypotheses(
             groups,
             full_batch_continuity_owner_sets,
             injection_trajectory_owner_sets,
+            bounded_continuity_owner_sets,
         ) = _restore_sparse_complete_link_groups(
             groups,
             sample_universe=sample_universe,
@@ -290,25 +294,80 @@ def construct_cross_sample_peak_group_hypotheses(
             edge_cache=edge_cache,
             edge_evaluator=edge_evaluator,
         )
-    clean_hypotheses = tuple(
-        _hypothesis_from_owner_group(
-            tuple(group),
-            group_hypothesis_id=f"FAM{index + len(conflict_hypotheses):06d}",
-            public_family_id=f"FAM{index + len(conflict_hypotheses):06d}",
-            evidence=_group_evidence(
-                group,
-                full_batch_continuity=(
-                    frozenset(owner.owner_id for owner in group)
-                    in full_batch_continuity_owner_sets
+    resolved_duplicate_owner_groups = (
+        _resolve_duplicate_owner_groups(groups, config=config)
+        if sample_universe is not None
+        else {}
+    )
+    group_ids = tuple(
+        f"FAM{index + len(conflict_hypotheses):06d}"
+        for index in range(1, len(groups) + 1)
+    )
+    resolved_group_ids_by_winner: dict[int, list[str]] = {}
+    for subordinate, winner in sorted(resolved_duplicate_owner_groups.items()):
+        resolved_group_ids_by_winner.setdefault(winner, []).append(
+            group_ids[subordinate],
+        )
+    clean_hypotheses: list[CrossSamplePeakGroupHypothesis] = []
+    for index, group in enumerate(groups):
+        group_id = group_ids[index]
+        owner_id_set = frozenset(owner.owner_id for owner in group)
+        evidence = _group_evidence(
+            group,
+            full_batch_continuity=(
+                owner_id_set in full_batch_continuity_owner_sets
+            ),
+            injection_trajectory=(
+                owner_id_set in injection_trajectory_owner_sets
+            ),
+            bounded_continuity=(owner_id_set in bounded_continuity_owner_sets),
+        )
+        winner_index = resolved_duplicate_owner_groups.get(index)
+        if winner_index is not None:
+            winner_id = group_ids[winner_index]
+            clean_hypotheses.append(
+                _hypothesis_from_owner_group(
+                    tuple(group),
+                    group_hypothesis_id=group_id,
+                    public_family_id=group_id,
+                    evidence=(
+                        f"{evidence};{_DUPLICATE_OWNER_GROUP_POLICY}_loser;"
+                        f"winner={winner_id}"
+                    ),
+                    review_only=True,
+                    consolidation_state="primary_loser",
+                    consolidation_winner_group_hypothesis_id=winner_id,
+                    consolidation_source_group_hypothesis_id=group_id,
                 ),
-                injection_trajectory=(
-                    frozenset(owner.owner_id for owner in group)
-                    in injection_trajectory_owner_sets
+            )
+            continue
+        resolved_ids = resolved_group_ids_by_winner.get(index)
+        if resolved_ids is None:
+            clean_hypotheses.append(
+                _hypothesis_from_owner_group(
+                    tuple(group),
+                    group_hypothesis_id=group_id,
+                    public_family_id=group_id,
+                    evidence=evidence,
+                ),
+            )
+            continue
+        clean_hypotheses.append(
+            _hypothesis_from_owner_group(
+                tuple(group),
+                group_hypothesis_id=group_id,
+                public_family_id=group_id,
+                evidence=(
+                    f"{evidence};{_DUPLICATE_OWNER_GROUP_POLICY}_winner;"
+                    f"resolved_group_count={len(resolved_ids)}"
+                ),
+                consolidation_state="primary_winner",
+                consolidation_winner_group_hypothesis_id=group_id,
+                consolidation_source_group_hypothesis_id=";".join(
+                    (group_id, *resolved_ids),
                 ),
             ),
         )
-        for index, group in enumerate(groups, start=1)
-    )
     return (*conflict_hypotheses, *clean_hypotheses)
 
 
@@ -781,10 +840,12 @@ def _restore_sparse_complete_link_groups(
     tuple[tuple[SampleLocalMS1Owner, ...], ...],
     frozenset[frozenset[str]],
     frozenset[frozenset[str]],
+    frozenset[frozenset[str]],
 ]:
     groups: list[tuple[SampleLocalMS1Owner, ...]] = []
     full_batch_continuity_owner_sets: set[frozenset[str]] = set()
     injection_trajectory_owner_sets: set[frozenset[str]] = set()
+    bounded_continuity_owner_sets: set[frozenset[str]] = set()
     for connected_group in connected_groups:
         group_samples = frozenset(owner.sample_stem for owner in connected_group)
         complete_groups = _complete_link_groups(
@@ -821,12 +882,210 @@ def _restore_sparse_complete_link_groups(
                 frozenset(owner.owner_id for owner in ordered),
             )
             continue
+        if len(complete_groups) > 1:
+            ordered = tuple(sorted(connected_group, key=_owner_sort_key))
+            if _group_passes_bounded_continuity(ordered, config=config):
+                groups.append(ordered)
+                bounded_continuity_owner_sets.add(
+                    frozenset(owner.owner_id for owner in ordered),
+                )
+                continue
         groups.extend(complete_groups)
     groups.sort(key=lambda group: _owner_sort_key(group[0]))
     return (
         tuple(groups),
         frozenset(full_batch_continuity_owner_sets),
         frozenset(injection_trajectory_owner_sets),
+        frozenset(bounded_continuity_owner_sets),
+    )
+
+
+def _group_passes_bounded_continuity(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    """Keep a connected component whole on bounded evidence, not on coverage.
+
+    The two coverage rescues above only fire at full batch coverage or one
+    sample short of it, so a component that a real compound produced over any
+    smaller share of the batch is re-split however continuous it is.  A
+    component instead survives here when the whole of it stays inside the
+    symmetric precursor/product/loss hard envelope and its apex RT span stays
+    within the group span bound, which is what separates one compound drifting
+    across the batch from two compounds the chromatography resolved.
+    """
+    if not _group_passes_hard_envelope(group, config=config):
+        return False
+    apex_rts = [owner.owner_apex_rt for owner in group]
+    span_sec = (max(apex_rts) - min(apex_rts)) * 60.0
+    return span_sec <= _BOUNDED_CONTINUITY_RT_SPAN_SEC
+
+
+@dataclass(frozen=True)
+class _GroupIdentityFacts:
+    """Group-level identity facts used to resolve duplicate-owner groups."""
+
+    neutral_loss_tag: str
+    center_mz: float
+    center_rt: float
+    center_product_mz: float
+    center_observed_loss: float
+    sample_stems: frozenset[str]
+    owners: tuple[SampleLocalMS1Owner, ...]
+    envelope: _GroupHardGateEnvelope
+
+
+def _group_identity_facts(
+    group: tuple[SampleLocalMS1Owner, ...],
+) -> _GroupIdentityFacts:
+    envelope = _group_envelope_for_owner(group[0])
+    for owner in group[1:]:
+        envelope = _extend_group_envelope(envelope, owner)
+    return _GroupIdentityFacts(
+        neutral_loss_tag=group[0].neutral_loss_tag,
+        center_mz=sum(owner.precursor_mz for owner in group) / len(group),
+        center_rt=sum(owner.owner_apex_rt for owner in group) / len(group),
+        center_product_mz=sum(
+            owner.primary_identity_event.product_mz for owner in group
+        )
+        / len(group),
+        center_observed_loss=sum(
+            owner.primary_identity_event.observed_neutral_loss_da for owner in group
+        )
+        / len(group),
+        sample_stems=frozenset(owner.sample_stem for owner in group),
+        owners=group,
+        envelope=envelope,
+    )
+
+
+def _resolve_duplicate_owner_groups(
+    groups: tuple[tuple[SampleLocalMS1Owner, ...], ...],
+    *,
+    config: AlignmentConfig,
+) -> dict[int, int]:
+    """Resolve groups that only compete inside samples another group owns.
+
+    A group whose samples are all already owned by a larger, identity-compatible
+    cross-sample group cannot add sample coverage; it holds duplicate owners of
+    that group's samples.  Resolving it in this owner keeps it out of Backfill
+    instead of paying a full-batch request set for a group that Matrix
+    consolidation demotes afterwards.  Resolution is one level deep: a group
+    that wins is never itself resolved away.
+    """
+    if len(groups) < 2:
+        return {}
+    facts = tuple(_group_identity_facts(group) for group in groups)
+    indexes_by_tag: dict[str, list[int]] = {}
+    for index, fact in enumerate(facts):
+        if not fact.neutral_loss_tag:
+            continue
+        indexes_by_tag.setdefault(fact.neutral_loss_tag, []).append(index)
+
+    rt_window_min = config.identity_rt_candidate_window_sec / 60.0
+    resolved: dict[int, int] = {}
+    winners: set[int] = set()
+    for tag_indexes in indexes_by_tag.values():
+        ordered = sorted(
+            tag_indexes,
+            key=lambda index: (facts[index].center_rt, index),
+        )
+        position_by_index = {index: position for position, index in enumerate(ordered)}
+        for subordinate in sorted(
+            tag_indexes,
+            key=lambda index: (
+                len(facts[index].owners),
+                facts[index].center_rt,
+                index,
+            ),
+        ):
+            if subordinate in winners:
+                continue
+            best_score: tuple[float, float, int] | None = None
+            best_winner: int | None = None
+            for candidate in _rt_window_group_indexes(
+                ordered,
+                facts=facts,
+                position=position_by_index[subordinate],
+                center_rt=facts[subordinate].center_rt,
+                rt_window_min=rt_window_min,
+            ):
+                if candidate == subordinate or candidate in resolved:
+                    continue
+                if not _group_resolves_duplicate_owner_group(
+                    facts[candidate],
+                    facts[subordinate],
+                    config=config,
+                ):
+                    continue
+                score = (
+                    _ppm(facts[subordinate].center_mz, facts[candidate].center_mz),
+                    abs(facts[subordinate].center_rt - facts[candidate].center_rt),
+                    candidate,
+                )
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_winner = candidate
+            if best_winner is not None:
+                resolved[subordinate] = best_winner
+                winners.add(best_winner)
+    return resolved
+
+
+def _rt_window_group_indexes(
+    ordered: list[int],
+    *,
+    facts: tuple[_GroupIdentityFacts, ...],
+    position: int,
+    center_rt: float,
+    rt_window_min: float,
+) -> Iterable[int]:
+    left = position - 1
+    while left >= 0 and center_rt - facts[ordered[left]].center_rt <= rt_window_min:
+        yield ordered[left]
+        left -= 1
+    right = position + 1
+    while (
+        right < len(ordered)
+        and facts[ordered[right]].center_rt - center_rt <= rt_window_min
+    ):
+        yield ordered[right]
+        right += 1
+
+
+def _group_resolves_duplicate_owner_group(
+    winner: _GroupIdentityFacts,
+    subordinate: _GroupIdentityFacts,
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    if len(winner.owners) < 2 or len(winner.owners) <= len(subordinate.owners):
+        return False
+    if winner.neutral_loss_tag != subordinate.neutral_loss_tag:
+        return False
+    if not subordinate.sample_stems <= winner.sample_stems:
+        return False
+    if _ppm(subordinate.center_mz, winner.center_mz) > config.max_ppm:
+        return False
+    if (
+        abs(subordinate.center_rt - winner.center_rt) * 60.0
+        > config.identity_rt_candidate_window_sec
+    ):
+        return False
+    if (
+        _ppm(subordinate.center_product_mz, winner.center_product_mz)
+        > config.product_mz_tolerance_ppm
+    ):
+        return False
+    if (
+        _ppm(subordinate.center_observed_loss, winner.center_observed_loss)
+        > config.observed_loss_tolerance_ppm
+    ):
+        return False
+    return all(
+        _owner_within_group_envelope(owner, winner.envelope, config)
+        for owner in subordinate.owners
     )
 
 
@@ -978,6 +1237,14 @@ def _group_can_pass_hard_gates(
 ) -> bool:
     if owner.sample_stem in envelope.sample_stems:
         return False
+    return _owner_within_group_envelope(owner, envelope, config)
+
+
+def _owner_within_group_envelope(
+    owner: SampleLocalMS1Owner,
+    envelope: _GroupHardGateEnvelope,
+    config: AlignmentConfig,
+) -> bool:
     if (
         not owner.neutral_loss_tag
         or owner.neutral_loss_tag != envelope.neutral_loss_tag
@@ -1135,6 +1402,9 @@ def _hypothesis_from_owner_group(
     evidence: str,
     identity_conflict: bool = False,
     review_only: bool = False,
+    consolidation_state: str = "not_consolidated",
+    consolidation_winner_group_hypothesis_id: str = "",
+    consolidation_source_group_hypothesis_id: str = "",
 ) -> CrossSamplePeakGroupHypothesis:
     center_mz = sum(owner.precursor_mz for owner in group) / len(group)
     center_rt = sum(owner.owner_apex_rt for owner in group) / len(group)
@@ -1165,6 +1435,13 @@ def _hypothesis_from_owner_group(
         identity_conflict=identity_conflict,
         review_only=review_only,
         construction_role="successor_constructor",
+        consolidation_state=consolidation_state,
+        consolidation_winner_group_hypothesis_id=(
+            consolidation_winner_group_hypothesis_id
+        ),
+        consolidation_source_group_hypothesis_id=(
+            consolidation_source_group_hypothesis_id
+        ),
     )
 
 
@@ -1173,6 +1450,7 @@ def _group_evidence(
     *,
     full_batch_continuity: bool,
     injection_trajectory: bool,
+    bounded_continuity: bool = False,
 ) -> str:
     if len(group) == 1:
         return "single_sample_local_owner"
@@ -1180,6 +1458,8 @@ def _group_evidence(
         policy = "owner_full_batch_continuity"
     elif injection_trajectory:
         policy = "owner_injection_trajectory"
+    elif bounded_continuity:
+        policy = "owner_bounded_continuity"
     else:
         policy = "owner_complete_link"
     return f"{policy};owner_count={len(group)}"

@@ -4,6 +4,9 @@ from pathlib import Path
 
 from xic_extractor.alignment import cross_sample_peak_groups as peak_groups_module
 from xic_extractor.alignment import owner_clustering as owner_clustering_module
+from xic_extractor.alignment.backfill_scope import (
+    backfill_request_sample_stems,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
 from xic_extractor.alignment.owner_clustering import (
@@ -114,7 +117,7 @@ def test_owner_clustering_connects_dense_rt_chain_without_external_drift() -> No
     assert features[0].evidence == "owner_full_batch_continuity;owner_count=3"
 
 
-def test_owner_clustering_does_not_connect_incomplete_rt_chain() -> None:
+def test_owner_clustering_keeps_bounded_incomplete_rt_chain() -> None:
     features = cluster_sample_local_owners(
         (
             _owner("sample-a", "a", apex_rt=10.00),
@@ -128,10 +131,53 @@ def test_owner_clustering_does_not_connect_incomplete_rt_chain() -> None:
     )
 
     assert [feature.event_cluster_ids for feature in features] == [
-        ("OWN-sample-a-a", "OWN-sample-b-b"),
-        ("OWN-sample-c-c",),
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
     ]
-    assert features[0].evidence == "owner_complete_link;owner_count=2"
+    assert features[0].evidence == "owner_bounded_continuity;owner_count=3"
+
+
+def test_owner_clustering_splits_rt_chain_beyond_span_bound() -> None:
+    features = cluster_sample_local_owners(
+        tuple(
+            _owner(f"sample-{index}", f"o{index}", apex_rt=10.00 + 0.9 * index)
+            for index in range(7)
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {f"sample-{index}" for index in range(8)},
+        ),
+    )
+
+    assert len(features) > 1
+    assert all(
+        "owner_bounded_continuity" not in feature.evidence
+        for feature in features
+    )
+
+
+def test_owner_clustering_splits_chain_that_fails_hard_envelope() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00, precursor_mz=100.0),
+            _owner("sample-b", "b", apex_rt=10.10, precursor_mz=100.003),
+            _owner("sample-c", "c", apex_rt=10.20, precursor_mz=100.006),
+        ),
+        config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+            preferred_ppm=50.0,
+            max_ppm=50.0,
+        ),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+
+    assert len(features) > 1
+    assert all(
+        "owner_bounded_continuity" not in feature.evidence
+        for feature in features
+    )
 
 
 def test_owner_clustering_restores_incomplete_injection_trajectory() -> None:
@@ -164,10 +210,8 @@ def test_owner_clustering_restores_incomplete_injection_trajectory() -> None:
         },
     )
 
-    assert [feature.event_cluster_ids for feature in without_order] == [
-        ("OWN-sample-a-a", "OWN-sample-b-b"),
-        ("OWN-sample-c-c", "OWN-sample-d-d"),
-    ]
+    assert with_order[0].evidence == "owner_injection_trajectory;owner_count=4"
+    assert without_order[0].evidence == "owner_bounded_continuity;owner_count=4"
     assert [feature.event_cluster_ids for feature in with_order] == [
         (
             "OWN-sample-a-a",
@@ -176,7 +220,6 @@ def test_owner_clustering_restores_incomplete_injection_trajectory() -> None:
             "OWN-sample-d-d",
         )
     ]
-    assert with_order[0].evidence == "owner_injection_trajectory;owner_count=4"
 
 
 def test_owner_clustering_requires_complete_unique_injection_order() -> None:
@@ -202,10 +245,10 @@ def test_owner_clustering_requires_complete_unique_injection_order() -> None:
             injection_order=injection_order,
         )
 
-        assert [feature.event_cluster_ids for feature in features] == [
-            ("OWN-sample-a-a", "OWN-sample-b-b"),
-            ("OWN-sample-c-c", "OWN-sample-d-d"),
-        ]
+        assert all(
+            "owner_injection_trajectory" not in feature.evidence
+            for feature in features
+        )
 
 
 def test_owner_clustering_keeps_sparse_trajectory_as_candidates() -> None:
@@ -239,10 +282,10 @@ def test_owner_clustering_keeps_sparse_trajectory_as_candidates() -> None:
         },
     )
 
-    assert [feature.event_cluster_ids for feature in features] == [
-        ("OWN-sample-a-a", "OWN-sample-b-b"),
-        ("OWN-sample-c-c", "OWN-sample-d-d"),
-    ]
+    assert all(
+        "owner_injection_trajectory" not in feature.evidence
+        for feature in features
+    )
 
 
 def test_owner_clustering_does_not_use_drift_lookup_order_for_trajectory() -> None:
@@ -270,10 +313,10 @@ def test_owner_clustering_does_not_use_drift_lookup_order_for_trajectory() -> No
         ),
     )
 
-    assert [feature.event_cluster_ids for feature in features] == [
-        ("OWN-sample-a-a", "OWN-sample-b-b"),
-        ("OWN-sample-c-c", "OWN-sample-d-d"),
-    ]
+    assert all(
+        "owner_injection_trajectory" not in feature.evidence
+        for feature in features
+    )
 
 
 def test_trajectory_hard_envelope_is_permutation_invariant_at_ppm_boundary() -> None:
@@ -644,9 +687,9 @@ def test_owner_clustering_keeps_incomplete_merge_on_complete_link_partition() ->
     )
 
     assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
-        ("OWN-sample-a-a",),
-        ("OWN-sample-b-b", "OWN-sample-c-c"),
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
     ]
+    assert "owner_bounded_continuity" in hypotheses[0].evidence
 
 
 def test_owner_clustering_keeps_rt_discontinuity_separate() -> None:
@@ -1151,3 +1194,119 @@ def _rows_by_feature_sample(path: Path) -> dict[tuple[str, str], dict[str, str]]
             (row["feature_family_id"], row["sample_stem"]): row
             for row in csv.DictReader(handle, delimiter="\t")
         }
+
+
+def test_owner_clustering_resolves_duplicate_owner_group_before_backfill() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.05),
+        _owner("sample-c", "c", apex_rt=10.10),
+        _owner("sample-a", "a2", apex_rt=10.40),
+        _owner("sample-b", "b2", apex_rt=10.45),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
+        ("OWN-sample-a-a2", "OWN-sample-b-b2"),
+    ]
+    winner, loser = hypotheses
+    assert winner.consolidation_state == "primary_winner"
+    assert winner.consolidation_winner_group_hypothesis_id == (
+        winner.group_hypothesis_id
+    )
+    assert winner.consolidation_source_group_hypothesis_id == (
+        f"{winner.group_hypothesis_id};{loser.group_hypothesis_id}"
+    )
+    assert not winner.review_only
+    assert loser.review_only
+    assert loser.consolidation_state == "primary_loser"
+    assert loser.consolidation_winner_group_hypothesis_id == (
+        winner.group_hypothesis_id
+    )
+    assert "owner_duplicate_group_resolved_loser" in loser.evidence
+
+
+def test_resolved_duplicate_owner_group_requests_no_backfill() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.05),
+            _owner("sample-c", "c", apex_rt=10.10),
+            _owner("sample-a", "a2", apex_rt=10.40),
+            _owner("sample-b", "b2", apex_rt=10.45),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+    sample_order = ("sample-a", "sample-b", "sample-c", "sample-d")
+
+    requests = {
+        feature.feature_family_id: backfill_request_sample_stems(
+            feature,
+            sample_order=sample_order,
+            raw_sample_stems=frozenset(sample_order),
+            alignment_config=AlignmentConfig(),
+        )
+        for feature in features
+    }
+
+    winner, loser = features
+    assert requests[winner.feature_family_id]
+    assert requests[loser.feature_family_id] == ()
+
+
+def test_owner_clustering_keeps_group_that_adds_a_sample() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.05),
+        _owner("sample-c", "c", apex_rt=10.10),
+        _owner("sample-a", "a2", apex_rt=10.40),
+        _owner("sample-d", "d2", apex_rt=10.45),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+    assert all(
+        hypothesis.consolidation_state == "not_consolidated"
+        for hypothesis in hypotheses
+    )
+
+
+def test_owner_clustering_keeps_duplicate_owner_group_outside_identity_window() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.05),
+        _owner("sample-c", "c", apex_rt=10.10),
+        _owner("sample-a", "a2", apex_rt=14.00),
+        _owner("sample-b", "b2", apex_rt=14.05),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+    assert all(
+        hypothesis.consolidation_state == "not_consolidated"
+        for hypothesis in hypotheses
+    )

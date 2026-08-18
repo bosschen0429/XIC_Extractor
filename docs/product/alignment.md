@@ -37,6 +37,42 @@ contracts for review and downstream product decisions.
   RT discontinuity remains on complete-link; `drift_lookup` is not an alternate
   order source. Parallel connected components remain separate groups, and this
   rule does not bridge existing groups or bypass the connected-link hard gates.
+- A connected component that neither coverage rescue admits may still replace
+  its complete-link split when the whole component stays inside the symmetric
+  precursor/product/loss hard envelope and its apex RT span stays within the
+  group span bound. The recovered family is `owner_bounded_continuity`. The two
+  coverage rescues above fire only at full batch coverage or one sample short of
+  it, so without this a component a real compound produced over any smaller
+  share of the batch is re-split however continuous it is; the envelope and the
+  span bound are what separate one compound drifting across the batch from two
+  the chromatography resolved. Coverage rescues keep priority, so a full-batch
+  or injection-trajectory component keeps its own policy label.
+- After the partition settles, the grouping owner resolves duplicate-owner
+  groups. A group is resolved into another group only when every one of its
+  samples is already owned by that group, that group holds more owners and at
+  least two, both group centers agree on tag, precursor, RT identity window,
+  product, and observed loss, and every subordinate owner sits inside the
+  winner's precursor/product/loss hard envelope. The resolved group stays a
+  review row carrying `owner_duplicate_group_resolved_loser;winner=<id>`,
+  `consolidation_state=primary_loser`, and its winner identity; the winner
+  carries `owner_duplicate_group_resolved_winner`. Resolution is one level
+  deep and never bridges groups that would add sample coverage, so it cannot
+  chain. Because a resolved group is `review_only`, Backfill issues no request
+  for it: the duplicate-owner decision belongs to this owner, not to Backfill
+  and not to a second grouping stage.
+- Cross-sample edge seed support is rated on the peak Alignment resolved, not
+  on Discovery's `evidence_score`. Every owner exists because ownership
+  re-extracted the XIC and found a peak, so the Discovery score -- which is
+  dominated by whether Discovery's own MS1 search succeeded -- judges an owner
+  by a search its construction already superseded. The rating uses
+  `height_raw / baseline_residual_mad` from the owner's `selected_integration`,
+  at the detection-limit and quantitation-limit conventions: both peaks at or
+  above the quantitation limit with the anchor MS2 seed count is `strong`, both
+  at or above the detection limit is `moderate`, anything below is `weak`. The
+  MS2 seed count is kept because Alignment does not re-derive it. An owner
+  whose integration recorded no baseline residual keeps the Discovery-score
+  rating, so paths that do not measure a residual are unchanged. This changes
+  the `seed_support_level` column in the edge evidence artifact.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional
