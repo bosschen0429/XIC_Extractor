@@ -21,9 +21,11 @@ contracts for review and downstream product decisions.
   owners, and RT discontinuities remain on complete-link. The recovered family
   is `owner_full_batch_continuity`; Matrix identity evaluates it through the
   existing `multi_sample_detected` policy rather than treating it as all-pairs
-  `owner_complete_link` evidence. A later owner may extend one bounded
-  continuity group, but it does not bridge and merge two existing groups;
-  single-link chaining is not family identity authority.
+  `owner_complete_link` evidence. A later owner may reconcile multiple
+  compatible groups in this connected-link pass only when the combined group
+  passes the hard envelope and every pair is free of a blocked edge.
+  Complete-link remains the downstream hard partition; single-link chaining is
+  not family identity authority.
 - A near-full connected component with exactly one batch sample absent may also
   replace its complete-link split when Alignment received the same explicit,
   injection-order mapping used to order Matrix columns, with a unique order for
@@ -34,7 +36,7 @@ contracts for review and downstream product decisions.
   a second absent sample, same-sample occupancy, a hard-envelope conflict, or an
   RT discontinuity remains on complete-link; `drift_lookup` is not an alternate
   order source. Parallel connected components remain separate groups, and this
-  rule does not bridge existing groups.
+  rule does not bridge existing groups or bypass the connected-link hard gates.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional

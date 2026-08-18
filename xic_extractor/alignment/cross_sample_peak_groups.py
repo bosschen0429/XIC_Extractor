@@ -609,6 +609,40 @@ def _link_groups(
                 group_indexes_by_precursor_bucket,
             )
             continue
+        # Only the connected-link pass reconciles multiple compatible groups.
+        # Complete-link remains the downstream hard partition and must not
+        # inherit union-find chaining from this pass.
+        if not require_complete_link and len(compatible_group_indexes) > 1:
+            merged_group_indexes = tuple(sorted(set(compatible_group_indexes)))
+            merged_group = [owner]
+            for group_index in merged_group_indexes:
+                merged_group.extend(groups[group_index])
+            merged_envelope = _group_envelope_for_owner(merged_group[0])
+            for merged_owner in merged_group[1:]:
+                merged_envelope = _extend_group_envelope(
+                    merged_envelope,
+                    merged_owner,
+                )
+            if _merged_group_passes_hard_gates(
+                tuple(merged_group),
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ):
+                keep_index = merged_group_indexes[0]
+                groups[keep_index] = merged_group
+                envelopes[keep_index] = merged_envelope
+                for group_index in reversed(merged_group_indexes[1:]):
+                    groups.pop(group_index)
+                    envelopes.pop(group_index)
+                _rebuild_group_indexes(
+                    envelopes,
+                    group_indexes_by_tag=group_indexes_by_tag,
+                    group_indexes_by_precursor_bucket=group_indexes_by_precursor_bucket,
+                )
+                continue
         best_index = min(
             compatible_group_indexes,
             key=lambda index: _group_match_score(owner, groups[index], config),
@@ -621,6 +655,52 @@ def _link_groups(
             group_indexes_by_precursor_bucket,
         )
     return tuple(tuple(group) for group in groups)
+
+
+def _rebuild_group_indexes(
+    envelopes: list[_GroupHardGateEnvelope],
+    *,
+    group_indexes_by_tag: dict[str, list[int]],
+    group_indexes_by_precursor_bucket: dict[tuple[str, int], list[int]],
+) -> None:
+    group_indexes_by_tag.clear()
+    group_indexes_by_precursor_bucket.clear()
+    for group_index, envelope in enumerate(envelopes):
+        group_indexes_by_tag.setdefault(envelope.neutral_loss_tag, []).append(
+            group_index,
+        )
+        _add_group_precursor_bucket_index(
+            group_index,
+            envelope,
+            group_indexes_by_precursor_bucket,
+        )
+
+
+def _merged_group_passes_hard_gates(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> bool:
+    if not _group_passes_hard_envelope(group, config=config):
+        return False
+    for left_index, left in enumerate(group):
+        for right in group[left_index + 1 :]:
+            edge = _edge_for_pair(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            )
+            if edge.decision == "blocked_edge":
+                return False
+    return True
 
 
 def _group_accepts_owner(

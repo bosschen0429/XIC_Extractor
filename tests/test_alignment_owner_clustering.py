@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.alignment import cross_sample_peak_groups as peak_groups_module
@@ -544,6 +545,105 @@ def test_owner_clustering_does_not_single_link_merge_bridge_groups() -> None:
     )
 
     assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a",),
+        ("OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+
+
+def test_owner_clustering_merges_groups_when_owner_matches_both() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=10.00,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=10.10,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=10.20,
+        ),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.owner_id, right.owner_id} == {
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        }:
+            return replace(
+                edge,
+                decision="weak_edge",
+                owner_quality="weak",
+                reason="weak: bridge admission withheld",
+            )
+        return edge
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c"},
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+        )
+    ]
+
+
+def test_owner_clustering_keeps_incomplete_merge_on_complete_link_partition() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.10),
+        _owner("sample-c", "c", apex_rt=10.20),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.owner_id, right.owner_id} == {
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        }:
+            return replace(
+                edge,
+                decision="weak_edge",
+                owner_quality="weak",
+                reason="weak: complete-link partition boundary",
+            )
+        return edge
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
         ("OWN-sample-a-a",),
         ("OWN-sample-b-b", "OWN-sample-c-c"),
     ]
