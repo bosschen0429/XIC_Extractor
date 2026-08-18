@@ -30,6 +30,7 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_candidates_csv,
     read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
 from xic_extractor.alignment.early_loser_shadow import (
     EarlyLoserShadowProposal,
     EarlyLoserShadowReport,
@@ -159,6 +160,24 @@ _RawSourceTimingStats = RawSourceTimingStats
 _TimedRawSource = TimedRawSource
 AlignmentRawHandle = _AlignmentRawHandle
 RawOpener = Callable[[Path, Path], AbstractContextManager[AlignmentRawHandle]]
+
+
+def _typed_targeted_istd_anchor(
+    drift_lookup: DriftLookupProtocol | None,
+) -> TargetedIstdIdentityAnchor | None:
+    """Return only an owner-minted targeted ISTD anchor.
+
+    The grouping seam and the metadata seam must share the same typed trust
+    boundary.  A duck-typed diagnostic object may expose similarly named
+    fields, but it is not allowed to request persisted run metadata.
+    """
+
+    candidate = getattr(drift_lookup, "istd_identity_anchor", None)
+    return (
+        candidate
+        if isinstance(candidate, TargetedIstdIdentityAnchor)
+        else None
+    )
 
 
 def _ordered_discovery_physical_bindings(
@@ -361,7 +380,7 @@ def run_alignment(
             "or selected-families"
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
-    targeted_istd_anchor = getattr(drift_lookup, "istd_identity_anchor", None)
+    targeted_istd_anchor = _typed_targeted_istd_anchor(drift_lookup)
     recorder.record(
         "alignment.run_config",
         elapsed_sec=0.0,

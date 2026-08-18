@@ -22,8 +22,13 @@ from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
     AlignmentArtifactFingerprintReceipt,
 )
+from xic_extractor.alignment.drift_evidence import (
+    build_targeted_istd_identity_anchor,
+)
 from xic_extractor.alignment.pipeline_outputs import alignment_metadata, output_paths
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
@@ -212,6 +217,42 @@ def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
     )
 
     assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
+
+
+def test_pipeline_target_anchor_metadata_requires_typed_owner_anchor() -> None:
+    fake_lookup = SimpleNamespace(
+        istd_identity_anchor=SimpleNamespace(
+            target_config_identity="forged",
+            target_snapshot=SimpleNamespace(snapshot_id="forged-snapshot"),
+        )
+    )
+    assert pipeline_module._typed_targeted_istd_anchor(fake_lookup) is None
+
+    target = Target(
+        label="d3-5-hmdC",
+        mz=261.127276,
+        rt_min=8.0,
+        rt_max=10.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+        isotope_label_type="deuterated",
+        paired_rt_relation="none",
+        sample_applicability="all",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-pipeline-targeted-istd",
+        ),
+        observed_labels=("d3-5-hmdC",),
+    )
+    assert pipeline_module._typed_targeted_istd_anchor(
+        SimpleNamespace(istd_identity_anchor=anchor)
+    ) is anchor
 
 
 def test_writer_timing_observations_are_truthful_with_live_output(
