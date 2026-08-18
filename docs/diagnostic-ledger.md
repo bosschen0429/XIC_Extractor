@@ -56,8 +56,9 @@ dated productization control-plane path is compatibility lookup only.
 
 | Purpose | Stable path |
 | --- | --- |
-| Accepted P8b 8RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/8raw/discovery_batch_index.csv` |
-| Accepted P8b 85RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/85raw/discovery_batch_index.csv` |
+| Accepted 8RAW discovery input (v2) | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` |
+| Accepted 85RAW discovery input | none; no v2 index exists yet. See `docs/agent/parameter-settings.md`. |
+| Retired v1 discovery inputs | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/`; `scripts.run_alignment` rejects them with `discovery_batch_index_v2 owner closure is required` |
 | Targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx`, SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7` |
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |

@@ -101,9 +101,28 @@ Get-Content .env.xic-local |
 | Thermo RAW validation subset | `$env:XIC_RAW_VALIDATION_DIR` | Historical 8RAW validation subset。 |
 | Thermo RawFileReader DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` | RAW commands 必須使用這個 DLL dir。 |
 | manual 2RAW truth data | `$env:XIC_MANUAL_2RAW_ROOT` | Resolver / manual-truth calibration。 |
-| accepted P8b 8RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/8raw/discovery_batch_index.csv` | Cross-worktree reusable validation input；內部 `candidate_csv` / `review_csv` 已重寫到同一 artifact store。 |
-| accepted P8b 85RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/85raw/discovery_batch_index.csv` | Cross-worktree reusable validation input；正式 85RAW 前仍需 `--expected-sample-count 85` preflight。 |
+| accepted 8RAW discovery input（v2） | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` | 目前唯一可用的 8RAW accepted input。`discovery_batch_index_v2`、index-relative locators、每個 sample 帶 `discovery_physical_facts.v1.json`。2026-08-18 驗證：8RAW alignment 輸出與 `output/20260818-compact-backfill-8raw-final-c9d26f76/` 五個 artifact 逐 byte 相同。 |
+| retired：accepted P8b 8RAW / 85RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/discovery_batch_index.csv` | **v1，`scripts.run_alignment` 直接拒絕**：`discovery_batch_index_v2 owner closure is required`（`--preflight-only` exit 2）。兩者皆為絕對 locator、0 個 physical-facts sidecar。85RAW 目前**沒有**可用的 v2 accepted input。 |
 | targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx` | SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7`；`targeted_gt_alignment_audit.py` 的 8RAW default positive checkpoint workbook；不要用 85-sample workbook 對 8RAW alignment，否則會產生 off-scope `MISS`。 |
+
+`local_validation_artifacts/` 是 gitignored，所以新 worktree 不會自動帶到
+accepted input。開跑前先 `Test-Path`；缺了就從既有 v2 Discovery 目錄複製，
+不要退回 `accepted_p8b`。
+
+辨識一份 index 是否可用（三項都要成立）：
+
+- 第一欄 `schema_version` 是 `discovery_batch_index_v2`；
+- `candidate_csv` / `review_csv` 是 index-relative，不是絕對路徑；
+- 每個 sample 目錄有 `discovery_physical_facts.v1.json`。
+
+`require_owner_closure=True` 硬編碼在 `scripts/run_alignment.py`，**沒有 CLI
+開關**可以繞過 v1 index。要新建一份 accepted input，就把來源 Discovery 目錄的
+`discovery_batch_index.csv` 與每個 sample 的三個檔案（`discovery_candidates.csv`、
+`discovery_review.csv`、`discovery_physical_facts.v1.json`）整份複製到
+`local_validation_artifacts/discovery/<name>/`，不要改寫 locators，然後用
+`--preflight-only` 確認 exit 0。當前 8RAW accepted input 即由
+`output/8raw-full-batch-continuity-final-gui-20260817/result/`（30,748 candidates）
+這樣複製而來。
 
 實驗性 mzML 路徑不列為常用 setting。即使本機有 mzML，production premise 仍是
 直接讀 `.raw`，不轉檔。只有使用者明確要求 external-reference audit 時才查
