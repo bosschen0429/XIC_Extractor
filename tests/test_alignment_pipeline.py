@@ -560,6 +560,27 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     (raw_dir / "Sample_B.raw").write_text("raw", encoding="utf-8")
     calls: dict[str, object] = {}
+    read_candidates = pipeline_module.read_discovery_candidates_csv
+
+    def read_with_review_only_orphan(path, **kwargs):
+        current = read_candidates(path, **kwargs)
+        if current[0].sample_stem != "Sample_A":
+            return current
+        return (
+            *current,
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="ms1_feature_nl_rescued",
+            ),
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="review_only_orphan_nl",
+            ),
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="rejected_noise_or_outside_rt",
+            ),
+        )
 
     def fake_build_owners(
         candidates,
@@ -573,6 +594,9 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         audit_evidence_mode,
     ):
         calls["candidates"] = tuple(candidate.sample_stem for candidate in candidates)
+        calls["candidate_states"] = tuple(
+            candidate.discovery_candidate_state for candidate in candidates
+        )
         calls["owner_raw_sources"] = raw_sources
         calls["alignment_config"] = alignment_config
         calls["peak_config"] = peak_config
@@ -637,6 +661,11 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     monkeypatch.setattr(pipeline_module, "build_sample_local_owners", fake_build_owners)
     monkeypatch.setattr(
         pipeline_module,
+        "read_discovery_candidates_csv",
+        read_with_review_only_orphan,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
         "cluster_sample_local_owners",
         fake_cluster_owners,
     )
@@ -661,7 +690,12 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         raw_opener=FakeRawOpener(),
     )
 
-    assert calls["candidates"] == ("Sample_A", "Sample_B")
+    assert calls["candidates"] == ("Sample_A", "Sample_A", "Sample_B")
+    assert calls["candidate_states"] == (
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+        "ms1_feature_nl_supported",
+    )
     assert calls["owners"] == ("owner",)
     assert calls["features"] == ("feature",)
     assert calls["sample_order"] == ("Sample_A", "Sample_B")

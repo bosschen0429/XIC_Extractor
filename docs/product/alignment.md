@@ -13,6 +13,12 @@ contracts for review and downstream product decisions.
   cross-sample owner/group hypotheses based on evidence. It does not create the
   first sample-local Discovery hit and does not treat a single method match as
   cross-sample identity proof by itself.
+- The RAW owner-build route consumes only Discovery's MS1-feature-backed
+  candidate states. `review_only_orphan_nl` and other review-only states remain
+  in Discovery review/audit artifacts but do not receive a second RAW XIC
+  search merely by entering Alignment. This keeps candidate recall available
+  for review without turning an unavailable physical feature into owner-build,
+  group, Matrix, or Backfill work.
 - Two resolved peaks in one sample count as an unresolved doublet only when
   their apex separation is chromatographically meaningful against the narrower
   of them, not on an absolute bound alone. One MS1 peak spans many scans and its

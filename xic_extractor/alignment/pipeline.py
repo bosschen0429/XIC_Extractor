@@ -134,7 +134,10 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
     validate_discovery_candidate_physical_bindings,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import (
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidate,
+)
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
 )
@@ -177,6 +180,18 @@ def _typed_targeted_istd_anchor(
         candidate
         if isinstance(candidate, TargetedIstdIdentityAnchor)
         else None
+    )
+
+
+def _raw_owner_build_candidates(
+    candidates: Sequence[DiscoveryCandidate],
+) -> tuple[DiscoveryCandidate, ...]:
+    """Keep Discovery review-only rows out of the RAW owner-build route."""
+
+    return tuple(
+        candidate
+        for candidate in candidates
+        if candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
     )
 
 
@@ -448,7 +463,14 @@ def run_alignment(
             for sample_stem in batch.sample_order
             for candidate in candidates_by_sample[sample_stem]
         )
+        raw_owner_build_candidates = _raw_owner_build_candidates(candidates)
         stage.metrics["candidate_count"] = len(candidates)
+        stage.metrics["raw_owner_build_candidate_count"] = len(
+            raw_owner_build_candidates
+        )
+        stage.metrics["non_raw_owner_build_candidate_count"] = (
+            len(candidates) - len(raw_owner_build_candidates)
+        )
     if discovery_physical_bindings_by_sample is None:
         discovery_physical_bindings = None
         owner_build_route_receipt = _mint_owner_build_route_receipt(
@@ -563,7 +585,7 @@ def run_alignment(
                 )
             elif raw_workers > 1:
                 owner_output = run_owner_build_process(
-                    candidates,
+                    raw_owner_build_candidates,
                     sample_order=batch.sample_order,
                     raw_paths=raw_paths,
                     dll_dir=dll_dir,
@@ -609,7 +631,7 @@ def run_alignment(
                     stage="alignment.build_owners.extract_xic",
                 )
                 ownership = build_sample_local_owners(
-                    candidates,
+                    raw_owner_build_candidates,
                     raw_sources=timed_raw_sources_,
                     alignment_config=alignment_config,
                     peak_config=peak_config,

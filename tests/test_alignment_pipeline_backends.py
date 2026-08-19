@@ -421,6 +421,25 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     opener = FakeRawOpener()
     calls = {}
     recorder = TimingRecorder("alignment", run_id="test-process-backfill")
+    read_candidates = pipeline_module.read_discovery_candidates_csv
+
+    def read_with_review_only_orphan(path, **kwargs):
+        current = read_candidates(path, **kwargs)
+        return (
+            *current,
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="ms1_feature_nl_rescued",
+            ),
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="review_only_orphan_nl",
+            ),
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="rejected_noise_or_outside_rt",
+            ),
+        )
 
     def fake_process_backfill(features, **kwargs):
         calls["features"] = features
@@ -446,6 +465,9 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
         calls["build_candidates"] = tuple(
             candidate.sample_stem for candidate in candidates
         )
+        calls["build_candidate_states"] = tuple(
+            candidate.discovery_candidate_state for candidate in candidates
+        )
         calls["build_kwargs"] = kwargs
         return OwnerBuildProcessOutput(
             ownership=OwnershipBuildResult(
@@ -467,6 +489,11 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
         pipeline_module,
         "run_owner_build_process",
         fake_process_build,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "read_discovery_candidates_csv",
+        read_with_review_only_orphan,
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -499,6 +526,11 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     )
 
     assert calls["max_workers"] == 2
+    assert calls["build_candidates"] == ("Sample_A", "Sample_A")
+    assert calls["build_candidate_states"] == (
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    )
     assert calls["raw_paths"] == {"Sample_A": raw_dir / "Sample_A.raw"}
     assert calls["matrix_sample_order"] == ("Sample_A",)
     assert calls["build_kwargs"]["max_workers"] == 2
@@ -510,6 +542,11 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     assert "owner_backfill_xic_backend" not in calls["build_kwargs"]
     records_by_stage_sample = {
         (record.stage, record.sample_stem): record for record in recorder.records
+    }
+    assert records_by_stage_sample[("alignment.read_candidates", "")].metrics == {
+        "candidate_count": 4,
+        "raw_owner_build_candidate_count": 2,
+        "non_raw_owner_build_candidate_count": 2,
     }
     assert records_by_stage_sample[
         ("alignment.build_owners.extract_xic", "Sample_A")

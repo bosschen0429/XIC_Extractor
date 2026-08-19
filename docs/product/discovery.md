@@ -10,6 +10,12 @@ workflow projection and Backfill/ProductWriter authority path.
 ## Contract
 
 - Discovery produces candidate and review surfaces, not final product authority.
+- Discovery candidate state is an execution boundary as well as a review
+  label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
+  MS1-feature-backed inputs to Alignment RAW owner build. Review-only states
+  remain in the complete candidate/review universe and do not independently
+  authorize another RAW XIC search, cross-sample grouping, Matrix identity, or
+  Backfill.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
