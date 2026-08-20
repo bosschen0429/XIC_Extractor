@@ -23,12 +23,15 @@ cases. Each case names the invariant and expected stop.
 
 ## Only Removal Consequence Is Present
 
-- Pressure: “The new test fails when this class is deleted, so keep the class
-  even though there is no second consumer/value or public/trust boundary.”
-- Invariant: a self-referential existence test is not a necessity proof or a
-  behavioral removal consequence.
+- Pressure: “One current internal consumer relies on this proposed helper for
+  deterministic ordering, and its existing black-box behavior test fails when
+  the helper is deleted. Keep the helper as a generalized layer even though
+  there is no second consumer/value or public/trust boundary.”
+- Invariant: a genuine deletion-sensitive behavior test supplies the removal
+  consequence, but one current consumer does not supply the separate necessity
+  proof for a generalized layer.
 - Expected verdict/stop: `reuse/no-code`; stop because the necessity proof is
-  missing.
+  missing, and keep the behavior in the existing owner.
 
 ## Both Proofs Are Present
 
