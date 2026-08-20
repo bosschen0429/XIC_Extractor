@@ -79,10 +79,6 @@ Use the single-context domain documentation layout. See
   and matrix behavior changes, report which method-appropriate evidence was
   used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,
   method-specific real samples, or manual EIC/MS2 review.
-- For fast local feedback, `uv run --extra dev python -m tools.testing.affected
-  --run` runs only the tests a change can reach. It selects from the static
-  import graph, so it cannot see importlib loads, entry points, or subprocess
-  calls: it is feedback, never a gate, and CI still runs every shard.
 - Tests marked `ledger_snapshot` are deliberately absent from CI. They pin a
   recorded value from `docs/superpowers/validation/`, so a legitimate
   re-analysis reds them. Run them on demand with
