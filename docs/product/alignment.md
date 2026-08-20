@@ -55,13 +55,14 @@ contracts for review and downstream product decisions.
   RT span stays within the group span bound. The recovered family is
   `owner_bounded_continuity`; full-batch and injection-trajectory rescues keep
   priority and their own policy labels.
-- After the partition settles, the grouping owner resolves duplicate-owner
-  groups. A group is resolved into another group only when every one of its
-  samples is already owned by that group, that group holds more owners and at
-  least two, both group centers agree on tag, precursor, RT identity window,
-  product, and observed loss, and every subordinate owner sits inside the
-  winner's precursor/product/loss hard envelope. The resolved group stays a
-  review row carrying `owner_duplicate_group_resolved_loser;winner=<id>`,
+- After the partition settles, the grouping owner may resolve a duplicate-owner
+  group only through a typed identity anchor. Current product behavior enables
+  this for validated targeted ISTD trajectories: every subordinate sample is
+  already owned by the larger same-target trajectory, both groups bind to the
+  same owner-minted target snapshot, and the combined precursor envelope stays
+  valid. Aggregate m/z/RT/product/loss geometry alone is not same-peak evidence;
+  an untyped parallel trajectory remains an independent group. A resolved group
+  stays a review row carrying `owner_duplicate_group_resolved_loser;winner=<id>`,
   `consolidation_state=primary_loser`, and its winner identity; the winner
   carries `owner_duplicate_group_resolved_winner`. Resolution is one level
   deep and never bridges groups that would add sample coverage, so it cannot
@@ -408,7 +409,7 @@ Alignment owner.
 | `alignment_matrix_identity.tsv` | Identity and owner traceability |
 | `alignment_backfill_cell_evidence.tsv` | Backfill-related cell evidence sidecar |
 | `alignment_run_metadata.json` | Conditional run settings and provenance sidecar |
-| `alignment-results-v2/v3` metadata | Schema-version signals for public behavior changes |
+| `alignment-results-v2/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored v3 accepts the legacy or canonical Matrix value policy, historical paired targeted-ISTD v3 requires the canonical policy, and v4 requires that same paired binding and canonical policy |
 
 ## Boundaries
 
