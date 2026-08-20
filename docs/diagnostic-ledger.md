@@ -1098,3 +1098,48 @@ review-found RAW-open observability gap: it does not repeat or broaden the
 paired performance evidence, and the Terminal B disposition remains
 **`RETAIN_NATIVE_BATCHING`** with `diagnostic_only` evidence status. No new
 8RAW or 85RAW run was launched.
+
+## Urine MeIQx Discovery-window versus group-centered Backfill
+
+**Current classification:** the bounded cases support the existing Alignment
+fallback; they do not justify a broader Discovery window or a new
+sample-specific RT predictor.
+
+At clean tracked revision `c0b9f0fc`, the current 54RAW urine Discovery v2
+artifacts and no-RAW grouping replay produced MeIQx `FAM000012` with 44 owners,
+center m/z `482.2098181818182`, center RT `40.933679545454545 min`, and
+`owner_targeted_istd_trajectory` evidence. The source group, owner, and batch
+index SHA-256 values were respectively
+`7add582ead91bb5e8ca394a190d474a9ea4d508e2e0ff24076a1fc8118fa3599`,
+`76c1c402744f28509fc1ce40f29ccc8aed2fdefeb37cbdeb1acdfb83a45541c8`,
+and `53f85766145deac4ca844ca67c810b983cade983366e5b028c12e7bcb1f9da3b`.
+
+One foreground three-RAW probe passed the current group through the existing
+Owner Backfill request plan and canonical physical-peak selector. It issued one
+logical request per sample, using the existing group-centered `±3 min` request
+window and `±1 min` maximum preferred-query delta:
+
+| Sample | Backfill state | Selected apex RT | Manual-review context |
+| --- | --- | ---: | --- |
+| `BC1165_control` | `rescued` | `40.9387127544` | positive at `40.98` |
+| `BC2264_cancer` | `rescued` | `40.8554188371` | positive at `40.90` |
+| `BC1028_control` | `unchecked/no_selection` | unavailable | negative; Discovery peak near `43.66` |
+
+The two selected positive apexes were each within `0.045 min` of the
+low-confidence manual review, while the off-trajectory BC1028 Discovery peak
+did not become a Backfill rescue. The oracle was also exercised with a displaced
+positive apex and a forged rescued negative; both perturbations failed it.
+
+Observed interpretation: BC2264 was a Discovery seed-window miss, not a
+demonstrated final Backfill miss. BC1165 already had multiple Discovery peaks,
+but the established cross-sample group supplied enough RT context for Backfill
+to select the locally compatible peak. This evidence is `diagnostic_only`; it
+grants no Matrix, selected-value, counted-detection, writer, or product
+authority.
+
+Do not widen every Untargeted Discovery request or add a second RT control plane
+to address these cases. Reopen a sample-specific trajectory/interpolation
+implementation only when a bounded real case has an established cross-sample
+group and a compatible physical peak, yet the current group-centered Backfill
+misses because the group-center query is materially displaced. No full urine,
+8RAW, or 85RAW Alignment run was launched for this loop.
