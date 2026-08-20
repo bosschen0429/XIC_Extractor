@@ -24,6 +24,10 @@ Completion criterion: one precise handoff, one falsifiable probe, and its
 decision consequence are named. If existing evidence closes the gap, return a
 reuse/no-code verdict and stop.
 
+When the semantic slice has plausible adjacent scope, state `Non-goals / Not
+Doing (and why)`. An adjacent problem discovered during reconnaissance may be
+recorded as `Noticed but not touching`; that receipt does not widen the task.
+
 If the requirement leaves a product or domain decision unstated, return
 `spec_gap` and name the missing decision. Do not let implementation or review
 comments silently choose the semantics.
@@ -43,6 +47,11 @@ Completion criterion: one behavior-owner path is selected, reused helpers are
 explicit, rejected alternatives are briefly explained, every cost category is
 accounted for, and no parser, evidence computation, or RAW read is orphaned in
 a writer/CLI.
+
+Before proposing an abstraction or configuration surface, name its current
+second consumer/value or the real public/trust boundary that requires it. Also
+name the current consumer or acceptance check that would fail if the layer were
+deleted. If neither exists, return the existing reuse/no-code verdict and stop.
 
 Return `design_no_go` instead of coding when the proposed owner must interpret
 an open-ended shell language, AST, schema DSL, or similar unbounded grammar
@@ -91,10 +100,13 @@ contract, and the validation gate can distinguish pass from fail.
 
 ```markdown
 Goal / observable loss / affected XIC spine handoff:
+Non-goals / Not Doing (and why), when adjacent scope is plausible:
+Noticed but not touching (optional):
 Current XIC behavior owner and existing evidence artifact:
 Reused helpers or `none`:
 Observed capability gap / cheapest XIC falsification probe:
 Reuse/owner decision; if a gap remains, proposed code location:
+Abstraction/config necessity and deletion consequence, or `N/A`:
 Product spine / evidence-provider role:
 Simplest product rule:
 Call-cost model:
@@ -112,3 +124,6 @@ condition.
 Completion criterion: every field has evidence or a reasoned `N/A`; stop,
 rollback, and exit conditions are checkable. Begin edits only after this
 criterion is met.
+
+Read `evals/pressure-cases.md` only when testing no-code and scope-control
+decisions under pressure. These prose fixtures do not change skill routing.

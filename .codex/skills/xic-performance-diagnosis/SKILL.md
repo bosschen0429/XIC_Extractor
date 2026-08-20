@@ -103,13 +103,24 @@ Use one workflow verdict:
 - `baseline_needed`, `diagnosis_ready`, or `optimization_ready` before edits;
 - `optimized` only after comparable evidence beats observed noise and the
   correctness gate passes;
-- `inconclusive` for missing comparability, unstable timing, or absent parity;
-- `rejected` for an attributable regression or failed correctness gate.
+- `inconclusive` for missing comparability, unstable timing, or absent parity
+  that prevents a candidate decision;
+- `rejected` for a comparable candidate within observed noise, an attributable
+  regression, or a failed correctness gate.
+
+Set `Candidate disposition` to `keep` only for `optimized`; use `revert` when
+rejected candidate code exists, and `not_applicable` when no candidate code is
+present. Set `Diagnostic-ledger action` to `update` only when a kept or rejected
+attempt changes a durable conclusion or prevents a known experiment from being
+repeated; otherwise use `reuse` or `none`. The existing diagnostic ledger stays
+the only durable performance-conclusion owner.
 
 Every branch returns this core:
 
 ```markdown
 Workflow/performance verdict:
+Candidate disposition: keep | revert | not_applicable
+Diagnostic-ledger action: reuse | update | none
 Product validation status:
 Workload / sample universe / decision:
 Evidence branch and artifact roots:
@@ -153,3 +164,6 @@ Completion criterion: every packet field has observed evidence, a reasoned
 source-qualified and the handoff cannot exceed the stated authority ceiling.
 
 Read `evals/trigger-cases.md` only when tuning skill routing.
+Read `evals/pressure-cases.md` only when testing candidate disposition under
+sunk-cost or deadline pressure. These prose fixtures are not behavioral
+automation and do not change skill routing.
