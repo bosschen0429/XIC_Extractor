@@ -300,8 +300,6 @@ def test_ci_shard_intersects_caller_marker_with_snapshot_exclusion(
             ("-m", "(slow) and (fast) and (unit) and (owned)"),
         ),
         (("-q",), ("-m", "owned", "-q")),
-        (("-m",), ("-m", "owned", "-m")),
-        (("-m=",), ("-m", "owned", "-m=")),
     ),
 )
 def test_marker_intersection_handles_every_pytest_option_shape(
@@ -312,3 +310,30 @@ def test_marker_intersection_handles_every_pytest_option_shape(
         pytest_args,
         required="owned",
     ) == expected
+
+
+@pytest.mark.parametrize(
+    "pytest_args",
+    (
+        ("-m=",),
+        ("-m",),
+        ("-m", ""),
+        ("-m", "-q"),
+    ),
+)
+def test_snapshot_runner_rejects_malformed_marker_before_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+    pytest_args: tuple[str, ...],
+) -> None:
+    monkeypatch.setattr(
+        test_shards,
+        "discover_test_files",
+        lambda _root: (Path("tests/test_snapshot.py"),),
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess,
+        "call",
+        lambda _command: pytest.fail("malformed marker reached pytest"),
+    )
+
+    assert test_shards._run_snapshots(pytest_args, Path("tests")) == 2

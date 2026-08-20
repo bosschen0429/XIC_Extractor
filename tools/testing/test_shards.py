@@ -475,6 +475,9 @@ def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
         pytest_args,
         required=f"not {SNAPSHOT_MARKER}",
     )
+    if owned_pytest_args is None:
+        print("Invalid pytest marker selection", file=sys.stderr)
+        return 2
     print(f"Running shard {shard}: {len(target_args)} test files", flush=True)
     return subprocess.call(
         [*_pytest_command(), *owned_pytest_args, *target_args]
@@ -491,6 +494,9 @@ def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:
         pytest_args,
         required=SNAPSHOT_MARKER,
     )
+    if owned_pytest_args is None:
+        print("Invalid pytest marker selection", file=sys.stderr)
+        return 2
     print(f"Running {SNAPSHOT_MARKER} tests across {len(targets)} files", flush=True)
     return subprocess.call([*_pytest_command(), *owned_pytest_args, *targets])
 
@@ -499,23 +505,29 @@ def _intersect_marker_selection(
     pytest_args: Sequence[str],
     *,
     required: str,
-) -> tuple[str, ...]:
+) -> tuple[str, ...] | None:
     """Keep the runner-owned marker boundary when callers add ``-m`` filters."""
     remaining: list[str] = []
     caller_expressions: list[str] = []
     index = 0
     while index < len(pytest_args):
         argument = pytest_args[index]
-        if argument == "-m" and index + 1 < len(pytest_args):
-            caller_expressions.append(pytest_args[index + 1])
+        if argument == "-m":
+            if index + 1 >= len(pytest_args):
+                return None
+            separated_expression = pytest_args[index + 1]
+            if not separated_expression or separated_expression.startswith("-"):
+                return None
+            caller_expressions.append(separated_expression)
             index += 2
             continue
         if argument.startswith("-m") and argument != "-m":
             compact_expression = argument[2:].removeprefix("=")
-            if compact_expression:
-                caller_expressions.append(compact_expression)
-                index += 1
-                continue
+            if not compact_expression:
+                return None
+            caller_expressions.append(compact_expression)
+            index += 1
+            continue
         remaining.append(argument)
         index += 1
 
