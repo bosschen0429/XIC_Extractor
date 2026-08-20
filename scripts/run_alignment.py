@@ -870,6 +870,11 @@ def _validate_expected_85raw_contract(args: argparse.Namespace) -> None:
         failures.append("--timing-output is required for canonical 85RAW runs")
     if args.timing_live_output is None:
         failures.append("--timing-live-output is required for canonical 85RAW runs")
+    if args.sample_info is None or args.targeted_istd_workbook is None:
+        failures.append(
+            "--sample-info and --targeted-istd-workbook are required for "
+            "canonical 85RAW runs"
+        )
     if not _is_repo_venv_python():
         failures.append(
             "Python executable must be under this worktree .venv for canonical "

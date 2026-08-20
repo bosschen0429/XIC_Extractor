@@ -2722,6 +2722,10 @@ def test_run_alignment_cli_rejects_noncanonical_85raw_contract(
     assert "85RAW canonical launch contract failed" in stderr
     assert "--output-level must be 'validation-minimal'" in stderr
     assert "--timing-live-output is required" in stderr
+    assert (
+        "--sample-info and --targeted-istd-workbook are required for canonical "
+        "85RAW runs"
+    ) in stderr
 
 
 def test_run_alignment_cli_rejects_85raw_wrong_python_environment(

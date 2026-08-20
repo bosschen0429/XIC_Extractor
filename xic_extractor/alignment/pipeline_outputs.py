@@ -278,8 +278,19 @@ def alignment_metadata(
         raise ValueError(
             "owner_backfill_peak_fact_provenance_row_count must be non-negative"
         )
+    has_targeted_istd_anchor = bool(targeted_istd_anchor_identity)
+    has_targeted_istd_snapshot = bool(targeted_istd_target_snapshot_id)
+    if has_targeted_istd_anchor != has_targeted_istd_snapshot:
+        raise ValueError(
+            "targeted ISTD anchor identity and target snapshot id must be "
+            "provided together"
+        )
     metadata = {
-        "schema_version": "alignment-results-v3",
+        "schema_version": (
+            "alignment-results-v4"
+            if has_targeted_istd_anchor
+            else "alignment-results-v3"
+        ),
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
@@ -331,9 +342,8 @@ def alignment_metadata(
             owner_backfill_peak_fact_provenance_row_count
         ),
     }
-    if targeted_istd_anchor_identity:
+    if has_targeted_istd_anchor:
         metadata["targeted_istd_anchor_identity"] = targeted_istd_anchor_identity
-    if targeted_istd_target_snapshot_id:
         metadata["targeted_istd_target_snapshot_id"] = (
             targeted_istd_target_snapshot_id
         )

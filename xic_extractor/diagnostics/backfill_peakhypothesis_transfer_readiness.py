@@ -59,14 +59,21 @@ READINESS_COLUMNS = (
     "next_action",
 )
 
-_CANONICAL_RAW85_METADATA = {
+_CANONICAL_RAW85_BASE_METADATA = {
     "output_level": "validation-minimal",
     "backfill_scope": "production-equivalent",
     "audit_evidence_mode": "none",
-    "matrix_value_policy": "gaussian15_positive_asls_residual_primary",
     "owner_backfill_xic_backend": "raw",
-    "schema_version": "alignment-results-v3",
 }
+_LEGACY_ALIGNMENT_METADATA_SCHEMA_VERSION = "alignment-results-v3"
+_TARGETED_ISTD_ALIGNMENT_METADATA_SCHEMA_VERSION = "alignment-results-v4"
+_CURRENT_MATRIX_VALUE_POLICY = "canonical_signal_profile_selected_area_v1"
+_LEGACY_V3_MATRIX_VALUE_POLICIES = frozenset(
+    {
+        "gaussian15_positive_asls_residual_primary",
+        _CURRENT_MATRIX_VALUE_POLICY,
+    }
+)
 
 _ZERO_MISMATCH_FIELDS = (
     "unexpected_matrix_diff_count",
@@ -318,10 +325,36 @@ def _raw85_failures(
     expected_sample_columns: int,
 ) -> tuple[str, ...]:
     failures: list[str] = []
-    if any(
+    metadata_contract_invalid = any(
         text_value(metadata.get(key)) != expected
-        for key, expected in _CANONICAL_RAW85_METADATA.items()
-    ):
+        for key, expected in _CANONICAL_RAW85_BASE_METADATA.items()
+    )
+    schema_version = text_value(metadata.get("schema_version"))
+    has_targeted_istd_anchor = bool(
+        text_value(metadata.get("targeted_istd_anchor_identity"))
+    )
+    has_targeted_istd_snapshot = bool(
+        text_value(metadata.get("targeted_istd_target_snapshot_id"))
+    )
+    matrix_value_policy = text_value(metadata.get("matrix_value_policy"))
+    if has_targeted_istd_anchor != has_targeted_istd_snapshot:
+        metadata_contract_invalid = True
+    if schema_version == _TARGETED_ISTD_ALIGNMENT_METADATA_SCHEMA_VERSION:
+        if not (
+            has_targeted_istd_anchor
+            and has_targeted_istd_snapshot
+            and matrix_value_policy == _CURRENT_MATRIX_VALUE_POLICY
+        ):
+            metadata_contract_invalid = True
+    elif schema_version == _LEGACY_ALIGNMENT_METADATA_SCHEMA_VERSION:
+        if has_targeted_istd_anchor:
+            if matrix_value_policy != _CURRENT_MATRIX_VALUE_POLICY:
+                metadata_contract_invalid = True
+        elif matrix_value_policy not in _LEGACY_V3_MATRIX_VALUE_POLICIES:
+            metadata_contract_invalid = True
+    else:
+        metadata_contract_invalid = True
+    if metadata_contract_invalid:
         failures.append("85raw_metadata_contract_not_canonical")
     if counts.get("sample_column_count", 0) != expected_sample_columns:
         failures.append("85raw_sample_column_count_unexpected")
