@@ -48,10 +48,23 @@ explicit, rejected alternatives are briefly explained, every cost category is
 accounted for, and no parser, evidence computation, or RAW read is orphaned in
 a writer/CLI.
 
-Before proposing an abstraction or configuration surface, name its current
-second consumer/value or the real public/trust boundary that requires it. Also
-name the current consumer or acceptance check that would fail if the layer were
-deleted. If neither exists, return the existing reuse/no-code verdict and stop.
+Before proposing an abstraction or configuration surface, require both proofs:
+
+1. **Necessity:** name its current second consumer/value or the real
+   public/trust boundary that requires it.
+2. **Removal consequence:** name the current consumer or behavioral acceptance
+   check that would fail if the layer were deleted. A check that only asserts
+   the proposed layer exists is not a removal consequence.
+
+| Necessity proof | Removal consequence | Verdict |
+| --- | --- | --- |
+| present | present | continue the remaining preflight gates |
+| present | missing | `reuse/no-code`; stop before edits |
+| missing | present | `reuse/no-code`; stop before edits |
+| missing | missing | `reuse/no-code`; stop before edits |
+
+Continuing the preflight does not authorize code; every remaining completion
+criterion must still pass.
 
 Return `design_no_go` instead of coding when the proposed owner must interpret
 an open-ended shell language, AST, schema DSL, or similar unbounded grammar

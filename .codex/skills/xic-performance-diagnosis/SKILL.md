@@ -108,12 +108,33 @@ Use one workflow verdict:
 - `rejected` for a comparable candidate within observed noise, an attributable
   regression, or a failed correctness gate.
 
-Set `Candidate disposition` to `keep` only for `optimized`; use `revert` when
-rejected candidate code exists, and `not_applicable` when no candidate code is
-present. Set `Diagnostic-ledger action` to `update` only when a kept or rejected
-attempt changes a durable conclusion or prevents a known experiment from being
-repeated; otherwise use `reuse` or `none`. The existing diagnostic ledger stays
-the only durable performance-conclusion owner.
+`Candidate code` means unaccepted code for the optimization under decision. Use
+this complete disposition table:
+
+| Workflow verdict | No candidate code | Candidate code exists |
+| --- | --- | --- |
+| `baseline_needed` | `not_applicable` | `revert` |
+| `diagnosis_ready` | `not_applicable` | `revert` |
+| `optimization_ready` | `not_applicable` | `revert` |
+| `inconclusive` | `not_applicable` | `revert` |
+| `rejected` | `not_applicable` | `revert` |
+| `optimized` | `not_applicable` | `keep` |
+
+Pre-edit verdicts do not preserve prematurely written candidate code.
+`optimization_ready` opens a fresh code-edit handoff; it does not accept an
+existing candidate. Missing evidence also does not create a keep-for-later
+state.
+
+Choose the diagnostic-ledger action independently:
+
+| Durable conclusion from this attempt | Applicable ledger conclusion exists | Action |
+| --- | --- | --- |
+| changes or prevents a known repeat | either | `update` |
+| no change | yes | `reuse` |
+| no change | no | `none` |
+
+The existing diagnostic ledger stays the only durable performance-conclusion
+owner.
 
 Every branch returns this core:
 
