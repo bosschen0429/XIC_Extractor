@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from tools.testing import test_shards
 from tools.testing.test_shards import (
     SHARD_PATTERNS,
@@ -182,3 +184,45 @@ def test_recorded_snapshot_tests_still_exist() -> None:
         assert path in discovered, path
         for name in names:
             assert name in discovered[path], f"{path}::{name}"
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "@pytest.mark.ledger_snapshot\nasync def test_async_snapshot():\n    pass\n",
+        (
+            "class TestSnapshots:\n"
+            "    @pytest.mark.ledger_snapshot\n"
+            "    def test_method_snapshot(self):\n"
+            "        pass\n"
+        ),
+        (
+            "@pytest.mark.ledger_snapshot\n"
+            "class TestSnapshotClass:\n"
+            "    def test_member(self):\n"
+            "        pass\n"
+        ),
+        (
+            "pytestmark = pytest.mark.ledger_snapshot\n\n"
+            "def test_module_snapshot():\n"
+            "    pass\n"
+        ),
+    ),
+    ids=("async", "method", "class", "module"),
+)
+def test_snapshot_inventory_rejects_unsupported_marker_placements(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_marker_shape.py").write_text(
+        "import pytest\n\n" + source,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="ledger_snapshot.*top-level synchronous test function",
+    ):
+        discover_snapshot_tests(root)

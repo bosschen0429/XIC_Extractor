@@ -337,18 +337,49 @@ def discover_snapshot_tests(
             tree = ast.parse(source)
         except SyntaxError:
             continue
-        names = sorted(
-            node.name
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef)
-            and any(
-                SNAPSHOT_MARKER in ast.unparse(decorator)
+        names: list[str] = []
+        supported_references: set[ast.Attribute] = set()
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            references = tuple(
+                reference
                 for decorator in node.decorator_list
+                if (
+                    reference := _direct_snapshot_marker_reference(decorator)
+                )
+                is not None
             )
+            if references:
+                names.append(node.name)
+                supported_references.update(references)
+
+        unsupported = tuple(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr == SNAPSHOT_MARKER
+            and node not in supported_references
         )
+        if unsupported:
+            lines = ", ".join(str(node.lineno) for node in unsupported)
+            raise ValueError(
+                f"{path.as_posix()}: {SNAPSHOT_MARKER} marker at line(s) "
+                f"{lines} must decorate a top-level synchronous test function"
+            )
         if names:
-            found[path.as_posix()] = tuple(names)
+            found[path.as_posix()] = tuple(sorted(names))
     return found
+
+
+def _direct_snapshot_marker_reference(
+    decorator: ast.expr,
+) -> ast.Attribute | None:
+    """Return a direct marker decorator, excluding marker-like arguments."""
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    if isinstance(target, ast.Attribute) and target.attr == SNAPSHOT_MARKER:
+        return target
+    return None
 
 
 def discover_test_files(root: Path = Path("tests")) -> tuple[Path, ...]:
