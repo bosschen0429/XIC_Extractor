@@ -163,7 +163,10 @@ def test_changed_row_preflight_skips_cohort_size_check_without_expectation() -> 
     ("raw_count", "expected_count", "expected_decision", "expected_blocker"),
     (
         (None, None, "defer", "raw_input_sample_count_not_checked"),
+        (None, 0, "defer", "raw_input_sample_count_not_checked"),
+        (None, 8, "defer", "raw_input_sample_count_not_checked"),
         (0, None, "defer", "raw_input_sample_count_nonpositive:0"),
+        (0, 0, "defer", "raw_input_sample_count_nonpositive:0"),
         (-1, 8, "defer", "raw_input_sample_count_nonpositive:-1"),
         (8, None, "promote", ""),
         (8, 0, "defer", "expected_sample_count_nonpositive:0"),
