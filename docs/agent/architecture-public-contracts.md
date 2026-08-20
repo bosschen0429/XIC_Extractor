@@ -9,8 +9,9 @@ The fuller decomposition contract remains in
 - Preserve dependency direction. Domain logic must not import GUI, workbook
   builders, CLI scripts, process backends, report renderers, or RAW/CSV
   adapters.
-- Keep public entry points and compatibility facades thin while moving behavior
-  into focused modules.
+- Retain a compatibility facade only when an explicit current public contract or
+  a real external consumer still names it. Tests and historical artifacts are
+  not consumer evidence.
 - Treat `tools/diagnostics/` as maintained product-adjacent code. CLIs
   orchestrate; reusable loading, classification, models, summaries, plotting,
   and writers belong in package modules.
@@ -187,8 +188,8 @@ must never alter a writer cell or value.
 
 ## Runtime Construction Authority
 
-Package 0 owns one mechanical runtime aggregate and one finalization boundary.
-`xic_extractor.execution_runtime_owner` is the facade that applies adapter facts
+`xic_extractor.execution_runtime_owner` owns one mechanical runtime aggregate
+and one finalization boundary. It is the facade that applies adapter facts
 to `RuntimeAttemptAggregate`, derives observability, and returns one
 `RuntimeFinalizationReceipt`. The focused `execution_runtime*` model/reducer
 modules remain its internal state-machine and canonical-serialization helpers;
@@ -316,21 +317,6 @@ override mint validation. Normal downstream construction fails even if a type
 annotation or a new static import shape exposes the class object; explicit
 access to private owner state remains forbidden and is separately rejected at
 the import root.
-
-Package 1 comparator receipts follow the same construction rule. One public
-experiment entry creates a dedicated workspace and product-output root,
-overwrites the Targeted request's output paths, pins the root identity, and
-constructs the Targeted service with the comparator-owned legacy-runner
-sentinel. It accepts only exact primitive no-RAW jobs; fixed Targeted and
-Alignment workers execute and drain synchronously before the private receipt
-mint. Callers cannot provide request factories, lifecycle/result providers,
-finished application/process results, executor factories, split begin/mint
-operations, counts, paths, or receipt construction/replacement. The root
-inventory proves final-state path/byte parity, not transient filesystem-I/O
-absence. Legacy writer non-invocation is instead owned by the sentinel, fixed
-worker ingress, and Alignment dependency boundary. Scientific and Matrix
-absence likewise remains a separate direct integration and dependency-boundary
-claim rather than a self-asserting status field.
 
 Every low-level module must define exactly one literal tuple `__all__` equal to
 its allowlist. Static binding/mutation/reflection checks and an evaluated runtime

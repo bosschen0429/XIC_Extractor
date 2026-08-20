@@ -12,7 +12,7 @@ class AttemptLifecycleContractError(ValueError):
 
 
 class AttemptLifecycleEventKind(str, Enum):
-    """Package 0 event kinds needed to freeze initial cancellation ordering."""
+    """Runtime event kinds needed to freeze initial cancellation ordering."""
 
     ATTEMPT_QUEUED = "attempt_queued"
     ATTEMPT_STARTED = "attempt_started"

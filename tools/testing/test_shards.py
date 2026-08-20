@@ -112,9 +112,6 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
         "test_current_cid_nl_public_output_claim_catalog_is_valid",
         "test_reference_rows_preserve_existing_owner_boundaries",
     ),
-    "tests/test_validation_artifact_retention.py": (
-        "test_current_validation_retention_inventory_accepts_worktree",
-    ),
 }
 
 # Shards are matched in order; the first match wins.
@@ -130,7 +127,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_docs_*.py",
             "tests/test_handoff_*.py",
             "tests/test_multiprocessing_entrypoints.py",
-            "tests/test_package0_smallest_strangler_contract.py",
             "tests/test_peak_model_selection.py",
             "tests/test_productization_*.py",
             "tests/test_pyinstaller_spec.py",
@@ -186,11 +182,8 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_istd_*.py",
             "tests/test_local_minimum_param_sweep.py",
             "tests/test_mass_accuracy.py",
-            "tests/test_m5_successor_verdict.py",
             "tests/test_neutral_loss.py",
             "tests/test_output_*.py",
-            "tests/test_package0_successor_comparator.py",
-            "tests/test_package1_observation_runtime.py",
             "tests/test_peak_*.py",
             "tests/test_processing_identity.py",
             "tests/test_processing_owner_references.py",

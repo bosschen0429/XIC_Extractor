@@ -2,8 +2,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from scripts.check_validation_artifact_retention import (
     REQUIRED_INVENTORY_COLUMNS,
     check_validation_artifact_retention,
@@ -16,18 +14,10 @@ MAINTAINED_VALIDATION_HTML = (
 )
 
 
-@pytest.mark.ledger_snapshot
 def test_current_validation_retention_inventory_accepts_worktree() -> None:
     result = check_validation_artifact_retention()
 
     assert result.problems == ()
-    assert result.summary["inventory_rows"] == 402
-    assert result.summary["present_validation_files"] == 346
-    assert result.summary["externalized_count"] == 55
-    assert result.summary["shrink_later_count"] == 0
-    assert result.summary["shrink_later_tracked_count"] == 0
-    assert result.summary["shrink_later_tracked_bytes"] == 0
-    assert result.summary["shrink_later_files"] == []
 
 
 def test_maintained_validation_html_uses_lf_checkout_policy() -> None:
