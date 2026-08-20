@@ -1381,8 +1381,9 @@ def _owner_backfill_prepared_peak_fact_provenance(
             f"missing={missing!r}; unexpected={unexpected!r}"
         )
     # One physical_question row per Backfill request, but only the rows a
-    # cell_projection selects carry a written Matrix value; 8RAW observed 853 of
-    # 43,126 (1.98%).  The unselected remainder is audit evidence, so it follows
+    # cell_projection selects carry a written Matrix value; the retained
+    # validation measurement observed 853 of 43,126 (1.98%).  The unselected
+    # remainder is audit evidence, so it follows
     # audit_evidence_mode like every other heavy audit artifact instead of being
     # emitted unconditionally at every output level.
     physical_rows = tuple(item.physical_row for item in prepared)

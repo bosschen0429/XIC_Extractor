@@ -147,7 +147,7 @@ KNOWN_PHASE_NAMES: dict[str, tuple[int, str]] = {
     "xic_extractor/extraction/targeted_diagnostic_application.py": (2, "#293"),
     "xic_extractor/extraction/targeted_diagnostic_method.py": (2, "#293"),
     "xic_extractor/extraction/targeted_real_data_runtime.py": (1, "#293"),
-    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (20, "#293"),
+    "xic_extractor/extraction/untargeted_cid_nl_mode_track_workflow.py": (19, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_adapter.py": (3, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_inputs.py": (2, "#293"),
     "xic_extractor/extraction/untargeted_cid_nl_real_data_runtime.py": (7, "#293"),
