@@ -1375,12 +1375,17 @@ def _owner(
     )
 
 
-def _quantitation_owner(sample_stem: str, *, snr: float) -> SimpleNamespace:
+def _quantitation_owner(
+    sample_stem: str,
+    *,
+    snr: float,
+    apex_on_left_boundary: bool = False,
+) -> SimpleNamespace:
     return SimpleNamespace(
         sample_stem=sample_stem,
         selected_integration=IntegrationResult(
             rt_left_min=8.45,
-            rt_apex_min=8.5,
+            rt_apex_min=8.45 if apex_on_left_boundary else 8.5,
             rt_right_min=8.55,
             raw_apex_rt_min=8.5,
             rt_width_min=0.1,
@@ -1435,6 +1440,34 @@ def test_bounded_continuity_holds_peaks_below_quantitation_limit() -> None:
     decision = decisions.row("FAM001")
     assert not decision.include_in_primary_matrix
     assert decision.identity_decision == "provisional_discovery"
+    assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
+
+
+def test_bounded_continuity_does_not_count_endpoint_apex_as_quantifiable() -> None:
+    matrix = _matrix(
+        _feature(
+            "FAM001",
+            evidence="owner_bounded_continuity;owner_count=2",
+            owners=(
+                _quantitation_owner("s1", snr=50.0),
+                _quantitation_owner(
+                    "s2",
+                    snr=50.0,
+                    apex_on_left_boundary=True,
+                ),
+            ),
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 110.0),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row(
+        "FAM001"
+    )
+
+    assert not decision.include_in_primary_matrix
     assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
 
 

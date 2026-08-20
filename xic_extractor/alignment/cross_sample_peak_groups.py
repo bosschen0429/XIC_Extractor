@@ -896,6 +896,16 @@ def _restore_sparse_complete_link_groups(
         )
         if group_samples == sample_universe and len(complete_groups) > 1:
             ordered = tuple(sorted(connected_group, key=_owner_sort_key))
+            if not _merged_group_passes_hard_gates(
+                ordered,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ):
+                groups.extend(complete_groups)
+                continue
             groups.append(ordered)
             full_batch_continuity_owner_sets.add(
                 frozenset(owner.owner_id for owner in ordered),
@@ -1364,12 +1374,12 @@ def _resolve_duplicate_owner_groups(
 ) -> dict[int, int]:
     """Resolve groups that only compete inside samples another group owns.
 
-    A group whose samples are all already owned by a larger, identity-compatible
-    cross-sample group cannot add sample coverage; it holds duplicate owners of
-    that group's samples.  Resolving it in this owner keeps it out of Backfill
-    instead of paying a full-batch request set for a group that Matrix
-    consolidation demotes afterwards.  Resolution is one level deep: a group
-    that wins is never itself resolved away.
+    A group whose samples are all already owned by a larger, typed same-target
+    trajectory cannot add sample coverage. Resolving that bounded duplicate in
+    this owner keeps it out of Backfill instead of paying a full-batch request
+    set for a group that Matrix consolidation demotes afterwards. Aggregate
+    group-center geometry is not same-peak evidence. Resolution is one level
+    deep: a group that wins is never itself resolved away.
     """
     if len(groups) < 2:
         return {}
@@ -1410,11 +1420,6 @@ def _resolve_duplicate_owner_groups(
             ):
                 if candidate == subordinate or candidate in resolved:
                     continue
-                generic_match = _group_resolves_duplicate_owner_group(
-                    facts[candidate],
-                    facts[subordinate],
-                    config=config,
-                )
                 targeted_match = (
                     targeted_istd_anchor is not None
                     and frozenset(
@@ -1428,7 +1433,7 @@ def _resolve_duplicate_owner_groups(
                         config=config,
                     )
                 )
-                if not generic_match and not targeted_match:
+                if not targeted_match:
                     continue
                 score = (
                     _ppm(facts[subordinate].center_mz, facts[candidate].center_mz),
@@ -1463,41 +1468,6 @@ def _rt_window_group_indexes(
     ):
         yield ordered[right]
         right += 1
-
-
-def _group_resolves_duplicate_owner_group(
-    winner: _GroupIdentityFacts,
-    subordinate: _GroupIdentityFacts,
-    *,
-    config: AlignmentConfig,
-) -> bool:
-    if len(winner.owners) < 2 or len(winner.owners) <= len(subordinate.owners):
-        return False
-    if winner.neutral_loss_tag != subordinate.neutral_loss_tag:
-        return False
-    if not subordinate.sample_stems <= winner.sample_stems:
-        return False
-    if _ppm(subordinate.center_mz, winner.center_mz) > config.max_ppm:
-        return False
-    if (
-        abs(subordinate.center_rt - winner.center_rt) * 60.0
-        > config.identity_rt_candidate_window_sec
-    ):
-        return False
-    if (
-        _ppm(subordinate.center_product_mz, winner.center_product_mz)
-        > config.product_mz_tolerance_ppm
-    ):
-        return False
-    if (
-        _ppm(subordinate.center_observed_loss, winner.center_observed_loss)
-        > config.observed_loss_tolerance_ppm
-    ):
-        return False
-    return all(
-        _owner_within_group_envelope(owner, winner.envelope, config)
-        for owner in subordinate.owners
-    )
 
 
 def _targeted_istd_group_resolves_duplicate_owner_group(
@@ -1664,12 +1634,24 @@ def _add_group_precursor_bucket_index(
     envelope: _GroupHardGateEnvelope,
     group_indexes_by_precursor_bucket: dict[tuple[str, int], list[int]],
 ) -> None:
-    if not math.isfinite(envelope.precursor_mz_min):
+    if not (
+        math.isfinite(envelope.precursor_mz_min)
+        and math.isfinite(envelope.precursor_mz_max)
+    ):
         return
-    key = (envelope.neutral_loss_tag, _precursor_bucket(envelope.precursor_mz_min))
-    bucket_indexes = group_indexes_by_precursor_bucket.setdefault(key, [])
-    if group_index not in bucket_indexes:
-        bucket_indexes.append(group_index)
+    # Owners arrive in ascending precursor-m/z order. Indexing both envelope
+    # endpoints keeps the next locally compatible owner discoverable across a
+    # bucket boundary without expanding a long connected chain into every
+    # interior integer-Da bucket.
+    buckets = {
+        _precursor_bucket(envelope.precursor_mz_min),
+        _precursor_bucket(envelope.precursor_mz_max),
+    }
+    for bucket in sorted(buckets):
+        key = (envelope.neutral_loss_tag, bucket)
+        bucket_indexes = group_indexes_by_precursor_bucket.setdefault(key, [])
+        if group_index not in bucket_indexes:
+            bucket_indexes.append(group_index)
 
 
 def _precursor_bucket(value: float) -> int:

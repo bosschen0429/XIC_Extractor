@@ -493,7 +493,7 @@ def test_owner_clustering_keeps_complete_full_batch_on_complete_link() -> None:
     assert features[0].evidence == "owner_complete_link;owner_count=2"
 
 
-def test_owner_clustering_connects_full_batch_across_local_mz_continuum() -> None:
+def test_owner_clustering_keeps_full_batch_split_across_blocked_mz_edge() -> None:
     owners = (
         _owner(
             "sample-a",
@@ -537,12 +537,51 @@ def test_owner_clustering_connects_full_batch_across_local_mz_continuum() -> Non
     )
 
     assert [feature.event_cluster_ids for feature in features] == [
-        (
-            "OWN-sample-a-a",
-            "OWN-sample-b-b",
-            "OWN-sample-c-c",
-        )
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-c-c",),
     ]
+
+
+def test_connected_link_grouping_is_invariant_to_precursor_bucket_origin() -> None:
+    config = AlignmentConfig(
+        preferred_ppm=10.0,
+        max_ppm=10.0,
+        product_mz_tolerance_ppm=15.0,
+    )
+
+    def connected_owner_ids(
+        precursor_mzs: tuple[float, ...],
+    ) -> tuple[tuple[str, ...], ...]:
+        owners = [
+            _owner(
+                f"sample-{index}",
+                str(index),
+                precursor_mz=precursor_mz,
+            )
+            for index, precursor_mz in enumerate(precursor_mzs)
+        ]
+        groups = peak_groups_module._connected_link_groups(
+            owners,
+            config,
+            drift_lookup=None,
+            edge_evidence_sink=None,
+            edge_cache={},
+            edge_evaluator=evaluate_owner_edge,
+        )
+        return tuple(
+            tuple(owner.owner_id for owner in group)
+            for group in groups
+        )
+
+    expected = (
+        tuple(f"OWN-sample-{index}-{index}" for index in range(5)),
+    )
+    assert connected_owner_ids(
+        (499.992, 499.996, 500.000, 500.004, 500.008)
+    ) == expected
+    assert connected_owner_ids(
+        (500.192, 500.196, 500.200, 500.204, 500.208)
+    ) == expected
 
 
 def test_owner_clustering_does_not_single_link_merge_bridge_groups() -> None:
@@ -2255,7 +2294,7 @@ def _rows_by_feature_sample(path: Path) -> dict[tuple[str, str], dict[str, str]]
         }
 
 
-def test_owner_clustering_resolves_duplicate_owner_group_before_backfill() -> None:
+def test_owner_clustering_preserves_parallel_group_without_typed_identity() -> None:
     owners = (
         _owner("sample-a", "a", apex_rt=10.00),
         _owner("sample-b", "b", apex_rt=10.05),
@@ -2275,24 +2314,14 @@ def test_owner_clustering_resolves_duplicate_owner_group_before_backfill() -> No
         ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
         ("OWN-sample-a-a2", "OWN-sample-b-b2"),
     ]
-    winner, loser = hypotheses
-    assert winner.consolidation_state == "primary_winner"
-    assert winner.consolidation_winner_group_hypothesis_id == (
-        winner.group_hypothesis_id
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+    assert all(
+        hypothesis.consolidation_state == "not_consolidated"
+        for hypothesis in hypotheses
     )
-    assert winner.consolidation_source_group_hypothesis_id == (
-        f"{winner.group_hypothesis_id};{loser.group_hypothesis_id}"
-    )
-    assert not winner.review_only
-    assert loser.review_only
-    assert loser.consolidation_state == "primary_loser"
-    assert loser.consolidation_winner_group_hypothesis_id == (
-        winner.group_hypothesis_id
-    )
-    assert "owner_duplicate_group_resolved_loser" in loser.evidence
 
 
-def test_resolved_duplicate_owner_group_requests_no_backfill() -> None:
+def test_parallel_group_without_typed_identity_keeps_bounded_backfill() -> None:
     features = cluster_sample_local_owners(
         (
             _owner("sample-a", "a", apex_rt=10.00),
@@ -2318,9 +2347,7 @@ def test_resolved_duplicate_owner_group_requests_no_backfill() -> None:
         for feature in features
     }
 
-    winner, loser = features
-    assert requests[winner.feature_family_id]
-    assert requests[loser.feature_family_id] == ()
+    assert all(requests[feature.feature_family_id] for feature in features)
 
 
 def test_owner_clustering_keeps_group_that_adds_a_sample() -> None:

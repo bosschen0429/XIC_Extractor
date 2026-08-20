@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
@@ -313,7 +314,11 @@ def owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
 def owner_peak_meets_quantitation_limit(owner: SampleLocalMS1Owner) -> bool:
     """Whether the resolved peak clears the quantitation-limit convention."""
     snr = owner_peak_snr(owner)
-    return snr is not None and snr >= _QUANTITATION_LIMIT_SNR
+    return (
+        owner_quantification_eligible(owner)
+        and snr is not None
+        and snr >= _QUANTITATION_LIMIT_SNR
+    )
 
 
 def _owner_quality(
