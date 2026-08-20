@@ -78,8 +78,18 @@ def build_selected_envelope_changed_row_preflight_manifest(
         blockers.append("boundary_oracle_artifact_hash_invalid")
     if not raw_runner_contract_checked:
         blockers.append("raw_runner_contract_not_checked")
+    # Count validation is one ordered truth table. A missing or nonpositive
+    # observed cohort is never launchable; ``None`` is the only way to request
+    # cohort-neutral validation, and a supplied expectation must be positive.
+    # The first matching row owns the single sample-count blocker.
     if raw_input_sample_count is None:
         blockers.append("raw_input_sample_count_not_checked")
+    elif raw_input_sample_count <= 0:
+        blockers.append(
+            f"raw_input_sample_count_nonpositive:{raw_input_sample_count}"
+        )
+    elif expected_sample_count is not None and expected_sample_count <= 0:
+        blockers.append(f"expected_sample_count_nonpositive:{expected_sample_count}")
     elif (
         expected_sample_count is not None
         and raw_input_sample_count != expected_sample_count

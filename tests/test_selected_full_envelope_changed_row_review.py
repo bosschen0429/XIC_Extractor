@@ -1,3 +1,5 @@
+import pytest
+
 from xic_extractor.peak_detection.selected_envelope_changed_row_review import (
     build_selected_envelope_changed_row_preflight_manifest,
 )
@@ -155,6 +157,36 @@ def test_changed_row_preflight_skips_cohort_size_check_without_expectation() -> 
     assert manifest["gate_decision"] == "promote"
     assert manifest["raw_launch_allowed"] == "TRUE"
     assert "raw_input_sample_count_mismatch" not in manifest["blocked_reasons"]
+
+
+@pytest.mark.parametrize(
+    ("raw_count", "expected_count", "expected_decision", "expected_blocker"),
+    (
+        (None, None, "defer", "raw_input_sample_count_not_checked"),
+        (0, None, "defer", "raw_input_sample_count_nonpositive:0"),
+        (-1, 8, "defer", "raw_input_sample_count_nonpositive:-1"),
+        (8, None, "promote", ""),
+        (8, 0, "defer", "expected_sample_count_nonpositive:0"),
+        (7, 8, "defer", "raw_input_sample_count_mismatch:7!=8"),
+        (8, 8, "promote", ""),
+    ),
+)
+def test_changed_row_preflight_closes_sample_count_truth_table(
+    raw_count: int | None,
+    expected_count: int | None,
+    expected_decision: str,
+    expected_blocker: str,
+) -> None:
+    manifest = _ready_preflight(
+        raw_input_sample_count=raw_count,
+        expected_sample_count=expected_count,
+    )
+
+    assert manifest["gate_decision"] == expected_decision
+    assert manifest["raw_launch_allowed"] == (
+        "TRUE" if expected_decision == "promote" else "FALSE"
+    )
+    assert manifest["blocked_reasons"] == expected_blocker
 
 
 def test_changed_row_preflight_requires_artifact_existence_and_hash_facts() -> None:
