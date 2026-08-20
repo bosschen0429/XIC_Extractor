@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         "PASS identity_coherence_sidecar_parity "
-        f"summary={args.output_root / 'identity_coherence_8raw_validation_report.md'}"
+        f"summary={args.output_root / 'identity_coherence_validation_report.md'}"
     )
     if acceptance.accepted:
         print(

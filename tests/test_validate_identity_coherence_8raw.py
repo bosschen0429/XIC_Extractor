@@ -381,7 +381,10 @@ def test_main_without_strict_acceptance_prints_no_go_but_returns_zero(
 
     assert code == 0
     stdout = capsys.readouterr().out
+    summary_path = output_root / "identity_coherence_validation_report.md"
     assert "PASS identity_coherence_sidecar_parity" in stdout
+    assert f"summary={summary_path}" in stdout
+    assert summary_path.is_file()
     assert "NO-GO identity_coherence_v04_acceptance" in stdout
     assert "reviewed_controls_manifest" in stdout
 
