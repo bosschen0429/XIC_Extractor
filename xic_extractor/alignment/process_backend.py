@@ -15,6 +15,11 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
 )
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillSampleResult,
+    OwnerBackfillSampleTransaction,
+    OwnerBackfillTimingStats,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.identity_coherence.models import (
     IdentityCoherenceTraceRequest,
@@ -231,41 +236,6 @@ class OwnerBackfillJobPayloadMetrics:
     request_payload_count: int
     requests_per_feature: float | None
     pickle_payload_bytes: int
-
-
-@dataclass(frozen=True)
-class OwnerBackfillTimingStats:
-    sample_stem: str
-    elapsed_sec: float
-    extract_xic_count: int
-    point_count: int
-    extract_xic_batch_count: int = 0
-    raw_chromatogram_call_count: int = 0
-
-
-@dataclass(frozen=True)
-class OwnerBackfillSampleResult:
-    sample_index: int
-    sample_stem: str
-    cells: tuple[AlignedCell, ...]
-    candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...] = ()
-    timing_stats: tuple[OwnerBackfillTimingStats, ...] = ()
-    request_reuse_observations: tuple[
-        OwnerBackfillRequestReuseObservation,
-        ...,
-    ] = ()
-    peak_fact_observations: tuple[
-        OwnerBackfillPeakFactObservation,
-        ...,
-    ] = ()
-    prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...] = ()
-    peak_fact_cost: RuntimePeakFactCostMetrics | None = None
-
-    def __post_init__(self) -> None:
-        if self.peak_fact_observations and self.prepared_peak_facts:
-            raise ValueError(
-                "Backfill result cannot carry live and prepared peak facts"
-            )
 
 
 @dataclass(frozen=True)
@@ -752,10 +722,6 @@ def run_owner_backfill_process(
         return OwnerBackfillProcessOutput(cells=(), timing_stats=())
     active_runner = runner or run_owner_backfill_jobs
     if matrix_sample_order is not None:
-        from xic_extractor.alignment.backfill_transaction import (
-            OwnerBackfillSampleTransaction,
-        )
-
         transaction = OwnerBackfillSampleTransaction(
             matrix_features if matrix_features is not None else features,
             matrix_sample_order=matrix_sample_order,

@@ -11,15 +11,13 @@ import pytest
 from tests.test_owner_backfill_peak_fact_provenance import _live_available_inputs
 from xic_extractor.alignment import owner_matrix
 from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillSampleResult,
     OwnerBackfillSampleTransaction,
+    OwnerBackfillTimingStats,
 )
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
     OwnerBackfillRequestReuseObservation,
-)
-from xic_extractor.alignment.process_backend import (
-    OwnerBackfillSampleResult,
-    OwnerBackfillTimingStats,
 )
 from xic_extractor.execution_runtime_owner import (
     derive_runtime_peak_fact_cost_metrics,

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.alignment.matrix import AlignmentMatrix
+from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
+    OwnerBackfillPeakFactObservation,
     OwnerBackfillRequestReuseObservation,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
@@ -13,14 +14,45 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.alignment.owner_matrix import OwnerAlignmentMatrixBuilder
-from xic_extractor.alignment.process_backend import (
-    OwnerBackfillSampleResult,
-    OwnerBackfillTimingStats,
-)
 from xic_extractor.execution_runtime_owner import RuntimePeakFactCostMetrics
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+
+
+@dataclass(frozen=True)
+class OwnerBackfillTimingStats:
+    sample_stem: str
+    elapsed_sec: float
+    extract_xic_count: int
+    point_count: int
+    extract_xic_batch_count: int = 0
+    raw_chromatogram_call_count: int = 0
+
+
+@dataclass(frozen=True)
+class OwnerBackfillSampleResult:
+    sample_index: int
+    sample_stem: str
+    cells: tuple[AlignedCell, ...]
+    candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...] = ()
+    timing_stats: tuple[OwnerBackfillTimingStats, ...] = ()
+    request_reuse_observations: tuple[
+        OwnerBackfillRequestReuseObservation,
+        ...,
+    ] = ()
+    peak_fact_observations: tuple[
+        OwnerBackfillPeakFactObservation,
+        ...,
+    ] = ()
+    prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...] = ()
+    peak_fact_cost: RuntimePeakFactCostMetrics | None = None
+
+    def __post_init__(self) -> None:
+        if self.peak_fact_observations and self.prepared_peak_facts:
+            raise ValueError(
+                "Backfill result cannot carry live and prepared peak facts"
+            )
 
 
 @dataclass(frozen=True, slots=True)
