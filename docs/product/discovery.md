@@ -36,6 +36,12 @@ workflow projection and Backfill/ProductWriter authority path.
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
   measured scan-precursor, and delta provenance. This is a public identity and
   replay contract even when the CSV column set is unchanged.
+- After physical MS1 evaluation and evidence scoring, one sample/tag/best-scan
+  context may advance at most one pure `product_mz + neutral_loss` candidate as
+  feature-backed. The highest-evidence candidate remains eligible; competing
+  pure inferred candidates stay in review output as
+  `review_only_ambiguous_coisolation`. Direct or mixed-basis candidates do not
+  enter this inferred-only competition.
 - CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
   methods when they are used to find features matching method-specific evidence
   settings. They produce feature candidates plus typed evidence, not

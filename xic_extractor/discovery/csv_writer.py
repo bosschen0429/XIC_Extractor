@@ -64,9 +64,12 @@ def build_discovery_review_note(candidate: DiscoveryCandidate) -> str:
         if not owner_reason.strip():
             raise ValueError("physical Discovery review reason must be nonempty")
         return f"physical MS1 {terminal_state}: {owner_reason}; missing RT"
-    return (
+    evidence_summary = (
         f"{ms2_support} MS2; {candidate.ms1_support} MS1; {candidate.rt_alignment} RT"
     )
+    if candidate.discovery_candidate_state == "review_only_ambiguous_coisolation":
+        return f"review-only ambiguous inferred precursor; {evidence_summary}"
+    return evidence_summary
 
 
 _candidate_sort_key = discovery_candidate_output_sort_key

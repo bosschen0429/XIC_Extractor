@@ -57,6 +57,11 @@ State values: `ms1_feature_nl_supported`, `ms1_feature_nl_rescued`,
 `review_only_orphan_nl`, `review_only_ambiguous_coisolation`,
 `rejected_noise_or_outside_rt`.
 
+`review_only_ambiguous_coisolation` includes otherwise feature-backed pure
+inferred precursor hypotheses that share one sample/tag/best-MS2-scan context
+with a stronger inferred hypothesis. They remain reviewable but do not
+independently enter Alignment RAW owner build.
+
 #### Provenance Columns
 
 | Column | Type | Description |
