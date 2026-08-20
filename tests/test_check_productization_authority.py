@@ -32,6 +32,7 @@ BACKFILL_EXTERNALIZED_SUMMARY = (
 )
 
 
+@pytest.mark.ledger_snapshot
 def test_productization_authority_checker_accepts_repo_artifacts() -> None:
     assert check_productization_authority() == []
     assert main([]) == 0

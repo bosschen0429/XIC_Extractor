@@ -40,14 +40,14 @@ def test_write_validation_outputs_labels_controls_not_assessed(
     )
 
     report = (
-        tmp_path / "identity_coherence_8raw_validation_report.md"
+        tmp_path / "identity_coherence_validation_report.md"
     ).read_text(encoding="utf-8")
     assert "Controls: not_assessed" in report
     assert "diagnostic-only" in report
     assert "does not validate final matrix filtering" in report
     assert "not final retained feature inclusion" in report
     summary = (
-        tmp_path / "identity_coherence_8raw_validation_summary.tsv"
+        tmp_path / "identity_coherence_validation_summary.tsv"
     ).read_text(encoding="utf-8")
     assert "controls_manifest_assessment\tnot_assessed" in summary
 
@@ -150,7 +150,7 @@ def test_write_validation_outputs_writes_acceptance_artifacts(
     markdown = acceptance_md.read_text(encoding="utf-8")
     assert "# Identity Coherence V0.4 Acceptance" in markdown
     assert "| `v04_acceptance` | `pass` |" in markdown
-    assert "does not clear 85RAW execution" in markdown
+    assert "does not clear full-cohort execution" in markdown
 
 
 def test_write_validation_outputs_keeps_parity_report_pass_when_controls_fail(
@@ -200,7 +200,7 @@ def test_write_validation_outputs_keeps_parity_report_pass_when_controls_fail(
         controls_manifest=tmp_path / "controls.reviewed.tsv",
     )
 
-    report = (tmp_path / "identity_coherence_8raw_validation_report.md").read_text(
+    report = (tmp_path / "identity_coherence_validation_report.md").read_text(
         encoding="utf-8",
     )
     assert "Parity result: PASS" in report

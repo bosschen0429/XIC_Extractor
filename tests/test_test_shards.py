@@ -1,15 +1,22 @@
 from pathlib import Path
 
+import pytest
+
 from tools.testing import test_shards
 from tools.testing.test_shards import (
     SHARD_PATTERNS,
+    SNAPSHOT_TESTS,
     assign_shards,
     check_coverage,
+    discover_snapshot_tests,
     discover_test_files,
     shard_for_path,
 )
 
-_ALLOWED_SHARD_OVERLAPS = {
+# Files whose path matches more than one shard glob. First match wins, so the
+# left-hand shard is the owner and the file runs exactly once. Locking the set
+# here means a new overlap has to be an explicit decision.
+_ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
     Path("tests/test_config_hash.py"): ("docs-config", "targeted-core"),
     Path("tests/test_config_io.py"): ("docs-config", "targeted-core"),
     Path("tests/test_discovery_method_section.py"): ("gui", "alignment-core"),
@@ -26,10 +33,7 @@ _ALLOWED_SHARD_OVERLAPS = {
         "alignment-core",
         "product-gates-evidence",
     ),
-    Path("tests/test_ms1_scan_index.py"): (
-        "alignment-core",
-        "product-gates-evidence",
-    ),
+    Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
     Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),
     Path("tests/test_target_pair_expected_diff_approval_registry_tool.py"): (
@@ -163,3 +167,173 @@ def _matching_shards(path: Path) -> tuple[str, ...]:
         for shard in SHARD_PATTERNS
         if test_shards._shard_matches_path(shard, path)
     )
+
+
+def test_snapshot_marker_cannot_grow_without_a_recorded_decision() -> None:
+    # The marker removes a test from CI, so it gets the ratchet the shard
+    # budgets have. Marking a test without recording it here fails, which is
+    # the gate the file-level exclusion never had.
+    assert discover_snapshot_tests() == SNAPSHOT_TESTS
+
+
+def test_recorded_snapshot_tests_still_exist() -> None:
+    # A registry entry for a renamed or deleted test would silently stop
+    # protecting anything.
+    discovered = discover_snapshot_tests()
+    for path, names in SNAPSHOT_TESTS.items():
+        assert path in discovered, path
+        for name in names:
+            assert name in discovered[path], f"{path}::{name}"
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "@pytest.mark.ledger_snapshot\nasync def test_async_snapshot():\n    pass\n",
+        (
+            "class TestSnapshots:\n"
+            "    @pytest.mark.ledger_snapshot\n"
+            "    def test_method_snapshot(self):\n"
+            "        pass\n"
+        ),
+        (
+            "@pytest.mark.ledger_snapshot\n"
+            "class TestSnapshotClass:\n"
+            "    def test_member(self):\n"
+            "        pass\n"
+        ),
+        (
+            "pytestmark = pytest.mark.ledger_snapshot\n\n"
+            "def test_module_snapshot():\n"
+            "    pass\n"
+        ),
+    ),
+    ids=("async", "method", "class", "module"),
+)
+def test_snapshot_inventory_rejects_unsupported_marker_placements(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_marker_shape.py").write_text(
+        "import pytest\n\n" + source,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="ledger_snapshot.*top-level synchronous test function",
+    ):
+        discover_snapshot_tests(root)
+
+
+def test_snapshot_runner_intersects_caller_marker_with_snapshot_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        test_shards,
+        "discover_test_files",
+        lambda _root: (Path("tests/test_snapshot.py"),),
+    )
+    monkeypatch.setattr(
+        test_shards,
+        "_pytest_command",
+        lambda: ["python", "-m", "pytest"],
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess,
+        "call",
+        lambda command: commands.append(command) or 0,
+    )
+
+    assert test_shards._run_snapshots(("-m", "slow"), Path("tests")) == 0
+
+    assert len(commands) == 1
+    command = commands[0]
+    pytest_args = command[3:]
+    assert pytest_args.count("-m") == 1
+    marker_index = pytest_args.index("-m")
+    assert pytest_args[marker_index + 1] == "(slow) and (ledger_snapshot)"
+
+
+def test_ci_shard_intersects_caller_marker_with_snapshot_exclusion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        test_shards,
+        "assign_shards",
+        lambda _files: {"docs-config": (Path("tests/test_regular.py"),)},
+    )
+    monkeypatch.setattr(test_shards, "discover_test_files", lambda _root: ())
+    monkeypatch.setattr(
+        test_shards,
+        "_pytest_command",
+        lambda: ["python", "-m", "pytest"],
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess,
+        "call",
+        lambda command: commands.append(command) or 0,
+    )
+
+    assert test_shards._run_shard("docs-config", ("-m", "slow"), Path("tests")) == 0
+
+    assert len(commands) == 1
+    command = commands[0]
+    pytest_args = command[3:]
+    assert pytest_args.count("-m") == 1
+    marker_index = pytest_args.index("-m")
+    assert pytest_args[marker_index + 1] == "(slow) and (not ledger_snapshot)"
+
+
+@pytest.mark.parametrize(
+    ("pytest_args", "expected"),
+    (
+        (("-m", "slow"), ("-m", "(slow) and (owned)")),
+        (("-mslow",), ("-m", "(slow) and (owned)")),
+        (("-m=slow",), ("-m", "(slow) and (owned)")),
+        (
+            ("-m", "slow", "-mfast", "-m=unit"),
+            ("-m", "(slow) and (fast) and (unit) and (owned)"),
+        ),
+        (("-q",), ("-m", "owned", "-q")),
+    ),
+)
+def test_marker_intersection_handles_every_pytest_option_shape(
+    pytest_args: tuple[str, ...],
+    expected: tuple[str, ...],
+) -> None:
+    assert test_shards._intersect_marker_selection(
+        pytest_args,
+        required="owned",
+    ) == expected
+
+
+@pytest.mark.parametrize(
+    "pytest_args",
+    (
+        ("-m=",),
+        ("-m",),
+        ("-m", ""),
+        ("-m", "-q"),
+    ),
+)
+def test_snapshot_runner_rejects_malformed_marker_before_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+    pytest_args: tuple[str, ...],
+) -> None:
+    monkeypatch.setattr(
+        test_shards,
+        "discover_test_files",
+        lambda _root: (Path("tests/test_snapshot.py"),),
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess,
+        "call",
+        lambda _command: pytest.fail("malformed marker reached pytest"),
+    )
+
+    assert test_shards._run_snapshots(pytest_args, Path("tests")) == 2

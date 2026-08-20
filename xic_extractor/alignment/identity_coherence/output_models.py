@@ -23,8 +23,8 @@ class IdentityCoherenceOutputContext:
     control_manifest_path: str = "not_provided"
     raw_xic_request_count: int | None = None
     xic_point_count: int | None = None
-    projected_85raw_identity_request_count: int | None = None
-    max_projected_85raw_identity_xic_requests: int | None = None
+    projected_full_cohort_identity_request_count: int | None = None
+    max_projected_full_cohort_identity_xic_requests: int | None = None
     max_infrastructure_blocked_fraction: float = 0.05
     firewall_fixture_status: str = "not_assessed"
     spawn_payload_smoke_status: str = "not_assessed"
@@ -44,8 +44,8 @@ class IdentityCoherenceOutputContext:
         for field_name in (
             "raw_xic_request_count",
             "xic_point_count",
-            "projected_85raw_identity_request_count",
-            "max_projected_85raw_identity_xic_requests",
+            "projected_full_cohort_identity_request_count",
+            "max_projected_full_cohort_identity_xic_requests",
         ):
             object.__setattr__(
                 self,

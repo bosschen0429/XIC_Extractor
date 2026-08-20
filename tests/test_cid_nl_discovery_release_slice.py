@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import check_cid_nl_discovery_release_slice as release_slice
 
 
+@pytest.mark.ledger_snapshot
 def test_current_cid_nl_discovery_release_slice_is_stable() -> None:
     assert release_slice.check_cid_nl_discovery_release_slice() == []
 

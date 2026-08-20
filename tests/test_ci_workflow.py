@@ -7,6 +7,16 @@ import pytest
 from scripts.check_pr_body import main, validate_pr_body
 from tools.testing.test_shards import SHARD_PATTERNS
 
+# Shards deliberately excluded from .github/workflows/ci.yml. Every shard must
+# appear exactly once in each test job; membership here is the only way to opt
+# out, so the CI/shard contract fails closed for anything unlisted.
+#
+# Empty, and it should stay that way. Register-snapshot tests are excluded by
+# the ledger_snapshot marker instead, which splits at the granularity the
+# property has: excluding whole files also removed 175 behavioural tests from
+# CI. See SNAPSHOT_MARKER in tools/testing/test_shards.py.
+MANUAL_ONLY_SHARDS: frozenset[str] = frozenset()
+
 CORE_CI_COMMANDS = (
     "uv run ruff check xic_extractor tests",
     "uv run lint-imports --no-cache",
@@ -103,14 +113,15 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
         )
         assert (
             r"& .\.venv\Scripts\python.exe "
-            "-m tools.testing.test_shards $shard -- -v --tb=short -x"
+            "-m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10"
         ) in block
         assert (
             r'$env:PATH = "$venvScripts;$env:PATH"'
             in block
         )
         for shard in SHARD_PATTERNS:
-            assert block.count(f'"{shard}"') == 1
+            expected = 0 if shard in MANUAL_ONLY_SHARDS else 1
+            assert block.count(f'"{shard}"') == expected, shard
         assert "install_seconds=" in block
         assert "test_seconds=" in block
         assert "$env:GITHUB_STEP_SUMMARY" in block

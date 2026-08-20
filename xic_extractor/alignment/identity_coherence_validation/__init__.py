@@ -1,1 +1,1 @@
-"""Internals for the 8RAW identity-coherence validation CLI."""
+"""Internals for the identity-coherence validation CLI."""

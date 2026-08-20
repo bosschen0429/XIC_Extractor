@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.check_backfill_expansion_sample_local_ms1_evidence import (
     CHECK_COLUMNS,
     DEFAULT_DOCS_DIR,
@@ -14,6 +16,7 @@ from scripts.check_backfill_expansion_sample_local_ms1_evidence import (
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 
+@pytest.mark.ledger_snapshot
 def test_current_backfill_expansion_sample_local_ms1_evidence_is_stable() -> None:
     assert check_backfill_expansion_sample_local_ms1_evidence() == []
 

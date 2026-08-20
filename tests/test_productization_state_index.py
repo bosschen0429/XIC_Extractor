@@ -27,6 +27,7 @@ from scripts.check_productization_state import (
 from tools.diagnostics.docs_scan import markdown_headings
 
 
+@pytest.mark.ledger_snapshot
 def test_productization_state_index_accepts_current_artifacts() -> None:
     assert check_productization_state() == []
 
@@ -49,6 +50,7 @@ def test_status_schema_matches_index_header() -> None:
     }
 
 
+@pytest.mark.ledger_snapshot
 def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
     _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
@@ -68,6 +70,7 @@ def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
     assert row["row_count"] == "0"
 
 
+@pytest.mark.ledger_snapshot
 def test_registered_default_scopes_have_writer_authority() -> None:
     _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
     authority_rows = [row for row in rows if row["write_authority"] == "TRUE"]
@@ -141,6 +144,7 @@ def test_registered_default_scopes_have_writer_authority() -> None:
     assert "cannot regenerate classification" in expansion["notes"]
 
 
+@pytest.mark.ledger_snapshot
 def test_peak_choice_lockbox_status_points_to_shadow_automation_design() -> None:
     _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
     row = next(

@@ -157,7 +157,7 @@ def test_oracle_manifest_allows_8raw_only_after_expert_oracle_support() -> None:
     assert manifest["benchmark_control_row_count"] == "0"
     assert manifest["selected_envelope_closer_count"] == "1"
     assert manifest["blocked_reasons"] == ""
-    assert manifest["next_gate"] == "8raw_changed_row_review"
+    assert manifest["next_gate"] == "changed_row_review"
 
 
 def test_oracle_manifest_no_go_when_resolver_is_closer_to_truth() -> None:

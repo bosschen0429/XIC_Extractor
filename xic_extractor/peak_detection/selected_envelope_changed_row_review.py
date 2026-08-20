@@ -19,12 +19,12 @@ def build_selected_envelope_changed_row_preflight_manifest(
     output_root: str = "",
     raw_runner_contract_checked: bool = False,
     raw_input_sample_count: int | None = None,
-    expected_sample_count: int = 8,
+    expected_sample_count: int | None = None,
     raw_dir_exists: bool = False,
     dll_dir_exists: bool = False,
     worktree_root: str = "",
 ) -> dict[str, str]:
-    """Build the no-RAW gate that decides whether changed-row 8RAW may launch."""
+    """Build the no-RAW gate that decides whether a changed-row RAW run may launch."""
     changed_row_count = _parse_int(diagnostic_manifest.get("changed_row_count"))
     changed_row_denominator = _parse_int(
         diagnostic_manifest.get("changed_row_denominator")
@@ -78,9 +78,22 @@ def build_selected_envelope_changed_row_preflight_manifest(
         blockers.append("boundary_oracle_artifact_hash_invalid")
     if not raw_runner_contract_checked:
         blockers.append("raw_runner_contract_not_checked")
+    # Count validation is one ordered truth table. A missing or nonpositive
+    # observed cohort is never launchable; ``None`` is the only way to request
+    # cohort-neutral validation, and a supplied expectation must be positive.
+    # The first matching row owns the single sample-count blocker.
     if raw_input_sample_count is None:
         blockers.append("raw_input_sample_count_not_checked")
-    elif raw_input_sample_count != expected_sample_count:
+    elif raw_input_sample_count <= 0:
+        blockers.append(
+            f"raw_input_sample_count_nonpositive:{raw_input_sample_count}"
+        )
+    elif expected_sample_count is not None and expected_sample_count <= 0:
+        blockers.append(f"expected_sample_count_nonpositive:{expected_sample_count}")
+    elif (
+        expected_sample_count is not None
+        and raw_input_sample_count != expected_sample_count
+    ):
         blockers.append(
             f"raw_input_sample_count_mismatch:{raw_input_sample_count}!="
             f"{expected_sample_count}"
@@ -163,7 +176,7 @@ def _parse_int(value: str | None) -> int:
 
 def _next_gate(decision: GateDecision) -> str:
     if decision == "promote":
-        return "8raw_changed_row_diagnostic_run"
+        return "changed_row_diagnostic_run"
     if decision == "no_go":
         return "stop_selected_envelope_product_path"
     if decision == "externalize":

@@ -85,7 +85,7 @@ def test_calibration_cli_rejects_missing_required_column(
 
     assert rc == 2
     err = capsys.readouterr().err
-    assert "Missing required Phase 1 trend columns" in err
+    assert "Missing required SDOLEK trend columns" in err
     assert "apex_rt_min" in err
 
 

@@ -8,8 +8,8 @@ from typing import Sequence
 
 from xic_extractor.instrument_qc.calibration import (
     calibrate_sdolek_rows,
-    load_phase1_metadata_source_status,
-    load_phase1_trend_rows,
+    load_metadata_source_status,
+    load_sdolek_trend_rows,
 )
 from xic_extractor.instrument_qc.calibration_writers import (
     write_calibrated_trend_tsv,
@@ -42,11 +42,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        trend_rows = load_phase1_trend_rows(args.trend_tsv)
-        phase1_metadata = load_phase1_metadata_source_status(args.trend_json)
+        trend_rows = load_sdolek_trend_rows(args.trend_tsv)
+        phase1_metadata = load_metadata_source_status(args.trend_json)
         result = calibrate_sdolek_rows(
             trend_rows,
-            phase1_metadata_source_status=phase1_metadata,
+            metadata_source_status=phase1_metadata,
             injection_order_source=args.injection_order_source,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:

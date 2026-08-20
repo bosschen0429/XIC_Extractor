@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.build_lockbox_ai_challenge_pack import (
     AI_CHALLENGE_QUEUE,
     AUTHORITY_FIELDS,
@@ -16,10 +18,12 @@ from scripts.check_lockbox_ai_challenge_results import (
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 
+@pytest.mark.ledger_snapshot
 def test_current_lockbox_ai_challenge_results_validate() -> None:
     assert check_lockbox_ai_challenge_results() == []
 
 
+@pytest.mark.ledger_snapshot
 def test_current_ai_challenge_result_summary_is_non_authoritative() -> None:
     rows = list(read_tsv_required(AI_CHALLENGE_RESULT_LOG, TEMPLATE_HEADER))
     summary = json.loads(AI_CHALLENGE_RESULT_SUMMARY.read_text(encoding="utf-8"))

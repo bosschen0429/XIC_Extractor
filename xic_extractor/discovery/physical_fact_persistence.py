@@ -95,10 +95,10 @@ def write_discovery_physical_fact_sidecar(
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.tmp")
     try:
-        # One sidecar per sample runs 34-36 MB in the 8RAW lane.  Decoding the
-        # payload to write it and then reading the whole temporary file back to
-        # compare held three full copies at once; write the canonical bytes
-        # directly and verify what landed by digest instead.
+        # One sidecar per sample measured 34-36 MB in the validation run.
+        # Decoding the payload to write it and then reading the whole temporary
+        # file back to compare held three full copies at once; write the
+        # canonical bytes directly and verify what landed by digest instead.
         with temporary.open("wb") as handle:
             handle.write(payload)
             handle.flush()

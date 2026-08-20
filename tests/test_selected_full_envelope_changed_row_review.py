@@ -1,3 +1,5 @@
+import pytest
+
 from xic_extractor.peak_detection.selected_envelope_changed_row_review import (
     build_selected_envelope_changed_row_preflight_manifest,
 )
@@ -33,7 +35,7 @@ def _oracle_manifest(
         "selected_envelope_closer_count": "1",
         "resolver_interval_closer_count": "0",
         "blocked_reasons": blocked_reasons,
-        "next_gate": "8raw_changed_row_review",
+        "next_gate": "changed_row_review",
     }
 
 
@@ -71,7 +73,7 @@ def test_changed_row_preflight_allows_raw_only_after_real_oracle_promote() -> No
     assert manifest["boundary_oracle_artifact_present"] == "TRUE"
     assert manifest["boundary_oracle_artifact_sha256"] == "b" * 64
     assert manifest["blocked_reasons"] == ""
-    assert manifest["next_gate"] == "8raw_changed_row_diagnostic_run"
+    assert manifest["next_gate"] == "changed_row_diagnostic_run"
 
 
 def test_changed_row_preflight_defers_without_boundary_oracle_rows() -> None:
@@ -144,6 +146,50 @@ def test_changed_row_preflight_defers_on_raw_runner_or_sample_count_gap() -> Non
     assert manifest["raw_launch_allowed"] == "FALSE"
     assert "raw_runner_contract_not_checked" in manifest["blocked_reasons"]
     assert "raw_input_sample_count_mismatch:85!=8" in manifest["blocked_reasons"]
+
+
+def test_changed_row_preflight_skips_cohort_size_check_without_expectation() -> None:
+    manifest = _ready_preflight(
+        raw_input_sample_count=85,
+        expected_sample_count=None,
+    )
+
+    assert manifest["gate_decision"] == "promote"
+    assert manifest["raw_launch_allowed"] == "TRUE"
+    assert "raw_input_sample_count_mismatch" not in manifest["blocked_reasons"]
+
+
+@pytest.mark.parametrize(
+    ("raw_count", "expected_count", "expected_decision", "expected_blocker"),
+    (
+        (None, None, "defer", "raw_input_sample_count_not_checked"),
+        (None, 0, "defer", "raw_input_sample_count_not_checked"),
+        (None, 8, "defer", "raw_input_sample_count_not_checked"),
+        (0, None, "defer", "raw_input_sample_count_nonpositive:0"),
+        (0, 0, "defer", "raw_input_sample_count_nonpositive:0"),
+        (-1, 8, "defer", "raw_input_sample_count_nonpositive:-1"),
+        (8, None, "promote", ""),
+        (8, 0, "defer", "expected_sample_count_nonpositive:0"),
+        (7, 8, "defer", "raw_input_sample_count_mismatch:7!=8"),
+        (8, 8, "promote", ""),
+    ),
+)
+def test_changed_row_preflight_closes_sample_count_truth_table(
+    raw_count: int | None,
+    expected_count: int | None,
+    expected_decision: str,
+    expected_blocker: str,
+) -> None:
+    manifest = _ready_preflight(
+        raw_input_sample_count=raw_count,
+        expected_sample_count=expected_count,
+    )
+
+    assert manifest["gate_decision"] == expected_decision
+    assert manifest["raw_launch_allowed"] == (
+        "TRUE" if expected_decision == "promote" else "FALSE"
+    )
+    assert manifest["blocked_reasons"] == expected_blocker
 
 
 def test_changed_row_preflight_requires_artifact_existence_and_hash_facts() -> None:

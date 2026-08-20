@@ -43,7 +43,8 @@ def evaluate_v04_acceptance(
             evidence="all_required_criteria_passed",
             details=(
                 "V0.4 diagnostic mechanics and reviewed controls passed for "
-                "8RAW method review; this does not clear 85RAW execution."
+                "diagnostic-subset method review; this does not clear "
+                "full-cohort execution."
             ),
         )
     else:

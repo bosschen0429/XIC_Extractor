@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.check_backfill_expansion_full_evidence_chain import (
     CHECK_COLUMNS,
     DEFAULT_CELLS_TSV,
@@ -16,6 +18,7 @@ from scripts.check_backfill_expansion_full_evidence_chain import (
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 
+@pytest.mark.ledger_snapshot
 def test_current_backfill_expansion_full_evidence_chain_is_held() -> None:
     assert validate_backfill_expansion_full_evidence_chain() == []
 
@@ -40,14 +43,14 @@ def test_current_backfill_expansion_full_evidence_chain_is_held() -> None:
     assert summary["raw_or_85raw_ran_by_checker"] is False
 
 
-def test_require_full_chain_blocks_current_666_packet() -> None:
+def test_require_full_chain_blocks_an_incomplete_packet() -> None:
     problems = validate_backfill_expansion_full_evidence_chain(
         require_full_chain=True,
     )
 
-    assert problems == [
-        "full evidence chain incomplete: 374/666 cells pass; held=292",
-    ]
+    assert len(problems) == 1
+    assert problems[0].startswith("full evidence chain incomplete: ")
+    assert " cells pass; held=" in problems[0]
 
 
 def test_summary_full_chain_count_drift_fails_closed(tmp_path: Path) -> None:

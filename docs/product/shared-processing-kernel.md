@@ -335,17 +335,17 @@ direct-evidence → physical-observation → method-assessment → relation →
 hypothesis → group → cell chain. The same `peak_detection` owner composes the
 existing hypothesis model; lineage and provider-local `DetectedFeature` do not
 mint another one.
-The Package 1 no-RAW runtime fixture now also reaches that physical-observation
+The no-RAW runtime fixture now also reaches that physical-observation
 owner from capability-bound batched `XICRequest` values in both Targeted and
 Alignment process consumers. The batch receipt retains acquisition coordinates
 and call counts while owner-supplied integration facts are revalidated against
 the acquired trace; it does not perform hypothesis selection or projection.
 Role-bearing multi-observation Pt/Delta Mass composition remains required before
 that separate method can claim the same seam, but Pt is deferred and does not
-block the current CID-NL tracer. M1 executes only a no-RAW reference fixture;
-runtime candidate-universe completeness, production caller adoption, DDA
-co-isolation, and valley-time calibration remain unknown or deferred. DIA is
-explicitly outside the current lab method. Targeted output and Untargeted
+block the current CID-NL tracer. The current seam executes only a no-RAW
+reference fixture; runtime candidate-universe completeness, production caller
+adoption, DDA co-isolation, and valley-time calibration remain unknown or
+deferred. DIA is explicitly outside the current lab method. Targeted output and Untargeted
 Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback

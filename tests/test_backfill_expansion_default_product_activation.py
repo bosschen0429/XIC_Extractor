@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.build_backfill_expansion_default_product_activation import (
     CHECK_COLUMNS,
     COMPACT_MANIFEST_COLUMNS,
@@ -15,6 +17,7 @@ from scripts.build_backfill_expansion_default_product_activation import (
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 
+@pytest.mark.ledger_snapshot
 def test_current_backfill_expansion_default_activation_is_stable() -> None:
     assert validate_backfill_expansion_default_product_activation() == []
 

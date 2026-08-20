@@ -281,7 +281,7 @@ def evaluate_must_not_regress(
 def infer_85raw_assessed_rows(
     blast_radius_summary_rows: Sequence[Mapping[str, str]],
 ) -> tuple[int | None, str]:
-    """Return the 85RAW blast-radius denominator without summing class repeats."""
+    """Return the cohort blast-radius denominator without summing class repeats."""
     row_counts = {
         count
         for row in blast_radius_summary_rows

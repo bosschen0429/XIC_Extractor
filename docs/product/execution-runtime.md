@@ -423,7 +423,7 @@ lifecycle events fail closed.
 | `artifact_read_count/bytes` | Sum of runtime-mediated reads; excludes uninstrumented external I/O and records coverage |
 | `artifact_write_count/bytes` | Sum of runtime-mediated writes; excludes uninstrumented external I/O and records coverage |
 
-The executable Package 0/1 ledger uses one attempt-scoped `sum` record for the
+The executable runtime ledger uses one attempt-scoped `sum` record for the
 count and artifact-I/O metrics, attempt-scoped `last` records for coordinator
 and wall spans, one work-unit-scoped `sum` elapsed record per declared work key,
 worker-scoped `max` RSS, and attempt-scoped `max` process-tree RSS. Metric
@@ -475,7 +475,7 @@ scientific parity.
 
 ## Current Implementation Gaps
 
-The first Package 0 event-contract slices are executable in
+The initial event-contract slices are executable in
 `xic_extractor.execution_runtime`: they bind `attempt_queued`,
 `attempt_started`, and `cancellation_accepted` to one owner-issued
 `ProcessingAttemptIdentity`, enforce contiguous append-only ordering, and
@@ -483,7 +483,7 @@ prevent an accepted queued cancellation from later becoming a started attempt.
 They also encode the coordinator-only
 `attempt_queued` -> `manifest_preflight_failed` ->
 `terminal_proposal(failed)` path without fabricating `attempt_started` or a
-committed outcome. The Package 0 runtime owner now consumes owner-supplied
+committed outcome. The runtime owner now consumes owner-supplied
 manifest content into an attempt-bound immutable `RequiredWorkManifest` with
 closed unique opaque work-unit keys. Missing completeness attestation, duplicate
 or blank keys, and attempt substitution drive that existing queued-to-failed
@@ -508,7 +508,7 @@ bytes retain that exact detail. A successful settlement accepts only an
 owner-minted `EvidenceArtifactRef` bound to the same processing request and
 attempt; an opaque string is no longer sufficient.
 
-The bounded Package 1 Targeted adapter in
+The bounded Targeted process adapter in
 `xic_extractor.extraction.targeted_runtime_adapter` owns one canonical
 process-result identity payload over the closed work key and exact digest/size
 of owner-supplied result bytes. It does not serialize or hash legacy
@@ -592,8 +592,8 @@ The owner-path durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
 
-Package 1 now composes that mechanical lifecycle with the existing acquisition
-and physical-observation owners. `peak_detection.observation_batch` performs
+The shared runtime composes that mechanical lifecycle with the existing
+acquisition and physical-observation owners. `peak_detection.observation_batch` performs
 one capability-aware `XICRequest` batch only after resolving the sample's
 request binding and requiring the capability's acquisition source to match.
 It retains truthful native/conversion/RT coordinates and mechanical
@@ -607,22 +607,7 @@ carriers register both wrapper and observation artifacts, and manifest-order
 normalization makes serial and deliberately reordered true-spawn results
 canonical-equal. Identical replay coalesces; a conflicting replay fails the
 attempt and exposes no observation batch through the success surface. Runtime
-does not select a peak or interpret the integration. A tracked
-`DifferenceManifest` binds the one explained internal carrier change to the
-immutable Package 0 comparator and one comparator-owned experiment. That single
-entry overwrites caller output paths with a dedicated identity-pinned root,
-constructs the Targeted service with the forbidden legacy runner, accepts only
-primitive no-RAW jobs, and runs fixed Targeted and Alignment workers to a
-synchronous executor drain. It inventories final paths/bytes before privately
-minting the owner-derived receipt. There is no public request factory,
-worker/result/executor provider, begin/mint, or finished-result handoff, and
-callers cannot construct or replace the receipt. The inventory claim is
-final-state parity, not transient filesystem-I/O absence; legacy writer
-non-invocation is proved separately by fixed ingress plus the sentinel and
-Alignment dependency boundary.
-This path remains opt-in no-RAW and `diagnostic_only`; legacy execution, product
-writers, CLI/config, output schemas, selected values, and Matrix authority are
-unchanged.
+does not select a peak or interpret the integration.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.

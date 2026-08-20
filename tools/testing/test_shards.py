@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,101 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
     }
 )
 
+# Register-snapshot tests are excluded from CI by MARKER, not by file. They
+# assert that checked-in registers under docs/superpowers/validation/ still
+# agree with the snapshot they were written against, so they pin recorded
+# numbers and go red when an analysis is legitimately re-run.
+#
+# An earlier version of this file excluded them by moving whole test files into
+# a manual-only shard. Review found the cost: those files are 212 tests, and 175
+# of them are behavioural -- they mutate a copy under tmp_path and assert the
+# checker rejects it. Excluding by file took all 175 out of CI too, so a
+# regression that accepts caller-authored authority could merge green. The
+# marker splits at the granularity the property actually has, which is per test.
+#
+# Which tests carry the marker was decided by measurement, not by naming: a test
+# is a snapshot test when it reads a checked-in register at runtime AND does not
+# redirect the checker at a tmp_path copy. Unmarked is the safe default, because
+# an unmarked test still runs in CI.
+#
+#     uv run python -m tools.testing.test_shards --snapshots   # run only those
+#
+# EXIT RULE (required by the retirement contract; do not drop this block without
+# resolving it): revisit at the next release cut, or as soon as any of these
+# holds, and then either delete the register plus its test or promote it back
+# into CI --
+#   1. a register here has not been consulted in a decision for two releases;
+#   2. its test has gone red only because recorded numbers moved, twice;
+#   3. the register's owning milestone is retired.
+SNAPSHOT_MARKER = "ledger_snapshot"
+
+# Every test carrying that marker, locked. The marker takes a test out of CI, so
+# it needs the same ratchet the shard budgets have: adding one is a decision,
+# and an unrecorded marker fails test_test_shards.py. Without this the exclusion
+# grows silently, which is exactly how a batch of behavioural tests left CI the
+# first time -- the file-level exclusion had no gate either.
+#
+# Add an entry only for a test that pins a recorded value from
+# docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
+# an invariant that survives a consistent re-analysis belongs in CI unmarked.
+SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
+    "tests/test_backfill_expansion_census.py": (
+        "test_current_backfill_expansion_census_is_stable",
+    ),
+    "tests/test_backfill_expansion_default_product_activation.py": (
+        "test_current_backfill_expansion_default_activation_is_stable",
+    ),
+    "tests/test_backfill_expansion_evidence_availability.py": (
+        "test_current_backfill_expansion_evidence_availability_is_stable",
+    ),
+    "tests/test_backfill_expansion_expected_diff_provenance.py": (
+        "test_current_backfill_expansion_expected_diff_provenance_is_stable",
+    ),
+    "tests/test_backfill_expansion_full_evidence_chain.py": (
+        "test_current_backfill_expansion_full_evidence_chain_is_held",
+    ),
+    "tests/test_backfill_expansion_raw_overlay_trace_identity.py": (
+        "test_current_backfill_expansion_raw_overlay_trace_identity_is_stable",
+    ),
+    "tests/test_backfill_expansion_sample_local_ms1_evidence.py": (
+        "test_current_backfill_expansion_sample_local_ms1_evidence_is_stable",
+    ),
+    "tests/test_bounded_product_lanes_contract.py": (
+        "test_bounded_product_lanes_accept_current_artifacts",
+        "test_limited_targeted_ms1_scope_and_effect_are_pinned",
+    ),
+    "tests/test_check_productization_authority.py": (
+        "test_productization_authority_checker_accepts_repo_artifacts",
+    ),
+    "tests/test_cid_nl_85raw_universe_closure.py": (
+        "test_current_cid_nl_85raw_universe_closure_is_stable",
+    ),
+    "tests/test_cid_nl_discovery_full_scope_classification.py": (
+        "test_current_cid_nl_discovery_full_scope_classification_is_stable",
+    ),
+    "tests/test_cid_nl_discovery_release_slice.py": (
+        "test_current_cid_nl_discovery_release_slice_is_stable",
+    ),
+    "tests/test_lockbox_ai_challenge_results.py": (
+        "test_current_ai_challenge_result_summary_is_non_authoritative",
+        "test_current_lockbox_ai_challenge_results_validate",
+    ),
+    "tests/test_lockbox_label_collection_pack.py": (
+        "test_current_label_collection_pack_validates",
+    ),
+    "tests/test_productization_state_index.py": (
+        "test_dependent_effect_lane_is_exact_hold_package_binding",
+        "test_peak_choice_lockbox_status_points_to_shadow_automation_design",
+        "test_productization_state_index_accepts_current_artifacts",
+        "test_registered_default_scopes_have_writer_authority",
+    ),
+    "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
+        "test_current_cid_nl_public_output_claim_catalog_is_valid",
+        "test_reference_rows_preserve_existing_owner_boundaries",
+    ),
+}
+
+# Shards are matched in order; the first match wins.
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
         "docs-config": (
@@ -30,7 +126,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_docs_*.py",
             "tests/test_handoff_*.py",
             "tests/test_multiprocessing_entrypoints.py",
-            "tests/test_package0_smallest_strangler_contract.py",
             "tests/test_peak_model_selection.py",
             "tests/test_productization_*.py",
             "tests/test_pyinstaller_spec.py",
@@ -86,11 +181,8 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_istd_*.py",
             "tests/test_local_minimum_param_sweep.py",
             "tests/test_mass_accuracy.py",
-            "tests/test_m5_successor_verdict.py",
             "tests/test_neutral_loss.py",
             "tests/test_output_*.py",
-            "tests/test_package0_successor_comparator.py",
-            "tests/test_package1_observation_runtime.py",
             "tests/test_peak_*.py",
             "tests/test_processing_identity.py",
             "tests/test_processing_owner_references.py",
@@ -217,6 +309,68 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
 )
 
 
+def discover_snapshot_tests(
+    root: Path = Path("tests"),
+) -> dict[str, tuple[str, ...]]:
+    """Return every test carrying SNAPSHOT_MARKER, read from the source.
+
+    Parsed rather than collected so the ratchet costs nothing and cannot be
+    skewed by which shard happens to be running.
+    """
+    found: dict[str, tuple[str, ...]] = {}
+    for path in discover_test_files(root):
+        source = path.read_text(encoding="utf-8", errors="replace")
+        if SNAPSHOT_MARKER not in source:
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        names: list[str] = []
+        supported_references: set[ast.Attribute] = set()
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            references = tuple(
+                reference
+                for decorator in node.decorator_list
+                if (
+                    reference := _direct_snapshot_marker_reference(decorator)
+                )
+                is not None
+            )
+            if references:
+                names.append(node.name)
+                supported_references.update(references)
+
+        unsupported = tuple(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr == SNAPSHOT_MARKER
+            and node not in supported_references
+        )
+        if unsupported:
+            lines = ", ".join(str(node.lineno) for node in unsupported)
+            raise ValueError(
+                f"{path.as_posix()}: {SNAPSHOT_MARKER} marker at line(s) "
+                f"{lines} must decorate a top-level synchronous test function"
+            )
+        if names:
+            found[path.as_posix()] = tuple(sorted(names))
+    return found
+
+
+def _direct_snapshot_marker_reference(
+    decorator: ast.expr,
+) -> ast.Attribute | None:
+    """Return a direct marker decorator, excluding marker-like arguments."""
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    if isinstance(target, ast.Attribute) and target.attr == SNAPSHOT_MARKER:
+        return target
+    return None
+
+
 def discover_test_files(root: Path = Path("tests")) -> tuple[Path, ...]:
     return tuple(
         sorted(
@@ -306,8 +460,72 @@ def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
         print(f"Shard {shard!r} has no test files", file=sys.stderr)
         return 2
     target_args = [path.as_posix() for path in targets]
+    owned_pytest_args = _intersect_marker_selection(
+        pytest_args,
+        required=f"not {SNAPSHOT_MARKER}",
+    )
+    if owned_pytest_args is None:
+        print("Invalid pytest marker selection", file=sys.stderr)
+        return 2
     print(f"Running shard {shard}: {len(target_args)} test files", flush=True)
-    return subprocess.call([*_pytest_command(), *pytest_args, *target_args])
+    return subprocess.call(
+        [*_pytest_command(), *owned_pytest_args, *target_args]
+    )
+
+
+def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:
+    """Run only the register-snapshot tests, the ones CI deliberately skips."""
+    targets = [path.as_posix() for path in discover_test_files(root)]
+    if not targets:
+        print("No test files discovered", file=sys.stderr)
+        return 2
+    owned_pytest_args = _intersect_marker_selection(
+        pytest_args,
+        required=SNAPSHOT_MARKER,
+    )
+    if owned_pytest_args is None:
+        print("Invalid pytest marker selection", file=sys.stderr)
+        return 2
+    print(f"Running {SNAPSHOT_MARKER} tests across {len(targets)} files", flush=True)
+    return subprocess.call([*_pytest_command(), *owned_pytest_args, *targets])
+
+
+def _intersect_marker_selection(
+    pytest_args: Sequence[str],
+    *,
+    required: str,
+) -> tuple[str, ...] | None:
+    """Keep the runner-owned marker boundary when callers add ``-m`` filters."""
+    remaining: list[str] = []
+    caller_expressions: list[str] = []
+    index = 0
+    while index < len(pytest_args):
+        argument = pytest_args[index]
+        if argument == "-m":
+            if index + 1 >= len(pytest_args):
+                return None
+            separated_expression = pytest_args[index + 1]
+            if not separated_expression or separated_expression.startswith("-"):
+                return None
+            caller_expressions.append(separated_expression)
+            index += 2
+            continue
+        if argument.startswith("-m") and argument != "-m":
+            compact_expression = argument[2:].removeprefix("=")
+            if not compact_expression:
+                return None
+            caller_expressions.append(compact_expression)
+            index += 1
+            continue
+        remaining.append(argument)
+        index += 1
+
+    expression = required
+    if caller_expressions:
+        expression = " and ".join(
+            (*(f"({item})" for item in caller_expressions), f"({required})")
+        )
+    return ("-m", expression, *remaining)
 
 
 def _pytest_command() -> list[str]:
@@ -332,6 +550,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Fail if any test file is not assigned to a shard",
     )
+    parser.add_argument(
+        "--snapshots",
+        action="store_true",
+        help=f"Run only the {SNAPSHOT_MARKER} tests, which the shards exclude",
+    )
     args, rest = parser.parse_known_args(argv)
     pytest_args = rest[1:] if rest[:1] == ["--"] else rest
     root = Path(args.root)
@@ -339,6 +562,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _print_summary(root)
     if args.check:
         return _check(root)
+    if args.snapshots:
+        return _run_snapshots(pytest_args, root)
     if args.shard is None:
         parser.error("a shard name is required unless --list or --check is used")
     return _run_shard(args.shard, pytest_args, root)

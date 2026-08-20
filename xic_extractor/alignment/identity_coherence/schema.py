@@ -80,7 +80,7 @@ class SeedRejectReason(StrEnum):
     LOW_MS1_SCAN_SUPPORT = "low_ms1_scan_support"
     REQUEST_CANDIDATE_IDENTITY_MISMATCH = "request_candidate_identity_mismatch"
     UNSUPPORTED_FRAGMENT_OBSERVATION_MODE = "unsupported_fragment_observation_mode"
-    MULTI_SEED_REQUIRES_PHASE2 = "multi_seed_requires_phase2"
+    MULTI_SEED_UNRESOLVED = "multi_seed_unresolved"
 
 
 class IdentityDecision(StrEnum):
@@ -93,8 +93,8 @@ class IdentityDecision(StrEnum):
     REVIEW_ONLY_WEAK_BASIS_SINGLE_TIER12_PLUS_TIER3 = (
         "review_only_weak_basis_single_tier12_plus_tier3"
     )
-    REVIEW_ONLY_MULTI_SEED_REQUIRES_PHASE2 = (
-        "review_only_multi_seed_requires_phase2"
+    REVIEW_ONLY_MULTI_SEED_UNRESOLVED = (
+        "review_only_multi_seed_unresolved"
     )
     BLOCKED_INFRASTRUCTURE = "blocked_infrastructure"
 

@@ -2,7 +2,7 @@
 
 This module does not select peaks, interpret Alignment content, or write product
 artifacts.  It binds opaque producer bytes to the existing evidence reference
-and settles the existing Alignment spawn runner through Package 0 lifecycle
+and settles the existing Alignment spawn runner through the shared lifecycle
 contracts.
 """
 

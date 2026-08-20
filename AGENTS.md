@@ -79,6 +79,13 @@ Use the single-context domain documentation layout. See
   and matrix behavior changes, report which method-appropriate evidence was
   used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,
   method-specific real samples, or manual EIC/MS2 review.
+- Tests marked `ledger_snapshot` are deliberately absent from CI. They pin a
+  recorded value from `docs/superpowers/validation/`, so a legitimate
+  re-analysis reds them. Run them on demand with
+  `uv run python -m tools.testing.test_shards --snapshots`. The exclusion is
+  per test, not per file: a rejection path or a monkeypatched dependency in the
+  same file stays unmarked and runs in CI. Its removal condition is on
+  `SNAPSHOT_MARKER` in `tools/testing/test_shards.py`.
 - Do not launch 85RAW or likely long RAW runs through background
   `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
   command shapes in `docs/agent/parameter-settings.md`, or get explicit approval

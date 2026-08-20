@@ -193,10 +193,10 @@ rejects mixed sample snapshots, target/request substitution, unresolved review
 records, superseded review records, artifact content/role/schema substitution,
 missing dependencies, cross-attempt mixing, and review-snapshot substitution.
 This is a bounded diagnostic artifact-envelope tracer, not a production
-artifact registry. Package 0 now makes Targeted delivery-cell, revision, stage,
-and seal-candidate identities executable by composing these existing owner refs
-in memory. Those candidates grant no product seal, current pointer, storage,
-publication, supersession, selected-value, Matrix, or writer authority.
+artifact registry. The Targeted delivery owner makes delivery-cell, revision,
+stage, and seal-candidate identities executable by composing these existing
+owner refs in memory. Those candidates grant no product seal, current pointer,
+storage, publication, supersession, selected-value, Matrix, or writer authority.
 The processing-identity owner derives the complete same-request predecessor
 chain from `ProcessingAttempt.retry_of`. A Targeted delivery revision uses that
 derived chain as its only allowed `dependency_processing_attempt_ids`; an

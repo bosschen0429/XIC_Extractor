@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import csv
 import hashlib
 import inspect
-import json
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
@@ -13,7 +11,6 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.acquisition_contract as acquisition_contract_module
-import xic_extractor.package0_successor_comparator as comparator_module
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -70,13 +67,6 @@ from xic_extractor.extraction.targeted_service import (
     TargetedRuntimeLifecycleRunner,
     build_targeted_application_request,
 )
-from xic_extractor.package0_successor_comparator import (
-    Package0ComparatorError,
-    Package1ObservationExperimentJob,
-    Package1ObservationTraceFixture,
-    run_package1_observation_experiment,
-    validate_package1_difference_manifest,
-)
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
@@ -102,13 +92,16 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
-DIFFERENCE_PACKET = Path(
-    "docs/superpowers/validation/package1_runtime_observation_difference_v1"
-)
-FROZEN_COMPARATOR = Path(
-    "docs/superpowers/validation/package0_smallest_strangler_contract_v1/contract.json"
-)
-_ObservationJob = Package1ObservationExperimentJob
+
+@dataclass(frozen=True, slots=True)
+class _ObservationJob:
+    owners: ProcessingOwnerReferences
+    sample: ResolvedCanonicalSampleIdentity
+    work_unit_key: str
+    resource_key: str
+    coordinate_kind: TraceCoordinateKind
+    plans: tuple[PeakObservationPlan, ...]
+    delay_sec: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -158,7 +151,7 @@ def _produce_batch(job: _ObservationJob) -> PeakObservationBatch:
     source = job.owners.request.acquisition_sources[0]
     capability = mint_trace_acquisition_capability(
         source,
-        adapter_namespace="synthetic.package1.no_raw",
+        adapter_namespace="synthetic.observation-runtime.no_raw",
         coordinate_kind=job.coordinate_kind,
     )
     return produce_peak_observation_batch(
@@ -534,7 +527,6 @@ def test_batch_production_rejects_selection_trace_length_mismatch(
             replace(
                 job,
                 plans=(bad_plan,),
-                trace_fixtures=(job.trace_fixtures[0],),
             )
         )
 
@@ -685,7 +677,7 @@ def test_observation_batch_rejects_cross_sample_capability_before_acquisition(
     )
     capability = mint_trace_acquisition_capability(
         second_source,
-        adapter_namespace="synthetic.package1.no_raw",
+        adapter_namespace="synthetic.observation-runtime.no_raw",
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     adapter = _RecordingNoRawBatchAdapter()
@@ -768,7 +760,7 @@ def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
     acquisition = _produce_batch(_jobs(owners, sample)[0]).acquisition
     acquired = acquisition.traces[0]
     other_path = tmp_path / "sample-b.raw"
-    other_path.write_bytes(b"synthetic-no-raw-package1-other-source")
+    other_path.write_bytes(b"synthetic-no-raw-observation-runtime-other-source")
     other_source = build_acquisition_source_identity(
         other_path,
         acquisition_format="thermo_raw",
@@ -800,315 +792,6 @@ def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
         )
 
 
-def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
-    tmp_path: Path,
-) -> None:
-    contract = json.loads(FROZEN_COMPARATOR.read_text(encoding="utf-8"))
-    with (DIFFERENCE_PACKET / "difference_manifest.tsv").open(
-        encoding="utf-8",
-        newline="",
-    ) as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    experiment_workspace = tmp_path / "difference-experiment"
-    experiment_workspace.mkdir()
-    observation = run_package1_observation_experiment(
-        experiment_workspace=experiment_workspace,
-        targeted_request=build_targeted_application_request(
-            _config(tmp_path / "caller-placeholder-output"),
-            [_target()],
-        ),
-        runtime=runtime,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        jobs=(job,),
-        max_workers=1,
-    )
-
-    digest = validate_package1_difference_manifest(
-        contract,
-        rows,
-        observation=observation,
-    )
-    assert len(digest) == 64
-    with pytest.raises(Package0ComparatorError, match="must not already exist"):
-        run_package1_observation_experiment(
-            experiment_workspace=experiment_workspace,
-            targeted_request=build_targeted_application_request(
-                _config(tmp_path / "second-caller-placeholder-output"),
-                [_target()],
-            ),
-            runtime=runtime,
-            resource_reservations=reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            jobs=(job,),
-            max_workers=1,
-        )
-    tampered = [dict(row) for row in rows]
-    tampered[1]["new_value"] = "sha256:" + "F" * 64
-    with pytest.raises(Package0ComparatorError, match="frozen exact-zero"):
-        validate_package1_difference_manifest(
-            contract,
-            tampered,
-            observation=observation,
-        )
-
-    reset_contract = json.loads(json.dumps(contract))
-    reset_contract["canonical_output_inventory_sha256"] = "F" * 64
-    reset_digest = comparator_module._package1_frozen_surface_digest(reset_contract)
-    consistently_reset = [dict(row) for row in rows]
-    consistently_reset[1]["old_value"] = f"sha256:{reset_digest}"
-    consistently_reset[1]["new_value"] = f"sha256:{reset_digest}"
-    with pytest.raises(Package0ComparatorError, match="immutable baseline"):
-        validate_package1_difference_manifest(
-            reset_contract,
-            consistently_reset,
-            observation=observation,
-        )
-
-    with pytest.raises(Package0ComparatorError, match="must be minted"):
-        replace(observation, _mint_token=object())
-    assert not hasattr(comparator_module, "begin_package1_no_write_probe")
-    assert not hasattr(comparator_module, "mint_package1_difference_observation")
-
-
-def test_package1_experiment_owns_legacy_runner_wiring(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    experiment_workspace = tmp_path / "legacy-runner-experiment"
-    experiment_workspace.mkdir()
-
-    def invoke_legacy_runner(self, request, _runtime, **_kwargs):
-        return self.execute(request)
-
-    monkeypatch.setattr(
-        TargetedApplicationService,
-        "execute_runtime_lifecycle",
-        invoke_legacy_runner,
-    )
-    with pytest.raises(Package0ComparatorError, match="forbidden legacy runner"):
-        run_package1_observation_experiment(
-            experiment_workspace=experiment_workspace,
-            targeted_request=build_targeted_application_request(
-                _config(),
-                [_target()],
-            ),
-            runtime=runtime,
-            resource_reservations=reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            jobs=(job,),
-            max_workers=1,
-        )
-
-
-def test_package1_experiment_owns_and_overwrites_product_output_root(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    experiment_workspace = tmp_path / "owned-root-experiment"
-    experiment_workspace.mkdir()
-    caller_root = tmp_path / "caller-selected-output"
-    observed_paths: list[tuple[Path, Path]] = []
-    owner_execute = TargetedApplicationService.execute_runtime_lifecycle
-
-    def observe_bound_request(self, request, *args, **kwargs):
-        observed_paths.append(
-            (request.config.output_csv, request.config.diagnostics_csv)
-        )
-        return owner_execute(self, request, *args, **kwargs)
-
-    monkeypatch.setattr(
-        TargetedApplicationService,
-        "execute_runtime_lifecycle",
-        observe_bound_request,
-    )
-    run_package1_observation_experiment(
-        experiment_workspace=experiment_workspace,
-        targeted_request=build_targeted_application_request(
-            _config(caller_root),
-            [_target()],
-        ),
-        runtime=runtime,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        jobs=(job,),
-        max_workers=1,
-    )
-
-    product_root = (
-        experiment_workspace
-        / "package1-runtime-observation-experiment"
-        / "product-output"
-    )
-    assert observed_paths == [
-        (
-            product_root / "xic_results.csv",
-            product_root / "xic_diagnostics.csv",
-        )
-    ]
-    assert not caller_root.exists()
-    assert tuple(product_root.iterdir()) == ()
-
-
-def test_package1_experiment_rejects_any_product_output_entry(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    experiment_workspace = tmp_path / "product-output-experiment"
-    experiment_workspace.mkdir()
-    owner_execute = TargetedApplicationService.execute_runtime_lifecycle
-
-    def write_product_entry(self, request, *args, **kwargs):
-        (request.config.output_csv.parent / "unexpected.json").write_text(
-            "{}\n",
-            encoding="utf-8",
-        )
-        return owner_execute(self, request, *args, **kwargs)
-
-    monkeypatch.setattr(
-        TargetedApplicationService,
-        "execute_runtime_lifecycle",
-        write_product_entry,
-    )
-
-    with pytest.raises(Package0ComparatorError, match="changed product output"):
-        run_package1_observation_experiment(
-            experiment_workspace=experiment_workspace,
-            targeted_request=build_targeted_application_request(
-                _config(),
-                [_target()],
-            ),
-            runtime=runtime,
-            resource_reservations=reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            jobs=(job,),
-            max_workers=1,
-        )
-
-
-def test_package1_experiment_rejects_output_root_replacement(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    experiment_workspace = tmp_path / "replaced-root-experiment"
-    experiment_workspace.mkdir()
-    owner_execute = TargetedApplicationService.execute_runtime_lifecycle
-
-    def replace_output_root(self, request, *args, **kwargs):
-        output_root = request.config.output_csv.parent
-        for entry in output_root.iterdir():
-            entry.unlink()
-        output_root.rmdir()
-        output_root.mkdir()
-        return owner_execute(self, request, *args, **kwargs)
-
-    monkeypatch.setattr(
-        TargetedApplicationService,
-        "execute_runtime_lifecycle",
-        replace_output_root,
-    )
-    with pytest.raises(Package0ComparatorError, match="root identity"):
-        run_package1_observation_experiment(
-            experiment_workspace=experiment_workspace,
-            targeted_request=build_targeted_application_request(
-                _config(),
-                [_target()],
-            ),
-            runtime=runtime,
-            resource_reservations=reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            jobs=(job,),
-            max_workers=1,
-        )
-
-
-def test_package1_experiment_has_no_generic_result_provider_seams(
-    tmp_path: Path,
-) -> None:
-    forbidden_parameters = {
-        "targeted_request_factory",
-        "targeted_lifecycle_runner",
-        "alignment_jobs",
-        "alignment_worker",
-        "alignment_error_factory",
-        "alignment_executor_factory",
-    }
-    assert not forbidden_parameters & set(
-        inspect.signature(run_package1_observation_experiment).parameters
-    )
-
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    prebuilt_result = _run_alignment_job(job)
-    experiment_workspace = tmp_path / "prebuilt-result-experiment"
-    experiment_workspace.mkdir()
-    with pytest.raises(
-        Package0ComparatorError,
-        match="Package1ObservationExperimentJob",
-    ):
-        run_package1_observation_experiment(
-            experiment_workspace=experiment_workspace,
-            targeted_request=build_targeted_application_request(
-                _config(),
-                [_target()],
-            ),
-            runtime=runtime,
-            resource_reservations=reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            jobs=(prebuilt_result,),  # type: ignore[arg-type]
-            max_workers=1,
-        )
-
-
-def test_package1_experiment_binds_primitive_jobs_to_manifest(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    mismatched_job = replace(job, work_unit_key="sample:alternate")
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (mismatched_job,))
-    experiment_workspace = tmp_path / "cross-work-key-experiment"
-    experiment_workspace.mkdir()
-
-    with pytest.raises(Package0ComparatorError, match="manifest work"):
-        run_package1_observation_experiment(
-            experiment_workspace=experiment_workspace,
-            targeted_request=build_targeted_application_request(
-                _config(),
-                [_target()],
-            ),
-            runtime=runtime,
-            resource_reservations=reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            jobs=(mismatched_job,),
-            max_workers=1,
-        )
-
-
 def _run_targeted_service(
     runtime: AttemptRuntime,
     jobs: tuple[_ObservationJob, ...],
@@ -1117,13 +800,13 @@ def _run_targeted_service(
     max_workers: int,
     marker_path: Path,
 ):
-    def default_legacy_runner(*_args, **_kwargs):
+    def disallowed_sync_runner(*_args, **_kwargs):
         raise AssertionError(
-            "observation runtime must not invoke the legacy writer path"
+            "observation runtime must not invoke the synchronous writer path"
         )
 
     service = TargetedApplicationService(
-        default_legacy_runner,
+        disallowed_sync_runner,
         runtime_lifecycle_runner=_targeted_lifecycle_runner(
             jobs,
             max_workers=max_workers,
@@ -1171,7 +854,7 @@ def _identity_fixture(
     tmp_path: Path,
 ) -> tuple[ProcessingOwnerReferences, ResolvedCanonicalSampleIdentity]:
     source_path = tmp_path / "sample-a.raw"
-    source_path.write_bytes(b"synthetic-no-raw-package1-observation")
+    source_path.write_bytes(b"synthetic-no-raw-observation-runtime-observation")
     source = build_acquisition_source_identity(
         source_path,
         acquisition_format="thermo_raw",
@@ -1186,15 +869,15 @@ def _identity_fixture(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="package1-observation-input-v1",
-        processing_algorithm_version="package1-observation-algorithm-v1",
-        processing_contract_version="package1-observation-contract-v1",
-        scientific_inputs={"fixture": "synthetic-no-raw-package1"},
+        scientific_input_schema_version="observation-runtime-observation-input-v1",
+        processing_algorithm_version="observation-runtime-observation-algorithm-v1",
+        processing_contract_version="observation-runtime-observation-contract-v1",
+        scientific_inputs={"fixture": "synthetic-no-raw-observation-runtime"},
     )
     attempt = issue_processing_attempt(request)
     snapshot = mint_sample_metadata_snapshot(
         (SampleMetadata(sample_name="Sample A", raw_stem="sample-a"),),
-        identity_namespace="study:package1-observation",
+        identity_namespace="study:observation-runtime-observation",
     )
     sample = resolve_canonical_sample_identity(snapshot, "sample-a")
     owners = compose_processing_owner_references(
@@ -1214,8 +897,8 @@ def _two_sample_identity_fixture(
     ResolvedCanonicalSampleIdentity,
 ]:
     source_paths = (tmp_path / "sample-a.raw", tmp_path / "sample-b.raw")
-    source_paths[0].write_bytes(b"synthetic-package1-source-a")
-    source_paths[1].write_bytes(b"synthetic-package1-source-b")
+    source_paths[0].write_bytes(b"synthetic-observation-runtime-source-a")
+    source_paths[1].write_bytes(b"synthetic-observation-runtime-source-b")
     sources = tuple(
         sorted(
             (
@@ -1231,10 +914,10 @@ def _two_sample_identity_fixture(
     )
     source_by_content = {source.content_sha256: source for source in sources}
     source_a = source_by_content[
-        hashlib.sha256(b"synthetic-package1-source-a").hexdigest()
+        hashlib.sha256(b"synthetic-observation-runtime-source-a").hexdigest()
     ]
     source_b = source_by_content[
-        hashlib.sha256(b"synthetic-package1-source-b").hexdigest()
+        hashlib.sha256(b"synthetic-observation-runtime-source-b").hexdigest()
     ]
     bindings = tuple(
         sorted(
@@ -1260,10 +943,12 @@ def _two_sample_identity_fixture(
     request = build_processing_request_identity(
         acquisition_sources=sources,
         acquisition_bindings=bindings,
-        scientific_input_schema_version="package1-observation-input-v1",
-        processing_algorithm_version="package1-observation-algorithm-v1",
-        processing_contract_version="package1-observation-contract-v1",
-        scientific_inputs={"fixture": "synthetic-no-raw-package1-two-sample"},
+        scientific_input_schema_version="observation-runtime-observation-input-v1",
+        processing_algorithm_version="observation-runtime-observation-algorithm-v1",
+        processing_contract_version="observation-runtime-observation-contract-v1",
+        scientific_inputs={
+            "fixture": "synthetic-no-raw-observation-runtime-two-sample"
+        },
     )
     attempt = issue_processing_attempt(request)
     snapshot = mint_sample_metadata_snapshot(
@@ -1279,7 +964,7 @@ def _two_sample_identity_fixture(
                 injection_order=2,
             ),
         ),
-        identity_namespace="study:package1-observation",
+        identity_namespace="study:observation-runtime-observation",
     )
     first = resolve_canonical_sample_identity(snapshot, "sample-a")
     second = resolve_canonical_sample_identity(snapshot, "sample-b")
@@ -1347,7 +1032,6 @@ def _jobs(
             resource_key="process:sample:native",
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
             plans=native_plans,
-            trace_fixtures=_trace_fixtures(native_plans),
             delay_sec=0.03,
         ),
         _ObservationJob(
@@ -1357,7 +1041,6 @@ def _jobs(
             resource_key="process:sample:rt-only",
             coordinate_kind=TraceCoordinateKind.RT_ONLY,
             plans=rt_only_plans,
-            trace_fixtures=_trace_fixtures(rt_only_plans),
         ),
     )
 
@@ -1391,25 +1074,6 @@ def _trace_for_request(request: XICRequest) -> XICTrace:
     )
 
 
-def _trace_fixtures(
-    plans: tuple[PeakObservationPlan, ...],
-) -> tuple[Package1ObservationTraceFixture, ...]:
-    fixtures: list[Package1ObservationTraceFixture] = []
-    for plan in plans:
-        trace = _trace_for_request(plan.request)
-        offset = int(plan.request.mz - 500.0) * 10
-        fixtures.append(
-            Package1ObservationTraceFixture(
-                request=plan.request,
-                rt=tuple(float(value) for value in trace.rt),
-                intensity=tuple(float(value) for value in trace.intensity),
-                first_scan=100 + offset,
-                last_scan=104 + offset,
-            )
-        )
-    return tuple(fixtures)
-
-
 def _runtime(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
@@ -1417,7 +1081,7 @@ def _runtime(
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
-        owner_completeness_attestation="package1-observation-runtime:v1",
+        owner_completeness_attestation="observation-runtime-observation-runtime:v1",
     )
 
 
@@ -1432,7 +1096,7 @@ def _reservations(
             resource_key=job.resource_key,
             worker_key=f"worker:{index}",
             source_reference=f"no-raw:{job.work_unit_key}",
-            compatibility_token="package1-observation-runtime:v1",
+            compatibility_token="observation-runtime-observation-runtime:v1",
         )
         for index, job in enumerate(jobs)
     )

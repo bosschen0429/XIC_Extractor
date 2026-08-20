@@ -200,7 +200,7 @@ class CandidateTrace:
 @dataclass(frozen=True)
 class EngineeringConfig:
     max_infrastructure_blocked_fraction: float = 0.05
-    max_projected_85raw_identity_xic_requests: int | None = None
+    max_projected_full_cohort_identity_xic_requests: int | None = None
 
     def __post_init__(self) -> None:
         blocked_fraction = _require_finite_nonnegative(
@@ -215,12 +215,12 @@ class EngineeringConfig:
             blocked_fraction,
         )
 
-        budget = self.max_projected_85raw_identity_xic_requests
+        budget = self.max_projected_full_cohort_identity_xic_requests
         if budget is None:
             return
         if isinstance(budget, bool) or not isinstance(budget, int) or budget < 0:
             raise ValueError(
-                "max_projected_85raw_identity_xic_requests must be nonnegative"
+                "max_projected_full_cohort_identity_xic_requests must be nonnegative"
             )
 
 

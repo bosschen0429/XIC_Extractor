@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.build_lockbox_label_collection_pack import (
     LABEL_TEMPLATE_HEADER,
     LOCKBOX_MANIFEST,
@@ -93,6 +95,7 @@ def test_label_collection_builder_is_deterministic_and_non_authoritative(
     assert {row["boundary_label"] for row in label_rows} == {""}
 
 
+@pytest.mark.ledger_snapshot
 def test_current_label_collection_pack_validates() -> None:
     assert check_lockbox_label_schema() == []
 

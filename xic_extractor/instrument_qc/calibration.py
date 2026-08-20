@@ -12,7 +12,7 @@ from xic_extractor.injection_rolling import read_injection_order
 
 MIN_BATCH_ROWS = 3
 
-PHASE1_TREND_REQUIRED_COLUMNS = {
+SDOLEK_TREND_REQUIRED_COLUMNS = {
     "sample_name",
     "compound",
     "identity_evidence",
@@ -28,7 +28,7 @@ PHASE1_TREND_REQUIRED_COLUMNS = {
 
 
 @dataclass(frozen=True)
-class Phase1SDOLEKTrendRow:
+class SDOLEKTrendRow:
     sample_name: str
     compound: str
     identity_evidence: str
@@ -81,23 +81,23 @@ class CalibratedSDOLEKTrendRow:
 @dataclass(frozen=True)
 class SDOLEKCalibrationResult:
     rows: tuple[CalibratedSDOLEKTrendRow, ...]
-    phase1_metadata_source_status: dict[str, str]
+    metadata_source_status: dict[str, str]
     calibration_metadata_status: CalibrationMetadataStatus
 
 
-def load_phase1_trend_rows(path: Path) -> tuple[Phase1SDOLEKTrendRow, ...]:
+def load_sdolek_trend_rows(path: Path) -> tuple[SDOLEKTrendRow, ...]:
     with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         fieldnames = set(reader.fieldnames or ())
-        missing = sorted(PHASE1_TREND_REQUIRED_COLUMNS - fieldnames)
+        missing = sorted(SDOLEK_TREND_REQUIRED_COLUMNS - fieldnames)
         if missing:
             raise ValueError(
-                "Missing required Phase 1 trend columns: " + ", ".join(missing)
+                "Missing required SDOLEK trend columns: " + ", ".join(missing)
             )
-        return tuple(_phase1_row_from_dict(row) for row in reader)
+        return tuple(_sdolek_row_from_dict(row) for row in reader)
 
 
-def load_phase1_metadata_source_status(path: Path) -> dict[str, str]:
+def load_metadata_source_status(path: Path) -> dict[str, str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     status = payload.get("metadata_source_status", {})
     if not isinstance(status, dict):
@@ -106,12 +106,12 @@ def load_phase1_metadata_source_status(path: Path) -> dict[str, str]:
 
 
 def calibrate_sdolek_rows(
-    phase1_rows: Iterable[Phase1SDOLEKTrendRow],
+    trend_rows: Iterable[SDOLEKTrendRow],
     *,
-    phase1_metadata_source_status: dict[str, str] | None = None,
+    metadata_source_status: dict[str, str] | None = None,
     injection_order_source: Path | None = None,
 ) -> SDOLEKCalibrationResult:
-    row_list = tuple(phase1_rows)
+    row_list = tuple(trend_rows)
     injection_order, metadata_status = _read_docs_injection_order(
         injection_order_source,
         row_list,
@@ -127,13 +127,13 @@ def calibrate_sdolek_rows(
     )
     return SDOLEKCalibrationResult(
         rows=calibrated,
-        phase1_metadata_source_status=phase1_metadata_source_status or {},
+        metadata_source_status=metadata_source_status or {},
         calibration_metadata_status=metadata_status,
     )
 
 
-def _phase1_row_from_dict(row: dict[str, str]) -> Phase1SDOLEKTrendRow:
-    return Phase1SDOLEKTrendRow(
+def _sdolek_row_from_dict(row: dict[str, str]) -> SDOLEKTrendRow:
+    return SDOLEKTrendRow(
         sample_name=row["sample_name"],
         compound=row["compound"],
         identity_evidence=row["identity_evidence"],
@@ -152,7 +152,7 @@ def _phase1_row_from_dict(row: dict[str, str]) -> Phase1SDOLEKTrendRow:
 
 def _read_docs_injection_order(
     path: Path | None,
-    rows: tuple[Phase1SDOLEKTrendRow, ...],
+    rows: tuple[SDOLEKTrendRow, ...],
 ) -> tuple[dict[str, int], CalibrationMetadataStatus]:
     if path is None:
         return {}, CalibrationMetadataStatus(
@@ -192,7 +192,7 @@ def _read_docs_injection_order(
 
 
 def _compound_medians(
-    rows: tuple[Phase1SDOLEKTrendRow, ...],
+    rows: tuple[SDOLEKTrendRow, ...],
 ) -> dict[str, tuple[float, float, float] | None]:
     compounds = sorted({row.compound for row in rows})
     medians: dict[str, tuple[float, float, float] | None] = {}
@@ -223,7 +223,7 @@ def _compound_medians(
 
 
 def _calibrate_row(
-    row: Phase1SDOLEKTrendRow,
+    row: SDOLEKTrendRow,
     *,
     injection_order: int | None,
     medians: dict[str, tuple[float, float, float] | None],
@@ -279,7 +279,7 @@ def _calibrate_row(
     )
 
 
-def _prior_conflict_flags(row: Phase1SDOLEKTrendRow) -> tuple[str, ...]:
+def _prior_conflict_flags(row: SDOLEKTrendRow) -> tuple[str, ...]:
     flags: list[str] = []
     if (
         row.rt_delta_to_reference_min is not None
@@ -312,7 +312,7 @@ def _batch_trend_flags(
 
 
 def _review_bucket(
-    row: Phase1SDOLEKTrendRow,
+    row: SDOLEKTrendRow,
     *,
     prior_flags: tuple[str, ...],
     batch_flags: tuple[str, ...],
@@ -320,7 +320,7 @@ def _review_bucket(
     injection_order: int | None,
 ) -> tuple[str, str]:
     if row.status != "detected":
-        return "not_detected_or_error", "Phase 1 row was not detected."
+        return "not_detected_or_error", "SDOLEK trend row was not detected."
     if median_values is None:
         return (
             "identity_evidence_insufficient",
@@ -340,7 +340,7 @@ def _review_bucket(
     if "PRIOR_WIDTH_SHIFT" in prior_flags:
         return (
             "width_definition_review",
-            "NoSplit prior width and Phase 1 integration width are not comparable.",
+            "NoSplit prior width and SDOLEK integration width are not comparable.",
         )
     return "stable_ms1_trend", "Detected row is stable relative to batch medians."
 

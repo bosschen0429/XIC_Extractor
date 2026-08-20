@@ -268,8 +268,8 @@ def render_identity_coherence_summary(
             f"| raw_xic_request_count | {model.raw_xic_request_count} |",
             f"| xic_point_count | {model.xic_point_count} |",
             (
-                "| projected_85raw_identity_request_count | "
-                f"{model.projected_85raw_identity_request_count} |"
+                "| projected_full_cohort_identity_request_count | "
+                f"{model.projected_full_cohort_identity_request_count} |"
             ),
             "",
             "## Writer Contract Checks",
