@@ -510,6 +510,12 @@ def _intersect_marker_selection(
             caller_expressions.append(pytest_args[index + 1])
             index += 2
             continue
+        if argument.startswith("-m") and argument != "-m":
+            compact_expression = argument[2:].removeprefix("=")
+            if compact_expression:
+                caller_expressions.append(compact_expression)
+                index += 1
+                continue
         remaining.append(argument)
         index += 1
 

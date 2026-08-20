@@ -287,3 +287,28 @@ def test_ci_shard_intersects_caller_marker_with_snapshot_exclusion(
     assert pytest_args.count("-m") == 1
     marker_index = pytest_args.index("-m")
     assert pytest_args[marker_index + 1] == "(slow) and (not ledger_snapshot)"
+
+
+@pytest.mark.parametrize(
+    ("pytest_args", "expected"),
+    (
+        (("-m", "slow"), ("-m", "(slow) and (owned)")),
+        (("-mslow",), ("-m", "(slow) and (owned)")),
+        (("-m=slow",), ("-m", "(slow) and (owned)")),
+        (
+            ("-m", "slow", "-mfast", "-m=unit"),
+            ("-m", "(slow) and (fast) and (unit) and (owned)"),
+        ),
+        (("-q",), ("-m", "owned", "-q")),
+        (("-m",), ("-m", "owned", "-m")),
+        (("-m=",), ("-m", "owned", "-m=")),
+    ),
+)
+def test_marker_intersection_handles_every_pytest_option_shape(
+    pytest_args: tuple[str, ...],
+    expected: tuple[str, ...],
+) -> None:
+    assert test_shards._intersect_marker_selection(
+        pytest_args,
+        required="owned",
+    ) == expected
