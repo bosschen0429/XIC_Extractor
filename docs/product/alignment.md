@@ -91,18 +91,26 @@ contracts for review and downstream product decisions.
   endpoint or incomplete rescue is censored by the same rule. This is a
   quantification-authority guard, not a new peak-selection or Backfill route.
 - For the observed, configured DNA dR ISTD lane only, an owner-minted targeted
-  ISTD anchor from the current run's target-list snapshot may bind typed
-  provenance only to an already-valid generic injection trajectory. The owners
-  must match one observed target's configured m/z/RT envelope and dR loss, have
-  unique samples, pass all-pairs hard gates, and form a bounded injection-order
-  trajectory using the explicit `--sample-column-injection-order` mapping. The
-  anchor never changes membership, order, or Backfill census; the generic
-  injection-trajectory rule is what resolves fragmentation and reduces requests.
-  Without the mapping or typed snapshot, this binding is absent. The separate
-  targeted drift prior may still affect edge scoring as before. This remains
-  grouping evidence only: it does not promote a rescued cell, write a Matrix
-  value, infer unknown-family chemical identity, add a public knob, or create a
-  second owner/control plane.
+  ISTD anchor from the current run's target-list snapshot may reconcile
+  sample-disjoint groups that independently match the same configured m/z/RT
+  target and form one locally continuous injection-order trajectory. Within
+  that bounded anchor, product-m/z or observed-loss disagreement is retained as
+  measurement evidence but is not a chemical-identity hard split; the known
+  standard identity is stronger evidence. Same-sample occupancy, precursor-m/z
+  conflict, missing or duplicate injection order, RT discontinuity, weak owner
+  quality, and untyped/unobserved targets still block reconciliation.
+  `tail_supported` is not weak and remains admissible. Parallel same-sample
+  peaks remain separate. Reconciliation is independent of group processing
+  order: a compatibility component merges only when its complete owner union
+  passes the same hard and trajectory validation. Otherwise every member stays
+  separate instead of choosing a track greedily. A smaller group whose samples
+  are a strict subset of another same-target group cannot bridge into that
+  containing trajectory; it may reconcile only with other subordinate groups
+  and may be demoted only through the existing duplicate-owner review path.
+  Without the mapping or typed snapshot, this rule is absent. This remains
+  inside the Alignment grouping owner: it does not promote a rescued cell,
+  write a Matrix value directly, infer unknown-family chemical identity, add a
+  public knob, or create a second control plane.
 - An `owner_bounded_continuity` family reaches the primary matrix only when at
   least two of its owners carry a resolved peak at or above the quantitation
   limit. Bounded continuity admits a group on detection-grade evidence, which is

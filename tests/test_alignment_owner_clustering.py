@@ -772,6 +772,831 @@ def test_targeted_istd_anchor_binds_generic_injection_trajectory_provenance(
     assert len(with_anchor[0].owners) == 8
 
 
+def test_targeted_istd_anchor_reconciles_loss_fragmented_sample_disjoint_groups(
+) -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.955,
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.4,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.950,
+            observed_loss=116.050,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-reconciliation",
+        ),
+        observed_labels=(target.label,),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset(
+        {"sample-a", "sample-b", "sample-c", "sample-d"}
+    )
+    injection_order = {"sample-a": 1, "sample-b": 2, "sample-c": 3}
+
+    without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(points=()),
+    )
+    with_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(without_anchor) == 2
+    assert [item.owner_ids for item in with_anchor] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+    assert with_anchor[0].evidence == "owner_targeted_istd_trajectory;owner_count=3"
+
+
+def test_targeted_istd_reconciliation_keeps_precursor_hard_conflict_separate() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            precursor_mz=499.991,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            precursor_mz=500.009,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-precursor-conflict",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+            max_ppm=20.0,
+        ),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in hypotheses
+    )
+
+
+def test_targeted_istd_reconciliation_keeps_rt_discontinuity_separate() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=9.5,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.050,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-rt-discontinuity",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in hypotheses
+    )
+
+
+def test_targeted_istd_reconciliation_demotes_same_sample_secondary_group() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-d",
+            "d",
+            apex_rt=8.3,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.955,
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-e",
+            "e",
+            apex_rt=8.4,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.955,
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b-secondary",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.948,
+            observed_loss=116.052,
+        ),
+        _owner(
+            "sample-a",
+            "a-secondary",
+            apex_rt=9.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.948,
+            observed_loss=116.052,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-secondary-group",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {
+                "sample-a",
+                "sample-b",
+                "sample-c",
+                "sample-d",
+                "sample-e",
+                "sample-f",
+            }
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+        },
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    winner = next(item for item in hypotheses if not item.review_only)
+    loser = next(item for item in hypotheses if item.review_only)
+    assert winner.owner_ids == (
+        "OWN-sample-a-a",
+        "OWN-sample-b-b",
+        "OWN-sample-c-c",
+        "OWN-sample-d-d",
+        "OWN-sample-e-e",
+    )
+    assert loser.owner_ids == (
+        "OWN-sample-b-b-secondary",
+        "OWN-sample-a-a-secondary",
+    )
+    assert "owner_duplicate_group_resolved_loser" in loser.evidence
+
+
+def test_targeted_istd_reconciliation_accepts_product_mz_measurement_split() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.940,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.960,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-product-split"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 1
+    assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
+
+
+def test_targeted_istd_reconciliation_accepts_tail_supported_owner() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        replace(
+            _owner(
+                "sample-b",
+                "b",
+                apex_rt=8.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.050,
+            ),
+            assignment_reason="owner_tail_assignment",
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-tail-supported"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 1
+    assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
+
+
+def test_targeted_istd_reconciliation_accepts_moderate_tail_without_mass_split(
+) -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.047,
+        ),
+        replace(
+            _owner(
+                "sample-b",
+                "b",
+                apex_rt=8.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.047,
+            ),
+            assignment_reason="owner_tail_assignment",
+        ),
+    )
+
+    def moderate_tail_evaluator(left, right, *, config, drift_lookup):
+        return replace(
+            evaluate_owner_edge(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+            ),
+            decision="weak_edge",
+            failure_reason="",
+            owner_quality="tail_supported",
+            seed_support_level="moderate",
+        )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-moderate-tail"
+            ),
+        ),
+        edge_evaluator=moderate_tail_evaluator,
+    )
+
+    assert len(hypotheses) == 1
+    assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
+
+
+def test_targeted_istd_reconciliation_rejects_weak_owner_edge() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.050,
+        ),
+    )
+
+    def weak_evaluator(left, right, *, config, drift_lookup):
+        return replace(
+            evaluate_owner_edge(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+            ),
+            owner_quality="weak",
+        )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-weak-owner"
+            ),
+        ),
+        edge_evaluator=weak_evaluator,
+    )
+
+    assert len(hypotheses) == 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in hypothesis.evidence
+        for hypothesis in hypotheses
+    )
+
+
+def test_targeted_istd_reconciliation_preserves_multiple_compatible_tracks() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "left",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.044,
+        ),
+        _owner(
+            "sample-b",
+            "left",
+            apex_rt=8.05,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.044,
+        ),
+        _owner(
+            "sample-c",
+            "left",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.044,
+        ),
+        _owner(
+            "sample-e",
+            "ambiguous-a",
+            apex_rt=8.75,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.047,
+        ),
+        _owner(
+            "sample-f",
+            "ambiguous-b",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.047,
+        ),
+        _owner(
+            "sample-d",
+            "right",
+            apex_rt=9.5,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.050,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {
+                "sample-a",
+                "sample-b",
+                "sample-c",
+                "sample-d",
+                "sample-e",
+                "sample-f",
+                "sample-g",
+            }
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+            "sample-f": 6,
+        },
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-multiple-tracks"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 3
+    assert sorted(len(hypothesis.owner_ids) for hypothesis in hypotheses) == [1, 2, 3]
+
+
+def test_targeted_istd_reconciliation_uses_complete_union_for_continuity() -> None:
+    groups = (
+        (
+            _owner(
+                "sample-1",
+                "a1",
+                apex_rt=8.0,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+            _owner(
+                "sample-4",
+                "a4",
+                apex_rt=9.8,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+            _owner(
+                "sample-10",
+                "a10",
+                apex_rt=8.9,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+        ),
+        (
+            _owner(
+                "sample-2",
+                "b2",
+                apex_rt=8.6,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.047,
+            ),
+        ),
+        (
+            _owner(
+                "sample-3",
+                "c3",
+                apex_rt=9.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.050,
+            ),
+        ),
+    )
+    drift_lookup = DriftEvidenceLookup(
+        points=(),
+        istd_identity_anchor=_targeted_istd_anchor(
+            identity_namespace="test-targeted-istd-complete-union"
+        ),
+    )
+
+    reconciled, targeted_owner_sets, validated_owner_sets = (
+        peak_groups_module._bind_targeted_istd_trajectory_provenance(
+            groups,
+            injection_trajectory_owner_sets=frozenset(),
+            injection_order={
+                "sample-1": 1,
+                "sample-2": 2,
+                "sample-3": 3,
+                "sample-4": 4,
+                "sample-10": 10,
+            },
+            config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=None,
+            edge_cache={},
+            edge_evaluator=evaluate_owner_edge,
+        )
+    )
+
+    assert len(reconciled) == 1
+    expected_owner_set = frozenset(
+        owner.owner_id for group in groups for owner in group
+    )
+    assert targeted_owner_sets == frozenset({expected_owner_set})
+    assert validated_owner_sets == frozenset({expected_owner_set})
+
+
+def test_targeted_istd_reconciliation_excludes_unconnected_hard_compatible_group(
+) -> None:
+    groups = (
+        (
+            _owner(
+                "sample-1",
+                "near-a",
+                apex_rt=8.0,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+        ),
+        (
+            _owner(
+                "sample-2",
+                "near-b",
+                apex_rt=8.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.047,
+            ),
+        ),
+        (
+            _owner(
+                "sample-3",
+                "far",
+                apex_rt=11.0,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.050,
+            ),
+        ),
+    )
+    drift_lookup = DriftEvidenceLookup(
+        points=(),
+        istd_identity_anchor=_targeted_istd_anchor(
+            identity_namespace="test-targeted-istd-unconnected-hard-compatible"
+        ),
+    )
+
+    reconciled, _targeted_owner_sets, _validated_owner_sets = (
+        peak_groups_module._bind_targeted_istd_trajectory_provenance(
+            groups,
+            injection_trajectory_owner_sets=frozenset(),
+            injection_order={"sample-1": 1, "sample-2": 2, "sample-3": 3},
+            config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=None,
+            edge_cache={},
+            edge_evaluator=evaluate_owner_edge,
+        )
+    )
+
+    assert sorted(len(group) for group in reconciled) == [1, 2]
+
+
+def test_targeted_istd_duplicate_demotion_accepts_natural_primary_trajectory() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-b",
+            "b-secondary",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+        _owner(
+            "sample-c",
+            "c-secondary",
+            apex_rt=8.9,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"}
+        ),
+        injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-natural-primary"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert sum(hypothesis.review_only for hypothesis in hypotheses) == 1
+    winner = next(hypothesis for hypothesis in hypotheses if not hypothesis.review_only)
+    assert winner.owner_ids == (
+        "OWN-sample-a-a",
+        "OWN-sample-b-b",
+        "OWN-sample-c-c",
+    )
+
+
+def test_targeted_istd_duplicate_demotion_requires_injection_trajectory() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b-secondary",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+        _owner(
+            "sample-c",
+            "c-secondary",
+            apex_rt=8.9,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"}
+        ),
+        injection_order=None,
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-no-injection-order"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+
+
 def test_targeted_istd_trajectory_keeps_same_sample_or_blocked_edge_separate() -> None:
     owners = (
         _owner("sample-a", "a", apex_rt=8.0, neutral_loss_tag="DNA_dR"),
@@ -1351,6 +2176,31 @@ def _owner(
             asls_area=900.0,
             morphology_area=900.0,
         ),
+    )
+
+
+def _targeted_istd_anchor(
+    *,
+    identity_namespace: str,
+):
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    return build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace=identity_namespace,
+        ),
+        observed_labels=(target.label,),
     )
 
 

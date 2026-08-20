@@ -34,6 +34,7 @@ from xic_extractor.alignment.ownership_models import (
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
+    from xic_extractor.configuration.models import Target
 
 CrossSamplePeakGroupEdgeRole: TypeAlias = Literal[
     "membership_support",
@@ -268,6 +269,7 @@ def construct_cross_sample_peak_group_hypotheses(
     injection_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
     bounded_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
     targeted_istd_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
+    validated_targeted_istd_owner_sets: frozenset[frozenset[str]] = frozenset()
     if sample_universe is None:
         groups = _complete_link_groups(
             sorted(clean, key=_owner_sort_key),
@@ -303,7 +305,11 @@ def construct_cross_sample_peak_group_hypotheses(
             edge_cache=edge_cache,
             edge_evaluator=edge_evaluator,
         )
-        groups, targeted_istd_trajectory_owner_sets = (
+        (
+            groups,
+            targeted_istd_trajectory_owner_sets,
+            validated_targeted_istd_owner_sets,
+        ) = (
             _bind_targeted_istd_trajectory_provenance(
                 groups,
                 injection_trajectory_owner_sets=injection_trajectory_owner_sets,
@@ -315,8 +321,16 @@ def construct_cross_sample_peak_group_hypotheses(
                 edge_evaluator=edge_evaluator,
             )
         )
+    targeted_istd_anchor = getattr(drift_lookup, "istd_identity_anchor", None)
+    if not isinstance(targeted_istd_anchor, TargetedIstdIdentityAnchor):
+        targeted_istd_anchor = None
     resolved_duplicate_owner_groups = (
-        _resolve_duplicate_owner_groups(groups, config=config)
+        _resolve_duplicate_owner_groups(
+            groups,
+            config=config,
+            targeted_istd_anchor=targeted_istd_anchor,
+            validated_targeted_istd_owner_sets=validated_targeted_istd_owner_sets,
+        )
         if sample_universe is not None
         else {}
     )
@@ -933,60 +947,325 @@ def _bind_targeted_istd_trajectory_provenance(
     edge_evidence_sink: list[OwnerEdgeEvidence] | None,
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
     edge_evaluator: OwnerEdgeEvaluator,
-) -> tuple[tuple[tuple[SampleLocalMS1Owner, ...], ...], frozenset[frozenset[str]]]:
-    """Bind typed ISTD provenance to already-minted injection trajectories.
-
-    The typed anchor may only classify an existing generic injection trajectory;
-    it never changes group membership, order, Matrix values, or Backfill scope.
-    """
+) -> tuple[
+    tuple[tuple[SampleLocalMS1Owner, ...], ...],
+    frozenset[frozenset[str]],
+    frozenset[frozenset[str]],
+]:
+    """Bind typed ISTD provenance and reconcile bounded anchor trajectories."""
 
     anchor = getattr(drift_lookup, "istd_identity_anchor", None)
     if (
         injection_order is None
         or not isinstance(anchor, TargetedIstdIdentityAnchor)
     ):
-        return groups, frozenset()
+        return groups, frozenset(), frozenset()
 
-    def matches_targeted_anchor(group: tuple[SampleLocalMS1Owner, ...]) -> bool:
-        if not group:
-            return False
-        view = _TargetedIstdFamilyView(
-            neutral_loss_tag=group[0].neutral_loss_tag,
-            family_center_mz=sum(owner.precursor_mz for owner in group) / len(group),
-            family_center_rt=sum(owner.owner_apex_rt for owner in group) / len(group),
+    passthrough: list[tuple[SampleLocalMS1Owner, ...]] = []
+    groups_by_target: dict[
+        str,
+        list[tuple[tuple[SampleLocalMS1Owner, ...], Target]],
+    ] = {}
+    for group in groups:
+        target = _targeted_istd_target_for_group(group, anchor=anchor)
+        if target is None:
+            passthrough.append(group)
+            continue
+        groups_by_target.setdefault(str(getattr(target, "label")), []).append(
+            (group, target)
         )
-        target = anchor.matching_target(view)
-        if target is None or not all(
-            anchor.matches_observation(
-                target,
-                neutral_loss_tag=owner.neutral_loss_tag,
-                precursor_mz=owner.precursor_mz,
-                apex_rt=owner.owner_apex_rt,
-            )
-            for owner in group
-        ):
-            return False
-        return True
 
     targeted_owner_sets: set[frozenset[str]] = set()
-    for group in groups:
-        owner_set = frozenset(owner.owner_id for owner in group)
-        if (
-            owner_set not in injection_trajectory_owner_sets
-            or not matches_targeted_anchor(group)
-            or not _targeted_istd_candidate_is_valid(
-                group,
+    validated_owner_sets: set[frozenset[str]] = set()
+    reconciled = list(passthrough)
+    for target_groups in groups_by_target.values():
+        tracks: list[tuple[tuple[SampleLocalMS1Owner, ...], Target, int]] = []
+        ordered_target_groups = sorted(
+            target_groups,
+            key=lambda item: (-len(item[0]), _owner_sort_key(item[0][0])),
+        )
+        sample_sets = [
+            frozenset(owner.sample_stem for owner in group)
+            for group, _target in ordered_target_groups
+        ]
+        subordinate_indexes = {
+            index
+            for index, samples in enumerate(sample_sets)
+            if any(samples < other_samples for other_samples in sample_sets)
+        }
+        adjacency: list[set[int]] = [set() for _ in ordered_target_groups]
+        for left_index, (left_group, target) in enumerate(ordered_target_groups):
+            for right_index in range(left_index + 1, len(ordered_target_groups)):
+                if (left_index in subordinate_indexes) != (
+                    right_index in subordinate_indexes
+                ):
+                    continue
+                right_group, _right_target = ordered_target_groups[right_index]
+                candidate = tuple(
+                    sorted((*left_group, *right_group), key=_owner_sort_key)
+                )
+                if _targeted_istd_hard_union_is_valid(
+                    candidate,
+                    target=target,
+                    anchor=anchor,
+                    injection_order=injection_order,
+                    config=config,
+                ) and _targeted_istd_groups_share_local_continuity(
+                    left_group,
+                    right_group,
+                    config=config,
+                    drift_lookup=drift_lookup,
+                    edge_evidence_sink=edge_evidence_sink,
+                    edge_cache=edge_cache,
+                    edge_evaluator=edge_evaluator,
+                ):
+                    adjacency[left_index].add(right_index)
+                    adjacency[right_index].add(left_index)
+
+        remaining = set(range(len(ordered_target_groups)))
+        while remaining:
+            start = min(remaining)
+            component: set[int] = set()
+            pending = [start]
+            while pending:
+                index = pending.pop()
+                if index in component:
+                    continue
+                component.add(index)
+                pending.extend(sorted(adjacency[index] - component, reverse=True))
+            remaining.difference_update(component)
+            members = [ordered_target_groups[index] for index in sorted(component)]
+            candidate = tuple(
+                sorted(
+                    (owner for group, _target in members for owner in group),
+                    key=_owner_sort_key,
+                )
+            )
+            target = members[0][1]
+            if len(members) > 1 and _targeted_istd_reconciliation_is_valid(
+                candidate,
+                target=target,
+                anchor=anchor,
                 injection_order=injection_order,
                 config=config,
                 drift_lookup=drift_lookup,
                 edge_evidence_sink=edge_evidence_sink,
                 edge_cache=edge_cache,
                 edge_evaluator=edge_evaluator,
+            ):
+                tracks.append((candidate, target, len(members)))
+                continue
+            tracks.extend((group, group_target, 1) for group, group_target in members)
+
+        for track, _target, source_count in tracks:
+            reconciled.append(track)
+            owner_set = frozenset(owner.owner_id for owner in track)
+            if _targeted_istd_reconciliation_is_valid(
+                track,
+                target=_target,
+                anchor=anchor,
+                injection_order=injection_order,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ):
+                validated_owner_sets.add(owner_set)
+            if source_count > 1 or (
+                owner_set in injection_trajectory_owner_sets
+                and _targeted_istd_candidate_is_valid(
+                    track,
+                    injection_order=injection_order,
+                    config=config,
+                    drift_lookup=drift_lookup,
+                    edge_evidence_sink=edge_evidence_sink,
+                    edge_cache=edge_cache,
+                    edge_evaluator=edge_evaluator,
+                )
+            ):
+                targeted_owner_sets.add(owner_set)
+    reconciled.sort(key=lambda group: _owner_sort_key(group[0]))
+    return (
+        tuple(reconciled),
+        frozenset(targeted_owner_sets),
+        frozenset(validated_owner_sets),
+    )
+
+
+def _targeted_istd_target_for_group(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    anchor: TargetedIstdIdentityAnchor,
+) -> Target | None:
+    if not group:
+        return None
+    view = _TargetedIstdFamilyView(
+        neutral_loss_tag=group[0].neutral_loss_tag,
+        family_center_mz=sum(owner.precursor_mz for owner in group) / len(group),
+        family_center_rt=sum(owner.owner_apex_rt for owner in group) / len(group),
+    )
+    target = anchor.matching_target(view)
+    if target is None or not all(
+        anchor.matches_observation(
+            target,
+            neutral_loss_tag=owner.neutral_loss_tag,
+            precursor_mz=owner.precursor_mz,
+            apex_rt=owner.owner_apex_rt,
+        )
+        for owner in group
+    ):
+        return None
+    return target
+
+
+def _targeted_istd_reconciliation_is_valid(
+    candidate: tuple[SampleLocalMS1Owner, ...],
+    *,
+    target: Target,
+    anchor: TargetedIstdIdentityAnchor,
+    injection_order: Mapping[str, int],
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> bool:
+    if not _targeted_istd_hard_union_is_valid(
+        candidate,
+        target=target,
+        anchor=anchor,
+        injection_order=injection_order,
+        config=config,
+    ):
+        return False
+    ordered = _owners_in_injection_order(
+        candidate,
+        injection_order=injection_order,
+    )
+    assert ordered is not None
+    return all(
+        _targeted_istd_continuity_edge(
+            _edge_for_pair(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ),
+            config=config,
+        )
+        for left, right in zip(ordered, ordered[1:])
+    )
+
+
+def _targeted_istd_hard_union_is_valid(
+    candidate: tuple[SampleLocalMS1Owner, ...],
+    *,
+    target: Target,
+    anchor: TargetedIstdIdentityAnchor,
+    injection_order: Mapping[str, int],
+    config: AlignmentConfig,
+) -> bool:
+    if (
+        len({owner.sample_stem for owner in candidate}) != len(candidate)
+        or not candidate
+        or not candidate[0].neutral_loss_tag
+        or any(
+            owner.neutral_loss_tag != candidate[0].neutral_loss_tag
+            for owner in candidate[1:]
+        )
+        or any(
+            not anchor.matches_observation(
+                target,
+                neutral_loss_tag=owner.neutral_loss_tag,
+                precursor_mz=owner.precursor_mz,
+                apex_rt=owner.owner_apex_rt,
             )
-        ):
-            continue
-        targeted_owner_sets.add(owner_set)
-    return groups, frozenset(targeted_owner_sets)
+            for owner in candidate
+        )
+    ):
+        return False
+    if not _targeted_istd_precursor_envelope_is_valid(candidate, config=config):
+        return False
+    return _owners_in_injection_order(
+        candidate,
+        injection_order=injection_order,
+    ) is not None
+
+
+def _targeted_istd_groups_share_local_continuity(
+    left_group: tuple[SampleLocalMS1Owner, ...],
+    right_group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
+) -> bool:
+    return any(
+        _targeted_istd_continuity_edge(
+            _edge_for_pair(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
+            ),
+            config=config,
+        )
+        for left in left_group
+        for right in right_group
+    )
+
+
+def _targeted_istd_precursor_envelope_is_valid(
+    owners: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    precursor_min = min(owner.precursor_mz for owner in owners)
+    precursor_max = max(owner.precursor_mz for owner in owners)
+    return all(
+        not _range_exceeds_ppm(
+            owner.precursor_mz,
+            precursor_min,
+            precursor_max,
+            config.max_ppm,
+        )
+        for owner in owners
+    )
+
+
+def _targeted_istd_continuity_edge(
+    edge: OwnerEdgeEvidence,
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    if _is_full_batch_continuity_edge(edge, config=config):
+        return True
+    if edge.failure_reason and edge.failure_reason not in {
+        "product_mz_out_of_tolerance",
+        "observed_loss_out_of_tolerance",
+    }:
+        return False
+    if (
+        edge.owner_quality in {"weak", "ambiguous_nearby"}
+        or edge.seed_support_level == "weak"
+    ):
+        return False
+    rt_delta_sec = edge.rt_raw_delta_sec
+    if (
+        edge.drift_prior_source != "none"
+        and edge.rt_drift_corrected_delta_sec is not None
+    ):
+        rt_delta_sec = edge.rt_drift_corrected_delta_sec
+    return rt_delta_sec <= config.preferred_rt_sec
 
 
 def _targeted_istd_candidate_is_valid(
@@ -1080,6 +1359,8 @@ def _resolve_duplicate_owner_groups(
     groups: tuple[tuple[SampleLocalMS1Owner, ...], ...],
     *,
     config: AlignmentConfig,
+    targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None,
+    validated_targeted_istd_owner_sets: frozenset[frozenset[str]] = frozenset(),
 ) -> dict[int, int]:
     """Resolve groups that only compete inside samples another group owns.
 
@@ -1129,11 +1410,25 @@ def _resolve_duplicate_owner_groups(
             ):
                 if candidate == subordinate or candidate in resolved:
                     continue
-                if not _group_resolves_duplicate_owner_group(
+                generic_match = _group_resolves_duplicate_owner_group(
                     facts[candidate],
                     facts[subordinate],
                     config=config,
-                ):
+                )
+                targeted_match = (
+                    targeted_istd_anchor is not None
+                    and frozenset(
+                        owner.owner_id for owner in facts[candidate].owners
+                    )
+                    in validated_targeted_istd_owner_sets
+                    and _targeted_istd_group_resolves_duplicate_owner_group(
+                        facts[candidate],
+                        facts[subordinate],
+                        anchor=targeted_istd_anchor,
+                        config=config,
+                    )
+                )
+                if not generic_match and not targeted_match:
                     continue
                 score = (
                     _ppm(facts[subordinate].center_mz, facts[candidate].center_mz),
@@ -1202,6 +1497,41 @@ def _group_resolves_duplicate_owner_group(
     return all(
         _owner_within_group_envelope(owner, winner.envelope, config)
         for owner in subordinate.owners
+    )
+
+
+def _targeted_istd_group_resolves_duplicate_owner_group(
+    winner: _GroupIdentityFacts,
+    subordinate: _GroupIdentityFacts,
+    *,
+    anchor: TargetedIstdIdentityAnchor,
+    config: AlignmentConfig,
+) -> bool:
+    if len(winner.owners) < 2 or len(winner.owners) <= len(subordinate.owners):
+        return False
+    if winner.neutral_loss_tag != subordinate.neutral_loss_tag:
+        return False
+    if not subordinate.sample_stems <= winner.sample_stems:
+        return False
+    if (
+        abs(subordinate.center_rt - winner.center_rt) * 60.0
+        > config.identity_rt_candidate_window_sec
+    ):
+        return False
+    winner_target = _targeted_istd_target_for_group(winner.owners, anchor=anchor)
+    subordinate_target = _targeted_istd_target_for_group(
+        subordinate.owners,
+        anchor=anchor,
+    )
+    if (
+        winner_target is None
+        or subordinate_target is None
+        or winner_target.label != subordinate_target.label
+    ):
+        return False
+    return _targeted_istd_precursor_envelope_is_valid(
+        (*winner.owners, *subordinate.owners),
+        config=config,
     )
 
 
