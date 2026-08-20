@@ -635,6 +635,49 @@ def test_alignment_builds_owner_from_discovery_binding_without_resolver(
         )
 
 
+def test_alignment_review_only_discovery_binding_does_not_build_owner(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.ownership import (
+        build_sample_local_owners_from_discovery_bindings,
+    )
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        _OwnerBoundBatchRaw(source),
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+    )
+    binding = discovery.physical_bindings[0]
+    review_only_binding = replace(
+        binding,
+        candidate=replace(
+            binding.candidate,
+            discovery_candidate_state="review_only_ambiguous_coisolation",
+        ),
+    )
+
+    ownership = build_sample_local_owners_from_discovery_bindings(
+        (review_only_binding,),
+        alignment_config=AlignmentConfig(),
+    )
+
+    assert ownership.owners == ()
+    assert ownership.assignments == ()
+    assert ownership.ambiguous_records == ()
+
+
 def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
     tmp_path: Path,
 ) -> None:

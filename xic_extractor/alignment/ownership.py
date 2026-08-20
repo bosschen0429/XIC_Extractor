@@ -20,6 +20,10 @@ from xic_extractor.alignment.ownership_models import (
 )
 from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.models import (
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidate,
+)
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
     validate_discovery_candidate_physical_binding,
@@ -95,6 +99,14 @@ _ResolutionRequestItem = tuple[int, Any, float, XICRequest, bool]
 _ResolutionRequestGroupKey = tuple[str, int | float, int | float]
 
 
+def discovery_candidate_is_owner_build_eligible(
+    candidate: DiscoveryCandidate,
+) -> bool:
+    """Return whether a final Discovery candidate may mint an Alignment owner."""
+
+    return candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+
+
 def build_sample_local_owners(
     candidates: Sequence[Any],
     *,
@@ -142,6 +154,8 @@ def build_sample_local_owners_from_discovery_bindings(
             )
         validate_discovery_candidate_physical_binding(binding)
         candidate = binding.candidate
+        if not discovery_candidate_is_owner_build_eligible(candidate):
+            continue
         evaluation = binding.physical_evaluation
         if evaluation.state != "available":
             outcomes.append(

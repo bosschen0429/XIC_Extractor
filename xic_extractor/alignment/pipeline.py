@@ -85,6 +85,7 @@ from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import (
     build_sample_local_owners,
     build_sample_local_owners_from_discovery_bindings,
+    discovery_candidate_is_owner_build_eligible,
 )
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
@@ -134,10 +135,7 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
     validate_discovery_candidate_physical_bindings,
 )
-from xic_extractor.discovery.models import (
-    MS1_FEATURE_BACKED_STATES,
-    DiscoveryCandidate,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
 )
@@ -191,7 +189,7 @@ def _raw_owner_build_candidates(
     return tuple(
         candidate
         for candidate in candidates
-        if candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        if discovery_candidate_is_owner_build_eligible(candidate)
     )
 
 
