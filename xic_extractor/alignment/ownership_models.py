@@ -40,6 +40,28 @@ class SampleLocalMS1Owner:
     assignment_reason: str
     region_audit: PeakRegionAuditSummary | None = None
     selected_integration: IntegrationResult | None = None
+    quantification_eligible: bool = True
+    quantification_exclusion_reason: str = ""
+
+    def __post_init__(self) -> None:
+        integration = self.selected_integration
+        apex = self.owner_apex_rt
+        left = self.owner_peak_start_rt
+        right = self.owner_peak_end_rt
+        if integration is not None:
+            apex = integration.rt_apex_min
+            left = integration.rt_left_min
+            right = integration.rt_right_min
+        if not (
+            left < apex < right
+        ):
+            object.__setattr__(self, "quantification_eligible", False)
+            if not self.quantification_exclusion_reason:
+                object.__setattr__(
+                    self,
+                    "quantification_exclusion_reason",
+                    "owner_apex_on_integration_boundary",
+                )
 
     @property
     def all_events(self) -> tuple[IdentityEvent, ...]:

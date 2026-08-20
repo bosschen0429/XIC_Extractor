@@ -33,6 +33,7 @@ from xic_extractor.execution_runtime_owner import start_runtime_attempt
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterError,
     adapt_current_discovery_sample_subject,
+    method_label,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     build_untargeted_cid_nl_real_data_context,
@@ -45,6 +46,8 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
+from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -54,6 +57,8 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.signal_processing import find_peak_and_area
+from xic_extractor.xic_models import XICRequest
 
 
 @pytest.mark.parametrize(
@@ -147,14 +152,25 @@ def test_adapter_parks_owner_observed_morphology_divergence(
     assert evaluation.facts is not None
     assert evaluation.integration is not None
     candidate = candidates[0]
-    assert getattr(candidate, candidate_field) != pytest.approx(
-        getattr(evaluation.integration, integration_field)
+    adapter_integration = _adapter_integration(
+        source_raw,
+        candidate,
+        settings=settings,
+        peak_config=peak_config,
     )
+    assert getattr(candidate, candidate_field) != pytest.approx(
+        getattr(adapter_integration, integration_field)
+    )
+    coherent_fields = {
+        "ms1_apex_rt": adapter_integration.rt_apex_min,
+        "ms1_peak_rt_start": adapter_integration.rt_left_min,
+        "ms1_peak_rt_end": adapter_integration.rt_right_min,
+    }
     if receipt_field == "height_raw":
-        candidate = replace(
-            candidate,
-            ms1_area=evaluation.integration.area_raw_counts_seconds,
-        )
+        coherent_fields["ms1_area"] = adapter_integration.area_raw_counts_seconds
+    else:
+        coherent_fields["ms1_height"] = adapter_integration.height_raw
+    candidate = replace(candidate, **coherent_fields)
     raw, _vendor_raw = _open_bound_raw(
         fixture,
         "S1",
@@ -205,6 +221,21 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
     assert evaluation.integration is not None
     assert evaluation.facts.area_counts_seconds != pytest.approx(
         evaluation.integration.area_raw_counts_seconds
+    )
+    adapter_integration = _adapter_integration(
+        source_raw,
+        candidates[0],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    candidates = (
+        replace(
+            candidates[0],
+            ms1_apex_rt=adapter_integration.rt_apex_min,
+            ms1_peak_rt_start=adapter_integration.rt_left_min,
+            ms1_peak_rt_end=adapter_integration.rt_right_min,
+            ms1_height=adapter_integration.height_raw,
+        ),
     )
     subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=500.0,
@@ -307,3 +338,42 @@ def _canonical_physical_candidates(
         signal_processing_profile=SignalProcessingProfile(window_points=15),
     )
     return result.candidates, result.physical_evaluations[0].evaluation
+
+
+def _adapter_integration(raw, candidate, *, settings, peak_config):
+    trace = raw.extract_xic_many(
+        (
+            XICRequest(
+                mz=candidate.precursor_mz,
+                rt_min=candidate.ms1_search_rt_min,
+                rt_max=candidate.ms1_search_rt_max,
+                ppm_tol=settings.precursor_mz_tolerance_ppm,
+            ),
+        )
+    )[0]
+    detection = detect_ms1_trace_peak(
+        trace.rt,
+        trace.intensity,
+        peak_config=peak_config,
+        preferred_rt=candidate.best_seed_rt,
+        peak_finder=find_peak_and_area,
+    )
+    assert detection.status == "detected"
+    assert detection.result is not None
+    hypotheses = build_peak_hypotheses(
+        sample_name=candidate.sample_stem,
+        target_label=method_label(candidate),
+        role="Analyte",
+        istd_pair="",
+        resolver_mode=settings.resolver_mode,
+        peak_result=detection.result,
+        rt=detection.rt,
+        intensity=detection.intensity,
+        baseline_integration_method="asls",
+        ms1_morphology_smoothing_window_points=(
+            peak_config.ms1_morphology_smoothing_window_points
+        ),
+    )
+    selected = tuple(item for item in hypotheses if item.audit.selected)
+    assert len(selected) == 1
+    return selected[0].integration

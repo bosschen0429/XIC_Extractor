@@ -15,6 +15,11 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
 )
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillSampleResult,
+    OwnerBackfillSampleTransaction,
+    OwnerBackfillTimingStats,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.identity_coherence.models import (
     IdentityCoherenceTraceRequest,
@@ -68,8 +73,17 @@ from xic_extractor.alignment.owner_backfill import (
     build_owner_backfill_result,
     validate_owner_backfill_peak_fact_observation,
 )
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    PreparedOwnerBackfillPeakFact,
+    prepare_owner_backfill_peak_fact,
+)
 from xic_extractor.alignment.owner_backfill_request_plan import (
-    build_owner_backfill_request_plan,
+    OwnerBackfillSampleRuntimeProjection,
+    build_owner_backfill_sample_runtime_projections,
+    validate_owner_backfill_sample_runtime_projection,
+)
+from xic_extractor.alignment.owner_backfill_runtime_projection import (
+    OwnerBackfillRuntimeFeatures,
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.alignment.ownership import (
@@ -168,7 +182,7 @@ class OwnerBackfillSampleJob:
     sample_stem: str
     raw_path: Path
     dll_dir: Path
-    features: OwnerGroupDeliveryFeatures
+    sample_projection: OwnerBackfillSampleRuntimeProjection
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     signal_processing_profile: SignalProcessingProfile
@@ -181,14 +195,37 @@ class OwnerBackfillSampleJob:
     emit_region_audit: bool = False
     region_audit_family_ids: frozenset[str] | None = None
     audit_evidence_mode: str = "full"
+    emit_candidate_audit_rows: bool = True
     request_plan_id: str = REQUEST_PLAN_VERSION
     backfill_scope: str = "full-audit"
     feature_payload_count: int = 0
     request_payload_count: int = 0
+    peak_fact_feature_order_indices: tuple[int, ...] = ()
+    peak_fact_sample_order_index: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
             raise TypeError("signal_processing_profile must be owner-resolved")
+        if not isinstance(
+            self.sample_projection,
+            OwnerBackfillSampleRuntimeProjection,
+        ):
+            raise TypeError("sample_projection must be owner-minted")
+        if self.sample_projection.sample_stem != self.sample_stem:
+            raise ValueError("Backfill job crosses sample-bound runtime projection")
+        if self.feature_payload_count != len(self.features):
+            raise ValueError("Backfill job feature payload count mismatches projection")
+        if self.request_payload_count != self.sample_projection.logical_request_count:
+            raise ValueError("Backfill job request payload count mismatches projection")
+        if self.peak_fact_sample_order_index is None:
+            if self.peak_fact_feature_order_indices:
+                raise ValueError("peak-fact feature order requires sample order")
+        elif len(self.peak_fact_feature_order_indices) != len(self.features):
+            raise ValueError("peak-fact feature order must cover every job feature")
+
+    @property
+    def features(self) -> OwnerBackfillRuntimeFeatures:
+        return self.sample_projection.features
 
 
 @dataclass(frozen=True)
@@ -199,34 +236,6 @@ class OwnerBackfillJobPayloadMetrics:
     request_payload_count: int
     requests_per_feature: float | None
     pickle_payload_bytes: int
-
-
-@dataclass(frozen=True)
-class OwnerBackfillTimingStats:
-    sample_stem: str
-    elapsed_sec: float
-    extract_xic_count: int
-    point_count: int
-    extract_xic_batch_count: int = 0
-    raw_chromatogram_call_count: int = 0
-
-
-@dataclass(frozen=True)
-class OwnerBackfillSampleResult:
-    sample_index: int
-    sample_stem: str
-    cells: tuple[AlignedCell, ...]
-    candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...] = ()
-    timing_stats: tuple[OwnerBackfillTimingStats, ...] = ()
-    request_reuse_observations: tuple[
-        OwnerBackfillRequestReuseObservation,
-        ...,
-    ] = ()
-    peak_fact_observations: tuple[
-        OwnerBackfillPeakFactObservation,
-        ...,
-    ] = ()
-    peak_fact_cost: RuntimePeakFactCostMetrics | None = None
 
 
 @dataclass(frozen=True)
@@ -587,6 +596,7 @@ def extract_owner_build_sample_job(
 def run_owner_backfill_process(
     features: OwnerGroupDeliveryFeatures,
     *,
+    matrix_features: OwnerGroupDeliveryFeatures | None = None,
     sample_order: tuple[str, ...],
     raw_paths: Mapping[str, Path],
     dll_dir: Path,
@@ -607,9 +617,11 @@ def run_owner_backfill_process(
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
+    emit_candidate_audit_rows: bool = True,
     runner: Callable[..., list[OwnerBackfillWorkerResult]] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
-) -> OwnerBackfillProcessOutput:
+    matrix_sample_order: tuple[str, ...] | None = None,
+) -> Any:
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be owner-resolved")
     if max_workers < 1:
@@ -618,6 +630,12 @@ def run_owner_backfill_process(
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
+    if owner_backfill_xic_backend == "ms1_index_hybrid":
+        raise ValueError(
+            "ms1_index_hybrid Backfill must use the existing serial owner; "
+            "sample-partitioned process jobs cannot mint validation ranges "
+            "from runtime pending requests"
+        )
     _validate_expected_acquisition_sources(
         sample_order=sample_order,
         raw_paths=raw_paths,
@@ -625,19 +643,32 @@ def run_owner_backfill_process(
     )
     jobs: list[OwnerBackfillSampleJob] = []
     raw_sample_stems = frozenset(raw_paths)
-    request_plan = build_owner_backfill_request_plan(
+    sample_runtime_projections = build_owner_backfill_sample_runtime_projections(
         features,
         sample_order=sample_order,
         raw_sample_stems=raw_sample_stems,
         alignment_config=alignment_config,
     )
+    peak_fact_feature_rank: dict[str, int] = {}
+    peak_fact_sample_rank: dict[str, int] = {}
+    if matrix_sample_order is not None:
+        peak_fact_feature_rank = {
+            feature.feature_family_id: index
+            for index, feature in enumerate(
+                matrix_features if matrix_features is not None else features
+            )
+        }
+        peak_fact_sample_rank = {
+            sample_stem: index for index, sample_stem in enumerate(matrix_sample_order)
+        }
     for index, sample_stem in enumerate(sample_order, start=1):
         raw_path = raw_paths.get(sample_stem)
         if raw_path is None:
             continue
-        sample_features = request_plan.features_for_sample(sample_stem)
-        if not sample_features:
+        sample_projection = sample_runtime_projections.get(sample_stem)
+        if sample_projection is None:
             continue
+        job_features = sample_projection.features
         expected_acquisition_source = _expected_acquisition_source(
             expected_acquisition_sources,
             sample_stem,
@@ -648,7 +679,7 @@ def run_owner_backfill_process(
                 sample_stem=sample_stem,
                 raw_path=raw_path,
                 dll_dir=dll_dir,
-                features=sample_features,
+                sample_projection=sample_projection,
                 alignment_config=alignment_config,
                 peak_config=peak_config,
                 signal_processing_profile=signal_processing_profile,
@@ -667,17 +698,52 @@ def run_owner_backfill_process(
                 emit_region_audit=emit_region_audit,
                 region_audit_family_ids=region_audit_family_ids,
                 audit_evidence_mode=audit_evidence_mode,
+                emit_candidate_audit_rows=emit_candidate_audit_rows,
                 request_plan_id=REQUEST_PLAN_VERSION,
                 backfill_scope=backfill_scope,
-                feature_payload_count=len(sample_features),
-                request_payload_count=request_plan.request_count_for_sample(
-                    sample_stem,
+                feature_payload_count=len(job_features),
+                request_payload_count=sample_projection.logical_request_count,
+                peak_fact_feature_order_indices=(
+                    tuple(
+                        peak_fact_feature_rank[feature.feature_family_id]
+                        for feature in job_features
+                    )
+                    if matrix_sample_order is not None
+                    else ()
+                ),
+                peak_fact_sample_order_index=(
+                    peak_fact_sample_rank[sample_stem]
+                    if matrix_sample_order is not None
+                    else None
                 ),
             )
         )
-    if not jobs:
+    if not jobs and matrix_sample_order is None:
         return OwnerBackfillProcessOutput(cells=(), timing_stats=())
     active_runner = runner or run_owner_backfill_jobs
+    if matrix_sample_order is not None:
+        transaction = OwnerBackfillSampleTransaction(
+            matrix_features if matrix_features is not None else features,
+            matrix_sample_order=matrix_sample_order,
+            expected_samples=tuple((job.sample_index, job.sample_stem) for job in jobs),
+            signal_processing_profile=signal_processing_profile,
+        )
+        results = active_runner(
+            jobs,
+            max_workers=max_workers,
+            progress_callback=progress_callback,
+            success_result_delivery=transaction.deliver,
+        )
+        errors = tuple(
+            result for result in results if isinstance(result, OwnerBackfillWorkerError)
+        )
+        if errors:
+            messages = "; ".join(
+                f"{error.raw_name}: {error.message}"
+                for error in sorted(errors, key=lambda item: item.sample_index)
+            )
+            raise AlignmentProcessExecutionError(messages)
+        return transaction.finish()
     if progress_callback is None:
         results = active_runner(jobs, max_workers=max_workers)
     else:
@@ -770,7 +836,8 @@ def run_owner_backfill_jobs(
     max_workers: int,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
-) -> list[OwnerBackfillWorkerResult]:
+    success_result_delivery: Callable[[int, Any], Any] | None = None,
+) -> list[Any]:
     return _run_process_jobs(
         jobs,
         worker=extract_owner_backfill_sample_job,
@@ -779,6 +846,7 @@ def run_owner_backfill_jobs(
         executor_factory=executor_factory,
         progress_callback=progress_callback,
         is_terminal_failure=lambda result: isinstance(result, OwnerBackfillWorkerError),
+        success_result_delivery=success_result_delivery,
     )
 
 
@@ -812,6 +880,9 @@ def extract_owner_backfill_sample_job(
     from xic_extractor.raw_reader import open_raw
 
     try:
+        validate_owner_backfill_sample_runtime_projection(job.sample_projection)
+        if job.sample_projection.sample_stem != job.sample_stem:
+            raise ValueError("Backfill job crosses sample-bound runtime projection")
         with open_raw(
             job.raw_path,
             job.dll_dir,
@@ -854,9 +925,14 @@ def extract_owner_backfill_sample_job(
                 owner_backfill_superwindow_span_factor=(
                     job.owner_backfill_superwindow_span_factor
                 ),
+                candidate_index_offset=job.sample_projection.logical_request_offset,
+                validation_candidate_index_offset=(
+                    job.sample_projection.validation_request_offset
+                ),
                 emit_region_audit=job.emit_region_audit,
                 region_audit_family_ids=job.region_audit_family_ids,
                 audit_evidence_mode=job.audit_evidence_mode,
+                emit_candidate_audit_rows=job.emit_candidate_audit_rows,
             )
             peak_fact_cost = _runtime_peak_fact_cost_metrics(
                 backfill_result,
@@ -864,13 +940,50 @@ def extract_owner_backfill_sample_job(
                 raw_session_capability=job.raw_session_capability,
                 raw_open_receipt=raw_open_receipt,
             )
+        peak_fact_observations = backfill_result.peak_fact_observations
+        prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...] = ()
+        if job.peak_fact_sample_order_index is not None:
+            feature_order_indices = {
+                feature.feature_family_id: feature_order_index
+                for feature, feature_order_index in zip(
+                    job.features,
+                    job.peak_fact_feature_order_indices,
+                    strict=True,
+                )
+            }
+            prepared = (
+                prepare_owner_backfill_peak_fact(
+                    observation,
+                    feature_order_index=feature_order_indices[
+                        observation.cell.cluster_id
+                    ],
+                    sample_order_index=job.peak_fact_sample_order_index,
+                    profile=job.signal_processing_profile,
+                )
+                for observation in peak_fact_observations
+            )
+            # Under audit_evidence_mode "none" the published provenance keeps only
+            # rows a cell_projection selects, and a cell_projection can only come
+            # from a fact that carries a selected integration authority.  Shipping
+            # the rest to the parent costs one 61-column row per Backfill request
+            # for something that is then filtered out.
+            if job.audit_evidence_mode == "none":
+                prepared_peak_facts = tuple(
+                    fact
+                    for fact in prepared
+                    if fact.selected_integration_authority_content_id is not None
+                )
+            else:
+                prepared_peak_facts = tuple(prepared)
+            peak_fact_observations = ()
         return OwnerBackfillSampleResult(
             sample_index=job.sample_index,
             sample_stem=job.sample_stem,
             cells=backfill_result.cells,
             candidate_audit_rows=backfill_result.candidate_audit_rows,
             request_reuse_observations=(backfill_result.request_reuse_observations),
-            peak_fact_observations=backfill_result.peak_fact_observations,
+            peak_fact_observations=peak_fact_observations,
+            prepared_peak_facts=prepared_peak_facts,
             peak_fact_cost=peak_fact_cost,
             timing_stats=(
                 OwnerBackfillTimingStats(
@@ -970,6 +1083,7 @@ def _runtime_peak_fact_operations(
 
 def validate_owner_backfill_job_payload(job: OwnerBackfillSampleJob) -> None:
     validate_process_job_payload(job)
+    validate_owner_backfill_sample_runtime_projection(job.sample_projection)
 
 
 def owner_backfill_job_payload_metrics(

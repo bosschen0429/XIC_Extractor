@@ -1,10 +1,10 @@
 # Peak Anchor, Cross-Sample Group, and Hypothesis Boundary
 
 This page defines the durable boundary between per-sample peak anchors, wide
-Family contexts, cross-sample group hypotheses, peak hypotheses, shadow
+Family contexts, cross-sample group hypotheses, peak hypotheses, diagnostic
 ModeTrack assignments, and product projections. Use it when a change touches
-discovery peak-anchor grouping, alignment owner construction, Backfill
-activation, or any matrix identity sidecar.
+discovery peak-anchor grouping, alignment owner construction, diagnostic
+ModeTrack review, Backfill activation, or any matrix identity sidecar.
 
 ## Contract
 
@@ -27,11 +27,12 @@ surface.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
-- `ModeTrackAssignment` records whether one sample-local `PeakHypothesis` is
+- `ModeTrackAssignment` records for debug or batch review whether one
+  sample-local `PeakHypothesis` is
   uniquely assigned to one existing ModeTrack, ambiguous across tracks,
   outside the model, absent, or technically unassessable. The M3
-  identity/trajectory boundary mints this internal, immutable shadow fact; it
-  does not mint a second group owner.
+  identity/trajectory boundary mints this internal, immutable diagnostic fact;
+  it does not mint a second group owner or feed the normal product path.
 - Workflow projection owns product decisions. Targeted projection, alignment
   projection, Backfill authority, and ProductWriter gates decide counted
   detection, matrix presence, and product output values.
@@ -48,7 +49,7 @@ surface.
 | Internal `FamilyContextRef` | Wide chromatographic observation context and its zero-or-more existing ModeTracks | Chemical identity, public row identity, same-peak truth, or writer authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity via `group_hypothesis_id` | Per-peak integration truth or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
-| Internal `ModeTrackAssignment` | Typed sample/acquisition × existing ModeTrack shadow correspondence, exact prediction exclusions, and lineage | Refitting tracks in consumers, evidence/area transfer, Backfill/Matrix values, or chemical identity |
+| Internal `ModeTrackAssignment` | Typed sample/acquisition × existing ModeTrack diagnostic correspondence, exact prediction exclusions, and lineage | Refitting tracks in consumers, evidence/area transfer, Backfill/Matrix values, or chemical identity |
 | Product projection / ProductWriter | Counted detection, product state, matrix value authority | Low-level evidence extraction or review-only grouping |
 
 ## Migration Rule

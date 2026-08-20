@@ -1,6 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 
+from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
@@ -183,6 +184,95 @@ def test_assign_peak_anchors_threads_custom_evidence_settings() -> None:
     )
 
     assert custom_assigned[0].evidence_score == default_assigned[0].evidence_score + 5
+
+
+def test_assign_peak_anchors_bounds_competing_feature_backed_inferred_hypotheses(
+) -> None:
+    weaker = replace(
+        _candidate(
+            candidate_id="Sample#10-weaker",
+            seed_event_count=1,
+            ms2_product_max_intensity=5_000.0,
+            ms1_area=50_000.0,
+        ),
+        precursor_mz_basis="product_plus_neutral_loss",
+        discovery_candidate_state="ms1_feature_nl_rescued",
+        ms1_feature_row_id="Sample|DNA_dR|258.1085|7.84",
+    )
+    stronger = replace(
+        _candidate(
+            candidate_id="Sample#10-stronger",
+            precursor_mz=300.1606,
+            product_mz=184.1132,
+            seed_event_count=3,
+            ms2_product_max_intensity=150_000.0,
+            ms1_area=20_000_000.0,
+        ),
+        precursor_mz_basis="product_plus_neutral_loss",
+        discovery_candidate_state="ms1_feature_nl_rescued",
+        ms1_feature_row_id="Sample|DNA_dR|300.1606|7.84",
+    )
+    direct = replace(
+        _candidate(
+            candidate_id="Sample#10-direct",
+            precursor_mz=301.1652,
+            product_mz=185.1178,
+        ),
+        precursor_mz_basis="scan_precursor",
+        discovery_candidate_state="ms1_feature_nl_supported",
+        ms1_feature_row_id="Sample|DNA_dR|301.1652|7.84",
+    )
+    other_scan = replace(
+        _candidate(
+            candidate_id="Sample#11-inferred",
+            precursor_mz=420.2,
+            product_mz=304.1526,
+        ),
+        best_ms2_scan_id=11,
+        seed_scan_ids=(11,),
+        precursor_mz_basis="product_plus_neutral_loss",
+        discovery_candidate_state="ms1_feature_nl_rescued",
+        ms1_feature_row_id="Sample|DNA_dR|420.2|7.84",
+    )
+
+    assigned = assign_peak_anchors((weaker, direct, other_scan, stronger))
+    reversed_assigned = assign_peak_anchors(
+        tuple(reversed((weaker, direct, other_scan, stronger)))
+    )
+    by_id = {candidate.candidate_id: candidate for candidate in assigned}
+    reversed_by_id = {
+        candidate.candidate_id: candidate for candidate in reversed_assigned
+    }
+
+    assert by_id[stronger.candidate_id].discovery_candidate_state == (
+        "ms1_feature_nl_rescued"
+    )
+    assert by_id[weaker.candidate_id].discovery_candidate_state == (
+        "review_only_ambiguous_coisolation"
+    )
+    assert by_id[weaker.candidate_id].reason == (
+        "competing feature-backed inferred precursor hypotheses share the best "
+        "MS2 scan; retained for review; preferred_candidate_id=Sample#10-stronger"
+    )
+    assert by_id[weaker.candidate_id].ms1_feature_row_id == (
+        "Sample|DNA_dR|258.1085|7.84"
+    )
+    assert build_discovery_review_note(by_id[weaker.candidate_id]).startswith(
+        "review-only ambiguous inferred precursor; "
+    )
+    assert by_id[direct.candidate_id].discovery_candidate_state == (
+        "ms1_feature_nl_supported"
+    )
+    assert by_id[other_scan.candidate_id].discovery_candidate_state == (
+        "ms1_feature_nl_rescued"
+    )
+    assert {
+        candidate_id: candidate.discovery_candidate_state
+        for candidate_id, candidate in by_id.items()
+    } == {
+        candidate_id: candidate.discovery_candidate_state
+        for candidate_id, candidate in reversed_by_id.items()
+    }
 
 
 def _candidate(

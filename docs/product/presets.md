@@ -51,7 +51,7 @@ The current V1 routes remain the existing entry-point modes:
 | `discovery_only` | RAW to the existing Discovery terminal |
 | `full` | RAW -> Discovery -> generic Alignment -> Owner Backfill -> canonical Matrix |
 | `align_only` | Existing Discovery index -> generic Alignment -> Owner Backfill -> canonical Matrix |
-| bounded ModeTrack runner | Existing single-subject M8/M9 compatibility route |
+| diagnostic ModeTrack review runner | Opt-in single-subject debug/batch review; no product authority |
 
 Generic Alignment and Owner Backfill close the Matrix loop. Standard Peak is
 not reachable from normal CLI/GUI/preset execution, and the source-Matrix
@@ -62,8 +62,9 @@ packet retains diagnostic context and current-file self-consistency checks only;
 it has no independent historical seal, and its ownerless writer and registered
 scope are retired.
 The provisional full-universe runner continues to stop after its
-existing provisional diagnostic projection, and bounded ModeTrack retains its
-precursor, metadata, injection-order, namespace, and reviewed-input owners.
+existing provisional diagnostic projection. Diagnostic ModeTrack review retains
+its precursor, metadata, injection-order, namespace, and reviewed-input owners,
+but it is not a product route and cannot replace canonical Alignment output.
 
 These route names are existing in-memory selectors, not new preset TOML fields
 or a user-authored workflow graph. Pt and Pt + CID-NL composite presets remain

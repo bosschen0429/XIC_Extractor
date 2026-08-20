@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,7 +5,6 @@ import pytest
 
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
-from tests.alignment_pipeline_helpers import cell as _cell
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
@@ -14,9 +12,11 @@ from tests.alignment_pipeline_helpers import (
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillTransactionOutput,
+)
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.process_backend import (
-    OwnerBackfillProcessOutput,
     OwnerBackfillTimingStats,
     OwnerBuildProcessOutput,
     OwnerBuildTimingStats,
@@ -48,7 +48,7 @@ def test_pipeline_applies_single_worker_hybrid_owner_backfill_backend(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -150,7 +150,7 @@ def test_pipeline_applies_single_worker_owner_build_backend(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -207,7 +207,7 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -295,7 +295,7 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             source_features
         ),
     )
@@ -420,15 +420,34 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     opener = FakeRawOpener()
     calls = {}
-    rescued = _cell("Sample_A", cluster_id="ALN000001")
     recorder = TimingRecorder("alignment", run_id="test-process-backfill")
+    read_candidates = pipeline_module.read_discovery_candidates_csv
+
+    def read_with_review_only_orphan(path, **kwargs):
+        current = read_candidates(path, **kwargs)
+        return (
+            *current,
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="ms1_feature_nl_rescued",
+            ),
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="review_only_orphan_nl",
+            ),
+            SimpleNamespace(
+                sample_stem="Sample_A",
+                discovery_candidate_state="rejected_noise_or_outside_rt",
+            ),
+        )
 
     def fake_process_backfill(features, **kwargs):
         calls["features"] = features
         calls.update(kwargs)
         assert opener.calls == []
-        return OwnerBackfillProcessOutput(
-            cells=(rescued,),
+        return OwnerBackfillTransactionOutput(
+            matrix=_matrix(("Sample_A",)),
+            candidate_audit_rows=(),
             timing_stats=(
                 OwnerBackfillTimingStats(
                     sample_stem="Sample_A",
@@ -437,11 +456,17 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
                     point_count=40,
                 ),
             ),
+            request_reuse_observations=(),
+            prepared_peak_facts=(),
+            peak_fact_cost_receipts=(),
         )
 
     def fake_process_build(candidates, **kwargs):
         calls["build_candidates"] = tuple(
             candidate.sample_stem for candidate in candidates
+        )
+        calls["build_candidate_states"] = tuple(
+            candidate.discovery_candidate_state for candidate in candidates
         )
         calls["build_kwargs"] = kwargs
         return OwnerBuildProcessOutput(
@@ -467,8 +492,13 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     )
     monkeypatch.setattr(
         pipeline_module,
+        "read_discovery_candidates_csv",
+        read_with_review_only_orphan,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -479,15 +509,6 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
         pipeline_module,
         "run_owner_backfill_process",
         fake_process_backfill,
-    )
-    def fake_owner_matrix(features, *, sample_order, rescued_cells, **kwargs):
-        calls["rescued_cells"] = rescued_cells
-        return _matrix(sample_order)
-
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_owner_alignment_matrix",
-        fake_owner_matrix,
     )
 
     pipeline_module.run_alignment(
@@ -505,8 +526,13 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     )
 
     assert calls["max_workers"] == 2
+    assert calls["build_candidates"] == ("Sample_A", "Sample_A")
+    assert calls["build_candidate_states"] == (
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    )
     assert calls["raw_paths"] == {"Sample_A": raw_dir / "Sample_A.raw"}
-    assert calls["rescued_cells"] == (rescued,)
+    assert calls["matrix_sample_order"] == ("Sample_A",)
     assert calls["build_kwargs"]["max_workers"] == 2
     assert calls["raw_xic_batch_size"] == 1
     assert calls["owner_backfill_xic_backend"] == "ms1_index"
@@ -516,6 +542,11 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     assert "owner_backfill_xic_backend" not in calls["build_kwargs"]
     records_by_stage_sample = {
         (record.stage, record.sample_stem): record for record in recorder.records
+    }
+    assert records_by_stage_sample[("alignment.read_candidates", "")].metrics == {
+        "candidate_count": 4,
+        "raw_owner_build_candidate_count": 2,
+        "non_raw_owner_build_candidate_count": 2,
     }
     assert records_by_stage_sample[
         ("alignment.build_owners.extract_xic", "Sample_A")
@@ -563,7 +594,7 @@ def test_pipeline_uses_raw_dir_as_authority_and_fallbacks_to_sample_stem(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (),
+        lambda owners, **kwargs: (),
     )
     monkeypatch.setattr(
         pipeline_module,

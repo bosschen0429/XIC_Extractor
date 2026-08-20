@@ -16,6 +16,12 @@ class _Failure:
     message: str
 
 
+@dataclass(frozen=True)
+class _DeliveryReceipt:
+    ordinal: int
+    value: int
+
+
 def _spawn_worker(job: _Job) -> int:
     if job.index == 0:
         raise RuntimeError("owner boom")
@@ -93,6 +99,83 @@ def test_success_results_are_returned_in_input_order() -> None:
     assert report.failed_job_ordinals == ()
     assert report.observed_results == (0, 10, 20)
     assert executor.shutdown_calls == [(True, False)]
+
+
+def test_success_delivery_replaces_payloads_with_input_order_receipts() -> None:
+    class _ImmediateExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(job.index * 10)
+            return future
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool = False) -> None:
+            pass
+
+    delivered: list[tuple[int, int]] = []
+
+    def deliver(ordinal: int, result: int) -> _DeliveryReceipt:
+        delivered.append((ordinal, result))
+        return _DeliveryReceipt(ordinal=ordinal, value=result)
+
+    report = execute_process_jobs(
+        (_Job(0), _Job(1), _Job(2)),
+        worker=lambda job: job.index * 10,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=2,
+        executor_factory=_ImmediateExecutor,
+        success_result_delivery=deliver,
+    )
+
+    assert delivered == [(0, 0), (1, 10), (2, 20)]
+    assert report.observed_results == (
+        _DeliveryReceipt(0, 0),
+        _DeliveryReceipt(1, 10),
+        _DeliveryReceipt(2, 20),
+    )
+    assert report.completed_results == report.observed_results
+    assert report.completed_job_ordinals == (0, 1, 2)
+
+
+def test_success_delivery_failure_becomes_late_terminal_failure() -> None:
+    class _ImmediateExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(job.index * 10)
+            return future
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool = False) -> None:
+            pass
+
+    def deliver(ordinal: int, result: int) -> _DeliveryReceipt:
+        if ordinal == 1:
+            raise ValueError("transaction rejected")
+        return _DeliveryReceipt(ordinal=ordinal, value=result)
+
+    report = execute_process_jobs(
+        (_Job(0), _Job(1), _Job(2), _Job(3)),
+        worker=lambda job: job.index * 10,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=2,
+        executor_factory=_ImmediateExecutor,
+        success_result_delivery=deliver,
+    )
+
+    assert report.first_failure == _Failure(1, "transaction rejected")
+    assert report.observed_results == (
+        _DeliveryReceipt(0, 0),
+        _Failure(1, "transaction rejected"),
+    )
+    assert report.completed_job_ordinals == (0,)
+    assert report.failed_job_ordinals == (1,)
+    assert report.unsubmitted_job_ordinals == (2, 3)
 
 
 def test_completed_work_is_preserved_when_failure_arrives_in_same_wait_batch() -> None:

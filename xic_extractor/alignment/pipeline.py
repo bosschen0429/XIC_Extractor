@@ -18,6 +18,10 @@ from xic_extractor.alignment.backfill_scope import (
     select_backfill_features,
     skipped_evidence_summary,
 )
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillSampleDeliveryReceipt,
+    OwnerBackfillTransactionOutput,
+)
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
@@ -26,6 +30,7 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_candidates_csv,
     read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
 from xic_extractor.alignment.early_loser_shadow import (
     EarlyLoserShadowProposal,
     EarlyLoserShadowReport,
@@ -60,16 +65,13 @@ from xic_extractor.alignment.owner_backfill import (
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OwnerBackfillCellProjectionV2,
-    OwnerBackfillPeakFactStageProjection,
-    build_owner_backfill_peak_fact_provenance_batch,
+    PreparedOwnerBackfillPeakFact,
+    build_owner_backfill_peak_fact_provenance_batch_from_rows,
     owner_backfill_authority_cell_projection,
     owner_backfill_cell_lineage_matches,
     owner_backfill_cell_projection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
+    prepare_owner_backfill_peak_fact,
     selected_integration_authority_projection,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    OwnerBackfillPeakFactObservation as ProvenanceObservation,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_owner_build_route_receipt,
@@ -83,6 +85,7 @@ from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import (
     build_sample_local_owners,
     build_sample_local_owners_from_discovery_bindings,
+    discovery_candidate_is_owner_build_eligible,
 )
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
@@ -158,6 +161,36 @@ _RawSourceTimingStats = RawSourceTimingStats
 _TimedRawSource = TimedRawSource
 AlignmentRawHandle = _AlignmentRawHandle
 RawOpener = Callable[[Path, Path], AbstractContextManager[AlignmentRawHandle]]
+
+
+def _typed_targeted_istd_anchor(
+    drift_lookup: DriftLookupProtocol | None,
+) -> TargetedIstdIdentityAnchor | None:
+    """Return only an owner-minted targeted ISTD anchor.
+
+    The grouping seam and the metadata seam must share the same typed trust
+    boundary.  A duck-typed diagnostic object may expose similarly named
+    fields, but it is not allowed to request persisted run metadata.
+    """
+
+    candidate = getattr(drift_lookup, "istd_identity_anchor", None)
+    return (
+        candidate
+        if isinstance(candidate, TargetedIstdIdentityAnchor)
+        else None
+    )
+
+
+def _raw_owner_build_candidates(
+    candidates: Sequence[DiscoveryCandidate],
+) -> tuple[DiscoveryCandidate, ...]:
+    """Keep Discovery review-only rows out of the RAW owner-build route."""
+
+    return tuple(
+        candidate
+        for candidate in candidates
+        if discovery_candidate_is_owner_build_eligible(candidate)
+    )
 
 
 def _ordered_discovery_physical_bindings(
@@ -360,6 +393,7 @@ def run_alignment(
             "or selected-families"
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
+    targeted_istd_anchor = _typed_targeted_istd_anchor(drift_lookup)
     recorder.record(
         "alignment.run_config",
         elapsed_sec=0.0,
@@ -382,6 +416,16 @@ def run_alignment(
             "emit_early_loser_shadow": emit_early_loser_shadow,
             "drift_prior_source": (
                 drift_lookup.source if drift_lookup is not None else "none"
+            ),
+            "targeted_istd_anchor_identity": getattr(
+                targeted_istd_anchor,
+                "target_config_identity",
+                "none",
+            ),
+            "targeted_istd_target_snapshot_id": getattr(
+                getattr(targeted_istd_anchor, "target_snapshot", None),
+                "snapshot_id",
+                "none",
             ),
         },
     )
@@ -417,7 +461,14 @@ def run_alignment(
             for sample_stem in batch.sample_order
             for candidate in candidates_by_sample[sample_stem]
         )
+        raw_owner_build_candidates = _raw_owner_build_candidates(candidates)
         stage.metrics["candidate_count"] = len(candidates)
+        stage.metrics["raw_owner_build_candidate_count"] = len(
+            raw_owner_build_candidates
+        )
+        stage.metrics["non_raw_owner_build_candidate_count"] = (
+            len(candidates) - len(raw_owner_build_candidates)
+        )
     if discovery_physical_bindings_by_sample is None:
         discovery_physical_bindings = None
         owner_build_route_receipt = _mint_owner_build_route_receipt(
@@ -450,6 +501,7 @@ def run_alignment(
             emit_alignment_backfill_candidate_audit
         ),
         emit_skipped_evidence_ledger=backfill_scope != "full-audit",
+        emit_target_snapshot_metadata=targeted_istd_anchor is not None,
         emit_provisional_matrix=emit_provisional_matrix,
         emit_early_loser_shadow=emit_early_loser_shadow,
     )
@@ -531,7 +583,7 @@ def run_alignment(
                 )
             elif raw_workers > 1:
                 owner_output = run_owner_build_process(
-                    candidates,
+                    raw_owner_build_candidates,
                     sample_order=batch.sample_order,
                     raw_paths=raw_paths,
                     dll_dir=dll_dir,
@@ -577,7 +629,7 @@ def run_alignment(
                     stage="alignment.build_owners.extract_xic",
                 )
                 ownership = build_sample_local_owners(
-                    candidates,
+                    raw_owner_build_candidates,
                     raw_sources=timed_raw_sources_,
                     alignment_config=alignment_config,
                     peak_config=peak_config,
@@ -587,6 +639,28 @@ def run_alignment(
                     audit_evidence_mode=resolved_audit_evidence_mode,
                 )
                 record_timed_raw_sources(timed_raw_sources_, recorder=recorder)
+        injection_order: dict[str, int] | None = None
+        injection_order_source_schema: str | None = None
+        if sample_column_injection_order is not None:
+            injection_order, injection_order_source_schema = (
+                _read_sample_column_injection_order(sample_column_injection_order)
+            )
+            recorder.record(
+                "alignment.sample_column_injection_order",
+                elapsed_sec=0.0,
+                metrics={
+                    "ordered_samples": sum(
+                        1 for sample in batch.sample_order if sample in injection_order
+                    ),
+                    "unordered_samples": sum(
+                        1
+                        for sample in batch.sample_order
+                        if sample not in injection_order
+                    ),
+                    "source": str(sample_column_injection_order),
+                    "source_schema": injection_order_source_schema,
+                },
+            )
         edge_evidence: list[OwnerEdgeEvidence] | None = (
             []
             if outputs.edge_evidence_tsv is not None or drift_lookup is not None
@@ -597,11 +671,15 @@ def run_alignment(
                 owner_features = cluster_sample_local_owners(
                     ownership.owners,
                     config=alignment_config,
+                    sample_universe=frozenset(batch.sample_order),
+                    injection_order=injection_order,
                 )
             else:
                 owner_features = cluster_sample_local_owners(
                     ownership.owners,
                     config=alignment_config,
+                    sample_universe=frozenset(batch.sample_order),
+                    injection_order=injection_order,
                     drift_lookup=drift_lookup,
                     edge_evidence_sink=edge_evidence,
                 )
@@ -703,6 +781,12 @@ def run_alignment(
                     **request_summary,
                 }
             )
+        matrix_sample_order = batch.sample_order
+        if injection_order is not None:
+            matrix_sample_order = order_sample_columns_by_injection(
+                batch.sample_order,
+                injection_order,
+            )
         with recorder.stage("alignment.owner_backfill") as owner_backfill_stage:
             owner_backfill_candidate_audit_rows: tuple[
                 OwnerBackfillCandidateAuditRow,
@@ -716,9 +800,12 @@ def run_alignment(
                 OwnerBackfillRequestReuseObservation,
                 ...,
             ] = ()
+            rescued_cells: tuple[AlignedCell, ...] = ()
+            backfill_transaction_output: OwnerBackfillTransactionOutput | None = None
             if raw_workers > 1:
                 process_output = run_owner_backfill_process(
                     backfill_features,
+                    matrix_features=owner_features,
                     sample_order=batch.sample_order,
                     raw_paths=raw_paths,
                     dll_dir=dll_dir,
@@ -737,19 +824,22 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    emit_candidate_audit_rows=(
+                        outputs.backfill_candidate_audit_tsv is not None
+                    ),
                     progress_callback=lambda result: _record_owner_backfill_progress(
                         recorder,
                         result,
                     ),
+                    matrix_sample_order=matrix_sample_order,
                 )
-                rescued_cells = process_output.cells
+                if not isinstance(process_output, OwnerBackfillTransactionOutput):
+                    raise TypeError("process Backfill must return a transaction output")
+                backfill_transaction_output = process_output
                 owner_backfill_candidate_audit_rows = (
                     process_output.candidate_audit_rows
                 )
                 request_reuse_observations = process_output.request_reuse_observations
-                owner_backfill_peak_fact_observations = (
-                    process_output.peak_fact_observations
-                )
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(process_output.timing_stats),
                 )
@@ -802,6 +892,9 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    emit_candidate_audit_rows=(
+                        outputs.backfill_candidate_audit_tsv is not None
+                    ),
                 )
                 rescued_cells = backfill_result.cells
                 owner_backfill_candidate_audit_rows = (
@@ -818,38 +911,16 @@ def run_alignment(
             owner_backfill_stage.metrics.update(
                 _request_reuse_summary(request_reuse_observations)
             )
-        matrix_sample_order = batch.sample_order
-        if sample_column_injection_order is not None:
-            injection_order, injection_order_source_schema = (
-                _read_sample_column_injection_order(sample_column_injection_order)
-            )
-            matrix_sample_order = order_sample_columns_by_injection(
-                batch.sample_order,
-                injection_order,
-            )
-            recorder.record(
-                "alignment.sample_column_injection_order",
-                elapsed_sec=0.0,
-                metrics={
-                    "ordered_samples": sum(
-                        1 for sample in batch.sample_order if sample in injection_order
-                    ),
-                    "unordered_samples": sum(
-                        1
-                        for sample in batch.sample_order
-                        if sample not in injection_order
-                    ),
-                    "source": str(sample_column_injection_order),
-                    "source_schema": injection_order_source_schema,
-                },
-            )
         with recorder.stage("alignment.build_matrix"):
-            matrix = build_owner_alignment_matrix(
-                owner_features,
-                sample_order=matrix_sample_order,
-                ambiguous_by_sample={},
-                rescued_cells=rescued_cells,
-            )
+            if backfill_transaction_output is None:
+                matrix = build_owner_alignment_matrix(
+                    owner_features,
+                    sample_order=matrix_sample_order,
+                    ambiguous_by_sample={},
+                    rescued_cells=rescued_cells,
+                )
+            else:
+                matrix = backfill_transaction_output.matrix
         with recorder.stage("alignment.claim_registry"):
             matrix = apply_ms1_peak_claim_registry(matrix, alignment_config)
         with recorder.stage("alignment.primary_consolidation"):
@@ -857,19 +928,30 @@ def run_alignment(
         with recorder.stage("alignment.pre_backfill_recenter"):
             matrix = recenter_pre_backfill_identity_families(matrix)
         production_decisions = build_production_decisions(matrix, alignment_config)
-        peak_fact_provenance = _owner_backfill_peak_fact_provenance(
-            owner_backfill_peak_fact_observations,
-            matrix=matrix,
-            alignment_config=alignment_config,
-            production_decisions=production_decisions,
-            feature_order=tuple(
-                feature_id
-                for feature in owner_features
-                if (feature_id := getattr(feature, "feature_family_id", None))
-            ),
-            sample_order=matrix_sample_order,
-            signal_processing_profile=signal_processing_profile,
-        )
+        if backfill_transaction_output is None:
+            peak_fact_provenance = _owner_backfill_peak_fact_provenance(
+                owner_backfill_peak_fact_observations,
+                matrix=matrix,
+                alignment_config=alignment_config,
+                production_decisions=production_decisions,
+                feature_order=tuple(
+                    feature_id
+                    for feature in owner_features
+                    if (feature_id := getattr(feature, "feature_family_id", None))
+                ),
+                sample_order=matrix_sample_order,
+                signal_processing_profile=signal_processing_profile,
+                audit_evidence_mode=resolved_audit_evidence_mode,
+            )
+        else:
+            peak_fact_provenance = _owner_backfill_prepared_peak_fact_provenance(
+                backfill_transaction_output.prepared_peak_facts,
+                matrix=matrix,
+                alignment_config=alignment_config,
+                production_decisions=production_decisions,
+                signal_processing_profile=signal_processing_profile,
+                audit_evidence_mode=resolved_audit_evidence_mode,
+            )
         early_loser_shadow_report: EarlyLoserShadowReport | None = None
         if early_loser_shadow_proposal is not None:
             with recorder.stage("alignment.early_loser_shadow.compare") as stage:
@@ -952,6 +1034,16 @@ def run_alignment(
                     signal_processing_profile=signal_processing_profile,
                     owner_backfill_peak_fact_provenance_row_count=len(
                         peak_fact_provenance.rows
+                    ),
+                    targeted_istd_anchor_identity=getattr(
+                        targeted_istd_anchor,
+                        "target_config_identity",
+                        "",
+                    ),
+                    targeted_istd_target_snapshot_id=getattr(
+                        getattr(targeted_istd_anchor, "target_snapshot", None),
+                        "snapshot_id",
+                        "",
                     ),
                 ),
                 ownership=ownership,
@@ -1101,6 +1193,7 @@ def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResu
         legacy_kwargs.pop("expected_acquisition_sources", None)
         legacy_kwargs.pop("owner_backfill_xic_backend", None)
         legacy_kwargs.pop("signal_processing_profile", None)
+        legacy_kwargs.pop("emit_candidate_audit_rows", None)
         return OwnerBackfillResult(
             cells=tuple(build_owner_backfill_cells(*args, **legacy_kwargs)),
             candidate_audit_rows=(),
@@ -1117,9 +1210,45 @@ def _owner_backfill_peak_fact_provenance(
     feature_order: tuple[str, ...],
     sample_order: tuple[str, ...],
     signal_processing_profile: SignalProcessingProfile,
+    audit_evidence_mode: str,
 ):
     feature_rank = {feature_id: index for index, feature_id in enumerate(feature_order)}
     sample_rank = {sample_stem: index for index, sample_stem in enumerate(sample_order)}
+    prepared: list[PreparedOwnerBackfillPeakFact] = []
+    for observation in observations:
+        prepared.append(
+            prepare_owner_backfill_peak_fact(
+                observation,
+                feature_order_index=feature_rank.get(
+                    observation.cell.cluster_id,
+                    len(feature_rank),
+                ),
+                sample_order_index=sample_rank.get(
+                    observation.cell.sample_stem,
+                    len(sample_rank),
+                ),
+                profile=signal_processing_profile,
+            )
+        )
+    return _owner_backfill_prepared_peak_fact_provenance(
+        prepared,
+        matrix=matrix,
+        alignment_config=alignment_config,
+        production_decisions=production_decisions,
+        signal_processing_profile=signal_processing_profile,
+        audit_evidence_mode=audit_evidence_mode,
+    )
+
+
+def _owner_backfill_prepared_peak_fact_provenance(
+    prepared_peak_facts: Iterable[PreparedOwnerBackfillPeakFact],
+    *,
+    matrix,
+    alignment_config: AlignmentConfig,
+    production_decisions: ProductionDecisionSet,
+    signal_processing_profile: SignalProcessingProfile,
+    audit_evidence_mode: str,
+):
     final_cells: dict[tuple[str, str, str], AlignedCell] = {}
     rescued_cells_by_integration: dict[tuple[str, str], list[AlignedCell]] = {}
     rescued_cells_by_source_group: dict[tuple[str, str], list[AlignedCell]] = {}
@@ -1152,50 +1281,29 @@ def _owner_backfill_peak_fact_provenance(
                     (cell.sample_stem, source_group_id),
                     [],
                 ).append(cell)
-    projected: list[ProvenanceObservation] = []
-    selected: list[
-        tuple[
-            OwnerBackfillPeakFactObservation,
-            OwnerBackfillPeakFactStageProjection,
-        ]
-    ] = []
-    for observation in observations:
-        evaluation = observation.physical_evaluation
-        if evaluation is None:
-            raise ValueError(
-                "covered Untargeted provenance requires canonical physical evaluation"
-            )
-        stage = owner_backfill_peak_fact_stage_projection_from_observation(
-            observation,
-            feature_order_index=feature_rank.get(
-                observation.cell.cluster_id,
-                len(feature_rank),
-            ),
-            sample_order_index=sample_rank.get(
-                observation.cell.sample_stem,
-                len(sample_rank),
+    prepared = tuple(
+        sorted(
+            prepared_peak_facts,
+            key=lambda item: (
+                item.stage.feature_order_index,
+                item.stage.sample_order_index,
+                item.stage.candidate_index,
+                item.stage.candidate_phase,
             ),
         )
-        projected.append(ProvenanceObservation(stage, evaluation))
-        if observation.selected_for_output:
-            selected.append((observation, stage))
+    )
 
     cell_projections: list[OwnerBackfillCellProjectionV2] = []
     selected_cell_keys: set[tuple[str, str, str]] = set()
-    for observation, stage in selected:
-        evaluation = observation.physical_evaluation
-        if evaluation is None:
-            raise ValueError(
-                "selected Untargeted provenance requires canonical physical evaluation"
-            )
-        facts = evaluation.facts
-        if facts is None or evaluation.answer.physical_segment_id is None:
+    for prepared_peak_fact in prepared:
+        prepared_peak_fact.validate_binding()
+        selected_integration_id = (
+            prepared_peak_fact.selected_integration_authority_content_id
+        )
+        if selected_integration_id is None:
             continue
-        if observation.facts is None:
-            raise ValueError("selected physical fact lacks bounded owner receipt")
-        selected_integration_id = selected_integration_authority_projection(
-            observation.facts.integration
-        ).selected_integration_authority_content_id
+        stage = prepared_peak_fact.stage
+        physical_row = prepared_peak_fact.physical_row
         integration_candidates = rescued_cells_by_integration.get(
             (stage.sample_stem, selected_integration_id),
             (),
@@ -1237,9 +1345,9 @@ def _owner_backfill_peak_fact_provenance(
             stage=stage,
             cell=final_cell,
             profile_id=signal_processing_profile.profile_id,
-            selected_fact_content_id=facts.fact_content_id,
-            physical_answer_id=evaluation.answer.physical_answer_id,
-            physical_segment_id=evaluation.answer.physical_segment_id,
+            selected_fact_content_id=physical_row.fact_content_id,
+            physical_answer_id=physical_row.physical_answer_id,
+            physical_segment_id=physical_row.physical_segment_id,
         )
         decision_projection = production_cell_decision_projection(
             decision,
@@ -1272,8 +1380,21 @@ def _owner_backfill_peak_fact_provenance(
             "final written rescued cells require exact provenance coverage; "
             f"missing={missing!r}; unexpected={unexpected!r}"
         )
-    return build_owner_backfill_peak_fact_provenance_batch(
-        projected,
+    # One physical_question row per Backfill request, but only the rows a
+    # cell_projection selects carry a written Matrix value; 8RAW observed 853 of
+    # 43,126 (1.98%).  The unselected remainder is audit evidence, so it follows
+    # audit_evidence_mode like every other heavy audit artifact instead of being
+    # emitted unconditionally at every output level.
+    physical_rows = tuple(item.physical_row for item in prepared)
+    if audit_evidence_mode == "none":
+        selected_work_unit_keys = {
+            projection.selected_work_unit_key for projection in cell_projections
+        }
+        physical_rows = tuple(
+            row for row in physical_rows if row.work_unit_key in selected_work_unit_keys
+        )
+    return build_owner_backfill_peak_fact_provenance_batch_from_rows(
+        physical_rows,
         profile=signal_processing_profile,
         cell_projections=cell_projections,
     )
@@ -1412,7 +1533,11 @@ def _record_owner_build_progress(
 
 def _record_owner_backfill_progress(
     recorder: TimingRecorder,
-    result: OwnerBackfillSampleResult | OwnerBackfillWorkerError,
+    result: (
+        OwnerBackfillSampleResult
+        | OwnerBackfillSampleDeliveryReceipt
+        | OwnerBackfillWorkerError
+    ),
 ) -> None:
     if isinstance(result, OwnerBackfillWorkerError):
         recorder.record(
@@ -1428,7 +1553,11 @@ def _record_owner_backfill_progress(
         return
     metrics: dict[str, object] = {
         "sample_index": result.sample_index,
-        "rescued_cell_count": len(result.cells),
+        "rescued_cell_count": (
+            result.cell_count
+            if isinstance(result, OwnerBackfillSampleDeliveryReceipt)
+            else len(result.cells)
+        ),
     }
     metrics.update(_request_reuse_summary(result.request_reuse_observations))
     if result.timing_stats:

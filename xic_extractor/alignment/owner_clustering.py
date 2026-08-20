@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -89,19 +90,22 @@ def cluster_sample_local_owners(
     owners: tuple[SampleLocalMS1Owner, ...] | list[SampleLocalMS1Owner],
     *,
     config: AlignmentConfig,
+    sample_universe: frozenset[str] | None = None,
+    injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
 ) -> tuple[OwnerAlignedFeature, ...]:
     hypotheses = construct_cross_sample_peak_group_hypotheses(
         owners,
         config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
         drift_lookup=drift_lookup,
         edge_evidence_sink=edge_evidence_sink,
         edge_evaluator=evaluate_owner_edge,
     )
     return tuple(
-        _feature_from_peak_group_hypothesis(hypothesis)
-        for hypothesis in hypotheses
+        _feature_from_peak_group_hypothesis(hypothesis) for hypothesis in hypotheses
     )
 
 
@@ -115,8 +119,7 @@ def review_only_features_from_ambiguous_records(
         start_index=start_index,
     )
     return tuple(
-        _feature_from_peak_group_hypothesis(hypothesis)
-        for hypothesis in hypotheses
+        _feature_from_peak_group_hypothesis(hypothesis) for hypothesis in hypotheses
     )
 
 

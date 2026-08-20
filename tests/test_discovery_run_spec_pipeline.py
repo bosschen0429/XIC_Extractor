@@ -22,6 +22,10 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.alignment import pipeline as alignment_pipeline
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.csv_io import (
+    read_discovery_batch_index,
+    read_owner_bound_discovery_candidates_csv,
+)
 from xic_extractor.discovery.batch_contract import (
     validate_discovery_candidate_physical_bindings,
 )
@@ -37,6 +41,70 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+
+
+def test_physical_binding_validation_joins_canonical_candidates_by_id(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-order")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+    )
+    raw = _OwnerBoundFakeRawHandle(
+        spec.acquisition_inputs[0].acquisition_source,
+        [
+            _scan_event(
+                scan_number=202,
+                rt=8.0,
+                product_intensity=9000.0,
+                precursor_mz=258.1085,
+            ),
+            _scan_event(
+                scan_number=101,
+                rt=8.0,
+                product_intensity=3000.0,
+                precursor_mz=300.1085,
+            ),
+        ],
+        rt=np.asarray([7.9, 8.0, 8.1], dtype=float),
+        intensity=np.asarray([1.0, 100.0, 1.0], dtype=float),
+    )
+    outputs = run_discovery_batch(
+        (raw_path,),
+        output_dir=tmp_path / "discovery",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda _path, _dll_dir: raw,
+        run_spec=spec,
+    )
+    batch = read_discovery_batch_index(
+        outputs.batch_index_csv,
+        require_owner_closure=True,
+    )
+    receipt = batch.candidate_receipts[raw_path.stem]
+    assert receipt is not None
+    canonical_candidates = read_owner_bound_discovery_candidates_csv(
+        batch.candidate_csvs[raw_path.stem],
+        receipt=receipt,
+        require_successor_columns=True,
+    )
+    bindings = outputs.per_sample[0].physical_bindings
+    reordered_candidates = tuple(reversed(canonical_candidates))
+    assert tuple(binding.candidate.candidate_id for binding in bindings) != tuple(
+        candidate.candidate_id for candidate in reordered_candidates
+    )
+
+    validated = validate_discovery_candidate_physical_bindings(
+        run_spec=spec,
+        sample_stem=raw_path.stem,
+        candidates=reordered_candidates,
+        bindings=bindings,
+    )
+
+    assert validated == bindings
 
 
 def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(

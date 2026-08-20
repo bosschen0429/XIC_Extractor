@@ -65,6 +65,67 @@ def test_owner_complete_link_with_two_detected_cells_is_production_family() -> N
     assert decision.quantifiable_detected_count == 2
 
 
+def test_targeted_istd_trajectory_does_not_promote_one_detected_owner() -> None:
+    matrix = _matrix(
+        _feature(
+            "FAM001",
+            evidence="owner_targeted_istd_trajectory;owner_count=8",
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "rescued", 90.0, backfill_evidence=False),
+            _cell("s3", "FAM001", "rescued", 80.0, backfill_evidence=False),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is False
+    assert decision.identity_decision == "provisional_discovery"
+    assert decision.primary_evidence == "owner_targeted_istd_trajectory"
+    assert decision.identity_reason == "insufficient_detected_identity_support"
+
+
+def test_targeted_istd_trajectory_with_two_detected_uses_existing_multi_sample_policy(
+) -> None:
+    matrix = _matrix(
+        _feature(
+            "FAM001",
+            evidence="owner_targeted_istd_trajectory;owner_count=8",
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 90.0),
+            _cell("s3", "FAM001", "rescued", 80.0),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is True
+    assert decision.primary_evidence == "multi_sample_detected"
+    assert decision.identity_reason == "multi_sample_detected"
+
+
+def test_full_batch_continuity_uses_existing_multi_sample_identity_policy() -> None:
+    matrix = _matrix(
+        _feature("FAM001", evidence="owner_full_batch_continuity;owner_count=3"),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 90.0),
+            _cell("s3", "FAM001", "detected", 80.0),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is True
+    assert decision.identity_decision == "production_family"
+    assert decision.identity_confidence == "medium"
+    assert decision.primary_evidence == "multi_sample_detected"
+    assert decision.identity_reason == "multi_sample_detected"
+
+
 def test_matrix_identity_decision_record_explains_row_projection_policy() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
@@ -162,10 +223,7 @@ def test_scan_support_only_high_backfill_retains_seed_identity() -> None:
     assert decision.include_in_primary_matrix is True
     assert decision.identity_decision == "production_family"
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "backfill_rescue_review_only" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
@@ -385,8 +443,7 @@ def test_weak_seed_dr_backfill_dependency_with_cell_evidence_is_supported() -> N
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -522,10 +579,7 @@ def test_unexplained_rt_delta_beyond_preferred_blocks_backfill_promotion() -> No
     assert decision.identity_confidence == "review"
     assert decision.quantifiable_rescue_count == 0
     assert decision.review_rescue_count == 6
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
 
@@ -564,8 +618,7 @@ def test_adequate_seed_dr_backfill_dependency_remains_production() -> None:
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -614,8 +667,7 @@ def test_owner_events_tolerate_single_weak_seed_with_two_trusted() -> None:
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -686,10 +738,7 @@ def test_high_score_low_event_seeds_do_not_bypass_weak_seed_gate() -> None:
     assert decision.include_in_primary_matrix is True
     assert decision.identity_decision == "production_family"
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "weak_seed_backfill_dependency" in decision.row_flags
     assert "backfill_cell_evidence_required" in decision.row_flags
 
@@ -706,9 +755,7 @@ def test_matrix_identity_decision_record_ignores_seed_evidence_score_payload() -
     assert base_record.blockers == adversarial_record.blockers
     assert base_record.support == adversarial_record.support
     assert all("evidence_score" not in name for name, _value in base_record.gate)
-    assert all(
-        "evidence_score" not in name for name, _value in base_record.tie_break
-    )
+    assert all("evidence_score" not in name for name, _value in base_record.tie_break)
     assert not hasattr(base_record, "key")
 
 
@@ -780,8 +827,7 @@ def test_weak_seed_gate_reads_owner_events_when_trusted_support_is_thin() -> Non
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -821,10 +867,7 @@ def test_rt_local_apex_low_interference_alone_does_not_promote() -> None:
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
 
@@ -857,10 +900,7 @@ def test_owner_backfill_label_without_independent_support_does_not_promote() -> 
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
 
@@ -888,10 +928,7 @@ def test_neighboring_ms1_interference_blocks_backfill_promotion() -> None:
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert (
-        decision.identity_reason
-        == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
-    )
+    assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "neighboring_ms1_interference" in decision.row_flags
 
@@ -1336,3 +1373,113 @@ def _owner(
             ),
         ),
     )
+
+
+def _quantitation_owner(
+    sample_stem: str,
+    *,
+    snr: float,
+    apex_on_left_boundary: bool = False,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        sample_stem=sample_stem,
+        selected_integration=IntegrationResult(
+            rt_left_min=8.45,
+            rt_apex_min=8.45 if apex_on_left_boundary else 8.5,
+            rt_right_min=8.55,
+            raw_apex_rt_min=8.5,
+            rt_width_min=0.1,
+            height_raw=snr * 10.0,
+            height_smoothed=snr * 10.0,
+            area_raw_counts_seconds=1000.0,
+            baseline_residual_mad=10.0,
+        ),
+    )
+
+
+def _bounded_continuity_matrix(*, snr: float, evidence: str) -> AlignmentMatrix:
+    return _matrix(
+        _feature(
+            "FAM001",
+            evidence=evidence,
+            owners=(
+                _quantitation_owner("s1", snr=snr),
+                _quantitation_owner("s2", snr=snr),
+            ),
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 110.0),
+        ),
+    )
+
+
+def test_bounded_continuity_publishes_quantifiable_peaks() -> None:
+    decisions = build_matrix_identity_decisions(
+        _bounded_continuity_matrix(
+            snr=50.0,
+            evidence="owner_bounded_continuity;owner_count=2",
+        ),
+        AlignmentConfig(),
+    )
+
+    decision = decisions.row("FAM001")
+    assert decision.include_in_primary_matrix
+    assert decision.identity_decision == "production_family"
+
+
+def test_bounded_continuity_holds_peaks_below_quantitation_limit() -> None:
+    decisions = build_matrix_identity_decisions(
+        _bounded_continuity_matrix(
+            snr=4.0,
+            evidence="owner_bounded_continuity;owner_count=2",
+        ),
+        AlignmentConfig(),
+    )
+
+    decision = decisions.row("FAM001")
+    assert not decision.include_in_primary_matrix
+    assert decision.identity_decision == "provisional_discovery"
+    assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
+
+
+def test_bounded_continuity_does_not_count_endpoint_apex_as_quantifiable() -> None:
+    matrix = _matrix(
+        _feature(
+            "FAM001",
+            evidence="owner_bounded_continuity;owner_count=2",
+            owners=(
+                _quantitation_owner("s1", snr=50.0),
+                _quantitation_owner(
+                    "s2",
+                    snr=50.0,
+                    apex_on_left_boundary=True,
+                ),
+            ),
+        ),
+        (
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 110.0),
+        ),
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row(
+        "FAM001"
+    )
+
+    assert not decision.include_in_primary_matrix
+    assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"
+
+
+def test_quantitation_gate_does_not_reach_other_grouping_policies() -> None:
+    decisions = build_matrix_identity_decisions(
+        _bounded_continuity_matrix(
+            snr=4.0,
+            evidence="owner_full_batch_continuity;owner_count=2",
+        ),
+        AlignmentConfig(),
+    )
+
+    decision = decisions.row("FAM001")
+    assert decision.include_in_primary_matrix
+    assert decision.identity_reason != "bounded_continuity_below_quantitation_limit"

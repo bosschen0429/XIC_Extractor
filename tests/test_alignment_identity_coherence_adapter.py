@@ -4,12 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.identity_coherence.models import (
-    CandidateTrace,
-    IdentityCoherenceTraceRequest,
-    IdentityCoherenceTraceResult,
-)
-from xic_extractor.alignment.identity_coherence_adapter import (
+from xic_extractor.alignment.identity_coherence.adapter import (
     IdentityCoherenceDiagnosticRun,
     IdentityCoherenceSeedSource,
     build_cell_candidate_evidence,
@@ -18,6 +13,11 @@ from xic_extractor.alignment.identity_coherence_adapter import (
     candidate_is_non_seed_pool_member,
     retrieve_identity_coherence_trace,
     run_identity_coherence_diagnostic,
+)
+from xic_extractor.alignment.identity_coherence.models import (
+    CandidateTrace,
+    IdentityCoherenceTraceRequest,
+    IdentityCoherenceTraceResult,
 )
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.ownership_models import (

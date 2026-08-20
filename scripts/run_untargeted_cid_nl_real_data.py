@@ -588,7 +588,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--nl-min-intensity-ratio", type=_positive_float, default=0.01)
     parser.add_argument("--seed-rt-gap-min", type=_positive_float, default=0.20)
-    parser.add_argument("--ms1-search-padding-min", type=_positive_float, default=0.20)
+    parser.add_argument("--ms1-search-padding-min", type=_positive_float, default=0.35)
     parser.add_argument("--rt-min", type=_nonnegative_float, default=0.0)
     parser.add_argument("--rt-max", type=_positive_float, default=999.0)
     parser.add_argument(

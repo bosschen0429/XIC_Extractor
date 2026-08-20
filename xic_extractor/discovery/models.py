@@ -148,7 +148,7 @@ class DiscoverySettings:
     ms2_precursor_tol_da: float = 1.6
     nl_min_intensity_ratio: float = 0.01
     seed_rt_gap_min: float = 0.20
-    ms1_search_padding_min: float = 0.20
+    ms1_search_padding_min: float = 0.35
     rt_min: float = 0.0
     rt_max: float = 999.0
     resolver_mode: str = "local_minimum"

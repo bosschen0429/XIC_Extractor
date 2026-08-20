@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import Path
 
 from xic_extractor.discovery.evidence_score import score_discovery_evidence
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
@@ -12,7 +13,65 @@ def assign_peak_anchors(
     settings: DiscoverySettings | None = None,
 ) -> tuple[DiscoveryCandidate, ...]:
     anchored = _assign_peak_anchors(candidates)
-    return _score_all_evidence(anchored, settings=settings)
+    scored = _score_all_evidence(anchored, settings=settings)
+    return _bound_competing_inferred_precursor_hypotheses(scored)
+
+
+def _bound_competing_inferred_precursor_hypotheses(
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> tuple[DiscoveryCandidate, ...]:
+    competing: dict[
+        tuple[Path, str, str, int],
+        list[DiscoveryCandidate],
+    ] = {}
+    for candidate in candidates:
+        if (
+            candidate.discovery_candidate_state != "ms1_feature_nl_rescued"
+            or candidate.precursor_mz_basis != "product_plus_neutral_loss"
+        ):
+            continue
+        key = (
+            candidate.raw_file,
+            candidate.sample_stem,
+            candidate.neutral_loss_tag,
+            candidate.best_ms2_scan_id,
+        )
+        competing.setdefault(key, []).append(candidate)
+
+    demoted_by_id: dict[str, DiscoveryCandidate] = {}
+    for hypotheses in competing.values():
+        if len(hypotheses) < 2:
+            continue
+        preferred = min(hypotheses, key=_inferred_precursor_hypothesis_rank)
+        for hypothesis in hypotheses:
+            if hypothesis.candidate_id == preferred.candidate_id:
+                continue
+            demoted_by_id[hypothesis.candidate_id] = replace(
+                hypothesis,
+                discovery_candidate_state="review_only_ambiguous_coisolation",
+                reason=(
+                    "competing feature-backed inferred precursor hypotheses share "
+                    "the best MS2 scan; retained for review; "
+                    f"preferred_candidate_id={preferred.candidate_id}"
+                ),
+            )
+
+    return tuple(
+        demoted_by_id.get(candidate.candidate_id, candidate)
+        for candidate in candidates
+    )
+
+
+def _inferred_precursor_hypothesis_rank(
+    candidate: DiscoveryCandidate,
+) -> tuple[float, float, float, str]:
+    precursor_delta = candidate.scan_precursor_delta_da
+    return (
+        -float(candidate.evidence_score),
+        -candidate.ms2_product_max_intensity,
+        float("inf") if precursor_delta is None else abs(precursor_delta),
+        candidate.candidate_id,
+    )
 
 
 def _assign_peak_anchors(

@@ -102,6 +102,7 @@ _DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
         "discovery_ms1_exact_scan_window_count",
         "discovery_ms1_predicted_chunked_call_count",
         "discovery_ms1_batch_max_requests",
+        "discovery_ms1_reacquisition_request_count",
         "discovery_ms1_predicted_call_reduction_pct",
     }
 )
@@ -1276,7 +1277,10 @@ def _record_discovery_ms1_measurements(
     nonempty_group_count = (
         measurements.input_group_count - measurements.empty_group_count
     )
-    if runtime_metrics.logical_xic_request_count != nonempty_group_count:
+    if measurements.initial_request_count > nonempty_group_count or (
+        runtime_metrics.logical_xic_request_count
+        != measurements.initial_request_count + measurements.reacquisition_request_count
+    ):
         raise ValueError(
             "Discovery MS1 acquisition receipts do not cover the input population"
         )
@@ -1338,6 +1342,12 @@ def _record_discovery_ms1_measurements(
             discovery_source,
         ),
         (
+            "discovery_ms1_reacquisition_request_count",
+            measurements.reacquisition_request_count,
+            "requests",
+            discovery_source,
+        ),
+        (
             "discovery_ms1_predicted_call_reduction_pct",
             (
                 0.0
@@ -1381,6 +1391,7 @@ def _record_unavailable_discovery_ms1_measurements(
         ("discovery_ms1_exact_scan_window_count", "windows"),
         ("discovery_ms1_predicted_chunked_call_count", "calls"),
         ("discovery_ms1_batch_max_requests", "requests/batch"),
+        ("discovery_ms1_reacquisition_request_count", "requests"),
         ("discovery_ms1_predicted_call_reduction_pct", "percent"),
     )
     for metric, unit in unavailable:

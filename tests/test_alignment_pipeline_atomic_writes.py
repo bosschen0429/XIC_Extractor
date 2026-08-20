@@ -129,6 +129,7 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
         owners,
         *,
         config,
+        sample_universe=None,
         drift_lookup=None,
         edge_evidence_sink=None,
     ):

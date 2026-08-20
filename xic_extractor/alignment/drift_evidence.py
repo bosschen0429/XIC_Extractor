@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import statistics
+from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -9,6 +12,9 @@ from typing import Literal
 
 from openpyxl import load_workbook
 
+from xic_extractor.alignment.identity_gates import is_dr_neutral_loss_tag
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import TargetListSnapshot
 from xic_extractor.injection_rolling import read_injection_order, rolling_median_rt
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
@@ -23,6 +29,8 @@ LocalTrajectoryStatus = Literal[
 LOCAL_TRAJECTORY_VALIDATION_STATUS = "shadow_ready"
 LOCAL_TRAJECTORY_PRODUCT_AUTHORITY = "none"
 _LOCAL_TRAJECTORY_ASSESSMENT_MINT_TOKEN = object()
+_TARGETED_ISTD_ANCHOR_MINT_TOKEN = object()
+_DNA_DR_NEUTRAL_LOSS_DA = 116.0474
 
 
 @dataclass(frozen=True)
@@ -34,6 +42,157 @@ class SampleDriftEvidence:
     local_trend_rt_min: float
     rt_drift_delta_min: float
     source: Literal["targeted_istd_trend", "batch_istd_trend"]
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedIstdIdentityAnchor:
+    """Run-local target anchor for the known DNA dR ISTD lane.
+
+    The anchor is derived from the owner-validated target definitions and the
+    existing targeted ISTD workbook labels.  It is an internal grouping
+    context, not a second grouping owner or a persisted Matrix identity.
+    """
+
+    target_snapshot: TargetListSnapshot
+    observed_labels: tuple[str, ...]
+    _mint_token: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._mint_token is not _TARGETED_ISTD_ANCHOR_MINT_TOKEN:
+            raise ValueError(
+                "targeted ISTD identity anchors must be minted by the owner"
+            )
+        if not isinstance(self.target_snapshot, TargetListSnapshot):
+            raise TypeError("target_snapshot must be an owner-minted snapshot")
+        labels = tuple(
+            definition.target.label
+            for definition in self.target_snapshot.definitions
+        )
+        if len(labels) != len(set(labels)):
+            raise ValueError("targeted ISTD anchor targets must have unique labels")
+        if not isinstance(self.observed_labels, tuple):
+            raise TypeError("observed_labels must be a tuple")
+        if (
+            any(
+                not isinstance(label, str) or not label.strip()
+                for label in self.observed_labels
+            )
+            or self.observed_labels != tuple(sorted(set(self.observed_labels)))
+        ):
+            raise ValueError("observed_labels must be canonical sorted text")
+
+    def matching_target(self, family: object) -> Target | None:
+        """Return a unique configured ISTD match for one aligned family."""
+
+        if not is_dr_neutral_loss_tag(str(getattr(family, "neutral_loss_tag", ""))):
+            return None
+        family_mz = _finite_float(getattr(family, "family_center_mz", None))
+        if family_mz is None:
+            family_mz = _finite_float(getattr(family, "cluster_center_mz", None))
+        if family_mz is None:
+            return None
+        family_rt = _finite_float(getattr(family, "family_center_rt", None))
+        if family_rt is None:
+            family_rt = _finite_float(getattr(family, "cluster_center_rt", None))
+        if family_rt is None:
+            return None
+        candidates = tuple(
+            target
+            for target in self.targets
+            if target.label in self.observed_labels
+            and self.matches_observation(
+                target,
+                neutral_loss_tag=str(getattr(family, "neutral_loss_tag", "")),
+                precursor_mz=family_mz,
+                apex_rt=family_rt,
+            )
+        )
+        return candidates[0] if len(candidates) == 1 else None
+
+    def matches_observation(
+        self,
+        target: Target,
+        *,
+        neutral_loss_tag: str,
+        precursor_mz: float,
+        apex_rt: float,
+    ) -> bool:
+        """Check one owner observation against the matched target envelope."""
+
+        return (
+            target.is_istd
+            and target.label in self.observed_labels
+            and target.neutral_loss_da is not None
+            and math.isclose(
+                target.neutral_loss_da,
+                _DNA_DR_NEUTRAL_LOSS_DA,
+                rel_tol=0.0,
+                abs_tol=1e-6,
+            )
+            and target.rt_min <= apex_rt <= target.rt_max
+            and abs(precursor_mz - target.mz)
+            <= target.mz * target.ppm_tol / 1_000_000.0
+            and is_dr_neutral_loss_tag(neutral_loss_tag)
+        )
+
+    def matching_family_ids(self, families: Iterable[object]) -> frozenset[str]:
+        return frozenset(
+            family_id
+            for family in families
+            if (family_id := _family_id(family))
+            and self.matching_target(family) is not None
+        )
+
+    @property
+    def target_config_identity(self) -> str:
+        """Stable identity of the owner-validated target snapshot."""
+
+        payload = {
+            "snapshot_id": self.target_snapshot.snapshot_id,
+            "observed_labels": list(self.observed_labels),
+        }
+        return hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+    @property
+    def targets(self) -> tuple[Target, ...]:
+        return tuple(
+            definition.target for definition in self.target_snapshot.definitions
+        )
+
+
+def build_targeted_istd_identity_anchor(
+    target_snapshot: TargetListSnapshot,
+    *,
+    observed_labels: Iterable[str],
+) -> TargetedIstdIdentityAnchor:
+    """Mint a bounded target anchor from existing owner inputs."""
+
+    if not isinstance(target_snapshot, TargetListSnapshot):
+        raise TypeError("target_snapshot must be an owner-minted snapshot")
+    labels = tuple(
+        sorted(
+            {
+                str(label).strip()
+                for label in observed_labels
+                if str(label).strip()
+            }
+        )
+    )
+    if not target_snapshot.definitions or not labels:
+        raise ValueError("ISTD identity anchor requires targets and observed labels")
+    return TargetedIstdIdentityAnchor(
+        target_snapshot=target_snapshot,
+        observed_labels=labels,
+        _mint_token=_TARGETED_ISTD_ANCHOR_MINT_TOKEN,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,6 +533,7 @@ def _validate_local_trajectory_authority(
 @dataclass(frozen=True)
 class DriftEvidenceLookup:
     points: tuple[SampleDriftEvidence, ...]
+    istd_identity_anchor: TargetedIstdIdentityAnchor | None = None
 
     @property
     def source(self) -> DriftPriorSource:
@@ -422,6 +582,8 @@ def read_targeted_istd_drift_evidence(
     targeted_workbook: Path,
     sample_info: Path,
     local_window: int = 4,
+    *,
+    target_snapshot: TargetListSnapshot | None = None,
 ) -> DriftEvidenceLookup:
     injection_order = read_injection_order(sample_info)
     rt_by_label = _read_istd_rt_by_label(targeted_workbook)
@@ -459,7 +621,14 @@ def read_targeted_istd_drift_evidence(
                     source="targeted_istd_trend",
                 )
             )
-    return DriftEvidenceLookup(points=tuple(points))
+    identity_anchor = _default_targeted_istd_identity_anchor(
+        observed_labels=tuple(rt_by_label),
+        target_snapshot=target_snapshot,
+    )
+    return DriftEvidenceLookup(
+        points=tuple(points),
+        istd_identity_anchor=identity_anchor,
+    )
 
 
 def _read_istd_rt_by_label(targeted_workbook: Path) -> dict[str, dict[str, float]]:
@@ -492,6 +661,48 @@ def _read_istd_rt_by_label(targeted_workbook: Path) -> dict[str, dict[str, float
         return out
     finally:
         wb.close()
+
+
+def _default_targeted_istd_identity_anchor(
+    *,
+    observed_labels: Iterable[str],
+    target_snapshot: TargetListSnapshot | None,
+) -> TargetedIstdIdentityAnchor | None:
+    if target_snapshot is None:
+        return None
+    targets = tuple(
+        definition.target for definition in target_snapshot.definitions
+    )
+    known_labels = {target.label for target in targets}
+    labels = tuple(
+        sorted(
+            {
+                str(label).strip()
+                for label in observed_labels
+                if str(label).strip() in known_labels
+            }
+        )
+    )
+    if not targets or not labels:
+        return None
+    return build_targeted_istd_identity_anchor(
+        target_snapshot,
+        observed_labels=labels,
+    )
+
+
+def _family_id(family: object) -> str:
+    return str(
+        getattr(family, "feature_family_id", "")
+        or getattr(family, "cluster_id", "")
+    ).strip()
+
+
+def _finite_float(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    numeric = float(value)
+    return numeric if math.isfinite(numeric) else None
 
 
 def _header_indexes(header: tuple[object, ...]) -> dict[str, int]:

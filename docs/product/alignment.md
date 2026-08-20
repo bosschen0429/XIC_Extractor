@@ -13,6 +13,114 @@ contracts for review and downstream product decisions.
   cross-sample owner/group hypotheses based on evidence. It does not create the
   first sample-local Discovery hit and does not treat a single method match as
   cross-sample identity proof by itself.
+- The RAW owner-build route consumes only Discovery's MS1-feature-backed
+  candidate states. `review_only_orphan_nl` and other review-only states remain
+  in Discovery review/audit artifacts but do not receive a second RAW XIC
+  search merely by entering Alignment. This keeps candidate recall available
+  for review without turning an unavailable physical feature into owner-build,
+  group, Matrix, or Backfill work.
+- Two resolved peaks in one sample count as an unresolved doublet only when
+  their apex separation is chromatographically meaningful against the narrower
+  of them, not on an absolute bound alone. One MS1 peak spans many scans and its
+  neutral loss can be seeded from several, and each seed opens its own
+  resolution window, so the same peak returns with apexes a few seconds apart
+  while the seeds sit tens of seconds apart. Below roughly half a peak width the
+  trace does not show two apexes, so the pair is not a doublet and its component
+  is not discarded. `owner_apex_close_sec` still applies as the lower bound.
+- Cross-sample grouping uses all-pairs strong-edge complete-link by default. A
+  connected RT/mass continuum may replace the split only when it contains one
+  clean detected owner from every sample in the explicit Alignment batch,
+  every accepted local edge passes the pair hard gates, and complete-link would
+  otherwise split it. Incomplete groups, same-sample recurrences, weak-quality
+  owners, and RT discontinuities remain on complete-link. The recovered family
+  is `owner_full_batch_continuity`; Matrix identity evaluates it through the
+  existing `multi_sample_detected` policy rather than treating it as all-pairs
+  `owner_complete_link` evidence. A later owner may reconcile multiple
+  compatible groups in this connected-link pass only when the combined group
+  passes the hard envelope and every pair is free of a blocked edge.
+  Complete-link remains the downstream hard partition; single-link chaining is
+  not family identity authority.
+- A partial connected component may replace its complete-link split only with
+  complete unique explicit injection order for every owner, the symmetric
+  precursor/product/loss hard envelope, and bounded RT continuity on every
+  adjacent injection-order edge. The recovered family is
+  `owner_injection_trajectory`; the full-batch rescue keeps priority. Missing or
+  duplicate order, a hard-envelope conflict, or an RT discontinuity remains on
+  complete-link; `drift_lookup` is not an alternate order source. Parallel
+  connected components remain separate, and this rule does not bridge groups or
+  add a control plane.
+- A connected component that neither full-batch nor injection-trajectory rescue
+  admits may still replace its complete-link split when the whole component
+  stays inside the symmetric precursor/product/loss hard envelope and its apex
+  RT span stays within the group span bound. The recovered family is
+  `owner_bounded_continuity`; full-batch and injection-trajectory rescues keep
+  priority and their own policy labels.
+- After the partition settles, the grouping owner may resolve a duplicate-owner
+  group only through a typed identity anchor. Current product behavior enables
+  this for validated targeted ISTD trajectories: every subordinate sample is
+  already owned by the larger same-target trajectory, both groups bind to the
+  same owner-minted target snapshot, and the combined precursor envelope stays
+  valid. Aggregate m/z/RT/product/loss geometry alone is not same-peak evidence;
+  an untyped parallel trajectory remains an independent group. A resolved group
+  stays a review row carrying `owner_duplicate_group_resolved_loser;winner=<id>`,
+  `consolidation_state=primary_loser`, and its winner identity; the winner
+  carries `owner_duplicate_group_resolved_winner`. Resolution is one level
+  deep and never bridges groups that would add sample coverage, so it cannot
+  chain. Because a resolved group is `review_only`, Backfill issues no request
+  for it: the duplicate-owner decision belongs to this owner, not to Backfill
+  and not to a second grouping stage.
+- Cross-sample edge seed support is rated on the peak Alignment resolved, not
+  on Discovery's `evidence_score`. Every owner exists because ownership
+  re-extracted the XIC and found a peak, so the Discovery score -- which is
+  dominated by whether Discovery's own MS1 search succeeded -- judges an owner
+  by a search its construction already superseded. The rating uses
+  `height_raw / baseline_residual_mad` from the owner's `selected_integration`,
+  at the detection-limit and quantitation-limit conventions: both peaks at or
+  above the quantitation limit with the anchor MS2 seed count is `strong`, both
+  at or above the detection limit is `moderate`, anything below is `weak`. The
+  MS2 seed count is kept because Alignment does not re-derive it. An owner
+  whose integration recorded no baseline residual keeps the Discovery-score
+  rating, so paths that do not measure a residual are unchanged. This changes
+  the `seed_support_level` column in the edge evidence artifact.
+- Owner quantification is eligible only when the selected integration apex is
+  strictly inside its selected left/right bounds. An endpoint apex remains an
+  owner and remains visible in diagnostics, but its Matrix cell is
+  `unchecked` with no area or selected integration, and it does not count as a
+  detected owner for the Backfill sample-quorum gate. A Backfill rescue may
+  replace that censored owner only when its scalar and selected-integration
+  boundaries are both interior and its primary Matrix area is valid; an
+  endpoint or incomplete rescue is censored by the same rule. This is a
+  quantification-authority guard, not a new peak-selection or Backfill route.
+- For the observed, configured DNA dR ISTD lane only, an owner-minted targeted
+  ISTD anchor from the current run's target-list snapshot may reconcile
+  sample-disjoint groups that independently match the same configured m/z/RT
+  target and form one locally continuous injection-order trajectory. Within
+  that bounded anchor, product-m/z or observed-loss disagreement is retained as
+  measurement evidence but is not a chemical-identity hard split; the known
+  standard identity is stronger evidence. Same-sample occupancy, precursor-m/z
+  conflict, missing or duplicate injection order, RT discontinuity, weak owner
+  quality, and untyped/unobserved targets still block reconciliation.
+  `tail_supported` is not weak and remains admissible. Parallel same-sample
+  peaks remain separate. Reconciliation is independent of group processing
+  order: a compatibility component merges only when its complete owner union
+  passes the same hard and trajectory validation. Otherwise every member stays
+  separate instead of choosing a track greedily. A smaller group whose samples
+  are a strict subset of another same-target group cannot bridge into that
+  containing trajectory; it may reconcile only with other subordinate groups
+  and may be demoted only through the existing duplicate-owner review path.
+  Without the mapping or typed snapshot, this rule is absent. This remains
+  inside the Alignment grouping owner: it does not promote a rescued cell,
+  write a Matrix value directly, infer unknown-family chemical identity, add a
+  public knob, or create a second control plane.
+- An `owner_bounded_continuity` family reaches the primary matrix only when at
+  least two of its owners carry a resolved peak at or above the quantitation
+  limit. Bounded continuity admits a group on detection-grade evidence, which is
+  the right bar for deciding two peaks are the same entity and the wrong one for
+  publishing a quantity; a family that misses it stays `provisional_discovery`
+  with `bounded_continuity_below_quantitation_limit` and keeps its grouping, so
+  Backfill scope and family identity are unaffected. The gate reads the family
+  evidence, not the primary evidence token, because `promotion_policy` scopes
+  itself on that token; it does not apply to any other grouping policy.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional
@@ -38,6 +146,21 @@ contracts for review and downstream product decisions.
   compatibility fields, but they do not promote rows into production authority.
 - Output filenames, row ordering, column schema, schema-version signals, and
   identity/provenance sidecars are public contracts.
+- Multi-process Owner Backfill delivers each complete sample result into one
+  private Alignment transaction. The transaction replaces rescued cells in the
+  feature-major/sample-major Matrix builder, projects live peak facts through
+  the existing provenance owner, and retains audit/runtime attachments in
+  canonical owner order before releasing the worker result graph. Completion
+  order cannot change Matrix or sidecar ordering. Any worker or delivery
+  failure discards the unpublished transaction; only an all-sample success may
+  freeze the Matrix and reach the existing atomic output publication seam.
+  Process workers project live peak-fact observations through the existing
+  provenance owner before IPC and send only typed physical rows, their bounded
+  selected-integration projection, and feature/sample order binding. The parent
+  revalidates those bindings; raw trace and prepared-signal graphs do not cross
+  this internal delivery boundary.
+  This is an internal retention mechanism, not a public configuration value,
+  persisted shard, alternate Backfill route, or second Matrix authority.
 - Runner scripts orchestrate inputs, profiles, and output locations. Reusable
   grouping, ownership, identity, writer, and sidecar behavior belongs in
   package modules or explicit specs.
@@ -135,15 +258,17 @@ not change a productization maturity tier, active lane, public output schema,
 selected area/counting behavior, or Matrix authority, and the productization
 control plane remains unchanged.
 
-## Shadow ModeTrack Assignment
+## Diagnostic ModeTrack Review
 
-Issue #179 adds a second internal, no-write fact at the existing M3
-identity/trajectory boundary. `FamilyContextRef` describes one wide m/z/RT
+ModeTrack is an opt-in debug and batch-review diagnostic downstream of the
+existing Alignment group owner. It is not an automatic Alignment stage, a
+fallback grouping route, or a candidate product control plane. Running normal
+Alignment does not invoke it. `FamilyContextRef` describes one wide m/z/RT
 observation universe and references zero or more existing
-`group_hypothesis_id` values. Each existing group is one ModeTrack; neither the
-Family nor the ModeTrack is a chemical-identity claim. Public or legacy family
-labels, `method_subject_id`, display labels, and ordinals do not mint or replace
-the internal Family context.
+`group_hypothesis_id` values for diagnostic comparison. Each existing group is
+one ModeTrack; neither the Family nor the ModeTrack is a chemical-identity
+claim. Public or legacy family labels, `method_subject_id`, display labels, and
+ordinals do not mint or replace the internal Family context.
 
 The initial model set is fit once per Family from canonical direct-SUPPORT
 assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint
@@ -251,10 +376,16 @@ defaults, changes M1, establishes chemical identity, or grants a new writer
 authority.
 
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
-`shadow_ready / product_authority=none` structure. The inconclusive retained
-evidence does not alter Targeted behavior, Backfill, acceptance manifests,
-QuantMatrixVersion, Matrix values, public schema, workbook output, GUI, CLI,
-configuration, or defaults.
+diagnostic structures with `product_authority=none`. Their owner-specific
+`shadow_ready` token describes retained artifact validity; opt-in runner output
+is `diagnostic_only` and does not register a productization lane. The runner may
+write task-local review tables, but those tables do not replace canonical
+Alignment, Backfill,
+QuantMatrixVersion, Matrix, workbook, GUI, configuration, or default outputs.
+Retain this diagnostic only while an operator or validation gate consumes its
+crossing, ambiguity, or typed-lineage review. If those consumers disappear,
+remove the entry point and workflow, retaining only primitives reused by the
+Alignment owner.
 
 ## Retained Validation Anchors
 
@@ -278,7 +409,7 @@ configuration, or defaults.
 | `alignment_matrix_identity.tsv` | Identity and owner traceability |
 | `alignment_backfill_cell_evidence.tsv` | Backfill-related cell evidence sidecar |
 | `alignment_run_metadata.json` | Conditional run settings and provenance sidecar |
-| `alignment-results-v2/v3` metadata | Schema-version signals for public behavior changes |
+| `alignment-results-v2/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored v3 accepts the legacy or canonical Matrix value policy, historical paired targeted-ISTD v3 requires the canonical policy, and v4 requires that same paired binding and canonical policy |
 
 ## Boundaries
 
@@ -300,7 +431,7 @@ Before changing alignment behavior, require the relevant subset of:
 - For shadow identity settlement, H1a/H1b/H2/H3 truth tables, missing/poor
   landmark cases, leave-one-landmark-out behavior, adversarial component
   transfer, split lifecycle/lineage, and child-local `S` recomputation.
-- For shadow ModeTrack assignment, optional occupancy, per-track local drift,
+- For diagnostic ModeTrack review, optional occupancy, per-track local drift,
   unique/both/neither interval cases, sparse anchors, missing/poor landmarks,
   bounded interpolation/extrapolation, crossing intervals, non-training
   rejection, request/attempt/physical-observation substitution, deterministic

@@ -1,4 +1,4 @@
-"""Finalize a reviewed fresh ModeTrack projection into task-local tables."""
+"""Finalize ModeTrack debug/batch review into non-authoritative local tables."""
 
 from __future__ import annotations
 

@@ -139,6 +139,10 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
         serialize_processing_run_spec(cast(ProcessingRunSpec, spec)) for spec in specs
     )
     assert serialized[0] == serialized[1] == serialized[2]
+    assert {
+        cast(ProcessingRunSpec, spec).discovery_method.settings.ms1_search_padding_min
+        for spec in specs
+    } == {0.35}
     assert len({cast(ProcessingRunSpec, spec).run_spec_id for spec in specs}) == 1
     assert len({cast(ProcessingRunSpec, spec).profile_id for spec in specs}) == 1
     assert (

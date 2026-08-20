@@ -75,6 +75,8 @@ def test_pipeline_records_alignment_timing_stages(
         "emit_provisional_matrix": False,
         "emit_early_loser_shadow": False,
         "drift_prior_source": "none",
+        "targeted_istd_anchor_identity": "none",
+        "targeted_istd_target_snapshot_id": "none",
     }
     assert records_by_stage["alignment.audit_evidence_mode"].metrics == {
         "requested_audit_evidence_mode": "auto",

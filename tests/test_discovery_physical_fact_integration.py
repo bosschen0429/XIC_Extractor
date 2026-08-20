@@ -57,6 +57,29 @@ from xic_extractor.xic_models import XICTrace
 _TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
 
 
+class _CadenceBoundRaw:
+    def __init__(self, source, rt: np.ndarray, intensity: np.ndarray) -> None:
+        self.acquisition_source = source
+        self.rt = rt
+        self.intensity = intensity
+        self.raw_chromatogram_call_count = 0
+        self.request_batches = []
+
+    def extract_xic_many(self, requests):
+        self.request_batches.append(tuple(requests))
+        self.raw_chromatogram_call_count += 1
+        traces = []
+        for request in requests:
+            mask = (self.rt >= request.rt_min) & (self.rt <= request.rt_max)
+            traces.append(
+                XICTrace.from_arrays(self.rt[mask], self.intensity[mask])
+            )
+        return tuple(traces)
+
+    def scan_window_for_request(self, request):
+        return (int(request.rt_min * 100), int(request.rt_max * 100))
+
+
 def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -68,11 +91,12 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         (raw_path,), discovery_settings=settings
     )
     handle_source = spec.acquisition_inputs[0].acquisition_source
+    trace_rt = np.linspace(7.20, 8.40, 25)
     raw = _OwnerBoundFakeRawHandle(
         handle_source,
         [_scan_event(scan_number=101, rt=7.80)],
-        rt=np.asarray([7.70, 7.80, 7.90]),
-        intensity=np.asarray([10.0, 600.0, 20.0]),
+        rt=trace_rt,
+        intensity=100.0 + 500.0 * np.exp(-0.5 * ((trace_rt - 7.80) / 0.08) ** 2),
     )
     from xic_extractor.peak_detection import evidence_facts as physical_owner
 
@@ -272,6 +296,226 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
     assert raw.raw_chromatogram_call_count == 1
 
 
+def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.55, 13.25, 0.10, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.08) ** 2)
+
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group(
+        (
+            _seed(scan_number=10, rt=12.063),
+            replace(
+                _seed(scan_number=11, rt=12.181),
+                precursor_mz_basis="product_plus_neutral_loss",
+            ),
+        )
+    )
+    assert group.precursor_mz_basis == "mixed"
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert len(result.measurements.acquisition_batches) == 2
+    assert result.measurements.initial_request_count == 1
+    assert result.measurements.reacquisition_request_count == 1
+    first, reacquired = result.measurements.acquisition_batches
+    assert first.traces[0].coordinate.trace_point_count < profile.window_points
+    assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    assert result.physical_evaluations[0].evaluation.state == "available"
+    assert (
+        result.physical_evaluations[0].evaluation.prepared.profile_id
+        == profile.profile_id
+    )
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+    final_request = reacquired.traces[0].coordinate.request
+    assert candidate.ms1_search_rt_min == final_request.rt_min
+    assert candidate.ms1_search_rt_max == final_request.rt_max
+
+
+def test_single_seed_discovery_acquires_complete_physical_context(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
+    )
+
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group((_seed(scan_number=10, rt=12.063),))
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert result.measurements.reacquisition_request_count == 0
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+    assert candidate.ms1_peak_rt_end is not None
+    assert candidate.ms1_search_rt_max - candidate.ms1_peak_rt_end >= 0.04
+    full_trace_evaluation = evaluate_physical_peak(
+        prepare_physical_signal(full_rt, full_intensity, profile=profile),
+        selection_subject_id="full-trace-oracle",
+        query_rt_min=12.063,
+        request_context_rt_start_min=float(full_rt[0]),
+        request_context_rt_end_min=float(full_rt[-1]),
+    )
+    assert full_trace_evaluation.facts is not None
+    assert candidate.ms1_peak_rt_start == pytest.approx(
+        full_trace_evaluation.facts.left_rt_min,
+        abs=0.04,
+    )
+    assert candidate.ms1_peak_rt_end == pytest.approx(
+        full_trace_evaluation.facts.right_rt_min,
+        abs=0.04,
+    )
+    assert candidate.ms1_area == pytest.approx(
+        full_trace_evaluation.facts.area_counts_seconds,
+        rel=0.10,
+    )
+
+
+def test_product_inferred_single_seed_uses_widened_initial_context(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
+    )
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group(
+        (
+            replace(
+                _seed(
+                    scan_number=10,
+                    rt=12.063,
+                    product_intensity=1_000_000.0,
+                ),
+                precursor_mz_basis="product_plus_neutral_loss",
+            ),
+        )
+    )
+    assert group.precursor_mz_basis == "product_plus_neutral_loss"
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert result.measurements.reacquisition_request_count == 0
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_trace_quality == "clean"
+    assert candidate.ms1_search_rt_min == pytest.approx(11.713)
+    assert candidate.ms1_search_rt_max == pytest.approx(12.413)
+    assert candidate.ms1_apex_rt == pytest.approx(12.14)
+
+
+def test_strong_product_inferred_seed_group_uses_widened_initial_context(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
+    )
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group(
+        tuple(
+            replace(
+                _seed(
+                    scan_number=scan_number,
+                    rt=rt,
+                    product_intensity=1_000_000.0,
+                ),
+                precursor_mz_basis="product_plus_neutral_loss",
+            )
+            for scan_number, rt in ((10, 12.063), (11, 12.100))
+        )
+    )
+    assert group.precursor_mz_basis == "product_plus_neutral_loss"
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert len(result.measurements.acquisition_batches) == 1
+    assert result.measurements.reacquisition_request_count == 0
+    initial = result.measurements.acquisition_batches[0]
+    assert initial.traces[0].coordinate.trace_point_count >= profile.window_points
+    initial_request = initial.traces[0].coordinate.request
+    assert initial_request.rt_min == pytest.approx(11.713)
+    assert initial_request.rt_max == pytest.approx(12.450)
+    work = result.physical_work_manifest[0]
+    assert work.query_rt_min == pytest.approx(12.063)
+    assert work.xic_rt_min == initial_request.rt_min
+    assert work.xic_rt_max == initial_request.rt_max
+    assert work.xic_rt_min <= work.context_rt_start_min <= work.query_rt_min
+    assert work.query_rt_min <= work.context_rt_end_min <= work.xic_rt_max
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+
+
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -389,6 +633,49 @@ def test_alignment_builds_owner_from_discovery_binding_without_resolver(
                 ),
             ),
         )
+
+
+def test_alignment_review_only_discovery_binding_does_not_build_owner(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.ownership import (
+        build_sample_local_owners_from_discovery_bindings,
+    )
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        _OwnerBoundBatchRaw(source),
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+    )
+    binding = discovery.physical_bindings[0]
+    review_only_binding = replace(
+        binding,
+        candidate=replace(
+            binding.candidate,
+            discovery_candidate_state="review_only_ambiguous_coisolation",
+        ),
+    )
+
+    ownership = build_sample_local_owners_from_discovery_bindings(
+        (review_only_binding,),
+        alignment_config=AlignmentConfig(),
+    )
+
+    assert ownership.owners == ()
+    assert ownership.assignments == ()
+    assert ownership.ambiguous_records == ()
 
 
 def test_physical_fact_owner_rejects_cross_acquisition_reassembly(

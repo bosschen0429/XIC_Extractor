@@ -10,6 +10,12 @@ workflow projection and Backfill/ProductWriter authority path.
 ## Contract
 
 - Discovery produces candidate and review surfaces, not final product authority.
+- Discovery candidate state is an execution boundary as well as a review
+  label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
+  MS1-feature-backed inputs to Alignment RAW owner build. Review-only states
+  remain in the complete candidate/review universe and do not independently
+  authorize another RAW XIC search, cross-sample grouping, Matrix identity, or
+  Backfill.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
@@ -17,11 +23,25 @@ workflow projection and Backfill/ProductWriter authority path.
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
   isolation precursor. The installed CLI exposes the same setting as
   `--ms2-precursor-tol-da`.
+- Physical trace context and precursor-identity confidence are separate. A
+  `product_mz + neutral_loss` group starts with the bounded configured RT
+  context; when that trace is too short for the active signal-processing
+  profile, Discovery may reacquire enough context only when at least two MS2
+  seeds agree and their maximum product intensity reaches the profile's existing
+  high-intensity threshold. Reacquisition keeps the original MS2 query RT and
+  m/z tolerance. It supplies enough points to answer the physical peak question;
+  it does not upgrade inferred precursor identity or grant Matrix authority.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
   measured scan-precursor, and delta provenance. This is a public identity and
   replay contract even when the CSV column set is unchanged.
+- After physical MS1 evaluation and evidence scoring, one sample/tag/best-scan
+  context may advance at most one pure `product_mz + neutral_loss` candidate as
+  feature-backed. The highest-evidence candidate remains eligible; competing
+  pure inferred candidates stay in review output as
+  `review_only_ambiguous_coisolation`. Direct or mixed-basis candidates do not
+  enter this inferred-only competition.
 - CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
   methods when they are used to find features matching method-specific evidence
   settings. They produce feature candidates plus typed evidence, not

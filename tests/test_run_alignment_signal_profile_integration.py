@@ -15,25 +15,23 @@ import numpy as np
 import openpyxl
 import pytest
 
+import xic_extractor.alignment.backfill_transaction as backfill_transaction_module
 import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.process_backend as process_backend_module
 import xic_extractor.alignment.process_execution as process_execution_module
 from scripts import run_alignment
-from tests.alignment_pipeline_helpers import write_partial_batch
+from tests.alignment_pipeline_helpers import write_owner_closed_partial_batch
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.output_levels import artifact_names_for_output_level
-from xic_extractor.alignment.owner_backfill import OwnerBackfillExtractionResult
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
     compose_owner_backfill_peak_fact_provenance,
     owner_backfill_authority_cell_projection,
     owner_backfill_cell_projection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
     read_owner_backfill_peak_fact_provenance_tsv,
     selected_integration_authority_projection,
 )
-from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
@@ -46,7 +44,6 @@ from xic_extractor.alignment.primary_consolidation import (
     consolidate_primary_family_rows,
 )
 from xic_extractor.alignment.process_backend import (
-    OwnerBackfillProcessOutput,
     OwnerBackfillSampleJob,
     OwnerBackfillSampleResult,
     OwnerBuildProcessOutput,
@@ -296,15 +293,19 @@ class _InlineTypedExecutor:
 
 @pytest.fixture
 def _highest_entry_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    batch_index = write_partial_batch(
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_files: dict[str, Path] = {}
+    for sample_stem in _SAMPLE_ORDER:
+        raw_path = raw_dir / f"{sample_stem}.raw"
+        raw_path.write_bytes(sample_stem.encode("utf-8"))
+        raw_files[sample_stem] = raw_path
+    batch_index = write_owner_closed_partial_batch(
         tmp_path,
         sample_order=_SAMPLE_ORDER,
         candidate_samples=("Sample_A", "Sample_B", "Sample_C"),
+        raw_files=raw_files,
     )
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    for sample_stem in _SAMPLE_ORDER:
-        (raw_dir / f"{sample_stem}.raw").write_bytes(sample_stem.encode("utf-8"))
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
@@ -363,9 +364,22 @@ def test_highest_entry_signal_profile_serial_process_oracle(
     _InlineTypedExecutor.payload_sizes.clear()
     _InlineTypedExecutor.results.clear()
 
+    process_outputs = []
+    real_run_owner_backfill_process = pipeline_module.run_owner_backfill_process
+
+    def capture_process_output(*args: Any, **kwargs: Any):
+        output = real_run_owner_backfill_process(*args, **kwargs)
+        process_outputs.append(output)
+        return output
+
     monkeypatch.setattr(
         "xic_extractor.process_job_execution.ProcessPoolExecutor",
         _InlineTypedExecutor,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_owner_backfill_process",
+        capture_process_output,
     )
     process_15 = _run_cli(
         batch_index,
@@ -448,11 +462,12 @@ def test_highest_entry_signal_profile_serial_process_oracle(
         serial_15.output_dir / "alignment_results.xlsx",
         process_15.output_dir / "alignment_results.xlsx",
     )
+    assert len(process_outputs) == 1
     process_matrix, process_config = _rebuild_process_matrix(
+        process_outputs[0],
         tuple(_InlineTypedExecutor.jobs),
-        tuple(_InlineTypedExecutor.results),
     )
-    _assert_process_live_owner_composition(
+    _assert_process_compact_projection(
         process_15,
         matrix=process_matrix,
         alignment_config=process_config,
@@ -470,6 +485,20 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
         _InlineTypedExecutor,
     )
 
+    process_outputs = []
+    real_run_owner_backfill_process = pipeline_module.run_owner_backfill_process
+
+    def capture_process_output(*args: Any, **kwargs: Any):
+        output = real_run_owner_backfill_process(*args, **kwargs)
+        process_outputs.append(output)
+        return output
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_owner_backfill_process",
+        capture_process_output,
+    )
+
     _clear_inline_executor_captures()
     _run_cli(
         batch_index,
@@ -481,7 +510,6 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
         audit_mode="none",
     )
     none_jobs = tuple(_InlineTypedExecutor.jobs)
-    none_results = tuple(_InlineTypedExecutor.results)
 
     _clear_inline_executor_captures()
     _run_cli(
@@ -498,8 +526,9 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
 
     _assert_audit_field_class_matrix(
         tmp_path / "audit-field-mutations",
+        none_process_output=process_outputs[0],
+        full_process_output=process_outputs[1],
         none_jobs=none_jobs,
-        none_results=none_results,
         full_jobs=full_jobs,
         full_results=full_results,
     )
@@ -615,13 +644,26 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
     captured_build_results: list[OwnerBuildSampleResult] = []
     captured_backfill_results: list[OwnerBackfillSampleResult] = []
     build_outputs: list[OwnerBuildProcessOutput] = []
-    backfill_outputs: list[OwnerBackfillProcessOutput] = []
+    backfill_outputs: list[
+        backfill_transaction_module.OwnerBackfillTransactionOutput
+    ] = []
     real_build_collector = process_backend_module.collect_owner_build_results
-    real_backfill_collector = process_backend_module.collect_owner_backfill_results
+    real_job_validator = process_execution_module._validate_process_job_payloads
+    real_backfill_delivery = (
+        backfill_transaction_module.OwnerBackfillSampleTransaction.deliver
+    )
+    real_backfill_finish = (
+        backfill_transaction_module.OwnerBackfillSampleTransaction.finish
+    )
 
     def capture_job(job: object) -> None:
         size = process_execution_module.process_job_payload_size_bytes(job)
         captured_jobs.append((job, size))
+
+    def capture_jobs(jobs) -> None:
+        real_job_validator(jobs)
+        for job in jobs:
+            capture_job(job)
 
     def capture_build_collector(results):
         materialized = tuple(results)
@@ -630,10 +672,12 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         build_outputs.append(output)
         return output
 
-    def capture_backfill_collector(results, **kwargs):
-        materialized = tuple(results)
-        captured_backfill_results.extend(materialized)
-        output = real_backfill_collector(materialized, **kwargs)
+    def capture_backfill_delivery(self, ordinal, result):
+        captured_backfill_results.append(result)
+        return real_backfill_delivery(self, ordinal, result)
+
+    def capture_backfill_finish(self):
+        output = real_backfill_finish(self)
         backfill_outputs.append(output)
         return output
 
@@ -649,8 +693,8 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
     )
     monkeypatch.setattr(
         process_execution_module,
-        "validate_process_job_payload",
-        capture_job,
+        "_validate_process_job_payloads",
+        capture_jobs,
     )
     monkeypatch.setattr(
         process_backend_module,
@@ -658,9 +702,14 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         capture_build_collector,
     )
     monkeypatch.setattr(
-        process_backend_module,
-        "collect_owner_backfill_results",
-        capture_backfill_collector,
+        backfill_transaction_module.OwnerBackfillSampleTransaction,
+        "deliver",
+        capture_backfill_delivery,
+    )
+    monkeypatch.setattr(
+        backfill_transaction_module.OwnerBackfillSampleTransaction,
+        "finish",
+        capture_backfill_finish,
     )
 
     run = _run_cli(
@@ -697,19 +746,21 @@ def test_real_windows_spawn_roundtrips_typed_owner_jobs_and_results(
         not _contains_trace_payload(result)
         for result in (*captured_build_results, *captured_backfill_results)
     )
-    observations = tuple(
-        observation
+    prepared_peak_facts = tuple(
+        prepared
         for result in captured_backfill_results
-        for observation in result.peak_fact_observations
+        for prepared in result.prepared_peak_facts
+    )
+    assert all(
+        not result.peak_fact_observations for result in captured_backfill_results
     )
     assert any(
-        observation.physical_evaluation is not None
-        and observation.physical_evaluation.state == "available"
-        and observation.physical_evaluation.prepared.profile_id == profile.profile_id
-        for observation in observations
+        prepared.physical_row.state == "available"
+        and prepared.physical_row.profile_id == profile.profile_id
+        for prepared in prepared_peak_facts
     )
     assert build_outputs and build_outputs[0].ownership.owners
-    assert backfill_outputs and backfill_outputs[0].peak_fact_observations
+    assert backfill_outputs and backfill_outputs[0].prepared_peak_facts
     assert run.profile_rows[0].profile_id == profile.profile_id
 
     markers = tuple(raw_dir.glob("*.spawn"))
@@ -974,36 +1025,16 @@ def _clear_inline_executor_captures() -> None:
 
 
 def _rebuild_process_matrix(
+    process_output: Any,
     jobs: tuple[OwnerBuildSampleJob | OwnerBackfillSampleJob, ...],
-    results: tuple[OwnerBuildSampleResult | OwnerBackfillSampleResult, ...],
 ) -> tuple[AlignmentMatrix, Any]:
     backfill_jobs = tuple(
         job for job in jobs if isinstance(job, OwnerBackfillSampleJob)
     )
-    backfill_results = tuple(
-        result for result in results if isinstance(result, OwnerBackfillSampleResult)
-    )
     assert backfill_jobs
-    assert backfill_results
     alignment_config = backfill_jobs[0].alignment_config
     assert all(job.alignment_config == alignment_config for job in backfill_jobs)
-    features_by_id = {
-        feature.feature_family_id: feature
-        for job in backfill_jobs
-        for feature in job.features
-    }
-    feature_order = tuple(features_by_id)
-    process_output = process_backend_module.collect_owner_backfill_results(
-        backfill_results,
-        feature_order=feature_order,
-        sample_order=_SAMPLE_ORDER,
-    )
-    matrix = build_owner_alignment_matrix(
-        tuple(features_by_id.values()),
-        sample_order=_SAMPLE_ORDER,
-        ambiguous_by_sample={},
-        rescued_cells=process_output.cells,
-    )
+    matrix = process_output.matrix
     matrix = apply_ms1_peak_claim_registry(matrix, alignment_config)
     matrix = consolidate_primary_family_rows(matrix, alignment_config)
     matrix = recenter_pre_backfill_identity_families(matrix)
@@ -1013,13 +1044,20 @@ def _rebuild_process_matrix(
 def _assert_audit_field_class_matrix(
     output_root: Path,
     *,
+    none_process_output: Any,
+    full_process_output: Any,
     none_jobs: tuple[OwnerBuildSampleJob | OwnerBackfillSampleJob, ...],
-    none_results: tuple[OwnerBuildSampleResult | OwnerBackfillSampleResult, ...],
     full_jobs: tuple[OwnerBuildSampleJob | OwnerBackfillSampleJob, ...],
     full_results: tuple[OwnerBuildSampleResult | OwnerBackfillSampleResult, ...],
 ) -> None:
-    none_matrix, none_config = _rebuild_process_matrix(none_jobs, none_results)
-    full_matrix, full_config = _rebuild_process_matrix(full_jobs, full_results)
+    none_matrix, none_config = _rebuild_process_matrix(
+        none_process_output,
+        none_jobs,
+    )
+    full_matrix, full_config = _rebuild_process_matrix(
+        full_process_output,
+        full_jobs,
+    )
     assert none_config == full_config
     _assert_live_audit_mode_semantic_parity(none_matrix, full_matrix)
 
@@ -1062,20 +1100,22 @@ def _assert_audit_field_class_matrix(
                 _matrix_with_cell(full_matrix, audited_index, mutated_cell),
             )
 
-    observation = next(
+    prepared_peak_fact = next(
         item
         for result in full_results
         if isinstance(result, OwnerBackfillSampleResult)
-        for item in result.peak_fact_observations
-        if item.selected_for_output
-        and item.physical_evaluation is not None
-        and item.physical_evaluation.state == "available"
+        for item in result.prepared_peak_facts
+        if item.selected_integration_authority_content_id is not None
+        and item.physical_row.state == "available"
     )
     matching_indexes = tuple(
         index
         for index, cell in enumerate(full_matrix.cells)
         if (cell.cluster_id, cell.sample_stem)
-        == (observation.cell.cluster_id, observation.cell.sample_stem)
+        == (
+            prepared_peak_fact.feature_family_id,
+            prepared_peak_fact.stage.sample_stem,
+        )
     )
     assert len(matching_indexes) == 1
     target_index = matching_indexes[0]
@@ -1123,11 +1163,11 @@ def _assert_audit_field_class_matrix(
         == _EXCLUDED_SELECTED_INTEGRATION_AUDIT_FIELDS
     )
 
-    stage = owner_backfill_peak_fact_stage_projection_from_observation(observation)
+    stage = prepared_peak_fact.stage
     base_authority_ids = _audit_authority_ids(
         base_matrix,
         target_index=target_index,
-        observation=observation,
+        prepared_peak_fact=prepared_peak_fact,
         stage=stage,
         alignment_config=full_config,
     )
@@ -1150,7 +1190,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1194,7 +1234,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1209,7 +1249,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1227,7 +1267,7 @@ def _assert_audit_field_class_matrix(
             _audit_authority_ids(
                 mutated_matrix,
                 target_index=target_index,
-                observation=observation,
+                prepared_peak_fact=prepared_peak_fact,
                 stage=stage,
                 alignment_config=full_config,
             )
@@ -1251,24 +1291,22 @@ def _audit_authority_ids(
     matrix: AlignmentMatrix,
     *,
     target_index: int,
-    observation: Any,
+    prepared_peak_fact: Any,
     stage: Any,
     alignment_config: Any,
 ) -> tuple[str, str, str, str]:
     cell = matrix.cells[target_index]
-    evaluation = observation.physical_evaluation
-    assert evaluation is not None
-    assert evaluation.facts is not None
+    physical_row = prepared_peak_fact.physical_row
     integration = cell.selected_integration
     assert isinstance(integration, IntegrationResult)
     selected_integration = selected_integration_authority_projection(integration)
     authority_cell = owner_backfill_authority_cell_projection(
         stage=stage,
         cell=cell,
-        profile_id=evaluation.prepared.profile_id,
-        selected_fact_content_id=evaluation.facts.fact_content_id,
-        physical_answer_id=evaluation.answer.physical_answer_id,
-        physical_segment_id=evaluation.facts.physical_segment_id,
+        profile_id=physical_row.profile_id,
+        selected_fact_content_id=physical_row.fact_content_id,
+        physical_answer_id=physical_row.physical_answer_id,
+        physical_segment_id=physical_row.physical_segment_id,
     )
     production_decisions = build_live_production_decisions(
         matrix,
@@ -1634,99 +1672,44 @@ def _assert_workbook_semantic_parity(
     assert observed_value_pairs == allowed_value_pairs
 
 
-def _assert_process_live_owner_composition(
+def _assert_process_compact_projection(
     run: _Run,
     *,
     matrix: AlignmentMatrix,
     alignment_config: Any,
 ) -> None:
-    process_observations = tuple(
-        observation
+    process_results = tuple(
+        result
         for result in _InlineTypedExecutor.results
         if isinstance(result, OwnerBackfillSampleResult)
-        for observation in result.peak_fact_observations
     )
-    observation = next(
+    assert process_results
+    assert all(not result.peak_fact_observations for result in process_results)
+    prepared = next(
         item
-        for item in process_observations
-        if item.selected_for_output
-        and item.physical_evaluation is not None
-        and item.physical_evaluation.state == "available"
-    )
-    request = observation.request_identity.request
-    extraction = OwnerBackfillExtractionResult(
-        request_identity=observation.request_identity,
-        trace=XICTrace.from_arrays(*_trace_arrays(request.rt_min, request.rt_max)),
-    )
-    profile = resolve_signal_processing_profile(
-        signal_processing_method="gaussian",
-        signal_processing_window_points=15,
+        for result in process_results
+        for item in result.prepared_peak_facts
+        if item.physical_row.state == "available"
     )
     read_result = read_owner_backfill_peak_fact_provenance_tsv(
         run.output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
-    physical_inputs = {
-        "live_observation_by_work": {observation.work_unit_key: observation},
-        "live_extraction_by_work": {observation.work_unit_key: extraction},
-        "profile": profile,
-    }
+    assert prepared.physical_row in read_result.rows
     production_decisions = build_live_production_decisions(
         matrix,
         alignment_config,
     )
-    final_inputs = {
-        "live_matrix": matrix,
-        "alignment_config": alignment_config,
-        "production_decisions": production_decisions,
-    }
     composed = compose_owner_backfill_peak_fact_provenance(
         read_result,
-        **physical_inputs,
-        **final_inputs,
+        live_matrix=matrix,
+        alignment_config=alignment_config,
+        production_decisions=production_decisions,
     )
-    assert any(claim.physical_claim == "verified" for claim in composed.physical_claims)
-    assert any(
-        claim.cell_projection_claim == "verified" for claim in composed.cell_claims
+    assert all(
+        claim.physical_claim == "unavailable_without_live_owner"
+        for claim in composed.physical_claims
     )
-
-    for missing in physical_inputs:
-        incomplete = compose_owner_backfill_peak_fact_provenance(
-            read_result,
-            **{key: value for key, value in physical_inputs.items() if key != missing},
-            **final_inputs,
-        )
-        assert all(
-            claim.physical_claim == "unavailable_without_live_owner"
-            for claim in incomplete.physical_claims
-        )
-        assert all(
-            claim.cell_projection_claim == "unavailable_without_live_owner"
-            for claim in incomplete.cell_claims
-        )
-
-    crossed_extraction = OwnerBackfillExtractionResult(
-        request_identity=observation.request_identity,
-        trace=XICTrace.from_arrays(
-            *_trace_arrays(request.rt_min + 0.01, request.rt_max)
-        ),
+    assert all(
+        claim.cell_projection_claim == "unavailable_without_live_owner"
+        for claim in composed.cell_claims
     )
-    with pytest.raises(ValueError, match="trace range crosses Alignment stage"):
-        compose_owner_backfill_peak_fact_provenance(
-            read_result,
-            live_observation_by_work={observation.work_unit_key: observation},
-            live_extraction_by_work={observation.work_unit_key: crossed_extraction},
-            profile=profile,
-        )
-    for missing in final_inputs:
-        incomplete = compose_owner_backfill_peak_fact_provenance(
-            read_result,
-            **physical_inputs,
-            **{key: value for key, value in final_inputs.items() if key != missing},
-        )
-        assert any(
-            claim.physical_claim == "verified" for claim in incomplete.physical_claims
-        )
-        assert all(
-            claim.cell_projection_claim == "unavailable_without_live_owner"
-            for claim in incomplete.cell_claims
-        )

@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+from tests.alignment_pipeline_helpers import peak_config as _peak_config
+from xic_extractor.alignment.pipeline_outputs import alignment_metadata
 from xic_extractor.diagnostics import (
     backfill_peakhypothesis_transfer_readiness as readiness,
 )
@@ -69,6 +71,99 @@ def test_readiness_fails_closed_when_85raw_contract_is_not_canonical() -> None:
 
     assert index.readiness_row["readiness_label"] == "blocked"
     assert index.readiness_row["raw85_artifact_status"] == "fail"
+    assert "85raw_metadata_contract_not_canonical" in (
+        index.readiness_row["hard_fail_reasons"]
+    )
+
+
+def test_readiness_accepts_targeted_istd_alignment_metadata_v4() -> None:
+    metadata = _current_raw85_metadata(targeted_istd=True)
+
+    index = readiness.build_transfer_readiness(
+        promotion_summary=_promotion_summary(promote_count=11),
+        activation_acceptance_rows=[_activation_acceptance_row()],
+        raw85_metadata=metadata,
+        raw85_counts=_raw85_counts(),
+    )
+
+    assert index.readiness_row["raw85_metadata_contract_status"] == "pass"
+    assert index.readiness_row["raw85_artifact_status"] == "pass"
+
+
+def test_readiness_accepts_current_unanchored_alignment_metadata_v3() -> None:
+    index = readiness.build_transfer_readiness(
+        promotion_summary=_promotion_summary(promote_count=11),
+        activation_acceptance_rows=[_activation_acceptance_row()],
+        raw85_metadata=_current_raw85_metadata(targeted_istd=False),
+        raw85_counts=_raw85_counts(),
+    )
+
+    assert index.readiness_row["raw85_metadata_contract_status"] == "pass"
+
+
+def test_readiness_accepts_historical_targeted_istd_metadata_v3() -> None:
+    metadata = {
+        **_current_raw85_metadata(targeted_istd=True),
+        "schema_version": "alignment-results-v3",
+    }
+
+    index = readiness.build_transfer_readiness(
+        promotion_summary=_promotion_summary(promote_count=11),
+        activation_acceptance_rows=[_activation_acceptance_row()],
+        raw85_metadata=metadata,
+        raw85_counts=_raw85_counts(),
+    )
+
+    assert index.readiness_row["raw85_metadata_contract_status"] == "pass"
+
+
+def test_readiness_rejects_legacy_policy_for_anchored_metadata_v3() -> None:
+    metadata = {
+        **_raw85_metadata(),
+        "targeted_istd_anchor_identity": "anchor-id",
+        "targeted_istd_target_snapshot_id": "snapshot-id",
+    }
+
+    index = readiness.build_transfer_readiness(
+        promotion_summary=_promotion_summary(promote_count=11),
+        activation_acceptance_rows=[_activation_acceptance_row()],
+        raw85_metadata=metadata,
+        raw85_counts=_raw85_counts(),
+    )
+
+    assert index.readiness_row["raw85_metadata_contract_status"] == "fail"
+
+
+def test_readiness_rejects_legacy_matrix_policy_under_v4() -> None:
+    metadata = {
+        **_raw85_metadata(),
+        "schema_version": "alignment-results-v4",
+        "targeted_istd_anchor_identity": "anchor-id",
+        "targeted_istd_target_snapshot_id": "snapshot-id",
+    }
+
+    index = readiness.build_transfer_readiness(
+        promotion_summary=_promotion_summary(promote_count=11),
+        activation_acceptance_rows=[_activation_acceptance_row()],
+        raw85_metadata=metadata,
+        raw85_counts=_raw85_counts(),
+    )
+
+    assert index.readiness_row["raw85_metadata_contract_status"] == "fail"
+
+
+def test_readiness_rejects_incomplete_targeted_istd_alignment_metadata_v4() -> None:
+    metadata = _current_raw85_metadata(targeted_istd=True)
+    metadata.pop("targeted_istd_target_snapshot_id")
+
+    index = readiness.build_transfer_readiness(
+        promotion_summary=_promotion_summary(promote_count=11),
+        activation_acceptance_rows=[_activation_acceptance_row()],
+        raw85_metadata=metadata,
+        raw85_counts=_raw85_counts(),
+    )
+
+    assert index.readiness_row["raw85_metadata_contract_status"] == "fail"
     assert "85raw_metadata_contract_not_canonical" in (
         index.readiness_row["hard_fail_reasons"]
     )
@@ -396,6 +491,23 @@ def _raw85_metadata() -> dict[str, str]:
         "owner_backfill_xic_backend": "raw",
         "schema_version": "alignment-results-v3",
     }
+
+
+def _current_raw85_metadata(*, targeted_istd: bool) -> dict[str, str]:
+    return alignment_metadata(
+        discovery_batch_index=Path("batch.csv"),
+        raw_dir=Path("raw"),
+        dll_dir=Path("dll"),
+        owner_backfill_xic_backend="raw",
+        output_level="validation-minimal",
+        peak_config=_peak_config(),
+        backfill_scope="production-equivalent",
+        audit_evidence_mode="none",
+        targeted_istd_anchor_identity="anchor-id" if targeted_istd else "",
+        targeted_istd_target_snapshot_id=(
+            "snapshot-id" if targeted_istd else ""
+        ),
+    )
 
 
 def _raw85_counts() -> dict[str, int]:

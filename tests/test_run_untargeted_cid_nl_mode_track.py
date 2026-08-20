@@ -26,6 +26,18 @@ def _valid_raw_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_help_declares_debug_review_role_without_product_authority(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        runner.main(["--help"])
+
+    assert exc_info.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "debug or batch review" in help_text
+    assert "no product authority" in help_text
+
+
 def test_one_command_publishes_reviewed_mode_track_table(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -192,6 +204,7 @@ def test_heartbeat_io_failure_cannot_abort_workflow_progress(
 def test_preflight_closes_inputs_without_running_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     projection, _proposal_dir = _gate_c_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
@@ -237,6 +250,9 @@ def test_preflight_closes_inputs_without_running_raw(
     assert exit_code == 0
     assert not output_dir.exists()
     assert not (tmp_path / "preflight-output.attempt").exists()
+    assert "debug or batch review; no product authority" in (
+        capsys.readouterr().out
+    )
 
 
 def test_preflight_preserves_multi_tag_error_class(

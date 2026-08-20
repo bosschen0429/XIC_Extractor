@@ -688,8 +688,11 @@
               <tr>
                 <td><span class="step-number">b</span>Cross-sample 分群</td>
                 <td>
-                  用 complete-link clustering 比對不同樣本的 owners。
-                  閘門：m/z 50 ppm、product m/z 20 ppm、相同 neutral-loss tag、RT scoring。
+                  預設用 complete-link clustering 比對不同樣本的 owners；若 explicit batch
+                  每個樣本皆有一個 clean detected owner，才允許以局部 RT/mass continuity
+                  收回被 complete-link 切開的完整 family。Pair hard gates、同樣本唯一性與
+                  RT discontinuity 仍會阻擋合併；後來出現的 bridge owner 不會把兩個既有
+                  群串成 single-link 巨群。
                 </td>
                 <td>
                   把跨樣本的「同一個化合物」歸入同一個 feature family，作為 matrix 的一行。
@@ -770,7 +773,7 @@
               <ul>
                 <li><code>xic_extractor/alignment/pipeline.py</code> — alignment 完整 pipeline 入口</li>
                 <li><code>xic_extractor/alignment/ownership.py</code> — sample-local owner 建構</li>
-                <li><code>xic_extractor/alignment/owner_clustering.py</code> — complete-link cross-sample clustering</li>
+                <li><code>xic_extractor/alignment/owner_clustering.py</code> — bounded complete-link / full-batch continuity adapter</li>
                 <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code> — group hypothesis 模型</li>
                 <li><code>xic_extractor/alignment/edge_scoring.py</code> — 跨樣本 RT/m/z 評分</li>
                 <li><code>xic_extractor/alignment/owner_backfill.py</code> — 缺值 rescue 抽取</li>

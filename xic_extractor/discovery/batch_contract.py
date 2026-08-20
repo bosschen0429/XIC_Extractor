@@ -252,16 +252,33 @@ def validate_discovery_candidate_physical_bindings(
         raise ValueError(
             f"{sample_stem}: candidate/physical binding cardinality mismatch"
         )
-    for final_ordinal, (binding, candidate) in enumerate(
-        zip(binding_values, candidate_values, strict=True)
+    if any(
+        not isinstance(candidate, DiscoveryCandidate) for candidate in candidate_values
     ):
-        if not isinstance(candidate, DiscoveryCandidate):
-            raise TypeError("candidates must contain DiscoveryCandidate values")
+        raise TypeError("candidates must contain DiscoveryCandidate values")
+    candidates_by_id = {
+        candidate.candidate_id: candidate for candidate in candidate_values
+    }
+    if len(candidates_by_id) != len(candidate_values):
+        raise ValueError(f"{sample_stem}: candidate IDs are not unique")
+    bound_candidate_ids: set[str] = set()
+    for final_ordinal, binding in enumerate(binding_values):
         if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
             raise TypeError(
                 "bindings must contain DiscoveryCandidatePhysicalBinding values"
             )
         validate_discovery_candidate_physical_binding(binding)
+        candidate_id = binding.candidate.candidate_id
+        candidate = candidates_by_id.get(candidate_id)
+        if candidate is None:
+            raise ValueError(
+                f"{sample_stem}: physical binding crosses candidate identity"
+            )
+        if candidate_id in bound_candidate_ids:
+            raise ValueError(
+                f"{sample_stem}: physical binding candidate IDs are not unique"
+            )
+        bound_candidate_ids.add(candidate_id)
         if binding.final_ordinal != final_ordinal:
             raise ValueError(f"{sample_stem}: physical binding order is not contiguous")
         if (
@@ -283,6 +300,10 @@ def validate_discovery_candidate_physical_bindings(
             raise ValueError(
                 f"{sample_stem}: physical binding crosses candidate content"
             )
+    if bound_candidate_ids != set(candidates_by_id):
+        raise ValueError(
+            f"{sample_stem}: physical bindings do not cover the candidate universe"
+        )
     return binding_values
 
 

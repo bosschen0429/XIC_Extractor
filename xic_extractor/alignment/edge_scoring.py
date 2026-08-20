@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
@@ -20,6 +21,9 @@ HardGateFailureReason = Literal[
 ]
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 SUPPORTED_DRIFT_PRIOR_SOURCES = {"targeted_istd_trend", "batch_istd_trend", "none"}
+_DETECTION_LIMIT_SNR = 3.0
+_QUANTITATION_LIMIT_SNR = 10.0
+_DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
 OwnerQuality = Literal["clean", "weak", "tail_supported", "ambiguous_nearby"]
 SeedSupportLevel = Literal["strong", "moderate", "weak"]
 DuplicateContext = Literal["none", "same_owner_events", "tail_assignment"]
@@ -232,6 +236,37 @@ def _seed_support_level(
     right: SampleLocalMS1Owner,
     config: AlignmentConfig,
 ) -> SeedSupportLevel:
+    """Rate the pair on the peaks Alignment resolved, not on Discovery's score.
+
+    Discovery's ``evidence_score`` is dominated by whether Discovery itself
+    found an MS1 peak.  Every owner exists because ownership re-extracted the
+    XIC and did find one, so reading that score back here judges an owner by a
+    search its own construction superseded.  Rate the resolved peaks instead,
+    at the detection- and quantitation-limit conventions, and keep the MS2 seed
+    count, which Alignment does not re-derive.  Owners whose integration never
+    recorded a baseline residual keep the Discovery-score rating.
+    """
+    min_seed_count = min(
+        left.primary_identity_event.seed_event_count,
+        right.primary_identity_event.seed_event_count,
+    )
+    min_snr = _min_owner_peak_snr(left, right)
+    if min_snr is None:
+        return _discovery_seed_support_level(left, right, config)
+    if min_snr >= _QUANTITATION_LIMIT_SNR and (
+        min_seed_count >= config.anchor_min_seed_events
+    ):
+        return "strong"
+    if min_snr >= _DETECTION_LIMIT_SNR and min_seed_count >= 1:
+        return "moderate"
+    return "weak"
+
+
+def _discovery_seed_support_level(
+    left: SampleLocalMS1Owner,
+    right: SampleLocalMS1Owner,
+    config: AlignmentConfig,
+) -> SeedSupportLevel:
     min_score = min(
         left.primary_identity_event.evidence_score,
         right.primary_identity_event.evidence_score,
@@ -245,9 +280,45 @@ def _seed_support_level(
         and min_seed_count >= config.anchor_min_seed_events
     ):
         return "strong"
-    if min_score >= 40 and min_seed_count >= 1:
+    if min_score >= _DISCOVERY_MODERATE_EVIDENCE_SCORE and min_seed_count >= 1:
         return "moderate"
     return "weak"
+
+
+def _min_owner_peak_snr(
+    left: SampleLocalMS1Owner,
+    right: SampleLocalMS1Owner,
+) -> float | None:
+    left_snr = _owner_peak_snr(left)
+    right_snr = _owner_peak_snr(right)
+    if left_snr is None or right_snr is None:
+        return None
+    return min(left_snr, right_snr)
+
+
+def _owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
+    return owner_peak_snr(owner)
+
+
+def owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
+    """Signal-to-noise of the peak Alignment resolved for this owner."""
+    integration = owner.selected_integration
+    if integration is None:
+        return None
+    residual = integration.baseline_residual_mad
+    if residual is None or residual <= 0.0:
+        return None
+    return integration.height_raw / residual
+
+
+def owner_peak_meets_quantitation_limit(owner: SampleLocalMS1Owner) -> bool:
+    """Whether the resolved peak clears the quantitation-limit convention."""
+    snr = owner_peak_snr(owner)
+    return (
+        owner_quantification_eligible(owner)
+        and snr is not None
+        and snr >= _QUANTITATION_LIMIT_SNR
+    )
 
 
 def _owner_quality(

@@ -137,7 +137,7 @@ where files live; this section owns the reason each package changes.
 | `xic_extractor/package0_successor_comparator.py` | Diagnostic-only derivation and exact comparison of actual successor files against frozen legacy membership/output receipts, plus owner/byte-derived CLI/GUI equal-adapter receipts; immutable baseline validation for per-slice internal `DifferenceManifest`; one Package 1 experiment entry that owns output-path binding and root identity, fixed primitive-job Targeted/Alignment workers, synchronous executor drain, final-state inventory, legacy-runner sentinel, and private receipt mint | Scientific oracle decisions, caller-authored comparison digests/counts/paths/results, generic result/worker/executor providers, split observation windows, writer invocation, output mutation, or product promotion |
 | `xic_extractor/output/` | General extraction workbook/TSV presentation and reusable output-schema rendering; Alignment-specific renderers remain in `xic_extractor/alignment/` under the same render-only boundary | Domain evidence recomputation, scientific decision rebuilding, or RAW scanning |
 | `xic_extractor/diagnostics/` | Reusable diagnostic models, summaries, and classification helpers used by diagnostic CLIs | CLI argument parsing, one-off file-system orchestration, production behavior changes |
-| Root facades such as `extractor.py`, `signal_processing.py`, and `peak_scoring.py` | Public compatibility imports and thin orchestration while behavior is migrated | Permanent home for new implementation detail |
+| Root facades such as `extractor.py` and `signal_processing.py` | Public compatibility imports and thin orchestration while behavior is migrated | Permanent home for new implementation detail |
 
 If a change appears to fit multiple rows, keep the low-level domain behavior in
 the package that owns the concept and put only orchestration at the caller. Do
@@ -298,9 +298,6 @@ surface, not an active phase plan:
 - `xic_extractor/signal_processing.py`: keep as compatibility facade; move
   models, resolver implementations, selection, recovery, integration, and trace
   quality into focused peak-detection modules.
-- `xic_extractor/peak_scoring.py`: split scoring models, score component
-  calculations, and selection helpers only after characterization tests pin
-  current confidence/reason outputs.
 - `xic_extractor/alignment/primary_consolidation.py`: add characterization tests
   before splitting graph construction, winner selection, cell merge, or loser
   audit helpers.

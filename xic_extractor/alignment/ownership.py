@@ -20,6 +20,10 @@ from xic_extractor.alignment.ownership_models import (
 )
 from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.models import (
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidate,
+)
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
     validate_discovery_candidate_physical_binding,
@@ -80,6 +84,8 @@ class _ResolvedCandidate:
     height: float
     region_audit: PeakRegionAuditSummary | None = None
     selected_integration: IntegrationResult | None = None
+    quantification_eligible: bool = True
+    quantification_exclusion_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,8 +94,17 @@ class _ResolutionOutcome:
     unresolved: OwnerAssignment | None
 
 
+_DOUBLET_APEX_SEPARATION_WIDTH_FRACTION = 0.5
 _ResolutionRequestItem = tuple[int, Any, float, XICRequest, bool]
 _ResolutionRequestGroupKey = tuple[str, int | float, int | float]
+
+
+def discovery_candidate_is_owner_build_eligible(
+    candidate: DiscoveryCandidate,
+) -> bool:
+    """Return whether a final Discovery candidate may mint an Alignment owner."""
+
+    return candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
 
 
 def build_sample_local_owners(
@@ -139,6 +154,8 @@ def build_sample_local_owners_from_discovery_bindings(
             )
         validate_discovery_candidate_physical_binding(binding)
         candidate = binding.candidate
+        if not discovery_candidate_is_owner_build_eligible(candidate):
+            continue
         evaluation = binding.physical_evaluation
         if evaluation.state != "available":
             outcomes.append(
@@ -163,6 +180,16 @@ def build_sample_local_owners_from_discovery_bindings(
                     area=integration.area_raw_counts_seconds,
                     height=integration.height_raw,
                     selected_integration=integration,
+                    quantification_eligible=_quantification_eligible(
+                        integration.rt_apex_min,
+                        integration.rt_left_min,
+                        integration.rt_right_min,
+                    ),
+                    quantification_exclusion_reason=_quantification_exclusion_reason(
+                        integration.rt_apex_min,
+                        integration.rt_left_min,
+                        integration.rt_right_min,
+                    ),
                 ),
                 unresolved=None,
             )
@@ -324,6 +351,9 @@ def _resolve_candidate(
     )
     if peak is None:
         return _unresolved_outcome(candidate, "peak_not_found")
+    quantification_apex, quantification_left, quantification_right = (
+        _resolved_peak_quantification_bounds(peak)
+    )
     return _ResolutionOutcome(
         resolved=_ResolvedCandidate(
             candidate=candidate,
@@ -335,6 +365,16 @@ def _resolve_candidate(
             height=peak.intensity,
             region_audit=peak.region_audit,
             selected_integration=peak.selected_integration,
+            quantification_eligible=_quantification_eligible(
+                quantification_apex,
+                quantification_left,
+                quantification_right,
+            ),
+            quantification_exclusion_reason=_quantification_exclusion_reason(
+                quantification_apex,
+                quantification_left,
+                quantification_right,
+            ),
         ),
         unresolved=None,
     )
@@ -363,6 +403,9 @@ def _resolve_candidate_trace(
     )
     if peak is None:
         return _unresolved_outcome(candidate, "peak_not_found")
+    quantification_apex, quantification_left, quantification_right = (
+        _resolved_peak_quantification_bounds(peak)
+    )
     return _ResolutionOutcome(
         resolved=_ResolvedCandidate(
             candidate=candidate,
@@ -374,6 +417,16 @@ def _resolve_candidate_trace(
             height=peak.intensity,
             region_audit=peak.region_audit,
             selected_integration=peak.selected_integration,
+            quantification_eligible=_quantification_eligible(
+                quantification_apex,
+                quantification_left,
+                quantification_right,
+            ),
+            quantification_exclusion_reason=_quantification_exclusion_reason(
+                quantification_apex,
+                quantification_left,
+                quantification_right,
+            ),
         ),
         unresolved=None,
     )
@@ -492,6 +545,29 @@ def _unresolved_outcome(candidate: Any, reason: str) -> _ResolutionOutcome:
             reason,
         ),
     )
+
+
+def _quantification_eligible(apex: float, left: float, right: float) -> bool:
+    return left < apex < right
+
+
+def _resolved_peak_quantification_bounds(
+    peak: ResolvedPeak,
+) -> tuple[float, float, float]:
+    integration = peak.selected_integration
+    if integration is not None:
+        return (
+            integration.rt_apex_min,
+            integration.rt_left_min,
+            integration.rt_right_min,
+        )
+    return peak.rt, peak.peak_start, peak.peak_end
+
+
+def _quantification_exclusion_reason(apex: float, left: float, right: float) -> str:
+    if _quantification_eligible(apex, left, right):
+        return ""
+    return "owner_apex_on_integration_boundary"
 
 
 def _emit_region_audit_for_candidate(
@@ -649,6 +725,10 @@ def _owners_for_sample(
                 assignment_reason="owner_exact_apex_match",
                 region_audit=primary.region_audit,
                 selected_integration=primary.selected_integration,
+                quantification_eligible=primary.quantification_eligible,
+                quantification_exclusion_reason=(
+                    primary.quantification_exclusion_reason
+                ),
             ),
         )
         assignments.append(
@@ -742,12 +822,35 @@ def _looks_like_unresolved_doublet(
     right: _ResolvedCandidate,
     config: AlignmentConfig,
 ) -> bool:
+    """Two peaks, or one peak seeded by more than one MS2 scan?
+
+    One MS1 peak spans many scans and its neutral loss can be seeded from
+    several of them.  Each seed opens its own resolution window, so the same
+    peak comes back with apexes a few seconds apart while the seeds themselves
+    sit tens of seconds apart.  An apex separation measured only against
+    ``owner_apex_close_sec`` cannot tell that from a real doublet, because the
+    bound carries no sense of how wide the peaks are.  Require the separation to
+    also be chromatographically meaningful against the narrower peak: below
+    roughly half a peak width the trace does not show two apexes at all, so
+    calling it an unresolved doublet is not supportable.
+    """
     apex_delta_sec = abs(left.apex_rt - right.apex_rt) * 60.0
+    if apex_delta_sec <= config.owner_apex_close_sec:
+        return False
+    narrower_width_sec = min(
+        (left.peak_end_rt - left.peak_start_rt) * 60.0,
+        (right.peak_end_rt - right.peak_start_rt) * 60.0,
+    )
+    if (
+        narrower_width_sec > 0.0
+        and apex_delta_sec
+        < narrower_width_sec * _DOUBLET_APEX_SEPARATION_WIDTH_FRACTION
+    ):
+        return False
     lower_height = min(left.height, right.height)
     higher_height = max(left.height, right.height)
     return (
-        apex_delta_sec > config.owner_apex_close_sec
-        and lower_height / max(higher_height, 1e-12)
+        lower_height / max(higher_height, 1e-12)
         > config.owner_tail_max_secondary_ratio
     )
 

@@ -10,6 +10,10 @@ from tests.alignment_pipeline_helpers import (
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.backfill_transaction import (
+    OwnerBackfillTransactionOutput,
+)
+from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
@@ -17,7 +21,6 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.process_backend import (
-    OwnerBackfillProcessOutput,
     OwnerBuildProcessOutput,
 )
 
@@ -133,7 +136,18 @@ def test_run_alignment_passes_identity_coherence_worker_policy(
         )
 
     def fake_backfill(*args, **kwargs):
-        return OwnerBackfillProcessOutput(cells=(), timing_stats=())
+        return OwnerBackfillTransactionOutput(
+            matrix=AlignmentMatrix(
+                clusters=(),
+                cells=(),
+                sample_order=("Sample_A",),
+            ),
+            candidate_audit_rows=(),
+            timing_stats=(),
+            request_reuse_observations=(),
+            prepared_peak_facts=(),
+            peak_fact_cost_receipts=(),
+        )
 
     def fake_diagnostic(**kwargs):
         calls.update(kwargs)
@@ -188,7 +202,7 @@ def test_identity_coherence_diagnostic_does_not_change_backfill_inputs(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             sentinel_feature,
         ),
     )

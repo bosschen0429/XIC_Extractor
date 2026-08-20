@@ -1,9 +1,17 @@
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.alignment import cross_sample_peak_groups as peak_groups_module
 from xic_extractor.alignment import owner_clustering as owner_clustering_module
+from xic_extractor.alignment.backfill_scope import (
+    backfill_request_sample_stems,
+)
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import (
+    DriftEvidenceLookup,
+    build_targeted_istd_identity_anchor,
+)
 from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
 from xic_extractor.alignment.owner_clustering import (
     cluster_sample_local_owners,
@@ -16,6 +24,8 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
@@ -66,54 +76,1729 @@ def test_owner_clustering_collapses_5medc_like_class_drift() -> None:
     assert features[0].evidence == "owner_complete_link;owner_count=5"
 
 
-def test_owner_clustering_does_not_bridge_three_owner_complete_link_group() -> None:
+def test_owner_clustering_connects_dense_rt_chain_without_external_drift() -> None:
     edge_evidence = []
     owners = (
         _owner("sample-a", "a", apex_rt=10.00),
         _owner("sample-b", "b", apex_rt=10.75),
         _owner("sample-c", "c", apex_rt=11.50),
     )
-    config = AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0)
-    drift_lookup = _DriftLookup(
-        deltas={
-            "sample-a": 0.00,
-            "sample-b": 0.50,
-            "sample-c": 0.90,
-        },
-        orders={
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        edge_evidence_sink=edge_evidence,
+    )
+
+    assert (
+        evaluate_owner_edge(
+            owners[0],
+            owners[1],
+            config=config,
+        ).decision
+        == "strong_edge"
+    )
+    assert (
+        evaluate_owner_edge(
+            owners[1],
+            owners[2],
+            config=config,
+        ).decision
+        == "strong_edge"
+    )
+    grouped_owner_ids = [feature.event_cluster_ids for feature in features]
+    assert grouped_owner_ids == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+        )
+    ]
+    assert (
+        _edge_decisions_by_pair(edge_evidence)[("OWN-sample-a-a", "OWN-sample-c-c")]
+        == "weak_edge"
+    )
+    assert features[0].evidence == "owner_full_batch_continuity;owner_count=3"
+
+
+def test_owner_clustering_keeps_bounded_incomplete_rt_chain() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.75),
+            _owner("sample-c", "c", apex_rt=11.50),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+    assert features[0].evidence == "owner_bounded_continuity;owner_count=3"
+
+
+def test_owner_clustering_splits_rt_chain_beyond_span_bound() -> None:
+    features = cluster_sample_local_owners(
+        tuple(
+            _owner(f"sample-{index}", f"o{index}", apex_rt=10.00 + 0.9 * index)
+            for index in range(7)
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {f"sample-{index}" for index in range(8)},
+        ),
+    )
+
+    assert len(features) > 1
+    assert all(
+        "owner_bounded_continuity" not in feature.evidence
+        for feature in features
+    )
+
+
+def test_owner_clustering_splits_chain_that_fails_hard_envelope() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00, precursor_mz=100.0),
+            _owner("sample-b", "b", apex_rt=10.10, precursor_mz=100.003),
+            _owner("sample-c", "c", apex_rt=10.20, precursor_mz=100.006),
+        ),
+        config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+            preferred_ppm=50.0,
+            max_ppm=50.0,
+        ),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+
+    assert len(features) > 1
+    assert all(
+        "owner_bounded_continuity" not in feature.evidence
+        for feature in features
+    )
+
+
+def test_owner_clustering_restores_incomplete_injection_trajectory() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset(
+        {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+    )
+
+    without_order = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+    )
+    with_order = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order={
             "sample-a": 1,
             "sample-b": 2,
             "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
         },
+    )
+
+    assert with_order[0].evidence == "owner_injection_trajectory;owner_count=4"
+    assert without_order[0].evidence == "owner_bounded_continuity;owner_count=4"
+    assert [feature.event_cluster_ids for feature in with_order] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+            "OWN-sample-d-d",
+        )
+    ]
+
+
+def test_owner_clustering_requires_complete_unique_injection_order() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset(
+        {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+    )
+
+    for injection_order in (
+        {"sample-a": 1, "sample-b": 2, "sample-c": 3},
+        {"sample-a": 1, "sample-b": 2, "sample-c": 2, "sample-d": 4},
+    ):
+        features = cluster_sample_local_owners(
+            owners,
+            config=config,
+            sample_universe=sample_universe,
+            injection_order=injection_order,
+        )
+
+        assert all(
+            "owner_injection_trajectory" not in feature.evidence
+            for feature in features
+        )
+
+
+def test_owner_clustering_restores_partial_injection_trajectory_beyond_bounded_span(
+) -> None:
+    owners = tuple(
+        _owner(
+            f"sample-{index}",
+            f"o{index}",
+            apex_rt=10.00 + 0.9 * (index - 1),
+        )
+        for index in range(1, 8)
+    )
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            f"sample-{index}" for index in range(1, 13)
+        ),
+        injection_order={f"sample-{index}": index for index in range(1, 13)},
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        tuple(f"OWN-sample-{index}-o{index}" for index in range(1, 8)),
+    ]
+    assert features[0].evidence == "owner_injection_trajectory;owner_count=7"
+
+
+def test_owner_clustering_does_not_use_drift_lookup_order_for_trajectory() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.75),
+        _owner("sample-c", "c", apex_rt=11.50),
+        _owner("sample-d", "d", apex_rt=12.25),
+    )
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+        ),
+        drift_lookup=_DriftLookup(
+            deltas={},
+            orders={
+                "sample-a": 1,
+                "sample-b": 2,
+                "sample-c": 3,
+                "sample-d": 4,
+            },
+        ),
+    )
+
+    assert all(
+        "owner_injection_trajectory" not in feature.evidence
+        for feature in features
+    )
+
+
+def test_trajectory_hard_envelope_is_permutation_invariant_at_ppm_boundary() -> None:
+    low = _owner("sample-a", "low", precursor_mz=100.0)
+    high = _owner("sample-b", "high", precursor_mz=100.001000005)
+    config = AlignmentConfig(preferred_ppm=10.0, max_ppm=10.0)
+
+    assert not peak_groups_module._group_passes_hard_envelope(
+        (low, high),
+        config=config,
+    )
+    assert not peak_groups_module._group_passes_hard_envelope(
+        (high, low),
+        config=config,
+    )
+
+
+def test_owner_clustering_does_not_restore_trajectory_across_hard_bridge() -> None:
+    sample_universe = frozenset({"sample-a", "sample-b", "sample-c", "sample-d"})
+    injection_order = {
+        "sample-a": 1,
+        "sample-b": 2,
+        "sample-c": 3,
+        "sample-d": 4,
+    }
+    cases = (
+        (
+            (
+                _owner("sample-a", "a", apex_rt=10.00, precursor_mz=500.0000),
+                _owner("sample-b", "b", apex_rt=10.10, precursor_mz=500.0040),
+                _owner("sample-c", "c", apex_rt=10.20, precursor_mz=500.0080),
+            ),
+            AlignmentConfig(preferred_ppm=10.0, max_ppm=10.0),
+        ),
+        (
+            (
+                _owner("sample-a", "a", apex_rt=10.00, product_mz=383.9526),
+                _owner("sample-b", "b", apex_rt=10.10, product_mz=383.9566),
+                _owner("sample-c", "c", apex_rt=10.20, product_mz=383.9606),
+            ),
+            AlignmentConfig(product_mz_tolerance_ppm=15.0),
+        ),
+        (
+            (
+                _owner("sample-a", "a", apex_rt=10.00, observed_loss=116.0474),
+                _owner("sample-b", "b", apex_rt=10.10, observed_loss=116.0486),
+                _owner("sample-c", "c", apex_rt=10.20, observed_loss=116.0498),
+            ),
+            AlignmentConfig(observed_loss_tolerance_ppm=15.0),
+        ),
+    )
+
+    for owners, config in cases:
+        features = cluster_sample_local_owners(
+            owners,
+            config=config,
+            sample_universe=sample_universe,
+            injection_order=injection_order,
+        )
+
+        assert [feature.event_cluster_ids for feature in features] == [
+            ("OWN-sample-a-a", "OWN-sample-b-b"),
+            ("OWN-sample-c-c",),
+        ]
+
+
+def test_owner_clustering_keeps_parallel_injection_trajectories_separate() -> None:
+    owners = (
+        _owner("sample-a", "low", apex_rt=10.00),
+        _owner("sample-b", "low", apex_rt=10.75),
+        _owner("sample-c", "low", apex_rt=11.50),
+        _owner("sample-d", "low", apex_rt=12.25),
+        _owner("sample-a", "high", apex_rt=12.50),
+        _owner("sample-b", "high", apex_rt=13.25),
+        _owner("sample-c", "high", apex_rt=14.00),
+        _owner("sample-d", "high", apex_rt=14.75),
+    )
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d", "sample-e"},
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+        },
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-low",
+            "OWN-sample-b-low",
+            "OWN-sample-c-low",
+            "OWN-sample-d-low",
+        ),
+        (
+            "OWN-sample-a-high",
+            "OWN-sample-b-high",
+            "OWN-sample-c-high",
+            "OWN-sample-d-high",
+        ),
+    ]
+    assert {feature.evidence for feature in features} == {
+        "owner_injection_trajectory;owner_count=4",
+    }
+
+
+def test_owner_clustering_keeps_8raw_like_rt_outlier_separate_with_order() -> None:
+    owners = tuple(
+        _owner(f"sample-{index}", "main", apex_rt=10.0 + index / 10.0)
+        for index in range(1, 8)
+    ) + (_owner("sample-8", "outlier", apex_rt=20.0),)
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(owner.sample_stem for owner in owners),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners)
+        },
+    )
+
+    assert [len(feature.owners) for feature in features] == [7, 1]
+    assert features[1].event_cluster_ids == ("OWN-sample-8-outlier",)
+
+
+def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=10.10,
+            evidence_score=53,
+            seed_event_count=1,
+        ),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    assert evaluate_owner_edge(owners[0], owners[1], config=config).decision == (
+        "weak_edge"
+    )
+    assert len(cluster_sample_local_owners(owners, config=config)) == 2
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        )
+    ]
+    assert features[0].evidence == "owner_full_batch_continuity;owner_count=2"
+
+
+def test_owner_clustering_keeps_complete_full_batch_on_complete_link() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.10),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        )
+    ]
+    assert features[0].evidence == "owner_complete_link;owner_count=2"
+
+
+def test_owner_clustering_keeps_full_batch_split_across_blocked_mz_edge() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            precursor_mz=500.000,
+            product_mz=383.9526,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            precursor_mz=500.004,
+            product_mz=383.9566,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            precursor_mz=500.008,
+            product_mz=383.9606,
+        ),
+    )
+    config = AlignmentConfig(
+        preferred_ppm=10.0,
+        max_ppm=10.0,
+        product_mz_tolerance_ppm=15.0,
+    )
+
+    assert evaluate_owner_edge(owners[0], owners[1], config=config).decision == (
+        "strong_edge"
+    )
+    assert evaluate_owner_edge(owners[1], owners[2], config=config).decision == (
+        "strong_edge"
+    )
+    assert evaluate_owner_edge(owners[0], owners[2], config=config).decision == (
+        "blocked_edge"
     )
 
     features = cluster_sample_local_owners(
         owners,
         config=config,
-        drift_lookup=drift_lookup,
-        edge_evidence_sink=edge_evidence,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
     )
 
-    assert evaluate_owner_edge(
-        owners[0],
-        owners[1],
-        config=config,
-        drift_lookup=drift_lookup,
-    ).decision == "strong_edge"
-    assert evaluate_owner_edge(
-        owners[1],
-        owners[2],
-        config=config,
-        drift_lookup=drift_lookup,
-    ).decision == "strong_edge"
-    grouped_owner_ids = [feature.event_cluster_ids for feature in features]
-    assert grouped_owner_ids == [
+    assert [feature.event_cluster_ids for feature in features] == [
         ("OWN-sample-a-a", "OWN-sample-b-b"),
         ("OWN-sample-c-c",),
     ]
-    assert _edge_decisions_by_pair(edge_evidence)[
-        ("OWN-sample-a-a", "OWN-sample-c-c")
-    ] == "weak_edge"
+
+
+def test_connected_link_grouping_is_invariant_to_precursor_bucket_origin() -> None:
+    config = AlignmentConfig(
+        preferred_ppm=10.0,
+        max_ppm=10.0,
+        product_mz_tolerance_ppm=15.0,
+    )
+
+    def connected_owner_ids(
+        precursor_mzs: tuple[float, ...],
+    ) -> tuple[tuple[str, ...], ...]:
+        owners = [
+            _owner(
+                f"sample-{index}",
+                str(index),
+                precursor_mz=precursor_mz,
+            )
+            for index, precursor_mz in enumerate(precursor_mzs)
+        ]
+        groups = peak_groups_module._connected_link_groups(
+            owners,
+            config,
+            drift_lookup=None,
+            edge_evidence_sink=None,
+            edge_cache={},
+            edge_evaluator=evaluate_owner_edge,
+        )
+        return tuple(
+            tuple(owner.owner_id for owner in group)
+            for group in groups
+        )
+
+    expected = (
+        tuple(f"OWN-sample-{index}-{index}" for index in range(5)),
+    )
+    assert connected_owner_ids(
+        (499.992, 499.996, 500.000, 500.004, 500.008)
+    ) == expected
+    assert connected_owner_ids(
+        (500.192, 500.196, 500.200, 500.204, 500.208)
+    ) == expected
+
+
+def test_owner_clustering_does_not_single_link_merge_bridge_groups() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            precursor_mz=500.000,
+            product_mz=383.9526,
+            apex_rt=10.00,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            precursor_mz=500.004,
+            product_mz=383.9566,
+            apex_rt=10.20,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            precursor_mz=500.008,
+            product_mz=383.9606,
+            apex_rt=10.10,
+        ),
+    )
+
+    features = cluster_sample_local_owners(
+        owners,
+        config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+            preferred_ppm=10.0,
+            max_ppm=10.0,
+            product_mz_tolerance_ppm=15.0,
+        ),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a",),
+        ("OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+
+
+def test_owner_clustering_merges_groups_when_owner_matches_both() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=10.00,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=10.10,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=10.20,
+        ),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.owner_id, right.owner_id} == {
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        }:
+            return replace(
+                edge,
+                decision="weak_edge",
+                owner_quality="weak",
+                reason="weak: bridge admission withheld",
+            )
+        return edge
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c"},
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
+        (
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+            "OWN-sample-c-c",
+        )
+    ]
+
+
+def test_owner_clustering_keeps_incomplete_merge_on_complete_link_partition() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.10),
+        _owner("sample-c", "c", apex_rt=10.20),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.owner_id, right.owner_id} == {
+            "OWN-sample-a-a",
+            "OWN-sample-b-b",
+        }:
+            return replace(
+                edge,
+                decision="weak_edge",
+                owner_quality="weak",
+                reason="weak: complete-link partition boundary",
+            )
+        return edge
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+    assert "owner_bounded_continuity" in hypotheses[0].evidence
+
+
+def test_targeted_istd_anchor_binds_generic_injection_trajectory_provenance(
+) -> None:
+    owners = tuple(
+        _owner(
+            f"sample-{index}",
+            f"o{index}",
+            apex_rt=8.0 + 0.8 * index,
+            neutral_loss_tag="DNA_dR",
+        )
+        for index in range(8)
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset({f"sample-{index}" for index in range(10)})
+    injection_order = {f"sample-{index}": index + 1 for index in range(8)}
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.sample_stem, right.sample_stem} == {
+            "sample-3",
+            "sample-4",
+        }:
+            return replace(
+                edge,
+                decision="weak_edge",
+                failure_reason="",
+                owner_quality="clean",
+                seed_support_level="moderate",
+                reason="weak: complete-link trajectory boundary",
+            )
+        return edge
+
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=20.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=(target.label,),
+    )
+    without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(points=()),
+        edge_evaluator=evaluator,
+    )
+    with_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert len(without_anchor) == 1
+    assert without_anchor[0].evidence == "owner_injection_trajectory;owner_count=8"
+    assert len(with_anchor) == 1
+    assert [item.owner_ids for item in with_anchor] == [
+        item.owner_ids for item in without_anchor
+    ]
+    assert with_anchor[0].evidence == "owner_targeted_istd_trajectory;owner_count=8"
+    assert len(with_anchor[0].owners) == 8
+
+
+def test_targeted_istd_anchor_reconciles_loss_fragmented_sample_disjoint_groups(
+) -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.955,
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.4,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.950,
+            observed_loss=116.050,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-reconciliation",
+        ),
+        observed_labels=(target.label,),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+    sample_universe = frozenset(
+        {"sample-a", "sample-b", "sample-c", "sample-d"}
+    )
+    injection_order = {"sample-a": 1, "sample-b": 2, "sample-c": 3}
+
+    without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(points=()),
+    )
+    with_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(without_anchor) == 2
+    assert [item.owner_ids for item in with_anchor] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
+    ]
+    assert with_anchor[0].evidence == "owner_targeted_istd_trajectory;owner_count=3"
+
+
+def test_targeted_istd_reconciliation_keeps_precursor_hard_conflict_separate() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            precursor_mz=499.991,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            precursor_mz=500.009,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-precursor-conflict",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(
+            preferred_rt_sec=60.0,
+            max_rt_sec=180.0,
+            max_ppm=20.0,
+        ),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in hypotheses
+    )
+
+
+def test_targeted_istd_reconciliation_keeps_rt_discontinuity_separate() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=9.5,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.050,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-rt-discontinuity",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in hypotheses
+    )
+
+
+def test_targeted_istd_reconciliation_demotes_same_sample_secondary_group() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.952,
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-d",
+            "d",
+            apex_rt=8.3,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.955,
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-e",
+            "e",
+            apex_rt=8.4,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.955,
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b-secondary",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.948,
+            observed_loss=116.052,
+        ),
+        _owner(
+            "sample-a",
+            "a-secondary",
+            apex_rt=9.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.948,
+            observed_loss=116.052,
+        ),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd-secondary-group",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {
+                "sample-a",
+                "sample-b",
+                "sample-c",
+                "sample-d",
+                "sample-e",
+                "sample-f",
+            }
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+        },
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    winner = next(item for item in hypotheses if not item.review_only)
+    loser = next(item for item in hypotheses if item.review_only)
+    assert winner.owner_ids == (
+        "OWN-sample-a-a",
+        "OWN-sample-b-b",
+        "OWN-sample-c-c",
+        "OWN-sample-d-d",
+        "OWN-sample-e-e",
+    )
+    assert loser.owner_ids == (
+        "OWN-sample-b-b-secondary",
+        "OWN-sample-a-a-secondary",
+    )
+    assert "owner_duplicate_group_resolved_loser" in loser.evidence
+
+
+def test_targeted_istd_reconciliation_accepts_product_mz_measurement_split() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.940,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            product_mz=383.960,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-product-split"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 1
+    assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
+
+
+def test_targeted_istd_reconciliation_accepts_tail_supported_owner() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        replace(
+            _owner(
+                "sample-b",
+                "b",
+                apex_rt=8.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.050,
+            ),
+            assignment_reason="owner_tail_assignment",
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-tail-supported"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 1
+    assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
+
+
+def test_targeted_istd_reconciliation_accepts_moderate_tail_without_mass_split(
+) -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.047,
+        ),
+        replace(
+            _owner(
+                "sample-b",
+                "b",
+                apex_rt=8.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.047,
+            ),
+            assignment_reason="owner_tail_assignment",
+        ),
+    )
+
+    def moderate_tail_evaluator(left, right, *, config, drift_lookup):
+        return replace(
+            evaluate_owner_edge(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+            ),
+            decision="weak_edge",
+            failure_reason="",
+            owner_quality="tail_supported",
+            seed_support_level="moderate",
+        )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-moderate-tail"
+            ),
+        ),
+        edge_evaluator=moderate_tail_evaluator,
+    )
+
+    assert len(hypotheses) == 1
+    assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
+
+
+def test_targeted_istd_reconciliation_rejects_weak_owner_edge() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.050,
+        ),
+    )
+
+    def weak_evaluator(left, right, *, config, drift_lookup):
+        return replace(
+            evaluate_owner_edge(
+                left,
+                right,
+                config=config,
+                drift_lookup=drift_lookup,
+            ),
+            owner_quality="weak",
+        )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-weak-owner"
+            ),
+        ),
+        edge_evaluator=weak_evaluator,
+    )
+
+    assert len(hypotheses) == 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in hypothesis.evidence
+        for hypothesis in hypotheses
+    )
+
+
+def test_targeted_istd_reconciliation_preserves_multiple_compatible_tracks() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "left",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.044,
+        ),
+        _owner(
+            "sample-b",
+            "left",
+            apex_rt=8.05,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.044,
+        ),
+        _owner(
+            "sample-c",
+            "left",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.044,
+        ),
+        _owner(
+            "sample-e",
+            "ambiguous-a",
+            apex_rt=8.75,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.047,
+        ),
+        _owner(
+            "sample-f",
+            "ambiguous-b",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.047,
+        ),
+        _owner(
+            "sample-d",
+            "right",
+            apex_rt=9.5,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.050,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {
+                "sample-a",
+                "sample-b",
+                "sample-c",
+                "sample-d",
+                "sample-e",
+                "sample-f",
+                "sample-g",
+            }
+        ),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+            "sample-d": 4,
+            "sample-e": 5,
+            "sample-f": 6,
+        },
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-multiple-tracks"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 3
+    assert sorted(len(hypothesis.owner_ids) for hypothesis in hypotheses) == [1, 2, 3]
+
+
+def test_targeted_istd_reconciliation_uses_complete_union_for_continuity() -> None:
+    groups = (
+        (
+            _owner(
+                "sample-1",
+                "a1",
+                apex_rt=8.0,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+            _owner(
+                "sample-4",
+                "a4",
+                apex_rt=9.8,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+            _owner(
+                "sample-10",
+                "a10",
+                apex_rt=8.9,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+        ),
+        (
+            _owner(
+                "sample-2",
+                "b2",
+                apex_rt=8.6,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.047,
+            ),
+        ),
+        (
+            _owner(
+                "sample-3",
+                "c3",
+                apex_rt=9.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.050,
+            ),
+        ),
+    )
+    drift_lookup = DriftEvidenceLookup(
+        points=(),
+        istd_identity_anchor=_targeted_istd_anchor(
+            identity_namespace="test-targeted-istd-complete-union"
+        ),
+    )
+
+    reconciled, targeted_owner_sets, validated_owner_sets = (
+        peak_groups_module._bind_targeted_istd_trajectory_provenance(
+            groups,
+            injection_trajectory_owner_sets=frozenset(),
+            injection_order={
+                "sample-1": 1,
+                "sample-2": 2,
+                "sample-3": 3,
+                "sample-4": 4,
+                "sample-10": 10,
+            },
+            config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=None,
+            edge_cache={},
+            edge_evaluator=evaluate_owner_edge,
+        )
+    )
+
+    assert len(reconciled) == 1
+    expected_owner_set = frozenset(
+        owner.owner_id for group in groups for owner in group
+    )
+    assert targeted_owner_sets == frozenset({expected_owner_set})
+    assert validated_owner_sets == frozenset({expected_owner_set})
+
+
+def test_targeted_istd_reconciliation_excludes_unconnected_hard_compatible_group(
+) -> None:
+    groups = (
+        (
+            _owner(
+                "sample-1",
+                "near-a",
+                apex_rt=8.0,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.044,
+            ),
+        ),
+        (
+            _owner(
+                "sample-2",
+                "near-b",
+                apex_rt=8.2,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.047,
+            ),
+        ),
+        (
+            _owner(
+                "sample-3",
+                "far",
+                apex_rt=11.0,
+                neutral_loss_tag="DNA_dR",
+                observed_loss=116.050,
+            ),
+        ),
+    )
+    drift_lookup = DriftEvidenceLookup(
+        points=(),
+        istd_identity_anchor=_targeted_istd_anchor(
+            identity_namespace="test-targeted-istd-unconnected-hard-compatible"
+        ),
+    )
+
+    reconciled, _targeted_owner_sets, _validated_owner_sets = (
+        peak_groups_module._bind_targeted_istd_trajectory_provenance(
+            groups,
+            injection_trajectory_owner_sets=frozenset(),
+            injection_order={"sample-1": 1, "sample-2": 2, "sample-3": 3},
+            config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+            drift_lookup=drift_lookup,
+            edge_evidence_sink=None,
+            edge_cache={},
+            edge_evaluator=evaluate_owner_edge,
+        )
+    )
+
+    assert sorted(len(group) for group in reconciled) == [1, 2]
+
+
+def test_targeted_istd_duplicate_demotion_accepts_natural_primary_trajectory() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.048,
+        ),
+        _owner(
+            "sample-b",
+            "b-secondary",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+        _owner(
+            "sample-c",
+            "c-secondary",
+            apex_rt=8.9,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"}
+        ),
+        injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-natural-primary"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert sum(hypothesis.review_only for hypothesis in hypotheses) == 1
+    winner = next(hypothesis for hypothesis in hypotheses if not hypothesis.review_only)
+    assert winner.owner_ids == (
+        "OWN-sample-a-a",
+        "OWN-sample-b-b",
+        "OWN-sample-c-c",
+    )
+
+
+def test_targeted_istd_duplicate_demotion_requires_injection_trajectory() -> None:
+    owners = (
+        _owner(
+            "sample-a",
+            "a",
+            apex_rt=8.0,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b",
+            apex_rt=8.1,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-c",
+            "c",
+            apex_rt=8.2,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.045,
+        ),
+        _owner(
+            "sample-b",
+            "b-secondary",
+            apex_rt=8.8,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+        _owner(
+            "sample-c",
+            "c-secondary",
+            apex_rt=8.9,
+            neutral_loss_tag="DNA_dR",
+            observed_loss=116.052,
+        ),
+    )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"}
+        ),
+        injection_order=None,
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=_targeted_istd_anchor(
+                identity_namespace="test-targeted-istd-no-injection-order"
+            ),
+        ),
+    )
+
+    assert len(hypotheses) == 2
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+
+
+def test_targeted_istd_trajectory_keeps_same_sample_or_blocked_edge_separate() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=8.0, neutral_loss_tag="DNA_dR"),
+        _owner("sample-a", "a2", apex_rt=8.8, neutral_loss_tag="DNA_dR"),
+        _owner("sample-b", "b", apex_rt=9.6, neutral_loss_tag="DNA_dR"),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=(target.label,),
+    )
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+    )
+
+    assert len(hypotheses) >= 2
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in hypotheses
+    )
+
+
+def test_targeted_istd_anchor_keeps_blocked_trajectory_membership_and_label() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=8.0, neutral_loss_tag="DNA_dR"),
+        _owner("sample-b", "b", apex_rt=8.4, neutral_loss_tag="DNA_dR"),
+        _owner("sample-c", "c", apex_rt=8.8, neutral_loss_tag="DNA_dR"),
+    )
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=(target.label,),
+    )
+
+    def evaluator(left, right, *, config, drift_lookup):
+        edge = evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if {left.sample_stem, right.sample_stem} == {"sample-b", "sample-c"}:
+            return replace(
+                edge,
+                decision="blocked_edge",
+                failure_reason="identity_conflict",
+                reason="blocked: crossing trajectory",
+            )
+        return replace(
+            edge,
+            decision="weak_edge",
+            failure_reason="",
+            owner_quality="clean",
+            seed_support_level="moderate",
+            reason="weak: crossing candidate",
+        )
+
+    without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c", "sample-d"}),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+        },
+        drift_lookup=DriftEvidenceLookup(points=()),
+        edge_evaluator=evaluator,
+    )
+    with_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c", "sample-d"}),
+        injection_order={
+            "sample-a": 1,
+            "sample-b": 2,
+            "sample-c": 3,
+        },
+        drift_lookup=DriftEvidenceLookup(
+            points=(),
+            istd_identity_anchor=anchor,
+        ),
+        edge_evaluator=evaluator,
+    )
+
+    assert [item.owner_ids for item in with_anchor] == [
+        item.owner_ids for item in without_anchor
+    ]
+    assert all(
+        "owner_targeted_istd_trajectory" not in item.evidence
+        for item in with_anchor
+    )
+
+
+def test_owner_clustering_keeps_rt_discontinuity_separate() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.75),
+            _owner("sample-c", "c", apex_rt=11.90),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+        injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-c-c",),
+    ]
+
+
+def test_owner_clustering_keeps_same_sample_recurrence_separate() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.75),
+            _owner("sample-a", "c", apex_rt=11.50),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+        injection_order={"sample-a": 1, "sample-b": 2},
+    )
+
+    assert [feature.event_cluster_ids for feature in features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+        ("OWN-sample-a-c",),
+    ]
 
 
 def test_owner_clustering_uses_drift_prior_for_strong_edge_over_strict_rt() -> None:
@@ -448,20 +2133,14 @@ def test_owner_family_construction_is_writer_visible(tmp_path: Path) -> None:
 
     assert len(cell_rows) == 3
     assert cell_rows[("FAM000001", "sample-a")]["status"] == "detected"
-    assert (
-        cell_rows[("FAM000001", "sample-a")]["source_candidate_id"]
-        == "sample-a#a"
-    )
+    assert cell_rows[("FAM000001", "sample-a")]["source_candidate_id"] == "sample-a#a"
     assert (
         cell_rows[("FAM000001", "sample-a")]["trace_quality"]
         == "owner_exact_apex_match"
     )
     assert cell_rows[("FAM000001", "sample-b")]["status"] == "detected"
     assert cell_rows[("FAM000001", "sample-c")]["status"] == "absent"
-    assert (
-        cell_rows[("FAM000001", "sample-c")]["reason"]
-        == "no local MS1 owner"
-    )
+    assert cell_rows[("FAM000001", "sample-c")]["reason"] == "no local MS1 owner"
 
     assert review_rows["FAM000001"]["event_cluster_count"] == "2"
     assert review_rows["FAM000001"]["event_cluster_ids"] == (
@@ -501,6 +2180,8 @@ def _owner(
     precursor_mz: float = 500.0,
     product_mz: float = 383.9526,
     observed_loss: float = 116.0474,
+    evidence_score: int = 80,
+    seed_event_count: int = 2,
     identity_conflict: bool = False,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
@@ -512,8 +2193,8 @@ def _owner(
         product_mz=product_mz,
         observed_neutral_loss_da=observed_loss,
         seed_rt=apex_rt,
-        evidence_score=80,
-        seed_event_count=2,
+        evidence_score=evidence_score,
+        seed_event_count=seed_event_count,
     )
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
@@ -534,6 +2215,31 @@ def _owner(
             asls_area=900.0,
             morphology_area=900.0,
         ),
+    )
+
+
+def _targeted_istd_anchor(
+    *,
+    identity_namespace: str,
+):
+    target = Target(
+        label="synthetic-dna-istd",
+        mz=500.0,
+        rt_min=7.0,
+        rt_max=12.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    return build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace=identity_namespace,
+        ),
+        observed_labels=(target.label,),
     )
 
 
@@ -586,3 +2292,107 @@ def _rows_by_feature_sample(path: Path) -> dict[tuple[str, str], dict[str, str]]
             (row["feature_family_id"], row["sample_stem"]): row
             for row in csv.DictReader(handle, delimiter="\t")
         }
+
+
+def test_owner_clustering_preserves_parallel_group_without_typed_identity() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.05),
+        _owner("sample-c", "c", apex_rt=10.10),
+        _owner("sample-a", "a2", apex_rt=10.40),
+        _owner("sample-b", "b2", apex_rt=10.45),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert [hypothesis.owner_ids for hypothesis in hypotheses] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b", "OWN-sample-c-c"),
+        ("OWN-sample-a-a2", "OWN-sample-b-b2"),
+    ]
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+    assert all(
+        hypothesis.consolidation_state == "not_consolidated"
+        for hypothesis in hypotheses
+    )
+
+
+def test_parallel_group_without_typed_identity_keeps_bounded_backfill() -> None:
+    features = cluster_sample_local_owners(
+        (
+            _owner("sample-a", "a", apex_rt=10.00),
+            _owner("sample-b", "b", apex_rt=10.05),
+            _owner("sample-c", "c", apex_rt=10.10),
+            _owner("sample-a", "a2", apex_rt=10.40),
+            _owner("sample-b", "b2", apex_rt=10.45),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+    sample_order = ("sample-a", "sample-b", "sample-c", "sample-d")
+
+    requests = {
+        feature.feature_family_id: backfill_request_sample_stems(
+            feature,
+            sample_order=sample_order,
+            raw_sample_stems=frozenset(sample_order),
+            alignment_config=AlignmentConfig(),
+        )
+        for feature in features
+    }
+
+    assert all(requests[feature.feature_family_id] for feature in features)
+
+
+def test_owner_clustering_keeps_group_that_adds_a_sample() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.05),
+        _owner("sample-c", "c", apex_rt=10.10),
+        _owner("sample-a", "a2", apex_rt=10.40),
+        _owner("sample-d", "d2", apex_rt=10.45),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset(
+            {"sample-a", "sample-b", "sample-c", "sample-d"},
+        ),
+    )
+
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+    assert all(
+        hypothesis.consolidation_state == "not_consolidated"
+        for hypothesis in hypotheses
+    )
+
+
+def test_owner_clustering_keeps_duplicate_owner_group_outside_identity_window() -> None:
+    owners = (
+        _owner("sample-a", "a", apex_rt=10.00),
+        _owner("sample-b", "b", apex_rt=10.05),
+        _owner("sample-c", "c", apex_rt=10.10),
+        _owner("sample-a", "a2", apex_rt=14.00),
+        _owner("sample-b", "b2", apex_rt=14.05),
+    )
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
+    )
+
+    assert all(not hypothesis.review_only for hypothesis in hypotheses)
+    assert all(
+        hypothesis.consolidation_state == "not_consolidated"
+        for hypothesis in hypotheses
+    )

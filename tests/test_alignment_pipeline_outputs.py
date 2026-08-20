@@ -15,14 +15,20 @@ from tests.alignment_pipeline_helpers import (
 )
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
+from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment import artifact_write_receipts as receipts_module
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
     AlignmentArtifactFingerprintReceipt,
 )
+from xic_extractor.alignment.drift_evidence import (
+    build_targeted_istd_identity_anchor,
+)
 from xic_extractor.alignment.pipeline_outputs import alignment_metadata, output_paths
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
@@ -85,6 +91,39 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
     )
     assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
     assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
+
+
+def test_alignment_metadata_versions_targeted_istd_anchor_shape() -> None:
+    metadata = alignment_metadata(
+        discovery_batch_index=Path("batch.csv"),
+        raw_dir=Path("raw"),
+        dll_dir=Path("dll"),
+        owner_backfill_xic_backend="raw",
+        output_level="validation",
+        peak_config=_peak_config(),
+        targeted_istd_anchor_identity="anchor-id",
+        targeted_istd_target_snapshot_id="snapshot-id",
+    )
+
+    assert metadata["schema_version"] == "alignment-results-v4"
+    assert metadata["targeted_istd_anchor_identity"] == "anchor-id"
+    assert metadata["targeted_istd_target_snapshot_id"] == "snapshot-id"
+
+
+def test_alignment_metadata_rejects_partial_targeted_istd_binding() -> None:
+    with pytest.raises(
+        ValueError,
+        match="anchor identity and target snapshot id must be provided together",
+    ):
+        alignment_metadata(
+            discovery_batch_index=Path("batch.csv"),
+            raw_dir=Path("raw"),
+            dll_dir=Path("dll"),
+            owner_backfill_xic_backend="raw",
+            output_level="validation",
+            peak_config=_peak_config(),
+            targeted_istd_anchor_identity="anchor-id",
+        )
 
 
 def test_alignment_metadata_records_owner_build_xic_backend() -> None:
@@ -197,6 +236,56 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         outputs.skipped_evidence_ledger_tsv == tmp_path / "skipped_evidence_ledger.tsv"
     )
     assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
+
+
+def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
+    tmp_path: Path,
+) -> None:
+    outputs = output_paths(
+        tmp_path,
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+        emit_target_snapshot_metadata=True,
+    )
+
+    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
+
+
+def test_pipeline_target_anchor_metadata_requires_typed_owner_anchor() -> None:
+    fake_lookup = SimpleNamespace(
+        istd_identity_anchor=SimpleNamespace(
+            target_config_identity="forged",
+            target_snapshot=SimpleNamespace(snapshot_id="forged-snapshot"),
+        )
+    )
+    assert pipeline_module._typed_targeted_istd_anchor(fake_lookup) is None
+
+    target = Target(
+        label="d3-5-hmdC",
+        mz=261.127276,
+        rt_min=8.0,
+        rt_max=10.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+        isotope_label_type="deuterated",
+        paired_rt_relation="none",
+        sample_applicability="all",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-pipeline-targeted-istd",
+        ),
+        observed_labels=("d3-5-hmdC",),
+    )
+    assert pipeline_module._typed_targeted_istd_anchor(
+        SimpleNamespace(istd_identity_anchor=anchor)
+    ) is anchor
 
 
 def test_writer_timing_observations_are_truthful_with_live_output(
@@ -764,6 +853,85 @@ def test_pipeline_orders_sample_columns_by_injection_order(
     ) == ["Sample_A", "Sample_B", "Sample_C", "Sample_X"]
 
 
+def test_pipeline_reads_injection_order_once_for_grouping_and_matrix_columns(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    samples = ("Sample_C", "Sample_A", "Sample_X", "Sample_B")
+    batch_index = _write_batch(tmp_path, samples)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    for stem in samples:
+        (raw_dir / f"{stem}.raw").write_text("raw", encoding="utf-8")
+    injection_csv = tmp_path / "instrument_qc_injection_order.csv"
+    injection_order = {"Sample_A": 1, "Sample_B": 2, "Sample_C": 3}
+    read_paths = []
+    captured = {}
+    real_cluster_owners = pipeline_module.cluster_sample_local_owners
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+    owners = (
+        _owner("Sample_A", "a", apex_rt=10.00),
+        _owner("Sample_B", "b", apex_rt=10.75),
+        _owner("Sample_C", "c", apex_rt=11.50),
+    )
+
+    def fake_read_injection_order(path: Path):
+        read_paths.append(path)
+        return injection_order, "test_injection_order"
+
+    def fake_owner_matrix(features, *, sample_order, **kwargs):
+        captured["features"] = features
+        return _matrix(sample_order)
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "_read_sample_column_injection_order",
+        fake_read_injection_order,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        lambda candidates, **kwargs: SimpleNamespace(
+            owners=owners,
+            assignments=(),
+            ambiguous_records=(),
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "cluster_sample_local_owners",
+        real_cluster_owners,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_owner_alignment_matrix",
+        fake_owner_matrix,
+    )
+
+    outputs = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        emit_alignment_status_matrix=True,
+        sample_column_injection_order=injection_csv,
+        raw_opener=FakeRawOpener(),
+    )
+
+    assert read_paths == [injection_csv]
+    assert len(captured["features"]) == 1
+    assert (
+        captured["features"][0].evidence
+        == "owner_injection_trajectory;owner_count=3"
+    )
+    assert _status_matrix_sample_columns(
+        outputs.status_matrix_tsv,
+        set(samples),
+    ) == ["Sample_A", "Sample_B", "Sample_C", "Sample_X"]
+
+
 def test_pipeline_orders_sample_columns_by_sample_metadata_v1(
     tmp_path: Path,
     monkeypatch,
@@ -910,7 +1078,7 @@ def test_pipeline_enables_region_audit_only_when_alignment_cells_are_emitted(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -971,7 +1139,7 @@ def test_pipeline_enables_region_audit_when_integration_sidecar_is_emitted(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1034,7 +1202,7 @@ def test_pipeline_backfill_seed_sidecar_does_not_force_alignment_cells_or_region
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1099,7 +1267,7 @@ def test_pipeline_backfill_candidate_audit_requires_own_flag(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1268,7 +1436,7 @@ def test_validation_minimal_auto_mode_does_not_enable_heavy_region_audit(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+        lambda owners, **kwargs: (
             "feature",
         ),
     )
@@ -1323,6 +1491,8 @@ def test_run_alignment_validation_level_writes_owner_edge_evidence_tsv(
         owners,
         *,
         config,
+        sample_universe=None,
+        injection_order=None,
         drift_lookup=None,
         edge_evidence_sink=None,
     ):

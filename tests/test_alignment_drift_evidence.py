@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from openpyxl import Workbook
@@ -9,8 +10,11 @@ from xic_extractor.alignment.drift_evidence import (
     LocalTrajectoryEvidenceLookup,
     SampleDriftEvidence,
     assess_local_trajectory,
+    build_targeted_istd_identity_anchor,
     read_targeted_istd_drift_evidence,
 )
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
 
 def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
@@ -472,6 +476,7 @@ def test_read_targeted_istd_drift_evidence_uses_opaque_trends_and_no_target_cont
     point = lookup.points[0]
     assert not hasattr(point, "istd_label")
     assert not hasattr(point, "target_label")
+    assert lookup.istd_identity_anchor is None
 
 
 def test_read_targeted_istd_drift_evidence_treats_whitespace_sample_as_blank(
@@ -537,6 +542,127 @@ def test_read_targeted_istd_drift_evidence_maps_sorted_labels_to_opaque_trends(
     point = lookup.points[0]
     assert not hasattr(point, "istd_label")
     assert not hasattr(point, "target_label")
+
+
+def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
+    target = Target(
+        label="d3-5-hmdC",
+        mz=261.127276,
+        rt_min=8.0,
+        rt_max=10.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+        isotope_label_type="deuterated",
+        paired_rt_relation="none",
+        sample_applicability="all",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+        observed_labels=("d3-5-hmdC",),
+    )
+
+    with pytest.raises(TypeError, match="target_snapshot"):
+        build_targeted_istd_identity_anchor(
+            (target,),  # type: ignore[arg-type]
+            observed_labels=("d3-5-hmdC",),
+        )
+
+    assert anchor.matching_target(
+        SimpleNamespace(
+            feature_family_id="FAM_ISTD",
+            neutral_loss_tag="DNA_dR",
+            family_center_mz=261.1270,
+            family_center_rt=9.0,
+        )
+    ) == target
+    assert anchor.matching_target(
+        SimpleNamespace(
+            feature_family_id="FAM_OTHER",
+            neutral_loss_tag="DNA_dR",
+            family_center_mz=300.1605,
+            family_center_rt=23.0,
+        )
+    ) is None
+    assert anchor.matches_observation(
+        target,
+        neutral_loss_tag="DNA_dR",
+        precursor_mz=261.127276,
+        apex_rt=9.0,
+    )
+    assert not anchor.matches_observation(
+        target,
+        neutral_loss_tag="DNA_dR",
+        precursor_mz=261.127276,
+        apex_rt=10.1,
+    )
+    assert anchor.matching_family_ids(
+        (
+            SimpleNamespace(
+                feature_family_id="FAM_ISTD",
+                neutral_loss_tag="DNA_dR",
+                family_center_mz=261.1270,
+                family_center_rt=9.0,
+            ),
+        )
+    ) == frozenset({"FAM_ISTD"})
+
+
+def test_reader_mints_anchor_from_explicit_target_snapshot(tmp_path: Path) -> None:
+    workbook = tmp_path / "targeted.xlsx"
+    sample_info = tmp_path / "sample_info.csv"
+    sample_info.write_text(
+        "Sample_Name,Injection_Order\nsample-a,1\nsample-b,2\n",
+        encoding="utf-8",
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "XIC Results"
+    ws.append(["SampleName", "Target", "Role", "RT"])
+    ws.append(["sample-a", "d3-5-hmdC", "ISTD", 8.5])
+    ws.append(["sample-b", "d3-5-hmdC", "ISTD", 8.6])
+    wb.save(workbook)
+
+    target = Target(
+        label="d3-5-hmdC",
+        mz=261.127276,
+        rt_min=8.0,
+        rt_max=10.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+
+    lookup = read_targeted_istd_drift_evidence(
+        targeted_workbook=workbook,
+        sample_info=sample_info,
+        local_window=2,
+        target_snapshot=mint_target_list_snapshot(
+            (target,),
+            identity_namespace="test-targeted-istd",
+        ),
+    )
+
+    assert lookup.istd_identity_anchor is not None
+    assert lookup.istd_identity_anchor.matching_family_ids(
+        (
+            SimpleNamespace(
+                feature_family_id="FAM_ISTD",
+                neutral_loss_tag="DNA_dR",
+                family_center_mz=261.127276,
+                family_center_rt=9.0,
+            ),
+        )
+    ) == frozenset({"FAM_ISTD"})
 
 
 def _write_targeted_workbook(path: Path) -> None:

@@ -48,6 +48,7 @@ def test_pipeline_v2_persists_and_replays_source_to_winner_lineage(
         feature_order=("WINNER",),
         sample_order=matrix.sample_order,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        audit_evidence_mode="full",
     )
 
     physical = next(row for row in batch.rows if row.row_kind == "physical_question")
@@ -74,6 +75,65 @@ def test_pipeline_v2_persists_and_replays_source_to_winner_lineage(
 
     path = write_owner_backfill_peak_fact_provenance_tsv(
         tmp_path / "moved-v2.tsv",
+        batch,
+    )
+    composed = compose_owner_backfill_peak_fact_provenance(
+        read_owner_backfill_peak_fact_provenance_tsv(path),
+        live_observation_by_work={live.stage.work_unit_key: live.observation},
+        live_extraction_by_work={live.stage.work_unit_key: live.extraction},
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        live_matrix=matrix,
+        alignment_config=config,
+        production_decisions=decisions,
+    )
+    assert composed.physical_claims[0].physical_claim == "verified"
+    assert composed.cell_claims[0].cell_projection_claim == "verified"
+
+
+def test_pipeline_v2_accepts_pre_backfill_winner_with_multi_source_lineage(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source_group_id = live.stage.group_hypothesis_id
+    winner = replace(
+        live.observation.cell,
+        consolidation_state="primary_winner",
+        consolidation_winner_group_hypothesis_id=source_group_id,
+        consolidation_source_group_hypothesis_id=(
+            f"{source_group_id};SOURCE-GROUP-2"
+        ),
+    )
+    matrix = AlignmentMatrix(
+        clusters=(_production_feature(live.stage),),
+        cells=(
+            winner,
+            _detected_cell("detected-1", live.evaluation.integration, stage=live.stage),
+            _detected_cell("detected-2", live.evaluation.integration, stage=live.stage),
+        ),
+        sample_order=(live.stage.sample_stem, "detected-1", "detected-2"),
+    )
+    config = AlignmentConfig()
+    decisions = build_production_decisions(matrix, config)
+
+    batch = _owner_backfill_peak_fact_provenance(
+        (live.observation,),
+        matrix=matrix,
+        alignment_config=config,
+        production_decisions=decisions,
+        feature_order=(source_group_id,),
+        sample_order=matrix.sample_order,
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        audit_evidence_mode="full",
+    )
+
+    cell = next(row for row in batch.rows if row.row_kind == "cell_projection")
+    assert cell.group_hypothesis_id == source_group_id
+    assert cell.consolidation_state == "primary_winner"
+    assert cell.consolidation_source_group_hypothesis_id == (
+        f"{source_group_id};SOURCE-GROUP-2"
+    )
+    path = write_owner_backfill_peak_fact_provenance_tsv(
+        tmp_path / "pre-backfill-winner-v2.tsv",
         batch,
     )
     composed = compose_owner_backfill_peak_fact_provenance(
@@ -139,6 +199,7 @@ def test_pipeline_v2_replays_lineage_minted_by_primary_consolidation(
         feature_order=(live.observation.cell.cluster_id, "WINNER"),
         sample_order=matrix.sample_order,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        audit_evidence_mode="full",
     )
     path = write_owner_backfill_peak_fact_provenance_tsv(
         tmp_path / "primary-consolidation-v2.tsv",
@@ -193,6 +254,7 @@ def test_pipeline_v2_fails_closed_for_crossed_consolidation_lineage(
             feature_order=("WINNER",),
             sample_order=crossed_matrix.sample_order,
             signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            audit_evidence_mode="full",
         )
 
 
@@ -227,6 +289,7 @@ def test_pipeline_v2_does_not_use_area_equality_as_work_or_fact_fallback(
             feature_order=("WINNER",),
             sample_order=crossed_matrix.sample_order,
             signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            audit_evidence_mode="full",
         )
 
 
@@ -247,6 +310,7 @@ def test_pipeline_v2_strict_reader_rejects_crossed_work_or_fact_binding(
         feature_order=("WINNER",),
         sample_order=matrix.sample_order,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        audit_evidence_mode="full",
     )
     path = write_owner_backfill_peak_fact_provenance_tsv(
         tmp_path / f"crossed-{field}.tsv",
@@ -313,6 +377,7 @@ def test_pipeline_v2_rejects_two_legal_final_cells_for_one_selected_work(
             feature_order=("WINNER", "WINNER-2"),
             sample_order=two_winner_matrix.sample_order,
             signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            audit_evidence_mode="full",
         )
 
 
@@ -347,6 +412,7 @@ def test_pipeline_v2_ignores_multiple_legal_nonwriting_cells_for_one_work(
         feature_order=(live.stage.public_family_id, "WINNER"),
         sample_order=matrix.sample_order,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        audit_evidence_mode="full",
     )
 
     assert tuple(row.row_kind for row in batch.rows) == (
@@ -372,6 +438,7 @@ def test_pipeline_v2_requires_reverse_coverage_for_every_written_rescued_cell(
             feature_order=("WINNER",),
             sample_order=matrix.sample_order,
             signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            audit_evidence_mode="full",
         )
 
 
@@ -392,6 +459,7 @@ def test_pipeline_v2_ignores_loser_with_same_integration_but_different_lineage(
         feature_order=("WINNER", "LOSER"),
         sample_order=matrix.sample_order,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        audit_evidence_mode="full",
     )
 
     physical_rows = tuple(
@@ -401,6 +469,56 @@ def test_pipeline_v2_ignores_loser_with_same_integration_but_different_lineage(
     assert len(physical_rows) == 2
     assert len(cell_rows) == 1
     assert cell_rows[0].selected_work_unit_key == selected.stage.work_unit_key
+
+
+def test_audit_evidence_mode_none_keeps_only_selected_physical_rows(
+    tmp_path: Path,
+) -> None:
+    """audit_evidence_mode must scope the unselected provenance remainder.
+
+    One physical_question row exists per Backfill request, but only the rows a
+    cell_projection selects carry a written Matrix value (8RAW: 853 of 43,126).
+    `full` keeps the audit remainder; `none` keeps only what the written cells
+    need, and never changes the cell projections themselves.
+    """
+
+    selected, matrix, config = _moved_final_matrix(tmp_path / "selected")
+    loser = _live_available_inputs(tmp_path / "loser", feature_id="LOSER")
+    decisions = build_production_decisions(matrix, config)
+
+    def batch_for(mode: str):
+        return _owner_backfill_peak_fact_provenance(
+            (selected.observation, loser.observation),
+            matrix=matrix,
+            alignment_config=config,
+            production_decisions=decisions,
+            feature_order=("WINNER", "LOSER"),
+            sample_order=matrix.sample_order,
+            signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            audit_evidence_mode=mode,
+        )
+
+    def split(batch):
+        kinds = {"run_profile": [], "physical_question": [], "cell_projection": []}
+        for row in batch.rows:
+            kinds[row.row_kind].append(row)
+        return kinds
+
+    full = split(batch_for("full"))
+    none = split(batch_for("none"))
+
+    assert len(full["physical_question"]) == 2
+    assert len(none["physical_question"]) == 1, "unselected row must be dropped"
+    assert none["physical_question"][0].work_unit_key == selected.stage.work_unit_key
+
+    # the written-cell evidence is identical under both modes
+    assert full["cell_projection"] == none["cell_projection"]
+    assert full["run_profile"] == none["run_profile"]
+    assert len(none["cell_projection"]) == 1
+
+    # every retained row is still referenced, so the batch stays self-consistent
+    referenced = {row.selected_work_unit_key for row in none["cell_projection"]}
+    assert {row.work_unit_key for row in none["physical_question"]} == referenced
 
 
 def _moved_final_matrix(tmp_path: Path):

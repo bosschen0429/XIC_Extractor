@@ -49,8 +49,7 @@ def test_owner_family_successor_mapping_names_all_required_invariants() -> None:
         "active_policy"
     )
     assert (
-        by_invariant["complete_link_edge_semantics"].disposition
-        == "successor_owned"
+        by_invariant["bounded_grouping_edge_semantics"].disposition == "successor_owned"
     )
     assert by_invariant["hard_family_split_gates"].disposition == "successor_owned"
     assert by_invariant["review_only_owner_records"].disposition == "successor_owned"
@@ -58,15 +57,18 @@ def test_owner_family_successor_mapping_names_all_required_invariants() -> None:
         by_invariant["backfill_seed_and_matrix_delivery"].disposition
         == "successor_owned"
     )
-    assert "owner_count=2" in by_invariant[
-        "stable_cross_sample_family_membership"
-    ].current_state
-    assert "event_ids=sample-a#a;sample-a#support;sample-b#b" in by_invariant[
-        "stable_cross_sample_family_membership"
-    ].current_state
-    assert "alignment_matrix.tsv" in by_invariant[
-        "stable_cross_sample_family_membership"
-    ].exit_rule
+    assert (
+        "owner_count=2"
+        in by_invariant["stable_cross_sample_family_membership"].current_state
+    )
+    assert (
+        "event_ids=sample-a#a;sample-a#support;sample-b#b"
+        in by_invariant["stable_cross_sample_family_membership"].current_state
+    )
+    assert (
+        "alignment_matrix.tsv"
+        in by_invariant["stable_cross_sample_family_membership"].exit_rule
+    )
 
 
 def test_successor_constructor_matches_owner_adapter_delivery_fields() -> None:
@@ -119,12 +121,10 @@ def test_successor_constructor_matches_owner_adapter_delivery_fields() -> None:
             edge_evidence=edge_evidence,
         )
     }
-    assert by_invariant["complete_link_edge_semantics"].disposition == (
+    assert by_invariant["bounded_grouping_edge_semantics"].disposition == (
         "successor_owned"
     )
-    assert by_invariant["hard_family_split_gates"].disposition == (
-        "successor_owned"
-    )
+    assert by_invariant["hard_family_split_gates"].disposition == ("successor_owned")
     assert by_invariant["backfill_seed_and_matrix_delivery"].disposition == (
         "successor_owned"
     )
@@ -294,7 +294,7 @@ def test_strong_owner_edge_projects_support_fact_and_marks_successor_owned() -> 
     assert "support_count=1" in edge_mapping.current_state
     assert "challenge_count=0" in edge_mapping.current_state
     assert "CrossSamplePeakGroupEdgeFact" in edge_mapping.successor_surface
-    assert by_invariant["complete_link_edge_semantics"].disposition == (
+    assert by_invariant["bounded_grouping_edge_semantics"].disposition == (
         "successor_owned"
     )
 
@@ -480,13 +480,14 @@ def test_blocked_edge_projects_hard_gate_observation() -> None:
     assert by_invariant["owner_edge_evidence_projection"].disposition == (
         "successor_owned"
     )
-    assert by_invariant["complete_link_edge_semantics"].disposition == (
+    assert by_invariant["bounded_grouping_edge_semantics"].disposition == (
         "successor_owned"
     )
     assert by_invariant["hard_family_split_gates"].disposition == "successor_owned"
-    assert "hard_gate_challenge_fact_count=1" in by_invariant[
-        "hard_family_split_gates"
-    ].current_state
+    assert (
+        "hard_gate_challenge_fact_count=1"
+        in by_invariant["hard_family_split_gates"].current_state
+    )
     assert "same_sample" in by_invariant["hard_family_split_gates"].current_state
 
 
@@ -503,7 +504,7 @@ def test_owner_clustering_is_adapter_candidate_after_successor_constructor() -> 
 
     assert decision.disposition == "compatibility_adapter_candidate"
     assert "review_only_owner_records" not in decision.blocking_invariants
-    assert "complete_link_edge_semantics" not in decision.blocking_invariants
+    assert "bounded_grouping_edge_semantics" not in decision.blocking_invariants
     assert "hard_family_split_gates" not in decision.blocking_invariants
     assert "backfill_seed_and_matrix_delivery" not in decision.blocking_invariants
 
@@ -548,7 +549,7 @@ def test_owner_group_migration_is_adapter_candidate_after_parity() -> None:
         "successor_owned"
     )
     assert by_invariant["review_only_owner_records"].disposition == "successor_owned"
-    assert by_invariant["complete_link_edge_semantics"].disposition == (
+    assert by_invariant["bounded_grouping_edge_semantics"].disposition == (
         "successor_owned"
     )
     assert by_invariant["hard_family_split_gates"].disposition == "successor_owned"
@@ -560,7 +561,7 @@ def test_owner_group_migration_is_adapter_candidate_after_parity() -> None:
     assert "successor cross-sample peak group construction" in decision.reason
     assert "stable_cross_sample_family_membership" not in decision.blocking_invariants
     assert "owner_edge_evidence_projection" not in decision.blocking_invariants
-    assert "complete_link_edge_semantics" not in decision.blocking_invariants
+    assert "bounded_grouping_edge_semantics" not in decision.blocking_invariants
     assert "hard_family_split_gates" not in decision.blocking_invariants
     assert "review_only_owner_records" not in decision.blocking_invariants
     assert "backfill_seed_and_matrix_delivery" not in decision.blocking_invariants
@@ -655,9 +656,8 @@ def test_compact_owner_family_tsv_triad_keeps_primary_and_full_delivery_rows(
 
 
 def test_cross_sample_peak_group_constructor_has_no_production_path_imports() -> None:
-    shared_peak_identity_dir = (
-        Path("xic_extractor/alignment")
-        / ("shared_peak_identity_" + "explanation")
+    shared_peak_identity_dir = Path("xic_extractor/alignment") / (
+        "shared_peak_identity_" + "explanation"
     )
     production_paths = [
         Path("xic_extractor/alignment/__init__.py"),

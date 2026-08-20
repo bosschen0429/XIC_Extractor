@@ -1,3 +1,4 @@
+import csv
 import json
 import tomllib
 from pathlib import Path
@@ -17,7 +18,18 @@ from xic_extractor.alignment.pipeline import (
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+    DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    discovery_receipt_index_fields,
+    mint_discovery_candidate_universe_receipt,
+)
+from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+    RawReaderError,
+)
 
 
 def AlignmentRunOutputs(  # noqa: N802 - test factory mirrors the product type
@@ -833,6 +845,7 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     assert code == 0
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["emit_alignment_cells"] is False
+    assert captured_alignment["require_discovery_owner_closure"] is True
     assert captured_preset == {}
 
 
@@ -1893,11 +1906,10 @@ def test_run_alignment_cli_builds_and_passes_drift_lookup(
     )
 
     assert code == 0
-    assert captured["drift_kwargs"] == {
-        "targeted_workbook": targeted_workbook.resolve(),
-        "sample_info": sample_info.resolve(),
-        "local_window": 40,
-    }
+    assert captured["drift_kwargs"]["targeted_workbook"] == targeted_workbook.resolve()
+    assert captured["drift_kwargs"]["sample_info"] == sample_info.resolve()
+    assert captured["drift_kwargs"]["local_window"] == 40
+    assert captured["drift_kwargs"]["target_snapshot"] is not None
     assert captured["run_kwargs"]["drift_lookup"] is drift_lookup
     assert captured["run_kwargs"]["raw_workers"] == 3
     assert captured["run_kwargs"]["raw_xic_batch_size"] == 16
@@ -2425,22 +2437,64 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
     assert code == 0
 
 
+def _write_owner_closed_preflight_batch(
+    tmp_path: Path,
+    sample_stems: tuple[str, ...],
+) -> tuple[Path, Path]:
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    fieldnames = (
+        "schema_version",
+        "sample_stem",
+        "raw_file",
+        "candidate_csv",
+        "candidate_count",
+        *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    )
+    rows: list[dict[str, str]] = []
+    for sample_stem in sample_stems:
+        raw_path = raw_dir / f"{sample_stem}.raw"
+        raw_path.write_bytes(b"")
+        candidate_csv = tmp_path / f"{sample_stem.lower()}.csv"
+        candidate_csv.write_bytes(b"")
+        acquisition_source = build_acquisition_source_identity(
+            raw_path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
+        receipt = mint_discovery_candidate_universe_receipt(
+            sample_stem=sample_stem,
+            acquisition_source=acquisition_source,
+            candidate_csv=candidate_csv,
+            candidates=(),
+        )
+        rows.append(
+            {
+                "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+                "sample_stem": sample_stem,
+                "raw_file": raw_path.name,
+                "candidate_csv": candidate_csv.name,
+                "candidate_count": "0",
+                **discovery_receipt_index_fields(receipt),
+            }
+        )
+    with batch_index.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return batch_index, raw_dir
+
+
 def test_run_alignment_cli_preflight_only_prints_launch_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\nS2,S2.raw,s2.csv\n",
-        encoding="utf-8",
+    batch_index, raw_dir = _write_owner_closed_preflight_batch(
+        tmp_path,
+        ("S1", "S2"),
     )
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    (raw_dir / "S1.raw").write_text("", encoding="utf-8")
-    (raw_dir / "S2.raw").write_text("", encoding="utf-8")
-    (tmp_path / "s1.csv").write_text("", encoding="utf-8")
-    (tmp_path / "s2.csv").write_text("", encoding="utf-8")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
@@ -2486,6 +2540,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
         "Alignment launch preflight OK (diagnostic_only; no validation completed)"
         in stdout
     )
+    assert "Preflight scope: owner-closed discovery batch" in stdout
     assert "no candidate CSVs loaded; no RAW files opened" in stdout
     assert "Discovery batch samples: 2" in stdout
     assert "Candidate CSVs found: 2" in stdout
@@ -2534,6 +2589,38 @@ def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
 
     assert code == 2
     assert "candidate_csv is required" in capsys.readouterr().err
+
+
+def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text(
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
+        encoding="utf-8",
+    )
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    (raw_dir / "S1.raw").write_text("", encoding="utf-8")
+    (tmp_path / "s1.csv").write_text("", encoding="utf-8")
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--preflight-only",
+        ]
+    )
+
+    assert code == 2
+    assert "owner closure is required" in capsys.readouterr().err
 
 
 def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
@@ -2635,6 +2722,10 @@ def test_run_alignment_cli_rejects_noncanonical_85raw_contract(
     assert "85RAW canonical launch contract failed" in stderr
     assert "--output-level must be 'validation-minimal'" in stderr
     assert "--timing-live-output is required" in stderr
+    assert (
+        "--sample-info and --targeted-istd-workbook are required for canonical "
+        "85RAW runs"
+    ) in stderr
 
 
 def test_run_alignment_cli_rejects_85raw_wrong_python_environment(

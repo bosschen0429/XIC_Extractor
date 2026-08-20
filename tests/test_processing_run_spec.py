@@ -420,8 +420,8 @@ def test_valid_canonical_hash_snapshots_are_unchanged(tmp_path: Path) -> None:
     spec = _compile_paths(_raws(tmp_path))
 
     assert spec.discovery_method.method_hash == (
-        "1df5270e1f0917ac2b202ae095354ebe8d6e252454c4941769ef671244322c9e"
+        "a941225d663a845f4acecc8cfda602bef7e75a8ac115a471772b8f94a84726bf"
     )
     assert spec.run_spec_hash == (
-        "b4af370f10bf60723f90a9353f903328bf8007fda76f180abd69bd0a73cebe44"
+        "47bd53ce47002c5ec286732d4542082761858787dc08d9832d24dcfbdcfd8292"
     )

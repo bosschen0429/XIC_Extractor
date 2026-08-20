@@ -7,6 +7,7 @@ import pytest
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ownership import build_sample_local_owners
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 def test_same_sample_same_resolved_peak_becomes_one_owner():
@@ -32,6 +33,7 @@ def test_same_sample_same_resolved_peak_becomes_one_owner():
     assert owner.primary_identity_event.candidate_id == "s1#6095"
     assert [event.candidate_id for event in owner.supporting_events] == ["s1#6096"]
     assert owner.assignment_reason == "owner_exact_apex_match"
+    assert owner.quantification_eligible is True
     assert [(a.candidate_id, a.assignment_status) for a in result.assignments] == [
         ("s1#6095", "primary"),
         ("s1#6096", "supporting"),
@@ -463,6 +465,44 @@ def test_sample_local_owner_region_audit_honors_candidate_allowlist() -> None:
     assert result.owners[0].region_audit is None
 
 
+def test_endpoint_apex_owner_is_retained_but_not_quantification_eligible() -> None:
+    result = build_sample_local_owners(
+        (_candidate("s1#edge-apex", seed_rt=8.0),),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([7.8, 7.9, 8.0, 8.1, 8.2, 8.3], dtype=float),
+                intensity=np.array([100.0, 80.0, 50.0, 20.0, 10.0, 8.0]),
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+    )
+
+    assert len(result.owners) == 1
+    owner = result.owners[0]
+    assert owner.quantification_eligible is False
+    assert owner.quantification_exclusion_reason == (
+        "owner_apex_on_integration_boundary"
+    )
+
+
+def test_right_endpoint_apex_owner_is_not_quantification_eligible() -> None:
+    result = build_sample_local_owners(
+        (_candidate("s1#right-edge", seed_rt=8.0),),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([7.8, 7.9, 8.0, 8.1, 8.2, 8.3], dtype=float),
+                intensity=np.array([8.0, 10.0, 20.0, 50.0, 80.0, 100.0]),
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+    )
+
+    assert len(result.owners) == 1
+    assert result.owners[0].quantification_eligible is False
+
+
 def test_custom_peak_resolver_without_region_audit_remains_supported() -> None:
     result = build_sample_local_owners(
         (_candidate("s1#custom", seed_rt=8.0),),
@@ -480,6 +520,28 @@ def test_custom_peak_resolver_without_region_audit_remains_supported() -> None:
 
     assert len(result.owners) == 1
     assert result.owners[0].region_audit is None
+
+
+def test_selected_integration_endpoint_censors_scalar_interior_owner() -> None:
+    result = build_sample_local_owners(
+        (_candidate("s1#integration-edge", seed_rt=8.0),),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([7.9, 8.0, 8.1], dtype=float),
+                intensity=np.array([0.0, 100.0, 0.0], dtype=float),
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        peak_resolver=_scalar_interior_endpoint_integration,
+    )
+
+    assert len(result.owners) == 1
+    owner = result.owners[0]
+    assert owner.quantification_eligible is False
+    assert owner.quantification_exclusion_reason == (
+        "owner_apex_on_integration_boundary"
+    )
 
 
 class FakeXICSource:
@@ -519,6 +581,35 @@ def _always_peak_at_seed(candidate, rt_array, intensity_array, peak_config, seed
         peak_end=float(rt_array[-1]),
         area=100.0,
         intensity=100.0,
+    )
+
+
+def _scalar_interior_endpoint_integration(
+    candidate,
+    rt_array,
+    intensity_array,
+    peak_config,
+    seed_rt,
+):
+    from xic_extractor.alignment.ownership import ResolvedPeak
+
+    return ResolvedPeak(
+        rt=8.05,
+        peak_start=8.0,
+        peak_end=8.1,
+        area=100.0,
+        intensity=100.0,
+        selected_integration=IntegrationResult(
+            rt_left_min=8.0,
+            rt_apex_min=8.0,
+            rt_right_min=8.1,
+            raw_apex_rt_min=8.0,
+            rt_width_min=0.1,
+            height_raw=100.0,
+            height_smoothed=100.0,
+            area_raw_counts_seconds=100.0,
+            boundary_sources=("test_endpoint_integration",),
+        ),
     )
 
 
@@ -581,3 +672,60 @@ def _peak_config():
         resolver_peak_duration_max=2.0,
         resolver_min_scans=1,
     )
+
+
+def test_one_peak_seeded_by_two_ms2_scans_is_not_an_unresolved_doublet():
+    """Seeds 42 s apart across one 27 s peak resolve 5 s apart, not as two peaks."""
+    candidates = (
+        _candidate("s1#9001", mz=269.1436, seed_rt=25.40, evidence_score=80),
+        _candidate("s1#9002", mz=269.1437, seed_rt=26.10, evidence_score=78),
+    )
+    source = FakeXICSource(
+        rt=np.array([25.5, 25.7, 25.8, 25.9, 26.1], dtype=float),
+        intensity=np.array([0.0, 100.0, 90.0, 78.0, 0.0], dtype=float),
+    )
+
+    result = build_sample_local_owners(
+        candidates,
+        raw_sources={"s1": source},
+        alignment_config=AlignmentConfig(owner_apex_close_sec=2.0),
+        peak_config=_peak_config(),
+        peak_resolver=FakePeakResolver(
+            {
+                "s1#9001": (25.75, 25.52, 25.98, 1000.0, 100.0),
+                "s1#9002": (25.83, 25.60, 26.06, 950.0, 78.0),
+            },
+        ),
+    )
+
+    assert result.ambiguous_records == ()
+    assert result.owners != ()
+
+
+def test_apex_separation_near_a_full_peak_width_stays_ambiguous():
+    """The rule still fires where the trace could actually show two apexes."""
+    candidates = (
+        _candidate("s1#9101", mz=269.1436, seed_rt=25.40, evidence_score=80),
+        _candidate("s1#9102", mz=269.1437, seed_rt=25.60, evidence_score=78),
+    )
+    source = FakeXICSource(
+        rt=np.array([25.5, 25.7, 25.8, 25.9, 26.1], dtype=float),
+        intensity=np.array([0.0, 100.0, 90.0, 78.0, 0.0], dtype=float),
+    )
+
+    result = build_sample_local_owners(
+        candidates,
+        raw_sources={"s1": source},
+        alignment_config=AlignmentConfig(owner_apex_close_sec=2.0),
+        peak_config=_peak_config(),
+        peak_resolver=FakePeakResolver(
+            {
+                "s1#9101": (25.75, 25.70, 25.80, 1000.0, 100.0),
+                "s1#9102": (25.83, 25.78, 25.88, 950.0, 78.0),
+            },
+        ),
+    )
+
+    assert result.owners == ()
+    assert len(result.ambiguous_records) == 1
+    assert result.ambiguous_records[0].reason == "owner_multiplet_ambiguity"

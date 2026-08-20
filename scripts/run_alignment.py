@@ -26,6 +26,7 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 )
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.loader import load_target_list_snapshot
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -212,6 +213,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if args.preflight_only:
+        try:
+            discovery_batch = read_discovery_batch_index(
+                discovery_batch_index,
+                require_owner_closure=True,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         _print_preflight_summary(
             args,
             discovery_batch_index=discovery_batch_index,
@@ -247,6 +256,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 targeted_workbook=targeted_istd_workbook,
                 sample_info=sample_info,
                 local_window=args.drift_local_window,
+                target_snapshot=load_target_list_snapshot(
+                    Path(__file__).resolve().parents[1] / "config",
+                    identity_namespace="alignment-targeted-istd",
+                ),
             )
             if sample_info is not None and targeted_istd_workbook is not None
             else None
@@ -307,6 +320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "audit_evidence_mode": args.audit_evidence_mode,
             "selected_family_ids": selected_family_ids,
             "selected_family_source": selected_family_source,
+            "require_discovery_owner_closure": True,
             **timing_kwargs,
         }
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
@@ -651,12 +665,20 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--sample-info",
         type=Path,
-        help="Sample metadata CSV used with --targeted-istd-workbook for drift priors.",
+        help=(
+            "Sample metadata CSV used with --targeted-istd-workbook for drift "
+            "priors and bounded configured DNA dR ISTD trajectory grouping; "
+            "trajectory grouping also requires --sample-column-injection-order."
+        ),
     )
     parser.add_argument(
         "--targeted-istd-workbook",
         type=Path,
-        help="Targeted ISTD workbook used with --sample-info for drift priors.",
+        help=(
+            "Targeted ISTD workbook used with --sample-info for drift priors "
+            "and bounded configured DNA dR ISTD trajectory grouping; "
+            "trajectory grouping also requires --sample-column-injection-order."
+        ),
     )
     parser.add_argument(
         "--drift-local-window",
@@ -678,7 +700,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "instrument_qc_sample_metadata.tsv derived from the method .docx). "
             "When given, final matrix sample columns are ordered earliest- to "
             "latest-injected; samples not listed keep their order at the end. "
-            "Reorders columns only; values are unchanged."
+            "The order also participates in Alignment trajectory rescue and "
+            "can change family partitioning and Matrix content."
         ),
     )
     parser.add_argument(
@@ -847,6 +870,11 @@ def _validate_expected_85raw_contract(args: argparse.Namespace) -> None:
         failures.append("--timing-output is required for canonical 85RAW runs")
     if args.timing_live_output is None:
         failures.append("--timing-live-output is required for canonical 85RAW runs")
+    if args.sample_info is None or args.targeted_istd_workbook is None:
+        failures.append(
+            "--sample-info and --targeted-istd-workbook are required for "
+            "canonical 85RAW runs"
+        )
     if not _is_repo_venv_python():
         failures.append(
             "Python executable must be under this worktree .venv for canonical "
@@ -933,7 +961,7 @@ def _print_preflight_summary(
     sample_count = len(discovery_batch.sample_order)
     print("Alignment launch preflight OK (diagnostic_only; no validation completed)")
     print(
-        "Preflight scope: shared discovery-batch parser, candidate CSV existence, "
+        "Preflight scope: owner-closed discovery batch, candidate CSV existence, "
         "RAW path existence; no candidate CSVs loaded; no RAW files opened."
     )
     print(f"Discovery batch index: {discovery_batch_index}")
