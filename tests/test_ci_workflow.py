@@ -21,8 +21,6 @@ CORE_CI_COMMANDS = (
     "uv run ruff check xic_extractor tests",
     "uv run lint-imports --no-cache",
     "uv run python scripts/check_architecture_census.py",
-    "uv run python scripts/check_lane_fixture_boundary.py",
-    "uv run python scripts/check_phase_naming_boundary.py",
     "uv run python scripts/check_diagnostics_index.py",
     (
         "uv run python tools/diagnostics/docs_management_audit.py "

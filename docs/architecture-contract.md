@@ -102,8 +102,11 @@ temporary resources and caches while respecting lineage pins.
 - Domain algorithms must not import GUI, workbook builders, CLI scripts, process
   backends, report renderers, or RAW/CSV adapters.
 - IO/rendering/adapters depend inward on domain helpers.
-- Public entry points and compatibility facades should stay thin. Move behavior
-  into focused modules while keeping old imports working when they are public.
+- Public entry points should stay thin. Retain a compatibility facade only when
+  a current explicit public/downstream contract or a real external consumer
+  still names it. Tests, historical artifacts, and the former implementation
+  are not consumer evidence; when an internal function is replaced, delete its
+  old implementation, alias, and migration shim in the same change.
 
 ## Ownership Map
 
@@ -175,17 +178,19 @@ or CID-NL-only tool.
 
 Naming rule:
 
-- Permanent package modules and CLI entry points should be named by product role
-  or evidence role, not by the validation fixture that first exposed the need.
-  Avoid new names that bake in `8raw`, `85raw`, a specific batch, or a phase code
-  when the behavior is really a reference-alignment gate, activation bridge,
-  evidence adapter, or review queue.
-- Existing fixture-shaped names may remain as compatibility or archival
-  surfaces, but new work should prefer role-named successors instead of extending
-  the fixture name into product architecture.
-- Opaque phase codes such as `p1`, `p2`, `p2b`, `p2c`, and `p7` need a behavior
-  name in docs, summaries, and PR descriptions. The code can stay for historical
-  artifacts, but it is not an acceptable standalone explanation of behavior.
+- Name modules, types, functions, config keys, commands, and current artifacts by
+  the product or evidence behavior they own. A name should remain accurate when
+  the milestone, ticket, validation fixture, or first dataset disappears.
+- A fixture name such as `8raw` or `85raw` is correct only when the surface
+  actually selects or reports that validation lane. A phase or package code is
+  correct only inside frozen historical evidence; it is not a current behavior
+  name and does not justify a runtime alias.
+- Apply this semantic rule when a name is introduced or changed. Do not enforce
+  it with repository-wide token counts, occurrence budgets, spelling ratchets,
+  or blacklists: lexical presence cannot prove whether a name matches behavior.
+- When behavior is replaced, remove its obsolete name, implementation, tests,
+  and compatibility/migration code together unless the public-contract rule
+  above identifies a current consumer. Git history is the recovery path.
 
 Before implementing non-trivial diagnostics, RAW-backed evidence, preset
 performance optimization, matrix activation, HCD-PI, Delta Mass, CID-NL

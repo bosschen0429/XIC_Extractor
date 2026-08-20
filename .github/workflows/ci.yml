@@ -32,10 +32,6 @@ jobs:
         run: uv run lint-imports --no-cache
       - name: Architecture census
         run: uv run python scripts/check_architecture_census.py
-      - name: Lane fixture boundary
-        run: uv run python scripts/check_lane_fixture_boundary.py
-      - name: Phase naming boundary
-        run: uv run python scripts/check_phase_naming_boundary.py
       - name: Test shard coverage
         run: uv run python -m tools.testing.test_shards --check
       - name: Diagnostics index in sync
