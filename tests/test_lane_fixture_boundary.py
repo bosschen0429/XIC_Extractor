@@ -69,6 +69,21 @@ def test_scan_reports_line_numbers(tmp_path: Path, monkeypatch) -> None:
     assert hits == {"sample.py": [(2, 'b = "8raw"')]}
 
 
+def test_scan_counts_matches_not_lines(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "sample.py"
+    target.write_text('lanes = "8raw 85raw"\n', encoding="utf-8")
+    monkeypatch.setattr(boundary, "ROOT", tmp_path)
+
+    hits = boundary.scan(["sample.py"])
+
+    assert hits == {
+        "sample.py": [
+            (1, 'lanes = "8raw 85raw"'),
+            (1, 'lanes = "8raw 85raw"'),
+        ]
+    }
+
+
 def test_new_unbudgeted_file_fails(monkeypatch) -> None:
     monkeypatch.setattr(
         boundary, "scan",
