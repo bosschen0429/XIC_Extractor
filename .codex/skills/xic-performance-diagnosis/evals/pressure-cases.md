@@ -11,7 +11,8 @@ cases. Each case names the invariant and expected stop.
 - Expected verdict/stop: `rejected` and `Candidate disposition: revert`. Use
   `Diagnostic-ledger action: update` only if the result changes a durable
   conclusion or prevents repeating the experiment; otherwise use `reuse` for
-  an applicable existing conclusion or `none`.
+  an applicable existing conclusion or `none`. Recording the delta as
+  diagnostic evidence does not change the `rejected` workflow verdict.
 
 ## Skip Evidence Under Deadline Pressure
 
