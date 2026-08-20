@@ -103,6 +103,16 @@ def test_changed_test_file_selects_itself() -> None:
     assert unresolved == []
 
 
+def test_changed_shared_test_helper_selects_importing_tests() -> None:
+    selected, broad, unresolved = select(["tests/alignment_pipeline_helpers.py"])
+
+    assert broad == []
+    assert unresolved == []
+    assert "tests/test_alignment_pipeline.py" in selected
+    assert "tests/test_alignment_pipeline_outputs.py" in selected
+    assert len(selected) < len(ALL_TESTS)
+
+
 def test_non_python_change_is_reported_rather_than_silently_dropped() -> None:
     selected, broad, unresolved = select(["README.md"])
 

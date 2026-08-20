@@ -100,15 +100,20 @@ def build_reverse_index() -> tuple[dict[str, set[str]], dict[str, str]]:
     measured at 6-8 seconds per call.
     """
     files = _tracked_python_files()
+    test_files = {
+        path.as_posix() for path in discover_test_files()
+    }
     modules = {
-        module_name(f): f for f in files if f.startswith(SOURCE_ROOTS)
+        module_name(path): path
+        for path in files
+        if path.startswith(SOURCE_ROOTS) or path.startswith("tests/")
     }
     known = set(modules)
 
     graph = {name: _direct_imports(path, known) for name, path in modules.items()}
 
     reverse: dict[str, set[str]] = defaultdict(set)
-    for test_path in (p.as_posix() for p in discover_test_files()):
+    for test_path in test_files:
         seen: set[str] = set()
         queue: deque[str] = deque(_direct_imports(test_path, known))
         while queue:
@@ -158,7 +163,7 @@ def select(changed: Iterable[str]) -> tuple[list[str], list[str], list[str]]:
         if path.startswith("tests/") and path.endswith(".py"):
             if path in all_tests:
                 selected.add(path)
-            continue
+                continue
         if not path.endswith(".py"):
             unresolved.append(path)
             continue
