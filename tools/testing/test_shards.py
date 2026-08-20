@@ -471,10 +471,13 @@ def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
         print(f"Shard {shard!r} has no test files", file=sys.stderr)
         return 2
     target_args = [path.as_posix() for path in targets]
-    marker_args = [] if "-m" in pytest_args else ["-m", f"not {SNAPSHOT_MARKER}"]
+    owned_pytest_args = _intersect_marker_selection(
+        pytest_args,
+        required=f"not {SNAPSHOT_MARKER}",
+    )
     print(f"Running shard {shard}: {len(target_args)} test files", flush=True)
     return subprocess.call(
-        [*_pytest_command(), *marker_args, *pytest_args, *target_args]
+        [*_pytest_command(), *owned_pytest_args, *target_args]
     )
 
 
@@ -484,9 +487,38 @@ def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:
     if not targets:
         print("No test files discovered", file=sys.stderr)
         return 2
-    marker_args = [] if "-m" in pytest_args else ["-m", SNAPSHOT_MARKER]
+    owned_pytest_args = _intersect_marker_selection(
+        pytest_args,
+        required=SNAPSHOT_MARKER,
+    )
     print(f"Running {SNAPSHOT_MARKER} tests across {len(targets)} files", flush=True)
-    return subprocess.call([*_pytest_command(), *marker_args, *pytest_args, *targets])
+    return subprocess.call([*_pytest_command(), *owned_pytest_args, *targets])
+
+
+def _intersect_marker_selection(
+    pytest_args: Sequence[str],
+    *,
+    required: str,
+) -> tuple[str, ...]:
+    """Keep the runner-owned marker boundary when callers add ``-m`` filters."""
+    remaining: list[str] = []
+    caller_expressions: list[str] = []
+    index = 0
+    while index < len(pytest_args):
+        argument = pytest_args[index]
+        if argument == "-m" and index + 1 < len(pytest_args):
+            caller_expressions.append(pytest_args[index + 1])
+            index += 2
+            continue
+        remaining.append(argument)
+        index += 1
+
+    expression = required
+    if caller_expressions:
+        expression = " and ".join(
+            (*(f"({item})" for item in caller_expressions), f"({required})")
+        )
+    return ("-m", expression, *remaining)
 
 
 def _pytest_command() -> list[str]:

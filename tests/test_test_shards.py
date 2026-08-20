@@ -226,3 +226,64 @@ def test_snapshot_inventory_rejects_unsupported_marker_placements(
         match="ledger_snapshot.*top-level synchronous test function",
     ):
         discover_snapshot_tests(root)
+
+
+def test_snapshot_runner_intersects_caller_marker_with_snapshot_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        test_shards,
+        "discover_test_files",
+        lambda _root: (Path("tests/test_snapshot.py"),),
+    )
+    monkeypatch.setattr(
+        test_shards,
+        "_pytest_command",
+        lambda: ["python", "-m", "pytest"],
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess,
+        "call",
+        lambda command: commands.append(command) or 0,
+    )
+
+    assert test_shards._run_snapshots(("-m", "slow"), Path("tests")) == 0
+
+    assert len(commands) == 1
+    command = commands[0]
+    pytest_args = command[3:]
+    assert pytest_args.count("-m") == 1
+    marker_index = pytest_args.index("-m")
+    assert pytest_args[marker_index + 1] == "(slow) and (ledger_snapshot)"
+
+
+def test_ci_shard_intersects_caller_marker_with_snapshot_exclusion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        test_shards,
+        "assign_shards",
+        lambda _files: {"docs-config": (Path("tests/test_regular.py"),)},
+    )
+    monkeypatch.setattr(test_shards, "discover_test_files", lambda _root: ())
+    monkeypatch.setattr(
+        test_shards,
+        "_pytest_command",
+        lambda: ["python", "-m", "pytest"],
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess,
+        "call",
+        lambda command: commands.append(command) or 0,
+    )
+
+    assert test_shards._run_shard("docs-config", ("-m", "slow"), Path("tests")) == 0
+
+    assert len(commands) == 1
+    command = commands[0]
+    pytest_args = command[3:]
+    assert pytest_args.count("-m") == 1
+    marker_index = pytest_args.index("-m")
+    assert pytest_args[marker_index + 1] == "(slow) and (not ledger_snapshot)"
