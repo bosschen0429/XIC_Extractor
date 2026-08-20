@@ -71,7 +71,6 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     ),
     "tests/test_backfill_expansion_full_evidence_chain.py": (
         "test_current_backfill_expansion_full_evidence_chain_is_held",
-        "test_require_full_chain_blocks_current_666_packet",
     ),
     "tests/test_backfill_expansion_raw_overlay_trace_identity.py": (
         "test_current_backfill_expansion_raw_overlay_trace_identity_is_stable",
