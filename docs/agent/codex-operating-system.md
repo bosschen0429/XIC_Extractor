@@ -172,6 +172,10 @@ Do not add one just because a feature exists. Prefer improving an existing hook,
 skill, or routing rule over adding a parallel one. Do use already-available
 tools generously when they answer a named question.
 
+For an external pack, map each capability to its current owner, transfer only
+decision-changing deltas, and require a real XIC consumer before creating a new
+repo-local owner.
+
 A repo-local skill must own a distinct recurring XIC decision or workflow that
 canonical docs and global skills do not already cover. It needs explicit
 trigger/exclusion cases and observable outcome evidence; trigger accuracy alone

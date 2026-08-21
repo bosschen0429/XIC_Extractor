@@ -103,13 +103,45 @@ Use one workflow verdict:
 - `baseline_needed`, `diagnosis_ready`, or `optimization_ready` before edits;
 - `optimized` only after comparable evidence beats observed noise and the
   correctness gate passes;
-- `inconclusive` for missing comparability, unstable timing, or absent parity;
-- `rejected` for an attributable regression or failed correctness gate.
+- `inconclusive` for missing comparability, unstable timing, or absent parity
+  that prevents a candidate decision;
+- `rejected` for a comparable candidate within observed noise, an attributable
+  regression, or a failed correctness gate.
+
+`Candidate code` means unaccepted code for the optimization under decision. Use
+this complete disposition table:
+
+| Workflow verdict | No candidate code | Candidate code exists |
+| --- | --- | --- |
+| `baseline_needed` | `not_applicable` | `revert` |
+| `diagnosis_ready` | `not_applicable` | `revert` |
+| `optimization_ready` | `not_applicable` | `revert` |
+| `inconclusive` | `not_applicable` | `revert` |
+| `rejected` | `not_applicable` | `revert` |
+| `optimized` | `not_applicable` | `keep` |
+
+Pre-edit verdicts do not preserve prematurely written candidate code.
+`optimization_ready` opens a fresh code-edit handoff; it does not accept an
+existing candidate. Missing evidence also does not create a keep-for-later
+state.
+
+Choose the diagnostic-ledger action independently:
+
+| Durable conclusion from this attempt | Applicable ledger conclusion exists | Action |
+| --- | --- | --- |
+| changes or prevents a known repeat | either | `update` |
+| no change | yes | `reuse` |
+| no change | no | `none` |
+
+The existing diagnostic ledger stays the only durable performance-conclusion
+owner.
 
 Every branch returns this core:
 
 ```markdown
 Workflow/performance verdict:
+Candidate disposition: keep | revert | not_applicable
+Diagnostic-ledger action: reuse | update | none
 Product validation status:
 Workload / sample universe / decision:
 Evidence branch and artifact roots:
@@ -153,3 +185,6 @@ Completion criterion: every packet field has observed evidence, a reasoned
 source-qualified and the handoff cannot exceed the stated authority ceiling.
 
 Read `evals/trigger-cases.md` only when tuning skill routing.
+Read `evals/pressure-cases.md` only when testing candidate disposition under
+sunk-cost or deadline pressure. These prose fixtures are not behavioral
+automation and do not change skill routing.

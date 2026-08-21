@@ -83,9 +83,17 @@ For expensive 8RAW/85RAW work, choose a design that can still falsify the claim:
 - reduce to a representative bounded stage before repeating a full RAW run.
 
 Do not adopt one fixed repetition count, CV cutoff, or minimum percentage as an
-XIC-wide product rule. `optimized` requires an effect that clears the observed
-noise for the chosen design; otherwise report the measured delta as
-`inconclusive` or diagnostic evidence.
+XIC-wide product rule. Apply these workflow verdicts in order:
+
+- use `inconclusive` when comparability or the observed-noise basis is missing
+  or unstable enough to prevent a candidate decision;
+- use `rejected` when comparable paired evidence does not clear the observed
+  noise for the chosen design;
+- use `optimized` only when comparable evidence clears the observed noise and
+  the correctness gate passes.
+
+A measured delta may still be retained as diagnostic evidence. That retention
+description does not replace or weaken the workflow verdict.
 
 ## Call-Cost Model
 
