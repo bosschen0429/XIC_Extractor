@@ -2174,8 +2174,7 @@ Use `--routing-manifest-tsv` for file-level cleanup rows and
 ignored index-only topic README files from the current cluster summary.
 Use `--repo-only --fail-on-completed-transient` in CI/PR closeout to fail when
 completed transient originals remain, without reading the private Obsidian vault.
-**Topic group**: `docs_management_audit.py` + `docs_placement_guard.py` +
-`handoff_retention_audit.py`
+**Topic group**: `docs_management_audit.py` + `docs_placement_guard.py`
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
 **Status note**: Read-only docs governance audit. It does not move files, write
 to Obsidian, stage changes, mutate product output, or authorize tracked
@@ -2187,21 +2186,6 @@ mean "not automatically movable", not "fully digested"; use
 `digestion_status`, `digestion_next_action`, and topic-cluster digestion review
 counts before treating retained docs as cleaned-up knowledge. Use it after major
 docs cleanup and before PR closeout when the repo/vault split changed.
-
----
-
-### `handoff_retention_audit.py`
-
-**Purpose**: Audit repo-tracked handoff retention state. It checks that every
-git-tracked file under `docs/superpowers/handoffs/current/` and
-`docs/superpowers/handoffs/archive/` is surfaced as migration residue and that
-the header-only `RETENTION.tsv` sentinel does not silently normalize tracked
-transient state. Ignored local handoffs are private workspace state and are not
-audited here.
-**Topic group**: `docs_management_audit.py` + `handoff_retention_audit.py`
-**Governing doc**: `docs/superpowers/handoffs/README.md`
-**Status note**: Read-only docs governance audit. It never moves files, writes
-to Obsidian, stages changes, or authorizes tracked deletion.
 
 ---
 

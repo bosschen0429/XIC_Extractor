@@ -23,7 +23,6 @@ from tools.diagnostics.docs_policy import (
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
-RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
 PROJECT_ROOT = Path(__file__).parents[1]
 
 
@@ -201,10 +200,6 @@ def _write_registered_retirement_contract(root: Path) -> None:
 def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
     _write_registered_retirement_contract(root)
-    _write(
-        root / RETENTION_INVENTORY,
-        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
-    )
 
 
 def _init_and_stage_repo(root: Path) -> dict[str, str]:
@@ -518,19 +513,6 @@ def test_tracked_current_handoff_is_a_retired_lane_blocker(tmp_path: Path) -> No
         root / CURRENT_HANDOFF,
         "Status: batches are staged; no commit has been made.\n",
     )
-    _write(
-        root / RETENTION_INVENTORY,
-        "\n".join(
-            [
-                "path\tretention_decision\trepo_owner\tnext_review_event\trationale",
-                (
-                    f"{CURRENT_HANDOFF}\tactive_current\tPR #1\t"
-                    "pr_merge_or_close\tActive branch stub."
-                ),
-            ]
-        )
-        + "\n",
-    )
 
     result = _run_audit(root, vault)
 
@@ -654,33 +636,6 @@ def test_docs_structure_review_reports_deepresearch_as_retired_lane(
             "retired_dir": "docs/deepresearch/",
         }
     ]
-
-
-def test_handoff_retention_blocker_is_reported_by_docs_management_audit(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_vault(vault)
-    _write(
-        root / CURRENT_HANDOFF,
-        "# Current handoff\n\nStatus: active.\n",
-    )
-    _write(
-        root / RETENTION_INVENTORY,
-        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
-    )
-
-    result = _run_audit(root, vault)
-
-    assert "handoff_retention" in result.summary["repo"]
-    assert result.summary["repo"]["handoff_retention"]["handoff_files"] == 1
-    assert any(
-        msg.path == CURRENT_HANDOFF
-        and msg.message.startswith("handoff retention:")
-        and "no retention inventory row" in msg.message
-        for msg in result.blockers
-    )
 
 
 def test_repo_docs_routing_review_reports_private_history_candidates(
@@ -2518,10 +2473,6 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         root / "docs/superpowers/handoffs/current/ACTIVE.local.md",
         "# Local handoff\n\nStatus: active.\n",
     )
-    _write(
-        root / RETENTION_INVENTORY,
-        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
-    )
     subprocess.run(
         ["git", "add", "."],
         cwd=root,
@@ -2534,7 +2485,6 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
 
     assert result.blockers == ()
     assert not [msg for msg in result.messages if msg.severity == "warning"]
-    assert result.summary["repo"]["handoff_retention"]["handoff_files"] == 0
 
 
 def test_canonical_metadata_review_reports_root_authority_missing_metadata(

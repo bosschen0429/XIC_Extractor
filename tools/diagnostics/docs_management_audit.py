@@ -49,9 +49,6 @@ from tools.diagnostics.docs_routing_review import (  # noqa: E402
 from tools.diagnostics.docs_topic_indexes import (  # noqa: E402
     write_topic_index_readmes as _write_topic_index_readmes,
 )
-from tools.diagnostics.handoff_retention_audit import (  # noqa: E402
-    run_handoff_retention_audit,
-)
 
 _read_text = _docs_scan.read_text
 
@@ -408,19 +405,6 @@ def audit_repo(
             )
         )
 
-    handoff_result = run_handoff_retention_audit(
-        root,
-        repository_view=repository_view,
-    )
-    messages.extend(
-        AuditMessage(
-            msg.severity,
-            msg.path,
-            f"handoff retention: {msg.message}",
-        )
-        for msg in handoff_result.messages
-    )
-
     summary: dict[str, object] = {
         "repo_markdown_files": len(docs),
         "docs_by_top_level": dict(sorted(docs_by_top.items())),
@@ -436,7 +420,6 @@ def audit_repo(
             "problems": governance_problems,
             "status": "pass" if not governance_problems else "fail",
         },
-        "handoff_retention": handoff_result.summary,
     }
     return messages, summary
 
