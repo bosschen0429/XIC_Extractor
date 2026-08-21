@@ -22,12 +22,9 @@ execution context, not repo history or product authority.
 - Durable product, architecture, validation, or workflow decisions belong in
   their canonical repo owners.
 - Never force-add files under `current/` or `archive/`. There are no tracked
-  active-stub, archive, closeout-summary, or same-path history exceptions.
-
-`RETENTION.tsv` is a header-only compatibility sentinel for the read-only
-handoff audit. It must not gain rows; a row indicates that tracked transient
-state escaped the ignored workspace and needs to be removed after owner and
-referrer checks.
+  active-stub, archive, closeout-summary, or same-path history exceptions. The
+  staged docs placement guard rejects either lane if an ignored file is
+  force-added; no tracked retention sentinel is required.
 
 Handoffs must not contain credentials, private RAW layout, machine-local paths,
 raw command transcripts, or sample-level private investigation. See

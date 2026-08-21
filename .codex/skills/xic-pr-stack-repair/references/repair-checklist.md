@@ -67,7 +67,6 @@ surfaces are involved:
 ```powershell
 $env:UV_CACHE_DIR='.uv-cache'; uv run python -m scripts.check_productization_state
 $env:UV_CACHE_DIR='.uv-cache'; uv run python -m scripts.check_productization_authority
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m scripts.check_validation_artifact_retention
 $env:UV_CACHE_DIR='.uv-cache'; uv run python -m scripts.check_diagnostics_index
 $env:UV_CACHE_DIR='.uv-cache'; uv run python .codex/hooks/fixtures/assert_hook_outputs.py
 ```

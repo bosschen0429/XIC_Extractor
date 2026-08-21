@@ -14,6 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT / "docs/superpowers/schemas/quant_matrix_real_bundle_schema.v1.json"
 )
+RETAINED_SUMMARY = (
+    ROOT
+    / "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "quant_matrix_real_bundle_summary.json"
+)
 
 
 def test_real_bundle_schema_matches_builder_contract() -> None:
@@ -33,6 +38,15 @@ def test_real_bundle_schema_matches_builder_contract() -> None:
     assert schema["binding_rules"][
         "default_check_only_must_match_511_accepted_backfills"
     ]
+
+
+def test_retained_seed_guard_copy_hash_matches_summary() -> None:
+    payload = json.loads(RETAINED_SUMMARY.read_text(encoding="utf-8"))
+    entry = payload["source_artifacts"]["seed_guard_decisions"]
+    copied = RETAINED_SUMMARY.parent / entry["path"]
+
+    assert copied.is_file()
+    assert _sha256(copied) == entry["sha256"]
 
 
 def test_real_bundle_builds_self_validating_contract_outputs(tmp_path: Path) -> None:

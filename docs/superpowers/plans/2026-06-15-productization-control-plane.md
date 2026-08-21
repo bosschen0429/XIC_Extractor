@@ -34,8 +34,6 @@ Its searchable locator note is
 `2026-06-15-productization-control-plane-source-97778ff9fb5c-locator`; the
 locator carries the stable `source_repo_path:` key while the source note stays
 byte-for-byte identical to the retired body.
-The checked retirement transaction is recorded in the
-[retirement evidence packet](../file-management/docs-cleanup/2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json).
 
 ## Lane anchor index
 
@@ -51,12 +49,6 @@ Lane key: `cid_nl_default_product_activation_v1`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
 
-### Backfill Expansion Full Evidence Chain v1
-
-Lane key: `backfill_expansion_default_product_activation_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
 ### park_broad_backfill
 
 Lane key: `broad_backfill_autowrite`
@@ -66,30 +58,6 @@ Routes: [state](../validation/productization_status_index_v1.tsv), [writer autho
 ### productization_authority_manifest_v1
 
 Lane key: `productization_authority_firewall_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### mechanical_adjudication_index_v1
-
-Lane key: `mechanical_adjudication_contract_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### Review Packet / Approval Workflow v1
-
-Lane key: `review_packet_workflow_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### lockbox_shadow_automation_experiment_v1
-
-Lane key: `peak_choice_truth_lockbox_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### Missing-Overlay Evidence Recovery v1
-
-Lane key: `missing_overlay_evidence_recovery_v1`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
 

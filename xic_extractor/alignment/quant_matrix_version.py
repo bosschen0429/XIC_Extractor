@@ -163,7 +163,9 @@ def build_quant_matrix_version_rows(
     ]
     identity_by_peak = _identity_by_peak(input_matrix_identity_rows, len(matrix_rows))
     row_identity = _row_identity_by_matrix_index(input_matrix_identity_rows)
-    accepted_by_key = _accepted_manifest_rows(production_acceptance_rows)
+    accepted_by_key = accepted_production_acceptance_rows_by_key(
+        production_acceptance_rows
+    )
     expected_by_key = _expected_diff_by_key(expected_diff_rows)
     written_keys: set[tuple[str, str]] = set()
 
@@ -340,9 +342,11 @@ def _matrix_row_index(row: Mapping[str, str], matrix_row_count: int) -> int:
     return matrix_row_index
 
 
-def _accepted_manifest_rows(
+def accepted_production_acceptance_rows_by_key(
     rows: Sequence[Mapping[str, str]],
 ) -> dict[tuple[str, str], Mapping[str, str]]:
+    """Select the exact ProductionAcceptance rows ProductWriter may write."""
+
     result: dict[tuple[str, str], Mapping[str, str]] = {}
     for row in rows:
         if row.get("acceptance_decision") not in {

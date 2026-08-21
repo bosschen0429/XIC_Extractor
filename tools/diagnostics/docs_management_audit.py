@@ -28,12 +28,7 @@ if str(ROOT) not in sys.path:
 
 
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
-from tools.diagnostics.docs_placement_guard import (  # noqa: E402
-    committed_same_path_retirement_packet_problems,
-    is_retirement_evidence_path,
-)
 from tools.diagnostics.docs_policy import (  # noqa: E402
-    COMMITTED_RETIREMENT_PACKET_CONTRACTS,
     DOC_CANONICAL_OWNER_FILES,
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
@@ -48,9 +43,6 @@ from tools.diagnostics.docs_routing_review import (  # noqa: E402
 )
 from tools.diagnostics.docs_topic_indexes import (  # noqa: E402
     write_topic_index_readmes as _write_topic_index_readmes,
-)
-from tools.diagnostics.handoff_retention_audit import (  # noqa: E402
-    run_handoff_retention_audit,
 )
 
 _read_text = _docs_scan.read_text
@@ -176,7 +168,6 @@ def audit_repo(
     root: Path,
     *,
     fail_on_completed_transient: bool = False,
-    require_retirement_history: bool = True,
 ) -> tuple[list[AuditMessage], dict[str, object]]:
     messages: list[AuditMessage] = []
     repository_view = _docs_scan.load_repository_text_view(root)
@@ -222,10 +213,6 @@ def audit_repo(
         repository_view
     )
     canonical_metadata_review = canonical_metadata_review_for_repo(repository_view)
-    retirement_packet_review = committed_retirement_packet_review_for_repo(
-        repository_view,
-        require_historical_replay=require_retirement_history,
-    )
     governance_rel_path = "docs/agent/codex-operating-system.md"
     governance_problems = (
         list(
@@ -316,15 +303,6 @@ def audit_repo(
             )
         )
 
-    for row in retirement_packet_review["problems"]:
-        messages.append(
-            AuditMessage(
-                "blocker",
-                str(row["path"]),
-                "committed retirement packet: " + str(row["problem"]),
-            )
-        )
-
     for problem in governance_problems:
         messages.append(
             AuditMessage(
@@ -408,19 +386,6 @@ def audit_repo(
             )
         )
 
-    handoff_result = run_handoff_retention_audit(
-        root,
-        repository_view=repository_view,
-    )
-    messages.extend(
-        AuditMessage(
-            msg.severity,
-            msg.path,
-            f"handoff retention: {msg.message}",
-        )
-        for msg in handoff_result.messages
-    )
-
     summary: dict[str, object] = {
         "repo_markdown_files": len(docs),
         "docs_by_top_level": dict(sorted(docs_by_top.items())),
@@ -431,12 +396,10 @@ def audit_repo(
         "docs_structure_review": structure_review,
         "completed_transient_review": completed_transient_review,
         "canonical_metadata_review": canonical_metadata_review,
-        "committed_retirement_packet_review": retirement_packet_review,
         "governance_enforcement_index": {
             "problems": governance_problems,
             "status": "pass" if not governance_problems else "fail",
         },
-        "handoff_retention": handoff_result.summary,
     }
     return messages, summary
 
@@ -580,100 +543,6 @@ def canonical_metadata_review_for_repo(
         "missing_metadata_files": len(rows),
         "missing_metadata": rows,
         "top_missing_metadata": rows[:25],
-    }
-
-
-def committed_retirement_packet_review_for_repo(
-    repository_view: _docs_scan.RepositoryTextView,
-    *,
-    require_historical_replay: bool = True,
-) -> dict[str, object]:
-    checked_paths: list[str] = []
-    problems: list[dict[str, str]] = []
-    normalized_scan_paths = {
-        _docs_scan.normalize_repo_rel_path(path) for path in repository_view.paths
-    }
-    registered_paths_checked: set[str] = set()
-    for rel_path, contract in sorted(COMMITTED_RETIREMENT_PACKET_CONTRACTS.items()):
-        registered_paths_checked.add(rel_path)
-        checked_paths.append(rel_path)
-        if rel_path not in normalized_scan_paths:
-            problems.append(
-                {
-                    "path": rel_path,
-                    "problem": "registered retirement packet is missing or untracked",
-                }
-            )
-            continue
-        for problem in committed_same_path_retirement_packet_problems(
-            repository_view.root,
-            rel_path,
-            contract=contract,
-            require_historical_replay=require_historical_replay,
-            repository_view=repository_view,
-        ):
-            problems.append({"path": rel_path, "problem": problem})
-
-    for rel_path in repository_view.paths:
-        if not is_retirement_evidence_path(rel_path):
-            continue
-        if rel_path in registered_paths_checked:
-            continue
-        try:
-            data = json.loads(repository_view.read_text(rel_path))
-        except _docs_scan.RepositoryViewError as exc:
-            checked_paths.append(rel_path)
-            problems.append(
-                {
-                    "path": rel_path,
-                    "problem": f"retirement packet cannot be read: {exc}",
-                }
-            )
-            continue
-        except json.JSONDecodeError:
-            checked_paths.append(rel_path)
-            problems.append(
-                {
-                    "path": rel_path,
-                    "problem": "retirement packet is not valid JSON",
-                }
-            )
-            continue
-        if not isinstance(data, dict):
-            checked_paths.append(rel_path)
-            problems.append(
-                {
-                    "path": rel_path,
-                    "problem": "retirement packet must be a JSON object",
-                }
-            )
-            continue
-        if data.get("transaction") != (
-            "body_to_compatibility_index"
-        ):
-            continue
-        checked_paths.append(rel_path)
-        problems.append(
-            {
-                "path": rel_path,
-                "problem": (
-                    "body_to_compatibility_index packet is not registered in the "
-                    "committed retirement contract"
-                ),
-            }
-        )
-        for problem in committed_same_path_retirement_packet_problems(
-            repository_view.root,
-            rel_path,
-            require_historical_replay=require_historical_replay,
-            repository_view=repository_view,
-        ):
-            problems.append({"path": rel_path, "problem": problem})
-    return {
-        "checked_files": len(set(checked_paths)),
-        "checked_paths": sorted(set(checked_paths)),
-        "problems": problems,
-        "status": "pass" if not problems else "fail",
     }
 
 
@@ -913,12 +782,10 @@ def run_audit(
     *,
     include_vault: bool = True,
     fail_on_completed_transient: bool = False,
-    require_retirement_history: bool = True,
 ) -> AuditResult:
     repo_messages, repo_summary = audit_repo(
         root,
         fail_on_completed_transient=fail_on_completed_transient,
-        require_retirement_history=require_retirement_history,
     )
     if include_vault:
         resolved_vault = resolve_vault(root, vault)

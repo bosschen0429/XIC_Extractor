@@ -15,7 +15,6 @@ def test_preflight_blocks_when_current_authority_ids_do_not_replay(
 
     payload = evaluate_cid_nl_default_activation_preflight(
         **paths,
-        expected_authority_cell_count=1,
         expected_focus_nonblank_count=1,
     )
 
@@ -42,7 +41,6 @@ def test_preflight_passes_when_replay_and_target_provenance_match(
 
     payload = evaluate_cid_nl_default_activation_preflight(
         **paths,
-        expected_authority_cell_count=1,
         expected_focus_nonblank_count=1,
     )
 
@@ -69,7 +67,6 @@ def test_preflight_rejects_product_row_without_matching_source_provenance(
 
     payload = evaluate_cid_nl_default_activation_preflight(
         **paths,
-        expected_authority_cell_count=1,
         expected_focus_nonblank_count=1,
     )
 
@@ -94,7 +91,6 @@ def test_preflight_rejects_wrong_source_candidate_identity(
 
     payload = evaluate_cid_nl_default_activation_preflight(
         **paths,
-        expected_authority_cell_count=1,
         expected_focus_nonblank_count=1,
     )
 
@@ -117,7 +113,6 @@ def test_preflight_rejects_provenance_family_identity_mismatch(
 
     payload = evaluate_cid_nl_default_activation_preflight(
         **paths,
-        expected_authority_cell_count=1,
         expected_focus_nonblank_count=1,
     )
 
@@ -140,7 +135,6 @@ def test_preflight_rejects_duplicate_focus_sample_provenance_rows(
 
     payload = evaluate_cid_nl_default_activation_preflight(
         **paths,
-        expected_authority_cell_count=1,
         expected_focus_nonblank_count=1,
     )
 
@@ -174,8 +168,6 @@ def test_preflight_cli_writes_blocked_summary_without_requiring_pass(
             str(paths["expected_diff_tsv"]),
             "--summary-json",
             str(summary_json),
-            "--expected-authority-cell-count",
-            "1",
             "--expected-focus-nonblank-count",
             "1",
         ]

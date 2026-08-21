@@ -813,7 +813,7 @@ def _summary_payload(
         },
         "authority_statement": (
             "This checker adds validation evidence only. It does not change the "
-            "registered CID-NL writer scope, Backfill's 511-cell authority, "
+            "registered CID-NL writer scope, Backfill's rule-selected membership, "
             "ProductWriter, workbook, GUI, selected peak/area, or counted "
             "detections."
         ),

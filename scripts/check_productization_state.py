@@ -36,6 +36,13 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_STATUS_INDEX_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
+from xic_extractor.alignment.production_acceptance import (  # noqa: E402
+    ProductionAcceptanceManifestError,
+    load_checked_production_acceptance_manifest,
+)
+from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+    accepted_production_acceptance_rows_by_key,
+)
 
 DEFAULT_SCHEMA = ROOT / PRODUCTIZATION_SCHEMA_REL
 DEFAULT_STATUS_INDEX = ROOT / PRODUCTIZATION_STATUS_INDEX_REL
@@ -103,7 +110,7 @@ DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
     "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
-    "D35E3783CEA171ACF67B69BCA04C1BA848E07810C11526617BAB6087EA2A7E89"
+    "15B74BC79DC9501210ACD5F761C86B4A7128DB83E74A62BF3E97B7BEB1572ED5"
 )
 DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1 = (
     "lane_id",
@@ -135,15 +142,8 @@ EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY = {
 REQUIRED_CONTROL_PLANE_ANCHORS_V3 = {
     "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation v1",
     "cid_nl_default_product_activation_v1": "CID-NL Default Product Activation v1",
-    "backfill_expansion_default_product_activation_v1": (
-        "Backfill Expansion Full Evidence Chain v1"
-    ),
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall_v1": "productization_authority_manifest_v1",
-    "mechanical_adjudication_contract_v1": "mechanical_adjudication_index_v1",
-    "review_packet_workflow_v1": "Review Packet / Approval Workflow v1",
-    "peak_choice_truth_lockbox_v1": "lockbox_shadow_automation_experiment_v1",
-    "missing_overlay_evidence_recovery_v1": "Missing-Overlay Evidence Recovery v1",
     "quality_explanation_sidecar_v1": (
         "quality_explanations and quality_blockers are explanation and triage "
         "inputs only"
@@ -176,11 +176,11 @@ WRITER_LANE_AUTHORITY = {
         "authority_key": "backfill",
         "scope": "backfill_policy_write_ready_rows",
     },
-    "cid_nl_default_product_activation_v1": {
-        "authority_key": "cid_nl_default_activation",
-        "scope": "cid_nl_adopt_ready_feature_inclusion_95_cells",
-    },
 }
+CURRENT_BACKFILL_ACCEPTANCE_REL = (
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/"
+    "production_acceptance_manifest.tsv"
+)
 WRITE_FORBIDDEN_STATUSES = {
     "parked",
     "blocked",
@@ -319,7 +319,13 @@ def check_productization_state(
 
     authority_rules = _check_schema_authority_rules(schema, problems)
     _check_schema_and_rows(schema, header, rows, problems)
-    _check_authority_boundaries(authority_rules, authority, rows, problems)
+    _check_authority_boundaries(
+        authority_rules,
+        authority,
+        rows,
+        repo_root,
+        problems,
+    )
     _check_artifacts(rows, repo_root, problems)
     _check_doc_anchors(rows, handoff_text, control_plane_text, problems)
     _check_compatibility_index(rows, control_plane_text, problems)
@@ -452,8 +458,8 @@ def _check_schema_and_rows(
     else:
         if tuple(raw_required_lane_ids) != REQUIRED_LANE_IDS_V3:
             problems.append(
-                "schema required_lane_ids must preserve the exact ordered 21-lane "
-                "V3 contract"
+                "schema required_lane_ids must preserve the exact ordered "
+                f"{len(REQUIRED_LANE_IDS_V3)}-lane V3 contract"
             )
         required_lane_ids = set(raw_required_lane_ids)
 
@@ -605,6 +611,7 @@ def _check_authority_boundaries(
     authority_rules: Mapping[str, Any],
     authority: Mapping[str, Any],
     rows: Sequence[Mapping[str, str]],
+    repo_root: Path,
     problems: list[str],
 ) -> None:
     policy = authority.get("authority_policy")
@@ -669,12 +676,15 @@ def _check_authority_boundaries(
         if not isinstance(current_scope, Mapping):
             problems.append(f"authority manifest missing {expected['authority_key']}")
             continue
-        if row.get("row_count") != str(
-            current_scope.get("current_product_authority_rows")
-        ):
-            problems.append("writer row_count does not match authority manifest")
+        if expected["authority_key"] == "backfill":
+            owner_count = _checked_backfill_authority_count(repo_root, problems)
+            if owner_count is not None and row.get("row_count") != str(owner_count):
+                problems.append(
+                    "Backfill writer row_count does not match owner-checked membership"
+                )
         if row.get("may_touch_matrix") != "TRUE":
             problems.append("writer row must explicitly mark matrix touch")
+
 
     for index, row in enumerate(rows, start=2):
         status = row.get("readiness_status", "")
@@ -728,6 +738,24 @@ def _check_authority_boundaries(
                 problems.append(
                     "quality_explanation_sidecar_v1 must be diagnostic only"
                 )
+
+
+def _checked_backfill_authority_count(
+    repo_root: Path,
+    problems: list[str],
+) -> int | None:
+    try:
+        checked = load_checked_production_acceptance_manifest(
+            manifest_path=repo_root / CURRENT_BACKFILL_ACCEPTANCE_REL,
+            repo_root=repo_root,
+        )
+    except ProductionAcceptanceManifestError as exc:
+        problems.extend(
+            "current Backfill production acceptance: " + problem
+            for problem in exc.problems
+        )
+        return None
+    return len(accepted_production_acceptance_rows_by_key(checked.rows))
 
 
 def _check_artifacts(
@@ -867,11 +895,6 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         "locator carries the stable `source_repo_path:` key while the source note "
         "stays",
         "byte-for-byte identical to the retired body.",
-        "The checked retirement transaction is recorded in the",
-        (
-            "[retirement evidence packet](../file-management/docs-cleanup/"
-            "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json)."
-        ),
         "",
         "## Lane anchor index",
         "",

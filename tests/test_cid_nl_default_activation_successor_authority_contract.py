@@ -24,7 +24,6 @@ def test_successor_authority_contract_builds_write_allowlist_and_replay(
         output_dir=tmp_path / "out",
         source_root=tmp_path,
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -68,7 +67,6 @@ def test_successor_authority_contract_preserves_detected_baseline_without_write(
         output_dir=tmp_path / "out",
         source_root=tmp_path,
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -94,7 +92,6 @@ def test_successor_authority_contract_omits_scope_removed_cells(
         output_dir=tmp_path / "out",
         source_root=tmp_path,
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -115,7 +112,6 @@ def test_successor_authority_contract_fails_closed_on_stale_coordinate(
         output_dir=tmp_path / "out",
         source_root=tmp_path,
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -148,8 +144,6 @@ def test_successor_authority_contract_cli_writes_summary(
             str(paths["expected_diff_tsv"]),
             "--target-preflight-summary-json",
             str(paths["target_preflight_summary_json"]),
-            "--expected-authority-cell-count",
-            "1",
             "--require-pass",
         ]
     )

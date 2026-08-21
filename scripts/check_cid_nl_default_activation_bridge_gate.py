@@ -1,7 +1,7 @@
 """Check the CID-NL default-activation ID bridge gate.
 
 This is a no-RAW, no-ProductWriter gate. It tests whether the current
-511-cell Backfill authority can be bridged from the tracked default activation
+rule-selected Backfill membership can be bridged from the tracked default activation
 identity space onto a newer CID-NL alignment identity space without ambiguity,
 without overwriting detected values, and with expected-diff closure.
 """
@@ -58,7 +58,6 @@ DEFAULT_OUTPUT_DIR = (
 
 DEFAULT_MZ_TOLERANCE_DA = 0.02
 DEFAULT_RT_TOLERANCE_MIN = 0.2
-DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT = 511
 
 ACCEPT_DECISIONS = {"accept_basic_backfill", "accept_strict_backfill"}
 
@@ -132,9 +131,6 @@ def evaluate_bridge_gate(
     require_target_preflight: bool = True,
     mz_tolerance_da: float = DEFAULT_MZ_TOLERANCE_DA,
     rt_tolerance_min: float = DEFAULT_RT_TOLERANCE_MIN,
-    expected_authority_cell_count: int | None = (
-        DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT
-    ),
 ) -> dict[str, Any]:
     old_identity_rows = list(
         read_tsv_required(old_matrix_identity_tsv, REQUIRED_IDENTITY_COLUMNS),
@@ -191,7 +187,6 @@ def evaluate_bridge_gate(
         audit_rows=audit_rows,
         target_preflight=target_preflight,
         expected_diff_problems=expected_diff_problems,
-        expected_authority_cell_count=expected_authority_cell_count,
     )
     activation_replay = _activation_replay_summary(
         blockers=bridge_blockers,
@@ -222,13 +217,12 @@ def evaluate_bridge_gate(
         "backfill_writer_authority_changed": False,
         "authority_statement": (
             "This gate does not grant ProductWriter/default matrix authority. "
-            "It only checks whether the existing 511-cell Backfill authority "
+            "It only checks whether the existing rule-selected Backfill membership "
             "can bridge cleanly onto the new CID-NL alignment identity."
         ),
         "mz_tolerance_da": mz_tolerance_da,
         "rt_tolerance_min": rt_tolerance_min,
         "accepted_authority_cell_count": len(accepted_rows),
-        "expected_authority_cell_count": expected_authority_cell_count,
         "expected_diff_row_count": len(expected_diff_rows),
         "accepted_peak_hypothesis_id_count": len(
             {row["peak_hypothesis_id"] for row in accepted_rows}
@@ -437,17 +431,8 @@ def _bridge_blockers(
     audit_rows: Sequence[Mapping[str, str]],
     target_preflight: Mapping[str, Any],
     expected_diff_problems: Sequence[str],
-    expected_authority_cell_count: int | None,
 ) -> list[str]:
     blockers: list[str] = []
-    if (
-        expected_authority_cell_count is not None
-        and len(accepted_rows) != expected_authority_cell_count
-    ):
-        blockers.append(
-            "accepted_authority_cell_count_mismatch:"
-            f"expected={expected_authority_cell_count};observed={len(accepted_rows)}",
-        )
     if len(expected_diff_rows) != len(accepted_rows):
         blockers.append(
             "expected_diff_count_mismatch:"
@@ -728,11 +713,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=DEFAULT_RT_TOLERANCE_MIN,
     )
     parser.add_argument(
-        "--expected-authority-cell-count",
-        type=int,
-        default=DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
-    )
-    parser.add_argument(
         "--require-pass",
         action="store_true",
         help="Return non-zero if the bridge gate is blocked.",
@@ -751,7 +731,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_preflight_summary_json=args.target_preflight_summary_json,
         mz_tolerance_da=args.mz_tolerance_da,
         rt_tolerance_min=args.rt_tolerance_min,
-        expected_authority_cell_count=args.expected_authority_cell_count,
     )
     outputs = write_outputs(output_dir=args.output_dir, payload=payload)
     print(f"cid_nl_default_activation_bridge_summary: {outputs['summary_json']}")

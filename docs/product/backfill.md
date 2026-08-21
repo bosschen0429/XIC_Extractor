@@ -277,7 +277,5 @@ Before changing Backfill product behavior, require the relevant subset of:
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index_v1.tsv)
 - [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
-- [Adjudication schema](../superpowers/schemas/mechanical_adjudication_schema.v1.json)
-- [Adjudication index](../superpowers/validation/mechanical_adjudication_index_v1.tsv)
 - [Evidence rules](../lc-msms-evidence-rules.md)
 - [Peak anchor and group boundary](family-hypothesis-boundary.md)

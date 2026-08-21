@@ -16,7 +16,7 @@ verdicts.
 | Readiness vocabulary, promotion semantics, and promotion-packet requirements | [Product validation contract](../agent/product-validation-contract.md) |
 | Stable capability meaning and public boundaries | Matching `docs/product/*.md` topic owner |
 | Compatibility lookup from historical control-plane anchors | [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md) |
-| Historical chronology and retired reasoning | Retirement evidence plus the private source copy keyed by `source_repo_path` |
+| Historical chronology and retired reasoning | Git history plus the private source copy keyed by `source_repo_path` |
 
 Narrative owners must not restate mutable status-index fields or authority-
 manifest values. The dependent-effect manifest does not extend the registered
@@ -79,5 +79,4 @@ Stable implementation priorities remain:
 - [Product topic index](README.md)
 - [Product validation contract](../agent/product-validation-contract.md)
 - [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Validation retention](../superpowers/validation/RETENTION.md)
 - [Project layout and documentation lifecycle](../project-layout.md)

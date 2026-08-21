@@ -17,14 +17,16 @@ from tools.diagnostics.docs_management_audit import (
 from tools.diagnostics.docs_policy import (
     CONTROL_PLANE_PATH,
     GOVERNANCE_RULE_FAMILY_CONTRACTS,
-    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
 )
 
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
-RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
 PROJECT_ROOT = Path(__file__).parents[1]
+MAINTAINED_VALIDATION_HTML = (
+    "docs/superpowers/validation/evidence_chain_status_guide.html",
+    "docs/superpowers/validation/evidence_overlay_interpretation_guide.html",
+)
 
 
 def _isolated_git_subprocess_env() -> dict[str, str]:
@@ -33,6 +35,23 @@ def _isolated_git_subprocess_env() -> dict[str, str]:
         for key, value in os.environ.items()
         if not key.startswith("GIT_")
     }
+
+
+def test_maintained_validation_html_uses_lf_checkout_policy() -> None:
+    env = _isolated_git_subprocess_env()
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    completed = subprocess.run(
+        ["git", "check-attr", "eol", "--", *MAINTAINED_VALIDATION_HTML],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.stdout.splitlines() == [
+        f"{path}: eol: lf" for path in MAINTAINED_VALIDATION_HTML
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -187,23 +206,11 @@ def _write_permanent_root_contracts(root: Path) -> None:
     )
 
 
-def _write_registered_retirement_contract(root: Path) -> None:
-    for rel_path in (
-        CONTROL_PLANE_PATH,
-        PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
-    ):
-        _write(
-            root / rel_path,
-            (PROJECT_ROOT / rel_path).read_text(encoding="utf-8"),
-        )
-
-
 def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
-    _write_registered_retirement_contract(root)
     _write(
-        root / RETENTION_INVENTORY,
-        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
+        root / CONTROL_PLANE_PATH,
+        (PROJECT_ROOT / CONTROL_PLANE_PATH).read_text(encoding="utf-8"),
     )
 
 
@@ -257,7 +264,6 @@ def _run_audit(
     *,
     repo_only: bool = False,
     fail_on_completed_transient: bool = False,
-    require_retirement_history: bool = False,
     preserve_index: bool = False,
 ):
     if root.resolve() != PROJECT_ROOT:
@@ -278,7 +284,6 @@ def _run_audit(
         vault,
         include_vault=not repo_only,
         fail_on_completed_transient=fail_on_completed_transient,
-        require_retirement_history=require_retirement_history,
     )
 
 
@@ -292,24 +297,6 @@ def test_repo_only_audit_skips_vault_blockers(tmp_path: Path) -> None:
     assert result.summary["vault"]["vault_skipped"] is True
     assert not any(msg.path == str(vault) for msg in result.messages)
     assert not any(msg.path == ".manifest.json" for msg in result.messages)
-
-
-def test_repo_only_audit_blocks_missing_retirement_history(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "missing-vault"
-    _clean_repo(root)
-
-    result = _run_audit(
-        root,
-        vault,
-        repo_only=True,
-        require_retirement_history=True,
-    )
-
-    assert any(
-        "retirement packet historical replay is unavailable" in message.message
-        for message in result.blockers
-    )
 
 
 def test_repo_only_completed_transient_spec_is_blocker(
@@ -518,19 +505,6 @@ def test_tracked_current_handoff_is_a_retired_lane_blocker(tmp_path: Path) -> No
         root / CURRENT_HANDOFF,
         "Status: batches are staged; no commit has been made.\n",
     )
-    _write(
-        root / RETENTION_INVENTORY,
-        "\n".join(
-            [
-                "path\tretention_decision\trepo_owner\tnext_review_event\trationale",
-                (
-                    f"{CURRENT_HANDOFF}\tactive_current\tPR #1\t"
-                    "pr_merge_or_close\tActive branch stub."
-                ),
-            ]
-        )
-        + "\n",
-    )
 
     result = _run_audit(root, vault)
 
@@ -654,33 +628,6 @@ def test_docs_structure_review_reports_deepresearch_as_retired_lane(
             "retired_dir": "docs/deepresearch/",
         }
     ]
-
-
-def test_handoff_retention_blocker_is_reported_by_docs_management_audit(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_vault(vault)
-    _write(
-        root / CURRENT_HANDOFF,
-        "# Current handoff\n\nStatus: active.\n",
-    )
-    _write(
-        root / RETENTION_INVENTORY,
-        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
-    )
-
-    result = _run_audit(root, vault)
-
-    assert "handoff_retention" in result.summary["repo"]
-    assert result.summary["repo"]["handoff_retention"]["handoff_files"] == 1
-    assert any(
-        msg.path == CURRENT_HANDOFF
-        and msg.message.startswith("handoff retention:")
-        and "no retention inventory row" in msg.message
-        for msg in result.blockers
-    )
 
 
 def test_repo_docs_routing_review_reports_private_history_candidates(
@@ -1612,48 +1559,6 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
     assert support_path in retained_review_paths
 
 
-def test_artifact_inventory_referrer_counts_as_authority_anchor(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    support_path = "docs/superpowers/validation/backfill-run.md"
-    _write(
-        root / support_path,
-        "\n".join(
-            [
-                "# Backfill support",
-                "",
-                "Doc placement: repo_support_doc",
-                "Doc kind: validation_artifact",
-                "Doc lifecycle: archived",
-                "Repo owner: docs/product/backfill.md",
-                "Doc exit rule: keep while listed by artifact inventory.",
-                "",
-                "Backfill validation support.",
-            ]
-        ),
-    )
-    _write(
-        root / "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
-        f"path\tretention_decision\n{support_path}\tkeep_machine_anchor\n",
-    )
-
-    result = _run_audit(root, vault)
-
-    review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if support_path in item["supporting_sample_paths"]
-    )
-    assert "authority_or_status_anchor:1" in cluster["support_retention_counts"]
-    retained_review_paths = {item["path"] for item in review["route_retained_reviews"]}
-    assert support_path not in retained_review_paths
-
-
 def test_mechanical_referrer_anchor_is_not_docs_followup_queue(
     tmp_path: Path,
 ) -> None:
@@ -2385,29 +2290,6 @@ def test_docs_audit_governance_index_uses_staged_text(tmp_path: Path) -> None:
     )
 
 
-def test_docs_audit_retirement_packet_uses_staged_text(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    _clean_repo(root)
-    git_env = _init_and_stage_repo(root)
-    path = PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
-    valid_worktree_text = (root / path).read_text(encoding="utf-8")
-    _write(root / path, "{\n")
-    subprocess.run(
-        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
-    )
-    _write(root / path, valid_worktree_text)
-
-    result = _run_audit(root, repo_only=True, preserve_index=True)
-
-    problems = result.summary["repo"]["committed_retirement_packet_review"][
-        "problems"
-    ]
-    assert any(
-        row["path"] == path and "retirement packet cannot be read" in row["problem"]
-        for row in problems
-    )
-
-
 def test_repo_owner_marker_controls_topic_before_body_keywords(
     tmp_path: Path,
 ) -> None:
@@ -2507,8 +2389,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         capture_output=True,
         env=git_env,
     )
-    _write_permanent_root_contracts(root)
-    _write_registered_retirement_contract(root)
+    _clean_repo(root)
     _clean_vault(vault)
     _write(
         root / ".gitignore",
@@ -2517,10 +2398,6 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
     _write(
         root / "docs/superpowers/handoffs/current/ACTIVE.local.md",
         "# Local handoff\n\nStatus: active.\n",
-    )
-    _write(
-        root / RETENTION_INVENTORY,
-        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
     subprocess.run(
         ["git", "add", "."],
@@ -2534,7 +2411,6 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
 
     assert result.blockers == ()
     assert not [msg for msg in result.messages if msg.severity == "warning"]
-    assert result.summary["repo"]["handoff_retention"]["handoff_files"] == 0
 
 
 def test_canonical_metadata_review_reports_root_authority_missing_metadata(
@@ -2575,122 +2451,6 @@ def test_canonical_metadata_review_blocks_missing_permanent_root(
         msg.severity == "blocker"
         and msg.path == "README.md"
         and "permanent root path is missing" in msg.message
-        for msg in result.messages
-    )
-
-
-@pytest.mark.parametrize(
-    ("packet_text", "expected_problem"),
-    (
-        (
-            json.dumps(
-                {
-                    "transaction": "body_to_compatibility_index",
-                    "source_path": (
-                        "docs/superpowers/plans/"
-                        "2026-06-15-productization-control-plane.md"
-                    ),
-                    "activation_base_sha": "not-a-sha",
-                }
-            ),
-            "activation_base_sha must be a full Git SHA",
-        ),
-        ("{", "retirement packet is not valid JSON"),
-    ),
-)
-def test_docs_audit_blocks_invalid_committed_retirement_packet(
-    tmp_path: Path,
-    packet_text: str,
-    expected_problem: str,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    git_env = _isolated_git_subprocess_env()
-    subprocess.run(
-        ["git", "init"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-    subprocess.run(
-        ["git", "add", "."],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "-m",
-            "fixture",
-        ],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-    packet_path = (
-        "docs/superpowers/file-management/docs-cleanup/"
-        "2026-08-01-retirement-evidence.json"
-    )
-    _write(
-        root / packet_path,
-        packet_text,
-    )
-    subprocess.run(
-        ["git", "add", packet_path], cwd=root, check=True, env=git_env
-    )
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "-m",
-            "invalid packet fixture",
-        ],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-
-    result = _run_audit(root, vault)
-
-    assert any(
-        msg.severity == "blocker"
-        and msg.path == packet_path
-        and expected_problem in msg.message
-        for msg in result.messages
-    )
-
-
-def test_docs_audit_requires_registered_packet_when_control_plane_exists(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    (root / PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL).unlink()
-
-    result = _run_audit(root, vault)
-
-    assert any(
-        msg.severity == "blocker"
-        and msg.path == PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
-        and "registered retirement packet is missing or untracked" in msg.message
         for msg in result.messages
     )
 

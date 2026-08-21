@@ -51,9 +51,7 @@ Two history dispositions are supported:
 `tools/diagnostics/retire_docs.py --evidence <ignored-json> --execute` performs
 the local destructive step. For retired construction lanes, the staged
 placement guard accepts deletion only when the final staged tree has no exact
-repo referrers. It does not require committing a retirement packet. The one
-existing checker-bound productization retirement packet remains an exact-path
-machine exception; it is not a template for new cleanup history.
+repo referrers. It does not require committing a retirement packet.
 
 The compatibility index at
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md` is also an

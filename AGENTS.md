@@ -68,8 +68,8 @@ Use the single-context domain documentation layout. See
   from a different worktree's ignored `.venv`.
 - Before Python, RAW, DLL, or validation commands, read
   `docs/agent/parameter-settings.md` and use documented runners and paths.
-- Keep outputs under task-specific `output/` or `docs/superpowers/` paths. New
-  diagnostic output groups need a summary or index.
+- Keep run-specific outputs under ignored task-specific `output/` paths. Track
+  only artifacts required by a current runtime, CI, or public consumer.
 - Keep active plans and handoffs as short, self-contained current-state stubs;
   use the PR body for normal durable closeout. Detailed retention and Obsidian
   routing live in the handoff owners above.
@@ -100,6 +100,8 @@ Use the single-context domain documentation layout. See
   when the current checkout has a healthy matching index; otherwise fall back
   to `rg` and targeted reads. CI, validation, and correctness claims must not
   depend on an external local index.
+- Prefer the simplest current path: abstractions need two current callers,
+  configuration a current second value, and compatibility a current consumer.
 
 ## PR Gate
 
@@ -140,12 +142,12 @@ must remain clean-checkout safe.
   enter through its atomic execution/finalization API, not call partial lifecycle
   primitives, accept caller-authored ledgers/counts, or expose settlement-only
   public bypasses. See `docs/agent/architecture-public-contracts.md`.
-- Treat persisted JSON/TSV/maps as untrusted projections after deserialization.
-  Before a consumer claims domain or runtime semantics, route the complete content
-  through the original semantic owner to reconstruct the typed value and recompute
-  canonical identity and invariants. Embedded IDs, hashes, status, counts, and
-  locators are assertions, not proof, even when the outer envelope is re-sealed;
-  omitted content makes the corresponding claim unavailable. See
+- Validate persisted content only at a reachable decision boundary. Fields that
+  grant writer authority, change product output, or drive a domain/runtime
+  decision use their existing semantic owner. Audit-only metadata is telemetry,
+  not an acceptance condition. If its source is absent, drop the claim instead
+  of adding validators or receipts. Coordinated tracked edits are a Git-review
+  concern unless an external caller can supply the content independently. See
   `docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration`.
 
 ## Workflow Routing
@@ -155,19 +157,17 @@ must remain clean-checkout safe.
   Every task shapes its objective, current evidence, boundaries, acceptance,
   and stop rule; only direction-changing uncertainty or material risk escalates
   to a Current Packet.
-- Before non-trivial diagnostics, RAW-backed evidence, matrix activation, or
-  evidence-provider work, use `xic-architecture-preflight` and name owner/helper
-  reuse, call-cost model, public contract risk, validation gate, and stop rule.
+- Use `xic-architecture-preflight` only when work creates or replaces a semantic
+  owner, grants writer authority, changes a runtime/public contract, or launches
+  scientific evidence. Focused work inside an established owner skips it.
 - Before XIC preset/runtime performance work, use `xic-performance-diagnosis` to
   inspect timing artifacts, rank bottlenecks, classify call cost and workload,
   and define correctness gates; then use `xic-architecture-preflight` before code
   edits. This does not replace `xic-raw-validation` before launching or accepting
   RAW-backed validation.
-- Review comments are failure instances, not the fix scope. A second actionable
-  finding from the same class, or actionable findings on two delivered heads,
-  stops patch-by-patch push/reply/resolve work. Classify the root as a PRD/spec
-  gap, unbounded design, implementation regression, oracle gap, or unsupported
-  reviewer claim; search prior owner findings and tests before editing. If the
-  failure universe cannot be bounded, shrink, delete, replace, or redesign the
-  mechanism instead of adding another special case. If a product/domain choice
-  was never specified, refreeze the PRD rather than encoding a reviewer guess.
+- A review finding needs a reachable actor, input, decision, and observable loss.
+  Audit metadata or coordinated repo edits alone do not justify a product gate.
+  Repeated findings from one mechanism stop patch-by-patch work: shrink the
+  claim, delete or replace the mechanism, or reject the unsupported finding
+  instead of adding another checker. Unspecified product choices return to the
+  issue/spec; reviewers do not define them implicitly.

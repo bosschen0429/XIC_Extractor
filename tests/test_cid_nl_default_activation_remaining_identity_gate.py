@@ -19,7 +19,6 @@ def test_remaining_identity_gate_passes_existing_write_ready_cell(
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -37,7 +36,6 @@ def test_remaining_identity_gate_removes_missing_identity_from_candidate_scope(
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -65,7 +63,6 @@ def test_remaining_identity_gate_records_non_bridge_source_identity_context(
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -96,7 +93,6 @@ def test_remaining_identity_gate_removes_all_blank_ambiguity_without_write(
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -126,7 +122,6 @@ def test_remaining_identity_gate_removes_multiple_detected_ambiguity_without_cho
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -157,7 +152,6 @@ def test_remaining_identity_gate_keeps_unique_detected_candidate_as_no_write(
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -185,7 +179,6 @@ def test_remaining_identity_gate_fails_closed_on_stale_candidate_coordinate(
 
     payload = evaluate_remaining_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -218,8 +211,6 @@ def test_remaining_identity_gate_cli_writes_summary_and_audit(
             str(paths["target_preflight_summary_json"]),
             "--output-dir",
             str(output_dir),
-            "--expected-authority-cell-count",
-            "1",
         ]
     )
 

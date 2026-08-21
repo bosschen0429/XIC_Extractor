@@ -57,27 +57,6 @@ SNAPSHOT_MARKER = "ledger_snapshot"
 # docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
 # an invariant that survives a consistent re-analysis belongs in CI unmarked.
 SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
-    "tests/test_backfill_expansion_census.py": (
-        "test_current_backfill_expansion_census_is_stable",
-    ),
-    "tests/test_backfill_expansion_default_product_activation.py": (
-        "test_current_backfill_expansion_default_activation_is_stable",
-    ),
-    "tests/test_backfill_expansion_evidence_availability.py": (
-        "test_current_backfill_expansion_evidence_availability_is_stable",
-    ),
-    "tests/test_backfill_expansion_expected_diff_provenance.py": (
-        "test_current_backfill_expansion_expected_diff_provenance_is_stable",
-    ),
-    "tests/test_backfill_expansion_full_evidence_chain.py": (
-        "test_current_backfill_expansion_full_evidence_chain_is_held",
-    ),
-    "tests/test_backfill_expansion_raw_overlay_trace_identity.py": (
-        "test_current_backfill_expansion_raw_overlay_trace_identity_is_stable",
-    ),
-    "tests/test_backfill_expansion_sample_local_ms1_evidence.py": (
-        "test_current_backfill_expansion_sample_local_ms1_evidence_is_stable",
-    ),
     "tests/test_bounded_product_lanes_contract.py": (
         "test_bounded_product_lanes_accept_current_artifacts",
         "test_limited_targeted_ms1_scope_and_effect_are_pinned",
@@ -94,18 +73,10 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     "tests/test_cid_nl_discovery_release_slice.py": (
         "test_current_cid_nl_discovery_release_slice_is_stable",
     ),
-    "tests/test_lockbox_ai_challenge_results.py": (
-        "test_current_ai_challenge_result_summary_is_non_authoritative",
-        "test_current_lockbox_ai_challenge_results_validate",
-    ),
-    "tests/test_lockbox_label_collection_pack.py": (
-        "test_current_label_collection_pack_validates",
-    ),
     "tests/test_productization_state_index.py": (
         "test_dependent_effect_lane_is_exact_hold_package_binding",
-        "test_peak_choice_lockbox_status_points_to_shadow_automation_design",
+        "test_only_revalidated_default_scope_has_writer_authority",
         "test_productization_state_index_accepts_current_artifacts",
-        "test_registered_default_scopes_have_writer_authority",
     ),
     "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
         "test_current_cid_nl_public_output_claim_catalog_is_valid",
@@ -262,12 +233,10 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_shift_aware_*.py",
             "tests/test_standard_peak_*.py",
             "tests/test_tier2_*.py",
-            "tests/test_trace_overlay_recovery_contract.py",
         ),
         "product-gates-evidence": (
             "tests/test_area_integration_uncertainty_audit.py",
             "tests/test_evidence_*.py",
-            "tests/test_lockbox_*.py",
             "tests/test_matrix_*.py",
             "tests/test_model_selection_approval_registry.py",
             "tests/test_ms1_*.py",

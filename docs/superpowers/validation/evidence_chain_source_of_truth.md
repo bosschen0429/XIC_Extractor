@@ -52,7 +52,6 @@ different questions:
 | `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Compatibility lookup for retired control-plane lane keys and historical anchors. | Current tier, lane, writer scope, or promotion state. |
 | `docs/superpowers/validation/productization_status_index_v1.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
 | `docs/superpowers/schemas/productization_authority_manifest.v1.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
-| `docs/superpowers/validation/ARTIFACT_INVENTORY.tsv` | Retention and externalization of validation artifacts. | Evidence-chain semantics. |
 | This file | Human-maintained evidence-chain map across code, diagnostics, and promotion boundaries. | Machine enforcement, counts, tier changes, or writer authority. |
 
 Rule: if a durable evidence provider, evidence state, gate, or authority
@@ -290,8 +289,6 @@ Owners:
 - `xic_extractor/alignment/backfill_ms1_product_authority.py`
 - `xic_extractor/alignment/backfill_candidate_ms2_product_authority.py`
 - `xic_extractor/alignment/shared_peak_identity_explanation/machine_evidence_support.py`
-- `scripts/check_backfill_expansion_*`
-- `scripts/build_backfill_expansion_default_product_activation.py`
 
 Purpose: decide whether a currently blank/rescued cell has enough evidence to
 be accepted, reviewed, held, or written inside a bounded Backfill lane.
@@ -311,49 +308,9 @@ Evidence states:
 - MS1 product authority requires allowlist status, source evidence, overlay
   JSON provenance/hash, same family/sample/vector, own-max metric, supportive
   quality vector, and threshold compliance.
-- Backfill expansion full-chain status requires expected diff, sample-local
-  source evidence, RAW trace identity, shift-aware standard-peak support,
-  own-max metric support, and a product-authorized MS1 sidecar joined by stable
-  row/cell keys.
-- Backfill expansion selective shift-aware replay is a diagnostic gate that
-  evaluates `PeakHypothesis + sample cell` by source-family best-shift support,
-  standard-peak boundary support, and per-cell own-max support. It can identify
-  cells eligible for later expected-diff design, but it does not grant
-  ProductWriter authority.
-- Historical standard-peak MS1 sidecars and full-chain status maps are retained
-  only as diagnostic context. Their packet-local checks do not authenticate
-  historical origin or immutability, and their producers predate the current
-  original-owner rehydration contract, so no current tool may regenerate them
-  or treat their `pass`/`product_authorized` labels as product authority.
-- Backfill expansion peak-mode decomposition is a diagnostic gate that compares
-  sample-local candidate apex RT against each family's detected/reference mode.
-  It identifies mixed target/off-target RT hypotheses and boundary-bridge
-  cells before selective gate output can be interpreted as product-ready.
-  RT coherence should be interpreted with sample subtype context: same-subtype
-  outliers are stronger wrong-peak or boundary evidence, while cross-subtype
-  Tumor/Normal/Benignfat shifts may be plausible but remain diagnostic until
-  backed by sample-local MS1, same-peak, provenance, and expected-diff evidence.
-  The current filename-prefix diagnostic flags same-subtype RT span above
-  `0.50 min` for review; product code should use `sample_metadata_v1` instead
-  of filename prefixes before this becomes an activation gate.
-  A compact subtype split review queue can summarize flagged cells by
-  `family + sample_subtype` for review priority; it remains diagnostic-only.
-  A compact split decision packet may then route flagged cells into clean
-  target-mode candidates, boundary-review target cells, off-target hold/remap
-  cells, and missing/unclassified cells. This routing isolates what may feed a
-  later full evidence chain, but it is not a write allowlist.
-  A clean-target full-chain replay may project only clean target-mode cells back
-  onto the existing evidence chain and the selective MS1 authority sidecar to
-  ask whether peak-mode cleanup plus selective source-family evidence is enough.
-  Its pass subset can inform expected-diff design, but held cells remain held
-  and the replay is not ProductWriter authority.
-  The historical clean-target packet recorded an 84-cell bounded experiment,
-  but it cannot be rehydrated by a current scientific owner. T5D therefore
-  retires its executable writer and registered scope; the retained packet can
-  falsify or explain an old result but cannot write or authorize current output.
-  Optional manual review labels may annotate peak-mode, boundary, and review
-  action for remap/boundary debugging; they are reviewer evidence, not a manual
-  allowlist and not ProductWriter authority.
+- The retired 666-cell and 84-cell Backfill expansion experiments remain only as
+  negative scope tombstones in the authority manifest. Their packets and
+  checkers are available from Git history, not as current evidence-chain gates.
 - Candidate MS2 product authority requires supportive/partial support,
   `sample_candidate_aligned` or `sample_boundary_aligned` level, source hash,
   schema version, source match, and similarity threshold compliance.
@@ -370,7 +327,6 @@ Owners:
 - `xic_extractor/alignment/quant_matrix_promotion.py`
 - `scripts/build_quant_matrix_default_product_activation.py`
 - `scripts/build_cid_nl_default_product_activation.py`
-- `scripts/build_backfill_expansion_default_product_activation.py`
 
 Purpose: make matrix-writing changes explicit, replayable, and auditable.
 
@@ -390,14 +346,10 @@ unused expected diffs and existing-value overwrites. Passing a focused expected
 diff proves contract correctness for a bounded scope, not global scientific
 confidence.
 
-### Review, Lockbox, Overlay, And Human-Guide Evidence
+### Overlay And Human-Guide Evidence
 
 Owners:
 
-- `scripts/build_peak_choice_truth_lockbox.py`
-- `scripts/build_lockbox_static_review_bundle.py`
-- `scripts/build_trace_overlay_recovery_report.py`
-- `scripts/build_lockbox_ai_challenge_pack.py`
 - `tools/diagnostics/family_ms1_overlay_*`
 - `tools/diagnostics/backfill_evidence_reconciliation_gallery.py`
 - `docs/superpowers/validation/evidence_chain_status_guide.html`
@@ -407,28 +359,30 @@ product authority.
 
 Evidence states:
 
-- Lockbox labels, review decisions, challenge queues, trace recovery status,
-  overlay trace JSON/PNG/HTML, recovered overlays, and reviewer conclusions.
+- Trace recovery status, overlay trace JSON/PNG/HTML, recovered overlays, and
+  compact reviewer conclusions with an enduring consumer.
 
-Authority state: review artifacts may support a future acceptance gate, but
-they should fail closed with fields such as
-`may_grant_product_authority=FALSE` or equivalent unless a separate activation
-contract consumes them.
+Authority state: review artifacts may support an active acceptance gate, but
+dataset-run queues, templates, labels, and rendered packets belong under
+ignored `output/`. A retained compact verdict remains non-authoritative unless
+a separate activation contract consumes it.
 
 ## Product-Lane Authority Boundaries
 
-The authoritative machine-readable state is
+The authoritative machine-readable registry state is
 `docs/superpowers/validation/productization_status_index_v1.tsv` plus
 `docs/superpowers/schemas/productization_authority_manifest.v1.json`. This table
 describes stable lane roles, not current counts. Counts, hashes, pass/fail
 numbers, and active scope sizes belong in the machine-readable artifacts.
+The exact Backfill writer membership remains in the retained production-
+acceptance manifest and activation values; `scripts/check_productization_authority.py`
+recomputes the manifest identity and binds every authorized cell across both.
 
 | Lane / surface | Evidence chain | Authority boundary |
 | --- | --- | --- |
 | Backfill current | Backfill policy, same-peak support, sample-local evidence, value provenance, and expected diff. | Writer authority is limited to the registered scope in the authority manifest and status index. |
 | CID-NL Discovery | Successor self evidence, CID-NL tag evidence, MS1/RT/family context, identity reconstruction, expected diff, and quant matrix replay. | CID-NL/MS2 evidence is not direct writer authority; it must be consumed by a bounded activation contract. |
-| Backfill expansion | Census, availability, sample-local MS1 identity, RAW trace identity, expected diff/provenance, activation replay, shift-aware standard-peak support, own-max metric support, selective source-family projection, and MS1 product-authority sidecar. | Expansion does not unlock broad Backfill. Only a scope registered by the authority manifest and status index after the bounded full-chain gate, expected diff, and provenance replay has writer authority; candidate and diagnostic pass sets are not authority. |
-| Broad Backfill candidate universe | Candidate, review, overlay, lockbox, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
+| Broad Backfill candidate universe | Candidate, review, overlay, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
 | Targeted review actions | Expected-diff gate over product state, counted detection, review state, candidate sidecar, or manual-boundary state. | Mutating actions require approved expected diff and fail closed on stale/missing baseline. |
 
 ## Known Gaps
@@ -437,16 +391,12 @@ numbers, and active scope sizes belong in the machine-readable artifacts.
    active writer scope to its required evidence columns, artifacts, and
    authority outcome. This file is the human source of truth until that checker
    exists.
-2. Backfill expansion now has a machine-readable full-chain checker for the
-   current 666-cell packet, but it is still packet-specific. If this lane is
-   promoted later, the same evidence-map shape should be generalized without
-   turning this dataset slice into broad Backfill policy.
-3. Similar vocabulary appears in multiple layers: `own_max`, `ambiguous`,
+2. Similar vocabulary appears in multiple layers: `own_max`, `ambiguous`,
    `rescue`, `accepted_rescue`, `backfill`, and `authority` have layer-specific
    meanings. Reports must name the layer, not only the word.
-4. The HTML evidence guide is a teaching artifact. It should be updated from
+3. The HTML evidence guide is a teaching artifact. It should be updated from
    this file, but it must not become the authority manifest or status source.
-5. HCD, standards, calibration, Delta Mass, and product-ion vocabulary exist as
+4. HCD, standards, calibration, Delta Mass, and product-ion vocabulary exist as
    providers or hooks, but not every provider is a complete first-class
    product lane.
 
@@ -461,13 +411,11 @@ When adding or changing evidence:
 3. Update `docs/lc-msms-evidence-rules.md` when the scientific/domain
    interpretation changes.
 4. Update `productization_status_index_v1.tsv`,
-   `productization_authority_manifest.v1.json`, the structured control schema,
-   and the promotion contract only when tier, active lane, writer scope, public
+   `productization_authority_manifest.v1.json`, and the promotion contract only
+   when tier, active lane, writer scope, public
    surface, default matrix, workbook, counted detection, selected peak, or
    selected area changes.
-5. Update `ARTIFACT_INVENTORY.tsv` when a new durable artifact is retained or
-   externalized.
-6. Add or update focused tests/checkers when a machine-readable contract is
+5. Add or update focused tests/checkers when a machine-readable contract is
    introduced.
 
 ## Integrity Status Vocabulary

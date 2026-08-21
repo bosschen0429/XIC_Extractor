@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from scripts import check_cid_nl_discovery_release_slice as release_slice
@@ -56,18 +54,6 @@ def test_release_slice_accepts_stable_compatibility_lane_registry(tmp_path) -> N
     )
 
     assert problems == []
-
-
-def test_release_slice_propagates_artifact_retention_problems(monkeypatch) -> None:
-    monkeypatch.setattr(
-        release_slice,
-        "check_validation_artifact_retention",
-        lambda: SimpleNamespace(problems=("inventory drift",)),
-    )
-
-    problems = release_slice.check_cid_nl_discovery_release_slice()
-
-    assert "validation_artifact_retention: inventory drift" in problems
 
 
 def test_release_slice_propagates_bounded_lane_problems(monkeypatch) -> None:

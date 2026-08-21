@@ -60,10 +60,6 @@ or the relevant structured productization owner.
   Issue #125 preregistration contract for estimands, finite-census versus
   sampled uncertainty dispatch, grouping keys, threshold parameters, planning
   inputs, incomplete-frame claim downgrades, and reveal timing.
-- `lockbox_label_schema_v1.json`: lockbox/truth-label packet row contract for
-  protected review evidence.
-- `mechanical_adjudication_schema.v1.json`: mechanical adjudication index
-  contract used by productization authority checks.
 - `production_acceptance_manifest_schema.v1.json`: Phase 2 Backfill
   `ProductionAcceptanceManifest v1` contract. This defines/checks the only
   future Backfill row artifact that may grant `write_authority=true`; it does
@@ -141,14 +137,8 @@ or the relevant structured productization owner.
   ProductWriter/default output activation schema. It writes
   `default_output/quant_matrix.tsv` plus `cell_provenance`, `row_summary`,
   `expected_diff_summary`, and `source_summary` from the validated current
-  511-cell authority contract; accepted Backfill values enter the default
+  rule-selected Backfill membership; accepted Backfill values enter the default
   numeric matrix as quantification values, not detections or truth claims.
-- `review_packet_schema.v1.json`: review packet contract for preserved
-  productization review evidence.
-- `trace_overlay_recovery_contract.v1.json`: trace overlay recovery contract
-  for validation/report continuity.
-- `truth_label_schema.v1.json`: truth-label schema consumed by lockbox and
-  review evidence checks.
 
 ## Rule
 

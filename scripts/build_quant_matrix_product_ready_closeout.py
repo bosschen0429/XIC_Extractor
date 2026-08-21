@@ -303,7 +303,7 @@ def _check_rows(
             and packet_payload.get("accepted_backfill_count")
             == dry_run_payload.get("accepted_backfill_count"),
             "phase8_phase9_source_binding",
-            "Phase 8 and Phase 9 bind to the same current 511-cell source run.",
+            "Phase 8 and Phase 9 bind to the same current rule-selected source run.",
         ),
     ]
     return rows
@@ -434,7 +434,7 @@ def _write_summary(
         },
         "activation_contract": (
             "A future explicit ProductWriter activation may make the default "
-            "quant matrix include detected values plus the current 511 accepted "
+            "quant matrix include detected values plus the current rule-selected "
             "Backfill values, provided it uses this expected-diff-bound contract "
             "and keeps provenance/reconstructability sidecars."
         ),
@@ -442,7 +442,7 @@ def _write_summary(
             "Phase 10 closes the evidence packet as a Product Ready default "
             "matrix candidate only. It does not itself write default matrix "
             "files, change ProductWriter behavior, or expand authority beyond "
-            "the current 511 accepted Backfill cells."
+            "the current rule-selected Backfill membership."
         ),
         "residual_risks": [
             "ProductWriter default activation still requires a separate "

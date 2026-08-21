@@ -31,9 +31,9 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
   structured productization owners, named specs, validation notes, PR body, or
   git state. Keep them under about 200 lines unless explicitly justified.
   Completed phase history belongs in Obsidian by default.
-- `docs/superpowers/handoffs/RETENTION.tsv`: zero-record compatibility sentinel
-  for the handoff audit. Tracked `current/` or `archive/` files are forbidden;
-  active context stays ignored and durable closeout belongs in the PR body.
+- `.gitignore` keeps local handoffs untracked, and the staged docs placement
+  guard rejects force-added `current/` or `archive/` files. Active context stays
+  ignored and durable closeout belongs in the PR body.
 - Read-side productization status snapshots are ordinary ignored reports under
   `output/` or private Obsidian notes. They do not promote tiers; promote only
   durable public summaries to `docs/superpowers/productization/evidence/`.

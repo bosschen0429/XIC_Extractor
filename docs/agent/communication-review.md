@@ -56,10 +56,10 @@ root `AGENTS.md`. Keep the root file limited to high-frequency guardrails.
 - PR body is the normal durable closeout surface. Condense the branch handoff
   into the PR body instead of treating the current handoff as the final record.
   Do not add a tracked closeout summary or force-add local handoff state.
-- `docs/superpowers/handoffs/RETENTION.tsv` is a zero-record compatibility
-  sentinel for the read-only audit. Any tracked file under `current/` or
-  `archive/` is a placement error; move its durable claim to an owner or PR body
-  and keep execution context ignored.
+- Any tracked file under `docs/superpowers/handoffs/current/` or `archive/` is
+  a placement error. The staged docs placement guard rejects force-added local
+  handoffs; move durable claims to an owner or PR body and keep execution
+  context ignored.
 - Status labels such as `[active]`, `[blocked]`, `[done]`, and `[superseded]`
   are useful in open-work sections. Remove `[done]` and `[superseded]` items
   from the active handoff during the next prune unless they prevent repeated

@@ -20,11 +20,9 @@ corrected T0 packet and activate #240 from the then-current `master`; #250,
 - Runtime effect: none. This packet adds no production type, parser, adapter,
   cache, CLI/config/GUI field, writer, schema, dependency, or authority.
 - RAW lanes: none. RAW validation was neither required nor authorized.
-- Budget exception: the operator explicitly authorized one additional tracked
-  docs/index file on 2026-08-11. The required packet directory still contains
-  exactly four files; the fifth changed docs file is the pre-existing
-  `docs/superpowers/validation/ARTIFACT_INVENTORY.tsv`, whose four new rows are
-  mandatory for the repository retention gate.
+- The required packet directory contains exactly four files. The former global
+  validation-artifact inventory was later retired because file-by-file
+  retention bookkeeping is not part of this packet's scientific contract.
 
 ## Result in one sentence
 

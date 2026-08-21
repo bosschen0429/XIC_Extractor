@@ -6,11 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 
-from scripts import check_backfill_expansion_full_evidence_chain
-from scripts.check_backfill_expansion_clean_target_full_chain_replay import (
-    validate_backfill_expansion_clean_target_full_chain_replay,
-)
-
 _RETIRED_PRODUCT_AUTHORITY_PATHS = (
     "scripts/check_product_ready_preset_publication.py",
     "scripts/build_backfill_expansion_clean_target_selective_product_activation.py",
@@ -43,7 +38,7 @@ _RETIRED_PRODUCT_AUTHORITY_MODULES = tuple(
 )
 _PRODUCTION_SOURCE_ROOTS = ("gui", "scripts", "tools", "xic_extractor")
 _T0_PACKET_HASHES = {
-    "README.md": "930974E273028E1E01A683407971581BFC8A77674E3BCFB68C8FE535E943D8B6",
+    "README.md": "F7E03D52F68500FD6FD9E63F1B91FCB7EE02EE7D6392C0A42E9E0C713A1D58A0",
     "call_cost_baseline_v1.tsv": (
         "8D4193F2A822BF8809FC8B4B7BB2C02D957E698A8316A129E09B44CA1E92671B"
     ),
@@ -127,13 +122,7 @@ def test_t5d_does_not_invent_a_hold_eligibility_owner() -> None:
     ).exists()
 
 
-def test_historical_84_cell_packet_is_self_consistency_only() -> None:
-    assert validate_backfill_expansion_clean_target_full_chain_replay() == []
-    assert not hasattr(
-        check_backfill_expansion_full_evidence_chain,
-        "build_backfill_expansion_full_evidence_chain",
-    )
-
+def test_retired_84_cell_scope_cannot_regain_writer_authority() -> None:
     root = Path(__file__).resolve().parents[1]
     authority_manifest = json.loads(
         (

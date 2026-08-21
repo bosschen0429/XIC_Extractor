@@ -2,7 +2,7 @@
 
 This no-RAW gate converts the resolved CID-NL identity audit into a successor
 ProductionAcceptanceManifest allow-list, an expected-diff packet, a full
-511-cell decision ledger, and an in-repo candidate QuantMatrixVersion replay.
+rule-selected decision ledger, and an in-repo candidate QuantMatrixVersion replay.
 It establishes a reviewable successor authority packet; it does not install a
 new default ProductWriter output, workbook, GUI state, or active matrix bundle.
 """
@@ -22,7 +22,6 @@ if __package__ in {None, ""}:
 
 from scripts.build_quant_matrix_version import run_activation  # noqa: E402
 from scripts.check_cid_nl_default_activation_bridge_gate import (  # noqa: E402
-    DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
     DEFAULT_EXPECTED_DIFF_TSV,
     DEFAULT_MZ_TOLERANCE_DA,
     DEFAULT_NEW_MATRIX_IDENTITY_TSV,
@@ -120,9 +119,6 @@ def build_successor_authority_contract(
     target_preflight_summary_json: Path | None = DEFAULT_TARGET_PREFLIGHT_SUMMARY_JSON,
     mz_tolerance_da: float = DEFAULT_MZ_TOLERANCE_DA,
     rt_tolerance_min: float = DEFAULT_RT_TOLERANCE_MIN,
-    expected_authority_cell_count: int | None = (
-        DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT
-    ),
 ) -> dict[str, Any]:
     remaining = evaluate_remaining_identity_gate(
         old_matrix_identity_tsv=old_matrix_identity_tsv,
@@ -133,7 +129,6 @@ def build_successor_authority_contract(
         target_preflight_summary_json=target_preflight_summary_json,
         mz_tolerance_da=mz_tolerance_da,
         rt_tolerance_min=rt_tolerance_min,
-        expected_authority_cell_count=expected_authority_cell_count,
     )
     source_blockers = list(remaining.get("blockers", ()))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -698,11 +693,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=DEFAULT_RT_TOLERANCE_MIN,
     )
     parser.add_argument(
-        "--expected-authority-cell-count",
-        type=int,
-        default=DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
-    )
-    parser.add_argument(
         "--require-pass",
         action="store_true",
         help="Return non-zero if the successor authority contract is blocked.",
@@ -723,7 +713,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_preflight_summary_json=args.target_preflight_summary_json,
         mz_tolerance_da=args.mz_tolerance_da,
         rt_tolerance_min=args.rt_tolerance_min,
-        expected_authority_cell_count=args.expected_authority_cell_count,
     )
     print(
         "cid_nl_default_activation_successor_authority_summary: "
