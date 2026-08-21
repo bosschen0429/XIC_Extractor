@@ -1,18 +1,15 @@
-"""Check productization authority/adjudication artifacts fail closed.
+"""Check current productization authority artifacts fail closed.
 
 This is a contract guard, not a writer. It validates the current authority
-manifest, mechanical adjudication schema, and adjudication index without
-touching ProductWriter, matrices, workbooks, selected peaks, or counted
-detections.
+manifests and their retained compact evidence without touching ProductWriter,
+matrices, workbooks, selected peaks, or counted detections.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -23,7 +20,6 @@ if str(ROOT) not in sys.path:
 
 from scripts.check_productization_state import artifact_sha256  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
-    MECHANICAL_ADJUDICATION_INDEX_REL,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
@@ -36,10 +32,6 @@ from xic_extractor.alignment.quantitative_projection_authority import (  # noqa:
 
 DEFAULT_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
 DEFAULT_DEPENDENT_MANIFEST = ROOT / QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
-DEFAULT_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/mechanical_adjudication_schema.v1.json"
-)
-DEFAULT_INDEX = ROOT / MECHANICAL_ADJUDICATION_INDEX_REL
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
 CID_NL_APPROVED_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
@@ -92,8 +84,6 @@ def check_productization_authority(
     *,
     manifest_path: Path = DEFAULT_MANIFEST,
     dependent_manifest_path: Path = DEFAULT_DEPENDENT_MANIFEST,
-    schema_path: Path = DEFAULT_SCHEMA,
-    index_path: Path = DEFAULT_INDEX,
     repo_root: Path = ROOT,
 ) -> list[str]:
     problems: list[str] = []
@@ -102,16 +92,12 @@ def check_productization_authority(
         dependent_manifest_path,
         problems,
     )
-    schema = _read_json(schema_path, problems)
-    header, rows = _read_tsv(index_path, problems)
-    if not manifest or not dependent_manifest or not schema:
+    if not manifest or not dependent_manifest:
         return problems
 
     _check_manifest(manifest, problems)
     _check_dependent_manifest(dependent_manifest, dependent_manifest_raw, problems)
-    _check_schema_and_index(schema, header, rows, problems)
-    _check_index_authority(manifest, rows, problems)
-    _check_source_hashes(manifest, rows, repo_root, problems)
+    _check_backfill_authority_sources(manifest, repo_root, problems)
     _check_retained_authority_source_hashes(manifest, repo_root, problems)
     return problems
 
@@ -296,138 +282,15 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         )
 
 
-def _check_schema_and_index(
-    schema: Mapping[str, Any],
-    header: Sequence[str],
-    rows: Sequence[Mapping[str, str]],
-    problems: list[str],
-) -> None:
-    required = schema.get("required_columns")
-    if not isinstance(required, list) or not all(
-        isinstance(column, str) for column in required
-    ):
-        problems.append("schema required_columns must be a string list")
-        return
-    missing = sorted(set(required) - set(header))
-    if missing:
-        problems.append("index missing required columns: " + ", ".join(missing))
-    if len(rows) != 4613:
-        problems.append(f"index must contain 4613 rows, found {len(rows)}")
-    row_ids = [row.get("row_id", "") for row in rows]
-    if len(set(row_ids)) != len(row_ids):
-        problems.append("index row_id values must be unique")
-
-    decision_counts = Counter(row.get("decision", "") for row in rows)
-    if decision_counts != {"write_ready": 511, "evidence_required": 4102}:
-        problems.append(f"unexpected decision counts: {dict(decision_counts)}")
-    grade_counts = Counter(row.get("evidence_grade", "") for row in rows)
-    if grade_counts != {"A": 511, "C": 3015, "D": 1087}:
-        problems.append(f"unexpected evidence_grade counts: {dict(grade_counts)}")
-
-
-def _check_index_authority(
+def _check_backfill_authority_sources(
     manifest: Mapping[str, Any],
-    rows: Sequence[Mapping[str, str]],
-    problems: list[str],
-) -> None:
-    policy = manifest.get("authority_policy")
-    if not isinstance(policy, Mapping):
-        problems.append("manifest missing authority_policy object for index check")
-        return
-    raw_allowed = policy.get("product_writer_allowed_scopes")
-    if not isinstance(raw_allowed, list) or not all(
-        isinstance(scope, str) for scope in raw_allowed
-    ):
-        problems.append("manifest product_writer_allowed_scopes must be a string list")
-        return
-    allowed = set(raw_allowed)
-    authority_scope_values: set[str] = set()
-    for index, row in enumerate(rows, start=2):
-        write_authority = row.get("write_authority")
-        scope = row.get("product_authority_scope", "")
-        if scope:
-            authority_scope_values.add(scope)
-        if write_authority == "TRUE":
-            _require_row_value(row, index, "decision", "write_ready", problems)
-            _require_row_value(
-                row,
-                index,
-                "source_policy_decision",
-                "write_ready",
-                problems,
-            )
-            _require_row_value(row, index, "explanation_only", "FALSE", problems)
-            _require_row_value(row, index, "may_touch_matrix", "TRUE", problems)
-            if scope not in allowed:
-                problems.append(f"row {index}: unregistered authority scope {scope!r}")
-        elif write_authority == "FALSE":
-            _require_row_value(row, index, "may_touch_matrix", "FALSE", problems)
-            if scope:
-                problems.append(f"row {index}: non-write row has authority scope")
-        else:
-            problems.append(f"row {index}: invalid write_authority {write_authority!r}")
-
-        if row.get("explanation_only") == "TRUE" and write_authority != "FALSE":
-            problems.append(f"row {index}: explanation_only row grants authority")
-        if row.get("blockers") and write_authority != "FALSE":
-            problems.append(f"row {index}: blocker row grants authority")
-
-    if authority_scope_values != {APPROVED_SCOPE}:
-        problems.append(
-            "index authority scopes must be exactly "
-            f"{APPROVED_SCOPE!r}, found {sorted(authority_scope_values)!r}"
-        )
-    forbidden = authority_scope_values & (NEGATIVE_SCOPE_IDS | {PARKED_BROAD_BACKFILL})
-    if forbidden:
-        problems.append("forbidden authority scopes present: " + ", ".join(forbidden))
-
-
-def _check_source_hashes(
-    manifest: Mapping[str, Any],
-    rows: Sequence[Mapping[str, str]],
     repo_root: Path,
     problems: list[str],
 ) -> None:
-    if not rows:
-        return
-    source_hash_sets = {row.get("source_hashes", "") for row in rows}
-    if len(source_hash_sets) != 1:
-        problems.append("index rows must share one source_hashes value")
-        return
-    source_hashes = _parse_semicolon_pairs(source_hash_sets.pop())
     backfill = _mapping_path(manifest, "current_authority", "backfill")
     explanation_sources = manifest.get("explanation_only_sources", [])
     if backfill is None or not explanation_sources:
         return
-    expected_policy_hash = backfill.get(
-        "externalized_source_artifact_sha256",
-        backfill.get("artifact_sha256"),
-    )
-    expected_quality_hash = explanation_sources[0].get(
-        "externalized_source_artifact_sha256",
-        explanation_sources[0].get("artifact_sha256"),
-    )
-    if source_hashes.get("policy") != expected_policy_hash:
-        problems.append("index policy source hash does not match manifest")
-    if source_hashes.get("quality") != expected_quality_hash:
-        problems.append("index quality source hash does not match manifest")
-
-    artifacts = {
-        "policy": backfill.get(
-            "externalized_source_artifact",
-            backfill.get("artifact"),
-        ),
-        "quality": explanation_sources[0].get(
-            "externalized_source_artifact",
-            explanation_sources[0].get("artifact"),
-        ),
-    }
-    for source_id, relative in artifacts.items():
-        if not isinstance(relative, str):
-            continue
-        path = repo_root / relative
-        if path.exists() and artifact_sha256(path) != source_hashes.get(source_id):
-            problems.append(f"{source_id} artifact hash does not match index")
 
     compact_sources = {
         "policy": backfill,
@@ -453,8 +316,6 @@ def _check_source_hashes(
     _check_backfill_compact_summary(
         backfill,
         explanation_sources[0],
-        rows,
-        source_hashes,
         repo_root,
         problems,
     )
@@ -500,8 +361,6 @@ def _check_retained_authority_source_hashes(
 def _check_backfill_compact_summary(
     backfill: Mapping[str, Any],
     explanation_source: Mapping[str, Any],
-    rows: Sequence[Mapping[str, str]],
-    source_hashes: Mapping[str, str],
     repo_root: Path,
     problems: list[str],
 ) -> None:
@@ -565,9 +424,6 @@ def _check_backfill_compact_summary(
         return
 
     expected_rows = backfill.get("candidate_audit_universe_rows")
-    if rows and expected_rows != len(rows):
-        problems.append("manifest backfill candidate rows must match index row count")
-
     policy = externalized.get("standard_peak_backfill_policy")
     quality = externalized.get("standard_peak_backfill_policy_quality_explanations")
     acceptance = externalized.get("narrow_product_writer_expected_diff_acceptance")
@@ -576,7 +432,7 @@ def _check_backfill_compact_summary(
         artifact=policy,
         manifest_path=backfill.get("externalized_source_artifact"),
         manifest_sha=backfill.get("externalized_source_artifact_sha256"),
-        index_sha=source_hashes.get("policy"),
+        index_sha=None,
         expected_rows=expected_rows,
         expected_write_authority=True,
         expected_may_grant_write_authority=None,
@@ -588,7 +444,7 @@ def _check_backfill_compact_summary(
         artifact=quality,
         manifest_path=explanation_source.get("externalized_source_artifact"),
         manifest_sha=explanation_source.get("externalized_source_artifact_sha256"),
-        index_sha=source_hashes.get("quality"),
+        index_sha=None,
         expected_rows=expected_rows,
         expected_write_authority=False,
         expected_may_grant_write_authority=explanation_source.get(
@@ -603,25 +459,21 @@ def _check_backfill_compact_summary(
         policy_artifact=policy,
         problems=problems,
     )
-
     if isinstance(policy, Mapping):
         policy_counts = policy.get("policy_decision_counts")
         if not isinstance(policy_counts, Mapping):
             problems.append("compact summary policy decision counts must be an object")
         else:
-            index_policy_counts = Counter(
-                row.get("source_policy_decision", "") for row in rows
-            )
             expected_counts = {
-                "write_ready": index_policy_counts.get("write_ready", 0),
-                "detected_flagged": index_policy_counts.get("detected_flagged", 0),
-                "blocked": index_policy_counts.get("blocked", 0),
+                "write_ready": backfill.get("current_product_authority_rows"),
+                "detected_flagged": backfill.get("detected_flagged_rows"),
+                "blocked": backfill.get("blocked_rows"),
             }
             for decision, expected in expected_counts.items():
                 if policy_counts.get(decision) != expected:
                     problems.append(
                         "compact summary policy decision count "
-                        f"{decision} does not match index",
+                        f"{decision} does not match manifest",
                     )
 
 
@@ -748,17 +600,6 @@ def _mapping_path(
     return current if isinstance(current, Mapping) else None
 
 
-def _require_row_value(
-    row: Mapping[str, str],
-    row_number: int,
-    field: str,
-    expected: str,
-    problems: list[str],
-) -> None:
-    if row.get(field) != expected:
-        problems.append(f"row {row_number}: {field} must be {expected!r}")
-
-
 class _DuplicateJsonKeyError(ValueError):
     pass
 
@@ -805,30 +646,6 @@ def _read_json_bytes(
     return payload, raw
 
 
-def _read_tsv(
-    path: Path,
-    problems: list[str],
-) -> tuple[tuple[str, ...], list[dict[str, str]]]:
-    try:
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle, delimiter="\t")
-            return tuple(reader.fieldnames or ()), list(reader)
-    except OSError as exc:
-        problems.append(f"{path}: cannot read TSV: {exc}")
-        return (), []
-
-
-def _parse_semicolon_pairs(value: str) -> dict[str, str]:
-    parsed: dict[str, str] = {}
-    for part in value.split(";"):
-        if not part:
-            continue
-        key, separator, item = part.partition("=")
-        if separator:
-            parsed[key] = item
-    return parsed
-
-
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -837,8 +654,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_DEPENDENT_MANIFEST,
     )
-    parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
-    parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     parser.add_argument("--repo-root", type=Path, default=ROOT)
     return parser.parse_args(argv)
 
@@ -848,8 +663,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     problems = check_productization_authority(
         manifest_path=args.manifest,
         dependent_manifest_path=args.dependent_manifest,
-        schema_path=args.schema,
-        index_path=args.index,
         repo_root=args.repo_root,
     )
     if problems:

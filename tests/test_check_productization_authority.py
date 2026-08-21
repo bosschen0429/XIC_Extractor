@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import shutil
@@ -11,9 +10,7 @@ import pytest
 from scripts.check_productization_authority import (
     APPROVED_SCOPE_ORDER,
     DEFAULT_DEPENDENT_MANIFEST,
-    DEFAULT_INDEX,
     DEFAULT_MANIFEST,
-    DEFAULT_SCHEMA,
     DEPENDENT_HOLD_STATUS,
     DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
     DEPENDENT_PACKAGE_AUTHORITY_SHA256,
@@ -195,29 +192,6 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
     assert any("owner replay failed" in problem for problem in problems)
 
 
-def test_productization_authority_checker_rejects_forbidden_scope(
-    tmp_path: Path,
-) -> None:
-    manifest = tmp_path / DEFAULT_MANIFEST.name
-    schema = tmp_path / DEFAULT_SCHEMA.name
-    index = tmp_path / DEFAULT_INDEX.name
-    shutil.copyfile(DEFAULT_MANIFEST, manifest)
-    shutil.copyfile(DEFAULT_SCHEMA, schema)
-    shutil.copyfile(DEFAULT_INDEX, index)
-
-    _mutate_first_non_write_row_to_forbidden_scope(index)
-
-    problems = check_productization_authority(
-        manifest_path=manifest,
-        schema_path=schema,
-        index_path=index,
-        repo_root=tmp_path,
-    )
-
-    assert any("unregistered authority scope" in problem for problem in problems)
-    assert any("forbidden authority scopes present" in problem for problem in problems)
-
-
 @pytest.mark.parametrize("mutation", ("reordered_scopes", "dependent_writer_lane"))
 def test_productization_authority_checker_keeps_writer_manifest_unchanged(
     tmp_path: Path,
@@ -245,22 +219,14 @@ def test_productization_authority_checker_rejects_stale_cid_nl_hash(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
-    schema = tmp_path / DEFAULT_SCHEMA.name
-    index = tmp_path / DEFAULT_INDEX.name
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
-    shutil.copyfile(DEFAULT_SCHEMA, schema)
-    shutil.copyfile(DEFAULT_INDEX, index)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["current_authority"]["cid_nl_default_activation"][
         "artifact_sha256"
     ] = "STALE"
     manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    problems = check_productization_authority(
-        manifest_path=manifest,
-        schema_path=schema,
-        index_path=index,
-    )
+    problems = check_productization_authority(manifest_path=manifest)
 
     assert any(
         "CID-NL artifact hash does not match manifest" in problem
@@ -272,11 +238,7 @@ def test_productization_authority_checker_rejects_retired_clean_target_scope(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
-    schema = tmp_path / DEFAULT_SCHEMA.name
-    index = tmp_path / DEFAULT_INDEX.name
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
-    shutil.copyfile(DEFAULT_SCHEMA, schema)
-    shutil.copyfile(DEFAULT_INDEX, index)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["authority_policy"]["product_writer_allowed_scopes"].append(
         "backfill_expansion_clean_target_selective_activation_84_cells"
@@ -290,11 +252,7 @@ def test_productization_authority_checker_rejects_retired_clean_target_scope(
     }
     manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    problems = check_productization_authority(
-        manifest_path=manifest,
-        schema_path=schema,
-        index_path=index,
-    )
+    problems = check_productization_authority(manifest_path=manifest)
 
     assert any("exact two registered scopes" in problem for problem in problems)
     assert any("exact two registered lanes" in problem for problem in problems)
@@ -304,22 +262,14 @@ def test_productization_authority_checker_requires_compact_artifact(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
-    schema = tmp_path / DEFAULT_SCHEMA.name
-    index = tmp_path / DEFAULT_INDEX.name
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
-    shutil.copyfile(DEFAULT_SCHEMA, schema)
-    shutil.copyfile(DEFAULT_INDEX, index)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["current_authority"]["backfill"][
         "artifact"
     ] = "docs/superpowers/validation/missing_backfill_summary.json"
     manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    problems = check_productization_authority(
-        manifest_path=manifest,
-        schema_path=schema,
-        index_path=index,
-    )
+    problems = check_productization_authority(manifest_path=manifest)
 
     assert any(
         "policy compact artifact is missing: "
@@ -332,22 +282,14 @@ def test_productization_authority_checker_rejects_stale_backfill_acceptance_hash
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
-    schema = tmp_path / DEFAULT_SCHEMA.name
-    index = tmp_path / DEFAULT_INDEX.name
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
-    shutil.copyfile(DEFAULT_SCHEMA, schema)
-    shutil.copyfile(DEFAULT_INDEX, index)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["current_authority"]["backfill"][
         "acceptance_artifact_sha256"
     ] = "STALE_ACCEPTANCE_SHA"
     manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    problems = check_productization_authority(
-        manifest_path=manifest,
-        schema_path=schema,
-        index_path=index,
-    )
+    problems = check_productization_authority(manifest_path=manifest)
 
     assert any(
         "compact summary acceptance sha256 does not match manifest" in problem
@@ -359,12 +301,8 @@ def test_productization_authority_checker_validates_compact_summary_contents(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
-    schema = tmp_path / DEFAULT_SCHEMA.name
-    index = tmp_path / DEFAULT_INDEX.name
     summary = tmp_path / BACKFILL_EXTERNALIZED_SUMMARY
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
-    shutil.copyfile(DEFAULT_SCHEMA, schema)
-    shutil.copyfile(DEFAULT_INDEX, index)
     summary.parent.mkdir(parents=True)
     shutil.copyfile(
         DEFAULT_MANIFEST.parent.parent
@@ -417,8 +355,6 @@ def test_productization_authority_checker_validates_compact_summary_contents(
 
     problems = check_productization_authority(
         manifest_path=manifest,
-        schema_path=schema,
-        index_path=index,
         repo_root=tmp_path,
     )
 
@@ -444,7 +380,7 @@ def test_productization_authority_checker_validates_compact_summary_contents(
         for problem in problems
     )
     assert any(
-        "compact summary policy decision count write_ready does not match index"
+        "compact summary policy decision count write_ready does not match manifest"
         in problem
         for problem in problems
     )
@@ -498,31 +434,6 @@ def test_productization_authority_checker_validates_compact_summary_contents(
         in problem
         for problem in problems
     )
-
-
-def _mutate_first_non_write_row_to_forbidden_scope(index: Path) -> None:
-    with index.open(encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        fieldnames = tuple(reader.fieldnames or ())
-        rows = list(reader)
-    for row in rows:
-        if row["write_authority"] == "FALSE":
-            row["write_authority"] = "TRUE"
-            row["may_touch_matrix"] = "TRUE"
-            row["explanation_only"] = "FALSE"
-            row["product_authority_scope"] = "all_stability"
-            break
-    else:
-        raise AssertionError("fixture index has no non-write rows")
-    with index.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=fieldnames,
-            delimiter="\t",
-            lineterminator="\n",
-        )
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def _raw_sha256(path: Path) -> str:
