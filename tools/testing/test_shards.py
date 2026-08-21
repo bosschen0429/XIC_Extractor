@@ -75,8 +75,8 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     ),
     "tests/test_productization_state_index.py": (
         "test_dependent_effect_lane_is_exact_hold_package_binding",
+        "test_only_revalidated_default_scope_has_writer_authority",
         "test_productization_state_index_accepts_current_artifacts",
-        "test_registered_default_scopes_have_writer_authority",
     ),
     "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
         "test_current_cid_nl_public_output_claim_catalog_is_valid",

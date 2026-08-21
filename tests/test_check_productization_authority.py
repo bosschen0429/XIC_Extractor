@@ -335,14 +335,16 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
     assert any("owner replay failed" in problem for problem in problems)
 
 
-@pytest.mark.parametrize("mutation", ("reordered_scopes", "dependent_writer_lane"))
+@pytest.mark.parametrize("mutation", ("extra_scope", "dependent_writer_lane"))
 def test_productization_authority_checker_keeps_writer_manifest_unchanged(
     tmp_path: Path,
     mutation: str,
 ) -> None:
     payload = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
-    if mutation == "reordered_scopes":
-        payload["authority_policy"]["product_writer_allowed_scopes"].reverse()
+    if mutation == "extra_scope":
+        payload["authority_policy"]["product_writer_allowed_scopes"].append(
+            "cid_nl_adopt_ready_feature_inclusion_95_cells"
+        )
     else:
         payload["current_authority"][
             "untargeted_owner_backfill_canonical_quantitative_projection_v1"
@@ -352,29 +354,26 @@ def test_productization_authority_checker_keeps_writer_manifest_unchanged(
 
     problems = check_productization_authority(manifest_path=manifest)
 
-    if mutation == "reordered_scopes":
-        assert any("exact two registered scopes in order" in p for p in problems)
+    if mutation == "extra_scope":
+        assert any("exact registered scopes in order" in p for p in problems)
     else:
-        assert any("exact two registered lanes" in p for p in problems)
+        assert any("exact registered lanes" in p for p in problems)
 
 
-def test_productization_authority_checker_rejects_stale_cid_nl_hash(
+def test_productization_authority_checker_rejects_retired_cid_nl_scope(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
-    payload["current_authority"]["cid_nl_default_activation"][
-        "artifact_sha256"
-    ] = "STALE"
+    payload["authority_policy"]["product_writer_allowed_scopes"].append(
+        "cid_nl_adopt_ready_feature_inclusion_95_cells"
+    )
     manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     problems = check_productization_authority(manifest_path=manifest)
 
-    assert any(
-        "CID-NL artifact hash does not match manifest" in problem
-        for problem in problems
-    )
+    assert any("exact registered scopes" in problem for problem in problems)
 
 
 def test_productization_authority_checker_rejects_retired_clean_target_scope(
@@ -397,8 +396,8 @@ def test_productization_authority_checker_rejects_retired_clean_target_scope(
 
     problems = check_productization_authority(manifest_path=manifest)
 
-    assert any("exact two registered scopes" in problem for problem in problems)
-    assert any("exact two registered lanes" in problem for problem in problems)
+    assert any("exact registered scopes" in problem for problem in problems)
+    assert any("exact registered lanes" in problem for problem in problems)
 
 
 @pytest.mark.parametrize(

@@ -45,11 +45,7 @@ DEFAULT_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
 DEFAULT_DEPENDENT_MANIFEST = ROOT / QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
-CID_NL_APPROVED_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
-APPROVED_SCOPE_ORDER = (
-    APPROVED_SCOPE,
-    CID_NL_APPROVED_SCOPE,
-)
+APPROVED_SCOPE_ORDER = (APPROVED_SCOPE,)
 APPROVED_SCOPES = frozenset(APPROVED_SCOPE_ORDER)
 DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
 DEPENDENT_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
@@ -58,7 +54,7 @@ DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
     "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
-    "d35e3783cea171acf67b69bca04c1ba848e07810c11526617bab6087ea2a7e89"
+    "15b74bc79dc9501210acd5f761c86b4a7128db83e74a62bf3e97b7beb1572ed5"
 )
 WRITER_MANIFEST_FIELDS = (
     "schema_version",
@@ -78,7 +74,6 @@ WRITER_AUTHORITY_POLICY_FIELDS = (
 )
 WRITER_CURRENT_AUTHORITY_FIELDS = (
     "backfill",
-    "cid_nl_default_activation",
 )
 PARKED_BROAD_BACKFILL = "broad_backfill"
 RETIRED_SCOPE_IDS = {
@@ -136,7 +131,6 @@ def check_productization_authority(
             repo_root,
             problems,
         )
-    _check_retained_authority_source_hashes(manifest, repo_root, problems)
     return problems
 
 
@@ -196,7 +190,7 @@ def _check_dependent_manifest(
     if owner_manifest.allowed_registered_writer_scope_ids != APPROVED_SCOPE_ORDER:
         problems.append(
             "dependent authority manifest writer scopes must equal the existing "
-            "two registered scopes in order"
+            "registered writer scopes in order"
         )
     if (
         owner_manifest.activation_summary_artifact != ""
@@ -246,7 +240,7 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         or tuple(raw_writer_scopes) != APPROVED_SCOPE_ORDER
     ):
         problems.append(
-            "product_writer_allowed_scopes must preserve the exact two registered "
+            "product_writer_allowed_scopes must preserve the exact registered "
             f"scopes in order: {APPROVED_SCOPE_ORDER!r}",
         )
 
@@ -255,8 +249,8 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         problems.append("manifest missing current_authority object")
     elif tuple(current_authority) != WRITER_CURRENT_AUTHORITY_FIELDS:
         problems.append(
-            "writer current_authority fields/order must remain the exact two "
-            "registered lanes"
+            "writer current_authority fields/order must remain the exact registered "
+            "lanes"
         )
 
     backfill = _mapping_path(manifest, "current_authority", "backfill")
@@ -266,20 +260,6 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         problems.append(
             f"manifest backfill authority_scope must be {APPROVED_SCOPE!r}"
         )
-
-    cid_nl = _mapping_path(manifest, "current_authority", "cid_nl_default_activation")
-    if cid_nl is None:
-        problems.append("manifest missing current_authority.cid_nl_default_activation")
-    else:
-        expected_cid_nl = {
-            "current_product_authority_rows": 95,
-            "existing_successor_context_rows": 337,
-            "omitted_no_target_rows": 27,
-            "authority_scope": CID_NL_APPROVED_SCOPE,
-        }
-        for key, value in expected_cid_nl.items():
-            if cid_nl.get(key) != value:
-                problems.append(f"manifest CID-NL {key} must be {value!r}")
 
     parked = _mapping_path(manifest, "parked_lanes", PARKED_BROAD_BACKFILL)
     if parked is None:
@@ -355,43 +335,6 @@ def _check_backfill_authority_sources(
         repo_root,
         problems,
     )
-
-
-def _check_retained_authority_source_hashes(
-    manifest: Mapping[str, Any],
-    repo_root: Path,
-    problems: list[str],
-) -> None:
-    retained_authorities = {
-        "CID-NL": _mapping_path(
-            manifest,
-            "current_authority",
-            "cid_nl_default_activation",
-        ),
-    }
-    artifact_fields = {
-        "artifact": "artifact_sha256",
-        "acceptance_artifact": "acceptance_artifact_sha256",
-        "compact_manifest": "compact_manifest_sha256",
-    }
-    for label, authority in retained_authorities.items():
-        if authority is None:
-            continue
-        for path_key, sha_key in artifact_fields.items():
-            relative = authority.get(path_key)
-            expected_hash = authority.get(sha_key)
-            if not isinstance(relative, str) or not relative:
-                problems.append(f"manifest {label} {path_key} must be a non-empty path")
-                continue
-            if not isinstance(expected_hash, str) or not expected_hash:
-                problems.append(f"manifest {label} {sha_key} must be a non-empty hash")
-                continue
-            path = repo_root / relative
-            if not path.is_file():
-                problems.append(f"{label} {path_key} artifact is missing: {relative}")
-                continue
-            if artifact_sha256(path) != expected_hash:
-                problems.append(f"{label} {path_key} hash does not match manifest")
 
 
 def _check_backfill_compact_summary(

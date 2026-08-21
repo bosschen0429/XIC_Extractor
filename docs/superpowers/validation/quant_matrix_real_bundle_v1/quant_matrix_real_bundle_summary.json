@@ -155,7 +155,7 @@
     },
     "seed_guard_decisions": {
       "path": "source_artifacts/seed_guard_decisions.tsv",
-      "sha256": "7D4F7047D6B7219AB6709940B8CBEDEC23B7AC5FBA470FC51FBD50320ABA926D"
+      "sha256": "6B8E692311619C32FA6DC9B0860D46D07066AEE39F3A0E821C90278F8268A95F"
     }
   },
   "source_run_dir": "output/productization_realdata_seed_guard_85raw_20260617/generated_policy_policy_observed_oracle_no_raw_productization",

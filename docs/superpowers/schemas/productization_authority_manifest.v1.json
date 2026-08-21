@@ -5,8 +5,7 @@
   "authority_policy": {
     "unregistered_scope_policy": "fail_closed",
     "product_writer_allowed_scopes": [
-      "backfill_policy_write_ready_rows",
-      "cid_nl_adopt_ready_feature_inclusion_95_cells"
+      "backfill_policy_write_ready_rows"
     ],
     "matrix_write_requires": [
       "registered_product_authority_scope",
@@ -31,20 +30,6 @@
       "externalized_source_artifact_sha256": "1585F9EBF6C216677406A03C57868EEA38A25B663F00566A9C84C37898D11659",
       "acceptance_artifact": "output/productization_realdata_seed_guard_85raw_20260617/generated_policy_quality_explained_no_raw_productization/narrow_product_writer_expected_diff_acceptance.json",
       "acceptance_artifact_sha256": "093E4F4894D0D7FB05A54FDFDA8454618FEBA0A4AC93EFEC7B77CA64AE97458D"
-    },
-    "cid_nl_default_activation": {
-      "current_product_authority_rows": 95,
-      "candidate_transition_rows": 20,
-      "existing_successor_context_rows": 337,
-      "omitted_no_target_rows": 27,
-      "authority_scope": "cid_nl_adopt_ready_feature_inclusion_95_cells",
-      "authority_source": "cid_nl_activation_adopt_gate_expected_diff",
-      "artifact": "docs/superpowers/validation/cid_nl_default_product_activation_v1/cid_nl_default_product_activation_summary.json",
-      "artifact_sha256": "36555FC6E2E82703B7D876117F9008DC5F52892DBDACBE6224D3D25199B605B7",
-      "acceptance_artifact": "docs/superpowers/validation/cid_nl_default_product_activation_v1/cid_nl_default_product_activation_checks.tsv",
-      "acceptance_artifact_sha256": "A948873B0FC35CF1A74487D935CB3EA6D3ABDB582A505F6E26774ABD7F147DED",
-      "compact_manifest": "docs/superpowers/validation/cid_nl_default_product_activation_v1/cid_nl_default_product_activation_manifest.tsv",
-      "compact_manifest_sha256": "AFEEE1B12DE2B16BAC4D0288CBBD5971BD21177B01B04EA4400C192692DFCB5C"
     }
   },
   "parked_lanes": {

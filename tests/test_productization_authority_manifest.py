@@ -16,7 +16,6 @@ DEPENDENT_MANIFEST_PATH = (
 )
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
-CID_NL_APPROVED_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
 PARKED_SCOPE = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
@@ -35,10 +34,7 @@ def test_manifest_freezes_current_backfill_authority() -> None:
     backfill = manifest["current_authority"]["backfill"]
 
     assert policy["unregistered_scope_policy"] == "fail_closed"
-    assert set(policy["product_writer_allowed_scopes"]) == {
-        APPROVED_SCOPE,
-        CID_NL_APPROVED_SCOPE,
-    }
+    assert policy["product_writer_allowed_scopes"] == [APPROVED_SCOPE]
     assert "quality_blockers" in policy["forbidden_authority_sources"]
     assert "broad_backfill_candidate_universe" in (
         policy["forbidden_authority_sources"]
@@ -52,20 +48,7 @@ def test_manifest_freezes_current_backfill_authority() -> None:
     }.isdisjoint(backfill)
     assert backfill["authority_scope"] == APPROVED_SCOPE
 
-    cid_nl = manifest["current_authority"]["cid_nl_default_activation"]
-    assert cid_nl["current_product_authority_rows"] == 95
-    assert cid_nl["existing_successor_context_rows"] == 337
-    assert cid_nl["omitted_no_target_rows"] == 27
-    assert cid_nl["authority_scope"] == CID_NL_APPROVED_SCOPE
-    assert artifact_sha256(ROOT / cid_nl["artifact"]) == cid_nl["artifact_sha256"]
-    assert (
-        artifact_sha256(ROOT / cid_nl["acceptance_artifact"])
-        == cid_nl["acceptance_artifact_sha256"]
-    )
-    assert (
-        artifact_sha256(ROOT / cid_nl["compact_manifest"])
-        == cid_nl["compact_manifest_sha256"]
-    )
+    assert tuple(manifest["current_authority"]) == ("backfill",)
 
     broad_backfill = manifest["parked_lanes"][PARKED_SCOPE]
     assert broad_backfill["status"] == "parked"
@@ -97,18 +80,12 @@ def test_manifest_freezes_current_backfill_authority() -> None:
 def test_dependent_hold_does_not_change_writer_authority() -> None:
     writer_manifest = _read_json(MANIFEST_PATH)
     dependent_manifest = _read_json(DEPENDENT_MANIFEST_PATH)
-    approved_scope_order = (
-        APPROVED_SCOPE,
-        CID_NL_APPROVED_SCOPE,
-    )
+    approved_scope_order = (APPROVED_SCOPE,)
 
     assert tuple(
         writer_manifest["authority_policy"]["product_writer_allowed_scopes"]
     ) == approved_scope_order
-    assert tuple(writer_manifest["current_authority"]) == (
-        "backfill",
-        "cid_nl_default_activation",
-    )
+    assert tuple(writer_manifest["current_authority"]) == ("backfill",)
     assert dependent_manifest["status"] == "HOLD_PENDING_VALIDATION"
     assert tuple(dependent_manifest["allowed_registered_writer_scope_ids"]) == (
         approved_scope_order

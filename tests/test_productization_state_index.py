@@ -71,13 +71,12 @@ def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
 
 
 @pytest.mark.ledger_snapshot
-def test_registered_default_scopes_have_writer_authority() -> None:
+def test_only_revalidated_default_scope_has_writer_authority() -> None:
     _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
     authority_rows = [row for row in rows if row["write_authority"] == "TRUE"]
 
     assert {row["lane_id"] for row in authority_rows} == {
         "backfill_current_write_ready_scope",
-        "cid_nl_default_product_activation_v1",
     }
     authority_by_lane = {row["lane_id"]: row for row in authority_rows}
 
@@ -97,23 +96,40 @@ def test_registered_default_scopes_have_writer_authority() -> None:
     assert backfill["product_effect"] == "default_quant_matrix_product_output"
     assert backfill["public_surface"] == "quant_matrix_default_product_activation_v1"
 
-    cid_nl = authority_by_lane["cid_nl_default_product_activation_v1"]
+    cid_nl = next(
+        row for row in rows if row["lane_id"] == "cid_nl_default_product_activation_v1"
+    )
     assert cid_nl["current_artifact"] == (
         "docs/superpowers/validation/cid_nl_default_product_activation_v1/"
         "cid_nl_default_product_activation_summary.json"
     )
-    assert cid_nl["product_authority_scope"] == (
-        "cid_nl_adopt_ready_feature_inclusion_95_cells"
-    )
+    assert cid_nl["readiness_status"] == "blocked"
+    assert cid_nl["write_authority"] == "FALSE"
+    assert cid_nl["product_authority_scope"] == ""
     assert cid_nl["row_count"] == "95"
-    assert cid_nl["may_touch_matrix"] == "TRUE"
-    assert cid_nl["may_change_quant_output"] == "TRUE"
+    assert cid_nl["may_touch_matrix"] == "FALSE"
+    assert cid_nl["may_change_quant_output"] == "FALSE"
     assert cid_nl["may_change_workbook"] == "FALSE"
     assert cid_nl["may_change_selected_peak"] == "FALSE"
     assert cid_nl["may_change_selected_area"] == "FALSE"
     assert cid_nl["may_change_counted_detection"] == "FALSE"
-    assert cid_nl["product_effect"] == "cid_nl_default_quant_matrix_product_output"
+    assert cid_nl["product_effect"] == "none"
     assert cid_nl["public_surface"] == "cid_nl_default_product_activation_v1"
+
+
+def test_checker_rejects_stale_backfill_writer_row_count(tmp_path: Path) -> None:
+    mutated = _mutated_index(
+        tmp_path,
+        "backfill_current_write_ready_scope",
+        {"row_count": "510"},
+    )
+
+    problems = _check_with_index(mutated)
+
+    assert (
+        "Backfill writer row_count does not match owner-checked membership"
+        in problems
+    )
 
 def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
