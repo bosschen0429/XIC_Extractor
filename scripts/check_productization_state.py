@@ -662,10 +662,12 @@ def _check_authority_boundaries(
         if not isinstance(current_scope, Mapping):
             problems.append(f"authority manifest missing {expected['authority_key']}")
             continue
-        if row.get("row_count") != str(
-            current_scope.get("current_product_authority_rows")
+        if (
+            expected["authority_key"] == "cid_nl_default_activation"
+            and row.get("row_count")
+            != str(current_scope.get("current_product_authority_rows"))
         ):
-            problems.append("writer row_count does not match authority manifest")
+            problems.append("CID-NL writer row_count does not match authority manifest")
         if row.get("may_touch_matrix") != "TRUE":
             problems.append("writer row must explicitly mark matrix touch")
 

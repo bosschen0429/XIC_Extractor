@@ -1,7 +1,7 @@
 """Check CID-NL default-activation authority reconstruction readiness.
 
-This is a no-RAW, no-ProductWriter gate. It classifies the existing 511-cell
-Backfill authority against the current CID-NL alignment baseline after the
+This is a no-RAW, no-ProductWriter gate. It classifies the existing rule-selected
+Backfill membership against the current CID-NL alignment baseline after the
 bridge gate has found a unique row match, detected-baseline supersession, or an
 identity blocker. It does not write a default matrix or grant new authority.
 """
@@ -19,7 +19,6 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.check_cid_nl_default_activation_bridge_gate import (  # noqa: E402
-    DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
     DEFAULT_EXPECTED_DIFF_TSV,
     DEFAULT_MZ_TOLERANCE_DA,
     DEFAULT_NEW_MATRIX_IDENTITY_TSV,
@@ -81,9 +80,6 @@ def evaluate_authority_reconstruction_gate(
     require_target_preflight: bool = True,
     mz_tolerance_da: float = DEFAULT_MZ_TOLERANCE_DA,
     rt_tolerance_min: float = DEFAULT_RT_TOLERANCE_MIN,
-    expected_authority_cell_count: int | None = (
-        DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT
-    ),
 ) -> dict[str, Any]:
     bridge_payload = evaluate_bridge_gate(
         old_matrix_identity_tsv=old_matrix_identity_tsv,
@@ -95,7 +91,6 @@ def evaluate_authority_reconstruction_gate(
         require_target_preflight=require_target_preflight,
         mz_tolerance_da=mz_tolerance_da,
         rt_tolerance_min=rt_tolerance_min,
-        expected_authority_cell_count=expected_authority_cell_count,
     )
     new_header, new_matrix_rows = read_tsv_with_header(
         new_quant_matrix_tsv,
@@ -135,7 +130,6 @@ def evaluate_authority_reconstruction_gate(
         accepted_rows=accepted_rows,
         expected_diff_rows=expected_diff_rows,
         audit_rows=audit_rows,
-        expected_authority_cell_count=expected_authority_cell_count,
     )
     replay = _candidate_replay_summary(
         source_blockers=source_blockers,
@@ -173,12 +167,12 @@ def evaluate_authority_reconstruction_gate(
         "backfill_writer_authority_changed": False,
         "detected_baseline_supersession_is_backfill_authority": False,
         "authority_statement": (
-            "This gate classifies the existing 511-cell authority against the "
-            "new CID-NL baseline. Detected-baseline supersession is resolved "
+            "This gate classifies the existing rule-selected Backfill membership "
+            "against the new CID-NL baseline. Detected-baseline supersession "
+            "is resolved "
             "as a no-write state and is not Backfill writer authority."
         ),
         "accepted_authority_cell_count": len(accepted_rows),
-        "expected_authority_cell_count": expected_authority_cell_count,
         "expected_diff_row_count": len(expected_diff_rows),
         "resolution_counts": resolution_counts,
         "candidate_backfill_write_count": resolution_counts.get(
@@ -415,17 +409,8 @@ def _source_blockers(
     accepted_rows: Sequence[Mapping[str, str]],
     expected_diff_rows: Sequence[Mapping[str, str]],
     audit_rows: Sequence[Mapping[str, str]],
-    expected_authority_cell_count: int | None,
 ) -> list[str]:
     blockers: list[str] = []
-    if (
-        expected_authority_cell_count is not None
-        and len(accepted_rows) != expected_authority_cell_count
-    ):
-        blockers.append(
-            "accepted_authority_cell_count_mismatch:"
-            f"expected={expected_authority_cell_count};observed={len(accepted_rows)}"
-        )
     if len(expected_diff_rows) != len(accepted_rows):
         blockers.append(
             "expected_diff_count_mismatch:"
@@ -554,11 +539,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=DEFAULT_RT_TOLERANCE_MIN,
     )
     parser.add_argument(
-        "--expected-authority-cell-count",
-        type=int,
-        default=DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
-    )
-    parser.add_argument(
         "--require-pass",
         action="store_true",
         help="Return non-zero if the reconstruction gate is blocked.",
@@ -577,7 +557,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_preflight_summary_json=args.target_preflight_summary_json,
         mz_tolerance_da=args.mz_tolerance_da,
         rt_tolerance_min=args.rt_tolerance_min,
-        expected_authority_cell_count=args.expected_authority_cell_count,
     )
     outputs = write_outputs(output_dir=args.output_dir, payload=payload)
     print(

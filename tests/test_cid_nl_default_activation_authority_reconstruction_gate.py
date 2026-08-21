@@ -19,7 +19,6 @@ def test_reconstruction_gate_passes_blank_write_ready_replay(
 
     payload = evaluate_authority_reconstruction_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -41,7 +40,6 @@ def test_reconstruction_gate_treats_detected_baseline_as_resolved_no_write(
 
     payload = evaluate_authority_reconstruction_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -60,7 +58,6 @@ def test_reconstruction_gate_blocks_missing_identity(tmp_path: Path) -> None:
 
     payload = evaluate_authority_reconstruction_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -84,7 +81,6 @@ def test_reconstruction_gate_blocks_ambiguous_identity(tmp_path: Path) -> None:
 
     payload = evaluate_authority_reconstruction_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -102,7 +98,6 @@ def test_reconstruction_gate_blocks_expected_diff_content_mismatch(
 
     payload = evaluate_authority_reconstruction_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -133,8 +128,6 @@ def test_reconstruction_gate_cli_writes_summary_and_audit(tmp_path: Path) -> Non
             str(paths["target_preflight_summary_json"]),
             "--output-dir",
             str(output_dir),
-            "--expected-authority-cell-count",
-            "1",
         ]
     )
 

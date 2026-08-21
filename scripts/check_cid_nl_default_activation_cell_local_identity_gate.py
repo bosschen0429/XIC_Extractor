@@ -23,7 +23,6 @@ from scripts.check_cid_nl_default_activation_authority_reconstruction_gate impor
     evaluate_authority_reconstruction_gate,
 )
 from scripts.check_cid_nl_default_activation_bridge_gate import (  # noqa: E402
-    DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
     DEFAULT_EXPECTED_DIFF_TSV,
     DEFAULT_MZ_TOLERANCE_DA,
     DEFAULT_NEW_MATRIX_IDENTITY_TSV,
@@ -85,9 +84,6 @@ def evaluate_cell_local_identity_gate(
     target_preflight_summary_json: Path | None = DEFAULT_TARGET_PREFLIGHT_SUMMARY_JSON,
     mz_tolerance_da: float = DEFAULT_MZ_TOLERANCE_DA,
     rt_tolerance_min: float = DEFAULT_RT_TOLERANCE_MIN,
-    expected_authority_cell_count: int | None = (
-        DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT
-    ),
 ) -> dict[str, Any]:
     reconstruction = evaluate_authority_reconstruction_gate(
         old_matrix_identity_tsv=old_matrix_identity_tsv,
@@ -98,7 +94,6 @@ def evaluate_cell_local_identity_gate(
         target_preflight_summary_json=target_preflight_summary_json,
         mz_tolerance_da=mz_tolerance_da,
         rt_tolerance_min=rt_tolerance_min,
-        expected_authority_cell_count=expected_authority_cell_count,
     )
     _header, matrix_rows = read_tsv_with_header(
         new_quant_matrix_tsv,
@@ -157,7 +152,6 @@ def evaluate_cell_local_identity_gate(
         "accepted_authority_cell_count": reconstruction[
             "accepted_authority_cell_count"
         ],
-        "expected_authority_cell_count": expected_authority_cell_count,
         "reconstruction_unresolved_authority_cell_count": reconstruction[
             "unresolved_authority_cell_count"
         ],
@@ -450,11 +444,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=DEFAULT_RT_TOLERANCE_MIN,
     )
     parser.add_argument(
-        "--expected-authority-cell-count",
-        type=int,
-        default=DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
-    )
-    parser.add_argument(
         "--require-pass",
         action="store_true",
         help="Return non-zero if the cell-local identity gate is blocked.",
@@ -473,7 +462,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_preflight_summary_json=args.target_preflight_summary_json,
         mz_tolerance_da=args.mz_tolerance_da,
         rt_tolerance_min=args.rt_tolerance_min,
-        expected_authority_cell_count=args.expected_authority_cell_count,
     )
     outputs = write_outputs(output_dir=args.output_dir, payload=payload)
     print(f"cid_nl_default_activation_cell_local_summary: {outputs['summary_json']}")

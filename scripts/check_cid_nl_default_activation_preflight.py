@@ -79,7 +79,6 @@ DEFAULT_TAG = "DNA_dR"
 DEFAULT_RT_MIN = 22.0
 DEFAULT_RT_MAX = 25.0
 DEFAULT_MZ_TOLERANCE_DA = 0.02
-DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT = 511
 DEFAULT_EXPECTED_FOCUS_NONBLANK_COUNT = 85
 
 ACCEPT_DECISIONS = {"accept_basic_backfill", "accept_strict_backfill"}
@@ -165,9 +164,6 @@ def evaluate_cid_nl_default_activation_preflight(
     mz_tolerance_da: float = DEFAULT_MZ_TOLERANCE_DA,
     rt_min: float = DEFAULT_RT_MIN,
     rt_max: float = DEFAULT_RT_MAX,
-    expected_authority_cell_count: int | None = (
-        DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT
-    ),
     expected_focus_nonblank_count: int | None = (
         DEFAULT_EXPECTED_FOCUS_NONBLANK_COUNT
     ),
@@ -220,7 +216,6 @@ def evaluate_cid_nl_default_activation_preflight(
         expected_diff_rows=expected_diff_rows,
         accepted_rows=accepted_rows,
         accepted_missing_identity=accepted_missing_identity,
-        expected_authority_cell_count=expected_authority_cell_count,
     )
 
     expectations = (
@@ -286,7 +281,8 @@ def evaluate_cid_nl_default_activation_preflight(
         "backfill_writer_authority_changed": False,
         "authority_statement": (
             "No new ProductWriter/default matrix authority is granted. "
-            "The current 511-cell Backfill authority must replay cleanly before "
+            "The current rule-selected Backfill membership must replay cleanly "
+            "before "
             "any default activation can claim the CID-NL 300.1605 row."
         ),
         "focus_sample": focus_sample,
@@ -324,7 +320,6 @@ def _replay_summary(
     expected_diff_rows: Sequence[Mapping[str, str]],
     accepted_rows: Sequence[Mapping[str, str]],
     accepted_missing_identity: Sequence[Mapping[str, str]],
-    expected_authority_cell_count: int | None,
 ) -> dict[str, Any]:
     blocking_reasons: list[str] = []
     try:
@@ -338,19 +333,9 @@ def _replay_summary(
     except ValueError as exc:
         blocking_reasons.append(str(exc))
 
-    if (
-        expected_authority_cell_count is not None
-        and len(accepted_rows) != expected_authority_cell_count
-    ):
-        blocking_reasons.append(
-            "accepted authority cell count mismatch: "
-            f"expected {expected_authority_cell_count}, observed {len(accepted_rows)}",
-        )
-
     return {
         "status": "pass" if not blocking_reasons else "blocked",
         "accepted_authority_cell_count": len(accepted_rows),
-        "expected_authority_cell_count": expected_authority_cell_count,
         "expected_diff_row_count": len(expected_diff_rows),
         "accepted_peak_hypothesis_id_count": len(
             {text_value(row.get("peak_hypothesis_id")) for row in accepted_rows},
@@ -904,11 +889,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=DEFAULT_MZ_TOLERANCE_DA,
     )
     parser.add_argument(
-        "--expected-authority-cell-count",
-        type=int,
-        default=DEFAULT_EXPECTED_AUTHORITY_CELL_COUNT,
-    )
-    parser.add_argument(
         "--expected-focus-nonblank-count",
         type=int,
         default=DEFAULT_EXPECTED_FOCUS_NONBLANK_COUNT,
@@ -943,7 +923,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         mz_tolerance_da=args.mz_tolerance_da,
         rt_min=args.rt_min,
         rt_max=args.rt_max,
-        expected_authority_cell_count=args.expected_authority_cell_count,
         expected_focus_nonblank_count=args.expected_focus_nonblank_count,
     )
     write_summary(args.summary_json, _json_ready(payload))

@@ -137,7 +137,7 @@ or the relevant structured productization owner.
   ProductWriter/default output activation schema. It writes
   `default_output/quant_matrix.tsv` plus `cell_provenance`, `row_summary`,
   `expected_diff_summary`, and `source_summary` from the validated current
-  511-cell authority contract; accepted Backfill values enter the default
+  rule-selected Backfill membership; accepted Backfill values enter the default
   numeric matrix as quantification values, not detections or truth claims.
 
 ## Rule

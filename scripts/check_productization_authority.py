@@ -23,12 +23,23 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
+from xic_extractor.alignment.production_acceptance import (  # noqa: E402
+    ProductionAcceptanceManifestError,
+    load_checked_production_acceptance_manifest,
+)
+from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+    accepted_production_acceptance_rows_by_key,
+)
 from xic_extractor.alignment.quantitative_projection_authority import (  # noqa: E402
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
     QuantitativeProjectionAuthorityError,
     rehydrate_quantitative_projection_authority_manifest,
     render_quantitative_projection_authority_manifest_bytes,
 )
+from xic_extractor.alignment.shared_peak_identity_explanation.schema import (  # noqa: E402
+    ACTIVATION_VALUE_INPUT_COLUMNS,
+)
+from xic_extractor.tabular_io import read_tsv_with_header_snapshot  # noqa: E402
 
 DEFAULT_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
 DEFAULT_DEPENDENT_MANIFEST = ROOT / QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
@@ -74,6 +85,14 @@ RETIRED_SCOPE_IDS = {
     "backfill_expansion_raw_trace_expected_diff_666_cells",
     "backfill_expansion_clean_target_selective_activation_84_cells",
 }
+CURRENT_BACKFILL_ACCEPTANCE_REL = (
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/"
+    "production_acceptance_manifest.tsv"
+)
+CURRENT_BACKFILL_ACTIVATION_VALUES_REL = (
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/source_artifacts/"
+    "standard_peak_activation_values.tsv"
+)
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
     "apex_delta_clean",
@@ -101,6 +120,22 @@ def check_productization_authority(
     _check_manifest(manifest, problems)
     _check_dependent_manifest(dependent_manifest, dependent_manifest_raw, problems)
     _check_backfill_authority_sources(manifest, repo_root, problems)
+    try:
+        checked_acceptance = load_checked_production_acceptance_manifest(
+            manifest_path=repo_root / CURRENT_BACKFILL_ACCEPTANCE_REL,
+            repo_root=repo_root,
+        )
+    except ProductionAcceptanceManifestError as exc:
+        problems.extend(
+            "current Backfill production acceptance: " + problem
+            for problem in exc.problems
+        )
+    else:
+        _check_current_backfill_membership(
+            checked_acceptance.rows,
+            repo_root,
+            problems,
+        )
     _check_retained_authority_source_hashes(manifest, repo_root, problems)
     return problems
 
@@ -227,17 +262,10 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
     backfill = _mapping_path(manifest, "current_authority", "backfill")
     if backfill is None:
         problems.append("manifest missing current_authority.backfill")
-    else:
-        expected = {
-            "candidate_audit_universe_rows": 4613,
-            "current_product_authority_rows": 511,
-            "detected_flagged_rows": 0,
-            "blocked_rows": 4102,
-            "authority_scope": APPROVED_SCOPE,
-        }
-        for key, value in expected.items():
-            if backfill.get(key) != value:
-                problems.append(f"manifest backfill {key} must be {value!r}")
+    elif backfill.get("authority_scope") != APPROVED_SCOPE:
+        problems.append(
+            f"manifest backfill authority_scope must be {APPROVED_SCOPE!r}"
+        )
 
     cid_nl = _mapping_path(manifest, "current_authority", "cid_nl_default_activation")
     if cid_nl is None:
@@ -392,34 +420,6 @@ def _check_backfill_compact_summary(
     else:
         _check_compact_summary_value(
             current_scope,
-            "candidate_audit_universe_rows",
-            backfill.get("candidate_audit_universe_rows"),
-            "current_scope",
-            problems,
-        )
-        _check_compact_summary_value(
-            current_scope,
-            "current_product_authority_rows",
-            backfill.get("current_product_authority_rows"),
-            "current_scope",
-            problems,
-        )
-        _check_compact_summary_value(
-            current_scope,
-            "detected_flagged_rows",
-            backfill.get("detected_flagged_rows"),
-            "current_scope",
-            problems,
-        )
-        _check_compact_summary_value(
-            current_scope,
-            "blocked_rows",
-            backfill.get("blocked_rows"),
-            "current_scope",
-            problems,
-        )
-        _check_compact_summary_value(
-            current_scope,
             "product_authority_scope",
             backfill.get("authority_scope"),
             "current_scope",
@@ -431,7 +431,6 @@ def _check_backfill_compact_summary(
         problems.append("compact summary externalized_artifacts must be an object")
         return
 
-    expected_rows = backfill.get("candidate_audit_universe_rows")
     policy = externalized.get("standard_peak_backfill_policy")
     quality = externalized.get("standard_peak_backfill_policy_quality_explanations")
     acceptance = externalized.get("narrow_product_writer_expected_diff_acceptance")
@@ -441,7 +440,6 @@ def _check_backfill_compact_summary(
         manifest_path=backfill.get("externalized_source_artifact"),
         manifest_sha=backfill.get("externalized_source_artifact_sha256"),
         index_sha=None,
-        expected_rows=expected_rows,
         expected_write_authority=True,
         expected_may_grant_write_authority=None,
         expected_scope=backfill.get("authority_scope"),
@@ -453,7 +451,6 @@ def _check_backfill_compact_summary(
         manifest_path=explanation_source.get("externalized_source_artifact"),
         manifest_sha=explanation_source.get("externalized_source_artifact_sha256"),
         index_sha=None,
-        expected_rows=expected_rows,
         expected_write_authority=False,
         expected_may_grant_write_authority=explanation_source.get(
             "may_grant_write_authority",
@@ -467,22 +464,52 @@ def _check_backfill_compact_summary(
         policy_artifact=policy,
         problems=problems,
     )
-    if isinstance(policy, Mapping):
-        policy_counts = policy.get("policy_decision_counts")
-        if not isinstance(policy_counts, Mapping):
-            problems.append("compact summary policy decision counts must be an object")
-        else:
-            expected_counts = {
-                "write_ready": backfill.get("current_product_authority_rows"),
-                "detected_flagged": backfill.get("detected_flagged_rows"),
-                "blocked": backfill.get("blocked_rows"),
-            }
-            for decision, expected in expected_counts.items():
-                if policy_counts.get(decision) != expected:
-                    problems.append(
-                        "compact summary policy decision count "
-                        f"{decision} does not match manifest",
-                    )
+def _check_current_backfill_membership(
+    acceptance_rows: Sequence[Mapping[str, str]],
+    repo_root: Path,
+    problems: list[str],
+) -> None:
+    """Reconcile owner-checked acceptance with the retained activation rows."""
+
+    try:
+        _header, activation_rows, _sha = read_tsv_with_header_snapshot(
+            repo_root / CURRENT_BACKFILL_ACTIVATION_VALUES_REL,
+            exact_columns=ACTIVATION_VALUE_INPUT_COLUMNS,
+        )
+    except (OSError, ValueError) as exc:
+        problems.append(f"current Backfill membership cannot be read: {exc}")
+        return
+
+    try:
+        acceptance_by_key = accepted_production_acceptance_rows_by_key(
+            acceptance_rows
+        )
+    except ValueError as exc:
+        problems.append(f"current Backfill writable membership is invalid: {exc}")
+        return
+    activation_by_key = {
+        (row["peak_hypothesis_id"], row["sample_stem"]): row
+        for row in activation_rows
+    }
+    membership_matches = (
+        len(acceptance_by_key) == len(activation_rows)
+        == len(activation_by_key)
+        and acceptance_by_key.keys() == activation_by_key.keys()
+    )
+    if membership_matches:
+        membership_matches = all(
+            acceptance["feature_family_id"] == activation["feature_family_id"]
+            and acceptance["quant_value"] == activation["projected_matrix_value"]
+            and acceptance["source_row_sha256"].upper()
+            == activation["source_row_sha256"].upper()
+            for key, acceptance in acceptance_by_key.items()
+            for activation in (activation_by_key[key],)
+        )
+    if not membership_matches:
+        problems.append(
+            "current Backfill owner-checked membership does not match retained "
+            "activation values"
+        )
 
 
 def _check_compact_summary_acceptance(
@@ -506,19 +533,6 @@ def _check_compact_summary_acceptance(
     if artifact.get("expected_scope") != backfill.get("authority_scope"):
         problems.append(
             "compact summary acceptance expected_scope does not match manifest"
-        )
-    if artifact.get("eligible_audit_row_count") != backfill.get(
-        "current_product_authority_rows",
-    ):
-        problems.append(
-            "compact summary acceptance eligible_audit_row_count "
-            "does not match manifest"
-        )
-    if artifact.get("matrix_cells_written") != backfill.get(
-        "current_product_authority_rows",
-    ):
-        problems.append(
-            "compact summary acceptance matrix_cells_written does not match manifest"
         )
     if artifact.get("product_surface_changed") != "TRUE":
         problems.append(
@@ -546,7 +560,6 @@ def _check_compact_summary_artifact(
     manifest_path: Any,
     manifest_sha: Any,
     index_sha: str | None,
-    expected_rows: Any,
     expected_write_authority: bool,
     expected_may_grant_write_authority: Any,
     expected_scope: Any,
@@ -561,8 +574,6 @@ def _check_compact_summary_artifact(
         problems.append(f"compact summary {label} sha256 does not match manifest")
     if index_sha is not None and artifact.get("sha256") != index_sha:
         problems.append(f"compact summary {label} sha256 does not match index")
-    if artifact.get("data_rows") != expected_rows:
-        problems.append(f"compact summary {label} data_rows does not match manifest")
     if artifact.get("write_authority") is not expected_write_authority:
         problems.append(
             f"compact summary {label} write_authority does not match manifest"

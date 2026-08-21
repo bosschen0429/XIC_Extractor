@@ -13,7 +13,6 @@ def test_bridge_gate_passes_unique_blank_replay(tmp_path: Path) -> None:
 
     payload = evaluate_bridge_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -29,7 +28,6 @@ def test_bridge_gate_blocks_missing_new_identity(tmp_path: Path) -> None:
 
     payload = evaluate_bridge_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -52,7 +50,6 @@ def test_bridge_gate_blocks_ambiguous_new_identity(tmp_path: Path) -> None:
 
     payload = evaluate_bridge_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -70,7 +67,6 @@ def test_bridge_gate_blocks_when_new_baseline_already_has_value(
 
     payload = evaluate_bridge_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -90,7 +86,6 @@ def test_bridge_gate_blocks_expected_diff_content_mismatch(
 
     payload = evaluate_bridge_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -111,7 +106,6 @@ def test_bridge_gate_blocks_identity_matrix_coordinate_mismatch(
 
     payload = evaluate_bridge_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -139,8 +133,6 @@ def test_bridge_gate_cli_writes_summary_and_audit(tmp_path: Path) -> None:
             str(paths["target_preflight_summary_json"]),
             "--output-dir",
             str(output_dir),
-            "--expected-authority-cell-count",
-            "1",
         ]
     )
 

@@ -44,10 +44,12 @@ def test_manifest_freezes_current_backfill_authority() -> None:
         policy["forbidden_authority_sources"]
     )
 
-    assert backfill["candidate_audit_universe_rows"] == 4613
-    assert backfill["current_product_authority_rows"] == 511
-    assert backfill["detected_flagged_rows"] == 0
-    assert backfill["blocked_rows"] == 4102
+    assert {
+        "candidate_audit_universe_rows",
+        "current_product_authority_rows",
+        "detected_flagged_rows",
+        "blocked_rows",
+    }.isdisjoint(backfill)
     assert backfill["authority_scope"] == APPROVED_SCOPE
 
     cid_nl = manifest["current_authority"]["cid_nl_default_activation"]

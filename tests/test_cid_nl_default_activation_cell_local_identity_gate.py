@@ -29,7 +29,6 @@ def test_cell_local_gate_resolves_ambiguous_unique_detected_candidate(
 
     payload = evaluate_cell_local_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "pass"
@@ -56,7 +55,6 @@ def test_cell_local_gate_keeps_all_blank_ambiguous_blocked(tmp_path: Path) -> No
 
     payload = evaluate_cell_local_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -81,7 +79,6 @@ def test_cell_local_gate_keeps_multiple_detected_ambiguous_blocked(
 
     payload = evaluate_cell_local_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -108,7 +105,6 @@ def test_cell_local_gate_blocks_stale_ambiguous_identity_coordinate(
 
     payload = evaluate_cell_local_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -123,7 +119,6 @@ def test_cell_local_gate_keeps_missing_identity_blocked(tmp_path: Path) -> None:
 
     payload = evaluate_cell_local_identity_gate(
         **paths,
-        expected_authority_cell_count=1,
     )
 
     assert payload["overall_status"] == "blocked"
@@ -161,8 +156,6 @@ def test_cell_local_gate_cli_writes_summary_and_audit(tmp_path: Path) -> None:
             str(paths["target_preflight_summary_json"]),
             "--output-dir",
             str(output_dir),
-            "--expected-authority-cell-count",
-            "1",
         ]
     )
 

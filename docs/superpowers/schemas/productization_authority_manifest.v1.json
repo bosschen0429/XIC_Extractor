@@ -1,7 +1,7 @@
 {
   "schema_version": "productization_authority_manifest_v1",
   "status": "active",
-  "updated": "2026-08-16",
+  "updated": "2026-08-21",
   "authority_policy": {
     "unregistered_scope_policy": "fail_closed",
     "product_writer_allowed_scopes": [
@@ -23,10 +23,6 @@
   },
   "current_authority": {
     "backfill": {
-      "candidate_audit_universe_rows": 4613,
-      "current_product_authority_rows": 511,
-      "detected_flagged_rows": 0,
-      "blocked_rows": 4102,
       "authority_scope": "backfill_policy_write_ready_rows",
       "authority_source": "generated_policy_write_ready_rows",
       "artifact": "docs/superpowers/validation/backfill_generated_policy_externalized_artifacts_v1/backfill_generated_policy_externalized_artifacts_summary.json",
