@@ -106,7 +106,6 @@ approved product changes.
 
 ## See Also
 
-- [Validation retention](../superpowers/validation/RETENTION.md)
 - [Backfill](backfill.md)
 - [Quant matrix](quant-matrix.md)
 - [Productization](productization.md)

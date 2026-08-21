@@ -452,7 +452,6 @@ DOC_ROUTING_TOPIC_PREFIX = "docs/superpowers/topics/"
 DOC_ROUTING_SCHEMAS_INDEX_PATH = "docs/superpowers/schemas/README.md"
 DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
     {
-        "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
         "docs/superpowers/validation/lockbox_review_packets_v1/packet_index.tsv",
         "docs/superpowers/validation/productization_status_index_v1.tsv",
         "docs/superpowers/schemas/productization_authority_manifest.v1.json",

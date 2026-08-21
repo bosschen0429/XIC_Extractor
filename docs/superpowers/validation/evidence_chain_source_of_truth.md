@@ -52,7 +52,6 @@ different questions:
 | `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Compatibility lookup for retired control-plane lane keys and historical anchors. | Current tier, lane, writer scope, or promotion state. |
 | `docs/superpowers/validation/productization_status_index_v1.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
 | `docs/superpowers/schemas/productization_authority_manifest.v1.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
-| `docs/superpowers/validation/ARTIFACT_INVENTORY.tsv` | Retention and externalization of validation artifacts. | Evidence-chain semantics. |
 | This file | Human-maintained evidence-chain map across code, diagnostics, and promotion boundaries. | Machine enforcement, counts, tier changes, or writer authority. |
 
 Rule: if a durable evidence provider, evidence state, gate, or authority
@@ -465,9 +464,7 @@ When adding or changing evidence:
    and the promotion contract only when tier, active lane, writer scope, public
    surface, default matrix, workbook, counted detection, selected peak, or
    selected area changes.
-5. Update `ARTIFACT_INVENTORY.tsv` when a new durable artifact is retained or
-   externalized.
-6. Add or update focused tests/checkers when a machine-readable contract is
+5. Add or update focused tests/checkers when a machine-readable contract is
    introduced.
 
 ## Integrity Status Vocabulary

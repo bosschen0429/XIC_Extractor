@@ -79,5 +79,4 @@ Stable implementation priorities remain:
 - [Product topic index](README.md)
 - [Product validation contract](../agent/product-validation-contract.md)
 - [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Validation retention](../superpowers/validation/RETENTION.md)
 - [Project layout and documentation lifecycle](../project-layout.md)

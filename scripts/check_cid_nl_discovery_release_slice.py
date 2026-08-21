@@ -44,9 +44,6 @@ from scripts.check_productization_authority import (  # noqa: E402
     check_productization_authority,
 )
 from scripts.check_productization_state import check_productization_state  # noqa: E402
-from scripts.check_validation_artifact_retention import (  # noqa: E402
-    check_validation_artifact_retention,
-)
 from tools.diagnostics.docs_policy import (  # noqa: E402
     CONTROL_PLANE_PATH,
     PRODUCTIZATION_STATUS_ANCHOR_PATH,
@@ -95,9 +92,6 @@ def check_cid_nl_discovery_release_slice(
         problems.append(f"productization_state: {problem}")
     for problem in check_productization_authority():
         problems.append(f"productization_authority: {problem}")
-    retention = check_validation_artifact_retention()
-    for problem in retention.problems:
-        problems.append(f"validation_artifact_retention: {problem}")
     for problem in check_bounded_product_lanes():
         problems.append(f"bounded_product_lanes: {problem}")
     return problems

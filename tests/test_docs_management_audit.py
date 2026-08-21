@@ -23,6 +23,10 @@ CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
 PROJECT_ROOT = Path(__file__).parents[1]
+MAINTAINED_VALIDATION_HTML = (
+    "docs/superpowers/validation/evidence_chain_status_guide.html",
+    "docs/superpowers/validation/evidence_overlay_interpretation_guide.html",
+)
 
 
 def _isolated_git_subprocess_env() -> dict[str, str]:
@@ -31,6 +35,23 @@ def _isolated_git_subprocess_env() -> dict[str, str]:
         for key, value in os.environ.items()
         if not key.startswith("GIT_")
     }
+
+
+def test_maintained_validation_html_uses_lf_checkout_policy() -> None:
+    env = _isolated_git_subprocess_env()
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    completed = subprocess.run(
+        ["git", "check-attr", "eol", "--", *MAINTAINED_VALIDATION_HTML],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.stdout.splitlines() == [
+        f"{path}: eol: lf" for path in MAINTAINED_VALIDATION_HTML
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -1536,48 +1557,6 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
         item["path"] for item in review["top_route_retained_reviews"]
     }
     assert support_path in retained_review_paths
-
-
-def test_artifact_inventory_referrer_counts_as_authority_anchor(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    support_path = "docs/superpowers/validation/backfill-run.md"
-    _write(
-        root / support_path,
-        "\n".join(
-            [
-                "# Backfill support",
-                "",
-                "Doc placement: repo_support_doc",
-                "Doc kind: validation_artifact",
-                "Doc lifecycle: archived",
-                "Repo owner: docs/product/backfill.md",
-                "Doc exit rule: keep while listed by artifact inventory.",
-                "",
-                "Backfill validation support.",
-            ]
-        ),
-    )
-    _write(
-        root / "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
-        f"path\tretention_decision\n{support_path}\tkeep_machine_anchor\n",
-    )
-
-    result = _run_audit(root, vault)
-
-    review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if support_path in item["supporting_sample_paths"]
-    )
-    assert "authority_or_status_anchor:1" in cluster["support_retention_counts"]
-    retained_review_paths = {item["path"] for item in review["route_retained_reviews"]}
-    assert support_path not in retained_review_paths
 
 
 def test_mechanical_referrer_anchor_is_not_docs_followup_queue(
