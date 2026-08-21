@@ -17,7 +17,6 @@ from tools.diagnostics.docs_management_audit import (
 from tools.diagnostics.docs_policy import (
     CONTROL_PLANE_PATH,
     GOVERNANCE_RULE_FAMILY_CONTRACTS,
-    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
 )
 
 CURRENT_HANDOFF = (
@@ -186,20 +185,12 @@ def _write_permanent_root_contracts(root: Path) -> None:
     )
 
 
-def _write_registered_retirement_contract(root: Path) -> None:
-    for rel_path in (
-        CONTROL_PLANE_PATH,
-        PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
-    ):
-        _write(
-            root / rel_path,
-            (PROJECT_ROOT / rel_path).read_text(encoding="utf-8"),
-        )
-
-
 def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
-    _write_registered_retirement_contract(root)
+    _write(
+        root / CONTROL_PLANE_PATH,
+        (PROJECT_ROOT / CONTROL_PLANE_PATH).read_text(encoding="utf-8"),
+    )
 
 
 def _init_and_stage_repo(root: Path) -> dict[str, str]:
@@ -252,7 +243,6 @@ def _run_audit(
     *,
     repo_only: bool = False,
     fail_on_completed_transient: bool = False,
-    require_retirement_history: bool = False,
     preserve_index: bool = False,
 ):
     if root.resolve() != PROJECT_ROOT:
@@ -273,7 +263,6 @@ def _run_audit(
         vault,
         include_vault=not repo_only,
         fail_on_completed_transient=fail_on_completed_transient,
-        require_retirement_history=require_retirement_history,
     )
 
 
@@ -287,24 +276,6 @@ def test_repo_only_audit_skips_vault_blockers(tmp_path: Path) -> None:
     assert result.summary["vault"]["vault_skipped"] is True
     assert not any(msg.path == str(vault) for msg in result.messages)
     assert not any(msg.path == ".manifest.json" for msg in result.messages)
-
-
-def test_repo_only_audit_blocks_missing_retirement_history(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "missing-vault"
-    _clean_repo(root)
-
-    result = _run_audit(
-        root,
-        vault,
-        repo_only=True,
-        require_retirement_history=True,
-    )
-
-    assert any(
-        "retirement packet historical replay is unavailable" in message.message
-        for message in result.blockers
-    )
 
 
 def test_repo_only_completed_transient_spec_is_blocker(
@@ -2340,29 +2311,6 @@ def test_docs_audit_governance_index_uses_staged_text(tmp_path: Path) -> None:
     )
 
 
-def test_docs_audit_retirement_packet_uses_staged_text(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    _clean_repo(root)
-    git_env = _init_and_stage_repo(root)
-    path = PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
-    valid_worktree_text = (root / path).read_text(encoding="utf-8")
-    _write(root / path, "{\n")
-    subprocess.run(
-        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
-    )
-    _write(root / path, valid_worktree_text)
-
-    result = _run_audit(root, repo_only=True, preserve_index=True)
-
-    problems = result.summary["repo"]["committed_retirement_packet_review"][
-        "problems"
-    ]
-    assert any(
-        row["path"] == path and "retirement packet cannot be read" in row["problem"]
-        for row in problems
-    )
-
-
 def test_repo_owner_marker_controls_topic_before_body_keywords(
     tmp_path: Path,
 ) -> None:
@@ -2462,8 +2410,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         capture_output=True,
         env=git_env,
     )
-    _write_permanent_root_contracts(root)
-    _write_registered_retirement_contract(root)
+    _clean_repo(root)
     _clean_vault(vault)
     _write(
         root / ".gitignore",
@@ -2525,122 +2472,6 @@ def test_canonical_metadata_review_blocks_missing_permanent_root(
         msg.severity == "blocker"
         and msg.path == "README.md"
         and "permanent root path is missing" in msg.message
-        for msg in result.messages
-    )
-
-
-@pytest.mark.parametrize(
-    ("packet_text", "expected_problem"),
-    (
-        (
-            json.dumps(
-                {
-                    "transaction": "body_to_compatibility_index",
-                    "source_path": (
-                        "docs/superpowers/plans/"
-                        "2026-06-15-productization-control-plane.md"
-                    ),
-                    "activation_base_sha": "not-a-sha",
-                }
-            ),
-            "activation_base_sha must be a full Git SHA",
-        ),
-        ("{", "retirement packet is not valid JSON"),
-    ),
-)
-def test_docs_audit_blocks_invalid_committed_retirement_packet(
-    tmp_path: Path,
-    packet_text: str,
-    expected_problem: str,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    git_env = _isolated_git_subprocess_env()
-    subprocess.run(
-        ["git", "init"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-    subprocess.run(
-        ["git", "add", "."],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "-m",
-            "fixture",
-        ],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-    packet_path = (
-        "docs/superpowers/file-management/docs-cleanup/"
-        "2026-08-01-retirement-evidence.json"
-    )
-    _write(
-        root / packet_path,
-        packet_text,
-    )
-    subprocess.run(
-        ["git", "add", packet_path], cwd=root, check=True, env=git_env
-    )
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "-m",
-            "invalid packet fixture",
-        ],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env=git_env,
-    )
-
-    result = _run_audit(root, vault)
-
-    assert any(
-        msg.severity == "blocker"
-        and msg.path == packet_path
-        and expected_problem in msg.message
-        for msg in result.messages
-    )
-
-
-def test_docs_audit_requires_registered_packet_when_control_plane_exists(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    (root / PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL).unlink()
-
-    result = _run_audit(root, vault)
-
-    assert any(
-        msg.severity == "blocker"
-        and msg.path == PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
-        and "registered retirement packet is missing or untracked" in msg.message
         for msg in result.messages
     )
 

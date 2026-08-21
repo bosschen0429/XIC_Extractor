@@ -82,10 +82,6 @@ QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL = (
 QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL = (
     "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
 )
-PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL = (
-    "docs/superpowers/file-management/docs-cleanup/"
-    "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json"
-)
 PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH = (
     "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
 )
@@ -99,33 +95,6 @@ PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE = (
         PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
     )
 )
-COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
-    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL: {
-        "transaction": "body_to_compatibility_index",
-        "source_path": CONTROL_PLANE_PATH,
-        "activation_base_sha": "a2d5032befb2a4439daff8a018aa551e3607f5f6",
-        "activation_end_sha": "f7736355feb3e3c3273e23cb0a32841cfd469a7b",
-        "source_hash": PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
-        "source_line_count": 5621,
-        "source_copy_destination": f"source_repo_path:{CONTROL_PLANE_PATH}",
-        "source_copy_note_title": (
-            PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE
-        ),
-        "source_copy_locator_note_title": (
-            PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE
-        ),
-        "source_copy_locator_sha256": source_copy_locator_sha256(
-            CONTROL_PLANE_PATH,
-            PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
-        ),
-        "replacement_hash": (
-            "723f81e4e51eaa00f3258da80be6620775bb1c6d07a7c1c8c834b76f894ab408"
-        ),
-        "packet_sha256": (
-            "b4e9039f3bc4930012111141b8ec3334e1b9c6a60e9a0a02268e83ba8abd9dbf"
-        ),
-    }
-}
 MECHANICAL_ADJUDICATION_INDEX_REL = (
     "docs/superpowers/validation/mechanical_adjudication_index_v1.tsv"
 )
@@ -380,8 +349,8 @@ DOC_RETIRED_TRACKED_DIRS = {
         "branch and PR closeout history belongs in the GitHub PR body"
     ),
     "docs/superpowers/file-management/docs-cleanup/": (
-        "one-off cleanup inventories and approval records are generated under "
-        "ignored output; only checker-bound retirement evidence is exempt"
+        "one-off cleanup inventories, approval records, and retirement evidence "
+        "belong under ignored output"
     ),
     "docs/superpowers/topics/": (
         "topics duplicated docs/product; generate temporary indexes under "
@@ -392,7 +361,6 @@ DOC_RETIRED_TRACKED_DIR_PREFIXES = tuple(DOC_RETIRED_TRACKED_DIRS)
 DOC_RETIRED_TRACKED_EXEMPTIONS = frozenset(
     {
         CONTROL_PLANE_PATH,
-        PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
     }
 )
 
@@ -421,7 +389,6 @@ DOC_CANONICAL_OWNER_FILES = {
     "docs/superpowers/handoffs/README.md",
     PRODUCTIZATION_STATUS_HANDOFF_PATH,
     CONTROL_PLANE_PATH,
-    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
 }
 HIGH_RISK_DOC_DIRS = [
     "docs/deepresearch/",

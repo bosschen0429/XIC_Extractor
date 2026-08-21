@@ -70,10 +70,9 @@ self-ownership，因此不需要 generic lifecycle metadata：
 body；next 1–3 actions 放 ignored local handoff。不要建立 tracked plan、spec、
 closeout、active stub 或永久歷史 stub。
 
-兩個 exact-path machine exceptions 必須保持原路徑，但不得當作新檔模板：
+唯一的 exact-path machine exception 必須保持原路徑，但不得當作新檔模板：
 
 - `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
-- `docs/superpowers/file-management/docs-cleanup/2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json`
 
 文件的 public/private 與 retirement 規則由
 [`docs/agent/obsidian-handoff-contract.md`](agent/obsidian-handoff-contract.md)
