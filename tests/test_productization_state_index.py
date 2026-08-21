@@ -44,7 +44,7 @@ def test_status_schema_matches_index_header() -> None:
     assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS_V3
     assert tuple(header) == STATUS_INDEX_FIELDS_V1
     assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS_V3
-    assert len(rows) == 20
+    assert len(rows) == 18
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -142,29 +142,6 @@ def test_registered_default_scopes_have_writer_authority() -> None:
     )
     assert "374/666 pass and 292 held" in expansion["notes"]
     assert "cannot regenerate classification" in expansion["notes"]
-
-
-@pytest.mark.ledger_snapshot
-def test_peak_choice_lockbox_status_points_to_shadow_automation_design() -> None:
-    _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
-    row = next(
-        item for item in rows if item["lane_id"] == "peak_choice_truth_lockbox_v1"
-    )
-
-    assert (
-        row["current_artifact"]
-        == "docs/superpowers/validation/lockbox_shadow_automation_experiment_v1.json"
-    )
-    assert row["public_surface"] == "lockbox_shadow_automation_experiment_v1"
-    assert row["product_effect"] == "shadow_only_contract_adapter_manifest"
-    assert row["row_count"] == "72"
-    assert "shadow_scoring_contract_adapter_v1_ready" in row["notes"]
-    assert (
-        "53 owner-clean Gaussian15 cases as non-authoritative accept challenges"
-        in (row["notes"])
-    )
-    assert "6 manual negative controls as reject hard stops" in row["notes"]
-    assert row["write_authority"] == "FALSE"
 
 
 def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
@@ -415,7 +392,8 @@ def test_checker_rejects_non_exact_v3_lane_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("exact ordered 21-lane" in problem for problem in problems)
+    expected = f"exact ordered {len(REQUIRED_LANE_IDS_V3)}-lane"
+    assert any(expected in problem for problem in problems)
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate", "reordered"))
@@ -441,7 +419,7 @@ def test_checker_rejects_non_exact_v3_anchor_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered 20-anchor" in problem for problem in problems)
+    assert any("ordered 18-anchor" in problem for problem in problems)
 
 
 def test_checker_rejects_crossed_or_active_dependent_status_row(
@@ -787,11 +765,7 @@ def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None
 
 
 def test_checker_rejects_review_truth_or_recovery_authority(tmp_path: Path) -> None:
-    for lane_id in (
-        "review_packet_workflow_v1",
-        "peak_choice_truth_lockbox_v1",
-        "missing_overlay_evidence_recovery_v1",
-    ):
+    for lane_id in ("missing_overlay_evidence_recovery_v1",):
         mutated = _mutated_index(
             tmp_path,
             lane_id,
@@ -810,7 +784,7 @@ def test_checker_rejects_review_truth_or_recovery_authority(tmp_path: Path) -> N
 def test_checker_rejects_non_writer_scope_without_write_flag(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "review_packet_workflow_v1",
+        "missing_overlay_evidence_recovery_v1",
         {"product_authority_scope": "backfill_policy_write_ready_rows"},
     )
 
@@ -840,7 +814,7 @@ def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
 def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "peak_choice_truth_lockbox_v1",
+        "missing_overlay_evidence_recovery_v1",
         {
             "may_change_workbook": "TRUE",
             "may_change_selected_peak": "TRUE",

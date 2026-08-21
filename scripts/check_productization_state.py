@@ -141,8 +141,6 @@ REQUIRED_CONTROL_PLANE_ANCHORS_V3 = {
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall_v1": "productization_authority_manifest_v1",
     "mechanical_adjudication_contract_v1": "mechanical_adjudication_index_v1",
-    "review_packet_workflow_v1": "Review Packet / Approval Workflow v1",
-    "peak_choice_truth_lockbox_v1": "lockbox_shadow_automation_experiment_v1",
     "missing_overlay_evidence_recovery_v1": "Missing-Overlay Evidence Recovery v1",
     "quality_explanation_sidecar_v1": (
         "quality_explanations and quality_blockers are explanation and triage "
@@ -452,8 +450,8 @@ def _check_schema_and_rows(
     else:
         if tuple(raw_required_lane_ids) != REQUIRED_LANE_IDS_V3:
             problems.append(
-                "schema required_lane_ids must preserve the exact ordered 21-lane "
-                "V3 contract"
+                "schema required_lane_ids must preserve the exact ordered "
+                f"{len(REQUIRED_LANE_IDS_V3)}-lane V3 contract"
             )
         required_lane_ids = set(raw_required_lane_ids)
 

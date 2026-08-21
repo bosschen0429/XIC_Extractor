@@ -26,8 +26,6 @@ Promotion requirements belong to
 - `broad_backfill_autowrite`
 - `productization_authority_firewall_v1`
 - `mechanical_adjudication_contract_v1`
-- `review_packet_workflow_v1`
-- `peak_choice_truth_lockbox_v1`
 - `missing_overlay_evidence_recovery_v1`
 - `quality_explanation_sidecar_v1`
 - `targeted_ms1_shape_identity_limited_rescue_v1`

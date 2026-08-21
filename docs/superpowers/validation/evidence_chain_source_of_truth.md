@@ -389,14 +389,11 @@ unused expected diffs and existing-value overwrites. Passing a focused expected
 diff proves contract correctness for a bounded scope, not global scientific
 confidence.
 
-### Review, Lockbox, Overlay, And Human-Guide Evidence
+### Overlay And Human-Guide Evidence
 
 Owners:
 
-- `scripts/build_peak_choice_truth_lockbox.py`
-- `scripts/build_lockbox_static_review_bundle.py`
 - `scripts/build_trace_overlay_recovery_report.py`
-- `scripts/build_lockbox_ai_challenge_pack.py`
 - `tools/diagnostics/family_ms1_overlay_*`
 - `tools/diagnostics/backfill_evidence_reconciliation_gallery.py`
 - `docs/superpowers/validation/evidence_chain_status_guide.html`
@@ -406,13 +403,13 @@ product authority.
 
 Evidence states:
 
-- Lockbox labels, review decisions, challenge queues, trace recovery status,
-  overlay trace JSON/PNG/HTML, recovered overlays, and reviewer conclusions.
+- Trace recovery status, overlay trace JSON/PNG/HTML, recovered overlays, and
+  compact reviewer conclusions with an enduring consumer.
 
-Authority state: review artifacts may support a future acceptance gate, but
-they should fail closed with fields such as
-`may_grant_product_authority=FALSE` or equivalent unless a separate activation
-contract consumes them.
+Authority state: review artifacts may support an active acceptance gate, but
+dataset-run queues, templates, labels, and rendered packets belong under
+ignored `output/`. A retained compact verdict remains non-authoritative unless
+a separate activation contract consumes it.
 
 ## Product-Lane Authority Boundaries
 
@@ -427,7 +424,7 @@ numbers, and active scope sizes belong in the machine-readable artifacts.
 | Backfill current | Backfill policy, same-peak support, sample-local evidence, value provenance, and expected diff. | Writer authority is limited to the registered scope in the authority manifest and status index. |
 | CID-NL Discovery | Successor self evidence, CID-NL tag evidence, MS1/RT/family context, identity reconstruction, expected diff, and quant matrix replay. | CID-NL/MS2 evidence is not direct writer authority; it must be consumed by a bounded activation contract. |
 | Backfill expansion | Census, availability, sample-local MS1 identity, RAW trace identity, expected diff/provenance, activation replay, shift-aware standard-peak support, own-max metric support, selective source-family projection, and MS1 product-authority sidecar. | Expansion does not unlock broad Backfill. Only a scope registered by the authority manifest and status index after the bounded full-chain gate, expected diff, and provenance replay has writer authority; candidate and diagnostic pass sets are not authority. |
-| Broad Backfill candidate universe | Candidate, review, overlay, lockbox, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
+| Broad Backfill candidate universe | Candidate, review, overlay, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
 | Targeted review actions | Expected-diff gate over product state, counted detection, review state, candidate sidecar, or manual-boundary state. | Mutating actions require approved expected diff and fail closed on stale/missing baseline. |
 
 ## Known Gaps

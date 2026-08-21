@@ -73,18 +73,6 @@ Lane key: `mechanical_adjudication_contract_v1`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
 
-### Review Packet / Approval Workflow v1
-
-Lane key: `review_packet_workflow_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### lockbox_shadow_automation_experiment_v1
-
-Lane key: `peak_choice_truth_lockbox_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
 ### Missing-Overlay Evidence Recovery v1
 
 Lane key: `missing_overlay_evidence_recovery_v1`

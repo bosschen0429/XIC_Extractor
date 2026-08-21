@@ -94,16 +94,8 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     "tests/test_cid_nl_discovery_release_slice.py": (
         "test_current_cid_nl_discovery_release_slice_is_stable",
     ),
-    "tests/test_lockbox_ai_challenge_results.py": (
-        "test_current_ai_challenge_result_summary_is_non_authoritative",
-        "test_current_lockbox_ai_challenge_results_validate",
-    ),
-    "tests/test_lockbox_label_collection_pack.py": (
-        "test_current_label_collection_pack_validates",
-    ),
     "tests/test_productization_state_index.py": (
         "test_dependent_effect_lane_is_exact_hold_package_binding",
-        "test_peak_choice_lockbox_status_points_to_shadow_automation_design",
         "test_productization_state_index_accepts_current_artifacts",
         "test_registered_default_scopes_have_writer_authority",
     ),
@@ -267,7 +259,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         "product-gates-evidence": (
             "tests/test_area_integration_uncertainty_audit.py",
             "tests/test_evidence_*.py",
-            "tests/test_lockbox_*.py",
             "tests/test_matrix_*.py",
             "tests/test_model_selection_approval_registry.py",
             "tests/test_ms1_*.py",
