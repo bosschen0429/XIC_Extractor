@@ -289,8 +289,6 @@ Owners:
 - `xic_extractor/alignment/backfill_ms1_product_authority.py`
 - `xic_extractor/alignment/backfill_candidate_ms2_product_authority.py`
 - `xic_extractor/alignment/shared_peak_identity_explanation/machine_evidence_support.py`
-- `scripts/check_backfill_expansion_*`
-- `scripts/build_backfill_expansion_default_product_activation.py`
 
 Purpose: decide whether a currently blank/rescued cell has enough evidence to
 be accepted, reviewed, held, or written inside a bounded Backfill lane.
@@ -369,7 +367,6 @@ Owners:
 - `xic_extractor/alignment/quant_matrix_promotion.py`
 - `scripts/build_quant_matrix_default_product_activation.py`
 - `scripts/build_cid_nl_default_product_activation.py`
-- `scripts/build_backfill_expansion_default_product_activation.py`
 
 Purpose: make matrix-writing changes explicit, replayable, and auditable.
 
@@ -393,7 +390,6 @@ confidence.
 
 Owners:
 
-- `scripts/build_trace_overlay_recovery_report.py`
 - `tools/diagnostics/family_ms1_overlay_*`
 - `tools/diagnostics/backfill_evidence_reconciliation_gallery.py`
 - `docs/superpowers/validation/evidence_chain_status_guide.html`

@@ -95,9 +95,6 @@ PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE = (
         PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
     )
 )
-MECHANICAL_ADJUDICATION_INDEX_REL = (
-    "docs/superpowers/validation/mechanical_adjudication_index_v1.tsv"
-)
 SUPERPOWERS_SPEC_DIR = "docs/superpowers/specs/"
 
 DOC_PLACEMENT_MARKER = "Doc placement:"

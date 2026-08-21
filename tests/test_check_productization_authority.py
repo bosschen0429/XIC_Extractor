@@ -258,6 +258,33 @@ def test_productization_authority_checker_rejects_retired_clean_target_scope(
     assert any("exact two registered lanes" in problem for problem in problems)
 
 
+@pytest.mark.parametrize(
+    "scope_id",
+    (
+        "backfill_expansion_raw_trace_expected_diff_666_cells",
+        "backfill_expansion_clean_target_selective_activation_84_cells",
+    ),
+)
+def test_productization_authority_checker_pins_retired_scope_status(
+    tmp_path: Path,
+    scope_id: str,
+) -> None:
+    manifest = tmp_path / DEFAULT_MANIFEST.name
+    shutil.copyfile(DEFAULT_MANIFEST, manifest)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    scope = next(
+        item
+        for item in payload["blocked_or_negative_evidence_scopes"]
+        if item["scope_id"] == scope_id
+    )
+    scope["status"] = "held_candidate"
+    manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    problems = check_productization_authority(manifest_path=manifest)
+
+    assert f"{scope_id} status must be retired" in problems
+
+
 def test_productization_authority_checker_requires_compact_artifact(
     tmp_path: Path,
 ) -> None:

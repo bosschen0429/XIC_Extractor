@@ -97,13 +97,13 @@
     },
     {
       "scope_id": "backfill_expansion_raw_trace_expected_diff_666_cells",
-      "status": "held_candidate",
-      "reason": "The 666-cell Backfill expansion packet has sample-local alignment, RAW trace identity, expected-diff, and provenance replay, but shift-aware standard-peak support and MS1 own-max evidence are not wired by stable row/cell keys; it may not grant ProductWriter authority."
+      "status": "retired",
+      "reason": "The retired 666-cell Backfill expansion scope never established stable shift-aware standard-peak support or MS1 own-max evidence by row/cell key; it may not grant ProductWriter authority."
     },
     {
       "scope_id": "backfill_expansion_clean_target_selective_activation_84_cells",
       "status": "retired",
-      "reason": "T5D retired the ownerless Standard Peak clean-target writer; the retained packet provides current-file self-consistency checks only, does not authenticate historical origin, and cannot grant ProductWriter authority."
+      "reason": "T5D retired the ownerless Standard Peak clean-target writer and its construction packet; this scope cannot grant ProductWriter authority."
     }
   ]
 }

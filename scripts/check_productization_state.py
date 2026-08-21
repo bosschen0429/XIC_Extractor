@@ -135,13 +135,8 @@ EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY = {
 REQUIRED_CONTROL_PLANE_ANCHORS_V3 = {
     "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation v1",
     "cid_nl_default_product_activation_v1": "CID-NL Default Product Activation v1",
-    "backfill_expansion_default_product_activation_v1": (
-        "Backfill Expansion Full Evidence Chain v1"
-    ),
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall_v1": "productization_authority_manifest_v1",
-    "mechanical_adjudication_contract_v1": "mechanical_adjudication_index_v1",
-    "missing_overlay_evidence_recovery_v1": "Missing-Overlay Evidence Recovery v1",
     "quality_explanation_sidecar_v1": (
         "quality_explanations and quality_blockers are explanation and triage "
         "inputs only"

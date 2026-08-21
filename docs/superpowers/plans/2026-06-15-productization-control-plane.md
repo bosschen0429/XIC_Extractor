@@ -49,12 +49,6 @@ Lane key: `cid_nl_default_product_activation_v1`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
 
-### Backfill Expansion Full Evidence Chain v1
-
-Lane key: `backfill_expansion_default_product_activation_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
 ### park_broad_backfill
 
 Lane key: `broad_backfill_autowrite`
@@ -64,18 +58,6 @@ Routes: [state](../validation/productization_status_index_v1.tsv), [writer autho
 ### productization_authority_manifest_v1
 
 Lane key: `productization_authority_firewall_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### mechanical_adjudication_index_v1
-
-Lane key: `mechanical_adjudication_contract_v1`
-
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
-
-### Missing-Overlay Evidence Recovery v1
-
-Lane key: `missing_overlay_evidence_recovery_v1`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
 

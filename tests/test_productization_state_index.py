@@ -44,7 +44,7 @@ def test_status_schema_matches_index_header() -> None:
     assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS_V3
     assert tuple(header) == STATUS_INDEX_FIELDS_V1
     assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS_V3
-    assert len(rows) == 18
+    assert len(rows) == len(REQUIRED_LANE_IDS_V3) == 15
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -114,35 +114,6 @@ def test_registered_default_scopes_have_writer_authority() -> None:
     assert cid_nl["may_change_counted_detection"] == "FALSE"
     assert cid_nl["product_effect"] == "cid_nl_default_quant_matrix_product_output"
     assert cid_nl["public_surface"] == "cid_nl_default_product_activation_v1"
-
-    expansion = next(
-        row
-        for row in rows
-        if row["lane_id"] == "backfill_expansion_default_product_activation_v1"
-    )
-    assert expansion["current_artifact"] == (
-        "docs/superpowers/validation/"
-        "backfill_expansion_default_product_activation_v1/"
-        "backfill_expansion_default_product_activation_summary.json"
-    )
-    assert expansion["readiness_status"] == "diagnostic_only"
-    assert expansion["write_authority"] == "FALSE"
-    assert expansion["product_authority_scope"] == ""
-    assert expansion["row_count"] == "666"
-    assert expansion["may_touch_matrix"] == "FALSE"
-    assert expansion["may_change_quant_output"] == "FALSE"
-    assert expansion["may_change_workbook"] == "FALSE"
-    assert expansion["may_change_selected_peak"] == "FALSE"
-    assert expansion["may_change_selected_area"] == "FALSE"
-    assert expansion["may_change_counted_detection"] == "FALSE"
-    assert expansion["product_effect"] == "candidate_replay_no_public_write"
-    assert (
-        expansion["public_surface"]
-        == "backfill_expansion_default_product_activation_v1"
-    )
-    assert "374/666 pass and 292 held" in expansion["notes"]
-    assert "cannot regenerate classification" in expansion["notes"]
-
 
 def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
@@ -419,7 +390,7 @@ def test_checker_rejects_non_exact_v3_anchor_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered 18-anchor" in problem for problem in problems)
+    assert any("ordered 15-anchor" in problem for problem in problems)
 
 
 def test_checker_rejects_crossed_or_active_dependent_status_row(
@@ -764,27 +735,26 @@ def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None
     )
 
 
-def test_checker_rejects_review_truth_or_recovery_authority(tmp_path: Path) -> None:
-    for lane_id in ("missing_overlay_evidence_recovery_v1",):
-        mutated = _mutated_index(
-            tmp_path,
-            lane_id,
-            {
-                "write_authority": "TRUE",
-                "product_authority_scope": "backfill_policy_write_ready_rows",
-                "may_touch_matrix": "TRUE",
-            },
-        )
+def test_checker_rejects_diagnostic_sidecar_authority(tmp_path: Path) -> None:
+    mutated = _mutated_index(
+        tmp_path,
+        "quality_explanation_sidecar_v1",
+        {
+            "write_authority": "TRUE",
+            "product_authority_scope": "backfill_policy_write_ready_rows",
+            "may_touch_matrix": "TRUE",
+        },
+    )
 
-        problems = _check_with_index(mutated)
+    problems = _check_with_index(mutated)
 
-        assert any("lane grants authority" in problem for problem in problems)
+    assert any("lane grants authority" in problem for problem in problems)
 
 
 def test_checker_rejects_non_writer_scope_without_write_flag(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "missing_overlay_evidence_recovery_v1",
+        "quality_explanation_sidecar_v1",
         {"product_authority_scope": "backfill_policy_write_ready_rows"},
     )
 
@@ -814,7 +784,7 @@ def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
 def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "missing_overlay_evidence_recovery_v1",
+        "quality_explanation_sidecar_v1",
         {
             "may_change_workbook": "TRUE",
             "may_change_selected_peak": "TRUE",
@@ -833,7 +803,7 @@ def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> No
 def test_checker_rejects_blank_doc_anchors(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "mechanical_adjudication_contract_v1",
+        "productization_authority_firewall_v1",
         {"handoff_anchor": "", "control_plane_anchor": ""},
     )
 
@@ -846,7 +816,7 @@ def test_checker_rejects_blank_doc_anchors(tmp_path: Path) -> None:
 def test_checker_rejects_artifact_hash_drift(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "mechanical_adjudication_contract_v1",
+        "productization_authority_firewall_v1",
         {"artifact_sha256": "0" * 64},
     )
 

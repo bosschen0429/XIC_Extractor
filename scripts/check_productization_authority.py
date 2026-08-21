@@ -70,14 +70,17 @@ WRITER_CURRENT_AUTHORITY_FIELDS = (
     "cid_nl_default_activation",
 )
 PARKED_BROAD_BACKFILL = "broad_backfill"
+RETIRED_SCOPE_IDS = {
+    "backfill_expansion_raw_trace_expected_diff_666_cells",
+    "backfill_expansion_clean_target_selective_activation_84_cells",
+}
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
     "apex_delta_clean",
     "width_only_clean",
     "shape_margin_clean",
     "shape_clean_reintegration_stable_writer_probe",
-    "backfill_expansion_clean_target_selective_activation_84_cells",
-}
+} | RETIRED_SCOPE_IDS
 
 
 def check_productization_authority(
@@ -269,17 +272,22 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
             elif source.get("may_grant_write_authority") is not False:
                 problems.append("explanation_only source grants authority")
 
-    negative_scope_ids = {
-        scope.get("scope_id")
+    negative_scopes = {
+        scope.get("scope_id"): scope
         for scope in manifest.get("blocked_or_negative_evidence_scopes", [])
         if isinstance(scope, Mapping)
     }
+    negative_scope_ids = set(negative_scopes)
     missing_negative = sorted(NEGATIVE_SCOPE_IDS - negative_scope_ids)
     if missing_negative:
         problems.append(
             "manifest missing negative-evidence scopes: "
             + ", ".join(missing_negative)
         )
+    for scope_id in RETIRED_SCOPE_IDS:
+        scope = negative_scopes.get(scope_id)
+        if scope is not None and scope.get("status") != "retired":
+            problems.append(f"{scope_id} status must be retired")
 
 
 def _check_backfill_authority_sources(

@@ -57,27 +57,6 @@ SNAPSHOT_MARKER = "ledger_snapshot"
 # docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
 # an invariant that survives a consistent re-analysis belongs in CI unmarked.
 SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
-    "tests/test_backfill_expansion_census.py": (
-        "test_current_backfill_expansion_census_is_stable",
-    ),
-    "tests/test_backfill_expansion_default_product_activation.py": (
-        "test_current_backfill_expansion_default_activation_is_stable",
-    ),
-    "tests/test_backfill_expansion_evidence_availability.py": (
-        "test_current_backfill_expansion_evidence_availability_is_stable",
-    ),
-    "tests/test_backfill_expansion_expected_diff_provenance.py": (
-        "test_current_backfill_expansion_expected_diff_provenance_is_stable",
-    ),
-    "tests/test_backfill_expansion_full_evidence_chain.py": (
-        "test_current_backfill_expansion_full_evidence_chain_is_held",
-    ),
-    "tests/test_backfill_expansion_raw_overlay_trace_identity.py": (
-        "test_current_backfill_expansion_raw_overlay_trace_identity_is_stable",
-    ),
-    "tests/test_backfill_expansion_sample_local_ms1_evidence.py": (
-        "test_current_backfill_expansion_sample_local_ms1_evidence_is_stable",
-    ),
     "tests/test_bounded_product_lanes_contract.py": (
         "test_bounded_product_lanes_accept_current_artifacts",
         "test_limited_targeted_ms1_scope_and_effect_are_pinned",
@@ -254,7 +233,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_shift_aware_*.py",
             "tests/test_standard_peak_*.py",
             "tests/test_tier2_*.py",
-            "tests/test_trace_overlay_recovery_contract.py",
         ),
         "product-gates-evidence": (
             "tests/test_area_integration_uncertainty_audit.py",
