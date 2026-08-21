@@ -43,7 +43,7 @@ def test_current_architecture_census_is_valid_and_static_only() -> None:
     } & set(observed.serializable())
 
 
-def test_persisted_semantic_rehydration_is_canonical_and_root_routed() -> None:
+def test_persisted_semantic_validation_is_proportional_and_root_routed() -> None:
     root_contract = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     public_contract = (
         ROOT / "docs/agent/architecture-public-contracts.md"
@@ -53,13 +53,11 @@ def test_persisted_semantic_rehydration_is_canonical_and_root_routed() -> None:
 
     assert "### Persisted Semantic Rehydration" in public_contract
     for required_rule in (
-        "untrusted projections after deserialization",
-        "original semantic owner's existing parser, constructor, or binding validator",
-        "reconstruct a typed value and recompute its canonical identity and invariants",
-        "re-seal the outer envelope after tampering",
-        "generic central semantic manager",
-        "downstream claim must remain unavailable",
-        "stale owner snapshots",
+        "reachable boundary",
+        "decision-bearing",
+        "audit-only provenance",
+        "Git review",
+        "self-sealing hash chain",
     ):
         assert required_rule in normalized_public
 
@@ -67,10 +65,8 @@ def test_persisted_semantic_rehydration_is_canonical_and_root_routed() -> None:
         "docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration"
         in root_contract
     )
-    root_summary = (
-        "Embedded IDs, hashes, status, counts, and locators are assertions, not proof"
-    )
-    assert root_summary in normalized_root
+    assert "A review finding needs a reachable actor" in normalized_root
+    assert "Audit-only metadata" in normalized_root
 
 
 def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:

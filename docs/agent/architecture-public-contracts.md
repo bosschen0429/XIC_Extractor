@@ -57,44 +57,36 @@ Apply these invariants:
 - Keep adapters translational. They may reject invalid projections, but must not
   silently recompute, collapse, or invent owner facts.
 
-A lossy projection is allowed only when the omitted fields and reduced claim are
-explicit. CI closure for a contract-bearing projection requires a source-to-
-terminal round trip plus the applicable cross-key, duplicate, malformed,
-reordered, partial, failure, serialization, recovery, and replay counterexamples.
+A lossy projection is allowed when its current consumer and reduced claim are
+explicit. CI covers only counterexamples that can change that consumer's
+decision; audit-only projections need no semantic mutation matrix.
 
 ### Persisted Semantic Rehydration
 
-A durable envelope proves only the bytes, schema, location, and lineage owned by
-that envelope. JSON objects, TSV rows, free-form mappings, receipts, replays, and
-other persisted payloads are untrusted projections after deserialization; they do
-not regain domain or runtime authority merely because an embedded ID, digest,
-status, count, locator, or outer-envelope hash matches.
+A durable envelope proves its own bytes and shape, not every statement stored
+inside it. Semantic rehydration is required only when persisted content crosses
+a reachable boundary and a field is decision-bearing: it selects identity or
+value, grants writer authority, changes product output, or determines a current
+domain/runtime result.
 
-Before a consumer may claim an embedded fact as owner-valid, it must route the
-complete persisted content through the original semantic owner's existing parser,
-constructor, or binding validator. That owner must reconstruct a typed value and
-recompute its canonical identity and invariants from the content. Comparing a
-payload's self-reported identity with another copied identity is not validation,
-even when a caller can re-seal the outer envelope after tampering.
+Use the smallest validation that protects that decision:
 
-Apply these ownership rules:
-
-- Envelope, storage, and lineage helpers may validate exact bytes/digests, schema
-  version, path, provenance, and envelope cardinality. They must delegate embedded
-  domain payloads to their existing semantic owners rather than duplicating owner
-  constructors or introducing a generic central semantic manager.
-- If the persisted target omits content required by the owner validator, the
-  downstream claim must remain unavailable. Add the missing content through a
-  versioned schema or reduce the claim; do not infer it from IDs, summaries,
-  navigation locators, or a sibling artifact.
-- Terminal status, disposition, counts, and current-state claims must be derived
-  from the accepted owner result or current owner snapshot. Persisted literals may
-  be compared for audit, but cannot be the source of the certified result.
-- Positive tests must round-trip persisted content through the owner. Negative
-  tests must mutate every owner-bearing content class while preserving the
-  embedded ID, then re-seal the outer envelope and expect rejection; also cover
-  unknown/duplicate fields, cross-key substitution, stale owner snapshots,
-  reordered members, and partial payloads where applicable.
+- Name the actor, independently supplied input, affected decision, and observable
+  loss before adding a rehydration boundary. A maintainer coordinating edits to a
+  tracked artifact and its manifest is handled by Git review, not a runtime
+  threat model.
+- Route decision-bearing content through the existing semantic owner. Reuse its
+  parser or binding validator; do not duplicate it or introduce a generic
+  semantic manager.
+- Treat audit-only provenance, labels, counts, locators, and copied hashes as
+  untrusted telemetry. They may be displayed or byte-checked, but their
+  completeness is not a product acceptance condition unless a current consumer
+  uses them to make a decision.
+- When the source required to support a claim is absent, reduce or remove the
+  claim. Do not manufacture confidence with another manifest, copied digest,
+  receipt, or self-sealing hash chain.
+- Test the counterexamples that can change the protected decision. Do not build
+  exhaustive mutation matrices for metadata that no current consumer trusts.
 
 #### Alignment Backfill evidence records
 
