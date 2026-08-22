@@ -139,9 +139,11 @@ Related evidence and analysis terms:
   in Discovery. A seed is not same-peak proof or counted detection.
 - `family`: legacy review/search container for related candidate or aligned
   evidence. Family membership is not same-peak proof or product authority.
-- `canonical projection`: one workflow-owned mapping from
-  `FinalizedScientificAlignment` and typed cell decisions to that workflow's
-  row identities, inclusion decisions, and product output. Targeted and
+- `canonical projection`: one workflow owner with two ordered mappings. Its
+  pre-cell operation maps `FinalizedScientificAlignment` to workflow row
+  identity/binding and explicit cell subjects; after
+  `ProductionCellDecision`, its post-cell operation maps typed cell decisions to
+  inclusion, counts/reasons, routing, and product output. Targeted and
   Untargeted keep separate projections; neither projection is the other's
   oracle.
 - `morphology`: peak-shape characteristics such as width, symmetry, boundaries,

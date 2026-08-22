@@ -1,19 +1,22 @@
 # Core Alignment Owner Migration — Current Packet
 
-Packet ID: `xic-core-alignment-owner-migration-r2`
+Packet ID: `xic-core-alignment-owner-migration-r3`
 
-Revision: `2`
+Revision: `3`
 
 Code-evidence base SHA: `f459f11ce1ba68a106095160ba453fc288288914`
 
-Prior documentation freeze: `5025511c955f169158d41d9d16d856af1851210c`
+Prior corrective freeze: `4354271f05ec8848168c23445e3232c4f0bc8c2a`
 
 Status: `frozen / local issue draft / implementation-ready; implementation not started`
 
 Canonical packet: this file
 
-Supersedes: `xic-core-alignment-owner-migration-r1` at the prior documentation
-freeze above
+Supersedes:
+
+- `xic-core-alignment-owner-migration-r1` at
+  `5025511c955f169158d41d9d16d856af1851210c`; and
+- `xic-core-alignment-owner-migration-r2` at the prior corrective freeze above.
 
 This is the local execution index for the next architecture phase. It may be
 copied into a GitHub Issue only after explicit authorization. The durable
@@ -102,9 +105,24 @@ Out of scope for structural PRs:
 | `delivery_lineage.py` Targeted cell/revision/stage/seal identities | `reuse_after_cleanup` | Delivery composes the existing leaf used by `extraction/targeted_diagnostic_delivery.py`; generalize only for a named current Untarget consumer and never remint parallel Targeted identity |
 | Existing Backfill TSV and string-Parquet adapters | `compatibility_only` | finite reader/adapter census; typed Parquet v2 is a separate promotion |
 | Alignment TSV/XLSX/HTML writers | `reuse_after_cleanup` | delivery renderers consuming finalized decisions only |
-| `shared_peak_identity_explanation/schema.py` and directly queried explanation/classification primitives | `reuse_after_cleanup` | explanation owner consumes typed archive queries; exact import/query roundtrip proves retained primitives |
-| `shared_peak_identity_explanation` activation/writer bridges with named current imports | `compatibility_only` | migrate or retire after `backfill_*_product_authority.py`, maintained `tools/diagnostics/` importers, activation diagnostics, gallery inputs, and `check_productization_authority.py` reach the successor interface |
-| Ownerless heavy explanation/debug assets | `replace_or_retire` | zero-import/CLI/index/downstream-reader census plus archive/reference parity; no ownerless diagnostic population survives final purge |
+
+### Shared explanation module disposition
+
+Every filename below is relative to
+`xic_extractor/alignment/shared_peak_identity_explanation/`; together the rows
+cover all 26 Python modules at the code-evidence base. A file is not considered
+consumer-free until import/referrer, CLI, diagnostic `INDEX.md`, documented
+artifact-name, and downstream-reader censuses all reach zero or point to a
+verified successor.
+
+| Exact module group | Disposition | Current named consumers | Successor / boundary | Removal oracle |
+| --- | --- | --- | --- | --- |
+| `__init__.py`, `schema.py`, `writers.py` | `compatibility_only` | `tools/diagnostics/shared_peak_identity_explanation.py`, `scripts/check_productization_authority.py`, activation/report writers, and schema importers | Split only after migration: typed explanation schemas/renderers go to `explanation/`; activation schemas stay with activation/ProductWriter authority | All importing CLIs/modules and schema/artifact readers migrate; output-schema parity passes; package facade and old writers then delete together |
+| `assembler.py`, `blast_radius.py`, `classifier.py`, `machine_artifacts.py`, `oracle.py`, `shadow_labels.py` | `reuse_after_cleanup` | shared-peak explanation CLI, health/blast-radius diagnostics, and review classifiers | `explanation/` consumes owner-backed archive queries and renders/classifies only; no product-value authority | Exact query/classification parity plus zero old imports, CLI/INDEX refs, and old artifact readers |
+| `candidate_ms2_pattern.py`, `ms1_pattern_coherence.py`, `ms1_peak_modes.py`, `ms1_peak_quality_vector.py`, `overlay_trace_data.py`, `qc_ms1_pattern_reference.py` | `compatibility_only` during structural migration | candidate-MS2/MS1/QC evidence diagnostics, `qc_ms1_pattern_reference.py`, peak-hypothesis builders, and product-authority review tools | Remain method/evidence-provider helpers until a separately promoted existing scientific owner consumes them; they do not move into explanation merely because explanation displays them | Per-module import/CLI/INDEX and artifact-reader census; method-specific parity/expected diff before reuse, otherwise retire at zero consumers |
+| `matrix_rt_drift_policy.py`, `mode_hypothesis_assignment.py`, `mode_window_assignment_gate.py`, `peak_hypothesis_matrix.py`, `peak_hypothesis_selection.py`, `rt_mode_evidence.py` | `compatibility_only` during structural migration | mode-assignment/window diagnostics, changed-row overlay review, RT normalization analysis, and peak-hypothesis matrix tooling | Current diagnostic evidence remains outside shared ModeTrack authority; reuse requires a typed proposal/evidence seam and separate behavior gate | Mode/RT output parity, no authority leakage, then zero import/CLI/INDEX/artifact-reader refs to the legacy modules |
+| `hypothesis_consistency.py`, `machine_evidence_support.py`, `wrong_peak_root_cause.py` | `reuse_after_cleanup` | shared-peak explanation, consistency/diagnosis tools, Backfill evidence projection, and product-authority review | Typed explanation/evidence reconciliation over owner-backed inputs; cannot select value, membership, or activation | Reconciliation/query parity and migrated named consumers; delete legacy path when all four census classes reach zero |
+| `activation_contract.py`, `product_activation.py` | `compatibility_only` | `tools/diagnostics/apply_shared_peak_identity_activation.py`, Backfill normal-peak activation, activation bridge/acceptance diagnostics, and current matrix-only writers | Remain with quant-matrix/ProductWriter activation authority; structural archive/explanation work must not absorb or duplicate them | Named activation consumers migrate through a separately approved behavior/writer contract; exact value/schema/rollback parity; then retire old modules |
 
 Tests protect product invariants and public compatibility, not old module
 shapes. A test moves to the successor interface or is deleted with its retired
@@ -122,6 +140,11 @@ Initial production census at the packet base:
 - `alignment_matrix.tsv`, `alignment_review.tsv`, identity/evidence sidecars,
   Targeted CSV/workbook, Alignment XLSX/HTML, config keys, filenames, order, and
   reason/count/value semantics are public contracts; and
+- `gui/workers/backfill_gallery.py`, `scripts/run_alignment_validation.py`,
+  `tools/diagnostics/alignment_health_packet.py`,
+  `tools/diagnostics/analyze_matrix_identity_blast_radius.py`, and
+  `tools/diagnostics/backfill_scope_probe.py` are live readers/adapters rather
+  than disposable diagnostics; and
 - tests and historical artifacts are oracles, not consumer evidence.
 
 Each migration PR must refresh the executable caller/reader census from its
@@ -133,6 +156,8 @@ from that census and has an explicit removal condition.
 The following scope is compiled against the code-evidence base SHA above. The
 census is bounded to in-repo production reachability and known public artifacts;
 tests and historical artifacts remain oracles, not evidence of a live consumer.
+`<base>` in the table means the declared code-evidence base SHA, never the
+mutable working-tree head.
 This documentation freeze launches no RAW work. Each owner PR must refresh its
 census, execute the highest applicable production entry with the named real
 consumer intact when dynamic dispatch/repeated work matters, and record every
@@ -140,11 +165,37 @@ monkeypatch, no-op, or substituted dependency.
 
 | Requirement / transaction | Highest real entry and current owner route | Successor owner operations | Live production/public consumers | Census query and exclusions | Call cost, falsifier, and acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| Targeted request, identity, and search | `scripts/run_extraction.py:main` and `gui/workers/pipeline_worker.py:PipelineWorker.run` both enter `build_canonical_targeted_application_service(extractor.run)`; exported `xic_extractor.extractor.run` enters `extraction.pipeline.run_pipeline`; `configuration/target_identity.py` owns Target identity | Existing Target identity owner -> `TargetSearchScope` -> shared capture/core -> Target projection binding/subjects -> cell decision -> Target projection completion | CLI CSV/method manifest/workbook, GUI summary/workbook, and direct `extractor.run` callers | `rg -n --glob '*.py' "extractor\.run\(" xic_extractor scripts gui`; `rg -n --glob '*.py' "build_canonical_targeted_application_service" xic_extractor scripts gui`; `rg -n --glob '*.py' "configuration\.target_identity" tools xic_extractor scripts gui`. Exclude tests, benchmarks, resolver comparison, and parameter sweeps as consumer evidence; retain them as oracles | Highest entry is RAW-backed and potentially expensive; structural PRs add no new RAW run unless their gate requires it. Falsify with Target key/definition/snapshot/order or method/search-scope mismatch. Accept with current Targeted config/order and CSV/workbook hard-exact parity, or an approved expected diff |
-| Untargeted discovery/alignment | `scripts/run_alignment.py:main`, `gui/workers/discovery_worker.py:DiscoveryWorker._run_alignment`, and `extraction/untargeted_provisional_matrix_workflow.py` enter `alignment.pipeline.run_alignment` | CrossSample -> ModeTrack proposal/apply -> bounded ObservationRepair -> scientific-core closure -> Untarget binding/subjects -> cell decision -> Untarget completion -> result finalizer | `alignment_matrix.tsv`, review/identity/evidence sidecars, Alignment XLSX/HTML, GUI discovery summary/gallery inputs, and provisional full-universe workflow | `rg -n --glob '*.py' "\brun_alignment\(" xic_extractor scripts gui`. Exclude tests, docs, and historical artifacts; named GUI/workflow adapters are live consumers | RAW/DLL-backed at the highest entries. Falsify with membership/group identity drift under order/parallelism, unresolved ambiguity choosing a winner, or artifact ordering drift. Accept with current matrix/review/identity/output byte/schema parity and targeted group/order counterexamples |
-| Projection, cell decision, and result | `run_alignment` currently builds mutable Matrix identity, calls `build_production_decisions`, then supplies `ProductionDecisionSet` to product matrix, provenance, explanation, and writers | `FinalizedScientificAlignment` -> Target/Untarget binding and typed cell subjects -> one `ProductionCellDecision` -> same projection's inclusion/count/reason/routing completion -> discriminated result finalizer | `product_matrix.py`, `pipeline_outputs.py`, TSV/XLSX/HTML writers, `untargeted_explanation_index.py`, and `owner_backfill_peak_fact_provenance.py` | `rg -n --glob '*.py' "build_production_decisions" xic_extractor scripts gui`; `rg -n --glob '*.py' "accepted_cell_count" xic_extractor scripts gui`; `rg -n --glob '*.py' "include_in_primary_matrix" xic_extractor scripts gui`. Exclude tests and ledger snapshots; diagnostic imports remain consumers until explicitly retired | In-memory row-by-sample work; no RAW is required for structural characterization. Falsify when Target evidence authorizes a Group subject, `accepted_cell_count` disagrees with inclusion, or typed no-write renders a different public reason/value. Accept with subject-crossing rejection, cell/no-write truth tables, current count/inclusion parity, and immutable closure tests |
-| Delivery and artifact set | Targeted CLI/GUI writers and `run_alignment` currently combine `output_levels.py`, `emit_*` parameters, pipeline metadata, renderers, and optional `delivery_lineage.py` Targeted diagnostic candidates | Projection contract + delivery intent + authority snapshot + named compatibility consumers -> `ArtifactPlan`; finalized result + plan -> render-only writers -> atomic delivery receipt | Targeted CSV/workbook/method manifest, Alignment TSV/XLSX/HTML and conditional sidecars, GUI summaries, `targeted_diagnostic_delivery.py`, and external readers of documented filenames/schemas | `rg -n --glob '*.py' "output_level" xic_extractor scripts gui`; `rg -n --glob '*.py' "emit_" xic_extractor scripts gui`; `rg -n --glob '*.py' "delivery_lineage" xic_extractor scripts gui`. Exclude tests/docs; CLI flags and GUI constants are live compatibility consumers | Output-I/O bound; no RAW needed for plan/atomicity tests. Falsify with missing/extra default artifact, schema/order drift, duplicate delivery identity, or partially visible failed bundle. Accept with exact artifact-set/schema/hash parity, current Targeted lineage roundtrip, and failure-atomic publication tests |
-| Evidence archive and explanation | `run_alignment` writes Backfill evidence TSV; maintained `tools/diagnostics/backfill_evidence_parquet_shadow.py` writes/reads the current strings-only Parquet shadow; explanation indices, product-authority modules, activation diagnostics, gallery inputs, and authority checks query or import explanation assets | Typed owner batches -> compact `evidence_archive`; owner-backed queries -> `explanation`; workflow projection alone routes Review Queue/archive presence | Backfill evidence readers, Parquet-shadow diagnostic CLI, explanation index/sections, Backfill product-authority modules, maintained explanation/mode/QC diagnostic CLIs, activation bridge/acceptance diagnostics, gallery evidence/inputs, and `scripts/check_productization_authority.py` | `rg -n --glob '*.py' "shared_peak_identity_explanation" tools xic_extractor scripts gui`; `rg -n --glob '*.py' "EvidenceQueryResult" tools xic_extractor scripts gui`; `rg -n --glob '*.py' "backfill_evidence_parquet" tools xic_extractor scripts gui`. Exclude tests/history; retain every import, CLI, index, and downstream reader until classified and migrated | Query/replay and storage I/O; no new RAW run. Falsify with broken evidence ref/query result, explanation/activation selecting a product value, or an omitted named consumer. Accept with typed query roundtrip, render-only explanation, retention-class checks, and zero-consumer proof before purge |
+| Targeted request, identity, and search | `scripts/run_extraction.py:main` and `gui/workers/pipeline_worker.py:PipelineWorker.run` both enter `build_canonical_targeted_application_service(extractor.run)`; exported `xic_extractor.extractor.run` enters `extraction.pipeline.run_pipeline`; `configuration/target_identity.py` owns Target identity | Existing Target identity owner -> `TargetSearchScope` -> shared capture/core -> Target projection binding/subjects -> cell decision -> Target projection completion | CLI CSV/method manifest/workbook, GUI summary/workbook, and direct `extractor.run` callers | `git grep -n -F "extractor.run(" <base> -- tools xic_extractor scripts gui`; `git grep -n -F "build_canonical_targeted_application_service" <base> -- tools xic_extractor scripts gui`; `git grep -n -F "configuration.target_identity" <base> -- tools xic_extractor scripts gui`. Exclude tests, benchmarks, resolver comparison, and parameter sweeps as consumer evidence; retain them as oracles | Highest entry is RAW-backed and potentially expensive; structural PRs add no new RAW run unless their gate requires it. Falsify with Target key/definition/snapshot/order or method/search-scope mismatch. Accept with current Targeted config/order and CSV/workbook hard-exact parity, or an approved expected diff |
+| Untargeted discovery/alignment | `scripts/run_alignment.py:main`, `gui/workers/discovery_worker.py:DiscoveryWorker._run_alignment`, and `extraction/untargeted_provisional_matrix_workflow.py` enter `alignment.pipeline.run_alignment` | CrossSample -> ModeTrack proposal/apply -> bounded ObservationRepair -> scientific-core closure -> Untarget binding/subjects -> cell decision -> Untarget completion -> result finalizer | `alignment_matrix.tsv`, review/identity/evidence sidecars, Alignment XLSX/HTML, GUI discovery summary/gallery inputs, provisional full-universe workflow, `gui/workers/backfill_gallery.py`, and `scripts/run_alignment_validation.py` | `git grep -n -E "\\brun_alignment\\(" <base> -- tools xic_extractor scripts gui`. Exclude tests, docs, and historical artifacts; named GUI/workflow adapters and maintained diagnostic readers are live consumers | RAW/DLL-backed at the highest entries. Falsify with membership/group identity drift under order/parallelism, unresolved ambiguity choosing a winner, or artifact ordering drift. Accept with current matrix/review/identity/output byte/schema parity and targeted group/order counterexamples |
+| Projection, cell decision, and result | `run_alignment` currently builds mutable Matrix identity, calls `build_production_decisions`, then supplies `ProductionDecisionSet` to product matrix, provenance, explanation, and writers | `FinalizedScientificAlignment` -> Target/Untarget binding and typed cell subjects -> one `ProductionCellDecision` -> same projection's inclusion/count/reason/routing completion -> discriminated result finalizer | `product_matrix.py`, `pipeline_outputs.py`, TSV/XLSX/HTML writers, `untargeted_explanation_index.py`, `owner_backfill_peak_fact_provenance.py`, `tools/diagnostics/alignment_health_packet.py`, and `tools/diagnostics/analyze_matrix_identity_blast_radius.py` | `git grep -l -E "ProductionDecisionSet|build_production_decisions|accepted_cell_count|include_in_primary_matrix" <base> -- tools xic_extractor scripts gui`. Exclude tests and ledger snapshots; every maintained diagnostic import remains a consumer until explicitly migrated or retired | In-memory row-by-sample work; no RAW is required for structural characterization. Falsify when Target evidence authorizes a Group subject, `accepted_cell_count` disagrees with inclusion, or typed no-write renders a different public reason/value. Accept with subject-crossing rejection, cell/no-write truth tables, current count/inclusion parity, and immutable closure tests |
+| Delivery and artifact set | Targeted CLI/GUI writers and `run_alignment` currently combine `output_levels.py`, `emit_*` parameters, pipeline metadata, renderers, and optional `delivery_lineage.py` Targeted diagnostic candidates | Projection contract + delivery intent + authority snapshot + named compatibility consumers -> `ArtifactPlan`; finalized result + plan -> render-only writers -> atomic delivery receipt | Targeted CSV/workbook/method manifest, Alignment TSV/XLSX/HTML and conditional sidecars, GUI summaries, `targeted_diagnostic_delivery.py`, `gui/workers/backfill_gallery.py`, `tools/diagnostics/backfill_scope_probe.py`, and external readers of documented filenames/schemas | `git grep -l -E "emit_alignment_|artifact_names_for_output_level|AlignmentOutputLevel|output_level" <base> -- tools xic_extractor/alignment xic_extractor/extraction scripts gui/workers`. Exclude tests/docs; CLI flags, GUI constants, path-carrying readers, and maintained diagnostic CLIs are live compatibility consumers | Output-I/O bound; no RAW needed for plan/atomicity tests. Falsify with missing/extra default artifact, schema/order drift, duplicate delivery identity, or partially visible failed bundle. Accept with exact artifact-set/schema/hash parity, current Targeted lineage roundtrip, and failure-atomic publication tests |
+| Evidence archive and explanation | `run_alignment` writes Backfill evidence TSV; maintained `tools/diagnostics/backfill_evidence_parquet_shadow.py` writes/reads the current strings-only Parquet shadow; explanation indices, product-authority modules, activation diagnostics, gallery inputs, and authority checks query or import explanation assets | Typed owner batches -> compact `evidence_archive`; owner-backed queries -> `explanation`; workflow projection alone routes Review Queue/archive presence | Backfill evidence readers, Parquet-shadow diagnostic CLI, explanation index/sections, Backfill product-authority modules, maintained explanation/mode/QC diagnostic CLIs, activation bridge/acceptance diagnostics, gallery evidence/inputs, and `scripts/check_productization_authority.py` | Import/referrer: `git grep -l "shared_peak_identity_explanation" <base> -- tools xic_extractor scripts gui`; CLI: named files in `tools/diagnostics/INDEX.md`; INDEX/docs: the reference query below; artifact readers: the filename query below. Exclude tests/history only; retain every import, CLI, index, documented artifact name, and downstream reader until classified and migrated | Query/replay and storage I/O; no new RAW run. Falsify with broken evidence ref/query result, explanation/activation selecting a product value, or an omitted named consumer. Accept with typed query roundtrip, render-only explanation, retention-class checks, and zero-consumer proof before owner-local retirement |
+
+### Base-SHA consumer and reader census
+
+The following commands were executed against
+`f459f11ce1ba68a106095160ba453fc288288914`, not inferred from the working
+tree. Counts include production package modules, maintained diagnostics, GUI
+workers, and scripts; tests and historical outputs are excluded. Every returned
+path remains a live compatibility consumer until its owner PR classifies and
+migrates it or proves its named retirement oracle.
+
+- Projection/decision readers: 64 Python paths from
+  `git grep -l -E "ProductionDecisionSet|build_production_decisions|accepted_cell_count|include_in_primary_matrix" f459f11ce1ba68a106095160ba453fc288288914 -- tools xic_extractor scripts gui`.
+- Persisted Alignment artifact readers: 53 Python paths from
+  `git grep -l -E "alignment_matrix\\.tsv|alignment_review\\.tsv|alignment_cells\\.tsv|alignment_matrix_identity\\.tsv|alignment_matrix_status\\.tsv" f459f11ce1ba68a106095160ba453fc288288914 -- tools xic_extractor scripts gui`.
+- Delivery/output-level consumers: 9 Python paths from
+  `git grep -l -E "emit_alignment_|artifact_names_for_output_level|AlignmentOutputLevel|output_level" f459f11ce1ba68a106095160ba453fc288288914 -- tools xic_extractor/alignment xic_extractor/extraction scripts gui/workers`.
+- Diagnostic INDEX and durable product/user references: 9 paths from
+  `git grep -l -E "shared_peak_identity_explanation|alignment_health_packet|matrix_identity|backfill_scope_probe|alignment_matrix|alignment_review" f459f11ce1ba68a106095160ba453fc288288914 -- tools/diagnostics/INDEX.md docs/product docs/user`.
+
+`gui/workers/backfill_gallery.py` is also an explicit path-carrying reader even
+when a literal artifact-filename query does not discover a particular field.
+`tools/diagnostics/INDEX.md` is searched separately because the Python-only
+censuses cannot discover registered CLIs or their documented artifact names.
+The shared explanation module table above adds the fourth required closure:
+each of its 26 module paths must independently clear import/referrer, CLI,
+INDEX/docs, and artifact/downstream-reader censuses.
 
 ## Migration milestones and ordered owner PRs
 
@@ -172,7 +223,19 @@ mega-PR.
 | 8c. Delivery / ArtifactPlan | Owner-compiled artifact set, render-only writers, atomic bundle | Exact artifact-set/schema parity, current lineage roundtrip, failure atomicity | Delete emit booleans, loose ledgers, and stale adapters with zero consumers |
 | 8d. Explanation | Typed decision rendering and archive/reference navigation | Render-only/query-reference tests and named-consumer migration | Delete compatibility bridges and heavy explanation assets at zero consumers |
 | 9. Behavior promotions | One separately chosen Target fill, ModeTrack sensitivity, Untarget key/schema, Parquet v2, or handoff activation per PR | Expected diff, authority binding, method-appropriate real evidence/manual review, rollback | Promote or kill each behavior independently |
-| 10. Final purge | No superseded owner, shim, migration schema, test, doc, or diagnostic remains | Fresh referrer/caller census, clean-checkout checks, public contract review | Delete this packet after durable claims and closeout are absorbed |
+
+### Owner-local retirement and parent issue gate
+
+There is no catch-all purge implementation PR. Each owner PR retires its own
+superseded implementation, shim, migration schema, tests, diagnostics, flags,
+and adapters as soon as that PR's named consumers and removal oracle close. A
+lane cannot defer owner-local cleanup to a later cross-owner mega-change.
+
+The parent issue closes only after the union of all owner exits has a fresh
+referrer/caller/reader census, clean-checkout verification, and public-contract
+review. If this temporary packet still needs deletion after its durable claims
+are absorbed, that deletion is a separate docs-only closeout PR; it carries no
+runtime owner migration.
 
 ## Validation and promotion rules
 
@@ -201,10 +264,13 @@ wrappers cannot resolve to one deliberate tagged identity; or owner closure
 requires caller-authored authority. Do not add a flag or fallback to hide the
 conflict.
 
-Every lane is rollbackable by reverting its coherent commit/PR while the prior
-public path remains authoritative. A compatibility facade never contains a
-second fallback algorithm, so rollback selects the prior owner rather than
-silently mixing both.
+Every PR body records its declared base SHA, its cutover point, and the ordered
+dependent suffix that already consumes the new owner. Before a downstream PR
+depends on it, a lane is rollbackable by reverting its coherent commit/PR while
+the prior public path remains authoritative. After dependency cutover, rollback
+reverts the dependent suffix in reverse dependency order before reverting the
+owner PR. A compatibility facade never contains a second fallback algorithm,
+so rollback selects the prior owner rather than silently mixing both.
 
 ## Done when
 

@@ -1,10 +1,12 @@
 # Alignment
 
-The target Alignment contract is the cross-sample scientific workflow. It consumes explicit
-sample-local hypotheses/observations, closes canonical group identity and
-trajectory/repair evidence, then returns an immutable finalized result to a
-workflow projection. It does not use a mutable Matrix as its internal transport
-contract or let writers recompute science.
+The target Alignment contract is the cross-sample scientific workflow. It
+consumes explicit sample-local hypotheses/observations, closes canonical group
+identity and trajectory/repair evidence, then returns
+`FinalizedScientificAlignment` to the workflow projection's binding/subject
+operation. The immutable workflow result exists only after cell decision and
+projection completion. Alignment does not use a mutable Matrix as its internal
+transport contract or let writers recompute science.
 
 ## Current Problem
 
