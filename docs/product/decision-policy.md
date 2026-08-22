@@ -17,9 +17,11 @@ questions:
 - Evidence providers feed typed facts into `EvidenceVector`,
   `EvidenceDecisionSemantics`, `PeakHypothesis`, `IntegrationResult`, and audit
   records. They do not write product matrices directly.
-- Decision policy owns gate order. If a rule affects selected peak, selected
-  area, counted detection, product state, matrix value, or output identity, the
-  rule must be explicit and test-covered.
+- Decision policy owns gate order. `ProductionCellDecision` is the sole owner
+  that converts closed observation evidence into a selected value or typed
+  no-write result. If a rule affects selected peak, selected area, counted
+  detection, product state, matrix value, or output identity, the rule must be
+  explicit and test-covered.
 - Score is a ranking and compatibility tool. A high score cannot bypass missing
   required evidence, hard conflicts, unresolved ambiguity, missing provenance,
   or workflow-specific activation gates.
@@ -49,7 +51,8 @@ baseline for proving behavior, not the owner of product truth.
 | Typed evidence facts | Observed RT, shape, boundary, MS2, NL, isotope/adduct, standards, library, paired-context, and provenance facts | Product state, counted detection, matrix value |
 | Decision semantics | Accepted/review/not-counted/ambiguous/excluded classes, support reasons, conflict reasons, blocker reasons | Workflow-specific writer authority |
 | Model selection / ranking | Choosing among comparable `PeakHypothesis` candidates after typed gates | Overriding hard gates or granting matrix writes |
-| Workflow projection | Targeted product projection, alignment projection, Backfill authority, ProductWriter gates | Low-level evidence extraction |
+| Cell decision | Selected value or typed no-write for explicit Target/Group subjects | Row identity, grouping, RAW access, or rendering |
+| Workflow projection | Target/Untarget row identity, inclusion, counted detection, product state, Review Queue routing, and ProductWriter gates | Low-level evidence extraction, Backfill repair, or value recomputation |
 | Audit trail | Human-readable explanation, review queue, expected-diff evidence | Silent product behavior |
 
 ## Common Decision Shape
@@ -114,7 +117,7 @@ generic evidence provider.
 | Hard blockers | Sample not applicable, invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, unapproved expected diff, role-incoherent paired context, missing activation for value-changing rescue |
 | Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, own-max same-peak support, morphology, boundary assessability, local S/N |
 | Tie-break | Decision class first, then blocker count, abundance demotion, role-aware RT/context, chemical evidence, trace strength, quality penalty, RT distance, abundance, and finally compatibility score only when comparable |
-| Projection | `TargetedProductProjection` owns product state, counted detection, confidence, reason, and targeted output fields |
+| Projection | `ProductionCellDecision` supplies the selected value/no-write result; `TargetedProductProjection` owns fixed Target row binding, product state, counted detection, confidence, reason, Review Queue routing, and targeted output fields |
 
 Targeted policy may prioritize paired ISTD/standard RT context because the
 targeted method declares that relationship ahead of time. That priority must
@@ -142,18 +145,20 @@ Targeted-specific rules to keep explicit:
 
 ## Untargeted / Backfill Policy
 
-Untargeted alignment and Backfill are discovery-driven. They do not know the
-target identity ahead of time, so they must decide from trace, owner, group,
-identity, and provenance evidence rather than targeted labels.
+Untargeted alignment is discovery-driven. It does not know target identity
+ahead of time, so CrossSample decides from trace, owner, group, identity, and
+provenance evidence rather than targeted labels. Backfill is a separate bounded
+ObservationRepair owner and does not decide membership, selected value, or row
+inclusion.
 
 | Decision role | Untargeted / Backfill rule |
 | --- | --- |
-| Unit | Separate decisions for owner edge, cross-sample group, matrix row identity, rescued cell, quant value, and activation output |
+| Unit | Separate decisions for owner edge, cross-sample group/disposition, ObservationRepair, Untarget row identity, Group cell value/no-write, and activation output |
 | Required evidence | Explicit discovery/alignment input, owner construction, row identity, typed same-peak evidence when claiming same-peak support, and provenance-valid sidecar when used for product support |
 | Hard blockers | Ambiguous owner, duplicate loser, wrong-peak conflict, missing matrix identity, stale source hash, unsupported family projection, unapproved authority scope, missing expected-diff gate for new writer behavior |
 | Support | Cross-sample coherence, m/z/RT consistency, MS1 pattern, shape and boundary agreement, MS2/NL consistency, standards/library evidence when represented as typed facts |
 | Tie-break | Owner-edge evidence, group match quality, drift-corrected RT, m/z/product tolerances, seed support, owner quality, trace quality, duplicate context, deterministic row ordering, and score only within already-eligible comparable candidates |
-| Projection | `MatrixIdentityRowDecision` decides row inclusion; `ProductionCellDecision`, Backfill authority, ProductWriter, and activation contracts decide matrix presence and accepted quant values |
+| Projection | Untarget projection decides typed row identity/inclusion; `ProductionCellDecision` decides cell value/no-write; ProductWriter and activation contracts authorize rendering/publication. Backfill supplies observation facts only |
 
 Targeted outputs may be used as benchmark, audit, or falsification evidence for
 untargeted behavior. They must not directly promote untargeted rows unless a
@@ -170,9 +175,10 @@ Untargeted-specific rules to keep explicit:
   detected seed. Rescue-only, duplicate-only, ambiguous-only, review-only,
   consolidation-loser, and zero-detected rows fail closed unless an explicit
   authority contract says otherwise.
-- A rescued cell can write only after row identity passes and the cell is
-  quantifiable. If backfill cell evidence is required, product-authorized
-  same-peak Backfill evidence is also required.
+- A repaired observation can write only after row identity passes and
+  `ProductionCellDecision` independently selects a quantifiable value. If
+  repair evidence is required, the exact owner-backed ObservationRepair receipt
+  must be present; repair never grants membership or writer authority itself.
 - Same-peak support is not the same as group membership. It needs selected peak
   geometry, RT or drift-supported compatibility, no MS1 pattern conflict, no
   hypothesis or claim blocker, and product-authorized trace or pattern support.
@@ -241,12 +247,13 @@ reconstruct the policy:
 | Blockers | conflict, ambiguity, stale source, unsupported projection, missing activation |
 | Support | RT, shape, MS2/NL, standard/library, paired-context, group/coherence support |
 | Tie-break basis | score, RT distance, abundance, deterministic order, compatibility fallback |
-| Projection authority | targeted projection, alignment projection, Backfill authority, ProductWriter scope |
+| Projection authority | ProductionCellDecision, Targeted/Untargeted projection, ProductWriter scope |
 | Validation status | synthetic, focused tests, targeted benchmark, 8RAW, 85RAW, manual review, expected diff |
 
 The decision record can live in different artifacts for different workflows,
 but the meaning must remain stable: evidence explains, policy gates, score
-ranks, and projection writes. Reserve `Trace` for LC-MS chromatogram signals;
+ranks, cell decision selects a value/no-write result, projection includes, and
+the writer renders. Reserve `Trace` for LC-MS chromatogram signals;
 do not use it as shorthand for decision records.
 `DecisionRecord.gate` and `DecisionRecord.tie_break` are audit-visible policy
 terms, not a generic selection key. Only workflow-owned selection modules may

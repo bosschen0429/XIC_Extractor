@@ -1,8 +1,97 @@
 # Alignment
 
-Alignment is the cross-sample handoff layer. It consumes explicit discovery or
-accepted input, builds owners and aligned matrices, and writes machine-readable
-contracts for review and downstream product decisions.
+The target Alignment contract is the cross-sample scientific workflow. It consumes explicit
+sample-local hypotheses/observations, closes canonical group identity and
+trajectory/repair evidence, then returns an immutable finalized result to a
+workflow projection. It does not use a mutable Matrix as its internal transport
+contract or let writers recompute science.
+
+## Current Problem
+
+The current `alignment/` tree is functional but shallow at its public seam and
+overloaded internally. `pipeline.py` builds an owner Matrix early, then passes
+that mutable shape through claim registration, consolidation, Backfill,
+production decisions, and output assembly. Group identity, provisional/primary
+inclusion, cell state, Backfill policy, diagnostics, and writer concerns are
+spread across many peer files. Targeted meanwhile owns a partially separate
+cross-sample/rescue path. The result is high coupling, duplicated scientific
+meaning, and a large change surface even when only one decision owner should
+move.
+
+This is a responsibility/locality problem, not evidence that Targeted and
+Untargeted need different capture algorithms. The frozen direction is to deepen
+the current owners and replace the mixed Matrix pipeline in dependency order.
+Current public output and science remain parity constraints until a separate
+promotion explicitly changes them.
+
+## Frozen Owner Contract
+
+| Owner | Sole responsibility | Output to the next seam |
+| --- | --- | --- |
+| CrossSample | Initial grouping, membership, group identity, disposition, split/merge lineage, and application of accepted proposals | Canonical immutable groups and lineage |
+| ModeTrack | Request-bound trajectory modeling over immutable evidence; proposes only | Typed assessable refinement proposals |
+| Backfill | One bounded local `ObservationRepair` epoch | Owner-backed repaired observation or typed no-repair result |
+| Scientific alignment closure | Validate request/group/disposition/membership/refinement/repair closure | `FinalizedScientificAlignment` |
+| Workflow projection | Target rows or Untarget group rows, binding/inclusion, Review Queue refs, and explicit cell subjects | Typed row decisions and cell subjects |
+| ProductionCellDecision | Selected value or typed no-write result for one explicit Target/Group subject | Immutable cell decision with evidence refs |
+| Result finalizer | Closure validation over the core, projection, and cell decisions | Discriminated immutable Targeted or Untargeted result |
+
+CrossSample alone may mint or supersede a group. ModeTrack cannot move a member
+or write a value, and Backfill cannot turn a repaired observation into implicit
+membership. The finalizer cannot rerun RAW access, grouping, ModeTrack,
+Backfill, integration, or selection.
+
+### Group identity and disposition
+
+- `group_hypothesis_id` is a typed digest over the group identity schema, exact
+  `processing_request_id`, and canonical-sorted identity-bearing members. Each
+  member combines canonical sample identity with one owner-backed
+  `PeakHypothesis` or physical-observation identity.
+- Ordinal `FAM...`, row order, sample stem, m/z/RT display coordinates, area,
+  and ModeTrack anchor IDs are compatibility/display facts, not identity bases.
+- A group contains at most one identity-bearing member per canonical sample.
+  Same-sample distinguishable peaks remain separate; unresolved ambiguity does
+  not choose an arbitrary winner.
+- Any accepted membership change or split/merge mints successor identity and
+  immutable lineage. A new processing request creates new group identity; this
+  refactor does not infer cross-request continuity.
+- `GroupDispositionDecision` is exactly one of `established`, `provisional`,
+  `unresolved`, or `rejected`. Established requires accepted identity-bearing
+  members from at least two distinct canonical samples plus method hard gates;
+  a singleton is always provisional. Low support alone is not rejection.
+  Disposition and output inclusion are separate.
+
+### ModeTrack and repair relationship
+
+- ModeTrack consumes one immutable `trajectory_input_id` containing only the
+  anchors, members, apexes, injection order, evidence profile, and exclusions
+  relevant to its model. Area-only or boundary-only changes do not rerun it.
+- Model selection uses the simplest validated candidate. RT correction is an
+  optional prior; direct local evidence wins and a prior alone cannot reassign
+  a member.
+- ISTD behavior proves that RT trends can move in different directions and jump
+  between adjacent injections. Unknown-feature behavior is not described by a
+  universal drift curve. Sensitivity work therefore uses method-appropriate
+  ISTDs plus several high-detection unknown features and reports where the
+  model is unassessable.
+- A bounded ObservationRepair may change trajectory identity once. CrossSample
+  may then rebuild the snapshot and request one final ModeTrack pass. No repair
+  loop, refit loop, arbitrary neighborhood chunking, or singleton-based
+  cross-sample fill is allowed.
+
+### Final result and projections
+
+`FinalizedScientificAlignment` closes the request, canonical groups,
+dispositions, membership/lineage, and refinement/repair receipts. Targeted adds
+fixed `TargetKey` rows, zero/one/many `TargetRowBinding`, Target cell decisions,
+inclusion, and existing Review Queue references. Untargeted adds projection-
+owned `UntargetRowKey`, Group cell decisions, and row-inclusion decisions.
+
+Targeted may bind a uniquely qualified established or provisional group. Zero
+groups retains a typed empty fixed row; multiple qualified groups remain
+unresolved. Untargeted standard Matrix includes established groups only.
+Provisional groups belong in a compact machine archive/review surface;
+unresolved and rejected groups remain AuditTrail facts.
 
 ## Contract
 
@@ -165,7 +254,7 @@ contracts for review and downstream product decisions.
   grouping, ownership, identity, writer, and sidecar behavior belongs in
   package modules or explicit specs.
 
-## One Decision Set Across Activated Outputs
+## Current Compatibility Decision Set Across Activated Outputs
 
 For one current Alignment run, `run_alignment` builds one owner-minted
 `ProductionDecisionSet` after final matrix authority is available and supplies
@@ -183,6 +272,13 @@ remain deferred until a stable consumer can state an exact schema and
 compatibility need. Diagnostic evidence sidecars may preserve their own raw
 evidence population, but they do not become a competing production decision
 set.
+
+This is current compatibility behavior. The successor
+`ProductionCellDecision` deepens the decision owner around explicit Target and
+Group subjects, and finalized result variants replace loose Matrix-plus-metadata
+transport. The migration must first preserve this decision set's selected
+values, statuses, counts, inclusion, and renderer bytes; behavior changes use a
+separate expected-diff promotion.
 
 ## Shadow Identity Settlement
 
@@ -269,6 +365,12 @@ observation universe and references zero or more existing
 one ModeTrack; neither the Family nor the ModeTrack is a chemical-identity
 claim. Public or legacy family labels, `method_subject_id`, display labels, and
 ordinals do not mint or replace the internal Family context.
+
+This describes current activation state, not a reason to build another
+trajectory module. The target architecture reuses and deepens this capability
+behind a proposal-only `alignment/mode_track/` interface. Existing diagnostic
+writers and validation packages stay outside that scientific interface and are
+retired or retained only by named consumers after migration.
 
 The initial model set is fit once per Family from canonical direct-SUPPORT
 assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint
@@ -415,7 +517,11 @@ Alignment owner.
 
 | Area | Owns | Does not own |
 | --- | --- | --- |
-| Alignment | Cross-sample grouping, owner construction, primary consolidation, one production decision set, and atomic Alignment-output composition | Discovery seed creation, renderer-local semantic rebuilding, or a second product writer authority |
+| CrossSample | Grouping, membership, identity, disposition, proposal application, and split/merge lineage | ModeTrack fitting, local ObservationRepair, value selection, row inclusion, or rendering |
+| ModeTrack | Immutable trajectory snapshots and refinement proposals | Group minting/mutation, Backfill, selected values, or Matrix authority |
+| Backfill | Bounded local ObservationRepair and provenance | First hits, membership, trajectory model, selected value, or writer authority |
+| Cell decision/result | Typed write/no-write decisions and immutable result closure | RAW access, regrouping, refitting, repairing, or renderer policy |
+| Alignment workflow | Typed composition, runtime/transaction receipts, finalization, and delivery handoff | Mutable Matrix transport, scientific fallbacks, or emit-flag policy |
 | Discovery | Candidate generation and per-sample review surfaces | Cross-sample matrix authority |
 | Output | Rendering TSV/XLSX/HTML artifacts from domain decisions | Recomputing evidence or selecting authority |
 | Diagnostics | Audits and observability | Product behavior unless promoted through public contract |
@@ -454,6 +560,12 @@ Before changing alignment behavior, require the relevant subset of:
   without a matching output contract.
 - Letting `alignment_review.tsv` support tokens promote rows without
   provenance-valid source sidecars.
+- Treating ModeTrack as a second grouping owner or Backfill as a membership or
+  selected-value owner.
+- Using a singleton or RT prior to fill another sample without direct local
+  evidence or an accepted independent ObservationRepair.
+- Calling a pre-final owner matrix `Matrix` and allowing it to cross the final
+  result or delivery seam.
 
 ## See Also
 

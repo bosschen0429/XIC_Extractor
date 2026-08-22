@@ -61,6 +61,38 @@ A lossy projection is allowed when its current consumer and reduced claim are
 explicit. CI covers only counterexamples that can change that consumer's
 decision; audit-only projections need no semantic mutation matrix.
 
+### Alignment owner-migration projection map
+
+The frozen Alignment migration defines the following future boundaries. They
+do not change current runtime/public output until their structural and behavior
+gates are separately delivered.
+
+| Source owner -> target consumer | Preserved identity/cardinality | Deliberate loss / forbidden reconstruction |
+| --- | --- | --- |
+| Target-list owner -> Target SearchScope | `TargetKey`, exact `TargetDefinition`, ordered `TargetListSnapshot`, method/evidence constraints | Paths, mutable CSV rows, or target labels alone cannot recreate the scope |
+| Discovery/capture -> CrossSample | exact request, canonical sample, owner-backed hypothesis/physical observation, evidence refs | Area/RT display values, candidate ordinals, and legacy family labels cannot mint members |
+| CrossSample -> ModeTrack | immutable `trajectory_input_id`, anchors/members/apexes/order/evidence profile/exclusions | Values, renderer fields, mutable group objects, and Backfill policy are intentionally absent |
+| ModeTrack -> CrossSample | typed proposal bound to the exact input snapshot and assessability evidence | Proposal does not carry group-minting, membership-mutation, or value authority |
+| Backfill -> cell decision/CrossSample | owner-backed `ObservationRepair` decision and exact repair receipt | Repair does not imply membership or selected value; either requires its own owner decision |
+| finalized canonical group -> Untarget projection | exact group identity/disposition/lineage -> one typed `UntargetRowKey` | `FAM...`, center m/z/RT, order, or display text cannot reconstruct row identity |
+| finalized core + workflow projection -> cell decision | explicit `TargetCellSubject` or `GroupCellSubject`, closed observation/search receipts | Target evidence cannot authorize Group/Untarget cells; human reason strings are not input |
+| owner decisions -> alignment result finalizer | exact request, group/refinement/repair closure, typed row/cell/inclusion decisions | Finalizer cannot reopen RAW, regroup, refit, repair, reintegrate, select, or accept optional-mode field soup |
+| finalized workflow result -> Delivery | one immutable result variant plus owner-compiled `ArtifactPlan` and destination mechanics | Loose Matrix/metadata maps, caller-authored ledgers, emit booleans, and renderer recomputation are forbidden |
+| typed archive owner batches -> Parquet v2 | native types/nulls, canonical identity/order, schema/version, exact bundle lineage | TSV strings are not the canonical intermediate; a storage adapter cannot decide science |
+
+CrossSample enforces at most one identity-bearing member per canonical sample
+and mints a successor identity on membership/split/merge change. ModeTrack is
+proposal-only. ObservationRepair is bounded to one epoch, with at most one final
+ModeTrack rerun when trajectory identity changes. `ProductionCellDecision` is
+the sole selected-value owner and returns either a typed write decision or one
+of `not_searched`, `searched_no_observation`, `unresolved`,
+`rejected_observation`, `not_quantifiable`, or `unavailable`.
+
+The complete search receipt is required to assert
+`searched_no_observation`; missing, partial, corrupt, or unbound evidence is
+`unavailable`. Blank/zero and human-rendered reason text are never semantic
+authority.
+
 ### Persisted Semantic Rehydration
 
 A durable envelope proves its own bytes and shape, not every statement stored
@@ -172,6 +204,15 @@ For a transaction that crosses persisted human review into a current owner run:
 - the final output becomes visible only after the internally derived manifest,
   existing writer owner, expected-diff oracle, rollback oracle, and terminal
   receipt all succeed.
+
+For the frozen Alignment successor, the writer-adjacent input is one immutable
+Targeted or Untargeted finalized result plus an owner-compiled `ArtifactPlan`
+and output-location mechanics. The plan derives from the projection contract,
+delivery intent, authority-manifest snapshot, and named compatibility consumers.
+The delivery finalizer returns one typed receipt and publishes required claim-
+closure groups atomically. It cannot accept a pre-final Matrix, loose
+`AlignedCell` population, caller-authored selected values/reasons/counts, or
+independent `emit_*` flags.
 
 Executable closure requires a writer-signature oracle plus re-seal attacks over
 every persisted writer-like field. A consistently re-hashed audit mutation must

@@ -4,9 +4,9 @@ This page defines the minimum cross-workflow lineage contract for Issue #123.
 It connects the shared scientific kernel to workflow-owned delivery without
 choosing a storage engine, cache format, database, or vendor-source strategy.
 
-Status: `diagnostic_only`. This contract grants no selected-value,
-counted-detection, Matrix, workbook, Backfill-write, activation, publication,
-or export authority.
+Architecture status: `frozen`; executable adoption remains incomplete. This
+contract grants no selected-value, counted-detection, Matrix, workbook,
+Backfill-write, activation, publication, or export authority.
 
 ## Problem And Decision
 
@@ -31,12 +31,12 @@ This is a lineage and retention contract, not another scientific decision
 core. `PeakHypothesis`, selection, Alignment, `CellObservation`, and Backfill
 semantics remain owned by the shared processing kernel.
 
-One workflow-neutral lineage contract serving both projections is still a
-design hypothesis, not an observed implementation fact. Confidence is medium:
-the shared-kernel decision establishes the intended scientific seam, but only
-the bounded dual-projection tracer can prove that the lineage concepts do not
-need workflow-specific meaning. If that probe fails, narrow or redraw this
-contract instead of adding Targeted/Untargeted flags to the identities.
+One workflow-neutral lineage contract serving both projections is the frozen
+design. Complete runtime adoption remains an unproven implementation claim:
+each ownership-transfer lane must prove its real Targeted and Untargeted
+consumers can preserve the same identity semantics. If that probe fails, stop
+and refreeze the seam instead of adding Targeted/Untargeted flags to shared
+identities.
 
 ## Ownership Boundary
 
@@ -84,6 +84,7 @@ These are internal lineage concepts, not additional user-visible review tags.
 | `ProcessingAttempt` | One execution of a `ProcessingRequest`; every retry receives a new identity | The logical request or the product delivery |
 | `EvidenceArtifact` | One immutable artifact instance identified by producer attempt, content digest, schema, semantic role, and lineage references | A mutable path, cache entry, or authority decision |
 | `DeliveryCellKey` | A projection-owned stable product position: canonical sample identity plus Targeted target identity, or canonical sample identity plus Untargeted matrix-row identity | An acquisition-source identity, kernel `CellObservation`, or ordinal group ID |
+| `UntargetRowKey` | Untargeted projection-owned row identity derived from one finalized canonical group | `group_hypothesis_id`, `FAM...`, m/z/RT display text, or row order |
 | `DeliveryRevision` | One immutable proposed or sealed value/null for a `DeliveryCellKey`, linked to its producing attempt and kernel decision | The current-value pointer or permission to publish |
 | `DeliverySeal` | An immutable manifest proving a complete, authority-approved set of delivery revisions and output artifact hashes | A staging directory, successful process exit, or diagnostic report |
 
@@ -106,6 +107,8 @@ labels until an adapter binds them to the contract above.
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
+| `group_hypothesis_id` | Group identity schema + exact processing request + canonical-sorted identity-bearing members, each binding canonical sample to owner-backed hypothesis/physical-observation identity | `FAM...`, group ordinal, sample stem, area, display RT/m/z, or ModeTrack anchor ID |
+| `untarget_row_key` | Untarget projection schema + finalized canonical group identity | Group/display label alone, center coordinates, current Matrix row number, or cross-request inference |
 | `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
 | `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
 | `delivery_seal_id` | Canonical sealed manifest content, including revision and output-artifact identities | Directory existence or writer exit code |
@@ -244,6 +247,13 @@ delivery-cell, revision, seal, or product authority. In particular, the
 current sequential `FAM000...` group label is not a stable delivery-cell
 identity.
 
+Within one processing request, canonical member sorting makes a group identity
+stable under input order, worker completion order, and parallelism. Membership
+or split/merge changes mint a successor group and lineage edge. A new processing
+request deliberately creates new group and Untarget row identities; automatic
+cross-request same/split/merge continuity is deferred until a real consumer and
+oracle justify it.
+
 ## Lineage Graph And Invariants
 
 ```mermaid
@@ -327,6 +337,16 @@ source and reusable-artifact capabilities, fidelity, size, and rebuild cost.
 
 Retention is defined by product dependency, not by file extension or directory.
 
+Every retained record also belongs to one lifecycle class:
+
+| Class | Meaning |
+| --- | --- |
+| `essential` | Final result, delivery identity/seal, authority closure, and minimum evidence refs needed to explain a current value/null |
+| `reviewable_compact` | Queryable machine archive needed for bounded review, including provisional groups and final cell-decision evidence |
+| `diagnostic_heavy` | Candidate universes, traces, galleries, and debug payloads retained only for opt-in validation, active review, or failure forensics |
+| `reconstructable` | Derived cache/artifact whose exact source identity, algorithm contract, and rebuild capability remain available |
+| `compatibility` | Legacy schema/projection retained only for a named current consumer and removed when its consumer census reaches zero |
+
 | Class | Logical rule |
 | --- | --- |
 | Sealed delivery lineage | The seal, revision records, output hashes, decision/audit references, and source identities remain immutable for as long as that delivery can be cited |
@@ -357,6 +377,31 @@ depends on that evidence.
 No numeric retention period or eviction technology is selected here. A
 retention policy must never advertise “rebuildable” if the required source,
 adapter, method contract, or fidelity is unavailable.
+
+### Storage projection and bundle contract
+
+- Same-run owner handoff uses immutable typed batches. Arrow IPC is considered
+  only after a measured same-run transport bottleneck; it is not the default
+  architecture.
+- Canonical Parquet v2, when implemented, writes native typed/null owner records
+  directly. It must not round-trip through a string TSV projection. The current
+  optional Parquet shadow remains diagnostic compatibility evidence until that
+  versioned cutover is separately accepted.
+- The internal evidence archive and the downstream analytical handoff are
+  different bundles, interfaces, and authorities. The archive optimizes
+  provenance/query/review; the handoff contains typed samples, features, final
+  dense group-by-sample cells, and lineage needed by a real downstream consumer.
+- Ordinary successful execution retains the essential set plus a compact final-
+  decision archive. Heavy candidate/trace/debug populations are opt-in,
+  validation-, review-, or failure-scoped.
+- One execution publishes one immutable atomic bundle. A cross-run catalog is a
+  derived disposable index, not a second source of authority.
+- New writers emit only the new schema. Finite readers/adapters may convert old
+  content into a new successor bundle with explicit lineage; they are deleted
+  after named consumer count reaches zero.
+- `ArtifactPlan` is compiled from the workflow projection contract, delivery
+  intent, authority-manifest snapshot, and named compatibility consumers. Loose
+  `emit_*` booleans cannot grant artifact or scientific authority.
 
 ## Two-Phase Delivery Seal
 
@@ -450,7 +495,8 @@ The model fails and must be narrowed or redrawn if:
    it is not a cross-attempt group or delivery reference.
 3. `CrossSamplePeakGroupHypothesis.group_hypothesis_id` is the pipeline
    identity, while current `FAM000...` construction is ordinal. It is not yet a
-   durable cross-attempt delivery-cell key.
+   request-stable canonical group identity, and a distinct projection-owned
+   `UntargetRowKey` does not yet exist.
 4. `AlignedCell` mixes observation, evidence sidecars, gap-fill, group,
    selection-blocker, consolidation, and Matrix projection fields. Its
    `source_candidate_id` / `source_raw_file` fields are not a lineage seal.
@@ -469,6 +515,9 @@ The model fails and must be narrowed or redrawn if:
    resolve a workflow-neutral immutable review-conclusion/supersession
    reference, but no production registry or persisted lineage integration has
    been selected.
+9. Current Parquet support shadows canonical string TSV rows rather than
+   accepting native typed owner batches, and output-level flags combine
+   scientific projection, retention, compatibility, and delivery intent.
 
 These are migration facts. This ticket does not authorize a repository-wide
 manifest rewrite or a new persistence framework.

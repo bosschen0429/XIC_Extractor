@@ -2,6 +2,12 @@
 
 Column-level reference for all untargeted discovery and alignment output files.
 
+This page documents the current public schemas. The frozen successor identity
+uses internal `group_hypothesis_id` plus projection-owned `UntargetRowKey` and
+`UntargetedDeliveryCellKey`; none replaces `feature_family_id` or changes these
+files until a separately versioned public cutover passes expected-diff, schema,
+downstream-consumer, and rollback gates.
+
 ## Discovery Outputs
 
 ### `discovery_candidates.csv`

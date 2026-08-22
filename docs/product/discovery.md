@@ -1,15 +1,20 @@
 # Discovery
 
-Discovery is the candidate-generation stage of the shared XIC lifecycle. Its
-general Untargeted form searches a broad feature space; Targeted supplies known
-targets and tighter method constraints that narrow the same scientific task.
-Discovery turns seed evidence and MS1 traces into reviewable candidates. It
-does not directly publish product outputs; publication requires the relevant
-workflow projection and Backfill/ProductWriter authority path.
+Discovery is the candidate-generation stage of the shared XIC lifecycle.
+Untargeted retains every candidate qualifying under its configured evidence
+space; Targeted supplies a `TargetSearchScope` that retains only configured
+targets. Both may inspect a broad evidence policy such as dR, R, or MeR through
+the same scientific task. Discovery turns seed evidence and MS1 traces into
+reviewable candidates. It does not directly publish product outputs;
+publication requires closed cell decisions and the relevant workflow
+projection/writer authority.
 
 ## Contract
 
 - Discovery produces candidate and review surfaces, not final product authority.
+- `broad candidate discovery` describes evidence-provider/search coverage, not
+  an Untargeted-only implementation. Targeted narrows the accepted target/row
+  universe without forking capture mechanics.
 - Discovery candidate state is an execution boundary as well as a review
   label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
   MS1-feature-backed inputs to Alignment RAW owner build. Review-only states

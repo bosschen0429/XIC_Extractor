@@ -3,6 +3,13 @@
 Column-level reference for every sheet in the Targeted Extraction Excel workbook.
 The workbook is written to `<output_dir>/<batch_name>_xic_results.xlsx`.
 
+This page documents the current public workbook, not the frozen internal
+architecture migration. `TargetKey`, `TargetDefinition`, `TargetRowBinding`,
+typed no-write reasons, and archive references remain internal until a
+separately versioned schema/expected-diff promotion changes these columns. The
+existing Review Queue remains the user-facing location for Targeted unresolved
+and diagnostic reasons.
+
 ## Overview Sheet
 
 Summary dashboard — no tabular columns. Displays:
