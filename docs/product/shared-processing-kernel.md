@@ -41,7 +41,7 @@ This contract succeeds when:
 
 XIC has one scientific lifecycle:
 
-`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> optional ObservationRepair -> FinalizedScientificAlignment -> workflow projection + ProductionCellDecision -> delivery`
+`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> optional ObservationRepair -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> delivery`
 
 - Untargeted is the general method and the primary architectural path.
 - Targeted narrows the accepted target/row universe with known target, m/z, RT,
@@ -54,9 +54,12 @@ XIC has one scientific lifecycle:
   schemas, and writer authority.
 
 The shared scientific owners produce observations, hypotheses, groups,
-refinement/repair decisions, and typed cell decisions. Workflow projection
-owns row identity, inclusion, counted detection, Review Queue routing, and
-delivery schema. One projection never grants authority to the other.
+refinement/repair decisions, and typed cell decisions. Workflow projection first
+owns row identity/binding and explicit cell-subject construction, then consumes
+the cell decisions to close inclusion, counted detection, reasons, Review Queue
+or archive routing, and delivery schema. These are two ordered operations of
+one projection owner, not two owners. One projection never grants authority to
+the other.
 
 ## Frozen Deep Interfaces
 
@@ -70,8 +73,11 @@ semantic owner.
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
 | ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mint or mutate groups, repair observations, or write cells |
 | ObservationRepair | one eligible pre-existing cell context -> owner-backed repaired observation or typed no-repair result | One bounded epoch; no first hit, group identity, implicit membership, or value authority |
+| Scientific alignment closure | closed request/group/disposition/membership/refinement/repair receipts -> `FinalizedScientificAlignment` | Validates shared-core closure; does not construct workflow rows, select values, or render |
+| Projection binding/subject operation | finalized core + typed Target/Untarget scope -> row binding/key + explicit cell subjects | `TargetRowBinding` precedes `TargetCellSubject`; `UntargetRowKey` precedes `GroupCellSubject`; no value, count, or inclusion decision |
 | ProductionCellDecision | `TargetCellSubject` or `GroupCellSubject` plus closed observations/receipts -> typed write or no-write | Sole selected-value owner; cannot create row identity or leak Target authority into Group cells |
-| Alignment finalization | discriminated workflow request plus closed owner results -> immutable workflow result | Validates closure only; no RAW, regrouping, refit, repair, selection, or rendering |
+| Projection completion operation | same projection owner + cell decisions -> inclusion, counts/reasons, Review Queue/archive routing | Does not recompute evidence or selected values |
+| Result finalizer | discriminated workflow request plus shared core, completed projection, and cell decisions -> immutable workflow result | Validates closure only; no RAW, regrouping, refit, repair, selection, projection policy, or rendering |
 
 `TargetCellSubject` contains the stable `TargetKey`, exact
 `TargetDefinition`, canonical sample, `TargetRowBinding`, and optional bound
@@ -80,17 +86,26 @@ sample. The four combinations member/value, member/null, nonmember/Target-local
 value, and nonmember/null are all valid; membership and value selection are
 independent decisions.
 
+An identity-bearing CrossSample member combines canonical sample identity with
+a discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
+physical-observation identity. The canonical variant tag is part of identity.
+Different wrappers over the same physical observation must canonicalize to one
+member subject unless explicit distinct variant tags deliberately preserve
+different identities.
+
 The only core no-write reasons are `not_searched`,
 `searched_no_observation`, `unresolved`, `rejected_observation`,
 `not_quantifiable`, and `unavailable`. Human-facing reason strings are rendered
 from these typed facts and are never parsed back into scientific logic.
 
 `FinalizedScientificAlignment` contains the request, canonical groups,
-dispositions, membership/lineage, and refinement/repair closure. Targeted
-finalization adds `TargetRowBinding`, Target cell decisions, inclusion decisions,
-and existing Review Queue references. Untargeted finalization adds
-`UntargetRowKey`, Group cell decisions, and row-inclusion decisions. These are
-discriminated immutable result variants, not one optional-field structure.
+dispositions, membership/lineage, and refinement/repair closure. Targeted's
+pre-cell projection operation adds `TargetRowBinding` and Target cell subjects;
+its post-cell operation adds inclusion/count/reason decisions and existing
+Review Queue references. Untargeted's pre-cell operation adds `UntargetRowKey`
+and Group cell subjects; its post-cell operation adds row-inclusion and archive-
+routing decisions. The result finalizer then closes discriminated immutable
+result variants, not one optional-field structure.
 
 ## Claims And Evidence
 

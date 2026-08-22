@@ -20,7 +20,7 @@ XIC has one core method lifecycle. Untargeted extraction is its general form;
 Targeted extraction is a constrained specialization of that method, not a
 second peer core:
 
-`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> optional ObservationRepair -> FinalizedScientificAlignment -> workflow projection + ProductionCellDecision -> delivery`
+`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> optional ObservationRepair -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> delivery`
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,
@@ -42,9 +42,11 @@ disposition, and lineage. `ModeTrack` may propose trajectory-based refinements,
 but only `CrossSample` can apply them. Backfill performs a bounded,
 independently traceable `ObservationRepair`; it does not create the first hit,
 mint a group, select a product value, or grant writer authority.
-The workflow-owned projection creates typed Target/Group row bindings and cell
-subjects; `ProductionCellDecision` alone selects the value or no-write result;
-the projection then owns row inclusion and delivery shape.
+The workflow-owned projection first creates typed Target/Group row bindings and
+cell subjects; `ProductionCellDecision` alone selects the value or no-write
+result; the same projection then owns row inclusion, counts/reasons, Review
+Queue/archive routing, and delivery shape. These are two ordered operations of
+one projection owner, not two owners.
 
 The current implementation only partially shares these stage owners. Targeted
 uses its own RT, paired-area, and MS1-shape evidence path. The headless limited
@@ -82,6 +84,11 @@ Use these terms consistently:
 - `CrossSamplePeakGroupHypothesis` (`cross-sample group hypothesis`): successor
   cross-sample owner/group identity, exposed through `group_hypothesis_id`. It
   does not own per-peak integration truth or product projection.
+- `identity-bearing member subject`: canonical sample identity plus a
+  discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
+  physical-observation identity. The canonical variant tag is part of identity;
+  wrappers over the same physical observation canonicalize to one subject unless
+  explicit different tags deliberately preserve distinct identities.
 - `GroupDispositionDecision`: the CrossSample-owned, mutually exclusive
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.
@@ -102,6 +109,10 @@ Use these terms consistently:
 - `TargetRowBinding`: Target projection decision that binds one fixed
   `TargetKey` row to zero or one uniquely resolved finalized group, or records
   an unresolved multiple-group state. It does not rescan RAW or rank peaks.
+- `workflow projection`: the Target or Untarget owner with two ordered
+  operations: pre-cell row binding/key plus cell-subject construction, then
+  post-cell inclusion/count/reason and Review Queue/archive routing. It is not
+  two owners and does not select the cell value.
 - `UntargetRowKey`: Untargeted projection-owned row identity derived from one
   finalized canonical group. It is distinct from `group_hypothesis_id` and
   from legacy `FAM...` display labels.

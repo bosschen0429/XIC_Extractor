@@ -32,9 +32,10 @@ target interface.
   Backfill owns the local missing-cell revisit. A trend or RT prior alone cannot
   manufacture a local observation or fill another sample from singleton
   evidence.
-- `ProductionCellDecision`, not Backfill, selects the final numeric value or
-  typed no-write result. Targeted and Untargeted projection then apply their own
-  row inclusion and delivery policy.
+- The Targeted or Untargeted projection first constructs the explicit cell
+  subject. `ProductionCellDecision`, not Backfill, then selects the final numeric
+  value or typed no-write result; the same projection afterward applies its row
+  inclusion and delivery policy.
 - Any new behavior that lets repaired evidence affect publication requires an
   explicit public authority contract, expected-diff evidence, and focused
   output tests.
@@ -259,7 +260,7 @@ recovery authority.
 | Surface | Role |
 | --- | --- |
 | ObservationRepair owner seam | Bounded local repair facts and provenance; no value or writer authority |
-| `ProductionCellDecision` handoff | Consumes repair facts and independently decides write/no-write |
+| `ProductionCellDecision` handoff | Consumes repair facts only through an explicit projection-owned Target/Group cell subject and independently decides write/no-write |
 | Legacy `ProductWriter` authority path | Current compatibility path for already approved matrix changes; must not be absorbed into Backfill's successor interface |
 | Productization status index | Machine-checkable Backfill maturity and lane state |
 | Authority manifest | Fail-closed writer scope and accepted authority records |

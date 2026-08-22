@@ -73,9 +73,10 @@ gates are separately delivered.
 | Discovery/capture -> CrossSample | exact request, canonical sample, owner-backed hypothesis/physical observation, evidence refs | Area/RT display values, candidate ordinals, and legacy family labels cannot mint members |
 | CrossSample -> ModeTrack | immutable `trajectory_input_id`, anchors/members/apexes/order/evidence profile/exclusions | Values, renderer fields, mutable group objects, and Backfill policy are intentionally absent |
 | ModeTrack -> CrossSample | typed proposal bound to the exact input snapshot and assessability evidence | Proposal does not carry group-minting, membership-mutation, or value authority |
-| Backfill -> cell decision/CrossSample | owner-backed `ObservationRepair` decision and exact repair receipt | Repair does not imply membership or selected value; either requires its own owner decision |
-| finalized canonical group -> Untarget projection | exact group identity/disposition/lineage -> one typed `UntargetRowKey` | `FAM...`, center m/z/RT, order, or display text cannot reconstruct row identity |
-| finalized core + workflow projection -> cell decision | explicit `TargetCellSubject` or `GroupCellSubject`, closed observation/search receipts | Target evidence cannot authorize Group/Untarget cells; human reason strings are not input |
+| Backfill -> CrossSample/scientific alignment closure | owner-backed `ObservationRepair` decision and exact repair receipt | Repair does not imply membership or selected value; later cell decision receives it only through a projection-owned subject and closed evidence |
+| finalized core -> workflow projection binding/subject operation | exact Target identity + `TargetRowBinding` -> `TargetCellSubject`, or exact group identity/disposition/lineage + `UntargetRowKey` -> `GroupCellSubject` | `FAM...`, center m/z/RT, order, display text, or Target label alone cannot reconstruct row/cell identity |
+| explicit workflow cell subject -> cell decision | `TargetCellSubject` or `GroupCellSubject` plus closed observation/search receipts | Target evidence cannot authorize Group/Untarget cells; human reason strings are not input |
+| cell decisions -> same workflow projection completion operation | exact row/cell identity plus typed write/no-write decisions -> inclusion, counts/reasons, Review Queue/archive routing | Projection cannot recompute observations or selected values |
 | owner decisions -> alignment result finalizer | exact request, group/refinement/repair closure, typed row/cell/inclusion decisions | Finalizer cannot reopen RAW, regroup, refit, repair, reintegrate, select, or accept optional-mode field soup |
 | finalized workflow result -> Delivery | one immutable result variant plus owner-compiled `ArtifactPlan` and destination mechanics | Loose Matrix/metadata maps, caller-authored ledgers, emit booleans, and renderer recomputation are forbidden |
 | typed archive owner batches -> Parquet v2 | native types/nulls, canonical identity/order, schema/version, exact bundle lineage | TSV strings are not the canonical intermediate; a storage adapter cannot decide science |
@@ -92,6 +93,12 @@ The complete search receipt is required to assert
 `searched_no_observation`; missing, partial, corrupt, or unbound evidence is
 `unavailable`. Blank/zero and human-rendered reason text are never semantic
 authority.
+
+Workflow projection has two ordered operations under one semantic owner:
+binding/subject construction before cell decision, and completion after it. An
+identity-bearing group member is a canonical tagged union of owner-backed
+`PeakHypothesis` or physical-observation identity; wrapper type alone cannot
+remint the same physical subject.
 
 ### Persisted Semantic Rehydration
 

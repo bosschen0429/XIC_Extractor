@@ -9,9 +9,10 @@ different typed names and cannot cross the delivery seam as if already final.
 
 - The primary matrix exposes numeric product values and stable user-facing row/sample structure, not diagnostic evidence columns.
 - Direct observations and repaired observations are different evidence states.
-  Backfill supplies only an owner-backed repaired observation;
-  `ProductionCellDecision` independently selects the final numeric value or a
-  typed no-write result before the owning projection may include it.
+  Backfill supplies only an owner-backed repaired observation. The owning
+  projection first constructs the explicit Target/Group cell subject;
+  `ProductionCellDecision` then independently selects the final numeric value or
+  typed no-write result before the same projection may include it.
 - `ProductionAcceptanceManifest` is the authority boundary for accepted Backfill values. Candidate sidecars, review packets, galleries, lockbox labels, and diagnostics do not grant authority by themselves.
 - File-backed activation reads each manifest byte snapshot once. The
   `production_acceptance` owner validates that snapshot and mints an immutable

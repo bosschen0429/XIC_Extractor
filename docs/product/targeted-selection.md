@@ -28,8 +28,9 @@ implementation.
   Other samples cannot be filled from singleton or RT-prior evidence alone;
   they require direct local evidence or an accepted independent
   `ObservationRepair`.
-- `ProductionCellDecision` owns the selected numeric value or typed no-write
-  result for `TargetCellSubject`. Targeted selection owns row binding,
+- Targeted selection first owns `TargetRowBinding` and constructs
+  `TargetCellSubject`. `ProductionCellDecision` then owns the selected numeric
+  value or typed no-write result. The same Targeted owner afterward closes
   inclusion, counted-detection policy, reason rendering, and Review Queue
   routing; it must not recompute the value.
 - Region, boundary, and selected-envelope logic are candidate and model-selection surfaces. They require expected-diff review before changing selected peak, area, confidence, reason, product state, counted detection, workbook, or matrix values.
@@ -73,10 +74,10 @@ implementation.
 
 ## Boundaries
 
-- **Owns:** `TargetSearchScope`, fixed `TargetKey` row projection,
-  `TargetRowBinding`, inclusion, confidence/reason/product-state/counting policy,
-  existing Review Queue routing, MS1 rescue policy scope, and target-pair RT
-  rules.
+- **Owns:** `TargetSearchScope`, fixed `TargetKey` row projection, pre-cell
+  `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
+  confidence/reason/product-state/counting policy, existing Review Queue
+  routing, MS1 rescue policy scope, and target-pair RT rules.
 - **Compatibility state:** current Targeted projection code still participates
   in selected peak/area assembly. Structural migration must preserve those
   outputs while moving sole selected-value authority to

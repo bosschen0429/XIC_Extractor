@@ -40,10 +40,11 @@ public/legacy `family` vocabulary or add public schema by implication.
   second group owner or select a product value.
 - Backfill may return one independently traceable owner-backed repaired
   observation. It cannot imply group membership or writer authority.
-- `ProductionCellDecision` owns the selected value or typed no-write result.
-  Workflow projection owns Target/Untarget row identity, inclusion, counted
-  detection, Review Queue routing, and output shape. ProductWriter renders only
-  an authorized finalized result.
+- Workflow projection first owns Target/Untarget row identity/binding and the
+  explicit Target/Group cell subject. `ProductionCellDecision` then owns the
+  selected value or typed no-write result. The same projection afterward closes
+  inclusion, counted detection, Review Queue/archive routing, and output shape.
+  ProductWriter renders only an authorized finalized result.
 - Legacy score, confidence, family role, and review tokens may rank, annotate,
   or preserve compatibility behavior. They must not become standalone product
   truth.
@@ -60,7 +61,7 @@ public/legacy `family` vocabulary or add public schema by implication.
 | Current/successor ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
 | ObservationRepair | Bounded local repaired observation or typed no-repair result | Membership, selected value, first hit, or recursive support |
 | ProductionCellDecision | Selected value or typed no-write for an explicit Target/Group subject | Row identity, RAW access, grouping, or rendering |
-| Product projection / ProductWriter | Row identity, inclusion, counted detection, product state, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, repair, or value recomputation |
+| Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, repair, or value recomputation |
 
 ## Migration Rule
 

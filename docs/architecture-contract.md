@@ -61,8 +61,8 @@ graph TB
 
 **Product-method flow — target architecture:** `.raw` files + typed SearchScope
 → Discovery/capture → PeakHypothesis → CrossSample → optional ObservationRepair
-→ FinalizedScientificAlignment → workflow projection + ProductionCellDecision
-→ delivery
+→ FinalizedScientificAlignment → projection binding/subjects →
+ProductionCellDecision → projection completion → result finalizer → delivery
 
 ```mermaid
 flowchart LR
@@ -74,17 +74,21 @@ flowchart LR
     CS --> BF["Backfill<br/>ObservationRepair"]
     CS --> R["FinalizedScientificAlignment"]
     BF --> R
-    R --> TP["Target projection<br/>fixed TargetKey rows"]
-    R --> UP["Untarget projection<br/>established group rows"]
-    TP --> CD["ProductionCellDecision<br/>Target subject"]
-    UP --> GD["ProductionCellDecision<br/>Group subject"]
-    CD --> TR["Finalized Targeted result"]
-    GD --> UR["Finalized Untargeted result"]
-    TP --> TR
-    UP --> UR
+    R --> TPB["Target projection<br/>binding + Target subjects"]
+    R --> UPB["Untarget projection<br/>row keys + Group subjects"]
+    TPB --> CD["ProductionCellDecision<br/>Target subject"]
+    UPB --> GD["ProductionCellDecision<br/>Group subject"]
+    CD --> TPC["Target projection completion<br/>inclusion / counts / reasons / review"]
+    GD --> UPC["Untarget projection completion<br/>inclusion / archive routing"]
+    TPC --> TR["Finalized Targeted result"]
+    UPC --> UR["Finalized Untargeted result"]
     TR --> DL["Delivery"]
     UR --> DL
 ```
+
+Each projection appears twice because one owner has two ordered operations:
+binding/subject construction before cell decision and completion after it. The
+diagram does not introduce a second Target or Untarget projection owner.
 
 **Untargeted application:** configured evidence search → shared core →
 established-group quantitative matrix + review/archive artifacts → downstream
@@ -160,9 +164,9 @@ defines the successor owner rather than claiming current implementation status.
 | `alignment/mode_track/` | Immutable trajectory-input snapshots, simplest validated trajectory model, assignment/refinement proposals, and their audit; absorbs reusable `identity_coherence` capability | Group minting, membership mutation, Backfill, value selection, Matrix writes, or a second control plane |
 | `alignment/backfill/` | Bounded work planning, exact request reuse, one `ObservationRepair` epoch, owner-backed repaired observations, and transaction closure | First-hit Discovery, group identity, implicit membership, recursive support, final selected value, or writer authority |
 | `alignment/cell_decision/` | One deep `ProductionCellDecision` interface over explicit `TargetCellSubject` and `GroupCellSubject` variants; returns typed write/no-write decisions | RAW access, regrouping, workflow row identity, renderer strings, or cross-projection authority leakage |
-| `alignment/result/` | Closure validation and immutable Targeted/Untargeted finalized result variants over one `FinalizedScientificAlignment` | Re-running RAW, ModeTrack, Backfill, selection, or projection policy |
-| `alignment/projection/target/` | `TargetSearchScope`, zero/one/many `TargetRowBinding`, fixed `TargetKey` rows, Target inclusion policy, and references to the existing Review Queue | A second capture/repair/cell-decision implementation or arbitrary winner selection |
-| `alignment/projection/untarget/` | `UntargetRowKey`, established-group row inclusion, Untarget delivery-cell identity, and analytical-handoff projection | Target policy, provisional-row promotion by implication, or m/z/RT/display labels as identity |
+| `alignment/result/` | Shared-core closure into `FinalizedScientificAlignment`, then final closure of immutable Targeted/Untargeted result variants after projection completion | Re-running RAW, ModeTrack, Backfill, selection, or projection policy |
+| `alignment/projection/target/` | `TargetSearchScope`; pre-cell zero/one/many `TargetRowBinding`, fixed `TargetKey` rows, and Target subjects; post-cell inclusion/count/reason policy and references to the existing Review Queue | A second capture/repair/cell-decision implementation or arbitrary winner selection |
+| `alignment/projection/untarget/` | Pre-cell `UntargetRowKey` and Group subjects; post-cell established-group row inclusion, archive routing, Untarget delivery-cell identity, and analytical-handoff projection | Target policy, provisional-row promotion by implication, or m/z/RT/display labels as identity |
 | `evidence_archive/` | Typed compact evidence archive, retention-class projection, direct typed Parquet v2 writing, and exact query/replay references | Product row/value decisions, delivery schema, or TSV-mediated canonical typing |
 | `delivery/` | `ArtifactPlan` compilation, render-only writers, atomic bundle publication, required claim-group closure, and typed delivery receipts | Scientific recomputation, caller-authored emit booleans, or evidence-archive query policy |
 | `explanation/` | Human reason rendering and stable archive/reference navigation from typed decisions | Parsing reason strings back into core decisions or minting scientific authority |
@@ -171,10 +175,13 @@ defines the successor owner rather than claiming current implementation status.
 
 - `group_hypothesis_id` is an owner-minted typed digest over the group identity
   schema, exact `processing_request_id`, and canonical-sorted identity-bearing
-  member subjects. A member subject combines canonical sample identity with an
-  owner-backed `PeakHypothesis` or physical-observation identity. Ordinals,
-  `FAM...`, area, display RT, sample stem, and ModeTrack anchor ID are forbidden
-  identity bases.
+  member subjects. A member subject combines canonical sample identity with a
+  discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
+  physical-observation identity; its canonical variant tag is part of identity.
+  Different wrappers over one physical observation canonicalize to the same
+  member subject unless explicit distinct variant tags intentionally keep them
+  separate. Ordinals, `FAM...`, area, display RT, sample stem, and ModeTrack
+  anchor ID are forbidden identity bases.
 - One group has at most one identity-bearing member per canonical sample.
   Distinguishable same-sample peaks form different groups; unresolved
   ambiguity is not settled by picking one.

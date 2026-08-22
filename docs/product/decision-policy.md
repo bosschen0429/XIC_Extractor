@@ -52,8 +52,14 @@ baseline for proving behavior, not the owner of product truth.
 | Decision semantics | Accepted/review/not-counted/ambiguous/excluded classes, support reasons, conflict reasons, blocker reasons | Workflow-specific writer authority |
 | Model selection / ranking | Choosing among comparable `PeakHypothesis` candidates after typed gates | Overriding hard gates or granting matrix writes |
 | Cell decision | Selected value or typed no-write for explicit Target/Group subjects | Row identity, grouping, RAW access, or rendering |
-| Workflow projection | Target/Untarget row identity, inclusion, counted detection, product state, Review Queue routing, and ProductWriter gates | Low-level evidence extraction, Backfill repair, or value recomputation |
+| Workflow projection | Pre-cell row identity/binding and explicit cell subjects; post-cell inclusion, counted detection, product state, reasons, Review Queue/archive routing, and ProductWriter gates | Low-level evidence extraction, Backfill repair, or value recomputation |
 | Audit trail | Human-readable explanation, review queue, expected-diff evidence | Silent product behavior |
+
+The pre-cell and post-cell projection steps are two ordered operations of the
+same Target or Untarget projection owner. A projection must first mint/bind the
+row and construct the typed cell subject; only then may
+`ProductionCellDecision` select a value/no-write. The same projection consumes
+that decision afterward to close inclusion, counts, reasons, and routing.
 
 ## Common Decision Shape
 
@@ -117,7 +123,7 @@ generic evidence provider.
 | Hard blockers | Sample not applicable, invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, unapproved expected diff, role-incoherent paired context, missing activation for value-changing rescue |
 | Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, own-max same-peak support, morphology, boundary assessability, local S/N |
 | Tie-break | Decision class first, then blocker count, abundance demotion, role-aware RT/context, chemical evidence, trace strength, quality penalty, RT distance, abundance, and finally compatibility score only when comparable |
-| Projection | `ProductionCellDecision` supplies the selected value/no-write result; `TargetedProductProjection` owns fixed Target row binding, product state, counted detection, confidence, reason, Review Queue routing, and targeted output fields |
+| Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, confidence, reason, Review Queue routing, and targeted output fields |
 
 Targeted policy may prioritize paired ISTD/standard RT context because the
 targeted method declares that relationship ahead of time. That priority must
@@ -158,7 +164,7 @@ inclusion.
 | Hard blockers | Ambiguous owner, duplicate loser, wrong-peak conflict, missing matrix identity, stale source hash, unsupported family projection, unapproved authority scope, missing expected-diff gate for new writer behavior |
 | Support | Cross-sample coherence, m/z/RT consistency, MS1 pattern, shape and boundary agreement, MS2/NL consistency, standards/library evidence when represented as typed facts |
 | Tie-break | Owner-edge evidence, group match quality, drift-corrected RT, m/z/product tolerances, seed support, owner quality, trace quality, duplicate context, deterministic row ordering, and score only within already-eligible comparable candidates |
-| Projection | Untarget projection decides typed row identity/inclusion; `ProductionCellDecision` decides cell value/no-write; ProductWriter and activation contracts authorize rendering/publication. Backfill supplies observation facts only |
+| Projection | Untarget projection first decides typed row identity and Group cell subjects; `ProductionCellDecision` then decides cell value/no-write; the same projection closes row inclusion and archive routing before ProductWriter/activation authorizes rendering or publication. Backfill supplies observation facts only |
 
 Targeted outputs may be used as benchmark, audit, or falsification evidence for
 untargeted behavior. They must not directly promote untargeted rows unless a

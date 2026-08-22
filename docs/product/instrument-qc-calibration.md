@@ -28,11 +28,11 @@ contract promotes a correction or gate.
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
-- ISTD RT trends may move in different directions and may jump between adjacent
-  injections. A future ModeTrack sensitivity packet must therefore examine
-  several high-detection unknown features as well as method-appropriate ISTDs,
-  report interpolation/extrapolation support, and retain unassessable cases. It
-  must not assume one batch-wide monotonic shift.
+- A future ModeTrack sensitivity packet must not assume one batch-wide monotonic
+  shift. It must permit feature-specific directions and adjacent-injection
+  jumps, examine several high-detection unknown features as well as method-
+  appropriate ISTDs, report interpolation/extrapolation support, and retain
+  unassessable cases.
 - `scripts/run_instrument_qc.py` is a contract-bearing product adapter. Its
   method-document path already produces sequence, injection-order, and
   `sample_metadata_v1` projections that should be reused rather than

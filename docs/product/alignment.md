@@ -32,21 +32,31 @@ promotion explicitly changes them.
 | ModeTrack | Request-bound trajectory modeling over immutable evidence; proposes only | Typed assessable refinement proposals |
 | Backfill | One bounded local `ObservationRepair` epoch | Owner-backed repaired observation or typed no-repair result |
 | Scientific alignment closure | Validate request/group/disposition/membership/refinement/repair closure | `FinalizedScientificAlignment` |
-| Workflow projection | Target rows or Untarget group rows, binding/inclusion, Review Queue refs, and explicit cell subjects | Typed row decisions and cell subjects |
+| Workflow projection: binding/subject operation | Target fixed-row binding or Untarget group-row identity, followed by explicit Target/Group cell-subject construction | `TargetRowBinding` + `TargetCellSubject`, or `UntargetRowKey` + `GroupCellSubject` |
 | ProductionCellDecision | Selected value or typed no-write result for one explicit Target/Group subject | Immutable cell decision with evidence refs |
-| Result finalizer | Closure validation over the core, projection, and cell decisions | Discriminated immutable Targeted or Untargeted result |
+| Workflow projection: completion operation | Consume cell decisions to close row inclusion, counted-detection/count/reason fields, Review Queue refs, and archive routing | Closed typed projection decisions |
+| Result finalizer | Closure validation over the core, completed projection, and cell decisions | Discriminated immutable Targeted or Untargeted result |
 
 CrossSample alone may mint or supersede a group. ModeTrack cannot move a member
 or write a value, and Backfill cannot turn a repaired observation into implicit
 membership. The finalizer cannot rerun RAW access, grouping, ModeTrack,
 Backfill, integration, or selection.
 
+The two workflow-projection rows above are ordered operations of the same
+Target or Untarget projection owner, not two owners. Binding and cell-subject
+construction must close before `ProductionCellDecision`; inclusion, counts,
+reasons, Review Queue/archive routing, and result finalization close afterward.
+
 ### Group identity and disposition
 
 - `group_hypothesis_id` is a typed digest over the group identity schema, exact
   `processing_request_id`, and canonical-sorted identity-bearing members. Each
-  member combines canonical sample identity with one owner-backed
-  `PeakHypothesis` or physical-observation identity.
+  member combines canonical sample identity with a discriminated member-subject
+  union: an owner-backed `PeakHypothesis` identity or an owner-backed physical-
+  observation identity. The canonical variant tag is part of identity. The same
+  physical observation reached through different wrappers must canonicalize to
+  the same member subject, or remain deliberately distinct under different
+  explicit variant tags.
 - Ordinal `FAM...`, row order, sample stem, m/z/RT display coordinates, area,
   and ModeTrack anchor IDs are compatibility/display facts, not identity bases.
 - A group contains at most one identity-bearing member per canonical sample.
@@ -69,11 +79,11 @@ Backfill, integration, or selection.
 - Model selection uses the simplest validated candidate. RT correction is an
   optional prior; direct local evidence wins and a prior alone cannot reassign
   a member.
-- ISTD behavior proves that RT trends can move in different directions and jump
-  between adjacent injections. Unknown-feature behavior is not described by a
-  universal drift curve. Sensitivity work therefore uses method-appropriate
-  ISTDs plus several high-detection unknown features and reports where the
-  model is unassessable.
+- Validation must not assume that every ISTD or unknown feature follows one
+  batch-wide monotonic RT drift. Sensitivity work therefore permits direction
+  changes and adjacent-injection jumps, uses method-appropriate ISTDs plus
+  several high-detection unknown features, and reports where the model is
+  unassessable.
 - A bounded ObservationRepair may change trajectory identity once. CrossSample
   may then rebuild the snapshot and request one final ModeTrack pass. No repair
   loop, refit loop, arbitrary neighborhood chunking, or singleton-based
@@ -82,10 +92,13 @@ Backfill, integration, or selection.
 ### Final result and projections
 
 `FinalizedScientificAlignment` closes the request, canonical groups,
-dispositions, membership/lineage, and refinement/repair receipts. Targeted adds
-fixed `TargetKey` rows, zero/one/many `TargetRowBinding`, Target cell decisions,
-inclusion, and existing Review Queue references. Untargeted adds projection-
-owned `UntargetRowKey`, Group cell decisions, and row-inclusion decisions.
+dispositions, membership/lineage, and refinement/repair receipts. Before cell
+decision, Targeted adds fixed `TargetKey` rows, zero/one/many
+`TargetRowBinding`, and `TargetCellSubject`; Untargeted adds projection-owned
+`UntargetRowKey` and `GroupCellSubject`. After cell decision, the same projection
+owner closes inclusion, counts/reasons, Target Review Queue references, or
+Untarget archive routing. Only then may the result finalizer return the matching
+immutable workflow result.
 
 Targeted may bind a uniquely qualified established or provisional group. Zero
 groups retains a typed empty fixed row; multiple qualified groups remain
