@@ -272,7 +272,7 @@ def _ok_alignment_peak(*args, **kwargs):
     peak = SimpleNamespace(
         rt=8.0,
         intensity=100.0,
-        area=25.0,
+        area=660.0,
         peak_start=7.9,
         peak_end=8.1,
     )

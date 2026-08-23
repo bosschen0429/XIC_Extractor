@@ -44,13 +44,27 @@ from xic_extractor.peak_detection.evidence_facts import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.observations import mint_peak_observation_ref
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    build_acquisition_source_identity,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+)
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+)
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    mint_sample_metadata_snapshot,
+    resolve_canonical_sample_identity,
 )
 from xic_extractor.xic_models import XICTrace
 
@@ -633,6 +647,113 @@ def test_alignment_builds_owner_from_discovery_binding_without_resolver(
                 ),
             ),
         )
+
+
+def test_discovery_receipt_and_physical_binding_share_cross_sample_subject(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        group_member_subject_from_discovery_physical_selection,
+    )
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        _OwnerBoundBatchRaw(source),
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+    )
+    binding = discovery.physical_bindings[0]
+    request = build_processing_request_identity(
+        acquisition_sources=(source,),
+        acquisition_bindings=(
+            AcquisitionInputBinding(
+                acquisition_source_id=source.acquisition_source_id,
+                adapter_input_key=binding.candidate.sample_stem,
+                injection_order=1,
+            ),
+        ),
+        scientific_input_schema_version="cross-sample-binding-test-v1",
+        processing_algorithm_version="cross-sample-binding-test-v1",
+        processing_contract_version="cross-sample-binding-test-v1",
+        scientific_inputs={"candidate_id": binding.candidate.candidate_id},
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        (
+            SampleMetadata(
+                sample_name=binding.candidate.sample_stem,
+                raw_stem=binding.candidate.sample_stem,
+                injection_order=1,
+            ),
+        ),
+        identity_namespace="cross-sample-binding-test-v1",
+    )
+    sample = resolve_canonical_sample_identity(snapshot, binding.candidate.sample_stem)
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=snapshot,
+        sample_resolutions=(sample,),
+    )
+    acquired_trace = binding.physical_fact_record.acquired_trace
+    trace_request = acquired_trace.coordinate.request
+    raw_rt = np.asarray(acquired_trace.trace.rt, dtype=float)
+    raw_intensity = np.asarray(acquired_trace.trace.intensity, dtype=float)
+    raw_apex_index = int(np.argmax(raw_intensity))
+    observation = mint_peak_observation_ref(
+        processing_owners=owners,
+        sample=sample,
+        trace=Trace.from_arrays(
+            sample_name=sample.metadata.raw_stem,
+            mz=trace_request.mz,
+            rt=acquired_trace.trace.rt,
+            intensity=acquired_trace.trace.intensity,
+            rt_min=trace_request.rt_min,
+            rt_max=trace_request.rt_max,
+            ppm_tol=trace_request.ppm_tol,
+            source="discovery_physical_binding_test",
+            acquisition_source_id=source.acquisition_source_id,
+        ),
+        integration=IntegrationResult(
+            rt_left_min=float(raw_rt[0]),
+            rt_apex_min=float(raw_rt[raw_apex_index]),
+            rt_right_min=float(raw_rt[-1]),
+            raw_apex_rt_min=float(raw_rt[raw_apex_index]),
+            rt_width_min=float(raw_rt[-1] - raw_rt[0]),
+            height_raw=float(raw_intensity[raw_apex_index]),
+            height_smoothed=float(raw_intensity[raw_apex_index]),
+            area_raw_counts_seconds=float(np.trapezoid(raw_intensity, raw_rt) * 60.0),
+            raw_scan_indices=tuple(range(len(raw_rt))),
+        ),
+        resolver_mode="discovery_physical_binding_test",
+        proposal_sources=("discovery_physical_binding_test",),
+    )
+
+    receipt_subject = group_member_subject_from_discovery_physical_selection(
+        processing_owners=owners,
+        sample=sample,
+        candidate=binding.candidate,
+        observation=observation,
+    )
+    bound_subject = group_member_subject_from_discovery_physical_selection(
+        processing_owners=owners,
+        sample=sample,
+        candidate=binding.candidate,
+        physical_binding=binding,
+    )
+
+    assert bound_subject.member_subject_id == receipt_subject.member_subject_id
+    assert bound_subject.basis_bytes == receipt_subject.basis_bytes
+    assert bound_subject.subject_id == binding.selection_subject_id
 
 
 def test_alignment_review_only_discovery_binding_does_not_build_owner(

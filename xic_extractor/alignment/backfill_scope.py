@@ -13,10 +13,15 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceRecord,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleBackfillScopeEdgeFacts,
+    CrossSampleContractError,
+    classify_cross_sample_backfill_scope_edge,
+    cross_sample_group_identity_from_carrier,
+)
 from xic_extractor.alignment.family_compatibility import (
     family_center_mz,
     family_center_rt,
-    loose_compatible_primary_family,
 )
 from xic_extractor.alignment.owner_area import positive_finite
 from xic_extractor.alignment.owner_backfill_runtime_projection import (
@@ -241,15 +246,56 @@ def _loose_compatible_neighbor_ids(
                 center_rt=feature_rt,
                 rt_window_min=rt_window_min,
             ):
-                if loose_compatible_primary_family(
+                if _has_cross_sample_backfill_scope_edge(
                     feature,
                     other,
-                    alignment_config,
+                    alignment_config=alignment_config,
                 ):
                     neighbor_ids.add(id(feature))
                     neighbor_ids.add(id(other))
                     break
     return frozenset(neighbor_ids)
+
+
+def _has_cross_sample_backfill_scope_edge(
+    left: OwnerGroupDeliveryFeature,
+    right: OwnerGroupDeliveryFeature,
+    *,
+    alignment_config: AlignmentConfig,
+) -> bool:
+    """Named adapter until Backfill consumes CrossSample edge receipts directly."""
+
+    try:
+        edge = classify_cross_sample_backfill_scope_edge(
+            CrossSampleBackfillScopeEdgeFacts(
+                left_group=cross_sample_group_identity_from_carrier(left),
+                right_group=cross_sample_group_identity_from_carrier(right),
+                left_neutral_loss_tag=str(left.neutral_loss_tag),
+                right_neutral_loss_tag=str(right.neutral_loss_tag),
+                left_precursor_mz=family_center_mz(left),
+                right_precursor_mz=family_center_mz(right),
+                left_product_mz=float(left.family_product_mz),
+                right_product_mz=float(right.family_product_mz),
+                left_observed_loss_da=float(left.family_observed_neutral_loss_da),
+                right_observed_loss_da=float(right.family_observed_neutral_loss_da),
+                left_rt_min=family_center_rt(left),
+                right_rt_min=family_center_rt(right),
+                left_targeted_istd_anchor=getattr(
+                    left,
+                    "targeted_istd_anchor",
+                    None,
+                ),
+                right_targeted_istd_anchor=getattr(
+                    right,
+                    "targeted_istd_anchor",
+                    None,
+                ),
+            ),
+            config=alignment_config,
+        )
+    except CrossSampleContractError:
+        return False
+    return edge.disposition == "eligible"
 
 
 def _rt_window_neighbors(

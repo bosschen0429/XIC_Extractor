@@ -1,26 +1,45 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+import xic_extractor.alignment.primary_consolidation as primary_mod
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+    CrossSampleNeighborhoodEdge,
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.output_rows import cells_by_cluster, row_id
+from xic_extractor.alignment.output_rows import row_id
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.alignment.primary_consolidation import (
     _connected_components,
-    _family_stats,
-    _near_duplicate_candidate_pairs,
+    _Observation,
+    _primary_consolidation_successor,
+    _winner_cluster_id,
     consolidate_primary_family_rows,
 )
 from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_TEST_PROCESSING_REQUEST_ID = typed_identity_digest(
+    "xic.processing-request.v1:",
+    canonical_identity_basis_bytes({"schema_version": "primary-consolidation-test"}),
+)
 
 
-def test_consolidation_promotes_one_primary_row_from_duplicate_claim_family():
+def test_duplicate_claims_without_exact_member_closure_do_not_rewrite_groups():
     matrix = AlignmentMatrix(
         clusters=(
             _feature("FAM001", rt=8.40),
@@ -54,33 +73,13 @@ def test_consolidation_promotes_one_primary_row_from_duplicate_claim_family():
     )
 
     consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
-    decisions = build_production_decisions(consolidated, AlignmentConfig())
-    primary_rows = [
-        row.feature_family_id
-        for row in decisions.rows.values()
-        if row.include_in_primary_matrix
-    ]
-
-    assert primary_rows == ["FAM002"]
-    assert decisions.row("FAM002").accepted_cell_count == 3
-    assert decisions.row("FAM001").include_in_primary_matrix is False
-    assert decisions.row("FAM003").include_in_primary_matrix is False
-    winner_cells = {
-        cell.sample_stem: cell
-        for cell in consolidated.cells
-        if cell.cluster_id == "FAM002"
-    }
-    assert [
-        (sample, cell.status, cell.area) for sample, cell in winner_cells.items()
-    ] == [
-        ("s1", "detected", 100.0),
-        ("s2", "detected", 200.0),
-        ("s3", "detected", 300.0),
-    ]
-    assert _feature_by_id(consolidated, "FAM002").family_center_rt == 8.55
+    # Every duplicate cell names canonical groups, but the local owner records
+    # only carry their own exact sample member.  A claim may not borrow an
+    # unrelated sample member to make a primary membership mutation.
+    assert consolidated == matrix
 
 
-def test_consolidation_merges_shared_ms1_peak_across_nl_evidence_tags():
+def test_primary_claims_ignore_reason_and_display_label_relabelling():
     matrix = AlignmentMatrix(
         clusters=(
             _feature(
@@ -109,21 +108,37 @@ def test_consolidation_merges_shared_ms1_peak_across_nl_evidence_tags():
         ),
     )
 
-    consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
-    decisions = build_production_decisions(consolidated, AlignmentConfig())
+    baseline = consolidate_primary_family_rows(matrix, AlignmentConfig())
+    relabelled = AlignmentMatrix(
+        clusters=tuple(
+            SimpleNamespace(
+                **{
+                    **vars(cluster),
+                    "public_family_id": f"display-{cluster.feature_family_id}",
+                }
+            )
+            for cluster in matrix.clusters
+        ),
+        sample_order=matrix.sample_order,
+        cells=tuple(
+            replace(
+                cell,
+                public_family_id=f"display-{cell.cluster_id}",
+                reason="caller-display-label-is-not-a-primary-edge",
+            )
+            for cell in matrix.cells
+        ),
+    )
 
-    primary_rows = [
-        row.feature_family_id
-        for row in decisions.rows.values()
-        if row.include_in_primary_matrix
-    ]
+    relabelled_result = consolidate_primary_family_rows(
+        relabelled,
+        AlignmentConfig(),
+    )
 
-    assert primary_rows == ["FAM001"]
-    assert decisions.row("FAM001").accepted_cell_count == 2
-    assert decisions.row("FAM002").include_in_primary_matrix is False
-    evidence = _feature_by_id(consolidated, "FAM001").evidence
-    assert "primary_family_consolidated;family_count=2" in evidence
-    assert "shared_ms1_peak_nl_tags=DNA_R,DNA_dR" in evidence
+    assert baseline == matrix
+    assert _canonical_matrix_snapshot(relabelled_result) == _canonical_matrix_snapshot(
+        baseline
+    )
 
 
 def test_same_tag_product_distinct_rows_do_not_merge_by_shared_ms1_peak():
@@ -206,7 +221,7 @@ def test_same_tag_product_distinct_rows_do_not_merge_by_shared_ms1_peak():
     assert decisions.row("FAM_SHIFTED").include_in_primary_matrix is True
 
 
-def test_consolidation_prefers_stronger_sample_peak_over_weak_detected_peak():
+def test_unclosed_primary_claim_does_not_move_stronger_same_sample_value():
     matrix = AlignmentMatrix(
         clusters=(
             _feature("FAM001", rt=8.50),
@@ -243,8 +258,18 @@ def test_consolidation_prefers_stronger_sample_peak_over_weak_detected_peak():
         scan_support_score=strong.scan_support_score,
         source_candidate_id=strong.source_candidate_id,
         source_raw_file=strong.source_raw_file,
-        reason=strong.reason,
-        selected_integration=_integration(raw_area=1000.0, asls_area=1000.0),
+            reason=strong.reason,
+            selected_integration=_integration(raw_area=1000.0, asls_area=1000.0),
+            group_hypothesis_id=strong.group_hypothesis_id,
+            public_family_id=strong.public_family_id,
+            group_construction_role=strong.group_construction_role,
+            group_delivery_role=strong.group_delivery_role,
+            group_membership_source=strong.group_membership_source,
+            gap_fill_state=strong.gap_fill_state,
+            gap_fill_reason=strong.gap_fill_reason,
+            missing_observation_state=strong.missing_observation_state,
+            group_claim_state=strong.group_claim_state,
+            consolidation_state=strong.consolidation_state,
     )
     matrix = AlignmentMatrix(
         clusters=matrix.clusters,
@@ -258,18 +283,10 @@ def test_consolidation_prefers_stronger_sample_peak_over_weak_detected_peak():
     )
 
     consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
-    winner_id = "FAM001"
-    winner_cells = {
-        cell.sample_stem: cell
-        for cell in consolidated.cells
-        if cell.cluster_id == winner_id
-    }
-
-    assert winner_cells["s1"].area == 1000.0
-    assert winner_cells["s1"].status == "rescued"
+    assert consolidated == matrix
 
 
-def test_consolidation_prefers_detected_over_same_apex_rescued_duplicate():
+def test_unclosed_primary_claim_does_not_replace_detected_same_apex_value():
     matrix = AlignmentMatrix(
         clusters=(
             _feature("FAM001", rt=8.50),
@@ -299,21 +316,37 @@ def test_consolidation_prefers_detected_over_same_apex_rescued_duplicate():
     )
 
     consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
-    winner_cells = {
-        cell.sample_stem: cell
-        for cell in consolidated.cells
-        if cell.cluster_id == "FAM001"
-    }
-
-    assert [
-        (sample, cell.status, cell.area) for sample, cell in winner_cells.items()
-    ] == [
-        ("s1", "detected", 100.0),
-        ("s2", "detected", 200.0),
-    ]
+    assert consolidated == matrix
 
 
-def test_near_duplicate_rescue_heavy_primary_family_is_demoted_to_audit():
+def test_primary_duplicate_reason_rewrite_does_not_create_a_seed() -> None:
+    matrix = AlignmentMatrix(
+        clusters=(
+            _feature("FAM001", rt=8.50),
+            _feature("FAM002", rt=8.50),
+        ),
+        sample_order=("s1", "s2"),
+        cells=(
+            _cell("s1", "FAM001", "detected", 100.0, apex=8.50),
+            replace(
+                _duplicate_cell(
+                    "s1",
+                    "FAM002",
+                    winner="FAM001",
+                    original="rescued",
+                    apex=8.50,
+                ),
+                reason="arbitrary rewritten prose must not become scientific input",
+                claim_source_status="",
+            ),
+            _cell("s2", "FAM002", "detected", 200.0, apex=8.50),
+        ),
+    )
+
+    assert consolidate_primary_family_rows(matrix, AlignmentConfig()) == matrix
+
+
+def test_unclosed_near_duplicate_disposition_does_not_demote_a_group():
     matrix = AlignmentMatrix(
         clusters=(
             _feature(
@@ -345,72 +378,62 @@ def test_near_duplicate_rescue_heavy_primary_family_is_demoted_to_audit():
     )
 
     consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
-    decisions = build_production_decisions(consolidated, AlignmentConfig())
-
-    assert decisions.row("FAM_STRONG").include_in_primary_matrix is True
-    assert decisions.row("FAM_RESCUE").include_in_primary_matrix is False
-    loser = _feature_by_id(consolidated, "FAM_RESCUE")
-    assert loser.review_only is True
-    assert (
-        "primary_family_consolidation_loser;winner=FAM_STRONG"
-        in loser.evidence
-    )
-    assert [
-        cell.sample_stem
-        for cell in consolidated.cells
-        if cell.cluster_id == "FAM_RESCUE"
-    ] == ["s1", "s2", "s3", "s4"]
+    assert consolidated == matrix
 
 
-def test_near_duplicate_candidate_pairs_prune_impossible_pairs() -> None:
+def test_primary_disposition_ingress_classifies_all_active_canonical_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     matrix = AlignmentMatrix(
         clusters=(
-            _feature("FAM_STRONG", rt=10.00),
-            _feature("FAM_RESCUE", rt=10.50),
-            _feature("FAM_FAR_RT", rt=20.00),
-            _feature("FAM_OTHER_NL", rt=10.40, neutral_loss_tag="DNA_R"),
-            _feature("FAM_LOW_STATS", rt=10.40),
+            _feature("FAM001", rt=8.00),
+            _feature("FAM002", rt=8.05),
+            _feature("FAM003", rt=8.10),
         ),
-        sample_order=("s1", "s2", "s3"),
+        sample_order=("FAM001", "FAM002", "FAM003"),
         cells=(
-            _cell("s1", "FAM_STRONG", "detected", 1000.0, apex=10.00),
-            _cell("s2", "FAM_STRONG", "detected", 900.0, apex=10.01),
-            _cell("s3", "FAM_STRONG", "rescued", 800.0, apex=10.02),
-            _cell("s1", "FAM_RESCUE", "detected", 100.0, apex=10.50),
-            _cell("s2", "FAM_RESCUE", "rescued", 90.0, apex=10.51),
-            _cell("s3", "FAM_RESCUE", "rescued", 80.0, apex=10.52),
-            _cell("s1", "FAM_FAR_RT", "detected", 100.0, apex=20.00),
-            _cell("s2", "FAM_FAR_RT", "rescued", 90.0, apex=20.01),
-            _cell("s3", "FAM_FAR_RT", "rescued", 80.0, apex=20.02),
-            _cell("s1", "FAM_OTHER_NL", "detected", 100.0, apex=10.40),
-            _cell("s2", "FAM_OTHER_NL", "rescued", 90.0, apex=10.41),
-            _cell("s3", "FAM_OTHER_NL", "rescued", 80.0, apex=10.42),
-            _cell("s1", "FAM_LOW_STATS", "detected", 100.0, apex=10.40),
+            _cell("FAM001", "FAM001", "detected", 100.0, apex=8.00),
+            _cell("FAM002", "FAM002", "detected", 100.0, apex=8.05),
+            _cell("FAM003", "FAM003", "detected", 100.0, apex=8.10),
         ),
     )
-    grouped_cells = cells_by_cluster(matrix)
-    clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    stats_by_id = {
-        cluster_id: _family_stats(grouped_cells.get(cluster_id, ()))
-        for cluster_id in clusters_by_id
+    calls: list[tuple[str, str]] = []
+    original = primary_mod.classify_cross_sample_primary_disposition_edge
+
+    def tracking_classifier(facts, *, config):
+        calls.append(
+            tuple(
+                sorted(
+                    (
+                        facts.left_group.group_hypothesis_id,
+                        facts.right_group.group_hypothesis_id,
+                    )
+                )
+            )
+        )
+        return original(facts, config=config)
+
+    monkeypatch.setattr(
+        primary_mod,
+        "classify_cross_sample_primary_disposition_edge",
+        tracking_classifier,
+    )
+
+    assert consolidate_primary_family_rows(matrix, AlignmentConfig()) == matrix
+    assert set(calls) == {
+        tuple(
+            sorted(
+                (
+                    matrix.clusters[left].group_hypothesis_id,
+                    matrix.clusters[right].group_hypothesis_id,
+                )
+            )
+        )
+        for left, right in ((0, 1), (0, 2), (1, 2))
     }
 
-    pairs = set(
-        _near_duplicate_candidate_pairs(
-            matrix,
-            clusters_by_id=clusters_by_id,
-            stats_by_id=stats_by_id,
-            config=AlignmentConfig(),
-        ),
-    )
 
-    assert ("FAM_RESCUE", "FAM_STRONG") in pairs
-    assert ("FAM_FAR_RT", "FAM_STRONG") not in pairs
-    assert ("FAM_OTHER_NL", "FAM_STRONG") not in pairs
-    assert ("FAM_LOW_STATS", "FAM_STRONG") not in pairs
-
-
-def test_consolidated_winner_carries_source_family_seed_events():
+def test_unclosed_primary_claim_does_not_flatten_source_owner_lineage():
     matrix = AlignmentMatrix(
         clusters=(
             _owner_feature("FAM001", "s1", rt=8.40),
@@ -465,33 +488,10 @@ def test_consolidated_winner_carries_source_family_seed_events():
     )
 
     consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
-    decisions = build_production_decisions(consolidated, AlignmentConfig())
-    winner = _feature_by_id(consolidated, "FAM002")
-
-    assert tuple(owner.sample_stem for owner in winner.owners) == ("s1", "s2", "s3")
-    assert decisions.row("FAM002").include_in_primary_matrix is True
-    assert decisions.row("FAM002").identity_reason == "owner_complete_link"
-    assert "weak_seed_backfill_dependency" not in decisions.row("FAM002").row_flags
-    assert "weak_seed_tolerated" not in decisions.row("FAM002").row_flags
-    assert winner.consolidation_state == "primary_winner"
-    assert winner.consolidation_source_group_hypothesis_id == (
-        "GROUP-FAM001;GROUP-FAM002;GROUP-FAM003"
-    )
-    winner_cells = {
-        cell.sample_stem: cell
-        for cell in consolidated.cells
-        if cell.cluster_id == "FAM002"
-    }
-    assert winner_cells["s1"].consolidation_state == "moved_to_primary_winner"
-    assert winner_cells["s1"].consolidation_source_group_hypothesis_id == (
-        "GROUP-FAM001"
-    )
-    assert winner_cells["s1"].consolidation_winner_group_hypothesis_id == (
-        "GROUP-FAM002"
-    )
+    assert consolidated == matrix
 
 
-def test_consolidation_loser_audit_is_review_tsv_visible(tmp_path: Path):
+def test_unclosed_primary_claim_emits_no_loser_render_adapter(tmp_path: Path):
     from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
@@ -522,21 +522,10 @@ def test_consolidation_loser_audit_is_review_tsv_visible(tmp_path: Path):
         ),
     )
 
-    assert rows["FAM001"]["include_in_primary_matrix"] == "FALSE"
-    assert "family_consolidation_loser" in rows["FAM001"]["row_flags"].split(";")
-    assert (
-        "primary_family_consolidation_loser;winner=FAM002"
-        in rows["FAM001"]["family_evidence"]
-    )
-    assert rows["FAM001"]["consolidation_state"] == "primary_loser"
-    assert rows["FAM001"]["consolidation_winner_group_hypothesis_id"] == (
-        "GROUP-FAM002"
-    )
-    assert rows["FAM002"]["include_in_primary_matrix"] == "TRUE"
-    assert rows["FAM002"]["consolidation_state"] == "primary_winner"
-    assert "primary_family_consolidated;family_count=2" in (
-        rows["FAM002"]["family_evidence"]
-    )
+    assert consolidated == matrix
+    assert "family_consolidation_loser" not in rows["FAM001"]["row_flags"].split(";")
+    assert rows["FAM001"]["consolidation_state"] == "not_consolidated"
+    assert rows["FAM002"]["consolidation_state"] == "not_consolidated"
 
 
 def test_connected_components_preserves_sorted_traversal_and_skips_singletons() -> None:
@@ -552,6 +541,184 @@ def test_connected_components_preserves_sorted_traversal_and_skips_singletons() 
     assert _connected_components(graph) == (("A", "B", "C"), ("D", "E"))
 
 
+def test_primary_successor_same_sample_membership_is_atomic_no_application() -> None:
+    canonical_sample_id = "xic.sample.v1:actual-s1"
+    selected_member = _member(
+        "selected",
+        canonical_sample_id=canonical_sample_id,
+    )
+    removed_member = _member(
+        "removed",
+        canonical_sample_id=canonical_sample_id,
+    )
+    selected_identity = mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=(selected_member,),
+    )
+    removed_identity = mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=(removed_member,),
+    )
+    selected_cluster = _feature_with_identity(
+        "FAM001",
+        identity=selected_identity,
+        sample_stem="s1",
+    )
+    removed_cluster = _feature_with_identity(
+        "FAM002",
+        identity=removed_identity,
+        sample_stem="s1",
+    )
+    selected_cell = _cell("s1", "FAM001", "detected", 200.0, apex=8.5)
+
+    application = _primary_consolidation_successor(
+        ("FAM001", "FAM002"),
+        clusters_by_id={
+            "FAM001": selected_cluster,
+            "FAM002": removed_cluster,
+        },
+        grouped_cells={"FAM001": (selected_cell,), "FAM002": ()},
+        selected_by_sample={
+            "s1": _Observation(
+                cell=selected_cell,
+                source_cluster_id="FAM001",
+                original_status="detected",
+            ),
+        },
+        edge_facts={},
+    )
+
+    assert application.status == "unassessable"
+    assert application.successors == ()
+    assert application.lineage == ()
+    assert selected_cluster.member_subjects == (selected_member,)
+    assert removed_cluster.member_subjects == (removed_member,)
+
+
+def test_primary_successor_applies_unique_typed_same_sample_claim_closure() -> None:
+    canonical_sample_id = "xic.sample.v1:actual-s1"
+    winner_member = _member("winner", canonical_sample_id=canonical_sample_id)
+    source_member = _member("source", canonical_sample_id=canonical_sample_id)
+    winner_identity = mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=(winner_member,),
+    )
+    source_identity = mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=(source_member,),
+    )
+    winner_cluster = _feature_with_identity(
+        "FAM001",
+        identity=winner_identity,
+        sample_stem="s1",
+    )
+    source_cluster = _feature_with_identity(
+        "FAM002",
+        identity=source_identity,
+        sample_stem="s1",
+    )
+    source_cell = replace(
+        _duplicate_cell(
+            "s1",
+            "FAM002",
+            winner="FAM001",
+            original="detected",
+            apex=8.5,
+        ),
+        claim_source_group_hypothesis_id=source_identity.group_hypothesis_id,
+        claim_winner_group_hypothesis_id=winner_identity.group_hypothesis_id,
+    )
+    matrix = AlignmentMatrix(
+        clusters=(winner_cluster, source_cluster),
+        cells=(source_cell,),
+        sample_order=("s1",),
+    )
+    edge_facts = primary_mod._duplicate_claim_edges(
+        matrix,
+        {"FAM001": winner_cluster, "FAM002": source_cluster},
+        AlignmentConfig(),
+    )
+
+    application = _primary_consolidation_successor(
+        ("FAM001", "FAM002"),
+        clusters_by_id={"FAM001": winner_cluster, "FAM002": source_cluster},
+        grouped_cells={"FAM001": (), "FAM002": (source_cell,)},
+        selected_by_sample={
+            "s1": _Observation(
+                cell=source_cell,
+                source_cluster_id="FAM002",
+                original_status="detected",
+            )
+        },
+        edge_facts=edge_facts,
+    )
+
+    assert tuple(edge.disposition for edge in edge_facts.values()) == ("eligible",)
+    assert application.status == "applied"
+    assert application.successors[0].member_subjects == (winner_member,)
+    # The kept member is the unchanged winner identity.  The removed source
+    # member cannot invent a forwarding lineage edge, and no self-edge exists.
+    assert application.lineage == ()
+
+
+def test_primary_successor_keeps_complete_owner_membership_not_selected_value() -> None:
+    left = _feature("FAM001", rt=8.50)
+    right = _feature("FAM002", rt=8.55)
+    selected_cell = _cell("FAM001", "FAM001", "detected", 100.0, apex=8.50)
+    left_member = _identity("FAM001").member_subjects[0]
+    right_member = _identity("FAM002").member_subjects[0]
+
+    application = _primary_consolidation_successor(
+        ("FAM001", "FAM002"),
+        clusters_by_id={"FAM001": left, "FAM002": right},
+        grouped_cells={"FAM001": (selected_cell,), "FAM002": ()},
+        selected_by_sample={
+            "FAM001": _Observation(
+                cell=selected_cell,
+                source_cluster_id="FAM001",
+                original_status="detected",
+            )
+        },
+        edge_facts={
+            ("FAM001", "FAM002"): CrossSampleNeighborhoodEdge(
+                left_member_subject_id=left_member.member_subject_id,
+                right_member_subject_id=right_member.member_subject_id,
+                disposition="eligible",
+            )
+        },
+    )
+
+    assert application.status == "applied"
+    assert application.successors[0].member_subjects == tuple(
+        sorted((left_member, right_member), key=lambda member: member.basis_bytes)
+    )
+
+
+def test_primary_winner_tiebreak_ignores_display_label_permutation() -> None:
+    def winner_group_id(*, left_label: str, right_label: str) -> str:
+        left = _feature("canonical-left")
+        right = _feature("canonical-right")
+        left.feature_family_id = left_label
+        left.public_family_id = left_label
+        right.feature_family_id = right_label
+        right.public_family_id = right_label
+        clusters_by_id = {left_label: left, right_label: right}
+        grouped_cells = {
+            left_label: (_cell("s1", left_label, "detected", 100.0, apex=8.5),),
+            right_label: (_cell("s1", right_label, "detected", 100.0, apex=8.5),),
+        }
+        winner_id = _winner_cluster_id(
+            (left_label, right_label),
+            clusters_by_id,
+            grouped_cells,
+        )
+        return clusters_by_id[winner_id].group_hypothesis_id
+
+    assert winner_group_id(left_label="FAM-A", right_label="FAM-Z") == (
+        winner_group_id(left_label="FAM-Z", right_label="FAM-A")
+    )
+
+
 def _feature(
     feature_family_id: str,
     *,
@@ -562,6 +729,13 @@ def _feature(
     neutral_loss_tag: str = "DNA_dR",
     evidence: str = "single_sample_local_owner",
 ) -> SimpleNamespace:
+    identity = _identity(feature_family_id)
+    owners = (
+        replace(
+            _owner(feature_family_id, feature_family_id, rt=rt),
+            cross_sample_member_subject=identity.member_subjects[0],
+        ),
+    )
     return SimpleNamespace(
         feature_family_id=feature_family_id,
         neutral_loss_tag=neutral_loss_tag,
@@ -570,12 +744,17 @@ def _feature(
         family_product_mz=product_mz,
         family_observed_neutral_loss_da=observed_loss,
         has_anchor=True,
+        owners=owners,
         event_cluster_ids=(f"OWN-{feature_family_id}",),
         event_member_count=1,
         evidence=evidence,
         review_only=False,
-        group_hypothesis_id=f"GROUP-{feature_family_id}",
+        group_hypothesis_id=identity.group_hypothesis_id,
         public_family_id=feature_family_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
         group_construction_role="successor_projection_adapter",
         group_delivery_role="successor_delivery_protocol",
         group_membership_source="cross_sample_peak_group_hypothesis",
@@ -585,7 +764,64 @@ def _feature(
     )
 
 
+def _identity(feature_family_id: str):
+    member = _member(feature_family_id)
+    return mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=(member,),
+    )
+
+
+def _member(
+    feature_family_id: str,
+    *,
+    canonical_sample_id: str | None = None,
+) -> CrossSampleGroupMemberSubject:
+    subject_id = f"xic.peak-observation-content.v1:primary-{feature_family_id}"
+    sample_id = canonical_sample_id or f"xic.sample.v1:primary-{feature_family_id}"
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest("xic.group-member-subject.v1:", basis),
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
+    )
+
+
+def _feature_with_identity(
+    feature_family_id: str,
+    *,
+    identity,
+    sample_stem: str,
+) -> SimpleNamespace:
+    feature = _feature(feature_family_id)
+    owner = replace(
+        feature.owners[0],
+        sample_stem=sample_stem,
+        raw_file=f"{sample_stem}.raw",
+        cross_sample_member_subject=identity.member_subjects[0],
+    )
+    feature.owners = (owner,)
+    feature.group_hypothesis_id = identity.group_hypothesis_id
+    feature.processing_request_id = identity.processing_request_id
+    feature.member_subjects = identity.member_subjects
+    feature.identity_basis_bytes = identity.basis_bytes
+    feature.disposition = identity.disposition
+    return feature
+
+
 def _owner_feature(feature_family_id: str, sample_stem: str, *, rt: float):
+    identity = _identity(feature_family_id)
     return OwnerAlignedFeature(
         feature_family_id=feature_family_id,
         neutral_loss_tag="DNA_dR",
@@ -594,10 +830,19 @@ def _owner_feature(feature_family_id: str, sample_stem: str, *, rt: float):
         family_product_mz=384.0,
         family_observed_neutral_loss_da=116.0,
         has_anchor=True,
-        owners=(_owner(feature_family_id, sample_stem, rt=rt),),
+        owners=(
+            replace(
+                _owner(feature_family_id, sample_stem, rt=rt),
+                cross_sample_member_subject=identity.member_subjects[0],
+            ),
+        ),
         evidence="single_sample_local_owner",
-        group_hypothesis_id=f"GROUP-{feature_family_id}",
+        group_hypothesis_id=identity.group_hypothesis_id,
         public_family_id=feature_family_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
         group_construction_role="successor_constructor",
         group_delivery_role="owner_aligned_feature_compatibility_facade",
         group_membership_source="owner_aligned_feature_successor_projection",
@@ -665,7 +910,7 @@ def _cell(
         source_raw_file=Path(f"{sample_stem}.raw"),
         reason=status,
         selected_integration=_integration(raw_area=area, asls_area=area),
-        group_hypothesis_id=f"GROUP-{cluster_id}",
+        group_hypothesis_id=_identity(cluster_id).group_hypothesis_id,
         public_family_id=cluster_id,
         group_construction_role="successor_projection_adapter",
         group_delivery_role="successor_delivery_protocol",
@@ -682,6 +927,8 @@ def _cell(
             "observed" if status == "detected" else "queried_and_detected"
         ),
         group_claim_state="unclaimed_or_winner",
+        claim_winner_group_hypothesis_id="",
+        claim_source_group_hypothesis_id=_identity(cluster_id).group_hypothesis_id,
         consolidation_state="not_consolidated",
     )
 
@@ -715,6 +962,19 @@ def _duplicate_cell(
             f"winner={winner}; original_status={original}"
         ),
         selected_integration=source.selected_integration,
+        group_hypothesis_id=source.group_hypothesis_id,
+        public_family_id=source.public_family_id,
+        group_construction_role=source.group_construction_role,
+        group_delivery_role=source.group_delivery_role,
+        group_membership_source=source.group_membership_source,
+        gap_fill_state=source.gap_fill_state,
+        gap_fill_reason=source.gap_fill_reason,
+        missing_observation_state=source.missing_observation_state,
+        group_claim_state=source.group_claim_state,
+        claim_source_status=original,
+        claim_winner_group_hypothesis_id=_identity(winner).group_hypothesis_id,
+        claim_source_group_hypothesis_id=_identity(cluster_id).group_hypothesis_id,
+        consolidation_state=source.consolidation_state,
     )
 
 
@@ -733,6 +993,43 @@ def _integration(*, raw_area: float, asls_area: float) -> IntegrationResult:
         area_ms1_morphology=asls_area,
         ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
         boundary_sources=("test_primary_consolidation",),
+    )
+
+
+def _canonical_matrix_snapshot(matrix: AlignmentMatrix) -> tuple[object, ...]:
+    """Identity and value surface; deliberately excludes display-only text."""
+
+    return (
+        tuple(
+            (
+                row_id(cluster),
+                getattr(cluster, "group_hypothesis_id", ""),
+                getattr(cluster, "processing_request_id", ""),
+                tuple(
+                    member.member_subject_id
+                    for member in getattr(cluster, "member_subjects", ())
+                ),
+                getattr(cluster, "identity_basis_bytes", b""),
+                getattr(cluster, "disposition", ""),
+                tuple(getattr(cluster, "cross_sample_lineage", ())),
+                getattr(cluster, "consolidation_state", ""),
+            )
+            for cluster in matrix.clusters
+        ),
+        tuple(
+            (
+                cell.sample_stem,
+                cell.cluster_id,
+                cell.status,
+                cell.area,
+                cell.apex_rt,
+                cell.group_hypothesis_id,
+                cell.claim_source_group_hypothesis_id,
+                cell.claim_winner_group_hypothesis_id,
+                cell.consolidation_state,
+            )
+            for cell in matrix.cells
+        ),
     )
 
 

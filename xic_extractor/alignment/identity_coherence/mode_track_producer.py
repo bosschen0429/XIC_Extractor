@@ -103,6 +103,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
                 owners.append(
                     owner_from_cid_nl_assessment_support(
+                        processing_owners=processing_owners,
                         sample=sample,
                         assessment=assessment,
                         hypothesis=hypothesis,

@@ -155,6 +155,21 @@ def decide_matrix_identity_row(
     cells: Sequence[AlignedCell] = (),
 ) -> MatrixIdentityRowDecision:
     family_id = row_id(cluster)
+    if getattr(cluster, "cross_sample_state", "active") == "render_only":
+        return MatrixIdentityRowDecision(
+            feature_family_id=family_id,
+            include_in_primary_matrix=False,
+            identity_decision="audit_family",
+            identity_confidence="none",
+            primary_evidence="none",
+            identity_reason="family_consolidation_loser",
+            quantifiable_detected_count=0,
+            quantifiable_rescue_count=0,
+            review_rescue_count=0,
+            duplicate_assigned_count=0,
+            ambiguous_ms1_owner_count=0,
+            row_flags=("family_consolidation_loser", "render_only"),
+        )
     evidence = _family_evidence(cluster)
     primary_evidence = _primary_evidence(cluster, evidence, cell_quality)
     q_detected = sum(

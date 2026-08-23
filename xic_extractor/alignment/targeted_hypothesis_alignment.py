@@ -8,6 +8,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
+    group_member_subject_from_peak_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
@@ -111,11 +112,13 @@ def align_selected_targeted_hypotheses(
             raise TargetedHypothesisAlignmentError(
                 "inputs must contain TargetedHypothesisAlignmentInput values"
             )
-        if item.target.definition.target_definition_id != (
-            target.definition.target_definition_id
-        ) or item.target.definition.target_key.target_key_id != (
-            target.definition.target_key.target_key_id
-        ) or item.target.snapshot.snapshot_id != target.snapshot.snapshot_id:
+        if (
+            item.target.definition.target_definition_id
+            != (target.definition.target_definition_id)
+            or item.target.definition.target_key.target_key_id
+            != (target.definition.target_key.target_key_id)
+            or item.target.snapshot.snapshot_id != target.snapshot.snapshot_id
+        ):
             raise TargetedHypothesisAlignmentError(
                 "all Alignment inputs must use the exact requested target definition"
             )
@@ -197,4 +200,9 @@ def _owner_from_selected_hypothesis(
         identity_conflict=False,
         assignment_reason="diagnostic_unique_hypothesis_selection",
         selected_integration=integration,
+        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
+            processing_request_id=item.candidate_set.processing_request_id,
+            sample=item.sample,
+            hypothesis=hypothesis,
+        ),
     )

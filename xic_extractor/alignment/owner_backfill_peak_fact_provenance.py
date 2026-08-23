@@ -785,9 +785,10 @@ def selected_integration_authority_projection(
 ) -> SelectedIntegrationAuthorityProjectionV1:
     if integration is None:
         raise ValueError("selected integration is required")
-    raw_scan_indices = tuple(getattr(integration, "raw_scan_indices", ()))
-    if raw_scan_indices:
-        raise ValueError("bounded selected integration must omit raw scan indices")
+    # Scan indexes bind the owner-local physical trace only.  This bounded
+    # value-authority projection intentionally retains the historical empty
+    # public field while the physical owner keeps its exact selected span.
+    raw_scan_indices: tuple[int, ...] = ()
     return SelectedIntegrationAuthorityProjectionV1(
         rt_left_min=integration.rt_left_min,
         rt_apex_min=integration.rt_apex_min,

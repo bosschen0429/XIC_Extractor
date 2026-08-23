@@ -1834,7 +1834,7 @@ def _backfill_feature_sample_trace_canonical(
             operations=(*physical_evaluation.operations, "region_audit_projection"),
         )
     peak_fact_receipt = OwnerBackfillPeakFactReceipt(
-        integration=integration,
+        integration=replace(integration, raw_scan_indices=()),
         physical_evaluation=physical_evaluation,
         normalized_shape_status="ok",
         normalized_shape_reason="canonical_physical_owner",
@@ -1873,7 +1873,7 @@ def _backfill_feature_sample_trace_canonical(
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=integration,
+        selected_integration=replace(integration, raw_scan_indices=()),
         backfill_seed_mz=request.mz,
         backfill_seed_rt=preferred_rt,
         backfill_request_rt_min=request.rt_min,

@@ -438,13 +438,15 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
     selected = universe.segments[0]
     selected_raw = raw[selected.start_index : selected.end_index]
     selected_rt = rt[selected.start_index : selected.end_index]
+    assert evaluation.integration.raw_scan_indices == tuple(
+        range(selected.start_index, selected.end_index)
+    )
     raw_apex_offset = int(np.argmax(selected_raw))
     assert evaluation.integration.raw_apex_rt_min == selected_rt[raw_apex_offset]
     assert evaluation.integration.height_raw == selected_raw[raw_apex_offset]
     assert evaluation.integration.area_raw_counts_seconds == pytest.approx(
         np.trapezoid(selected_raw, selected_rt) * 60.0
     )
-    assert evaluation.integration.raw_scan_indices == ()
     assert evaluation.operations == (
         "trace_evaluation",
         "asls_baseline",

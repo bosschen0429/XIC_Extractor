@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    group_member_subject_from_peak_hypothesis,
+)
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportRef,
@@ -130,6 +133,7 @@ def compose_peak_hypotheses_from_assessment_universe(
 
 def owner_from_cid_nl_assessment_support(
     *,
+    processing_owners: ProcessingOwnerReferences | None = None,
     sample: ResolvedCanonicalSampleIdentity,
     assessment: CidNlMethodAssessmentRef,
     hypothesis: PeakHypothesis,
@@ -141,6 +145,12 @@ def owner_from_cid_nl_assessment_support(
         assessment=assessment,
         hypothesis=hypothesis,
     )
+    processing_request_id = assessment.artifact.producer_processing_request_id
+    if (
+        processing_owners is not None
+        and processing_owners.request.processing_request_id != processing_request_id
+    ):
+        raise HypothesisOwnerAdapterError("assessment crossed processing owner request")
     measured = tuple(evidence.observation for evidence in evidence_refs)
     aggregate_product_mz = math.fsum(
         observation.product_mz for observation in measured
@@ -179,6 +189,12 @@ def owner_from_cid_nl_assessment_support(
         identity_conflict=False,
         assignment_reason="cid_nl_method_assessment_unique_support",
         selected_integration=integration,
+        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
+            processing_owners=processing_owners,
+            processing_request_id=processing_request_id,
+            sample=sample,
+            hypothesis=hypothesis,
+        ),
     )
 
 
@@ -246,6 +262,11 @@ def owner_from_cid_nl_assessment_observation(
         identity_conflict=False,
         assignment_reason="cid_nl_method_assessment_observation_only",
         selected_integration=integration,
+        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
+            processing_owners=processing_owners,
+            sample=sample,
+            hypothesis=hypothesis,
+        ),
     )
 
 

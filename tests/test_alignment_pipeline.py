@@ -9,6 +9,7 @@ import pytest
 
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
+from tests.alignment_pipeline_helpers import cluster as _cluster
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
@@ -417,7 +418,7 @@ def test_pipeline_provisional_matrix_flags_fail_closed(
 
 
 def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> None:
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    batch_index = _write_batch(tmp_path, ("Sample_A",), owner_closed=False)
 
     with pytest.raises(ValueError, match="owner closure is required"):
         pipeline_module.run_alignment(
@@ -428,6 +429,36 @@ def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> No
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
             require_discovery_owner_closure=True,
+        )
+
+
+def test_pipeline_cross_sample_identity_rejects_legacy_batch_before_grouping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",), owner_closed=False)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+
+    def fail_if_owner_build_reached(*_args, **_kwargs):
+        raise AssertionError("legacy identity must fail before owner grouping")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        fail_if_owner_build_reached,
+    )
+
+    with pytest.raises(ValueError, match="requires owner-closed acquisition"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=FakeRawOpener(),
         )
 
 
@@ -592,6 +623,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         emit_region_audit,
         region_audit_family_ids,
         audit_evidence_mode,
+        cross_sample_identity_context,
     ):
         calls["candidates"] = tuple(candidate.sample_stem for candidate in candidates)
         calls["candidate_states"] = tuple(
@@ -604,6 +636,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         calls["owner_emit_region_audit"] = emit_region_audit
         calls["owner_region_audit_family_ids"] = region_audit_family_ids
         calls["owner_audit_evidence_mode"] = audit_evidence_mode
+        calls["cross_sample_identity_context"] = cross_sample_identity_context
         return SimpleNamespace(owners=("owner",), ambiguous_records=())
 
     def fake_cluster_owners(
@@ -758,9 +791,15 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     def reject_old_owner_build(*_args, **_kwargs):
         raise AssertionError("same-run Discovery facts called the old owner builder")
 
-    def build_from_bindings(bindings, *, alignment_config):
+    def build_from_bindings(
+        bindings,
+        *,
+        alignment_config,
+        cross_sample_identity_context,
+    ):
         calls["bindings"] = bindings
         calls["alignment_config"] = alignment_config
+        calls["cross_sample_identity_context"] = cross_sample_identity_context
         return SimpleNamespace(owners=(), ambiguous_records=())
 
     monkeypatch.setattr(
@@ -827,11 +866,6 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         "processing_run_spec_hash": "run-spec-hash",
     }
 
-
-def test_pipeline_default_path_no_longer_uses_legacy_near_duplicate_folding() -> None:
-    assert not hasattr(pipeline_module, "fold_near_duplicate_clusters")
-
-
 def test_pipeline_builds_owner_features_before_owner_matrix(
     tmp_path: Path,
     monkeypatch,
@@ -842,17 +876,9 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     calls = {}
     owner = SimpleNamespace(owner_id="OWN-Sample_A-000001")
-    feature = SimpleNamespace(
-        feature_family_id="FAM000001",
-        neutral_loss_tag="DNA_dR",
-        family_center_mz=500.0,
-        family_center_rt=8.5,
-        family_product_mz=384.0,
-        family_observed_neutral_loss_da=116.0,
-        has_anchor=True,
-        event_cluster_ids=("ALN000001",),
-        event_member_count=1,
-        evidence="single_sample_local_owner",
+    feature = _cluster(
+        "FAM000001",
+        sample_order=("Sample_A",),
     )
     owner_matrix = AlignmentMatrix(
         clusters=(feature,),
@@ -969,9 +995,7 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            feature,
-        ),
+        lambda owners, **kwargs: (feature,),
     )
     monkeypatch.setattr(
         pipeline_module,

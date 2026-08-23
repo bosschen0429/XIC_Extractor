@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupDisposition,
+    CrossSampleGroupMemberSubject,
+    CrossSampleLineageEdge,
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
-    review_only_peak_group_hypotheses_from_ambiguous_records,
 )
+from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
@@ -18,6 +22,8 @@ from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
     SampleLocalMS1Owner,
 )
+
+CrossSampleCarrierState = Literal["active", "render_only"]
 
 
 @dataclass(frozen=True)
@@ -40,6 +46,7 @@ class OwnerAlignedFeature:
     has_anchor: bool
     owners: tuple[SampleLocalMS1Owner, ...]
     evidence: str
+    targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
     identity_conflict: bool = False
     review_only: bool = False
     confirm_local_owners_with_backfill: bool = False
@@ -48,20 +55,22 @@ class OwnerAlignedFeature:
     ambiguous_candidate_ids: tuple[str, ...] = ()
     group_hypothesis_id: str = ""
     public_family_id: str = ""
+    processing_request_id: str = ""
+    member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
+    identity_basis_bytes: bytes = b""
+    disposition: CrossSampleGroupDisposition = "established"
+    cross_sample_lineage: tuple[CrossSampleLineageEdge, ...] = ()
     group_construction_role: str = "successor_constructor"
     group_delivery_role: str = "owner_aligned_feature_compatibility_facade"
     group_membership_source: str = "owner_aligned_feature_successor_projection"
     consolidation_state: str = "not_consolidated"
     consolidation_winner_group_hypothesis_id: str = ""
     consolidation_source_group_hypothesis_id: str = ""
+    cross_sample_state: CrossSampleCarrierState = "active"
 
     def __post_init__(self) -> None:
-        if not self.group_hypothesis_id:
-            object.__setattr__(
-                self,
-                "group_hypothesis_id",
-                self.feature_family_id,
-            )
+        if self.cross_sample_state not in {"active", "render_only"}:
+            raise ValueError("cross_sample_state is not closed")
         if not self.public_family_id:
             object.__setattr__(
                 self,
@@ -114,13 +123,37 @@ def review_only_features_from_ambiguous_records(
     *,
     start_index: int,
 ) -> tuple[OwnerAlignedFeature, ...]:
-    hypotheses = review_only_peak_group_hypotheses_from_ambiguous_records(
-        records,
-        start_index=start_index,
-    )
-    return tuple(
-        _feature_from_peak_group_hypothesis(hypothesis) for hypothesis in hypotheses
-    )
+    features: list[OwnerAlignedFeature] = []
+    for offset, record in enumerate(records):
+        if (
+            record.neutral_loss_tag is None
+            or record.precursor_mz is None
+            or record.apex_rt is None
+            or record.product_mz is None
+            or record.observed_neutral_loss_da is None
+        ):
+            continue
+        family_id = f"FAM{start_index + offset:06d}"
+        features.append(
+            OwnerAlignedFeature(
+                feature_family_id=family_id,
+                neutral_loss_tag=record.neutral_loss_tag,
+                family_center_mz=record.precursor_mz,
+                family_center_rt=record.apex_rt,
+                family_product_mz=record.product_mz,
+                family_observed_neutral_loss_da=record.observed_neutral_loss_da,
+                has_anchor=False,
+                owners=(),
+                evidence="ambiguous_ms1_owner_review_only",
+                review_only=True,
+                ambiguous_sample_stem=record.sample_stem,
+                ambiguous_candidate_ids=record.candidate_ids,
+                group_construction_role="ambiguous_owner_display_adapter",
+                group_membership_source="no_cross_sample_membership",
+                cross_sample_state="render_only",
+            )
+        )
+    return tuple(features)
 
 
 def _feature_from_peak_group_hypothesis(
@@ -144,6 +177,7 @@ def _feature_from_peak_group_hypothesis(
         has_anchor=hypothesis.has_anchor,
         owners=hypothesis.owners,
         evidence=hypothesis.evidence,
+        targeted_istd_anchor=hypothesis.targeted_istd_anchor,
         identity_conflict=hypothesis.identity_conflict,
         review_only=hypothesis.review_only,
         confirm_local_owners_with_backfill=(
@@ -154,6 +188,11 @@ def _feature_from_peak_group_hypothesis(
         ambiguous_candidate_ids=hypothesis.ambiguous_candidate_ids,
         group_hypothesis_id=hypothesis.group_hypothesis_id,
         public_family_id=hypothesis.public_family_id,
+        processing_request_id=hypothesis.processing_request_id,
+        member_subjects=hypothesis.member_subjects,
+        identity_basis_bytes=hypothesis.identity_basis_bytes,
+        disposition=hypothesis.disposition,
+        cross_sample_lineage=hypothesis.lineage,
         group_construction_role=hypothesis.group_construction_role,
         group_delivery_role="owner_aligned_feature_compatibility_facade",
         group_membership_source="owner_aligned_feature_successor_projection",
@@ -164,4 +203,5 @@ def _feature_from_peak_group_hypothesis(
         consolidation_source_group_hypothesis_id=(
             hypothesis.consolidation_source_group_hypothesis_id
         ),
+        cross_sample_state="active",
     )

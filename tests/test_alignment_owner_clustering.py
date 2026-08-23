@@ -2,12 +2,18 @@ import csv
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from xic_extractor.alignment import cross_sample_peak_groups as peak_groups_module
 from xic_extractor.alignment import owner_clustering as owner_clustering_module
 from xic_extractor.alignment.backfill_scope import (
     backfill_request_sample_stems,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleContractError,
+    CrossSampleGroupMemberSubject,
+)
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
     build_targeted_istd_identity_anchor,
@@ -27,6 +33,10 @@ from xic_extractor.alignment.production_decisions import build_production_decisi
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
 
 
 def test_owner_clustering_allows_plausible_rt_drift_with_complete_link() -> None:
@@ -257,8 +267,7 @@ def test_owner_clustering_requires_complete_unique_injection_order() -> None:
         )
 
 
-def test_owner_clustering_restores_partial_injection_trajectory_beyond_bounded_span(
-) -> None:
+def test_owner_clustering_restores_partial_trajectory_beyond_bounded_span() -> None:
     owners = tuple(
         _owner(
             f"sample-{index}",
@@ -1838,26 +1847,20 @@ def test_owner_clustering_preserves_weak_no_drift_rt_split() -> None:
     assert [edge.decision for edge in edge_evidence] == ["weak_edge"]
 
 
-def test_owner_clustering_edge_evidence_sink_keeps_unique_sorted_pairs() -> None:
+def test_owner_clustering_rejects_duplicate_physical_membership() -> None:
     edge_evidence = []
 
-    cluster_sample_local_owners(
-        (
-            _owner("sample-a", "a", apex_rt=10.00),
-            _owner("sample-b", "b", apex_rt=10.20),
-            _owner("sample-c", "c", apex_rt=10.40),
-            _owner("sample-c", "c", apex_rt=10.40),
-        ),
-        config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
-        edge_evidence_sink=edge_evidence,
-    )
-
-    sorted_pairs = [
-        tuple(sorted((edge.left_owner_id, edge.right_owner_id)))
-        for edge in edge_evidence
-    ]
-    assert len(sorted_pairs) == len(set(sorted_pairs))
-    assert all(left <= right for left, right in sorted_pairs)
+    with pytest.raises(CrossSampleContractError, match="canonical member"):
+        cluster_sample_local_owners(
+            (
+                _owner("sample-a", "a", apex_rt=10.00),
+                _owner("sample-b", "b", apex_rt=10.20),
+                _owner("sample-c", "c", apex_rt=10.40),
+                _owner("sample-c", "c", apex_rt=10.40),
+            ),
+            config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
+            edge_evidence_sink=edge_evidence,
+        )
 
 
 def test_owner_clustering_skips_impossible_mz_group_without_edge_sink(
@@ -2215,6 +2218,55 @@ def _owner(
             asls_area=900.0,
             morphology_area=900.0,
         ),
+        cross_sample_member_subject=_test_member_subject(sample_stem, suffix),
+    )
+
+
+def _test_member_subject(
+    sample_stem: str,
+    suffix: str,
+) -> CrossSampleGroupMemberSubject:
+    request_id = typed_identity_digest(
+        "xic.processing-request.v1:",
+        canonical_identity_basis_bytes(
+            {"schema_version": "owner-clustering-test-request-v1"}
+        ),
+    )
+    canonical_sample_identity_id = typed_identity_digest(
+        "xic.sample.v1:",
+        canonical_identity_basis_bytes(
+            {
+                "schema_version": "owner-clustering-test-sample-v1",
+                "sample_stem": sample_stem,
+            }
+        ),
+    )
+    subject_id = typed_identity_digest(
+        "xic.peak-observation-content.v1:",
+        canonical_identity_basis_bytes(
+            {
+                "schema_version": "owner-clustering-test-observation-v1",
+                "sample_stem": sample_stem,
+                "suffix": suffix,
+            }
+        ),
+    )
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": request_id,
+            "canonical_sample_identity_id": canonical_sample_identity_id,
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest("xic.group-member-subject.v1:", basis),
+        processing_request_id=request_id,
+        canonical_sample_identity_id=canonical_sample_identity_id,
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
     )
 
 

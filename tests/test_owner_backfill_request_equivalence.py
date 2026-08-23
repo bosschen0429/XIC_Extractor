@@ -440,8 +440,8 @@ def test_request_plan_mints_complete_partition_in_first_logical_order(
         (2,),
     ]
     assert [member.group_hypothesis_id for member in classes[0].members] == [
-        "FAM000001",
-        "FAM000002",
+        feature_a.group_hypothesis_id,
+        feature_b.group_hypothesis_id,
     ]
     logical_request_ids = {
         member.logical_request_id for item in classes for member in item.members
@@ -667,12 +667,11 @@ def test_superwindow_extracts_once_per_exact_class_and_fans_out(
 ) -> None:
     source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
     source = _OwnerBoundWindowSource(source_identity)
+    feature_a = _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5)
+    feature_b = _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5)
 
     result = build_owner_backfill_result(
-        (
-            _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
-            _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5),
-        ),
+        (feature_a, feature_b),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
         expected_acquisition_sources={"sample-b": source_identity},
@@ -693,7 +692,10 @@ def test_superwindow_extracts_once_per_exact_class_and_fans_out(
     assert {
         observation.logical_request.group_hypothesis_id
         for observation in result.peak_fact_observations
-    } == {"FAM000001", "FAM000002"}
+    } == {
+        feature_a.group_hypothesis_id,
+        feature_b.group_hypothesis_id,
+    }
     assert all(
         observation.request_identity.acquisition_source == source_identity
         for observation in result.peak_fact_observations

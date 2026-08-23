@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +83,7 @@ from xic_extractor.alignment.owner_clustering import (
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import (
+    AlignmentCrossSampleIdentityContext,
     build_sample_local_owners,
     build_sample_local_owners_from_discovery_bindings,
     discovery_candidate_is_owner_build_eligible,
@@ -149,11 +150,20 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    AcquisitionSourceIdentity,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+)
 from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.sample_metadata import (
+    SampleMetadata,
     is_sample_metadata_source,
     load_sample_metadata,
+    mint_sample_metadata_snapshot,
+    resolve_canonical_sample_identity,
     sample_metadata_to_injection_order,
 )
 
@@ -174,11 +184,7 @@ def _typed_targeted_istd_anchor(
     """
 
     candidate = getattr(drift_lookup, "istd_identity_anchor", None)
-    return (
-        candidate
-        if isinstance(candidate, TargetedIstdIdentityAnchor)
-        else None
-    )
+    return candidate if isinstance(candidate, TargetedIstdIdentityAnchor) else None
 
 
 def _raw_owner_build_candidates(
@@ -434,10 +440,16 @@ def run_alignment(
             discovery_batch_index,
             require_owner_closure=require_discovery_owner_closure,
         )
-    expected_acquisition_sources = (
+    cross_sample_acquisition_sources = (
         _expected_acquisition_sources(batch)
-        if require_discovery_owner_closure
+        if all(
+            batch.candidate_receipts[sample_stem] is not None
+            for sample_stem in batch.sample_order
+        )
         else None
+    )
+    expected_acquisition_sources = (
+        cross_sample_acquisition_sources if require_discovery_owner_closure else None
     )
     with recorder.stage("alignment.read_candidates") as stage:
         if require_discovery_owner_closure:
@@ -466,8 +478,8 @@ def run_alignment(
         stage.metrics["raw_owner_build_candidate_count"] = len(
             raw_owner_build_candidates
         )
-        stage.metrics["non_raw_owner_build_candidate_count"] = (
-            len(candidates) - len(raw_owner_build_candidates)
+        stage.metrics["non_raw_owner_build_candidate_count"] = len(candidates) - len(
+            raw_owner_build_candidates
         )
     if discovery_physical_bindings_by_sample is None:
         discovery_physical_bindings = None
@@ -575,11 +587,20 @@ def run_alignment(
                         for sample_stem, raw_path in raw_paths.items()
                     }
                 stage.metrics["raw_count"] = len(raw_sources)
+        cross_sample_identity_context = _alignment_cross_sample_identity_context(
+            batch=batch,
+            candidates=candidates,
+            alignment_config=alignment_config,
+            peak_config=peak_config,
+            expected_acquisition_sources=cross_sample_acquisition_sources,
+            discovery_physical_bindings=discovery_physical_bindings,
+        )
         with recorder.stage("alignment.build_owners"):
             if discovery_physical_bindings is not None:
                 ownership = build_sample_local_owners_from_discovery_bindings(
                     discovery_physical_bindings,
                     alignment_config=alignment_config,
+                    cross_sample_identity_context=cross_sample_identity_context,
                 )
             elif raw_workers > 1:
                 owner_output = run_owner_build_process(
@@ -596,6 +617,7 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    cross_sample_identity_context=cross_sample_identity_context,
                     progress_callback=lambda result: _record_owner_build_progress(
                         recorder,
                         result,
@@ -637,6 +659,7 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    cross_sample_identity_context=cross_sample_identity_context,
                 )
                 record_timed_raw_sources(timed_raw_sources_, recorder=recorder)
         injection_order: dict[str, int] | None = None
@@ -1185,6 +1208,136 @@ def _expected_acquisition_sources(
         sample_stem: _required_candidate_receipt(batch, sample_stem).acquisition_source
         for sample_stem in batch.sample_order
     }
+
+
+def _alignment_cross_sample_identity_context(
+    *,
+    batch: DiscoveryBatchInput,
+    candidates: Sequence[DiscoveryCandidate],
+    alignment_config: AlignmentConfig,
+    peak_config: ExtractionConfig,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
+    discovery_physical_bindings: Sequence[DiscoveryCandidatePhysicalBinding] | None,
+) -> AlignmentCrossSampleIdentityContext:
+    """Build Alignment's internal exact owner context before CrossSample runs.
+
+    This is intentionally internal to the existing owner-closed Alignment
+    boundary: callers do not supply an ordinal, a ``ProcessingRunSpec``, or a
+    display family as identity input.
+    """
+
+    if expected_acquisition_sources is not None:
+        sources_by_sample = dict(expected_acquisition_sources)
+    elif discovery_physical_bindings is not None and all(
+        isinstance(binding, DiscoveryCandidatePhysicalBinding)
+        for binding in discovery_physical_bindings
+    ):
+        bound_sources: dict[str, AcquisitionSourceIdentity] = {}
+        for binding in discovery_physical_bindings:
+            prior = bound_sources.setdefault(
+                binding.candidate.sample_stem,
+                binding.acquisition_source,
+            )
+            if prior != binding.acquisition_source:
+                raise ValueError("Discovery bindings disagree on an acquisition source")
+        sources_by_sample = bound_sources
+    else:
+        raise ValueError(
+            "Alignment CrossSample identity requires owner-closed acquisition "
+            "receipts or typed Discovery physical bindings"
+        )
+    if set(sources_by_sample) != set(batch.sample_order):
+        raise ValueError("Alignment CrossSample identity lacks a sample acquisition")
+    sources = tuple(
+        sorted(
+            sources_by_sample.values(),
+            key=lambda source: source.acquisition_source_id,
+        )
+    )
+    bindings = tuple(
+        AcquisitionInputBinding(
+            acquisition_source_id=sources_by_sample[sample_stem].acquisition_source_id,
+            adapter_input_key=sample_stem,
+            injection_order=index,
+        )
+        for index, sample_stem in enumerate(batch.sample_order, start=1)
+    )
+    canonical_candidates = tuple(
+        sorted(
+            (
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "sample_stem": candidate.sample_stem,
+                    "precursor_mz": candidate.precursor_mz,
+                    "product_mz": candidate.product_mz,
+                    "observed_neutral_loss_da": candidate.observed_neutral_loss_da,
+                    "best_seed_rt": candidate.best_seed_rt,
+                    "discovery_candidate_state": candidate.discovery_candidate_state,
+                }
+                for candidate in candidates
+                if isinstance(candidate, DiscoveryCandidate)
+            ),
+            key=lambda value: (str(value["sample_stem"]), str(value["candidate_id"])),
+        )
+    )
+    request = build_processing_request_identity(
+        acquisition_sources=sources,
+        acquisition_bindings=bindings,
+        scientific_input_schema_version="alignment-cross-sample-input-v1",
+        processing_algorithm_version="alignment-cross-sample-owner-v1",
+        processing_contract_version="alignment-cross-sample-identity-v1",
+        scientific_inputs={
+            "candidate_universe": list(canonical_candidates),
+            "alignment_config": _alignment_identity_json(asdict(alignment_config)),
+        },
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        tuple(
+            SampleMetadata(
+                # Discovery's batch index supplies a lookup alias, not product
+                # sample metadata.  Acquisition identity is therefore the
+                # internal Alignment namespace primary key; the stem remains
+                # the owner-declared raw lookup alias only.
+                sample_name=sources_by_sample[sample_stem].acquisition_source_id,
+                raw_stem=sample_stem,
+                injection_order=index,
+            )
+            for index, sample_stem in enumerate(batch.sample_order, start=1)
+        ),
+        identity_namespace="alignment-discovery-owner-v1",
+    )
+    samples = tuple(
+        resolve_canonical_sample_identity(snapshot, sample_stem)
+        for sample_stem in batch.sample_order
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=snapshot,
+        sample_resolutions=samples,
+    )
+    return AlignmentCrossSampleIdentityContext(
+        processing_owners=owners,
+        samples_by_stem={sample.lookup_token: sample for sample in samples},
+    )
+
+
+def _alignment_identity_json(value: object) -> object:
+    """Retain scientific config values while excluding local storage locations."""
+
+    if isinstance(value, Path):
+        return None
+    if isinstance(value, Mapping):
+        return {
+            str(key): _alignment_identity_json(nested)
+            for key, nested in value.items()
+            if not isinstance(nested, Path)
+        }
+    if isinstance(value, tuple):
+        return [_alignment_identity_json(item) for item in value]
+    if isinstance(value, list):
+        return [_alignment_identity_json(item) for item in value]
+    return value
 
 
 def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResult:

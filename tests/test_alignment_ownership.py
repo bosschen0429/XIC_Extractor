@@ -5,9 +5,28 @@ import numpy as np
 import pytest
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ownership import build_sample_local_owners
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    construct_cross_sample_peak_group_hypotheses,
+)
+from xic_extractor.alignment.ownership import (
+    AlignmentCrossSampleIdentityContext,
+    build_sample_local_owners,
+)
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    build_acquisition_source_identity,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+)
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    mint_sample_metadata_snapshot,
+    resolve_canonical_sample_identity,
+)
 
 
 def test_same_sample_same_resolved_peak_becomes_one_owner():
@@ -38,6 +57,116 @@ def test_same_sample_same_resolved_peak_becomes_one_owner():
         ("s1#6095", "primary"),
         ("s1#6096", "supporting"),
     ]
+
+
+def test_owner_build_threads_exact_physical_member_subject_to_cross_sample(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "s1.raw"
+    source_path.write_bytes(b"synthetic-owner-context")
+    source = build_acquisition_source_identity(
+        source_path,
+        acquisition_format="synthetic",
+        observation_namespace="alignment-owner:s1",
+    )
+    request = build_processing_request_identity(
+        acquisition_sources=(source,),
+        acquisition_bindings=(
+            AcquisitionInputBinding(
+                acquisition_source_id=source.acquisition_source_id,
+                adapter_input_key="s1",
+                injection_order=1,
+            ),
+        ),
+        scientific_input_schema_version="alignment-owner-test-v1",
+        processing_algorithm_version="alignment-owner-test-v1",
+        processing_contract_version="alignment-owner-test-v1",
+        scientific_inputs={"candidate_universe": ["s1#context"]},
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        (SampleMetadata(sample_name="s1", raw_stem="s1", injection_order=1),),
+        identity_namespace="alignment-owner-test-v1",
+    )
+    sample = resolve_canonical_sample_identity(snapshot, "s1")
+    context = AlignmentCrossSampleIdentityContext(
+        processing_owners=compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=snapshot,
+            sample_resolutions=(sample,),
+        ),
+        samples_by_stem={"s1": sample},
+    )
+    candidate = DiscoveryCandidate.from_values(
+        raw_file=source_path,
+        sample_stem="s1",
+        precursor_mz=242.114,
+        product_mz=126.066,
+        observed_neutral_loss_da=116.048,
+        best_seed=DiscoverySeed(
+            raw_file=source_path,
+            sample_stem="s1",
+            scan_number=6095,
+            rt=12.59,
+            precursor_mz=242.114,
+            product_mz=126.066,
+            product_intensity=100.0,
+            neutral_loss_tag="DNA_dR",
+            configured_neutral_loss_da=116.048,
+            observed_neutral_loss_da=116.048,
+            observed_loss_error_ppm=0.0,
+        ),
+        seed_scan_ids=(6095,),
+        neutral_loss_tag="DNA_dR",
+        configured_neutral_loss_da=116.048,
+        neutral_loss_mass_error_ppm=0.0,
+        rt_seed_min=12.58,
+        rt_seed_max=12.60,
+        ms1_search_rt_min=12.55,
+        ms1_search_rt_max=12.64,
+        ms1_seed_delta_min=0.0,
+        ms1_peak_rt_start=12.58,
+        ms1_peak_rt_end=12.61,
+        ms1_height=100.0,
+        ms1_trace_quality="GOOD",
+        seed_event_count=1,
+        ms1_peak_found=True,
+        ms1_apex_rt=12.593,
+        ms1_area=117.0,
+        ms2_product_max_intensity=100.0,
+        review_priority="HIGH",
+        reason="owner-context fixture",
+    )
+    result = build_sample_local_owners(
+        (candidate,),
+        raw_sources={
+            "s1": FakeXICSource(
+                rt=np.array([12.55, 12.58, 12.593, 12.61, 12.64], dtype=float),
+                intensity=np.array([0.0, 30.0, 100.0, 30.0, 0.0], dtype=float),
+            ),
+        },
+        alignment_config=AlignmentConfig(owner_apex_close_sec=2.0),
+        peak_config=_peak_config(),
+        cross_sample_identity_context=context,
+    )
+
+    owner = result.owners[0]
+    assert owner.owner_apex_rt == pytest.approx(12.593)
+    assert owner.owner_area == pytest.approx(117.0)
+    assert owner.owner_height == pytest.approx(100.0)
+    assert owner.owner_peak_start_rt == pytest.approx(12.58)
+    assert owner.owner_peak_end_rt == pytest.approx(12.61)
+    assert owner.cross_sample_member_subject is not None
+    assert (
+        owner.cross_sample_member_subject.processing_request_id
+        == request.processing_request_id
+    )
+    groups = construct_cross_sample_peak_group_hypotheses(
+        result.owners,
+        config=AlignmentConfig(),
+    )
+    assert groups[0].disposition == "provisional"
+    assert groups[0].group_hypothesis_id.startswith("xic.cross-sample-group.v1:")
 
 
 def test_same_peak_primary_order_uses_resolved_sort_key_not_input_order() -> None:

@@ -477,7 +477,10 @@ def canonical_alignment_peak_group_result_bytes(
     """Serialize one Alignment-owned scientific result without runtime policy."""
 
     from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleGroupIdentity,
         CrossSamplePeakGroupHypothesis,
+        validate_cross_sample_group_population,
+        validate_cross_sample_peak_group_identity,
     )
 
     if not isinstance(groups, tuple) or any(
@@ -486,10 +489,32 @@ def canonical_alignment_peak_group_result_bytes(
         raise AlignmentRuntimeAdapterError(
             "groups must be a tuple of CrossSamplePeakGroupHypothesis values"
         )
+    try:
+        identities = []
+        for group in groups:
+            validate_cross_sample_peak_group_identity(
+                group,
+                require_canonical=True,
+            )
+            identities.append(
+                CrossSampleGroupIdentity(
+                    group_hypothesis_id=group.group_hypothesis_id,
+                    processing_request_id=group.processing_request_id,
+                    member_subjects=group.member_subjects,
+                    basis_bytes=group.identity_basis_bytes,
+                    disposition=group.disposition,
+                )
+            )
+        validate_cross_sample_group_population(tuple(identities))
+    except ValueError as exc:
+        raise AlignmentRuntimeAdapterError(
+            "CrossSample canonical identity did not replay from its exact basis: "
+            f"{exc}"
+        ) from exc
     return (
         json.dumps(
             {
-                "groups": [asdict(group) for group in groups],
+                "groups": [_jsonable_alignment_group(group) for group in groups],
                 "schema_version": "alignment_peak_group_result_v1",
             },
             ensure_ascii=False,
@@ -499,6 +524,28 @@ def canonical_alignment_peak_group_result_bytes(
         )
         + "\n"
     ).encode("utf-8")
+
+
+def _jsonable_alignment_group(group: CrossSamplePeakGroupHypothesis) -> object:
+    """Render retained canonical UTF-8 identity bases without losing bytes."""
+
+    def render(value: object) -> object:
+        if isinstance(value, bytes):
+            try:
+                return value.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise AlignmentRuntimeAdapterError(
+                    "CrossSample identity basis bytes must be UTF-8"
+                ) from exc
+        if isinstance(value, dict):
+            return {key: render(nested) for key, nested in value.items()}
+        if isinstance(value, tuple):
+            return [render(item) for item in value]
+        if isinstance(value, list):
+            return [render(item) for item in value]
+        return value
+
+    return render(asdict(group))
 
 
 def resolve_alignment_application_peak_group_result(

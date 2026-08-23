@@ -4,12 +4,30 @@ import csv
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleContractError,
+    CrossSampleGroupMemberSubject,
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_REQUEST_ID = typed_identity_digest(
+    "xic.processing-request.v1:",
+    canonical_identity_basis_bytes({"schema_version": "claim-registry-test"}),
+)
+_SAMPLES = ("sample-a", "sample-b", "sample-c")
 
 
-def test_claim_registry_marks_duplicate_same_sample_peak_loser() -> None:
+def test_claim_registry_requires_owner_backed_physical_identity_for_exact_peak(
+) -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", detected_count=10),
@@ -26,24 +44,18 @@ def test_claim_registry_marks_duplicate_same_sample_peak_loser() -> None:
 
     assert cells["FAM000001"].status == "detected"
     assert cells["FAM000001"].area == 1000.0
-    assert cells["FAM000002"].status == "duplicate_assigned"
+    assert cells["FAM000002"].status == "rescued"
     assert cells["FAM000002"].area == 1000.0
     assert cells["FAM000002"].apex_rt == 8.5
     assert cells["FAM000002"].peak_start_rt == 8.4
     assert cells["FAM000002"].peak_end_rt == 8.6
-    assert cells["FAM000002"].reason == (
-        "duplicate MS1 peak claim; winner=FAM000001; original_status=rescued"
-    )
-    assert cells["FAM000002"].group_claim_state == "duplicate_loser"
-    assert cells["FAM000002"].claim_winner_group_hypothesis_id == (
-        "GROUP-FAM000001"
-    )
-    assert cells["FAM000002"].claim_source_group_hypothesis_id == (
-        "GROUP-FAM000002"
-    )
+    assert cells["FAM000002"].group_claim_state == ""
+    assert cells["FAM000002"].claim_winner_group_hypothesis_id == ""
+    assert cells["FAM000002"].claim_source_group_hypothesis_id == ""
 
 
-def test_claim_registry_conflicts_across_neutral_loss_tags() -> None:
+def test_claim_registry_does_not_claim_cross_tag_exact_geometry_without_physical_id(
+) -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", neutral_loss_tag="DNA_dR", detected_count=10),
@@ -57,10 +69,11 @@ def test_claim_registry_conflicts_across_neutral_loss_tags() -> None:
 
     result = apply_ms1_peak_claim_registry(matrix, AlignmentConfig())
 
-    assert _cells_by_feature(result)["FAM000002"].status == "duplicate_assigned"
+    assert _cells_by_feature(result)["FAM000002"].status == "detected"
 
 
-def test_claim_registry_most_supported_family_can_win_with_rescued_cell() -> None:
+def test_claim_registry_support_does_not_replace_owner_closed_physical_identity(
+) -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", detected_count=40),
@@ -78,11 +91,11 @@ def test_claim_registry_most_supported_family_can_win_with_rescued_cell() -> Non
     cells = _cells_by_feature_sample(result)
 
     assert cells[("FAM000001", "sample-a")].status == "rescued"
-    assert cells[("FAM000002", "sample-a")].status == "duplicate_assigned"
-    assert "winner=FAM000001" in cells[("FAM000002", "sample-a")].reason
+    assert cells[("FAM000002", "sample-a")].status == "detected"
 
 
-def test_claim_registry_equal_support_prefers_detected_over_rescued() -> None:
+def test_claim_registry_detected_status_does_not_create_physical_identity_claim(
+) -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", detected_count=5),
@@ -97,11 +110,12 @@ def test_claim_registry_equal_support_prefers_detected_over_rescued() -> None:
     result = apply_ms1_peak_claim_registry(matrix, AlignmentConfig())
     cells = _cells_by_feature(result)
 
-    assert cells["FAM000001"].status == "duplicate_assigned"
+    assert cells["FAM000001"].status == "rescued"
     assert cells["FAM000002"].status == "detected"
 
 
-def test_claim_registry_review_only_feature_cannot_win_claim() -> None:
+def test_claim_registry_review_only_feature_cannot_create_unclosed_exact_claim(
+) -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", detected_count=1),
@@ -117,15 +131,14 @@ def test_claim_registry_review_only_feature_cannot_win_claim() -> None:
     cells = _cells_by_feature(result)
 
     assert cells["FAM000001"].status == "rescued"
-    assert cells["FAM000002"].status == "duplicate_assigned"
-    assert "winner=FAM000001" in cells["FAM000002"].reason
+    assert cells["FAM000002"].status == "detected"
 
 
-def test_claim_registry_claims_exact_same_peak_even_outside_mz_gate() -> None:
+def test_claim_registry_does_not_reopen_distinct_physical_exact_rounding() -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", mz=500.0, detected_count=10),
-            _feature("FAM000002", mz=500.01, detected_count=9),
+            _feature("FAM000002", mz=500.0, detected_count=9),
         ),
         cells=(
             _cell("sample-a", "FAM000001", "detected"),
@@ -138,7 +151,7 @@ def test_claim_registry_claims_exact_same_peak_even_outside_mz_gate() -> None:
         AlignmentConfig(duplicate_fold_ppm=5.0),
     )
 
-    assert _cells_by_feature(result)["FAM000002"].status == "duplicate_assigned"
+    assert _cells_by_feature(result)["FAM000002"].status == "detected"
 
 
 def test_claim_registry_keeps_distinct_peak_window_claims() -> None:
@@ -216,6 +229,140 @@ def test_claim_registry_ignores_incomplete_peak_claims() -> None:
     assert [cell.status for cell in result.cells] == ["detected", "detected"]
 
 
+def test_claim_candidates_do_not_inherit_stale_cluster_stats_or_review_state() -> None:
+    def matrix(*, order: tuple[str, ...], include_trailing: bool) -> AlignmentMatrix:
+        clusters_by_id = {
+            "FAM000001": _feature(
+                "FAM000001",
+                detected_count=2,
+                event_member_count=2,
+                event_cluster_count=2,
+            ),
+            "FAM000002": _feature(
+                "FAM000002",
+                detected_count=1,
+                event_member_count=99,
+                event_cluster_count=99,
+            ),
+            "FAM000003": _feature(
+                "FAM000003",
+                detected_count=3,
+                event_member_count=3,
+                event_cluster_count=3,
+                review_only=True,
+            ),
+        }
+        clusters = tuple(clusters_by_id[feature_id] for feature_id in order)
+        if include_trailing:
+            clusters = (*clusters, _feature("FAM000004", mz=700.0, detected_count=0))
+        return _matrix(
+            clusters=clusters,
+            cells=(
+                _cell("sample-a", "FAM000001", "detected", apex=8.500),
+                _cell("sample-b", "FAM000001", "detected", apex=8.500),
+                _cell("sample-a", "FAM000002", "detected", apex=8.501),
+                _cell("sample-a", "FAM000003", "detected", apex=8.502),
+                _cell("sample-b", "FAM000003", "detected", apex=8.502),
+                _cell("sample-c", "FAM000003", "detected"),
+            ),
+        )
+
+    def assignments(result: AlignmentMatrix) -> tuple[tuple[str, str, str, str], ...]:
+        return tuple(
+            (
+                cell.cluster_id,
+                cell.sample_stem,
+                cell.status,
+                cell.claim_winner_group_hypothesis_id,
+            )
+            for cell in result.cells
+        )
+
+    baseline = apply_ms1_peak_claim_registry(
+        matrix(order=("FAM000001", "FAM000002", "FAM000003"), include_trailing=False),
+        AlignmentConfig(),
+    )
+    reversed_order = apply_ms1_peak_claim_registry(
+        matrix(order=("FAM000003", "FAM000002", "FAM000001"), include_trailing=False),
+        AlignmentConfig(),
+    )
+    with_unrelated_trailing = apply_ms1_peak_claim_registry(
+        matrix(order=("FAM000001", "FAM000002", "FAM000003"), include_trailing=True),
+        AlignmentConfig(),
+    )
+
+    assert assignments(baseline) == assignments(reversed_order)
+    assert assignments(baseline) == assignments(with_unrelated_trailing)
+    cells = _cells_by_feature_sample(baseline)
+    assert cells[("FAM000001", "sample-a")].status == "detected"
+    assert cells[("FAM000002", "sample-a")].status == "duplicate_assigned"
+    assert cells[("FAM000003", "sample-a")].status == "duplicate_assigned"
+
+
+def test_claim_registry_filters_render_only_and_unclosed_repair_cells() -> None:
+    visible = _feature("FAM000001", detected_count=10)
+    historical = _feature("FAM000002", detected_count=9)
+    historical.cross_sample_state = "render_only"
+    historical.group_hypothesis_id = ""
+    historical.processing_request_id = ""
+    historical.member_subjects = ()
+    historical.identity_basis_bytes = b""
+    unclosed_repair = _feature("FAM000003", detected_count=8)
+    unclosed_repair.owners = ()
+    matrix = _matrix(
+        clusters=(visible, historical, unclosed_repair),
+        cells=(
+            _cell("sample-a", "FAM000001", "detected"),
+            _cell("sample-a", "FAM000002", "rescued"),
+            _cell(
+                "sample-a",
+                "FAM000003",
+                "rescued",
+                gap_fill_state="gap_fill_rescued",
+                missing_observation_state="queried_and_detected",
+            ),
+        ),
+    )
+
+    result = apply_ms1_peak_claim_registry(matrix, AlignmentConfig())
+
+    assert result is matrix
+    assert [cell.status for cell in result.cells] == [
+        "detected",
+        "rescued",
+        "rescued",
+    ]
+
+
+def test_claim_ingress_rejects_duplicate_active_canonical_population() -> None:
+    visible = _feature("FAM000001", detected_count=10)
+    duplicate = _feature("FAM000002", detected_count=9)
+    duplicate.group_hypothesis_id = visible.group_hypothesis_id
+    duplicate.processing_request_id = visible.processing_request_id
+    duplicate.member_subjects = visible.member_subjects
+    duplicate.identity_basis_bytes = visible.identity_basis_bytes
+    duplicate.disposition = visible.disposition
+    matrix = _matrix(
+        clusters=(visible, duplicate),
+        cells=(_cell("sample-a", "FAM000001", "detected"),),
+    )
+
+    with pytest.raises(CrossSampleContractError, match="duplicates a group identity"):
+        apply_ms1_peak_claim_registry(matrix, AlignmentConfig())
+
+
+def test_claim_ingress_rejects_forged_active_identity_basis() -> None:
+    forged = _feature("FAM000001", detected_count=10)
+    forged.identity_basis_bytes = forged.identity_basis_bytes + b" "
+    matrix = _matrix(
+        clusters=(forged,),
+        cells=(_cell("sample-a", "FAM000001", "detected"),),
+    )
+
+    with pytest.raises(CrossSampleContractError, match="canonical identity"):
+        apply_ms1_peak_claim_registry(matrix, AlignmentConfig())
+
+
 def test_claim_registry_claims_are_sample_local() -> None:
     matrix = _matrix(
         clusters=(
@@ -234,7 +381,7 @@ def test_claim_registry_claims_are_sample_local() -> None:
     assert {cell.status for cell in result.cells} == {"detected"}
 
 
-def test_claim_registry_all_review_only_conflicts_have_no_winner() -> None:
+def test_claim_registry_all_review_only_exact_geometry_remains_value_only() -> None:
     matrix = _matrix(
         clusters=(
             _feature("FAM000001", detected_count=10, review_only=True),
@@ -249,21 +396,15 @@ def test_claim_registry_all_review_only_conflicts_have_no_winner() -> None:
     result = apply_ms1_peak_claim_registry(matrix, AlignmentConfig())
     cells = _cells_by_feature(result)
 
-    assert cells["FAM000001"].status == "duplicate_assigned"
-    assert cells["FAM000001"].reason == (
-        "review-only MS1 peak claim; winner=none; original_status=detected"
-    )
-    assert cells["FAM000001"].group_claim_state == "review_only_duplicate_loser"
+    assert cells["FAM000001"].status == "detected"
+    assert cells["FAM000001"].group_claim_state == ""
     assert cells["FAM000001"].claim_winner_group_hypothesis_id == ""
-    assert cells["FAM000001"].claim_source_group_hypothesis_id == "GROUP-FAM000001"
-    assert cells["FAM000002"].status == "duplicate_assigned"
-    assert cells["FAM000002"].reason == (
-        "review-only MS1 peak claim; winner=none; original_status=rescued"
-    )
-    assert cells["FAM000002"].group_claim_state == "review_only_duplicate_loser"
+    assert cells["FAM000001"].claim_source_group_hypothesis_id == ""
+    assert cells["FAM000002"].status == "rescued"
+    assert cells["FAM000002"].group_claim_state == ""
 
 
-def test_claim_registry_duplicate_assignment_is_cells_tsv_visible(
+def test_claim_registry_unclosed_exact_geometry_keeps_cells_tsv_values(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
@@ -283,21 +424,14 @@ def test_claim_registry_duplicate_assignment_is_cells_tsv_visible(
     rows = _rows_by_feature(write_alignment_cells_tsv(tmp_path / "cells.tsv", result))
 
     assert rows["FAM000001"]["status"] == "detected"
-    assert rows["FAM000002"]["status"] == "duplicate_assigned"
+    assert rows["FAM000002"]["status"] == "rescued"
     assert rows["FAM000002"]["area"] == "1000"
     assert rows["FAM000002"]["apex_rt"] == "8.5"
     assert rows["FAM000002"]["peak_start_rt"] == "8.4"
     assert rows["FAM000002"]["peak_end_rt"] == "8.6"
-    assert rows["FAM000002"]["reason"] == (
-        "duplicate MS1 peak claim; winner=FAM000001; original_status=rescued"
-    )
-    assert rows["FAM000002"]["group_claim_state"] == "duplicate_loser"
-    assert rows["FAM000002"]["claim_winner_group_hypothesis_id"] == (
-        "GROUP-FAM000001"
-    )
-    assert rows["FAM000002"]["claim_source_group_hypothesis_id"] == (
-        "GROUP-FAM000002"
-    )
+    assert rows["FAM000002"]["group_claim_state"] == ""
+    assert rows["FAM000002"]["claim_winner_group_hypothesis_id"] == ""
+    assert rows["FAM000002"]["claim_source_group_hypothesis_id"] == ""
 
 
 def _matrix(*, clusters, cells) -> AlignmentMatrix:
@@ -321,6 +455,11 @@ def _feature(
     event_cluster_count = (
         detected_count if event_cluster_count is None else event_cluster_count
     )
+    members = tuple(_member(feature_id, sample) for sample in _SAMPLES)
+    identity = mint_cross_sample_group_identity(
+        processing_request_id=_REQUEST_ID,
+        member_subjects=members,
+    )
     return SimpleNamespace(
         feature_family_id=feature_id,
         neutral_loss_tag=neutral_loss_tag,
@@ -337,8 +476,16 @@ def _feature(
         ),
         evidence="owner_complete_link",
         review_only=review_only,
-        group_hypothesis_id=f"GROUP-{feature_id}",
+        owners=tuple(
+            SimpleNamespace(sample_stem=sample, cross_sample_member_subject=member)
+            for sample, member in zip(_SAMPLES, members, strict=True)
+        ),
+        group_hypothesis_id=identity.group_hypothesis_id,
         public_family_id=feature_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
         group_construction_role="successor_projection_adapter",
         group_delivery_role="successor_delivery_protocol",
         group_membership_source="cross_sample_peak_group_hypothesis",
@@ -346,6 +493,35 @@ def _feature(
         consolidation_winner_group_hypothesis_id="",
         consolidation_source_group_hypothesis_id="",
     )
+
+
+def _member(feature_id: str, sample_stem: str) -> CrossSampleGroupMemberSubject:
+    subject_id = f"xic.peak-observation-content.v1:claim-{feature_id}-{sample_stem}"
+    sample_id = f"xic.sample.v1:claim-{sample_stem}"
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _REQUEST_ID,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest("xic.group-member-subject.v1:", basis),
+        processing_request_id=_REQUEST_ID,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
+    )
+
+
+def _group_id(feature_id: str) -> str:
+    return mint_cross_sample_group_identity(
+        processing_request_id=_REQUEST_ID,
+        member_subjects=tuple(_member(feature_id, sample) for sample in _SAMPLES),
+    ).group_hypothesis_id
 
 
 def _cell(
@@ -357,6 +533,8 @@ def _cell(
     apex: float = 8.5,
     start: float = 8.4,
     end: float = 8.6,
+    gap_fill_state: str = "",
+    missing_observation_state: str = "",
 ) -> AlignedCell:
     return AlignedCell(
         sample_stem=sample,
@@ -373,6 +551,8 @@ def _cell(
         source_candidate_id=f"{sample}#{feature_id}",
         source_raw_file=None,
         reason=f"{status} reason",
+        gap_fill_state=gap_fill_state,
+        missing_observation_state=missing_observation_state,
     )
 
 

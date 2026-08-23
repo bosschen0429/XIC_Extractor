@@ -1,9 +1,14 @@
+from dataclasses import replace
 from typing import cast
 
 import pytest
 
 import xic_extractor.alignment.pre_backfill_consolidation as pre_mod
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix, CellStatus
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
@@ -12,6 +17,15 @@ from xic_extractor.alignment.pre_backfill_consolidation import (
     recenter_pre_backfill_identity_families,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_TEST_PROCESSING_REQUEST_ID = typed_identity_digest(
+    "xic.processing-request.v1:",
+    canonical_identity_basis_bytes({"schema_version": "pre-backfill-test"}),
+)
 
 
 def test_pre_backfill_consolidation_merges_identity_compatible_samples() -> None:
@@ -40,12 +54,20 @@ def test_pre_backfill_consolidation_merges_identity_compatible_samples() -> None
     )
     assert primary[0].consolidation_state == "primary_winner"
     assert primary[0].consolidation_source_group_hypothesis_id == (
-        "FAM000001;FAM000002"
+        f"{feature_a.group_hypothesis_id};{feature_b.group_hypothesis_id}"
     )
     assert "pre_backfill_identity_consolidated" in primary[0].evidence
     assert len(losers) == 1
     assert losers[0].consolidation_state == "primary_loser"
-    assert losers[0].consolidation_winner_group_hypothesis_id == "FAM000001"
+    assert losers[0].cross_sample_state == "render_only"
+    assert losers[0].group_hypothesis_id == ""
+    assert losers[0].processing_request_id == ""
+    assert losers[0].member_subjects == ()
+    assert losers[0].identity_basis_bytes == b""
+    assert losers[0].cross_sample_lineage == ()
+    assert losers[0].consolidation_winner_group_hypothesis_id == (
+        primary[0].group_hypothesis_id
+    )
     assert "winner=" in losers[0].evidence
 
 
@@ -94,7 +116,7 @@ def test_pre_backfill_consolidation_caps_backfill_seed_centers() -> None:
     )
 
 
-def test_pre_backfill_consolidation_reuses_sample_stem_sets(
+def test_pre_backfill_consolidation_classifies_the_complete_active_pair_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     features = (
@@ -102,21 +124,44 @@ def test_pre_backfill_consolidation_reuses_sample_stem_sets(
         _feature("FAM000002", sample_stem="sample-b", rt=8.1),
         _feature("FAM000003", sample_stem="sample-c", rt=8.2),
     )
-    calls: list[str] = []
-    original = pre_mod._sample_stems
+    calls: list[tuple[str, str]] = []
+    original = pre_mod.classify_cross_sample_pre_consolidation_edge
 
-    def tracking_sample_stems(feature: OwnerAlignedFeature) -> set[str]:
-        calls.append(feature.feature_family_id)
-        return original(feature)
+    def tracking_classifier(facts, *, config):
+        calls.append(
+            tuple(
+                sorted(
+                    (
+                        facts.left_group.group_hypothesis_id,
+                        facts.right_group.group_hypothesis_id,
+                    )
+                )
+            )
+        )
+        return original(facts, config=config)
 
-    monkeypatch.setattr(pre_mod, "_sample_stems", tracking_sample_stems)
+    monkeypatch.setattr(
+        pre_mod,
+        "classify_cross_sample_pre_consolidation_edge",
+        tracking_classifier,
+    )
 
     consolidated = consolidate_pre_backfill_identity_families(
         features,
         config=AlignmentConfig(),
     )
 
-    assert calls == ["FAM000001", "FAM000002", "FAM000003"]
+    assert set(calls) == {
+        tuple(
+            sorted(
+                (
+                    features[left].group_hypothesis_id,
+                    features[right].group_hypothesis_id,
+                )
+            )
+        )
+        for left, right in ((0, 1), (0, 2), (1, 2))
+    }
     assert [feature.consolidation_state for feature in consolidated] == [
         "primary_loser",
         "primary_winner",
@@ -159,7 +204,11 @@ def _feature(
     rt: float = 8.0,
     product_mz: float = 383.9526,
 ) -> OwnerAlignedFeature:
-    owner = _owner(sample_stem, feature_family_id, apex_rt=rt)
+    identity = _identity(feature_family_id, sample_stem=sample_stem)
+    owner = replace(
+        _owner(sample_stem, feature_family_id, apex_rt=rt),
+        cross_sample_member_subject=identity.member_subjects[0],
+    )
     return OwnerAlignedFeature(
         feature_family_id=feature_family_id,
         neutral_loss_tag="NL116",
@@ -170,6 +219,39 @@ def _feature(
         has_anchor=True,
         owners=(owner,),
         evidence="single_sample_local_owner",
+        group_hypothesis_id=identity.group_hypothesis_id,
+        public_family_id=feature_family_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
+    )
+
+
+def _identity(feature_family_id: str, *, sample_stem: str):
+    subject_id = f"xic.peak-observation-content.v1:pre-backfill-{feature_family_id}"
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
+            "canonical_sample_identity_id": (
+                f"xic.sample.v1:pre-backfill-{sample_stem}"
+            ),
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    member = CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest("xic.group-member-subject.v1:", basis),
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        canonical_sample_identity_id=f"xic.sample.v1:pre-backfill-{sample_stem}",
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
+    )
+    return mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=(member,),
     )
 
 

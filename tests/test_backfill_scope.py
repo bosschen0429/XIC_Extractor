@@ -14,6 +14,19 @@ from xic_extractor.alignment.backfill_scope import (
     write_skipped_evidence_ledger_tsv,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+    mint_cross_sample_group_identity,
+)
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_REQUEST_ID = typed_identity_digest(
+    "xic.processing-request.v1:",
+    canonical_identity_basis_bytes({"schema_version": "backfill-scope-test"}),
+)
 
 
 def test_production_equivalent_skips_only_isolated_single_detected_family() -> None:
@@ -175,6 +188,11 @@ def _feature(
     confirm: bool = False,
     owner_area: float = 100.0,
 ) -> SimpleNamespace:
+    members = tuple(_member(family_id, sample) for sample in owners)
+    identity = mint_cross_sample_group_identity(
+        processing_request_id=_REQUEST_ID,
+        member_subjects=members,
+    )
     return SimpleNamespace(
         feature_family_id=family_id,
         neutral_loss_tag="DNA_dR",
@@ -186,7 +204,39 @@ def _feature(
         confirm_local_owners_with_backfill=confirm,
         backfill_seed_centers=(),
         owners=tuple(
-            SimpleNamespace(sample_stem=sample, owner_area=owner_area)
-            for sample in owners
+            SimpleNamespace(
+                sample_stem=sample,
+                owner_area=owner_area,
+                cross_sample_member_subject=member,
+            )
+            for sample, member in zip(owners, members, strict=True)
         ),
+        group_hypothesis_id=identity.group_hypothesis_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
+        cross_sample_state="active",
+    )
+
+
+def _member(family_id: str, sample: str) -> CrossSampleGroupMemberSubject:
+    sample_id = f"xic.sample.v1:backfill-scope-{sample}"
+    subject_id = f"xic.peak-observation-content.v1:backfill-scope-{family_id}-{sample}"
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _REQUEST_ID,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest("xic.group-member-subject.v1:", basis),
+        processing_request_id=_REQUEST_ID,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
     )

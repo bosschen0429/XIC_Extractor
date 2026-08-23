@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
+from tests.test_alignment_owner_backfill import _feature
+from tests.test_alignment_owner_clustering import _owner
 from tests.test_owner_backfill_peak_fact_provenance import (
     _column,
     _cross_typed_id,
@@ -18,6 +19,9 @@ from tests.test_owner_backfill_peak_fact_provenance import (
     _write_projection_rows,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     compose_owner_backfill_peak_fact_provenance,
@@ -57,8 +61,9 @@ def test_pipeline_v2_persists_and_replays_source_to_winner_lineage(
         live.stage.group_hypothesis_id,
         live.stage.public_family_id,
     )
+    winner = matrix.clusters[0]
     assert (cell.group_hypothesis_id, cell.public_family_id) == (
-        "WINNER",
+        winner.group_hypothesis_id,
         "WINNER",
     )
     assert (
@@ -67,7 +72,7 @@ def test_pipeline_v2_persists_and_replays_source_to_winner_lineage(
         cell.consolidation_source_group_hypothesis_id,
     ) == (
         "moved_to_primary_winner",
-        "WINNER",
+        winner.group_hypothesis_id,
         live.stage.group_hypothesis_id,
     )
     assert cell.selected_work_unit_key == physical.work_unit_key
@@ -149,7 +154,7 @@ def test_pipeline_v2_accepts_pre_backfill_winner_with_multi_source_lineage(
     assert composed.cell_claims[0].cell_projection_claim == "verified"
 
 
-def test_pipeline_v2_replays_lineage_minted_by_primary_consolidation(
+def test_pipeline_v2_does_not_mint_primary_lineage_from_unowned_duplicate_cell(
     tmp_path: Path,
 ) -> None:
     live = _live_available_inputs(tmp_path)
@@ -159,36 +164,39 @@ def test_pipeline_v2_replays_lineage_minted_by_primary_consolidation(
         status="duplicate_assigned",
         reason=("duplicate MS1 peak claim; winner=WINNER; original_status=rescued"),
     )
+    winner = _winner_feature(live.stage, "WINNER")
     detected = tuple(
         replace(
             _detected_cell(sample, live.evaluation.integration, stage=live.stage),
             cluster_id="WINNER",
-            group_hypothesis_id="WINNER",
+            group_hypothesis_id=winner.group_hypothesis_id,
             public_family_id="WINNER",
         )
         for sample in ("detected-1", "detected-2")
     )
     pre_consolidation = AlignmentMatrix(
-        clusters=(live.feature, _winner_feature(live.stage, "WINNER")),
+        clusters=(live.feature, winner),
         cells=(source_duplicate, *detected),
         sample_order=(live.stage.sample_stem, "detected-1", "detected-2"),
     )
     config = AlignmentConfig()
 
     matrix = consolidate_primary_family_rows(pre_consolidation, config)
-    moved = next(
+    duplicate = next(
         cell
         for cell in matrix.cells
-        if cell.sample_stem == "sample-b" and cell.status == "rescued"
+        if cell.sample_stem == "sample-b" and cell.status == "duplicate_assigned"
     )
     assert (
-        moved.consolidation_state,
-        moved.consolidation_source_group_hypothesis_id,
-        moved.consolidation_winner_group_hypothesis_id,
+        duplicate.group_hypothesis_id,
+        duplicate.consolidation_state,
+        duplicate.consolidation_source_group_hypothesis_id,
+        duplicate.consolidation_winner_group_hypothesis_id,
     ) == (
-        "moved_to_primary_winner",
         live.stage.group_hypothesis_id,
-        "WINNER",
+        "not_consolidated",
+        "",
+        "",
     )
     decisions = build_production_decisions(matrix, config)
     batch = _owner_backfill_peak_fact_provenance(
@@ -216,7 +224,7 @@ def test_pipeline_v2_replays_lineage_minted_by_primary_consolidation(
         production_decisions=decisions,
     )
     assert composed.physical_claims[0].physical_claim == "verified"
-    assert composed.cell_claims[0].cell_projection_claim == "verified"
+    assert composed.cell_claims == ()
 
 
 @pytest.mark.parametrize(
@@ -338,19 +346,19 @@ def test_pipeline_v2_rejects_two_legal_final_cells_for_one_selected_work(
 ) -> None:
     live, matrix, config = _moved_final_matrix(tmp_path)
     first = next(cell for cell in matrix.cells if cell.sample_stem == "sample-b")
+    second_feature = _winner_feature(live.stage, "WINNER-2")
     second = replace(
         first,
         cluster_id="WINNER-2",
-        group_hypothesis_id="WINNER-2",
+        group_hypothesis_id=second_feature.group_hypothesis_id,
         public_family_id="WINNER-2",
-        consolidation_winner_group_hypothesis_id="WINNER-2",
+        consolidation_winner_group_hypothesis_id=second_feature.group_hypothesis_id,
     )
-    second_feature = _winner_feature(live.stage, "WINNER-2")
     second_detected = tuple(
         replace(
             cell,
             cluster_id="WINNER-2",
-            group_hypothesis_id="WINNER-2",
+            group_hypothesis_id=second_feature.group_hypothesis_id,
             public_family_id="WINNER-2",
         )
         for cell in matrix.cells
@@ -386,17 +394,18 @@ def test_pipeline_v2_ignores_multiple_legal_nonwriting_cells_for_one_work(
 ) -> None:
     live = _live_available_inputs(tmp_path)
     exact = live.observation.cell
+    winner = _winner_feature(live.stage, "WINNER")
     moved = replace(
         exact,
         cluster_id="WINNER",
-        group_hypothesis_id="WINNER",
+        group_hypothesis_id=winner.group_hypothesis_id,
         public_family_id="WINNER",
         consolidation_state="moved_to_primary_winner",
-        consolidation_winner_group_hypothesis_id="WINNER",
+        consolidation_winner_group_hypothesis_id=winner.group_hypothesis_id,
         consolidation_source_group_hypothesis_id=live.stage.group_hypothesis_id,
     )
     matrix = AlignmentMatrix(
-        clusters=(live.feature, _winner_feature(live.stage, "WINNER")),
+        clusters=(live.feature, winner),
         cells=(exact, moved),
         sample_order=(live.stage.sample_stem,),
     )
@@ -523,27 +532,28 @@ def test_audit_evidence_mode_none_keeps_only_selected_physical_rows(
 
 def _moved_final_matrix(tmp_path: Path):
     live = _live_available_inputs(tmp_path)
+    winner = _winner_feature(live.stage, "WINNER")
     source = live.observation.cell
     moved = replace(
         source,
         cluster_id="WINNER",
-        group_hypothesis_id="WINNER",
+        group_hypothesis_id=winner.group_hypothesis_id,
         public_family_id="WINNER",
         consolidation_state="moved_to_primary_winner",
-        consolidation_winner_group_hypothesis_id="WINNER",
+        consolidation_winner_group_hypothesis_id=winner.group_hypothesis_id,
         consolidation_source_group_hypothesis_id=live.stage.group_hypothesis_id,
     )
     detected = tuple(
         replace(
             _detected_cell(sample, live.evaluation.integration, stage=live.stage),
             cluster_id="WINNER",
-            group_hypothesis_id="WINNER",
+            group_hypothesis_id=winner.group_hypothesis_id,
             public_family_id="WINNER",
         )
         for sample in ("detected-1", "detected-2")
     )
     matrix = AlignmentMatrix(
-        clusters=(_winner_feature(live.stage, "WINNER"),),
+        clusters=(winner,),
         cells=(moved, *detected),
         sample_order=(live.stage.sample_stem, "detected-1", "detected-2"),
     )
@@ -551,12 +561,32 @@ def _moved_final_matrix(tmp_path: Path):
 
 
 def _winner_feature(stage, winner_id: str):
-    source = _production_feature(stage)
-    return SimpleNamespace(
-        **{
-            **vars(source),
-            "feature_family_id": winner_id,
-            "group_hypothesis_id": winner_id,
-            "public_family_id": winner_id,
-        }
+    source = _feature(
+        feature_family_id=winner_id,
+        mz=500.0,
+        rt=stage.query_rt_min,
+    )
+    owners = (
+        source.owners[0],
+        _owner("sample-c", f"{winner_id}-support", apex_rt=stage.query_rt_min),
+    )
+    members = tuple(
+        owner.cross_sample_member_subject
+        for owner in owners
+        if owner.cross_sample_member_subject is not None
+    )
+    assert len(members) == len(owners)
+    identity = mint_cross_sample_group_identity(
+        processing_request_id=members[0].processing_request_id,
+        member_subjects=members,
+    )
+    return replace(
+        source,
+        owners=owners,
+        evidence="owner_complete_link;owner_count=2",
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        group_hypothesis_id=identity.group_hypothesis_id,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
     )

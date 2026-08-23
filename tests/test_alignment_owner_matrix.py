@@ -78,7 +78,7 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
     by_sample = {cell.sample_stem: cell for cell in matrix.cells}
     assert by_sample["sample-a"].status == "detected"
     assert by_sample["sample-a"].area == 1000.0
-    assert by_sample["sample-a"].group_hypothesis_id == "FAM000001"
+    assert by_sample["sample-a"].group_hypothesis_id == feature.group_hypothesis_id
     assert by_sample["sample-a"].public_family_id == "FAM000001"
     assert by_sample["sample-a"].group_construction_role == "successor_constructor"
     assert (
@@ -96,9 +96,12 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
     assert by_sample["sample-a"].selected_integration is not None
     assert by_sample["sample-a"].selected_integration.area_raw_counts_seconds == 1000.0
     assert by_sample["sample-a"].matrix_area == 900.0
-    assert by_sample["sample-a"].source_candidate_id == "sample-a#a"
+    assert (
+        by_sample["sample-a"].source_candidate_id
+        == feature.owners[0].primary_identity_event.candidate_id
+    )
     assert by_sample["sample-b"].status == "rescued"
-    assert by_sample["sample-b"].group_hypothesis_id == "FAM000001"
+    assert by_sample["sample-b"].group_hypothesis_id == feature.group_hypothesis_id
     assert by_sample["sample-b"].gap_fill_state == "gap_fill_rescued"
     assert by_sample["sample-c"].status == "ambiguous_ms1_owner"
     assert by_sample["sample-c"].gap_fill_state == "not_filled"

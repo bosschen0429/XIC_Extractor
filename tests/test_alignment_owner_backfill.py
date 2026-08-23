@@ -10,6 +10,9 @@ import xic_extractor.alignment.owner_backfill as owner_backfill_module
 import xic_extractor.alignment.owner_backfill_request_plan as request_plan_module
 from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.owner_backfill import (
     build_owner_backfill_cells,
     build_owner_backfill_result,
@@ -55,7 +58,7 @@ def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
     assert cell.matrix_area == cell.selected_integration.area_ms1_morphology
     assert cell.reason == "owner-centered MS1 backfill"
     assert cell.trace_quality == "owner_backfill"
-    assert cell.group_hypothesis_id == "FAM000001"
+    assert cell.group_hypothesis_id == feature.group_hypothesis_id
     assert cell.public_family_id == "FAM000001"
     assert cell.group_construction_role == "successor_constructor"
     assert cell.group_delivery_role == "owner_aligned_feature_compatibility_facade"
@@ -78,8 +81,9 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
         tmp_path,
         b"owner-backfill-shadow-corpus",
     )
+    feature = _feature()
     baseline = build_owner_backfill_result(
-        (_feature(),),
+        (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": _dense_peak_source(center=8.50, height=120.0)},
         alignment_config=AlignmentConfig(max_rt_sec=60.0),
@@ -88,7 +92,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     )
 
     candidate = build_owner_backfill_result(
-        (_feature(),),
+        (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": bound_source},
         expected_acquisition_sources={"sample-b": acquisition},
@@ -102,7 +106,10 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert len(baseline.peak_fact_unsealed_evaluation_keys) == 1
     assert bound_source.calls == [(500.0, 7.5, 9.5, 20.0)]
     observation = candidate.peak_fact_observations[0]
-    assert observation.logical_request.group_hypothesis_id == "FAM000001"
+    assert (
+        observation.logical_request.group_hypothesis_id
+        == feature.group_hypothesis_id
+    )
     assert observation.request_identity.acquisition_source == acquisition
     assert observation.facts is not None
     assert observation.facts.integration == candidate.cells[0].selected_integration
@@ -315,36 +322,7 @@ def test_owner_backfill_canonical_rejects_unique_segment_beyond_preferred_rt(
 
 def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -> None:
     source = _dense_peak_source(center=8.50, height=120.0)
-    owner = SimpleNamespace(sample_stem="sample-a", owner_area=1000.0)
-    feature = SimpleNamespace(
-        feature_family_id="FAM_CONTRACT",
-        cluster_id="FAM_CONTRACT",
-        neutral_loss_tag="NL116",
-        family_center_mz=500.0,
-        family_center_rt=8.5,
-        family_product_mz=383.9526,
-        family_observed_neutral_loss_da=116.0474,
-        has_anchor=True,
-        owners=(owner,),
-        members=(owner,),
-        event_cluster_ids=("OWN-sample-a-000001",),
-        event_member_count=1,
-        evidence="test_delivery_contract",
-        identity_conflict=False,
-        review_only=False,
-        confirm_local_owners_with_backfill=False,
-        backfill_seed_centers=(),
-        ambiguous_sample_stem=None,
-        ambiguous_candidate_ids=(),
-        group_hypothesis_id="GROUP_CONTRACT",
-        public_family_id="FAM_CONTRACT",
-        group_construction_role="successor_projection_adapter",
-        group_delivery_role="successor_delivery_protocol",
-        group_membership_source="cross_sample_peak_group_hypothesis",
-        consolidation_state="not_consolidated",
-        consolidation_winner_group_hypothesis_id="",
-        consolidation_source_group_hypothesis_id="",
-    )
+    feature = _delivery_contract_feature()
 
     cells = build_owner_backfill_cells(
         (feature,),
@@ -357,7 +335,7 @@ def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -
     assert not isinstance(feature, OwnerAlignedFeature)
     assert len(cells) == 1
     assert cells[0].cluster_id == "FAM_CONTRACT"
-    assert cells[0].group_hypothesis_id == "GROUP_CONTRACT"
+    assert cells[0].group_hypothesis_id == feature.group_hypothesis_id
     assert cells[0].public_family_id == "FAM_CONTRACT"
     assert cells[0].group_delivery_role == "successor_delivery_protocol"
     assert cells[0].gap_fill_state == "gap_fill_rescued"
@@ -1495,6 +1473,14 @@ def _feature(
     mz: float = 500.0,
     rt: float = 8.5,
 ) -> OwnerAlignedFeature:
+    owners = (_owner("sample-a", feature_family_id, apex_rt=8.5),)
+    member = owners[0].cross_sample_member_subject
+    assert member is not None
+    identity = mint_cross_sample_group_identity(
+        processing_request_id=member.processing_request_id,
+        member_subjects=(member,),
+        disposition="unresolved" if review_only else None,
+    )
     return OwnerAlignedFeature(
         feature_family_id=feature_family_id,
         neutral_loss_tag="NL116",
@@ -1503,10 +1489,57 @@ def _feature(
         family_product_mz=383.9526,
         family_observed_neutral_loss_da=116.0474,
         has_anchor=True,
-        owners=(_owner("sample-a", "a", apex_rt=8.5),),
+        owners=owners,
         evidence="single_sample_local_owner",
         review_only=review_only,
         identity_conflict=review_only,
+        group_hypothesis_id=identity.group_hypothesis_id,
+        public_family_id=feature_family_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
+    )
+
+
+def _delivery_contract_feature() -> SimpleNamespace:
+    """Canonical non-DTO carrier for the delivery protocol boundary."""
+
+    base = _feature(feature_family_id="FAM_CONTRACT", mz=500.0, rt=8.5)
+    return SimpleNamespace(
+        feature_family_id=base.feature_family_id,
+        cluster_id=base.cluster_id,
+        neutral_loss_tag=base.neutral_loss_tag,
+        family_center_mz=base.family_center_mz,
+        family_center_rt=base.family_center_rt,
+        family_product_mz=base.family_product_mz,
+        family_observed_neutral_loss_da=base.family_observed_neutral_loss_da,
+        has_anchor=base.has_anchor,
+        owners=base.owners,
+        members=base.members,
+        event_cluster_ids=base.event_cluster_ids,
+        event_member_count=base.event_member_count,
+        evidence="test_delivery_contract",
+        identity_conflict=base.identity_conflict,
+        review_only=base.review_only,
+        confirm_local_owners_with_backfill=base.confirm_local_owners_with_backfill,
+        backfill_seed_centers=base.backfill_seed_centers,
+        ambiguous_sample_stem=base.ambiguous_sample_stem,
+        ambiguous_candidate_ids=base.ambiguous_candidate_ids,
+        group_hypothesis_id=base.group_hypothesis_id,
+        public_family_id=base.public_family_id,
+        processing_request_id=base.processing_request_id,
+        member_subjects=base.member_subjects,
+        identity_basis_bytes=base.identity_basis_bytes,
+        disposition=base.disposition,
+        cross_sample_lineage=base.cross_sample_lineage,
+        cross_sample_state=base.cross_sample_state,
+        group_construction_role="successor_projection_adapter",
+        group_delivery_role="successor_delivery_protocol",
+        group_membership_source="cross_sample_peak_group_hypothesis",
+        consolidation_state="not_consolidated",
+        consolidation_winner_group_hypothesis_id="",
+        consolidation_source_group_hypothesis_id="",
     )
 
 

@@ -972,7 +972,7 @@ def _physical_raw_descriptor_projection(
         boundary_sources=("canonical_physical_segment_v1",),
         area_baseline_corrected=facts.area_counts_seconds,
         baseline_type=prepared.profile.baseline_method,
-        raw_scan_indices=(),
+        raw_scan_indices=tuple(range(selected.start_index, selected.end_index)),
         area_ms1_morphology=facts.area_counts_seconds,
         ms1_morphology_area_source=facts.area_source,
         ms1_morphology_trace_method=prepared.profile.method,
@@ -1153,6 +1153,17 @@ def validate_bounded_physical_peak_evaluation(
             prefix="physical-facts.v1:",
             field="fact_content_id",
         )
+        selected_segment = next(
+            (
+                segment
+                for segment in evaluation.segment_universe.segments
+                if segment.physical_segment_id
+                == evaluation.answer.physical_segment_id
+            ),
+            None,
+        )
+        if selected_segment is None:
+            raise ValueError("physical answer selects an unknown segment")
         if (
             integration.rt_left_min != facts.left_rt_min
             or integration.rt_apex_min != facts.apex_rt_min
@@ -1160,6 +1171,9 @@ def validate_bounded_physical_peak_evaluation(
             or integration.area_baseline_corrected != facts.area_counts_seconds
             or integration.area_ms1_morphology != facts.area_counts_seconds
             or integration.raw_scan_indices
+            != tuple(
+                range(selected_segment.start_index, selected_segment.end_index)
+            )
         ):
             raise ValueError("bounded raw descriptor crosses physical facts")
     elif (
@@ -2427,6 +2441,7 @@ def _integration_and_morphology_trace(
     )
     enriched = replace(
         integration,
+        raw_scan_indices=tuple(range(left_index, right_index)),
         area_baseline_corrected=baseline.area_baseline_corrected,
         area_uncertainty=baseline.area_uncertainty,
         area_uncertainty_formula_version=baseline.area_uncertainty_formula_version,

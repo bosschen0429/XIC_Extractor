@@ -526,6 +526,7 @@ def _prepare_owner_authorized_recoveries(
             return
         support_owners.append(
             owner_from_cid_nl_assessment_support(
+                processing_owners=state.job.processing_owners,
                 sample=state.job.sample,
                 assessment=assessment,
                 hypothesis=hypotheses[0],

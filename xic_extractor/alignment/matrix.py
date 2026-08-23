@@ -111,6 +111,7 @@ class AlignedCell:
     product_selection_blocker: str = ""
     rt_mode_status: str = ""
     group_claim_state: str = ""
+    claim_source_status: str = ""
     claim_winner_group_hypothesis_id: str = ""
     claim_source_group_hypothesis_id: str = ""
     consolidation_state: str = ""

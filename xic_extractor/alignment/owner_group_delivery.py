@@ -151,8 +151,26 @@ GROUP_BACKFILL_SEED_AUDIT_COLUMNS = (
 
 
 def delivery_group_hypothesis_id(feature: object) -> str:
+    """Return the canonical CrossSample identity required for science paths.
+
+    A public family label is deliberately not an identity substitute.  Call the
+    explicitly named render-only adapter below when projecting an ambiguous
+    legacy display record instead of allowing that projection into a grouping,
+    claim, or delivery decision.
+    """
+
+    group_hypothesis_id = _string_attr(feature, "group_hypothesis_id")
+    if group_hypothesis_id:
+        return group_hypothesis_id
+    raise ValueError("scientific delivery requires a canonical group_hypothesis_id")
+
+
+def render_only_delivery_group_hypothesis_id(feature: object) -> str:
+    """Project an ambiguous legacy record for rendering only, never science."""
+
     return (
         _string_attr(feature, "group_hypothesis_id")
+        or _string_attr(feature, "public_family_id")
         or _string_attr(feature, "feature_family_id")
         or _string_attr(feature, "cluster_id")
     )
@@ -195,8 +213,10 @@ def delivery_consolidation_source_group_hypothesis_id(feature: object) -> str:
 
 
 def delivery_group_projection(feature: object) -> GroupProjection:
+    """Render a group projection; legacy display identity stays render-only."""
+
     return {
-        "group_hypothesis_id": delivery_group_hypothesis_id(feature),
+        "group_hypothesis_id": render_only_delivery_group_hypothesis_id(feature),
         "public_family_id": delivery_public_family_id(feature),
         "group_construction_role": delivery_group_construction_role(feature),
         "group_delivery_role": delivery_group_delivery_role(feature),

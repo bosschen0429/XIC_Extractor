@@ -3,10 +3,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import xic_extractor.alignment.pipeline as pipeline_module
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.models import AlignmentCluster
+from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
+from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -15,7 +20,18 @@ from xic_extractor.discovery.batch_contract import (
     mint_discovery_candidate_universe_receipt,
 )
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import (
+    build_acquisition_source_identity,
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_PIPELINE_FIXTURE_REQUEST_ID = typed_identity_digest(
+    "xic.processing-request.v1:",
+    canonical_identity_basis_bytes(
+        {"schema_version": "alignment-pipeline-helper-v1"}
+    ),
+)
 
 
 def patch_owner_pipeline_to_matrix(monkeypatch) -> None:
@@ -85,6 +101,7 @@ def write_batch(
     sample_order: tuple[str, ...],
     *,
     raw_files: dict[str, str] | None = None,
+    owner_closed: bool = True,
 ) -> Path:
     batch_dir = tmp_path / "batch"
     batch_dir.mkdir(exist_ok=True)
@@ -99,18 +116,31 @@ def write_batch(
             DISCOVERY_CANDIDATE_COLUMNS,
             [candidate_row(sample_stem)],
         )
-        rows.append(
-            {
-                "sample_stem": sample_stem,
-                "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
-                "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-                "review_csv": "",
-            }
-        )
+        row = {
+            "sample_stem": sample_stem,
+            "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
+            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
+            "review_csv": "",
+        }
+        if owner_closed:
+            row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
+        rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
     write_csv(
         batch_index,
-        ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        (
+            (
+                "schema_version",
+                "sample_stem",
+                "raw_file",
+                "candidate_csv",
+                "review_csv",
+                "candidate_count",
+                *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+            )
+            if owner_closed
+            else ("sample_stem", "raw_file", "candidate_csv", "review_csv")
+        ),
         rows,
     )
     return batch_index
@@ -121,6 +151,7 @@ def write_partial_batch(
     *,
     sample_order: tuple[str, ...],
     candidate_samples: tuple[str, ...],
+    owner_closed: bool = True,
 ) -> Path:
     batch_dir = tmp_path / "batch"
     batch_dir.mkdir(exist_ok=True)
@@ -133,21 +164,61 @@ def write_partial_batch(
             [candidate_row(sample_stem)] if sample_stem in candidate_samples else []
         )
         write_csv(candidates_csv, DISCOVERY_CANDIDATE_COLUMNS, candidate_rows)
-        rows.append(
-            {
-                "sample_stem": sample_stem,
-                "raw_file": f"C:/stale/{sample_stem}.raw",
-                "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-                "review_csv": "",
-            }
-        )
+        row = {
+            "sample_stem": sample_stem,
+            "raw_file": f"C:/stale/{sample_stem}.raw",
+            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
+            "review_csv": "",
+        }
+        if owner_closed:
+            row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
+        rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
     write_csv(
         batch_index,
-        ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        (
+            (
+                "schema_version",
+                "sample_stem",
+                "raw_file",
+                "candidate_csv",
+                "review_csv",
+                "candidate_count",
+                *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+            )
+            if owner_closed
+            else ("sample_stem", "raw_file", "candidate_csv", "review_csv")
+        ),
         rows,
     )
     return batch_index
+
+
+def _owner_closed_receipt_fields(
+    sample_stem: str,
+    candidates_csv: Path,
+) -> dict[str, str]:
+    """Build a test-only Discovery receipt from a stable synthetic acquisition."""
+
+    source_path = candidates_csv.with_name("owner_closed_acquisition.raw")
+    source_path.write_bytes(f"owner-closed-acquisition:{sample_stem}".encode())
+    acquisition_source = build_acquisition_source_identity(
+        source_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    candidates = read_discovery_candidates_csv(candidates_csv)
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem=sample_stem,
+        acquisition_source=acquisition_source,
+        candidate_csv=candidates_csv,
+        candidates=candidates,
+    )
+    return {
+        "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+        "candidate_count": str(len(candidates)),
+        **discovery_receipt_index_fields(receipt),
+    }
 
 
 def write_owner_closed_partial_batch(
@@ -278,23 +349,43 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
     }
 
 
-def cluster(cluster_id: str = "ALN000001") -> AlignmentCluster:
-    return AlignmentCluster(
-        cluster_id=cluster_id,
+def cluster(
+    cluster_id: str = "ALN000001",
+    *,
+    sample_order: tuple[str, ...] = ("sample-a",),
+) -> OwnerAlignedFeature:
+    members = tuple(_pipeline_member(sample_stem) for sample_stem in sample_order)
+    identity = mint_cross_sample_group_identity(
+        processing_request_id=_PIPELINE_FIXTURE_REQUEST_ID,
+        member_subjects=members,
+    )
+    return OwnerAlignedFeature(
+        feature_family_id=cluster_id,
         neutral_loss_tag="DNA_dR",
-        cluster_center_mz=500.0,
-        cluster_center_rt=8.5,
-        cluster_product_mz=384.0,
-        cluster_observed_neutral_loss_da=116.0,
+        family_center_mz=500.0,
+        family_center_rt=8.5,
+        family_product_mz=384.0,
+        family_observed_neutral_loss_da=116.0,
         has_anchor=True,
-        members=(),
-        anchor_members=(),
+        owners=tuple(
+            _pipeline_owner(sample_stem, member)
+            for sample_stem, member in zip(sample_order, members, strict=True)
+        ),
+        evidence=f"owner_complete_link;owner_count={len(members)}",
+        group_hypothesis_id=identity.group_hypothesis_id,
+        public_family_id=cluster_id,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
     )
 
 
 def matrix(sample_order: tuple[str, ...]) -> AlignmentMatrix:
+    if not sample_order:
+        return AlignmentMatrix(clusters=(), cells=(), sample_order=sample_order)
     return AlignmentMatrix(
-        clusters=(cluster(),),
+        clusters=(cluster(sample_order=sample_order),),
         cells=tuple(
             AlignedCell(
                 sample_stem=sample_stem,
@@ -315,6 +406,67 @@ def matrix(sample_order: tuple[str, ...]) -> AlignmentMatrix:
             for sample_stem in sample_order
         ),
         sample_order=sample_order,
+    )
+
+
+def _pipeline_member(sample_stem: str) -> CrossSampleGroupMemberSubject:
+    subject_id = f"xic.peak-observation-content.v1:pipeline-helper-{sample_stem}"
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _PIPELINE_FIXTURE_REQUEST_ID,
+            "canonical_sample_identity_id": (
+                f"xic.sample.v1:pipeline-helper-{sample_stem}"
+            ),
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(
+            "xic.group-member-subject.v1:",
+            basis,
+        ),
+        processing_request_id=_PIPELINE_FIXTURE_REQUEST_ID,
+        canonical_sample_identity_id=(
+            f"xic.sample.v1:pipeline-helper-{sample_stem}"
+        ),
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
+    )
+
+
+def _pipeline_owner(
+    sample_stem: str,
+    member: CrossSampleGroupMemberSubject,
+) -> SampleLocalMS1Owner:
+    return SampleLocalMS1Owner(
+        owner_id=f"OWN-{sample_stem}-000001",
+        sample_stem=sample_stem,
+        raw_file=f"{sample_stem}.raw",
+        precursor_mz=500.0,
+        owner_apex_rt=8.5,
+        owner_peak_start_rt=8.4,
+        owner_peak_end_rt=8.6,
+        owner_area=100.0,
+        owner_height=50.0,
+        primary_identity_event=IdentityEvent(
+            candidate_id=candidate_id(sample_stem),
+            sample_stem=sample_stem,
+            raw_file=f"{sample_stem}.raw",
+            neutral_loss_tag="DNA_dR",
+            precursor_mz=500.0,
+            product_mz=384.0,
+            observed_neutral_loss_da=116.0,
+            seed_rt=8.5,
+            evidence_score=80,
+            seed_event_count=2,
+        ),
+        supporting_events=(),
+        identity_conflict=False,
+        assignment_reason="pipeline helper canonical owner",
+        cross_sample_member_subject=member,
     )
 
 

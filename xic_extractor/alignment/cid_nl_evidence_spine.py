@@ -322,6 +322,7 @@ def build_cid_nl_reference_spine(
     try:
         owners = tuple(
             owner_from_cid_nl_assessment_support(
+                processing_owners=processing_owners,
                 sample=sample,
                 assessment=assessment,
                 hypothesis=hypothesis,

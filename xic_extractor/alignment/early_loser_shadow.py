@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Literal, Mapping
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignmentMatrix
@@ -17,6 +17,7 @@ from xic_extractor.alignment.owner_group_delivery import (
     delivery_consolidation_state,
     delivery_consolidation_winner_group_hypothesis_id,
     delivery_group_hypothesis_id,
+    render_only_delivery_group_hypothesis_id,
 )
 from xic_extractor.alignment.pre_backfill_consolidation import (
     consolidate_pre_backfill_identity_families,
@@ -144,23 +145,40 @@ def build_early_loser_shadow_proposal(
 ) -> EarlyLoserShadowProposal:
     if not run_id.strip():
         raise ValueError("early-loser shadow run_id must be non-empty")
-    source_by_group = _features_by_group(features, label="source")
-    shadow_features = consolidate_pre_backfill_identity_families(
-        features,
+    scientific_sources, display_sources = _shadow_source_partition(features)
+    source_by_group = _features_by_group(scientific_sources, label="source")
+    consolidated_scientific = consolidate_pre_backfill_identity_families(
+        scientific_sources,
         config=alignment_config,
     )
-    shadow_by_group = _features_by_group(shadow_features, label="shadow")
-    if set(source_by_group) != set(shadow_by_group):
-        raise ValueError("early-loser shadow changed the owner feature universe")
+    shadow_by_source_group = _render_only_shadow_by_source_group(
+        scientific_sources,
+        consolidated_scientific,
+    )
+    consolidated_by_source: dict[str, OwnerAlignedFeature] = {
+        group_id: shadow
+        for group_id, shadow in shadow_by_source_group.items()
+    }
+    shadow_features = tuple(
+        consolidated_by_source.get(delivery_group_hypothesis_id(feature), feature)
+        if feature in scientific_sources
+        else feature
+        for feature in features
+    )
+    shadow_active_by_group = _active_features_by_group(shadow_features, label="shadow")
 
     proposal_lineages = {
-        group_id: _resolve_lineage(group_id, shadow_by_group)
-        for group_id in shadow_by_group
+        group_id: _resolve_shadow_lineage(
+            group_id,
+            shadow_by_source_group,
+            shadow_active_by_group,
+        )
+        for group_id in source_by_group
     }
     rows: list[EarlyLoserShadowProposalRow] = []
     for group_id in sorted(source_by_group):
         source = source_by_group[group_id]
-        proposed = shadow_by_group[group_id]
+        proposed = shadow_by_source_group[group_id]
         state = delivery_consolidation_state(proposed)
         lineage = proposal_lineages[group_id]
         if bool(getattr(source, "review_only", False)):
@@ -193,6 +211,30 @@ def build_early_loser_shadow_proposal(
                 lineage=lineage,
             )
         )
+    for offset, source in enumerate(display_sources, start=1):
+        display_id = render_only_delivery_group_hypothesis_id(source).strip()
+        if not display_id:
+            display_id = f"display-source-{offset:06d}"
+        if bool(getattr(source, "identity_conflict", False)):
+            reason = "source_owner_feature_has_identity_conflict"
+        elif bool(getattr(source, "review_only", False)):
+            reason = "source_owner_feature_is_review_only"
+        else:
+            reason = "source_owner_feature_is_render_only"
+        rows.append(
+            EarlyLoserShadowProposalRow(
+                source_feature_family_id=(
+                    str(getattr(source, "feature_family_id", "")) or row_id(source)
+                ),
+                source_group_hypothesis_id=display_id,
+                proposal_status="unresolved",
+                proposal_reason=reason,
+                source_stage=_SOURCE_STAGE,
+                direct_winner_group_hypothesis_id="",
+                terminal_winner_group_hypothesis_id="",
+                lineage=(),
+            )
+        )
     return EarlyLoserShadowProposal(
         run_id=run_id,
         source_owner_snapshot_sha256=_canonical_sha256(
@@ -200,7 +242,7 @@ def build_early_loser_shadow_proposal(
                 asdict(feature)
                 for feature in sorted(
                     features,
-                    key=delivery_group_hypothesis_id,
+                    key=_shadow_source_sort_key,
                 )
             ]
         ),
@@ -231,21 +273,56 @@ def compare_early_loser_shadow_with_final_authority(
     proposal: EarlyLoserShadowProposal,
     final_matrix: AlignmentMatrix,
 ) -> EarlyLoserShadowReport:
-    final_by_group = _features_by_group(final_matrix.clusters, label="final")
+    final_by_group = _active_features_by_group(final_matrix.clusters, label="final")
+    final_lineage_edges = _lineage_successors(final_by_group)
+    scientific_proposal_rows = tuple(
+        row for row in proposal.rows if row.proposal_status != "unresolved"
+    )
     final_lineages = {
-        group_id: _resolve_lineage(group_id, final_by_group)
-        for group_id in final_by_group
+        group_id: _resolve_final_lineage(
+            group_id,
+            final_by_group,
+            final_lineage_edges,
+        )
+        for group_id in {
+            *(row.source_group_hypothesis_id for row in scientific_proposal_rows),
+            *(
+                row.terminal_winner_group_hypothesis_id
+                for row in scientific_proposal_rows
+            ),
+        }
     }
     rows: list[EarlyLoserShadowComparisonRow] = []
     for proposal_row in proposal.rows:
-        group_id = proposal_row.source_group_hypothesis_id
-        final_feature = final_by_group.get(group_id)
-        if final_feature is None:
-            raise ValueError(
-                "early-loser final authority is missing source group "
-                f"{group_id!r}"
+        if proposal_row.proposal_status == "unresolved":
+            rows.append(
+                EarlyLoserShadowComparisonRow(
+                    source_feature_family_id=proposal_row.source_feature_family_id,
+                    source_group_hypothesis_id=proposal_row.source_group_hypothesis_id,
+                    proposal_status=proposal_row.proposal_status,
+                    proposal_reason=proposal_row.proposal_reason,
+                    proposal_source_stage=proposal_row.source_stage,
+                    proposal_direct_winner_group_hypothesis_id=(
+                        proposal_row.direct_winner_group_hypothesis_id
+                    ),
+                    proposal_terminal_winner_group_hypothesis_id=(
+                        proposal_row.terminal_winner_group_hypothesis_id
+                    ),
+                    proposal_lineage=proposal_row.lineage,
+                    final_consolidation_state="unresolved_display_only",
+                    final_direct_winner_group_hypothesis_id="",
+                    final_terminal_winner_group_hypothesis_id="",
+                    final_lineage=(),
+                    comparison_status="unresolved",
+                    comparison_reason=(
+                        "source was excluded from scientific shadow identity lookup"
+                    ),
+                )
             )
+            continue
+        group_id = proposal_row.source_group_hypothesis_id
         final_lineage = final_lineages[group_id]
+        final_feature = final_by_group[final_lineage[-1]]
         final_state = delivery_consolidation_state(final_feature)
         comparison_status, comparison_reason = _comparison(
             proposal_row,
@@ -360,8 +437,13 @@ def _workload(
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
 ) -> EarlyLoserShadowWorkload:
+    active_features = tuple(
+        feature
+        for feature in features
+        if getattr(feature, "cross_sample_state", "active") == "active"
+    )
     plan = build_owner_backfill_request_plan(
-        features,
+        active_features,
         sample_order=sample_order,
         raw_sample_stems=raw_sample_stems,
         alignment_config=alignment_config,
@@ -379,11 +461,42 @@ def _workload(
         for item in items
     }
     return EarlyLoserShadowWorkload(
-        feature_count=len(features),
+        feature_count=len(active_features),
         requested_feature_count=len(requested_features),
         requested_cell_count=len(requested_cells),
         logical_xic_request_count=len(items),
     )
+
+
+def _shadow_source_partition(
+    features: tuple[OwnerAlignedFeature, ...],
+) -> tuple[tuple[OwnerAlignedFeature, ...], tuple[OwnerAlignedFeature, ...]]:
+    """Separate canonical science inputs from unresolved/render display rows."""
+
+    scientific: list[OwnerAlignedFeature] = []
+    display: list[OwnerAlignedFeature] = []
+    for feature in features:
+        state = getattr(feature, "cross_sample_state", "active")
+        if state not in {"active", "render_only"}:
+            raise ValueError("early-loser source has an unknown CrossSample state")
+        if (
+            state == "active"
+            and not bool(getattr(feature, "review_only", False))
+            and not bool(getattr(feature, "identity_conflict", False))
+        ):
+            scientific.append(feature)
+        else:
+            display.append(feature)
+    return tuple(scientific), tuple(display)
+
+
+def _shadow_source_sort_key(feature: object) -> tuple[str, str]:
+    """Deterministically snapshot display rows without treating labels as IDs."""
+
+    state = str(getattr(feature, "cross_sample_state", "active"))
+    if state == "active":
+        return ("active", delivery_group_hypothesis_id(feature))
+    return ("display", render_only_delivery_group_hypothesis_id(feature))
 
 
 def _features_by_group(features, *, label: str) -> dict[str, object]:
@@ -398,14 +511,134 @@ def _features_by_group(features, *, label: str) -> dict[str, object]:
     return by_group
 
 
-def _resolve_lineage(
+def _active_features_by_group(features, *, label: str) -> dict[str, object]:
+    """Index canonical records that remain scientific delivery inputs.
+
+    A pre-backfill loser survives only as a render row.  Its cleared canonical
+    identity must not be reconstructed merely so this no-write diagnostic can
+    compare it with final authority.
+    """
+
+    active = tuple(
+        feature
+        for feature in features
+        if getattr(feature, "cross_sample_state", "active") == "active"
+    )
+    unknown = tuple(
+        feature
+        for feature in features
+        if getattr(feature, "cross_sample_state", "active")
+        not in {"active", "render_only"}
+    )
+    if unknown:
+        raise ValueError(f"{label} owner feature has an unknown CrossSample state")
+    return _features_by_group(active, label=label)
+
+
+def _render_only_shadow_by_source_group(
+    source_features: tuple[OwnerAlignedFeature, ...],
+    shadow_features: tuple[OwnerAlignedFeature, ...],
+) -> dict[str, OwnerAlignedFeature]:
+    """Bind the pre-owner's same-position render projection to its source ID.
+
+    `consolidate_pre_backfill_identity_families` deliberately leaves a losing
+    row in place for structural rendering while stripping all canonical fields.
+    That record cannot participate in a scientific identity map.  The owner
+    returns one output carrier for each supplied input carrier, preserving its
+    position; this adapter only retains that closed projection relation for the
+    diagnostic's source-to-result comparison.
+    """
+
+    if len(source_features) != len(shadow_features):
+        raise ValueError("early-loser shadow changed the owner feature universe")
+    by_source_group: dict[str, OwnerAlignedFeature] = {}
+    for source, shadow in zip(source_features, shadow_features, strict=True):
+        source_group_id = delivery_group_hypothesis_id(source).strip()
+        if not source_group_id:
+            raise ValueError("source owner feature has a blank group identity")
+        if source_group_id in by_source_group:
+            raise ValueError(
+                f"source owner feature repeats group {source_group_id!r}"
+            )
+        state = getattr(shadow, "cross_sample_state", "active")
+        if state not in {"active", "render_only"}:
+            raise ValueError("shadow owner feature has an unknown CrossSample state")
+        by_source_group[source_group_id] = shadow
+    return by_source_group
+
+
+def _resolve_shadow_lineage(
     source_group_id: str,
-    features_by_group: dict[str, object],
+    shadow_by_source_group: Mapping[str, object],
+    active_by_group: Mapping[str, object],
 ) -> tuple[str, ...]:
+    """Resolve a pre-backfill source through an active canonical successor."""
+
+    source_feature = shadow_by_source_group.get(source_group_id)
+    if source_feature is None:
+        raise ValueError(
+            f"early-loser shadow is missing source group {source_group_id!r}"
+        )
+    state = delivery_consolidation_state(source_feature)
+    if state == "primary_loser":
+        winner = delivery_consolidation_winner_group_hypothesis_id(source_feature)
+        if not winner:
+            raise ValueError(
+                f"primary_loser {source_group_id!r} has no winner group identity"
+            )
+        winner_feature = active_by_group.get(winner)
+        if winner_feature is None:
+            raise ValueError(
+                f"primary_loser {source_group_id!r} references missing winner "
+                f"{winner!r}"
+            )
+        _validate_primary_winner(winner, winner_feature)
+        return (source_group_id, winner)
+    if state == "primary_winner":
+        winner = delivery_group_hypothesis_id(source_feature)
+        _validate_primary_winner(winner, source_feature)
+        if winner == source_group_id:
+            return (source_group_id,)
+        return (source_group_id, winner)
+    if state == "not_consolidated":
+        group_id = delivery_group_hypothesis_id(source_feature)
+        if group_id != source_group_id:
+            raise ValueError(
+                "not_consolidated source changed its canonical group identity"
+            )
+        return (source_group_id,)
+    raise ValueError(
+        f"group {source_group_id!r} has unknown consolidation state {state!r}"
+    )
+
+
+def _lineage_successors(
+    active_by_group: dict[str, object],
+) -> dict[str, tuple[str, ...]]:
+    successors: dict[str, set[str]] = {}
+    for current_group_id, feature in active_by_group.items():
+        for edge in getattr(feature, "cross_sample_lineage", ()):
+            if edge.successor_group_hypothesis_id != current_group_id:
+                raise ValueError("final lineage is not closed by its active successor")
+            successors.setdefault(edge.predecessor_group_hypothesis_id, set()).add(
+                edge.successor_group_hypothesis_id
+            )
+    return {
+        predecessor: tuple(sorted(next_ids))
+        for predecessor, next_ids in successors.items()
+    }
+
+
+def _resolve_final_lineage(
+    source_group_id: str,
+    active_by_group: dict[str, object],
+    lineage_successors: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    """Resolve a historical source ID only through immutable active lineage."""
+
     lineage: list[str] = []
     visited: set[str] = set()
     current = source_group_id
-    source_state = delivery_consolidation_state(features_by_group[current])
     while True:
         if current in visited:
             raise ValueError(
@@ -414,46 +647,49 @@ def _resolve_lineage(
             )
         visited.add(current)
         lineage.append(current)
-        feature = features_by_group.get(current)
-        if feature is None:
+        feature = active_by_group.get(current)
+        if feature is not None:
+            state = delivery_consolidation_state(feature)
+            if state == "primary_loser":
+                winner = delivery_consolidation_winner_group_hypothesis_id(feature)
+                if not winner:
+                    raise ValueError(
+                        f"primary_loser {current!r} has no winner group identity"
+                    )
+                current = winner
+                continue
+            if state == "primary_winner":
+                _validate_primary_winner(current, feature)
+            elif state != "not_consolidated":
+                raise ValueError(
+                    f"group {current!r} has unknown consolidation state {state!r}"
+                )
+            return tuple(lineage)
+        next_ids = lineage_successors.get(current, ())
+        if len(next_ids) != 1:
             raise ValueError(
-                f"consolidation lineage references missing group {current!r}"
+                "early-loser final authority is missing source group "
+                f"{current!r}"
             )
-        state = delivery_consolidation_state(feature)
-        if state == "primary_loser":
-            winner = delivery_consolidation_winner_group_hypothesis_id(feature)
-            if not winner:
-                raise ValueError(
-                    f"primary_loser {current!r} has no winner group identity"
-                )
-            if winner not in features_by_group:
-                raise ValueError(
-                    f"primary_loser {current!r} references missing winner {winner!r}"
-                )
-            current = winner
-            continue
-        if state == "primary_winner":
-            winner = delivery_consolidation_winner_group_hypothesis_id(feature)
-            if winner != current:
-                raise ValueError(
-                    f"primary_winner {current!r} must self-reference its winner"
-                )
-            return tuple(lineage)
-        if state == "not_consolidated":
-            if source_state == "primary_loser":
-                raise ValueError(
-                    f"primary_loser {source_group_id!r} terminates at "
-                    f"non-winner {current!r}"
-                )
-            return tuple(lineage)
+        current = next_ids[0]
+
+
+def _validate_primary_winner(group_id: str, feature: object) -> None:
+    winner = delivery_consolidation_winner_group_hypothesis_id(feature)
+    if winner != group_id:
         raise ValueError(
-            f"group {current!r} has unknown consolidation state {state!r}"
+            f"primary_winner {group_id!r} must self-reference its winner"
         )
 
 
 def _direct_winner(group_id: str, feature: object) -> str:
-    if delivery_consolidation_state(feature) == "primary_loser":
+    state = delivery_consolidation_state(feature)
+    if state == "primary_loser":
         return delivery_consolidation_winner_group_hypothesis_id(feature)
+    if state == "primary_winner":
+        winner = delivery_group_hypothesis_id(feature)
+        _validate_primary_winner(winner, feature)
+        return winner
     return group_id
 
 
@@ -466,7 +702,11 @@ def _comparison(
     if proposal_row.proposal_status == "unresolved":
         return "unresolved", "pre-Backfill owner left the source unresolved"
     if proposal_row.proposal_status == "survivor":
-        if len(final_lineage) > 1:
+        if (
+            len(final_lineage) > 1
+            and final_lineage[-1]
+            != proposal_row.terminal_winner_group_hypothesis_id
+        ):
             return (
                 "late_loser",
                 "final authority settled this retained shadow survivor later",
@@ -633,10 +873,22 @@ def _expected_diff_surfaces() -> tuple[EarlyLoserExpectedDiffSurface, ...]:
 
 def _canonical_sha256(value: object) -> str:
     payload = json.dumps(
-        value,
+        _json_hash_value(value),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
         allow_nan=False,
     )
     return hashlib.sha256((payload + "\n").encode("utf-8")).hexdigest()
+
+
+def _json_hash_value(value: object) -> object:
+    """Preserve typed canonical basis bytes in diagnostic snapshot hashing."""
+
+    if isinstance(value, bytes):
+        return {"encoding": "utf-8", "value": value.decode("utf-8")}
+    if isinstance(value, dict):
+        return {str(key): _json_hash_value(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_hash_value(item) for item in value]
+    return value

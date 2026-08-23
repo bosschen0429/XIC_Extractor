@@ -251,7 +251,7 @@ def _complete_no_raw_kwargs(
             ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
             [
                 _backfill_row(
-                    feature_family_id=group.group_hypothesis_id,
+                    feature_family_id=group.public_family_id,
                     group_hypothesis_id=group.group_hypothesis_id,
                     public_family_id=group.public_family_id,
                     sample_stem=sample.lookup_token,
@@ -264,13 +264,13 @@ def _complete_no_raw_kwargs(
             known_sample_stems=frozenset({sample.lookup_token}),
             candidate_samples={source_candidate_id: sample.lookup_token},
             group_feature_family_ids={
-                group.group_hypothesis_id: group.group_hypothesis_id
+                group.group_hypothesis_id: group.public_family_id
             },
             group_public_family_ids={group.group_hypothesis_id: group.public_family_id},
         )
         query_result = lookup_backfill_evidence_tsv(
             path,
-            feature_family_id=group.group_hypothesis_id,
+            feature_family_id=group.public_family_id,
             group_hypothesis_id=group.group_hypothesis_id,
             sample_stem=sample.lookup_token,
             owner_bindings=bindings,

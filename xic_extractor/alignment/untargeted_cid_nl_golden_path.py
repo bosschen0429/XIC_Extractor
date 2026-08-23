@@ -521,6 +521,20 @@ def build_untargeted_cid_nl_quant_matrix_version(
     return rows
 
 
+def _mode_track_projection_display_sort_key(
+    fact: ModeTrackConservativeBackfillGroupFacts,
+) -> tuple[float, float, str, str]:
+    """Keep rendered Matrix/proposal rows in the established scientific order."""
+
+    group = fact.group
+    return (
+        group.family_center_mz,
+        group.family_center_rt,
+        group.public_family_id,
+        group.group_hypothesis_id,
+    )
+
+
 def build_untargeted_cid_nl_mode_track_projection(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -539,6 +553,9 @@ def build_untargeted_cid_nl_mode_track_projection(
         for fact, group in zip(mode_track_facts, expected_groups, strict=True)
     ):
         raise UntargetedCidNlGoldenPathError("incomplete ModeTrack group population")
+    mode_track_facts = tuple(
+        sorted(mode_track_facts, key=_mode_track_projection_display_sort_key)
+    )
     owner_key = (
         processing_owners.request.processing_request_id,
         processing_owners.attempt.processing_attempt_id,

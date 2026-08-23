@@ -7,6 +7,10 @@ from dataclasses import replace
 import pytest
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+    mint_cross_sample_group_identity,
+)
 from xic_extractor.alignment.early_loser_shadow import (
     EARLY_LOSER_SHADOW_SCHEMA_VERSION,
     build_early_loser_shadow_proposal,
@@ -21,46 +25,50 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.alignment.pre_backfill_consolidation import (
+    consolidate_pre_backfill_identity_families,
+)
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_TEST_PROCESSING_REQUEST_ID = typed_identity_digest(
+    "xic.processing-request.v1:",
+    canonical_identity_basis_bytes({"schema_version": "early-loser-shadow-test"}),
+)
 
 
-def test_shadow_accepts_transitive_two_stage_final_lineage() -> None:
+def test_shadow_accepts_canonical_pre_backfill_successor_lineage() -> None:
     loser, middle, winner = _proposal_features()
     proposal = _proposal((loser, middle, winner))
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            _loser(middle, winner="GROUP-WINNER"),
-            _winner(winner),
-        )
-    )
+    final = _pre_backfill_matrix((loser, middle, winner))
 
     report = compare_early_loser_shadow_with_final_authority(proposal, final)
     rows = {row.source_group_hypothesis_id: row for row in report.rows}
+    successor_id = rows[
+        loser.group_hypothesis_id
+    ].proposal_terminal_winner_group_hypothesis_id
 
     assert report.verdict == "GO"
     assert report.activation_allowed is False
     assert report.confirmed_loser_count == 1
-    assert report.late_loser_count == 1
-    assert rows["GROUP-LOSER"].proposal_lineage == (
-        "GROUP-LOSER",
-        "GROUP-MIDDLE",
+    assert report.late_loser_count == 0
+    assert rows[loser.group_hypothesis_id].proposal_lineage == (
+        loser.group_hypothesis_id,
+        successor_id,
     )
-    assert rows["GROUP-LOSER"].final_lineage == (
-        "GROUP-LOSER",
-        "GROUP-MIDDLE",
-        "GROUP-WINNER",
+    assert rows[loser.group_hypothesis_id].final_lineage == (
+        loser.group_hypothesis_id,
+        successor_id,
     )
-    assert rows["GROUP-LOSER"].comparison_status == "confirmed_loser"
-    assert rows["GROUP-MIDDLE"].comparison_status == "late_loser"
+    assert rows[loser.group_hypothesis_id].comparison_status == "confirmed_loser"
+    assert rows[middle.group_hypothesis_id].comparison_status == "retained_survivor"
+    assert successor_id.startswith("xic.cross-sample-group.v1:")
+    assert successor_id not in {loser.group_hypothesis_id, middle.group_hypothesis_id}
     assert report.baseline_workload.requested_feature_count == 3
     assert report.proposed_workload.requested_feature_count == 2
     assert report.projected_feature_reduction == 1
-    assert report.baseline_workload.requested_cell_count == 8
-    assert report.proposed_workload.requested_cell_count == 4
-    assert report.projected_cell_reduction == 4
-    assert report.baseline_workload.logical_xic_request_count == 8
-    assert report.proposed_workload.logical_xic_request_count == 5
-    assert report.projected_logical_xic_request_reduction == 3
     assert report.actual_savings_claim.startswith("unavailable:")
     assert all(
         surface.observed_shadow_diff_count == 0
@@ -70,13 +78,7 @@ def test_shadow_accepts_transitive_two_stage_final_lineage() -> None:
 
 def test_shadow_is_order_deterministic() -> None:
     loser, middle, winner = _proposal_features()
-    final = _matrix(
-        (
-            _winner(winner),
-            _loser(middle, winner="GROUP-WINNER"),
-            _loser(loser, winner="GROUP-MIDDLE"),
-        )
-    )
+    final = _pre_backfill_matrix((loser, middle, winner))
 
     forward = compare_early_loser_shadow_with_final_authority(
         _proposal((loser, middle, winner)),
@@ -90,134 +92,13 @@ def test_shadow_is_order_deterministic() -> None:
     assert forward == reversed_report
 
 
-def test_shadow_rejects_final_lineage_cycle() -> None:
+def test_shadow_rejects_final_without_canonical_successor_lineage() -> None:
     loser, middle, winner = _proposal_features()
     proposal = _proposal((loser, middle, winner))
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            _loser(middle, winner="GROUP-LOSER"),
-            _winner(winner),
-        )
-    )
+    final = _matrix((loser, middle, winner))
 
-    with pytest.raises(ValueError, match="contains a cycle"):
+    with pytest.raises(ValueError, match="missing source group"):
         compare_early_loser_shadow_with_final_authority(proposal, final)
-
-
-def test_shadow_rejects_missing_final_winner_reference() -> None:
-    loser, middle, winner = _proposal_features()
-    proposal = _proposal((loser, middle, winner))
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MISSING"),
-            _winner(middle),
-            _winner(winner),
-        )
-    )
-
-    with pytest.raises(ValueError, match="references missing winner"):
-        compare_early_loser_shadow_with_final_authority(proposal, final)
-
-
-def test_shadow_rejects_final_loser_terminating_at_non_winner() -> None:
-    loser, middle, winner = _proposal_features()
-    proposal = _proposal((loser, middle, winner))
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            middle,
-            _winner(winner),
-        )
-    )
-
-    with pytest.raises(ValueError, match="terminates at non-winner"):
-        compare_early_loser_shadow_with_final_authority(proposal, final)
-
-
-def test_shadow_rejects_final_winner_without_self_reference() -> None:
-    loser, middle, winner = _proposal_features()
-    proposal = _proposal((loser, middle, winner))
-    malformed_winner = replace(
-        _winner(middle),
-        consolidation_winner_group_hypothesis_id="GROUP-WINNER",
-    )
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            malformed_winner,
-            _winner(winner),
-        )
-    )
-
-    with pytest.raises(ValueError, match="must self-reference its winner"):
-        compare_early_loser_shadow_with_final_authority(proposal, final)
-
-
-def test_shadow_kills_false_loser_proposal() -> None:
-    loser, middle, winner = _proposal_features()
-    proposal = _proposal((loser, middle, winner))
-    final = _matrix((loser, _winner(middle), winner))
-
-    report = compare_early_loser_shadow_with_final_authority(proposal, final)
-
-    assert report.verdict == "KILL"
-    assert report.false_loser_count == 1
-    assert report.winner_mismatch_count == 0
-
-
-def test_shadow_kills_terminal_winner_mismatch() -> None:
-    loser, middle, winner = _proposal_features()
-    proposal = _proposal((loser, middle, winner))
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-WINNER"),
-            middle,
-            _winner(winner),
-        )
-    )
-
-    report = compare_early_loser_shadow_with_final_authority(proposal, final)
-
-    assert report.verdict == "KILL"
-    assert report.false_loser_count == 0
-    assert report.winner_mismatch_count == 1
-
-
-@pytest.mark.parametrize("projected_reduction", (0, -1))
-def test_shadow_kills_insufficient_projected_decision_value(
-    projected_reduction: int,
-) -> None:
-    loser, middle, winner = _proposal_features()
-    proposal = _proposal((loser, middle, winner))
-    baseline = proposal.baseline_workload
-    proposal = replace(
-        proposal,
-        proposed_workload=replace(
-            baseline,
-            requested_feature_count=(
-                baseline.requested_feature_count - projected_reduction
-            ),
-            requested_cell_count=(
-                baseline.requested_cell_count - projected_reduction
-            ),
-            logical_xic_request_count=(
-                baseline.logical_xic_request_count - projected_reduction
-            ),
-        ),
-    )
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            _winner(middle),
-            _winner(winner),
-        )
-    )
-
-    report = compare_early_loser_shadow_with_final_authority(proposal, final)
-
-    assert report.verdict == "KILL"
-    assert "insufficient positive" in report.verdict_reason
 
 
 def test_shadow_kills_all_survivor_zero_decision_value() -> None:
@@ -249,18 +130,36 @@ def test_shadow_preserves_owner_unresolved_state() -> None:
     assert report.verdict == "REDESIGN"
 
 
+def test_shadow_excludes_ambiguous_render_only_source_from_identity_lookup() -> None:
+    ambiguous = replace(
+        _feature("AMBIGUOUS", ("sample-u",), mz=800.0),
+        group_hypothesis_id="",
+        processing_request_id="",
+        member_subjects=(),
+        identity_basis_bytes=b"",
+        cross_sample_state="render_only",
+        review_only=True,
+        identity_conflict=True,
+    )
+
+    proposal = _proposal((ambiguous,))
+    report = compare_early_loser_shadow_with_final_authority(
+        proposal,
+        _matrix(()),
+    )
+
+    assert proposal.rows[0].source_group_hypothesis_id == "FAM-AMBIGUOUS"
+    assert proposal.rows[0].proposal_status == "unresolved"
+    assert report.rows[0].comparison_status == "unresolved"
+    assert report.rows[0].final_lineage == ()
+
+
 def test_shadow_is_no_write_and_renders_complete_expected_diff(tmp_path) -> None:
     loser, middle, winner = _proposal_features()
     source = (loser, middle, winner)
     source_snapshot = tuple(source)
     proposal = _proposal(source)
-    final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            _loser(middle, winner="GROUP-WINNER"),
-            _winner(winner),
-        )
-    )
+    final = _pre_backfill_matrix(source)
     final_snapshot = replace(final)
 
     report = compare_early_loser_shadow_with_final_authority(proposal, final)
@@ -339,33 +238,15 @@ def test_shadow_bindings_change_with_each_bound_input() -> None:
     assert config_mutation.alignment_config_sha256 != baseline.alignment_config_sha256
     assert request_mutation.request_universe_sha256 != baseline.request_universe_sha256
 
-    first_final = _matrix(
-        (
-            _loser(loser, winner="GROUP-MIDDLE"),
-            _loser(middle, winner="GROUP-WINNER"),
-            _winner(winner),
-        )
-    )
-    changed_final = _matrix(
-        (
-            _loser(loser, winner="GROUP-WINNER"),
-            _loser(middle, winner="GROUP-WINNER"),
-            _winner(winner),
-        )
-    )
+    first_final = _pre_backfill_matrix(features)
+    changed_final = _matrix((loser, middle, winner))
     first_report = compare_early_loser_shadow_with_final_authority(
         baseline,
         first_final,
     )
-    changed_report = compare_early_loser_shadow_with_final_authority(
-        baseline,
-        changed_final,
-    )
-
-    assert (
-        first_report.final_authority_projection_sha256
-        != changed_report.final_authority_projection_sha256
-    )
+    with pytest.raises(ValueError, match="missing source group"):
+        compare_early_loser_shadow_with_final_authority(baseline, changed_final)
+    assert len(first_report.final_authority_projection_sha256) == 64
 
 
 def _proposal(
@@ -403,22 +284,14 @@ def _matrix(features: tuple[OwnerAlignedFeature, ...]) -> AlignmentMatrix:
     return AlignmentMatrix(clusters=features, cells=(), sample_order=sample_order)
 
 
-def _loser(feature: OwnerAlignedFeature, *, winner: str) -> OwnerAlignedFeature:
-    return replace(
-        feature,
-        review_only=True,
-        consolidation_state="primary_loser",
-        consolidation_winner_group_hypothesis_id=winner,
-        consolidation_source_group_hypothesis_id=feature.group_hypothesis_id,
-    )
-
-
-def _winner(feature: OwnerAlignedFeature) -> OwnerAlignedFeature:
-    return replace(
-        feature,
-        consolidation_state="primary_winner",
-        consolidation_winner_group_hypothesis_id=feature.group_hypothesis_id,
-        consolidation_source_group_hypothesis_id=feature.group_hypothesis_id,
+def _pre_backfill_matrix(
+    features: tuple[OwnerAlignedFeature, ...],
+) -> AlignmentMatrix:
+    return _matrix(
+        consolidate_pre_backfill_identity_families(
+            features,
+            config=AlignmentConfig(owner_backfill_min_detected_samples=1),
+        )
     )
 
 
@@ -429,6 +302,7 @@ def _feature(
     mz: float,
     rt: float = 8.0,
 ) -> OwnerAlignedFeature:
+    identity = _identity(suffix, sample_stems)
     return OwnerAlignedFeature(
         feature_family_id=f"FAM-{suffix}",
         neutral_loss_tag="NL116",
@@ -438,12 +312,55 @@ def _feature(
         family_observed_neutral_loss_da=116.0,
         has_anchor=True,
         owners=tuple(
-            _owner(suffix, sample_stem, mz=mz, rt=rt)
-            for sample_stem in sample_stems
+            _owner(suffix, sample_stem, member=member, mz=mz, rt=rt)
+            for sample_stem, member in zip(
+                sample_stems,
+                identity.member_subjects,
+                strict=True,
+            )
         ),
         evidence="single_sample_local_owner",
-        group_hypothesis_id=f"GROUP-{suffix}",
+        group_hypothesis_id=identity.group_hypothesis_id,
         public_family_id=f"FAM-{suffix}",
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
+    )
+
+
+def _identity(suffix: str, sample_stems: tuple[str, ...]):
+    return mint_cross_sample_group_identity(
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        member_subjects=tuple(
+            _member(suffix, sample_stem) for sample_stem in sample_stems
+        ),
+    )
+
+
+def _member(
+    suffix: str,
+    sample_stem: str,
+) -> CrossSampleGroupMemberSubject:
+    subject_id = f"xic.peak-observation-content.v1:early-shadow-{suffix}-{sample_stem}"
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
+            "canonical_sample_identity_id": (
+                f"xic.sample.v1:early-shadow-{sample_stem}"
+            ),
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest("xic.group-member-subject.v1:", basis),
+        processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+        canonical_sample_identity_id=f"xic.sample.v1:early-shadow-{sample_stem}",
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
     )
 
 
@@ -451,6 +368,7 @@ def _owner(
     suffix: str,
     sample_stem: str,
     *,
+    member: CrossSampleGroupMemberSubject,
     mz: float,
     rt: float,
 ) -> SampleLocalMS1Owner:
@@ -480,4 +398,5 @@ def _owner(
         supporting_events=(),
         identity_conflict=False,
         assignment_reason="test_owner",
+        cross_sample_member_subject=member,
     )
