@@ -361,6 +361,8 @@ def _adapter_integration(raw, candidate, *, settings, peak_config):
     assert detection.status == "detected"
     assert detection.result is not None
     hypotheses = build_peak_hypotheses(
+        analysis_mode="untargeted",
+        common_evidence_source_id=candidate.candidate_id,
         sample_name=candidate.sample_stem,
         target_label=method_label(candidate),
         role="Analyte",

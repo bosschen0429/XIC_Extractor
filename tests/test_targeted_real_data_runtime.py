@@ -44,6 +44,7 @@ from xic_extractor.extraction.targeted_real_data_runtime import (
     TargetedRealDataRuntimeJob,
     execute_current_discovery_sample_target_runtime,
 )
+from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.processing_identity import IdentityContractError
 from xic_extractor.raw_reader import (
     EXPECTED_THERMO_DLLS,
@@ -56,6 +57,14 @@ def test_real_data_runtime_accounts_successful_raw_and_xic_work(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    capture_variants: list[str] = []
+    real_capture = capture_owner.capture_peak_hypotheses
+
+    def _trace_capture(**kwargs):
+        capture_variants.append(kwargs["scope"].variant)
+        return real_capture(**kwargs)
+
+    monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", _trace_capture)
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -94,6 +103,7 @@ def test_real_data_runtime_accounts_successful_raw_and_xic_work(
     )
 
     assert result.adapter_result is not None
+    assert capture_variants == ["targeted"]
     assert result.adapter_result.alignment_input.selection.status == "selected"
     assert result.lifecycle.finalization_record.terminal_outcome is (
         AttemptTerminalOutcome.SUCCEEDED

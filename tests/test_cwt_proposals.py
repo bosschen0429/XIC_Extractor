@@ -6,11 +6,13 @@ from pathlib import Path
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses as build_peak_hypotheses,
+)
 from xic_extractor.peak_detection.cwt import (
     add_cwt_proposals_for_audit,
     find_peak_candidates_centwave_cwt,
 )
-from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.signal_processing import (
     PeakCandidate,
     PeakDetectionResult,

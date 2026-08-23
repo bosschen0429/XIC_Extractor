@@ -10,7 +10,7 @@ from xic_extractor.evidence_semantics import (
     CommonEvidence,
     EvidenceDecisionSemantics,
     EvidenceSignalSet,
-    common_evidence_from_targeted_candidate,
+    common_evidence_from_peak_candidate,
     decision_semantics_from_signal_set,
 )
 from xic_extractor.neutral_loss import CandidateMS2Evidence
@@ -41,10 +41,11 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_metrics,
 )
 from xic_extractor.peak_detection.observations import PeakObservationRef
-from xic_extractor.peak_detection.traces import TraceGroup
+from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
 OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
 OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
+CandidateMS2EvidenceMap = Mapping[PeakCandidate, CandidateMS2Evidence]
 
 _CONFIDENCE_RANK = {
     "HIGH": 0,
@@ -218,13 +219,15 @@ def hypothesis_audit_id(
 
 def build_peak_hypotheses(
     *,
+    analysis_mode: AnalysisMode,
+    common_evidence_source_id: str,
     sample_name: str,
     target_label: str,
     role: str,
     istd_pair: str,
     resolver_mode: str,
     peak_result: PeakDetectionResult,
-    candidate_ms2_evidence: Mapping[PeakCandidate, CandidateMS2Evidence] | None = None,
+    candidate_ms2_evidence: CandidateMS2EvidenceMap | None = None,
     rt: object | None = None,
     intensity: object | None = None,
     trace_group: TraceGroup | None = None,
@@ -232,6 +235,16 @@ def build_peak_hypotheses(
     count_no_ms2_as_detected: bool = False,
     ms1_morphology_smoothing_window_points: int = (DEFAULT_GAUSSIAN15_WINDOW_POINTS),
 ) -> tuple[PeakHypothesis, ...]:
+    if analysis_mode not in ("targeted", "untargeted"):
+        raise ValueError("analysis_mode must be targeted or untargeted")
+    if (
+        not isinstance(common_evidence_source_id, str)
+        or not common_evidence_source_id
+        or common_evidence_source_id != common_evidence_source_id.strip()
+    ):
+        raise ValueError("common_evidence_source_id must be normalized text")
+    if trace_group is not None and trace_group.analysis_mode != analysis_mode:
+        raise ValueError("trace_group analysis mode mismatches analysis_mode")
     selected = _selected_candidate(peak_result)
     score_by_candidate = {
         score.candidate: score for score in peak_result.candidate_scores
@@ -271,7 +284,7 @@ def build_peak_hypotheses(
                 target_label=target_label,
                 role=role,
                 istd_pair=istd_pair,
-                analysis_mode="targeted",
+                analysis_mode=analysis_mode,
                 resolver_mode=resolver_mode,
                 integration=_integration_from_candidate(
                     candidate,
@@ -286,7 +299,8 @@ def build_peak_hypotheses(
                     candidate,
                     score,
                     evidence,
-                    target_label=target_label,
+                    analysis_mode=analysis_mode,
+                    common_evidence_source_id=common_evidence_source_id,
                     count_no_ms2_as_detected=count_no_ms2_as_detected,
                 ),
                 audit=AuditTrail(
@@ -432,10 +446,25 @@ def _evidence_from_candidate(
     score: PeakCandidateScore | None,
     evidence: CandidateMS2Evidence | None,
     *,
-    target_label: str,
+    analysis_mode: AnalysisMode,
+    common_evidence_source_id: str,
     count_no_ms2_as_detected: bool = False,
 ) -> EvidenceVector:
     facts = score.evidence_facts if score is not None else None
+    common = common_evidence_from_peak_candidate(
+        candidate,
+        score=score,
+        candidate_ms2_evidence=evidence,
+        source=(
+            "targeted_peak" if analysis_mode == "targeted" else "discovery_candidate"
+        ),
+        source_id=common_evidence_source_id,
+        provenance=(
+            "selected_or_candidate"
+            if analysis_mode == "targeted"
+            else "reacquired_discovery_candidate"
+        ),
+    )
     semantics = (
         decision_semantics_from_candidate_facts(
             facts,
@@ -445,7 +474,7 @@ def _evidence_from_candidate(
         else _legacy_decision_semantics(
             candidate,
             score,
-            target_label=target_label,
+            common=common,
             count_no_ms2_as_detected=count_no_ms2_as_detected,
         )
     )
@@ -462,12 +491,6 @@ def _evidence_from_candidate(
         else score.reason
         if score is not None
         else ""
-    )
-    common = common_evidence_from_targeted_candidate(
-        candidate,
-        score=score,
-        candidate_ms2_evidence=evidence,
-        target_label=target_label,
     )
     best_ms2_scan_rt_min = evidence.best_scan_rt if evidence is not None else None
     return EvidenceVector(
@@ -563,14 +586,9 @@ def _legacy_decision_semantics(
     candidate: PeakCandidate,
     score: PeakCandidateScore | None,
     *,
-    target_label: str,
+    common: CommonEvidence,
     count_no_ms2_as_detected: bool,
 ) -> EvidenceDecisionSemantics:
-    common = common_evidence_from_targeted_candidate(
-        candidate,
-        score=score,
-        target_label=target_label,
-    )
     return decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=score.support_labels if score is not None else (),

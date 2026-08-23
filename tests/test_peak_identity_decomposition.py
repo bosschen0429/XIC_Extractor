@@ -61,6 +61,8 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
     )
 
     targeted = build_peak_hypotheses(
+        analysis_mode="targeted",
+        common_evidence_source_id="KnownAnalyte",
         sample_name="SampleA",
         target_label="KnownAnalyte",
         role="Analyte",
@@ -70,6 +72,8 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
         trace_group=targeted_group,
     )[0]
     untargeted_context = build_peak_hypotheses(
+        analysis_mode="untargeted",
+        common_evidence_source_id="FAM000123",
         sample_name="SampleA",
         target_label="UnknownFeature",
         role="",
@@ -85,10 +89,8 @@ def test_one_ms1_observation_can_have_distinct_workflow_hypotheses() -> None:
     assert _integration_probe(targeted) == _integration_probe(untargeted_context)
     assert targeted.trace_group_id != untargeted_context.trace_group_id
     assert targeted.hypothesis_id != untargeted_context.hypothesis_id
-    # Characterizes the current gap: the builder cannot yet express an
-    # Untargeted hypothesis even when given an Untargeted TraceGroup.
     assert untargeted_group.analysis_mode == "untargeted"
-    assert untargeted_context.analysis_mode == "targeted"
+    assert untargeted_context.analysis_mode == "untargeted"
 
 
 def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
@@ -102,6 +104,8 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
     )
 
     supported = build_peak_hypotheses(
+        analysis_mode="targeted",
+        common_evidence_source_id="KnownAnalyte",
         sample_name="SampleA",
         target_label="KnownAnalyte",
         role="Analyte",
@@ -112,6 +116,8 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
         trace_group=trace_group,
     )[0]
     unsupported = build_peak_hypotheses(
+        analysis_mode="targeted",
+        common_evidence_source_id="KnownAnalyte",
         sample_name="SampleA",
         target_label="KnownAnalyte",
         role="Analyte",
