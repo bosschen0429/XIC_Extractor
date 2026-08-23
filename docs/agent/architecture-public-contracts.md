@@ -70,29 +70,37 @@ gates are separately delivered.
 | Source owner -> target consumer | Preserved identity/cardinality | Deliberate loss / forbidden reconstruction |
 | --- | --- | --- |
 | Target-list owner -> Target SearchScope | `TargetKey`, exact `TargetDefinition`, ordered `TargetListSnapshot`, method/evidence constraints | Paths, mutable CSV rows, or target labels alone cannot recreate the scope |
+| Discovery/provider configuration owner -> Untargeted SearchScope | exact processing request, canonical sample universe, provider configuration, and method/evidence constraints | A capture adapter cannot widen/rewrite the provider policy or infer cross-request continuity |
+| application-owned scope variants -> shared SearchScope boundary | exact discriminated variant and owner-issued content; common schema validation only | The shared boundary cannot remint Target/provider identity or choose application policy |
 | Discovery/capture -> CrossSample | exact request, canonical sample, owner-backed hypothesis/physical observation, evidence refs | Area/RT display values, candidate ordinals, and legacy family labels cannot mint members |
 | CrossSample -> ModeTrack | immutable `trajectory_input_id`, anchors/members/apexes/order/evidence profile/exclusions | Values, renderer fields, mutable group objects, and Backfill policy are intentionally absent |
 | ModeTrack -> CrossSample | typed proposal bound to the exact input snapshot and assessability evidence | Proposal does not carry group-minting, membership-mutation, or value authority |
-| Backfill -> CrossSample/scientific alignment closure | owner-backed `ObservationRepair` decision and exact repair receipt | Repair does not imply membership or selected value; later cell decision receives it only through a projection-owned subject and closed evidence |
+| Backfill -> CrossSample -> optional final ModeTrack proposal -> CrossSample -> scientific alignment closure | owner-backed `ObservationRepair` decision, exact repair receipt, reconciled group state, and final CrossSample receipt | Repair and proposals do not imply membership or selected value; scientific closure cannot bind only the repair receipt or bypass final CrossSample application |
 | finalized core -> workflow projection binding/subject operation | exact Target identity + `TargetRowBinding` -> `TargetCellSubject`, or exact group identity/disposition/lineage + `UntargetRowKey` -> `GroupCellSubject` | `FAM...`, center m/z/RT, order, display text, or Target label alone cannot reconstruct row/cell identity |
 | explicit workflow cell subject -> cell decision | `TargetCellSubject` or `GroupCellSubject` plus closed observation/search receipts | Target evidence cannot authorize Group/Untarget cells; human reason strings are not input |
 | cell decisions -> same workflow projection completion operation | exact row/cell identity plus typed write/no-write decisions -> inclusion, counts/reasons, Review Queue/archive routing | Projection cannot recompute observations or selected values |
 | owner decisions -> alignment result finalizer | exact request, group/refinement/repair closure, typed row/cell/inclusion decisions | Finalizer cannot reopen RAW, regroup, refit, repair, reintegrate, select, or accept optional-mode field soup |
-| finalized workflow result -> Delivery | one immutable result variant plus owner-compiled `ArtifactPlan` and destination mechanics | Loose Matrix/metadata maps, caller-authored ledgers, emit booleans, and renderer recomputation are forbidden |
-| typed archive owner batches -> Parquet v2 | native types/nulls, canonical identity/order, schema/version, exact bundle lineage | TSV strings are not the canonical intermediate; a storage adapter cannot decide science |
+| typed archive owner batches -> internal typed-Parquet staged bundle/reference | native types/nulls, canonical identity/order, schema/version, retention class, exact bundle lineage | TSV strings are not the canonical intermediate; a storage adapter cannot decide science or activate the separate public Parquet-v2 surface |
+| typed decisions + archive references -> Explanation | human reasons, review sections, and navigation links | Prose and references cannot mint/reseal decisions; activation and method-evidence authority stay with their owners |
+| finalized workflow result + stabilized render/query surfaces -> Delivery | one immutable result variant plus owner-compiled `ArtifactPlan`, staged archive/explanation refs, and destination mechanics | Loose Matrix/metadata maps, caller-authored ledgers, emit booleans, and renderer recomputation are forbidden |
 
 CrossSample enforces at most one identity-bearing member per canonical sample
 and mints a successor identity on membership/split/merge change. ModeTrack is
 proposal-only. ObservationRepair is bounded to one epoch, with at most one final
-ModeTrack rerun when trajectory identity changes. `ProductionCellDecision` is
-the sole selected-value owner and returns either a typed write decision or one
-of `not_searched`, `searched_no_observation`, `unresolved`,
-`rejected_observation`, `not_quantifiable`, or `unavailable`.
+ModeTrack rerun when trajectory identity changes; CrossSample reconciles repair,
+applies or rejects that proposal, and mints the final receipt. The finalized core
+contains the canonical sample universe and a terminal search/observation variant
+for every required subject. `ProductionCellDecision` is the sole selected-value
+owner and returns either a typed write decision or one of `not_searched`,
+`searched_no_observation`, `unresolved`, `rejected_observation`,
+`not_quantifiable`, or `unavailable`.
 
 The complete search receipt is required to assert
 `searched_no_observation`; missing, partial, corrupt, or unbound evidence is
 `unavailable`. Blank/zero and human-rendered reason text are never semantic
-authority.
+authority. The six no-write cases are discriminated terminal variants rather
+than overlapping flags; crossed request or subject identity is rejected as a
+contract error rather than classified as a no-write result.
 
 Workflow projection has two ordered operations under one semantic owner:
 binding/subject construction before cell decision, and completion after it. An

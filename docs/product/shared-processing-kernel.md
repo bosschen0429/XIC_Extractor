@@ -41,7 +41,7 @@ This contract succeeds when:
 
 XIC has one scientific lifecycle:
 
-`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> optional ObservationRepair -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> delivery`
+`SearchScope -> shared Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> archive/explanation/delivery`
 
 - Untargeted is the general method and the primary architectural path.
 - Targeted narrows the accepted target/row universe with known target, m/z, RT,
@@ -69,7 +69,8 @@ semantic owner.
 
 | Interface | Input -> output | Authority and deliberate loss |
 | --- | --- | --- |
-| Search scope | typed Targeted or Untargeted scope -> provider/capture request | Constrains what may be searched; does not claim what was observed |
+| Search scope | Target-list or Discovery/provider owner mints its variant -> closed shared boundary -> provider/capture request | Constrains what may be searched; shared boundary validates but does not remint application identity/policy or claim what was observed |
+| Shared capture | exact SearchScope + canonical sample + declared providers -> owner-backed observations and `PeakHypothesis` values | One implementation executes both applications; scope chooses candidate universe/constraints/providers, never rows, groups, values, or artifacts |
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
 | ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mint or mutate groups, repair observations, or write cells |
 | ObservationRepair | one eligible pre-existing cell context -> owner-backed repaired observation or typed no-repair result | One bounded epoch; no first hit, group identity, implicit membership, or value authority |
@@ -93,13 +94,28 @@ Different wrappers over the same physical observation must canonicalize to one
 member subject unless explicit distinct variant tags deliberately preserve
 different identities.
 
+CrossSample-member/group and Untarget-row constructors delegate canonical JSON
+serialization and typed-digest mechanics to
+`xic_extractor.processing_identity`. That module owns the workflow-neutral
+mechanism, while CrossSample and Untarget projection still own their respective
+domain payloads and minting decisions. They must not copy its private helpers or
+create another canonicalizer.
+
 The only core no-write reasons are `not_searched`,
 `searched_no_observation`, `unresolved`, `rejected_observation`,
 `not_quantifiable`, and `unavailable`. Human-facing reason strings are rendered
 from these typed facts and are never parsed back into scientific logic.
+They are closed terminal variants, not a precedence list over booleans:
+owner-confirmed no-search, complete searched-empty, scientific ambiguity,
+all-observations-rejected, accepted-but-nonquantifiable, and owner-reported
+missing/partial/corrupt/technical evidence map one-to-one to those variants.
+One authorized quantifiable observation maps to a write decision. Crossed
+request or Target/Group subject identity is rejected as a contract error.
 
-`FinalizedScientificAlignment` contains the request, canonical groups,
-dispositions, membership/lineage, and refinement/repair closure. Targeted's
+`FinalizedScientificAlignment` contains the request, canonical sample universe,
+canonical groups, dispositions, membership/lineage, final CrossSample receipt,
+and one terminal search/observation variant per required subject plus
+refinement/repair closure. Targeted's
 pre-cell projection operation adds `TargetRowBinding` and Target cell subjects;
 its post-cell operation adds inclusion/count/reason decisions and existing
 Review Queue references. Untargeted's pre-cell operation adds `UntargetRowKey`
@@ -269,13 +285,16 @@ Target-local value cannot authorize an Untargeted group cell.
 
 Projection is outside the kernel.
 
-- Targeted retains one row per `TargetKey`. Zero qualified groups keeps a typed
-  empty state; one uniquely qualified group binds; multiple qualified groups
-  remain unresolved and reference the existing Review Queue. A provisional
-  group may support a Target row, but cannot fill other samples from a singleton
-  or RT prior alone.
-- Untargeted derives one `UntargetRowKey` per included finalized group. The
-  standard Matrix includes established groups only; provisional groups go to a
+- Targeted retains one row per `TargetKey`. Only `established` and `provisional`
+  groups are binding-eligible: zero keeps a typed empty state, one binds, and
+  multiple eligible groups remain unresolved and reference the existing Review
+  Queue. Rejected/unresolved groups remain review evidence rather than a unique
+  binding. Every Target row × canonical sample produces a subject. A
+  provisional group may support a Target row, but cannot fill other samples
+  from a singleton or RT prior alone.
+- Untargeted derives one processing-request-scoped `UntargetRowKey` per finalized
+  group and one Group subject per finalized group × canonical sample. The
+  request-scoped standard Matrix includes established groups only; provisional groups go to a
   compact review/archive surface and unresolved/rejected groups remain in the
   AuditTrail.
 
@@ -304,7 +323,10 @@ or Matrix-write authority.
 
 - Deepen `peak_detection` as the sample-local trace → hypothesis → selection
   module. Remove Targeted assumptions from its external interface
-  incrementally; keep Targeted evidence conversion in an adapter.
+  incrementally; keep Targeted evidence conversion in an adapter. Before
+  CrossSample migration, one Gate-0 ticket must route current Targeted and
+  Untargeted highest entries through this same implementation and retire each
+  duplicate capture path after its named-consumer census.
 - Deepen `alignment/cross_sample`, `alignment/mode_track`,
   `alignment/backfill`, `alignment/cell_decision`, and `alignment/result` as
   distinct semantic owners. Reuse group-hypothesis and ModeTrack mechanics, but
