@@ -110,9 +110,11 @@ not provisional science or a complete in-memory row list. Required artifact
 failure is fail-closed and cannot silently reduce evidence or switch formats;
 archive activation requires semantic parity plus total representation-cost
 evidence. Query results distinguish scientific absence from lifecycle
-unavailability and present-but-invalid content. The physical archive-owner seam
-remains proposed in `docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md`
-and must be refrozen before its implementation ticket becomes claimable.
+unavailability and present-but-invalid content. ADR-0003 accepts the existing
+`backfill_evidence_parquet` and `backfill_evidence_parquet_bundle` modules as the
+first canonical archive implementation owner, with a second-current-owner gate
+before any workflow-neutral extraction. That owner decision is closed; #313
+remains blocked by #312 and requires no additional archive-owner refreeze.
 
 The complete search receipt is required to assert
 `searched_no_observation`; missing, partial, corrupt, or unbound evidence is

@@ -6,10 +6,11 @@ below as implementation evidence; it no longer defines the full architectural
 seam. The shared kernel is a collaboration of deep existing modules, not
 permission to create a new `core/` package.
 
-Architecture status: the scientific lifecycle is `frozen`, while archive
-implementation locality remains `proposed` under ADR-0003; runtime adoption is
-incomplete. This document changes no selected value, counted detection, Matrix,
-workbook, activation, writer, or export authority.
+Architecture status: the scientific lifecycle is `frozen`, and the existing
+Backfill Parquet modules are the accepted first canonical archive implementation
+owner under ADR-0003; runtime adoption is incomplete. This document changes no
+selected value, counted detection, Matrix, workbook, activation, writer, or
+export authority.
 
 ## Problem And Success
 
