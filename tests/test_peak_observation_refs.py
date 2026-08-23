@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.peak_detection.observations as observation_owner
-from xic_extractor.peak_detection.hypotheses import (
-    IntegrationResult,
-    build_peak_hypotheses,
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
+from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,

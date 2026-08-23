@@ -4,6 +4,9 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses as build_peak_hypotheses,
+)
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     integrate_with_baseline,
@@ -15,10 +18,7 @@ from xic_extractor.peak_detection.boundaries import (
 )
 from xic_extractor.peak_detection.boundary_scoring import score_boundary_hypothesis
 from xic_extractor.peak_detection.cwt import add_cwt_proposals_for_audit
-from xic_extractor.peak_detection.hypotheses import (
-    PeakHypothesis,
-    build_peak_hypotheses,
-)
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.interval_selection import (
     WeightedInterval,
     select_weighted_nonoverlap_intervals,

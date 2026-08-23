@@ -89,10 +89,31 @@ def common_evidence_from_targeted_candidate(
     candidate_ms2_evidence: CandidateMS2Evidence | None = None,
     target_label: str = "",
 ) -> CommonEvidence:
-    return CommonEvidence(
+    return common_evidence_from_peak_candidate(
+        candidate,
+        score=score,
+        candidate_ms2_evidence=candidate_ms2_evidence,
         source="targeted_peak",
         source_id=target_label,
         provenance="selected_or_candidate",
+    )
+
+
+def common_evidence_from_peak_candidate(
+    candidate: PeakCandidate,
+    *,
+    score: PeakCandidateScore | None = None,
+    candidate_ms2_evidence: CandidateMS2Evidence | None = None,
+    source: Literal["targeted_peak", "discovery_candidate"],
+    source_id: str,
+    provenance: str,
+) -> CommonEvidence:
+    """Project one captured peak without assigning workflow product authority."""
+
+    return CommonEvidence(
+        source=source,
+        source_id=source_id,
+        provenance=provenance,
         ms1_peak_found=True,
         ms1_apex_rt_min=candidate.selection_apex_rt,
         ms1_area=candidate.peak.area,

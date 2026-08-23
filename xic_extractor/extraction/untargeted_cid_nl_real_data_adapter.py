@@ -41,6 +41,7 @@ from xic_extractor.discovery.strict_seed_receipts import (
     read_complete_strict_scan_seeds,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
+from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationRef,
     resolve_dda_cid_nl_candidate_set_relation_ref,
@@ -57,6 +58,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CID_NL_PROVIDER_ID,
     CidNlMethodSubject,
     CidNlMethodSubjectContractError,
     validate_cid_nl_method_subject_binding,
@@ -71,6 +73,14 @@ from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_pe
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     mint_peak_observation_ref,
+)
+from xic_extractor.peak_detection.search_scope import (
+    SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
+    CaptureMethodConstraints,
+    EvidenceProviderBinding,
+    SearchScopeContractError,
+    UntargetedSearchScope,
 )
 from xic_extractor.peak_detection.traces import trace_from_xic_request
 from xic_extractor.processing_identity import (
@@ -275,6 +285,15 @@ def adapt_current_discovery_sample_subject(
         if candidate.ms1_peak_found
         and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
     )
+    search_scope = _untargeted_search_scope(
+        processing_owners=processing_owners,
+        sample=sample,
+        acquisition_source_id=source.acquisition_source_id,
+        method_subject=method_subject,
+        candidates=candidates,
+        capture_candidates=peak_candidates,
+        peak_config=peak_config,
+    )
     acquisition, observations = _reacquire_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
@@ -283,6 +302,7 @@ def adapt_current_discovery_sample_subject(
         peak_config=peak_config,
         raw=bound_raw,
         source=source,
+        search_scope=search_scope,
         _observer=_observer,
     )
     if _observer is not None:
@@ -399,7 +419,11 @@ def recover_untargeted_cid_nl_sample_subject(
     raw: UntargetedCidNlRealDataRaw,
     _observer: _UntargetedRealDataWorkObserver | None = None,
 ) -> UntargetedCidNlRecoveryAttemptResult:
-    """Revisit one eligible HOLD cell without granting direct SUPPORT."""
+    """Revisit one eligible HOLD cell without granting direct SUPPORT.
+
+    This finite ObservationRepair adapter remains until that owner receives an
+    issued ``UntargetedSearchScope``. It is not a fallback for initial capture.
+    """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise UntargetedCidNlRealDataAdapterError(
@@ -476,6 +500,8 @@ def recover_untargeted_cid_nl_sample_subject(
     observations: tuple[PeakObservationRef, ...] = ()
     if detection.status == "detected" and detection.result is not None:
         hypotheses = build_peak_hypotheses(
+            analysis_mode="untargeted",
+            common_evidence_source_id=method_subject.method_subject_id,
             sample_name=sample.metadata.sample_name,
             target_label=(
                 f"untargeted:{method_subject.precursor_mz:.8g}:"
@@ -573,6 +599,7 @@ def _reacquire_peak_observations(
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw,
     source,
+    search_scope: UntargetedSearchScope,
     _observer: _UntargetedRealDataWorkObserver | None = None,
 ) -> tuple[TraceAcquisitionBatch | None, tuple[PeakObservationRef, ...]]:
     if not candidates:
@@ -596,38 +623,6 @@ def _reacquire_peak_observations(
         _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
     for candidate, acquired in zip(candidates, acquisition.traces, strict=True):
-        detection = detect_ms1_trace_peak(
-            acquired.trace.rt,
-            acquired.trace.intensity,
-            peak_config=peak_config,
-            preferred_rt=candidate.best_seed_rt,
-            peak_finder=find_peak_and_area,
-        )
-        if detection.status != "detected" or detection.result is None:
-            raise UntargetedCidNlRealDataAdapterError(
-                f"{candidate.candidate_id}: current MS1 receipt was not reacquired"
-            )
-        hypotheses = build_peak_hypotheses(
-            sample_name=sample.metadata.sample_name,
-            target_label=method_label(candidate),
-            role="Analyte",
-            istd_pair="",
-            resolver_mode=settings.resolver_mode,
-            peak_result=detection.result,
-            rt=detection.rt,
-            intensity=detection.intensity,
-            baseline_integration_method="asls",
-            ms1_morphology_smoothing_window_points=(
-                peak_config.ms1_morphology_smoothing_window_points
-            ),
-        )
-        selected = tuple(item for item in hypotheses if item.audit.selected)
-        if len(selected) != 1:
-            raise UntargetedCidNlRealDataAdapterError(
-                f"{candidate.candidate_id}: integration owner did not select one peak"
-            )
-        integration = selected[0].integration
-        _validate_candidate_integration(candidate, integration)
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
             request=acquired.coordinate.request,
@@ -635,14 +630,25 @@ def _reacquire_peak_observations(
             source=f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )
+        capture = capture_owner.capture_peak_hypotheses(
+            scope=search_scope,
+            candidate_id=candidate.candidate_id,
+            trace=trace,
+        )
+        if (
+            capture.detection.status != "detected"
+            or capture.selected_hypothesis is None
+        ):
+            raise UntargetedCidNlRealDataAdapterError(
+                f"{candidate.candidate_id}: current MS1 receipt was not reacquired"
+            )
+        integration = capture.selected_hypothesis.integration
+        _validate_candidate_integration(candidate, integration)
         observations.append(
-            mint_peak_observation_ref(
+            capture_owner.mint_captured_peak_observation(
+                capture,
                 processing_owners=processing_owners,
                 sample=sample,
-                trace=trace,
-                integration=integration,
-                resolver_mode=settings.resolver_mode,
-                proposal_sources=selected[0].audit.proposal_sources,
             )
         )
     return acquisition, tuple(observations)
@@ -804,6 +810,51 @@ def _bounded_subject_candidates(
             key=lambda item: item.candidate_id,
         )
     )
+
+
+def _untargeted_search_scope(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    acquisition_source_id: str,
+    method_subject: CidNlMethodSubject,
+    candidates: tuple[DiscoveryCandidate, ...],
+    capture_candidates: tuple[DiscoveryCandidate, ...],
+    peak_config: ExtractionConfig,
+) -> UntargetedSearchScope:
+    try:
+        return UntargetedSearchScope(
+            schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+            request=processing_owners.request,
+            samples=processing_owners.sample_resolutions,
+            method_constraints=CaptureMethodConstraints(
+                boundary_policy="resolver_interval",
+                peak_config=peak_config,
+            ),
+            evidence_providers=(
+                EvidenceProviderBinding(
+                    provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=method_subject.method_subject_id,
+                ),
+            ),
+            declared_candidate_ids=tuple(item.candidate_id for item in candidates),
+            capture_bindings=tuple(
+                CaptureCandidateBinding(
+                    candidate_id=item.candidate_id,
+                    sample_identity_id=sample.identity.sample_identity_id,
+                    sample_name=sample.metadata.sample_name,
+                    acquisition_source_id=acquisition_source_id,
+                    query_mz=item.precursor_mz,
+                    query_rt_min=item.ms1_search_rt_min,
+                    query_rt_max=item.ms1_search_rt_max,
+                    query_ppm_tol=method_subject.precursor_tolerance_ppm,
+                    preferred_rt=item.best_seed_rt,
+                )
+                for item in capture_candidates
+            ),
+        )
+    except SearchScopeContractError as exc:
+        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
 
 
 def _supports_direct_precursor_assessment(

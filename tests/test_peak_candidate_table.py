@@ -13,6 +13,9 @@ from xic_extractor.extraction.peak_candidate_table import (
     candidate_audit_id,
     with_product_selected_marker,
 )
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses as build_peak_hypotheses,
+)
 from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.output.peak_candidates import write_peak_candidates_tsv
 from xic_extractor.peak_detection.baseline import integrate_asls_baseline
@@ -21,7 +24,6 @@ from xic_extractor.peak_detection.hypotheses import (
     EvidenceVector,
     IntegrationResult,
     PeakHypothesis,
-    build_peak_hypotheses,
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group

@@ -42,6 +42,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     execute_untargeted_cid_nl_real_data_runtime,
     untargeted_cid_nl_runtime_call_cost,
 )
+from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
@@ -63,6 +64,14 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    capture_variants: list[str] = []
+    real_capture = capture_owner.capture_peak_hypotheses
+
+    def _trace_capture(**kwargs):
+        capture_variants.append(kwargs["scope"].variant)
+        return real_capture(**kwargs)
+
+    monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", _trace_capture)
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     for path in raw_paths:
         path.write_bytes(f"m7-runtime:{path.stem}".encode())
@@ -154,6 +163,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
         result.finalization.coordinator.state.artifacts,
         result.finalization.coordinator.state.failures,
     )
+    assert capture_variants == ["untargeted"]
     assert len(result.sample_results) == 2
     by_stem = {
         item.job.sample.metadata.raw_stem: item for item in result.sample_results

@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses as build_peak_hypotheses,
+)
 from xic_extractor.ms2_trace_evidence import MS2TraceEvidence
 from xic_extractor.neutral_loss import CandidateMS2Evidence
-from xic_extractor.peak_detection.hypotheses import (
-    build_peak_hypotheses,
-    hypothesis_audit_id,
-)
+from xic_extractor.peak_detection.hypotheses import hypothesis_audit_id
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 from xic_extractor.signal_processing import (
     PeakCandidate,

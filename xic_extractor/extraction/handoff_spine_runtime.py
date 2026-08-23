@@ -7,18 +7,17 @@ from typing import cast
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses as build_peak_hypotheses,
+)
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.baseline import BaselineMethod
-from xic_extractor.peak_detection.chrom_peak_segment_projection import (
-    chrom_peak_segment_promoted_hypothesis_from_hypothesis,
+from xic_extractor.peak_detection.capture_boundary_policy import (
+    promote_targeted_boundary_hypothesis as promote_targeted_boundary_hypothesis,
 )
-from xic_extractor.peak_detection.chrom_peak_segments import ChromPeakSegmentPolicy
-from xic_extractor.peak_detection.hypotheses import (
-    PeakHypothesis,
-    build_peak_hypotheses,
-)
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecords,
     PeakModelSelectionResult,
@@ -29,13 +28,6 @@ from xic_extractor.peak_detection.model_selection import (
 from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
-)
-from xic_extractor.peak_detection.selected_envelope import (
-    SelectedEnvelopeBoundaryEvaluation,
-    SelectedEnvelopePolicy,
-)
-from xic_extractor.peak_detection.selected_envelope_projection import (
-    selected_envelope_promoted_hypothesis_from_hypothesis,
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
@@ -48,6 +40,8 @@ from xic_extractor.target_sample_applicability import (
     target_sample_is_applicable,
 )
 
+# Finite re-export: remove after target_extraction imports the capture owner directly.
+
 
 @dataclass(frozen=True)
 class HandoffPeakSelection:
@@ -56,69 +50,6 @@ class HandoffPeakSelection:
     selection_decision: PeakHypothesisSelectionDecision | None
     trace_group: TraceGroup | None
     model_selection_result: PeakModelSelectionResult | None = None
-
-
-@dataclass(frozen=True)
-class TargetedBoundaryPromotion:
-    hypothesis: PeakHypothesis
-    selected_envelope_evaluation: SelectedEnvelopeBoundaryEvaluation | None
-    chrom_segment_boundary_accepted: bool
-
-
-def promote_targeted_boundary_hypothesis(
-    hypothesis: PeakHypothesis,
-    *,
-    rt: object,
-    intensity: object,
-    context_rt_start: float,
-    context_rt_end: float,
-    morphology_window_points: int,
-) -> TargetedBoundaryPromotion:
-    """Apply the existing Targeted Gaussian15 boundary-owner sequence."""
-
-    selected_envelope_evaluation = None
-    try:
-        promoted_hypothesis, selected_envelope_evaluation = (
-            selected_envelope_promoted_hypothesis_from_hypothesis(
-                hypothesis,
-                rt_values=rt,
-                intensity_values=intensity,
-                quantitation_context_rt_start=context_rt_start,
-                quantitation_context_rt_end=context_rt_end,
-                policy=SelectedEnvelopePolicy(
-                    morphology_trace_window_points=morphology_window_points,
-                ),
-            )
-        )
-    except ValueError:
-        promoted_hypothesis = hypothesis
-    try:
-        chrom_promoted_hypothesis, chrom_segment_projection = (
-            chrom_peak_segment_promoted_hypothesis_from_hypothesis(
-                hypothesis,
-                rt_values=rt,
-                intensity_values=intensity,
-                quantitation_context_rt_start=context_rt_start,
-                quantitation_context_rt_end=context_rt_end,
-                selected_envelope_evaluation=selected_envelope_evaluation,
-                policy=ChromPeakSegmentPolicy(
-                    morphology_trace_window_points=morphology_window_points,
-                ),
-            )
-        )
-    except ValueError:
-        chrom_promoted_hypothesis = hypothesis
-        chrom_segment_projection = None
-    chrom_segment_boundary_accepted = bool(
-        chrom_segment_projection is not None and chrom_segment_projection.accepted
-    )
-    if chrom_segment_boundary_accepted:
-        promoted_hypothesis = chrom_promoted_hypothesis
-    return TargetedBoundaryPromotion(
-        hypothesis=promoted_hypothesis,
-        selected_envelope_evaluation=selected_envelope_evaluation,
-        chrom_segment_boundary_accepted=chrom_segment_boundary_accepted,
-    )
 
 
 def build_production_peak_hypotheses(

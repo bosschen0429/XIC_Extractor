@@ -467,7 +467,7 @@ def test_adapter_builds_each_observation_from_its_candidate_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_extractor.extraction.targeted_real_data_adapter as adapter_module
+    from xic_extractor.peak_detection import capture as capture_owner
 
     fixture = build_package2_targeted_raw_fixture(
         tmp_path,
@@ -494,14 +494,14 @@ def test_adapter_builds_each_observation_from_its_candidate_window(
         tmp_path=tmp_path,
     )
     detection_windows: list[tuple[float, float]] = []
-    detect_ms1_trace_peak = adapter_module.detect_ms1_trace_peak
+    detect_ms1_trace_peak = capture_owner.detect_ms1_trace_peak
 
     def _capture_detection_window(rt, intensity, **kwargs):
         detection_windows.append((float(rt[0]), float(rt[-1])))
         return detect_ms1_trace_peak(rt, intensity, **kwargs)
 
     monkeypatch.setattr(
-        adapter_module,
+        capture_owner,
         "detect_ms1_trace_peak",
         _capture_detection_window,
     )
@@ -523,17 +523,15 @@ def test_adapter_builds_each_observation_from_its_candidate_window(
         and acquisition_request.rt_max >= candidate.ms1_search_rt_max
         for candidate in candidates
     )
-    assert len(detection_windows) == 4
-    for candidate, first, second in zip(
+    assert len(detection_windows) == 2
+    for candidate, detection_window in zip(
         candidates,
-        detection_windows[::2],
-        detection_windows[1::2],
+        detection_windows,
         strict=True,
     ):
-        assert first == second
-        assert candidate.ms1_search_rt_min <= first[0]
-        assert first[1] <= candidate.ms1_search_rt_max
-        assert first[0] <= candidate.ms1_apex_rt <= first[1]
+        assert candidate.ms1_search_rt_min <= detection_window[0]
+        assert detection_window[1] <= candidate.ms1_search_rt_max
+        assert detection_window[0] <= candidate.ms1_apex_rt <= detection_window[1]
     hypotheses = tuple(
         sorted(
             result.alignment_input.candidate_set.candidate_hypotheses,
