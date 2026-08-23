@@ -3,9 +3,10 @@
 Targeted selection is the Targeted workflow projection for known targets. It
 constrains the shared scientific lifecycle with an exact target-list snapshot,
 binds finalized groups to fixed target rows, applies Targeted inclusion/counting
-policy, and renders the existing Review Queue and delivery. It does not require
-a second capture, CrossSample, ModeTrack, Backfill, or selected-value
-implementation.
+and typed reason/routing policy, and closes references to the existing Review
+Queue plus delivery-shape decisions. Explanation renders the human-facing
+reasons from those typed decisions. Targeted selection does not require a second
+capture, CrossSample, ModeTrack, Backfill, or selected-value implementation.
 
 ## Contract
 
@@ -31,7 +32,7 @@ implementation.
 - Targeted selection first owns `TargetRowBinding` and constructs
   `TargetCellSubject`. `ProductionCellDecision` then owns the selected numeric
   value or typed no-write result. The same Targeted owner afterward closes
-  inclusion, counted-detection policy, reason rendering, and Review Queue
+  inclusion, counted-detection policy, typed reason facts, and Review Queue
   routing; it must not recompute the value.
 - Region, boundary, and selected-envelope logic are candidate and model-selection surfaces. They require expected-diff review before changing selected peak, area, confidence, reason, product state, counted detection, workbook, or matrix values.
 - Selected-hypothesis public behavior must preserve compatibility projections unless an explicit schema/versioning plan changes downstream contracts.
@@ -67,7 +68,7 @@ implementation.
 | --- | --- |
 | Targeted CSV/workbook fields | Public output for target decisions |
 | `Product State` / `Counted Detection` | User-facing product projection |
-| Confidence and reason strings | Reviewable decision explanation |
+| Confidence and reason fields | Explanation-rendered review surface from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and model-selection evidence |
 | Target-pair RT calibration artifacts | Activation-gated selection support |
 | Expected-diff packets | Required gate for output-changing behavior |
@@ -76,7 +77,7 @@ implementation.
 
 - **Owns:** `TargetSearchScope`, fixed `TargetKey` row projection, pre-cell
   `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
-  confidence/reason/product-state/counting policy, existing Review Queue
+  typed confidence/reason/product-state/counting decisions, existing Review Queue
   routing, MS1 rescue policy scope, and target-pair RT rules.
 - **Compatibility state:** current Targeted projection code still participates
   in selected peak/area assembly. Structural migration must preserve those

@@ -69,6 +69,78 @@ def test_persisted_semantic_validation_is_proportional_and_root_routed() -> None
     assert "Audit-only metadata" in normalized_root
 
 
+def test_alignment_owner_summaries_match_canonical_contract() -> None:
+    paths = {
+        relative_path: (ROOT / relative_path).read_text(encoding="utf-8")
+        for relative_path in (
+            "docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md",
+            "docs/agent/architecture-public-contracts.md",
+            "docs/architecture-contract.md",
+            "docs/product/domain-glossary.md",
+            "docs/product/shared-processing-kernel.md",
+            "docs/product/targeted-selection.md",
+        )
+    }
+
+    assert "status: accepted" in paths[
+        "docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md"
+    ]
+    for relative_path, text in paths.items():
+        normalized = " ".join(text.split())
+        assert "archive implementation locality remains `proposed`" not in normalized, (
+            relative_path
+        )
+        assert "archive-owner seam remains proposed" not in normalized, relative_path
+        assert "must be refrozen before its implementation ticket" not in normalized, (
+            relative_path
+        )
+
+    lifecycle_stages = (
+        "SearchScope",
+        "Discovery/capture",
+        "PeakHypothesis",
+        "CrossSample",
+        "ModeTrack proposal",
+        "ObservationRepair",
+        "CrossSample reconciliation",
+        "final ModeTrack proposal/application",
+        "FinalizedScientificAlignment",
+        "projection binding/subjects",
+        "ProductionCellDecision",
+        "projection completion",
+        "result finalizer",
+        "archive/explanation/delivery",
+    )
+    for relative_path in (
+        "docs/product/domain-glossary.md",
+        "docs/product/shared-processing-kernel.md",
+    ):
+        lifecycle_lines = [
+            line.strip().strip("`")
+            for line in paths[relative_path].splitlines()
+            if line.strip().startswith("`SearchScope ->")
+        ]
+        assert len(lifecycle_lines) == 1, relative_path
+        text = lifecycle_lines[0]
+        cursor = -1
+        for stage in lifecycle_stages:
+            next_cursor = text.find(stage, cursor + 1)
+            assert next_cursor > cursor, (
+                f"{relative_path}: missing/out-of-order {stage}"
+            )
+            cursor = next_cursor
+
+    targeted = " ".join(
+        paths["docs/product/targeted-selection.md"].split()
+    ).casefold()
+    assert "reason rendering" not in targeted
+    assert "renders the existing review queue and delivery" not in targeted
+    assert "explanation renders the human-facing reasons" in targeted
+    assert "| `explanation/` | Human reason rendering" in paths[
+        "docs/architecture-contract.md"
+    ]
+
+
 def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
