@@ -59,18 +59,66 @@ graph TB
     ALN --> OUT
 ```
 
-**Product-method flow — target architecture:**
-`.raw` files + method constraints → Discovery → PeakHypothesis/evidence → cross-sample Alignment → evidence-based Backfill → workflow projection
+**Product-method flow — target architecture:** `.raw` files + typed SearchScope
+→ shared Discovery/capture → PeakHypothesis → CrossSample → ModeTrack proposal
+and CrossSample application → optional ObservationRepair → CrossSample
+reconciliation → optional one final ModeTrack proposal/application →
+FinalizedScientificAlignment → projection binding/subjects →
+ProductionCellDecision → projection completion → result finalizer → archive,
+explanation, and delivery
 
-**Untargeted application:** broad candidate search → shared core → feature-by-sample quantitative matrix + review artifacts → downstream preprocessing/calibration/statistics
+```mermaid
+flowchart LR
+    TS["TargetSearchScope"] --> D["Shared Discovery / capture"]
+    US["Untargeted SearchScope"] --> D
+    D --> CS["CrossSample<br/>group identity and disposition"]
+    CS --> MT["ModeTrack<br/>refinement proposal"]
+    MT -. "proposal only" .-> CS
+    CS --> BF["Backfill<br/>ObservationRepair 0..1"]
+    BF --> CSR["CrossSample<br/>repair reconciliation"]
+    CSR --> MTF["ModeTrack<br/>final proposal 0..1"]
+    MTF -. "proposal only" .-> CSF["CrossSample<br/>final receipt"]
+    CSR --> CSF
+    CSF --> R["FinalizedScientificAlignment"]
+    R --> TPB["Target projection<br/>binding + Target subjects"]
+    R --> UPB["Untarget projection<br/>row keys + Group subjects"]
+    TPB --> CD["ProductionCellDecision<br/>Target subject"]
+    UPB --> GD["ProductionCellDecision<br/>Group subject"]
+    CD --> TPC["Target projection completion<br/>inclusion / counts / reasons / review"]
+    GD --> UPC["Untarget projection completion<br/>inclusion / archive routing"]
+    TPC --> TR["Finalized Targeted result"]
+    UPC --> UR["Finalized Untargeted result"]
+    TR --> EA["Evidence archive<br/>typed staged bundle"]
+    UR --> EA
+    TR --> EX["Explanation<br/>render + navigation"]
+    UR --> EX
+    EA --> EX
+    TR --> DL["Delivery<br/>ArtifactPlan + atomic publish"]
+    UR --> DL
+    EA --> DL
+    EX --> DL
+```
 
-**Targeted application:** known target/m/z/RT/role/pairing constraints → narrowly scoped shared core → targeted evidence delivery (CSV/workbook)
+Each projection appears twice because one owner has two ordered operations:
+binding/subject construction before cell decision and completion after it. The
+diagram does not introduce a second Target or Untarget projection owner.
+
+**Untargeted application:** configured evidence search → shared core →
+established-group quantitative matrix + review/archive artifacts → downstream
+preprocessing/calibration/statistics
+
+**Targeted application:** exact target-list/search scope → the same capture,
+group, trajectory, repair, and cell-decision core → fixed target-row evidence
+delivery (CSV/workbook)
 
 Untargeted is the general XIC method and architectural core. Targeted is a
-constrained specialization over that lifecycle with its own application policy,
-GUI flow, and output projection. Separate output contracts and writer authority
-do not justify permanent duplicate evidence, peak-identity, Alignment, or
-Backfill systems.
+constrained specialization over that lifecycle with its own search scope,
+application policy, GUI flow, and output projection. A broad candidate-
+discovery policy is not Untargeted-only: Targeted may inspect the same broad
+evidence relationships while accepting only configured targets. Separate
+output contracts and writer authority do not justify permanent duplicate
+capture, peak-identity, CrossSample, ModeTrack, ObservationRepair, or cell-
+decision implementations.
 
 The current runtime has not completed that convergence. Targeted uses bounded
 sample-local hypotheses, configured target identity, and cross-sample RT,
@@ -90,10 +138,12 @@ delivery-seal lineage is owned separately by
 [`docs/product/processing-lineage.md`](product/processing-lineage.md). Attempt
 scheduling, cancellation, retry/resume, worker/resource cleanup, cache
 lifecycle, and runtime observability are owned by
-[`docs/product/execution-runtime.md`](product/execution-runtime.md). Storage
-engine, schema, location, and retention policy remain outside both contracts;
-the runtime may only execute owner-supplied lifecycle actions for registered
-temporary resources and caches while respecting lineage pins.
+[`docs/product/execution-runtime.md`](product/execution-runtime.md). Processing
+lineage owns logical retention classes and the archive/handoff bundle contract;
+the future evidence-archive owner owns its native typed storage projection.
+Physical activation, location, catalog, and migration remain separate delivery
+decisions. The runtime may only execute owner-supplied lifecycle actions for
+registered temporary resources and caches while respecting lineage pins.
 
 ## Dependency Direction
 
@@ -108,6 +158,120 @@ temporary resources and caches while respecting lineage pins.
   are not consumer evidence; when an internal function is replaced, delete its
   old implementation, alias, and migration shim in the same change.
 
+## Frozen Alignment Owner Decomposition
+
+The current `xic_extractor/alignment/` tree mixes grouping, trajectory review,
+Backfill, Matrix assembly, decision policy, diagnostics, rendering, and
+publication. The target is replace-don't-layer: deepen the existing scientific
+owners behind small interfaces, move consumers in dependency order, then remove
+the superseded implementation and compatibility path. Do not create a generic
+`core/`, `common/`, `utils/`, or storage-first model package.
+
+These paths are the target locality contract. A path may not exist yet; its row
+defines the successor owner rather than claiming current implementation status.
+
+| Target module | Owns | Must not own |
+| --- | --- | --- |
+| `peak_detection/search_scope.py` | Closed `TargetSearchScope | UntargetedSearchScope` boundary schema and common request/sample/provider binding validation; Target-list and Discovery/provider owners mint their own variant content | Reminting Target identity, choosing provider policy, capture science, rows, groups, values, or artifacts |
+| `alignment/workflow.py` | Typed composition of stage order, resource/cancellation handling, transaction scope, runtime receipts, finalization, and delivery | Grouping, trajectory fitting, Backfill science, selected-value rules, mutable Matrix transport, renderer flags, or fallback algorithms |
+| `alignment/cross_sample/` | Initial grouping, canonical member set, `group_hypothesis_id`, `GroupDispositionDecision`, split/merge lineage, and application of accepted refinement proposals | Trace integration, ModeTrack fitting, ObservationRepair, cell values, row inclusion, or rendering |
+| `alignment/mode_track/` | Immutable trajectory-input snapshots, simplest validated trajectory model, assignment/refinement proposals, and their audit; absorbs reusable `identity_coherence` capability | Group minting, membership mutation, Backfill, value selection, Matrix writes, or a second control plane |
+| `alignment/backfill/` | Bounded work planning, exact request reuse, one `ObservationRepair` epoch, owner-backed repaired observations, and transaction closure | First-hit Discovery, group identity, implicit membership, recursive support, final selected value, or writer authority |
+| `alignment/cell_decision/` | One deep `ProductionCellDecision` interface over explicit `TargetCellSubject` and `GroupCellSubject` variants; returns typed write/no-write decisions | RAW access, regrouping, workflow row identity, renderer strings, or cross-projection authority leakage |
+| `alignment/result/` | Shared-core closure into `FinalizedScientificAlignment`, then final closure of immutable Targeted/Untargeted result variants after projection completion | Re-running RAW, ModeTrack, Backfill, selection, or projection policy |
+| `alignment/projection/target/` | Consumes owner-issued `TargetSearchScope`; pre-cell zero/one/many `TargetRowBinding`, fixed `TargetKey` rows, and Target subjects; post-cell inclusion/count/reason policy and references to the existing Review Queue | Reminting SearchScope/Target identity, a second capture/repair/cell-decision implementation, or arbitrary winner selection |
+| `alignment/projection/untarget/` | Pre-cell `UntargetRowKey` and Group subjects; post-cell established-group row inclusion, archive routing, Untarget delivery-cell identity, and analytical-handoff projection | Target policy, provisional-row promotion by implication, or m/z/RT/display labels as identity |
+| `alignment/backfill_evidence_parquet.py` + `alignment/backfill_evidence_parquet_bundle.py` (accepted archive implementation locality; see `docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md`) | Native typed-Parquet persistence and bounded query of finalized Backfill/skipped owner records; retention-class projection; staged bundle/reference identity; verification and atomic internal archive publication | Scientific record semantics, product row/value decisions, delivery schema, TSV-mediated canonical typing, final product bundle publication, public Parquet-v2 activation, a generic evidence/database framework, or persistence for hypothetical future owners |
+| `explanation/` | Human reason rendering and stable archive/reference navigation from typed decisions | Parsing reason strings back into core decisions or minting scientific authority |
+| `delivery/` | Final `ArtifactPlan` compilation after render/query consumers stabilize, render-only writers, atomic bundle publication, required claim-group closure, and typed delivery receipts | Scientific recomputation, caller-authored emit booleans, or evidence-archive query policy |
+
+### Identity, refinement, and finalization invariants
+
+- `group_hypothesis_id` is an owner-minted typed digest over the group identity
+  schema, exact `processing_request_id`, and canonical-sorted identity-bearing
+  member subjects. A member subject combines canonical sample identity with a
+  discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
+  physical-observation identity; its canonical variant tag is part of identity.
+  Different wrappers over one physical observation canonicalize to the same
+  member subject unless explicit distinct variant tags intentionally keep them
+  separate. Ordinals, `FAM...`, area, display RT, sample stem, and ModeTrack
+  anchor ID are forbidden identity bases.
+- Group/member/Untarget-row identity bases are versioned discriminated mappings
+  serialized as UTF-8 canonical JSON with sorted keys, compact separators, and
+  exact variant spellings. The owner preserves or can reproduce the basis bytes;
+  equal digest with unequal basis bytes is a contract collision and fails closed.
+  Their constructors delegate canonical serialization and typed-digest mechanics
+  to `xic_extractor/processing_identity.py`; they do not copy its private helpers
+  or create package-local canonicalizers.
+- One group has at most one identity-bearing member per canonical sample.
+  Distinguishable same-sample peaks form different groups; unresolved
+  ambiguity is not settled by picking one.
+- Membership or split/merge changes mint successor group identities and
+  immutable lineage. A new processing request creates new group and row
+  identities; cross-request continuity is not inferred during the first
+  migration.
+- `GroupDispositionDecision` is exactly one of `established`, `provisional`,
+  `unresolved`, or `rejected`. `established` requires accepted identity-bearing
+  members from at least two distinct canonical samples plus the active method's
+  hard gates. A singleton is always `provisional`; low support alone is not
+  `rejected`. Disposition and output inclusion are separate decisions.
+- ModeTrack consumes one immutable `trajectory_input_id` whose content is
+  limited to trajectory-relevant anchors, members, apexes, injection order,
+  evidence profile, and exclusions. Value-only area or boundary changes do not
+  rerun it. CrossSample alone applies proposals and mints successors.
+- CrossSample owns the closed `eligible | review_only | excluded` edge
+  classifier used by initial grouping, claim candidates, and repaired
+  observations. Only `eligible` edges connect one bounded atomic ModeTrack
+  neighborhood; `excluded` cannot be reopened. CrossSample applies the complete
+  coupled successor set or none. An oversized eligible neighborhood is
+  unassessable and cannot be split, truncated, or processed greedily to alter
+  membership.
+- ObservationRepair may trigger at most one rebuilt trajectory snapshot and one
+  final ModeTrack rerun when trajectory identity actually changes. CrossSample
+  reconciles repaired observations, applies or rejects the optional final
+  proposal, and mints the final receipt consumed by scientific closure. There is
+  no repair/refit loop. A repaired observation is neither group membership nor
+  a selected product value.
+- Repair provenance persists. A subsequent execution grants anchor eligibility
+  only when the active method-specific evidence owner freshly classifies the
+  required independent evidence; repair acceptance or trajectory agreement is
+  insufficient.
+- `FinalizedScientificAlignment` carries the exact canonical sample universe
+  and one terminal search/observation state for every required subject; absence
+  is never inferred from a missing row. Target binding considers only unique
+  established/provisional groups and creates every Target × sample subject.
+  Untarget row identity is processing-request-scoped and every finalized group
+  × sample creates a subject; standard Matrix completion includes established
+  groups only.
+- `ProductionCellDecision` is the sole selected-value owner. Its no-write
+  taxonomy is `not_searched`, `searched_no_observation`, `unresolved`,
+  `rejected_observation`, `not_quantifiable`, and `unavailable`. Only a complete
+  owner-bound search receipt may prove `searched_no_observation`; missing,
+  incomplete, or corrupt evidence is `unavailable`.
+  These are closed terminal variants, not overlapping booleans: explicit
+  no-search, searched-empty, unresolved, all-rejected, accepted-nonquantifiable,
+  technical-unavailable, or authorized-quantifiable maps to exactly one result.
+  Cross-request/cross-subject evidence is a contract error rather than a
+  no-write reason.
+- `finalize_alignment_result(request)` accepts a discriminated Targeted or
+  Untargeted request and returns the matching immutable result variant. It
+  validates closure only. Public construction, mutable dictionaries, optional
+  mode fields, and workflow boolean soup are forbidden.
+- The type name `Matrix` is reserved for the final canonical grid. Pre-final
+  owner/cell collections use distinct observation or provisional-snapshot
+  types and cannot be passed to delivery as if already finalized.
+
+### Compatibility and promotion
+
+Current TSV/CSV/workbook schemas, selected values, counted detections, public
+identifiers, configuration, and default behavior remain unchanged during the
+structural migration. Legacy facades may delegate and project for a finite list
+of named current consumers; they may not retain a fallback algorithm. Target
+local fill, ModeTrack sensitivity changes, Untarget row-key cutover, typed
+Parquet v2, and analytical-handoff activation are separate behavior-promotion
+lanes with expected diffs, method-appropriate evidence, rollback, and explicit
+consumer proof.
+
 ## Ownership Map
 
 Use this map when adding or moving package code. `docs/project-layout.md` owns
@@ -115,7 +279,7 @@ where files live; this section owns the reason each package changes.
 
 | Surface | Owns | Should not own |
 | --- | --- | --- |
-| `xic_extractor/alignment/` | Cross-sample alignment, owner construction, backfill, matrix identity, primary consolidation, one owner-minted production decision set, Alignment-specific render/atomic-publication composition, alignment-side diagnostics, exact-content receipts for committed Alignment writer artifacts, and the Alignment process adapter into the shared mechanical attempt lifecycle | GUI, renderer-local domain decisions or evidence recomputation, RAW adapters, targeted extraction orchestration, manifest/publication eligibility, a second writer authority, or a second runtime lifecycle owner |
+| `xic_extractor/alignment/` | Transitional facade and composition surface while the frozen semantic owners above absorb current behavior; current public entry compatibility and Alignment process adaptation | Permanent grouping/ModeTrack/Backfill/cell-decision implementation in one package root, mutable Matrix transport, renderer-local decisions, GUI, RAW adapters, targeted-only science, or a second runtime lifecycle owner |
 | `xic_extractor/discovery/` | General candidate discovery and seed generation; reusable workflow-neutral discovery facts; content-bound batch receipts that close exact candidate artifact bytes/payload/count against acquisition identity; Untargeted adapter from direct measured CID-NL seeds to canonical evidence refs | Cross-sample matrix consolidation, targeted target-list policy, or Matrix authority from diagnostic projection refs |
 | `xic_extractor/extraction/` | Targeted extraction orchestration, target jobs, anchor windowing, drift handling, backend coordination, and Targeted adapter from typed MS2 product evidence to canonical CID-NL refs | Workbook rendering, GUI, alignment matrix decisions, or counted-detection authority from diagnostic projection refs |
 | `xic_extractor/peak_detection/` | Trace models, owner-backed physical MS1 observation refs, hypotheses, resolver implementations, boundary selection, baseline/integration audit, region logic, and workflow-neutral canonical CID-NL observation content | Cross-sample ownership, workflow projection policy, workbook output, GUI, or RAW IO orchestration |
@@ -132,7 +296,7 @@ where files live; this section owns the reason each package changes.
 | `xic_extractor/peak_detection/peak_hypothesis_identity.py` | Immutable composition of owner-minted physical observations and typed evidence into the existing `PeakHypothesis`; workflow-neutral content identity, exact attempt artifact closure, and binding validation | A second hypothesis model, Targeted context minting, candidate generation, model selection, cross-sample grouping, counting, or product authority |
 | `xic_extractor/extraction/cid_nl_evidence_projection.py` | Validate existing Targeted `MS2ProductEvidence` plus exact request-bound target snapshot, target-precursor ppm tolerance, acquisition source, scan, and sample context against a canonical CID-NL ref | Recompute evidence, select/count a peak, write output, or mint canonical evidence |
 | `xic_extractor/discovery/cid_nl_evidence_projection.py` | Validate an existing direct `scan_precursor` `DiscoverySeed`, including its finite measured scan precursor, plus exact request-bound acquisition source and sample context against a canonical CID-NL ref | Inferred-precursor special cases, group/Matrix decisions, product writes, or canonical evidence minting |
-| `xic_extractor/processing_identity.py` plus `xic_extractor/artifact_lineage.py` | Workflow-neutral acquisition-source, processing-request, processing-attempt identity, complete retry-predecessor-chain derivation, and producer-attempt-derived closure validation of complete owner-resolved sample/target/artifact/review references | Sample/target/artifact/review ID minting or resolution, caller-authored artifact-attempt allowlists, caller-authorized retry dependencies, runtime events, storage, scientific selection, projection, or writer authority |
+| `xic_extractor/processing_identity.py` plus `xic_extractor/artifact_lineage.py` | Workflow-neutral canonical identity serialization and typed-digest mechanics; acquisition-source, processing-request, and processing-attempt identity; complete retry-predecessor-chain derivation; and producer-attempt-derived closure validation of complete owner-resolved sample/target/artifact/review references | Owning the domain payload of Target, CrossSample, or projection identities; sample/target/artifact/review ID minting or resolution; caller-authored artifact-attempt allowlists; caller-authorized retry dependencies; runtime events, storage, scientific selection, projection, or writer authority |
 | `xic_extractor/process_job_execution.py` | Bounded spawned-process submission, deterministic result collection, pending-future cancellation, first terminal failure preservation, all observed terminal results, and submitted/completed/failed/cancelled/in-flight/unsubmitted mechanical census; consumers reject a non-terminal incomplete census before scientific projection | Scientific state, runtime lifecycle facts, retry/resume, RAW handles, domain result interpretation, persistence, or worker payload authority |
 | `xic_extractor/execution_runtime.py`, `execution_runtime_owner.py`, plus focused `execution_runtime_finalization*.py`, `execution_runtime_marker.py`, and `execution_runtime_observability.py` companions | One atomic runtime execution/finalization entry over accepted running manifests or an empty preflight-terminal state and append-only attempt/work facts; typed adapter receipt acceptance; owner-derived lifecycle, resource cleanup, opened-process-worker topology, fixed metric provenance, runtime-artifact disposition, acquisition metrics, and observability; content-bound coordinator/supervisor terminal records carried by one finalization receipt; one atomic owner-path-supplied launch/finalization recovery marker; coordinator/supervisor phase enforcement; and typed external monotonic-offset/RSS/runtime-mediated-I/O samples | Request/attempt identity minting, acquisition/resource implementation, live telemetry collection, caller-authored ledgers/counts/provenance/finalization halves, partial lifecycle calls or settlement-only consumer bypasses, storage-location or retention policy, a generic persistence framework, scientific state, artifact delivery, or writer authority |
 | `xic_extractor/acquisition_contract.py` | Capability-aware batch use of existing `XICRequest`/`XICTrace`, exact acquisition-source binding, truthful `native_scan`/`conversion_scan`/`rt_only` coordinates, and mechanical call/point counts | Vendor/RAW implementation, cache/storage, PeakObservation, scientific selection, workflow flags, or writer authority |
@@ -302,9 +466,12 @@ surface, not an active phase plan:
 - `xic_extractor/signal_processing.py`: keep as compatibility facade; move
   models, resolver implementations, selection, recovery, integration, and trace
   quality into focused peak-detection modules.
-- `xic_extractor/alignment/primary_consolidation.py`: add characterization tests
-  before splitting graph construction, winner selection, cell merge, or loser
-  audit helpers.
+- `xic_extractor/alignment/`: migrate in dependency order to the frozen owner
+  decomposition above. `primary_consolidation.py`, `matrix_identity.py`,
+  `production_decisions.py`, `pipeline.py`, `identity_coherence/`, current
+  Backfill files, and output-level flags are evidence-bearing legacy sources,
+  not permanent owner shapes. Characterize before moving; delete replaced
+  implementations and adapters after their named consumer census reaches zero.
 - `xic_extractor/diagnostics/backfill_reconciliation_gallery.py`: keep as the
   reconciliation-gallery orchestrator; continue moving static presentation
   assets, input/index construction, classification, and HTML section rendering
@@ -315,6 +482,8 @@ See also:
 - `docs/project-layout.md`
 - `docs/agent/architecture-public-contracts.md`
 - `docs/product/alignment.md`
+- [GitHub Issue #301](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/301)
 
-Retired dated decomposition specs have been folded into this contract and are
-kept only as migration/history stubs while exact historical refs are cleaned up.
+Retired dated decomposition specs are folded into this contract and removed;
+active implementation maps, acceptance, and dependency sequencing live in
+GitHub Issues rather than tracked history stubs.

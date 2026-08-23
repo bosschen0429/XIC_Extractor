@@ -1,17 +1,18 @@
 # Peak Anchor, Cross-Sample Group, and Hypothesis Boundary
 
 This page defines the durable boundary between per-sample peak anchors, wide
-Family contexts, cross-sample group hypotheses, peak hypotheses, diagnostic
-ModeTrack assignments, and product projections. Use it when a change touches
+Family contexts, cross-sample group hypotheses, peak hypotheses, ModeTrack
+proposals, ObservationRepair, cell decisions, and product projections. Use it when a change touches
 discovery peak-anchor grouping, alignment owner construction, diagnostic
 ModeTrack review, Backfill activation, or any matrix identity sidecar.
 
 ## Contract
 
-`FamilyContextRef`, ModeTrack, and `ModeTrackAssignment` are topic-local
-internal alignment terms owned by this page. They do not rename the public or
-legacy `family` vocabulary and do not add public DTO, schema, or identifier
-surface.
+Current `FamilyContextRef` and `ModeTrackAssignment` values are internal
+diagnostic structures. Their useful trajectory capability is the migration
+source for a proposal-only `alignment/mode_track/` interface; it must be
+deepened rather than replaced. Neither current nor successor terms rename the
+public/legacy `family` vocabulary or add public schema by implication.
 
 - `peak_anchor_id` (discovery `feature_family_id`) groups candidates that share
   the same MS1 chromatographic peak within a single sample. It is a per-sample
@@ -19,6 +20,9 @@ surface.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
   membership, owner edge evidence, hard split gates, review-only records, and
   group delivery metadata. Use `group_hypothesis_id` for identity.
+- CrossSample also owns the mutually exclusive group disposition and every
+  membership/split/merge successor lineage edge. ModeTrack may propose a change
+  but cannot apply it or mint the successor.
 - Internal `FamilyContextRef` owns one wide m/z/RT observation universe and
   references zero or more existing `group_hypothesis_id` ModeTracks. It is
   owner-minted from canonical context, policy, lineage, and group IDs. Public or
@@ -27,15 +31,20 @@ surface.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
-- `ModeTrackAssignment` records for debug or batch review whether one
+- `ModeTrackAssignment` currently records for debug or batch review whether one
   sample-local `PeakHypothesis` is
   uniquely assigned to one existing ModeTrack, ambiguous across tracks,
   outside the model, absent, or technically unassessable. The M3
-  identity/trajectory boundary mints this internal, immutable diagnostic fact;
-  it does not mint a second group owner or feed the normal product path.
-- Workflow projection owns product decisions. Targeted projection, alignment
-  projection, Backfill authority, and ProductWriter gates decide counted
-  detection, matrix presence, and product output values.
+  identity/trajectory boundary mints this internal, immutable diagnostic fact.
+  The successor ModeTrack result remains proposal-only; it does not mint a
+  second group owner or select a product value.
+- Backfill may return one independently traceable owner-backed repaired
+  observation. It cannot imply group membership or writer authority.
+- Workflow projection first owns Target/Untarget row identity/binding and the
+  explicit Target/Group cell subject. `ProductionCellDecision` then owns the
+  selected value or typed no-write result. The same projection afterward closes
+  inclusion, counted detection, Review Queue/archive routing, and output shape.
+  ProductWriter renders only an authorized finalized result.
 - Legacy score, confidence, family role, and review tokens may rank, annotate,
   or preserve compatibility behavior. They must not become standalone product
   truth.
@@ -47,10 +56,12 @@ surface.
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
 | Internal `FamilyContextRef` | Wide chromatographic observation context and its zero-or-more existing ModeTracks | Chemical identity, public row identity, same-peak truth, or writer authority |
-| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity via `group_hypothesis_id` | Per-peak integration truth or ProductWriter authority |
+| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, ModeTrack fitting, repair, or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
-| Internal `ModeTrackAssignment` | Typed sample/acquisition × existing ModeTrack diagnostic correspondence, exact prediction exclusions, and lineage | Refitting tracks in consumers, evidence/area transfer, Backfill/Matrix values, or chemical identity |
-| Product projection / ProductWriter | Counted detection, product state, matrix value authority | Low-level evidence extraction or review-only grouping |
+| Current/successor ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
+| ObservationRepair | Bounded local repaired observation or typed no-repair result | Membership, selected value, first hit, or recursive support |
+| ProductionCellDecision | Selected value or typed no-write for an explicit Target/Group subject | Row identity, RAW access, grouping, or rendering |
+| Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, repair, or value recomputation |
 
 ## Migration Rule
 
@@ -71,6 +82,9 @@ display labels. Treat this as an adapter state:
    it.
 5. Keep review-only group context out of ProductWriter authority unless it is
    converted into typed same-peak or group-hypothesis evidence.
+6. Introduce projection-owned `UntargetRowKey` separately from canonical group
+   identity. Do not make `group_hypothesis_id` itself the public Matrix row key
+   or derive row identity from m/z/RT/display order.
 
 ## Design Red Lines
 
@@ -99,6 +113,8 @@ display labels. Treat this as an adapter state:
 - Do not let a consumer refit ModeTracks or reinterpret an ambiguous,
   out-of-model, absent, or technically unassessable state as unique. Shadow
   assignments carry no value or writer authority.
+- Do not treat an accepted ObservationRepair as implicit membership or selected
+  value. Those decisions remain with CrossSample and ProductionCellDecision.
 - Do not let `alignment_review.tsv` display tokens promote rows. Positive
   product support needs provenance-valid sidecars or explicit authority records.
 - Do not treat `family_projection` rows as canonical identity proof. They are

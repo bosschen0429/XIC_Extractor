@@ -1,10 +1,39 @@
 # Targeted Selection
 
-Targeted selection is the product-facing decision path for known targets. It turns candidate evidence, region boundaries, paired standards, RT context, and reason projection into targeted output decisions. Diagnostic proposals must pass through explicit policy before becoming product truth.
+Targeted selection is the Targeted workflow projection for known targets. It
+constrains the shared scientific lifecycle with an exact target-list snapshot,
+binds finalized groups to fixed target rows, applies Targeted inclusion/counting
+and typed reason/routing policy, and closes references to the existing Review
+Queue plus delivery-shape decisions. Explanation renders the human-facing
+reasons from those typed decisions. Targeted selection does not require a second
+capture, CrossSample, ModeTrack, Backfill, or selected-value implementation.
 
 ## Contract
 
 - Product targeted output is a workflow-owned projection from evidence and selection decisions. Shared evidence providers inform but do not choose targeted product state.
+- `TargetKey` is the stable logical row identity. `TargetDefinition` is the
+  exact immutable scientific revision, and `TargetListSnapshot` is the exact
+  ordered request input. A same-label definition change preserves the key but
+  changes definition/snapshot identity; duplicate labels fail closed.
+- `TargetSearchScope` narrows the allowed target universe but may still ask the
+  shared Discovery/capture method to inspect broad evidence relationships such
+  as dR, R, or MeR. Broad candidate discovery is not Untargeted-only.
+- `TargetRowBinding` resolves zero, one, or many qualified finalized groups for
+  each fixed Target row. Zero keeps the row with a typed state; one unique group
+  binds; many remain unresolved with stable references in the existing Review
+  Queue. It does not rescan RAW, rank by area, change integration, or choose an
+  arbitrary winner.
+- A Target row may bind a unique established or provisional group. An
+  owner-backed direct local observation may produce a Target cell value even
+  when the group is provisional or the observation is not a group member.
+  Other samples cannot be filled from singleton or RT-prior evidence alone;
+  they require direct local evidence or an accepted independent
+  `ObservationRepair`.
+- Targeted selection first owns `TargetRowBinding` and constructs
+  `TargetCellSubject`. `ProductionCellDecision` then owns the selected numeric
+  value or typed no-write result. The same Targeted owner afterward closes
+  inclusion, counted-detection policy, typed reason facts, and Review Queue
+  routing; it must not recompute the value.
 - Region, boundary, and selected-envelope logic are candidate and model-selection surfaces. They require expected-diff review before changing selected peak, area, confidence, reason, product state, counted detection, workbook, or matrix values.
 - Selected-hypothesis public behavior must preserve compatibility projections unless an explicit schema/versioning plan changes downstream contracts.
 - The bounded headless `5-hmdC + 5-medC` contract is the only MS1
@@ -39,14 +68,22 @@ Targeted selection is the product-facing decision path for known targets. It tur
 | --- | --- |
 | Targeted CSV/workbook fields | Public output for target decisions |
 | `Product State` / `Counted Detection` | User-facing product projection |
-| Confidence and reason strings | Reviewable decision explanation |
+| Confidence and reason fields | Explanation-rendered review surface from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and model-selection evidence |
 | Target-pair RT calibration artifacts | Activation-gated selection support |
 | Expected-diff packets | Required gate for output-changing behavior |
 
 ## Boundaries
 
-- **Owns:** targeted product projection (selected peak, area, confidence, reason, product state, counted detection), MS1 rescue policy scope, target-pair RT rules.
+- **Consumes:** owner-issued `TargetSearchScope`.
+- **Owns:** fixed `TargetKey` row projection, pre-cell
+  `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
+  typed confidence/reason/product-state/counting decisions, existing Review Queue
+  routing, MS1 rescue policy scope, and target-pair RT rules.
+- **Compatibility state:** current Targeted projection code still participates
+  in selected peak/area assembly. Structural migration must preserve those
+  outputs while moving sole selected-value authority to
+  `ProductionCellDecision`; any actual value change is a separate promotion.
 - **Does not own:** Backfill/Discovery writer scope, specific target's current selected peak, full review-action apply behavior, or maturity tier decisions.
 - Targeted authority does not extend to untargeted pipelines, and untargeted authority does not extend back.
 
@@ -71,6 +108,10 @@ Targeted selection is the product-facing decision path for known targets. It tur
 - Promoting target-pair RT support without explicit activation.
 - Letting selected-hypothesis refactors silently change public reason or counted-detection behavior.
 - Reusing Backfill or Discovery authority for targeted selection.
+- Treating configured Target identity as proof of a local observation or group
+  membership.
+- Creating a second Target-only capture, trajectory, repair, or cell-decision
+  implementation because the output rows differ.
 
 ## See Also
 

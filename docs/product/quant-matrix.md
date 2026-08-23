@@ -1,11 +1,18 @@
 # Quant Matrix
 
-The quant matrix is the product-facing numeric matrix. It separates detected values from accepted Backfill quantification values and enforces explicit authority and provenance before any value enters the matrix.
+The quant matrix is the final product-facing numeric grid. The type name
+`Matrix` is reserved for this finalized canonical shape; owner observations,
+Backfill results, consolidation snapshots, and provisional cell collections use
+different typed names and cannot cross the delivery seam as if already final.
 
 ## Contract
 
 - The primary matrix exposes numeric product values and stable user-facing row/sample structure, not diagnostic evidence columns.
-- Detected values and accepted Backfill values are different product states. Backfill values may enter the matrix only through explicit authority and provenance.
+- Direct observations and repaired observations are different evidence states.
+  Backfill supplies only an owner-backed repaired observation. The owning
+  projection first constructs the explicit Target/Group cell subject;
+  `ProductionCellDecision` then independently selects the final numeric value or
+  typed no-write result before the same projection may include it.
 - `ProductionAcceptanceManifest` is the authority boundary for accepted Backfill values. Candidate sidecars, review packets, galleries, lockbox labels, and diagnostics do not grant authority by themselves.
 - File-backed activation reads each manifest byte snapshot once. The
   `production_acceptance` owner validates that snapshot and mints an immutable
@@ -30,6 +37,11 @@ The quant matrix is the product-facing numeric matrix. It separates detected val
   values, statuses, counts, or row inclusion from raw cells. This in-process
   handoff does not by itself define a durable decision carrier or replace the
   separate file-backed activation contracts below.
+- `ProductionDecisionSet` is the current compatibility surface. Its successor
+  is one deep `ProductionCellDecision` owner over explicit Target and Group
+  subjects, carried inside discriminated immutable finalized results. The
+  structural migration must preserve current values, states, counts, row
+  inclusion, and renderer bytes before any behavior promotion.
 - Historical AsLS primary-matrix policy is superseded by LC-MS/MS evidence rules and morphology-aware area policy.
 - Row-completion confidence and downstream-impact benchmarks are readiness evidence; they do not change default matrix authority without a separate activation decision.
 - The M6 Untargeted CID-NL no-RAW golden path prepares one deterministic raw-area
@@ -69,12 +81,15 @@ themselves.
 | `expected_diff_summary` | Review gate for behavior-changing activation |
 | `ProductionAcceptanceManifest` | Accepted Backfill authority record |
 | `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
+| `ProductionCellDecision` | Successor sole owner of selected value or typed no-write for a Target/Group cell subject |
 | `QuantMatrixVersion` | Versioned activation bundle |
 | Productization status index / authority manifest | Current state and writer scope |
 
 ## Boundaries
 
-- **Owns:** primary matrix schema, cell provenance, activation bundle format, authority boundary between detected and Backfill values.
+- **Owns:** final primary matrix schema, projection-owned row/cell identity,
+  cell provenance, activation bundle format, and rendering of finalized cell
+  decisions.
 - **Does not own:** which Backfill cells are currently accepted, per-row scientific confidence, maturity tier decisions, or upstream alignment/detection logic.
 - Candidate Backfill rows are not accepted matrix values until the authority manifest says so.
 
@@ -89,6 +104,10 @@ themselves.
 ## Pitfalls
 
 - Treating candidate Backfill rows as accepted matrix values.
+- Treating a repaired observation as the selected value without a closed
+  `ProductionCellDecision`.
+- Passing the pre-final owner Matrix or loose `AlignedCell` collection directly
+  to a writer.
 - Treating review-only labels or diagnostic sidecars as writer authority.
 - Adding diagnostic evidence columns to the primary matrix.
 - Treating historical AsLS-vs-raw policy as current area authority.

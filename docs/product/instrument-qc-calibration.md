@@ -13,6 +13,10 @@ contract promotes a correction or gate.
 - HCD/product-ion audit is a human review and plausibility surface. It must
   not become a hard pass/fail production gate without an explicit activation
   contract.
+- Method evidence remains method-specific: SDO/LEK interpretation uses HCD;
+  MixSTDs may use CID or HCD; a Targeted method consumes the evidence provider
+  configured for that method. Architecture convergence must not replace these
+  choices with a universal CID-NL or QC rule.
 - Level 3 RT calibration remains `NO-GO`: leave-one-anchor-out residuals,
   transfer support, extrapolated rows, and blocked rows do not yet support
   production correction.
@@ -24,6 +28,11 @@ contract promotes a correction or gate.
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
+- A future ModeTrack sensitivity packet must not assume one batch-wide monotonic
+  shift. It must permit feature-specific directions and adjacent-injection
+  jumps, examine several high-detection unknown features as well as method-
+  appropriate ISTDs, report interpolation/extrapolation support, and retain
+  unassessable cases.
 - `scripts/run_instrument_qc.py` is a contract-bearing product adapter. Its
   method-document path already produces sequence, injection-order, and
   `sample_metadata_v1` projections that should be reused rather than
@@ -66,6 +75,8 @@ contract promotes a correction or gate.
 - Treating clean-standard behavior as proof of biological matrix performance.
 - Making HCD support a hard gate from audit evidence alone.
 - Applying Level 3 RT correction while maturity gate remains `NO-GO`.
+- Treating a global LOESS/ISTD trend as identity or fill authority for every
+  unknown feature.
 - Hiding calibration assumptions in private notes without a repo owner.
 
 ## See Also

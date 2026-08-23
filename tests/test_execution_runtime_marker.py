@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
+import xic_extractor.execution_runtime_marker as runtime_marker_module
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -342,6 +344,103 @@ def test_concurrent_conflicting_finalizations_fail_closed_at_replace(
         AttemptTerminalOutcome.SUCCEEDED,
         AttemptTerminalOutcome.FAILED,
     }
+
+
+def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    attempt = _attempt(tmp_path)
+    runtime = _runtime(attempt)
+    real_open = os.open
+    lock_path = tmp_path / ".attempt.runtime.json.lock"
+    permission_races = 0
+
+    def race_once(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+    ) -> int:
+        nonlocal permission_races
+        if str(path).endswith(".lock") and permission_races == 0:
+            permission_races += 1
+            descriptor = real_open(path, flags, mode)
+            os.close(descriptor)
+            raise PermissionError(13, "synthetic concurrent Windows lock denial", path)
+        if str(path).endswith(".lock") and lock_path.exists():
+            lock_path.unlink()
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(runtime_marker_module.os, "open", race_once)
+
+    snapshot = marker.record_launch(runtime)
+
+    assert permission_races == 1
+    assert snapshot.processing_attempt_id == attempt.processing_attempt_id
+
+
+def test_windows_sharing_violation_retries_without_directory_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    attempt = _attempt(tmp_path)
+    runtime = _runtime(attempt)
+    real_open = os.open
+    opened_paths: list[str] = []
+
+    def sharing_violation_once(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+    ) -> int:
+        opened_paths.append(str(path))
+        if str(path).endswith(".lock") and len(opened_paths) == 1:
+            raise PermissionError(13, "synthetic sharing violation", path, 32)
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(runtime_marker_module.os, "open", sharing_violation_once)
+
+    snapshot = marker.record_launch(runtime)
+
+    assert snapshot.processing_attempt_id == attempt.processing_attempt_id
+    assert not any(path.endswith(".probe") for path in opened_paths)
+
+
+def test_marker_lock_does_not_recast_unrelated_permission_denial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    runtime = _runtime(_attempt(tmp_path))
+    lock_path = tmp_path / ".attempt.runtime.json.lock"
+    lock_path.write_bytes(b"existing-lock")
+    real_open = os.open
+
+    def deny_lock(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+    ) -> int:
+        if Path(path).parent == tmp_path:
+            raise PermissionError(13, "synthetic directory ACL denial", path)
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(runtime_marker_module.os, "open", deny_lock)
+    monkeypatch.setattr(runtime_marker_module, "_MARKER_LOCK_TIMEOUT_SECONDS", 0.0)
+
+    with pytest.raises(PermissionError, match="synthetic directory ACL denial"):
+        marker.record_launch(runtime)
 
 
 def test_marker_rejects_noncanonical_or_wrong_attempt_content(

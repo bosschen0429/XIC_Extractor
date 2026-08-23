@@ -11,9 +11,26 @@ linked owner pages.
 - The untargeted lane is an alignment, recovery, and primary-matrix hygiene
   layer. It is not a full LC-MS preprocessing, normalization, artifact
   annotation, blank/background filtering, or batch-correction system.
+- Untargeted is the general application of the shared scientific lifecycle, not
+  a separate core that Targeted must call into wholesale. Targeted and
+  Untargeted share capture, CrossSample, ModeTrack, ObservationRepair, and
+  ProductionCellDecision implementations; they differ at search scope and
+  output projection.
+- A broad candidate-discovery policy is available to both applications.
+  Untargeted's distinguishing search behavior is that every group qualifying
+  under the configured method remains eligible for its projection, whereas
+  Targeted retains only configured `TargetKey` rows.
 - Product-facing `Matrix` output stays conservative. Rescue-only, ambiguous,
   diagnostic, and review-only evidence belongs in Review/Audit surfaces until a
   ProductWriter authority record and expected-diff packet explicitly promote it.
+- Untargeted projection derives a typed `UntargetRowKey` from each finalized
+  canonical group. Standard Matrix rows require `established` disposition.
+  `provisional` groups stay in a compact machine archive/review surface;
+  `unresolved` and `rejected` groups remain AuditTrail facts. Disposition and
+  row inclusion are separate typed decisions.
+- `UntargetedDeliveryCellKey` is canonical sample plus `UntargetRowKey`.
+  `FAM...`, row order, m/z/RT display coordinates, and current Matrix text are
+  compatibility/display facts, not canonical cell identity.
 - Exact equality to old upstream feature tables is not the success definition.
   The accepted method direction is owner-centered recovery plus duplicate-claim
   control while preserving a clean primary matrix.
@@ -73,6 +90,11 @@ Any future expansion from method evidence to product output must name:
 3. the expected matrix diff,
 4. the focused tests and validation packet proving the diff,
 5. the current productization tier after the change.
+
+Structural adoption of the shared owners is parity work and does not itself
+promote provisional groups, change Matrix row identity, fill a cell, or activate
+downstream preprocessing. Public `UntargetRowKey` cutover, ModeTrack sensitivity
+changes, and analytical-handoff activation each require their own packet.
 
 ## See Also
 

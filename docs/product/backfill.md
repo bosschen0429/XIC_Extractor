@@ -1,19 +1,44 @@
 # Backfill
 
-Backfill is the authority-gated path for filling accepted quantification values
-into product-facing outputs. It is not a shortcut from diagnostics, overlays,
-or candidate tables into the matrix.
+Backfill is the bounded scientific module for repairing an observation in a
+pre-existing Target or cross-sample group cell. It returns an independently
+traceable `ObservationRepair` decision; it does not select a product value,
+create membership, or write an output. Current files that combine Backfill with
+Matrix promotion are migration sources and compatibility behavior, not the
+target interface.
 
 ## Contract
 
-- Backfill acceptance means accepted quantification values, not automatic truth
-  claims about every candidate feature.
-- Backfill is evidence-based recovery for accepted candidates or aligned groups
-  after Discovery and Alignment have established the relevant context. It is not
-  blind imputation, not a way to create first Discovery hits, and not counted
-  detection.
-- Any broader Backfill publication requires an explicit public authority
-  contract, expected-diff evidence, and focused output tests.
+- Backfill is evidence-based recovery for an owner-backed Target or existing
+  group cell after Discovery/capture has produced a sample-local hypothesis
+  elsewhere in the relevant context. It is not blind imputation, a first-hit
+  Discovery path, recursive candidate generation, or counted detection.
+- One request yields a typed `ObservationRepair` decision containing an
+  owner-backed repaired observation or a typed no-repair outcome. It never
+  returns a caller-authored area alias or a writer decision.
+- Observation repair and group membership are independent. An accepted repaired
+  observation does not silently join a group; CrossSample must make a separate
+  membership decision. A Target-local value may also remain valid without
+  becoming an Untargeted group member.
+- Across the independent membership and cell-decision owners, the legal final
+  outcomes include member+value, member+null,
+  nonmember+Target-local-value, and nonmember+null. Backfill itself decides
+  neither axis.
+- Backfill runs at most one bounded repair epoch. If accepted repair changes the
+  immutable ModeTrack trajectory input, CrossSample may rebuild that snapshot
+  and request one final ModeTrack pass. Value-only area/boundary changes do not
+  rerun ModeTrack, and there is no repair/refit loop.
+- Alignment and ModeTrack supply cross-sample context and trajectory evidence;
+  Backfill owns the local missing-cell revisit. A trend or RT prior alone cannot
+  manufacture a local observation or fill another sample from singleton
+  evidence.
+- The Targeted or Untargeted projection first constructs the explicit cell
+  subject. `ProductionCellDecision`, not Backfill, then selects the final numeric
+  value or typed no-write result; the same projection afterward applies its row
+  inclusion and delivery policy.
+- Any new behavior that lets repaired evidence affect publication requires an
+  explicit public authority contract, expected-diff evidence, and focused
+  output tests.
 - Broad auto-write from the full candidate universe has no registered writer
   authority. The candidate/audit universe is not the writer pool; consult the
   status index for current lane readiness.
@@ -27,9 +52,9 @@ or candidate tables into the matrix.
 - Positive support must be provenance-valid. Display tokens in
   `alignment_review.tsv` do not promote a row without the approved source
   sidecar or authority chain.
-- Family-level context can guide review, but product support must be tied to a
-  same-peak, group-hypothesis, or PeakHypothesis-level authority record before
-  it can promote a rescued cell.
+- Family-level context can guide review, but repaired evidence must be tied to a
+  same-peak, group-hypothesis, or PeakHypothesis-level owner record before it
+  can enter `ProductionCellDecision`.
 - Reusable offline overlay trace evidence caches are opt-in diagnostic replay
   helpers, not Backfill authority. A warm hit must match per-sample
   `path_stat_v1` RAW identity: resolved path, size, mtime, device, and inode.
@@ -38,11 +63,26 @@ or candidate tables into the matrix.
   lesson and focused evidence are retained in
   [`raw-backed-evidence-cache-identity.md`](../solutions/validation/raw-backed-evidence-cache-identity.md).
 
+## Current Direction
+
+The successor Backfill interface is one deep module with a small typed seam:
+
+| Input | Output | Explicitly outside the interface |
+| --- | --- | --- |
+| Exact request/attempt, canonical sample, typed Target or existing-group repair context, owner-bound search receipt, eligible local evidence, and optional finalized group/trajectory context | Immutable repaired observation plus provenance, or typed no-repair decision | First-hit Discovery, group minting, implicit membership, ModeTrack fitting, row identity, selected value, reason strings, Matrix inclusion, and artifact rendering |
+
+The work remains method-aware. SDO/LEK evidence is assessed through HCD;
+MixSTDs may use CID or HCD; every Targeted method uses the evidence provider
+named by that method. Architecture consolidation does not silently change the
+current Alignment Backfill or Instrument QC scientific strategies. Any such
+change is a separate promotion lane with method-appropriate evidence.
+
 ## Current Untargeted Owner Route
 
-Normal Untargeted GUI `full`, GUI `align_only`, generic Alignment CLI, and
-built-in preset runs enter the existing Owner Backfill transaction through
-`run_alignment`. Candidate observation and product write authorization are
+This section describes current compatibility behavior, not the frozen successor
+interface. Normal Untargeted GUI `full`, GUI `align_only`, generic Alignment
+CLI, and built-in preset runs enter the existing Owner Backfill transaction
+through `run_alignment`. Candidate observation and product write authorization are
 separate: a physical peak found inside the broad owner-authorized RT context is
 not same-peak or cell-identity proof by itself.
 
@@ -219,7 +259,9 @@ recovery authority.
 
 | Surface | Role |
 | --- | --- |
-| `ProductWriter` authority path | Only approved writer path for product matrix changes |
+| ObservationRepair owner seam | Bounded local repair facts and provenance; no value or writer authority |
+| `ProductionCellDecision` handoff | Consumes repair facts only through an explicit projection-owned Target/Group cell subject and independently decides write/no-write |
+| Legacy `ProductWriter` authority path | Current compatibility path for already approved matrix changes; must not be absorbed into Backfill's successor interface |
 | Productization status index | Machine-checkable Backfill maturity and lane state |
 | Authority manifest | Fail-closed writer scope and accepted authority records |
 | Mechanical adjudication schema/index | Structured review evidence for candidate promotion |
@@ -229,11 +271,13 @@ recovery authority.
 
 ## Boundaries
 
-- **Owns**: authority-gated writer path, accepted quantification values,
-  promotion gates, evidence-chain lifecycle, expansion packet evaluation.
-- **Does not own**: current maturity tier or active lane (see status index),
-  candidate-level truth for unresolved rows (see validation
-  packets and adjudication), sample-level private investigation details.
+- **Owns:** bounded repair eligibility, exact local repair work, owner-backed
+  repaired observations, no-repair outcomes, provenance, and transaction
+  closure.
+- **Does not own:** group membership, ModeTrack fitting, selected value,
+  counted detection, Matrix/row inclusion, Review Queue policy, writer
+  authority, current maturity tier or active lane, or sample-level private
+  investigation details.
 - The candidate/audit universe feeds review and classification, not automatic
   matrix writing.
 
@@ -241,7 +285,7 @@ recovery authority.
 
 | Category | Meaning | Repo owner |
 | --- | --- | --- |
-| Current scoped writes | Already accepted cells that ProductWriter may publish | Authority manifest, status index |
+| Current scoped writes | Already accepted cells that ProductionCellDecision and the registered ProductWriter path may publish | Authority manifest, status index, cell-decision owner |
 | Candidate or audit rows | Rows available for review, classification, or evidence recovery | Validation packets, adjudication index |
 | Trace-matched unresolved rows | Rows with some trace-level evidence but insufficient authority | Evidence lifecycle, adjudication surfaces |
 | Missing-overlay rows | Rows blocked by absent or insufficient overlay evidence | Evidence availability packets, blocker reports |
@@ -259,6 +303,11 @@ Before changing Backfill product behavior, require the relevant subset of:
 - Evidence-rule review for any new interpretation of trace, overlay, or
   candidate evidence.
 - Privacy scan if historical notes or sample-level review details are touched.
+- Characterization parity when moving current Backfill behavior into the
+  ObservationRepair owner; do not combine that move with eligibility, RT,
+  integration, or selected-value changes.
+- A truth-table test proving repaired observation, membership, and selected
+  value remain three independent decisions.
 
 ## Pitfalls
 
@@ -269,6 +318,10 @@ Before changing Backfill product behavior, require the relevant subset of:
   provenance-valid sidecars.
 - Treating a family/window match as same-peak evidence without typed anchor,
   selected mode, or PeakHypothesis-level support.
+- Treating an accepted repaired observation as implicit group membership or an
+  automatically writable value.
+- Letting ModeTrack/Alignment own the local repair merely because trajectory
+  evidence informed the request.
 - Updating a topic summary while leaving the status index, authority manifest,
   or promotion contract stale after a real authority change.
 

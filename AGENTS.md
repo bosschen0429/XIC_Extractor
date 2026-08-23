@@ -14,10 +14,10 @@ for the active task unless a hard gate below says otherwise.
 - Product vocabulary and topic authority:
   [`domain-glossary.md`](docs/product/domain-glossary.md) and
   [`docs/product/README.md`](docs/product/README.md)
-- Evidence and validation policy:
+- Evidence semantics, method-specific QC/calibration, and validation policy:
   [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
   and [`lc-msms-evidence-rules.md`](docs/lc-msms-evidence-rules.md)
-- Architecture and public contracts:
+- Shared Target/Untarget lifecycle, semantic owners, and public contracts:
   [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
   and [`architecture-contract.md`](docs/architecture-contract.md)
 - Execution, PR, planning, review, and handoff mechanics:
@@ -125,6 +125,33 @@ must remain clean-checkout safe.
 - Product rules must be short, human-explainable, and domain-meaningful. If a
   rule reads like nested dataset-specific qualifiers, treat it as a temporary
   validation slice until it is collapsed into a simpler gate or killed.
+
+## Alignment Core Invariants
+
+- **Shared core:** Untargeted is the general lifecycle; Targeted is a constrained
+  application over the same capture, CrossSample, ModeTrack, ObservationRepair,
+  and cell-decision core. `broad` describes evidence coverage, not an
+  Untargeted-only algorithm; Targeted retains only configured targets through
+  its own search scope and projection.
+- **Authority:** CrossSample alone changes group membership; ModeTrack only
+  proposes; ObservationRepair yields one bounded repair or no-repair result;
+  `ProductionCellDecision` alone selects a value. Target and Group subjects stay
+  distinct, with binding before and projection completion after cell decision.
+- **Method evidence:** QC/RT evidence follows the active method; unsupported
+  CID/HCD opportunity is unavailable, not negative. Direct local evidence
+  outranks RT priors. A singleton cannot establish a cross-sample
+  trajectory; feature-specific directions, adjacent-injection jumps, and an
+  unassessable result remain valid.
+- **Reuse and migration:** Deepen existing Target identity, CrossSample,
+  ModeTrack/`identity_coherence`, ObservationRepair, and `delivery_lineage.py`
+  before minting an equivalent owner. Move one owner under structural/public
+  parity, then promote behavior separately. Each lane migrates named consumers
+  and retires superseded algorithms, adapters, and assets after zero-ref proof;
+  there is no permanent fallback or catch-all cleanup lane.
+- **Surface split:** Keep user-facing review/output surfaces small and stable;
+  keep machine evidence in compact typed/queryable archives. Diagnostics,
+  archive records, and reason strings never gain implicit value or writer
+  authority. Canonical archive typing does not round-trip through TSV.
 
 ## Architecture Guardrails
 

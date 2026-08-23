@@ -17,28 +17,36 @@ peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
 XIC has one core method lifecycle. Untargeted extraction is its general form;
-Targeted extraction is a highly constrained specialization of that method, not
-a second peer core:
+Targeted extraction is a constrained specialization of that method, not a
+second peer core:
 
-- Untargeted extraction searches a broad candidate space, resolves cross-sample
-  identity, performs authority-gated Backfill, and produces the quantitative
-  feature-by-sample matrix intended for downstream preprocessing, calibration,
-  and statistics.
-- Targeted extraction supplies known targets and tighter m/z, RT, role, pairing,
-  and evidence conditions up front. Those constraints narrow Discovery and
-  preassign cross-sample target identity; Alignment still evaluates whether the
-  sample-local hypotheses represent the configured target, and evidence-based
-  Backfill may revisit initially uncounted sample/target results. Targeted then
-  produces its dedicated CSV/workbook delivery, which does not currently require
-  a downstream calibration or statistical-analysis consumer.
+`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> archive/explanation/delivery`
 
-The shared core lifecycle is Discovery to Alignment to Backfill. Discovery
-methods such as CID-NL, HCD-PI, and Delta Mass find features matching
-configured evidence settings. Alignment establishes cross-sample
-correspondence: Untargeted constructs owner/group identity, while Targeted may
-start from configured target identity and test it with cross-sample evidence.
-Backfill revisits initially missing or uncounted cells only when evidence and
-authority support recovery; it is not blind imputation or counted Discovery.
+- Both applications may use a broad candidate-discovery policy. Here, `broad`
+  describes which evidence relationships the method may inspect, such as dR,
+  R, or MeR; it does not mean Untargeted-only. Targeted narrows the allowed
+  target/row universe, not necessarily the evidence-provider mechanics used to
+  find a candidate.
+- Untargeted searches the configured evidence space, retains all qualifying
+  finalized groups, and projects established groups into the quantitative
+  feature-by-sample matrix for downstream preprocessing, calibration, and
+  statistics.
+- Targeted supplies an exact `TargetListSnapshot` and a constrained
+  `TargetSearchScope`. It retains one fixed output row per `TargetKey` and
+  discards unrelated groups from that delivery. It does not require a second
+  peak-capture, cross-sample, trajectory, repair, or cell-decision core.
+
+Discovery methods such as CID-NL, HCD-PI, and Delta Mass produce sample-local
+evidence and hypotheses. `CrossSample` owns group membership, identity,
+disposition, and lineage. `ModeTrack` may propose trajectory-based refinements,
+but only `CrossSample` can apply them. Backfill performs a bounded,
+independently traceable `ObservationRepair`; it does not create the first hit,
+mint a group, select a product value, or grant writer authority.
+The workflow-owned projection first creates typed Target/Group row bindings and
+cell subjects; `ProductionCellDecision` alone selects the value or no-write
+result; the same projection then owns row inclusion, counts/reasons, Review
+Queue/archive routing, and delivery shape. These are two ordered operations of
+one projection owner, not two owners.
 
 The current implementation only partially shares these stage owners. Targeted
 uses its own RT, paired-area, and MS1-shape evidence path. The headless limited
@@ -46,11 +54,12 @@ uses its own RT, paired-area, and MS1-shape evidence path. The headless limited
 API entry points do not generate that support automatically. This is an
 implementation parity gap, not a different product lifecycle.
 
-Targeted and Untargeted may apply different priors, projection rules, GUI flows,
-and output contracts. Evidence or output authority from one projection does not
-grant write authority in the other without an explicit contract, expected-diff
-evidence, and focused tests. Different projections do not imply different
-evidence, identity, Alignment, or Backfill cores.
+Targeted and Untargeted may apply different search scopes, priors, projection
+rules, GUI flows, and output contracts. Evidence or output authority from one
+projection does not grant write authority in the other without an explicit
+contract, expected-diff evidence, and focused tests. Different projections do
+not imply different capture, group, ModeTrack, ObservationRepair, or cell-
+decision implementations.
 
 ## Evidence Spine
 
@@ -75,6 +84,41 @@ Use these terms consistently:
 - `CrossSamplePeakGroupHypothesis` (`cross-sample group hypothesis`): successor
   cross-sample owner/group identity, exposed through `group_hypothesis_id`. It
   does not own per-peak integration truth or product projection.
+- `identity-bearing member subject`: canonical sample identity plus a
+  discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
+  physical-observation identity. The canonical variant tag is part of identity;
+  wrappers over the same physical observation canonicalize to one subject unless
+  explicit different tags deliberately preserve distinct identities.
+- `GroupDispositionDecision`: the CrossSample-owned, mutually exclusive
+  disposition of one finalized group: `established`, `provisional`,
+  `unresolved`, or `rejected`. Disposition does not decide output inclusion.
+- `ModeTrack`: one request-bound trajectory model over immutable CrossSample
+  evidence. It proposes assessable refinements; it does not mint groups,
+  re-integrate traces, repair observations, or write values.
+- `ObservationRepair`: one bounded Backfill decision that may produce an
+  owner-backed repaired observation for a pre-existing Target or group cell.
+  It is not imputation, group membership, or product-value authority.
+- `ProductionCellDecision`: the sole core owner of the selected numeric value
+  or typed no-write result for one `TargetCellSubject` or `GroupCellSubject`.
+  Observations retain measurement facts; they do not select the delivered
+  value themselves.
+- `FinalizedScientificAlignment`: immutable shared core containing request
+  identity, finalized groups, dispositions, membership/lineage, and the closed
+  refinement/repair receipts needed by a workflow projection. It is not an
+  output artifact or mutable Matrix.
+- `TargetRowBinding`: Target projection decision that binds one fixed
+  `TargetKey` row to zero or one uniquely resolved finalized group, or records
+  an unresolved multiple-group state. It does not rescan RAW or rank peaks.
+- `workflow projection`: the Target or Untarget owner with two ordered
+  operations: pre-cell row binding/key plus cell-subject construction, then
+  post-cell inclusion/count/reason and Review Queue/archive routing. It is not
+  two owners and does not select the cell value.
+- `UntargetRowKey`: Untargeted projection-owned row identity derived from one
+  finalized canonical group. It is distinct from `group_hypothesis_id` and
+  from legacy `FAM...` display labels.
+- `final Matrix`: the immutable, canonical grid produced only after cell and
+  row-inclusion decisions close. Pre-final observations or owner matrices must
+  use a different typed name and must not cross the final Matrix interface.
 - `ChromPeakSegment`: scoped product-candidate boundary unit used by
   quantitation-context decisions.
 - `ProductWriter`: the exclusive approved code path for product-matrix
@@ -95,9 +139,13 @@ Related evidence and analysis terms:
   in Discovery. A seed is not same-peak proof or counted detection.
 - `family`: legacy review/search container for related candidate or aligned
   evidence. Family membership is not same-peak proof or product authority.
-- `canonical projection`: one workflow-owned mapping from shared evidence and
-  decisions to that workflow's product output. Targeted and Untargeted keep
-  separate projections; neither projection is the other's oracle.
+- `canonical projection`: one workflow owner with two ordered mappings. Its
+  pre-cell operation maps `FinalizedScientificAlignment` to workflow row
+  identity/binding and explicit cell subjects; after
+  `ProductionCellDecision`, its post-cell operation maps typed cell decisions to
+  inclusion, counts/reasons, routing, and product output. Targeted and
+  Untargeted keep separate projections; neither projection is the other's
+  oracle.
 - `morphology`: peak-shape characteristics such as width, symmetry, boundaries,
   and quality flags used as evidence for selection or integration.
 - `evidence-chain packet`: structured source evidence assembled for review,
@@ -215,6 +263,12 @@ contract says otherwise.
 - `DeliveryCellKey`: projection-owned stable position for one sample and
   Targeted target or Untargeted matrix row. It is not a kernel observation or
   an ordinal group label.
+- `TargetedDeliveryCellKey`: canonical sample identity plus `TargetKey`. Exact
+  target-definition and projection-policy versions belong to the delivery
+  revision, not the stable cell position.
+- `UntargetedDeliveryCellKey`: canonical sample identity plus
+  `UntargetRowKey`. A legacy family label, m/z/RT display text, or current row
+  number is not this identity.
 - `DeliveryRevision`: immutable proposed or sealed value/null for one delivery
   cell, linked to the producing attempt and kernel decision.
 - `DeliverySeal`: immutable manifest proving that a complete delivery revision
@@ -243,8 +297,10 @@ Untargeted lane:
 - The feature-by-sample quantitative matrix is the downstream analytical
   handoff. Its sample identity and order may share method-document-derived
   metadata with Targeted delivery without sharing its output schema.
-- Backfill must stay authority-gated. Broad Backfill diagnostics or blockers
-  cannot be promoted into writes just because they classify rows.
+- ObservationRepair must stay bounded and owner-backed. Broad Backfill
+  diagnostics or blockers cannot select values merely because they classify
+  rows; only `ProductionCellDecision` and the owning projection can authorize a
+  delivery value.
 - Review and lockbox assets are designed to reduce manual ambiguity and build
   truth evidence before new automation writes product output.
 
