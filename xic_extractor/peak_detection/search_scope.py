@@ -9,6 +9,15 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CID_NL_PROVIDER_ID,
+    CidNlMethodSubjectContractError,
+    cid_nl_method_subject_from_request,
+    cid_nl_method_subject_from_target,
+)
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
+)
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
@@ -17,6 +26,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SEARCH_SCOPE_SCHEMA_VERSION = "search_scope_v1"
 SearchScopeVariant = Literal["targeted", "untargeted"]
+CaptureBoundaryPolicy = Literal["resolver_interval", "targeted_gaussian15"]
 
 
 class SearchScopeContractError(ValueError):
@@ -28,13 +38,29 @@ class SearchScopeAuthorizationError(SearchScopeContractError):
 
 
 @dataclass(frozen=True, slots=True)
+class CaptureMethodConstraints:
+    """Closed sample-local scientific constraints selected by an application."""
+
+    boundary_policy: CaptureBoundaryPolicy
+
+    def __post_init__(self) -> None:
+        if self.boundary_policy not in {
+            "resolver_interval",
+            "targeted_gaussian15",
+        }:
+            raise SearchScopeContractError("unsupported capture boundary policy")
+
+
+@dataclass(frozen=True, slots=True)
 class EvidenceProviderBinding:
     """Name one evidence provider without granting it capture authority."""
 
     provider_id: str
+    method_subject_id: str
 
     def __post_init__(self) -> None:
         _normalized_text(self.provider_id, field="provider_id")
+        _normalized_text(self.method_subject_id, field="method_subject_id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +68,7 @@ class TargetSearchScope:
     schema_version: str
     request: ProcessingRequestIdentity
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    method_constraints: CaptureMethodConstraints
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
     capture_candidate_ids: tuple[str, ...]
@@ -53,6 +80,7 @@ class TargetSearchScope:
             schema_version=self.schema_version,
             request=self.request,
             samples=self.samples,
+            method_constraints=self.method_constraints,
             evidence_providers=self.evidence_providers,
             declared_candidate_ids=self.declared_candidate_ids,
             capture_candidate_ids=self.capture_candidate_ids,
@@ -71,6 +99,14 @@ class TargetSearchScope:
             raise SearchScopeContractError(
                 "Target scope snapshot is not pinned by the processing request"
             )
+        if CID_NL_REQUEST_INPUT_KEY in _request_inputs(self.request):
+            raise SearchScopeContractError(
+                "Target SearchScope rejects Untargeted provider fields"
+            )
+        _validate_targeted_evidence_provider(
+            self.evidence_providers,
+            target=self.target,
+        )
 
     @property
     def variant(self) -> Literal["targeted"]:
@@ -82,25 +118,36 @@ class UntargetedSearchScope:
     schema_version: str
     request: ProcessingRequestIdentity
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    method_constraints: CaptureMethodConstraints
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
     capture_candidate_ids: tuple[str, ...]
-    method_context_id: str
-
     def __post_init__(self) -> None:
         _validate_common_scope(
             schema_version=self.schema_version,
             request=self.request,
             samples=self.samples,
+            method_constraints=self.method_constraints,
             evidence_providers=self.evidence_providers,
             declared_candidate_ids=self.declared_candidate_ids,
             capture_candidate_ids=self.capture_candidate_ids,
         )
-        _normalized_text(self.method_context_id, field="method_context_id")
+        if "target_list_snapshot" in _request_inputs(self.request):
+            raise SearchScopeContractError(
+                "Untargeted SearchScope rejects Targeted request fields"
+            )
+        _validate_untargeted_evidence_provider(
+            self.evidence_providers,
+            request=self.request,
+        )
 
     @property
     def variant(self) -> Literal["untargeted"]:
         return "untargeted"
+
+    @property
+    def method_context_id(self) -> str:
+        return self.evidence_providers[0].method_subject_id
 
 
 SearchScope: TypeAlias = TargetSearchScope | UntargetedSearchScope
@@ -163,6 +210,7 @@ def _validate_common_scope(
     schema_version: object,
     request: object,
     samples: object,
+    method_constraints: object,
     evidence_providers: object,
     declared_candidate_ids: object,
     capture_candidate_ids: object,
@@ -195,6 +243,10 @@ def _validate_common_scope(
     if samples and any(sample.snapshot != samples[0].snapshot for sample in samples):
         raise SearchScopeContractError(
             "SearchScope samples must come from one owner snapshot"
+        )
+    if not isinstance(method_constraints, CaptureMethodConstraints):
+        raise SearchScopeContractError(
+            "method_constraints must be a closed CaptureMethodConstraints value"
         )
     if (
         not isinstance(evidence_providers, tuple)
@@ -233,6 +285,60 @@ def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:
     return values
 
 
+def _validate_targeted_evidence_provider(
+    providers: tuple[EvidenceProviderBinding, ...],
+    *,
+    target: ResolvedTargetDefinition,
+) -> None:
+    try:
+        expected_subject = cid_nl_method_subject_from_target(target)
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(str(exc)) from exc
+    _validate_exact_cid_nl_provider(
+        providers,
+        expected_method_subject_id=expected_subject.method_subject_id,
+        variant="Target",
+    )
+
+
+def _validate_untargeted_evidence_provider(
+    providers: tuple[EvidenceProviderBinding, ...],
+    *,
+    request: ProcessingRequestIdentity,
+) -> None:
+    try:
+        expected_subject = cid_nl_method_subject_from_request(request)
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(
+            f"Untargeted SearchScope evidence provider is not request-bound: {exc}"
+        ) from exc
+    _validate_exact_cid_nl_provider(
+        providers,
+        expected_method_subject_id=expected_subject.method_subject_id,
+        variant="Untargeted",
+    )
+
+
+def _validate_exact_cid_nl_provider(
+    providers: tuple[EvidenceProviderBinding, ...],
+    *,
+    expected_method_subject_id: str,
+    variant: str,
+) -> None:
+    if len(providers) != 1:
+        raise SearchScopeContractError(
+            f"{variant} SearchScope requires exactly one current evidence provider"
+        )
+    binding = providers[0]
+    if (
+        binding.provider_id != CID_NL_PROVIDER_ID
+        or binding.method_subject_id != expected_method_subject_id
+    ):
+        raise SearchScopeContractError(
+            f"{variant} SearchScope evidence provider mismatches its owner definition"
+        )
+
+
 def _candidate_ids(value: object, *, field: str) -> tuple[str, ...]:
     if not isinstance(value, tuple):
         raise SearchScopeContractError(f"{field} must be a tuple")
@@ -257,6 +363,8 @@ def _normalized_text(value: object, *, field: str) -> str:
 
 __all__ = (
     "SEARCH_SCOPE_SCHEMA_VERSION",
+    "CaptureBoundaryPolicy",
+    "CaptureMethodConstraints",
     "EvidenceProviderBinding",
     "SearchScope",
     "SearchScopeAuthorizationError",

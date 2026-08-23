@@ -16,7 +16,10 @@ from dataclasses import asdict, dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
-from xic_extractor.processing_identity import ProcessingOwnerReferences
+from xic_extractor.processing_identity import (
+    ProcessingOwnerReferences,
+    ProcessingRequestIdentity,
+)
 
 SCHEMA_VERSION = "cid_nl_method_subject_v1"
 REQUEST_INPUT_KEY = "cid_nl_method_subject"
@@ -169,6 +172,75 @@ def mint_untargeted_cid_nl_method_subject(
     )
 
 
+def cid_nl_method_subject_from_request(
+    request: ProcessingRequestIdentity,
+) -> CidNlMethodSubject:
+    """Rehydrate the exact Untargeted provider configuration pinned by a request."""
+
+    if not isinstance(request, ProcessingRequestIdentity):
+        raise CidNlMethodSubjectContractError(
+            "request must be an owner-minted processing request"
+        )
+    request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    payload = request_inputs.get(REQUEST_INPUT_KEY)
+    if not isinstance(payload, dict):
+        raise CidNlMethodSubjectContractError(
+            "Untargeted request does not pin a CID-NL method subject"
+        )
+    expected_fields = {
+        "schema_version",
+        "method_subject_id",
+        "subject_kind",
+        "precursor_mz",
+        "precursor_tolerance_ppm",
+        "neutral_loss_da",
+        "target_snapshot_id",
+        "target_key_id",
+        "target_definition_id",
+    }
+    if set(payload) != expected_fields:
+        raise CidNlMethodSubjectContractError(
+            "Untargeted request CID-NL method subject has wrong fields"
+        )
+    if payload["schema_version"] != SCHEMA_VERSION:
+        raise CidNlMethodSubjectContractError(
+            f"Untargeted request CID-NL schema must be {SCHEMA_VERSION!r}"
+        )
+    subject_kind = payload["subject_kind"]
+    if subject_kind != "untargeted_precursor":
+        raise CidNlMethodSubjectContractError(
+            "Untargeted request requires an untargeted_precursor method subject"
+        )
+    method_subject_id = payload["method_subject_id"]
+    if not isinstance(method_subject_id, str):
+        raise CidNlMethodSubjectContractError(
+            "Untargeted request method_subject_id must be text"
+        )
+    target_ids = (
+        payload["target_snapshot_id"],
+        payload["target_key_id"],
+        payload["target_definition_id"],
+    )
+    if any(value is not None for value in target_ids):
+        raise CidNlMethodSubjectContractError(
+            "Untargeted request method subject cannot carry Target identity"
+        )
+    return CidNlMethodSubject(
+        method_subject_id=method_subject_id,
+        subject_kind="untargeted_precursor",
+        precursor_mz=_positive_finite_float(
+            payload["precursor_mz"], field="precursor_mz"
+        ),
+        precursor_tolerance_ppm=_positive_finite_float(
+            payload["precursor_tolerance_ppm"],
+            field="precursor_tolerance_ppm",
+        ),
+        neutral_loss_da=_positive_finite_float(
+            payload["neutral_loss_da"], field="neutral_loss_da"
+        ),
+    )
+
+
 def validate_cid_nl_method_subject_binding(
     subject: CidNlMethodSubject,
     *,
@@ -206,24 +278,13 @@ def validate_cid_nl_method_subject_binding(
         raise CidNlMethodSubjectContractError(
             "Untargeted method subject cannot be paired with a configured Target"
         )
-    request_inputs = json.loads(
-        processing_owners.request.normalized_scientific_inputs_json
-    )
-    pinned_payload = json.dumps(
-        request_inputs.get(REQUEST_INPUT_KEY),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-    expected_payload = json.dumps(
-        subject.request_payload(),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-    if pinned_payload != expected_payload:
+    try:
+        pinned_subject = cid_nl_method_subject_from_request(processing_owners.request)
+    except CidNlMethodSubjectContractError as exc:
+        raise CidNlMethodSubjectContractError(
+            "Untargeted method subject is not pinned by the processing request"
+        ) from exc
+    if pinned_subject != subject:
         raise CidNlMethodSubjectContractError(
             "Untargeted method subject is not pinned by the processing request"
         )
@@ -335,6 +396,7 @@ __all__ = [
     "CidNlMethodSubjectKind",
     "REQUEST_INPUT_KEY",
     "SCHEMA_VERSION",
+    "cid_nl_method_subject_from_request",
     "cid_nl_method_subject_from_target",
     "mint_untargeted_cid_nl_method_subject",
     "validate_cid_nl_method_subject_binding",

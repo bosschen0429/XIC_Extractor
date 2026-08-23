@@ -76,6 +76,7 @@ from xic_extractor.peak_detection.observations import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeContractError,
     UntargetedSearchScope,
@@ -829,16 +830,19 @@ def _untargeted_search_scope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
             request=processing_owners.request,
             samples=processing_owners.sample_resolutions,
+            method_constraints=CaptureMethodConstraints(
+                boundary_policy="resolver_interval",
+            ),
             evidence_providers=(
                 EvidenceProviderBinding(
                     provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=method_subject.method_subject_id,
                 ),
             ),
             declared_candidate_ids=tuple(item.candidate_id for item in candidates),
             capture_candidate_ids=tuple(
                 item.candidate_id for item in capture_candidates
             ),
-            method_context_id=method_subject.method_subject_id,
         )
     except SearchScopeContractError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc

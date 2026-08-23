@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.baseline import BaselineMethod
+from xic_extractor.peak_detection.capture_boundary_policy import (
+    promote_targeted_boundary_hypothesis,
+)
 from xic_extractor.peak_detection.hypotheses import (
     CandidateMS2EvidenceMap,
     PeakHypothesis,
@@ -35,14 +38,45 @@ class SampleLocalCaptureError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class SampleLocalCapture:
+class _CaptureOwnerSeal:
     scope: SearchScope
     candidate_id: str
     trace: Trace
     trace_group: TraceGroup
     detection: Ms1TracePeakDetection
     hypotheses: tuple[PeakHypothesis, ...]
+    receipt_hypothesis: PeakHypothesis | None
     selected_hypothesis: PeakHypothesis | None
+
+
+@dataclass(frozen=True, slots=True)
+class SampleLocalCapture:
+    _owner_seal: _CaptureOwnerSeal = field(repr=False, compare=False)
+    scope: SearchScope
+    candidate_id: str
+    trace: Trace
+    trace_group: TraceGroup
+    detection: Ms1TracePeakDetection
+    hypotheses: tuple[PeakHypothesis, ...]
+    receipt_hypothesis: PeakHypothesis | None
+    selected_hypothesis: PeakHypothesis | None
+
+    def __post_init__(self) -> None:
+        seal = self._owner_seal
+        if (
+            not isinstance(seal, _CaptureOwnerSeal)
+            or seal.scope is not self.scope
+            or seal.candidate_id != self.candidate_id
+            or seal.trace is not self.trace
+            or seal.trace_group is not self.trace_group
+            or seal.detection is not self.detection
+            or seal.hypotheses is not self.hypotheses
+            or seal.receipt_hypothesis is not self.receipt_hypothesis
+            or seal.selected_hypothesis is not self.selected_hypothesis
+        ):
+            raise SampleLocalCaptureError(
+                "SampleLocalCapture must be issued by the shared capture owner"
+            )
 
 
 def capture_peak_hypotheses(
@@ -97,6 +131,7 @@ def capture_peak_hypotheses(
         istd_pair=istd_pair,
     )
     hypotheses: tuple[PeakHypothesis, ...] = ()
+    receipt_hypothesis: PeakHypothesis | None = None
     selected: PeakHypothesis | None = None
     if detection.status == "detected" and detection.result is not None:
         hypotheses = build_peak_hypotheses(
@@ -122,14 +157,47 @@ def capture_peak_hypotheses(
             raise SampleLocalCaptureError(
                 "shared hypothesis owner selected more than one candidate"
             )
-        selected = selected_values[0] if selected_values else None
-    return SampleLocalCapture(
+        receipt_hypothesis = selected_values[0] if selected_values else None
+        selected = receipt_hypothesis
+        if (
+            selected is not None
+            and scope.method_constraints.boundary_policy == "targeted_gaussian15"
+        ):
+            selected = promote_targeted_boundary_hypothesis(
+                selected,
+                rt=detection.rt,
+                intensity=detection.intensity,
+                context_rt_start=float(detection.rt[0]),
+                context_rt_end=float(detection.rt[-1]),
+                morphology_window_points=(
+                    peak_config.ms1_morphology_smoothing_window_points
+                    if ms1_morphology_smoothing_window_points is None
+                    else ms1_morphology_smoothing_window_points
+                ),
+            ).hypothesis
+            hypotheses = tuple(
+                selected if item.hypothesis_id == selected.hypothesis_id else item
+                for item in hypotheses
+            )
+    owner_seal = _CaptureOwnerSeal(
         scope=scope,
         candidate_id=candidate,
         trace=trace,
         trace_group=trace_group,
         detection=detection,
         hypotheses=hypotheses,
+        receipt_hypothesis=receipt_hypothesis,
+        selected_hypothesis=selected,
+    )
+    return SampleLocalCapture(
+        _owner_seal=owner_seal,
+        scope=scope,
+        candidate_id=candidate,
+        trace=trace,
+        trace_group=trace_group,
+        detection=detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=receipt_hypothesis,
         selected_hypothesis=selected,
     )
 
@@ -140,7 +208,6 @@ def mint_captured_peak_observation(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     resolver_mode: str,
-    hypothesis: PeakHypothesis | None = None,
 ) -> PeakObservationRef:
     if not isinstance(capture, SampleLocalCapture):
         raise SampleLocalCaptureError("observation requires SampleLocalCapture")
@@ -152,16 +219,13 @@ def mint_captured_peak_observation(
         )
     except SearchScopeContractError as exc:
         raise SampleLocalCaptureError(str(exc)) from exc
-    selected = capture.selected_hypothesis if hypothesis is None else hypothesis
+    selected = capture.selected_hypothesis
     if selected is None or not isinstance(selected, PeakHypothesis):
         raise SampleLocalCaptureError(
             "observation requires one selected PeakHypothesis"
         )
-    original = capture.selected_hypothesis
     if (
-        original is None
-        or selected.hypothesis_id != original.hypothesis_id
-        or selected.trace_group_id != capture.trace_group.trace_group_id
+        selected.trace_group_id != capture.trace_group.trace_group_id
         or selected.analysis_mode != capture.scope.variant
         or not selected.audit.selected
     ):

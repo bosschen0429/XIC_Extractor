@@ -44,9 +44,6 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.extraction.cid_nl_evidence_projection import (
     mint_targeted_cid_nl_projection_ref,
 )
-from xic_extractor.extraction.handoff_spine_runtime import (
-    promote_targeted_boundary_hypothesis,
-)
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.neutral_loss import MS2ProductEvidence
 from xic_extractor.peak_detection import capture as capture_owner
@@ -59,7 +56,11 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
     mint_cid_nl_evidence_ref,
 )
-from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CID_NL_PROVIDER_ID,
+    CidNlMethodSubjectContractError,
+    cid_nl_method_subject_from_target,
+)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
@@ -72,6 +73,7 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeContractError,
     TargetSearchScope,
@@ -326,30 +328,21 @@ def _adapt_current_discovery_sample_target(
         )
         if (
             capture.detection.status != "detected"
+            or capture.receipt_hypothesis is None
             or capture.selected_hypothesis is None
         ):
             raise TargetedRealDataAdapterError(
                 f"{candidate.candidate_id}: current receipt was not reacquired"
             )
-        selected = capture.selected_hypothesis
-        _validate_candidate_integration(candidate, selected.integration)
-        boundary_promotion = promote_targeted_boundary_hypothesis(
-            selected,
-            rt=capture.detection.rt,
-            intensity=capture.detection.intensity,
-            context_rt_start=float(capture.detection.rt[0]),
-            context_rt_end=float(capture.detection.rt[-1]),
-            morphology_window_points=(
-                peak_config.ms1_morphology_smoothing_window_points
-            ),
+        _validate_candidate_integration(
+            candidate,
+            capture.receipt_hypothesis.integration,
         )
-        promoted = boundary_promotion.hypothesis
         observation = capture_owner.mint_captured_peak_observation(
             capture,
             processing_owners=processing_owners,
             sample=sample,
             resolver_mode=settings.resolver_mode,
-            hypothesis=promoted,
         )
         observations.append(observation)
         _record_artifact(artifacts, _observer, observation.artifact)
@@ -595,13 +588,18 @@ def _target_search_scope(
             "Targeted SearchScope requires its owner target snapshot"
         )
     try:
+        method_subject = cid_nl_method_subject_from_target(target)
         return TargetSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
             request=processing_owners.request,
             samples=processing_owners.sample_resolutions,
+            method_constraints=CaptureMethodConstraints(
+                boundary_policy="targeted_gaussian15",
+            ),
             evidence_providers=(
                 EvidenceProviderBinding(
                     provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=method_subject.method_subject_id,
                 ),
             ),
             declared_candidate_ids=tuple(item.candidate_id for item in candidates),
@@ -609,7 +607,7 @@ def _target_search_scope(
             target_snapshot=processing_owners.target_snapshot,
             target=target,
         )
-    except SearchScopeContractError as exc:
+    except (CidNlMethodSubjectContractError, SearchScopeContractError) as exc:
         raise TargetedRealDataAdapterError(str(exc)) from exc
 
 
