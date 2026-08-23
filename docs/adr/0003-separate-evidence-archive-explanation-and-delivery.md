@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 Doc placement: repo_support_doc
@@ -11,22 +11,50 @@ Machine-facing scientific evidence, human explanation, and product delivery
 need separate authority boundaries. Evidence persistence translates finalized
 owner facts, Explanation renders typed decisions and navigates stable
 references, and Delivery compiles `ArtifactPlan` and publishes atomically.
-This direction is accepted, but the implementation owner for evidence
-persistence is not yet frozen.
+The existing Backfill Parquet modules are the implementation owner for the
+first canonical typed archive. They are deepened in place instead of being
+wrapped by a new workflow-neutral storage package.
 
-## Considered options
+## Decision
 
-- Deepen the existing Backfill Parquet modules into the typed persistence owner.
-  This follows the earlier decision to reuse the proven adapter and avoids a
-  repository-wide storage framework.
-- Introduce a new `evidence_archive/` owner and retain existing Backfill Parquet
-  modules as finite adapters. This gives a workflow-neutral archive boundary but
-  may replace rather than deepen an existing owner.
+- Deepen `xic_extractor.alignment.backfill_evidence_parquet` into the native
+  typed persistence and bounded-query owner for finalized Backfill and skipped
+  evidence records.
+- Deepen `xic_extractor.alignment.backfill_evidence_parquet_bundle` into the
+  staging, verification, bundle/reference-identity, and atomic archive
+  publication owner. Its publication is internal archive publication, not final
+  product delivery.
+- Replace the TSV-mediated strings-only shadow path. TSV remains only as a
+  finite compatibility adapter for named consumers, with explicit removal
+  conditions.
+- Do not introduce `evidence_archive/`, a generic evidence store, or a shared
+  database framework in this migration.
+
+The archive implementation owner does not become a scientific owner. Record
+content, validity, disposition, and query-claim semantics remain with the
+existing scientific owners; persistence cannot select values, include rows,
+change disposition, or grant writer authority.
+
+## Extraction gate
+
+A workflow-neutral archive seam may be reconsidered only after a second current
+scientific owner needs the same persistence interface and shares the same
+lifecycle, retention, reference, and atomic-publication invariants. Any later
+extraction must move the proven implementation and retire the superseded path;
+it must not layer a parallel generic owner over the Backfill modules.
+
+## Rejected alternatives
+
+- Introduce a new `evidence_archive/` owner now and retain the Backfill modules
+  as adapters. Rejected because the current repository has no second production
+  record family proving that generic seam, while the existing modules already
+  own the relevant persistence mechanics.
 - Keep TSV authoritative and convert it after the run. Rejected because it pays
-  duplicate serialization, I/O, conversion, and storage costs.
+  duplicate serialization, I/O, conversion, and storage costs and loses native
+  types before canonical persistence.
 
-The first two options conflict in owner locality. GitHub #313 must resolve that
-choice and refreeze this ADR before archive implementation becomes claimable.
+GitHub #313 carries the executable migration packet. Its implementation remains
+blocked by #312 even though this owner decision is now closed.
 
 ## Consequences already fixed
 
