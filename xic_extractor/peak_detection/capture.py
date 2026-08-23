@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.capture_boundary_policy import (
     promote_targeted_boundary_hypothesis,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    cid_nl_method_subject_from_request,
+)
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import (
-    CandidateMS2EvidenceMap,
     PeakHypothesis,
     build_peak_hypotheses,
 )
 from xic_extractor.peak_detection.ms1_trace_detection import (
-    Ms1PeakFinder,
     Ms1TracePeakDetection,
     detect_ms1_trace_peak,
 )
@@ -25,7 +27,7 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScope,
     SearchScopeContractError,
     TargetSearchScope,
-    require_capture_candidate,
+    require_capture_binding,
     validate_scope_owner_binding,
     validate_scope_trace_coordinates,
 )
@@ -85,42 +87,35 @@ def capture_peak_hypotheses(
     scope: SearchScope,
     candidate_id: str,
     trace: Trace,
-    peak_config: ExtractionConfig,
-    preferred_rt: float | None,
-    peak_finder: Ms1PeakFinder,
-    resolver_mode: str,
-    context_id: str | None = None,
-    candidate_ms2_evidence: CandidateMS2EvidenceMap | None = None,
-    baseline_integration_method: BaselineMethod = "asls",
-    ms1_morphology_smoothing_window_points: int | None = None,
 ) -> SampleLocalCapture:
-    candidate = require_capture_candidate(scope, candidate_id)
+    binding = require_capture_binding(scope, candidate_id)
+    candidate = binding.candidate_id
     if not isinstance(trace, Trace):
         raise SampleLocalCaptureError("capture trace must be an owner trace")
-    if trace.sample_name not in {
-        sample.metadata.sample_name for sample in scope.samples
-    }:
-        raise SampleLocalCaptureError("capture trace sample is outside SearchScope")
     try:
         validate_scope_trace_coordinates(
             scope,
+            binding=binding,
+            sample_name=trace.sample_name,
+            acquisition_source_id=trace.acquisition_source_id,
             mz=trace.mz,
+            rt_min=trace.rt_min,
+            rt_max=trace.rt_max,
             ppm_tol=trace.ppm_tol,
         )
     except SearchScopeContractError as exc:
         raise SampleLocalCaptureError(str(exc)) from exc
-    if not isinstance(peak_config, ExtractionConfig):
-        raise SampleLocalCaptureError("peak_config has the wrong owner type")
+    peak_config = scope.method_constraints.peak_config
     detection = detect_ms1_trace_peak(
         trace.rt,
         trace.intensity,
         peak_config=peak_config,
-        preferred_rt=preferred_rt,
-        peak_finder=peak_finder,
+        preferred_rt=binding.preferred_rt,
+        peak_finder=find_peak_and_area,
     )
     label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
         scope,
-        context_id=context_id,
+        query_mz=binding.query_mz,
     )
     trace_group = TraceGroup(
         trace_group_id="|".join(
@@ -134,7 +129,7 @@ def capture_peak_hypotheses(
         analysis_mode=scope.variant,
         context_id=label,
         traces=(trace,),
-        expected_rt_min=preferred_rt,
+        expected_rt_min=binding.preferred_rt,
         precursor_mz=trace.mz,
         role=role,
         istd_pair=istd_pair,
@@ -150,15 +145,15 @@ def capture_peak_hypotheses(
             target_label=label,
             role=role,
             istd_pair=istd_pair,
-            resolver_mode=resolver_mode,
+            resolver_mode=peak_config.resolver_mode,
             peak_result=detection.result,
-            candidate_ms2_evidence=candidate_ms2_evidence,
             trace_group=trace_group,
-            baseline_integration_method=baseline_integration_method,
+            baseline_integration_method=cast(
+                BaselineMethod,
+                peak_config.baseline_integration_method,
+            ),
             ms1_morphology_smoothing_window_points=(
                 peak_config.ms1_morphology_smoothing_window_points
-                if ms1_morphology_smoothing_window_points is None
-                else ms1_morphology_smoothing_window_points
             ),
         )
         selected_values = tuple(item for item in hypotheses if item.audit.selected)
@@ -180,8 +175,6 @@ def capture_peak_hypotheses(
                 context_rt_end=float(detection.rt[-1]),
                 morphology_window_points=(
                     peak_config.ms1_morphology_smoothing_window_points
-                    if ms1_morphology_smoothing_window_points is None
-                    else ms1_morphology_smoothing_window_points
                 ),
             ).hypothesis
             hypotheses = tuple(
@@ -216,7 +209,6 @@ def mint_captured_peak_observation(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    resolver_mode: str,
 ) -> PeakObservationRef:
     if not isinstance(capture, SampleLocalCapture):
         raise SampleLocalCaptureError("observation requires SampleLocalCapture")
@@ -246,7 +238,7 @@ def mint_captured_peak_observation(
         sample=sample,
         trace=capture.trace,
         integration=selected.integration,
-        resolver_mode=resolver_mode,
+        resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
         proposal_sources=selected.audit.proposal_sources,
     )
 
@@ -254,7 +246,7 @@ def mint_captured_peak_observation(
 def _hypothesis_context(
     scope: SearchScope,
     *,
-    context_id: str | None,
+    query_mz: float,
 ) -> tuple[str, str, str, str]:
     if isinstance(scope, TargetSearchScope):
         target = scope.target.definition.target
@@ -264,11 +256,11 @@ def _hypothesis_context(
             target.istd_pair,
             target.label,
         )
-    label = scope.method_context_id if context_id is None else context_id
-    if not isinstance(label, str) or not label or label != label.strip():
-        raise SampleLocalCaptureError(
-            "Untargeted capture context_id must be normalized text"
-        )
+    method_subject = cid_nl_method_subject_from_request(scope.request)
+    label = (
+        f"untargeted:{query_mz:.8g}:"
+        f"NL{method_subject.neutral_loss_da:.8g}"
+    )
     return label, "Analyte", "", label
 
 

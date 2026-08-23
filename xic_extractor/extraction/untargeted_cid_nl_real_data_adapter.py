@@ -76,6 +76,7 @@ from xic_extractor.peak_detection.observations import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeContractError,
@@ -286,9 +287,12 @@ def adapt_current_discovery_sample_subject(
     )
     search_scope = _untargeted_search_scope(
         processing_owners=processing_owners,
+        sample=sample,
+        acquisition_source_id=source.acquisition_source_id,
         method_subject=method_subject,
         candidates=candidates,
         capture_candidates=peak_candidates,
+        peak_config=peak_config,
     )
     acquisition, observations = _reacquire_peak_observations(
         processing_owners=processing_owners,
@@ -630,15 +634,6 @@ def _reacquire_peak_observations(
             scope=search_scope,
             candidate_id=candidate.candidate_id,
             trace=trace,
-            peak_config=peak_config,
-            preferred_rt=candidate.best_seed_rt,
-            peak_finder=find_peak_and_area,
-            resolver_mode=settings.resolver_mode,
-            context_id=method_label(candidate),
-            baseline_integration_method="asls",
-            ms1_morphology_smoothing_window_points=(
-                peak_config.ms1_morphology_smoothing_window_points
-            ),
         )
         if (
             capture.detection.status != "detected"
@@ -654,7 +649,6 @@ def _reacquire_peak_observations(
                 capture,
                 processing_owners=processing_owners,
                 sample=sample,
-                resolver_mode=settings.resolver_mode,
             )
         )
     return acquisition, tuple(observations)
@@ -821,9 +815,12 @@ def _bounded_subject_candidates(
 def _untargeted_search_scope(
     *,
     processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    acquisition_source_id: str,
     method_subject: CidNlMethodSubject,
     candidates: tuple[DiscoveryCandidate, ...],
     capture_candidates: tuple[DiscoveryCandidate, ...],
+    peak_config: ExtractionConfig,
 ) -> UntargetedSearchScope:
     try:
         return UntargetedSearchScope(
@@ -832,6 +829,7 @@ def _untargeted_search_scope(
             samples=processing_owners.sample_resolutions,
             method_constraints=CaptureMethodConstraints(
                 boundary_policy="resolver_interval",
+                peak_config=peak_config,
             ),
             evidence_providers=(
                 EvidenceProviderBinding(
@@ -840,8 +838,19 @@ def _untargeted_search_scope(
                 ),
             ),
             declared_candidate_ids=tuple(item.candidate_id for item in candidates),
-            capture_candidate_ids=tuple(
-                item.candidate_id for item in capture_candidates
+            capture_bindings=tuple(
+                CaptureCandidateBinding(
+                    candidate_id=item.candidate_id,
+                    sample_identity_id=sample.identity.sample_identity_id,
+                    sample_name=sample.metadata.sample_name,
+                    acquisition_source_id=acquisition_source_id,
+                    query_mz=item.precursor_mz,
+                    query_rt_min=item.ms1_search_rt_min,
+                    query_rt_max=item.ms1_search_rt_max,
+                    query_ppm_tol=method_subject.precursor_tolerance_ppm,
+                    preferred_rt=item.best_seed_rt,
+                )
+                for item in capture_candidates
             ),
         )
     except SearchScopeContractError as exc:

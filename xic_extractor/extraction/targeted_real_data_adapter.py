@@ -73,6 +73,7 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeContractError,
@@ -95,7 +96,6 @@ from xic_extractor.raw_reader import (
     require_owner_bound_raw_handle,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, crop_xic_trace_by_rt
 
 VALIDATION_STATUS = "diagnostic_only"
@@ -224,11 +224,18 @@ def _adapt_current_discovery_sample_target(
         sample=sample,
         target=target,
     )
+    source = resolve_request_acquisition_source(
+        processing_owners=processing_owners,
+        sample=sample,
+    )
     search_scope = _target_search_scope(
         processing_owners=processing_owners,
+        sample=sample,
+        acquisition_source_id=source.acquisition_source_id,
         target=target,
         candidates=candidates,
         bounded=bounded,
+        peak_config=peak_config,
     )
     if not bounded:
         return _empty_result(
@@ -242,10 +249,6 @@ def _adapt_current_discovery_sample_target(
         )
     _validate_raw_adapter(raw)
 
-    source = resolve_request_acquisition_source(
-        processing_owners=processing_owners,
-        sample=sample,
-    )
     try:
         bound_raw = require_owner_bound_raw_handle(raw, source)
     except RawReaderError as exc:
@@ -317,14 +320,6 @@ def _adapt_current_discovery_sample_target(
             scope=search_scope,
             candidate_id=candidate.candidate_id,
             trace=trace,
-            peak_config=peak_config,
-            preferred_rt=candidate.best_seed_rt,
-            peak_finder=find_peak_and_area,
-            resolver_mode=settings.resolver_mode,
-            baseline_integration_method=baseline_integration_method,
-            ms1_morphology_smoothing_window_points=(
-                peak_config.ms1_morphology_smoothing_window_points
-            ),
         )
         if (
             capture.detection.status != "detected"
@@ -342,7 +337,6 @@ def _adapt_current_discovery_sample_target(
             capture,
             processing_owners=processing_owners,
             sample=sample,
-            resolver_mode=settings.resolver_mode,
         )
         observations.append(observation)
         _record_artifact(artifacts, _observer, observation.artifact)
@@ -579,9 +573,12 @@ def _bounded_current_discovery_candidates(
 def _target_search_scope(
     *,
     processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    acquisition_source_id: str,
     target: ResolvedTargetDefinition,
     candidates: tuple[DiscoveryCandidate, ...],
     bounded: tuple[DiscoveryCandidate, ...],
+    peak_config: ExtractionConfig,
 ) -> TargetSearchScope:
     if processing_owners.target_snapshot is None:
         raise TargetedRealDataAdapterError(
@@ -595,6 +592,7 @@ def _target_search_scope(
             samples=processing_owners.sample_resolutions,
             method_constraints=CaptureMethodConstraints(
                 boundary_policy="targeted_gaussian15",
+                peak_config=peak_config,
             ),
             evidence_providers=(
                 EvidenceProviderBinding(
@@ -603,7 +601,20 @@ def _target_search_scope(
                 ),
             ),
             declared_candidate_ids=tuple(item.candidate_id for item in candidates),
-            capture_candidate_ids=tuple(item.candidate_id for item in bounded),
+            capture_bindings=tuple(
+                CaptureCandidateBinding(
+                    candidate_id=item.candidate_id,
+                    sample_identity_id=sample.identity.sample_identity_id,
+                    sample_name=sample.metadata.sample_name,
+                    acquisition_source_id=acquisition_source_id,
+                    query_mz=target.definition.target.mz,
+                    query_rt_min=item.ms1_search_rt_min,
+                    query_rt_max=item.ms1_search_rt_max,
+                    query_ppm_tol=target.definition.target.ppm_tol,
+                    preferred_rt=item.best_seed_rt,
+                )
+                for item in bounded
+            ),
             target_snapshot=processing_owners.target_snapshot,
             target=target,
         )

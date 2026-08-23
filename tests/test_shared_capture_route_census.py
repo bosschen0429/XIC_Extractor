@@ -27,6 +27,14 @@ def test_current_adapters_cannot_bypass_shared_capture_implementation() -> None:
         assert "capture_owner.mint_captured_peak_observation" in source
         assert "build_peak_hypotheses(" not in source
         assert "mint_peak_observation_ref(" not in source
+        assert _call_keyword_sets(
+            source,
+            function_name="capture_peak_hypotheses",
+        ) == {frozenset({"scope", "candidate_id", "trace"})}
+        assert _call_keyword_sets(
+            source,
+            function_name="mint_captured_peak_observation",
+        ) == {frozenset({"processing_owners", "sample"})}
     assert "promote_targeted_boundary_hypothesis" not in targeted_source
     assert "hypothesis=promoted" not in targeted_source
     assert "scope.method_constraints.boundary_policy" in capture_source
@@ -94,3 +102,18 @@ def _defines_function(path: Path, function_name: str) -> bool:
         and node.name == function_name
         for node in ast.walk(tree)
     )
+
+
+def _call_keyword_sets(
+    source: str,
+    *,
+    function_name: str,
+) -> set[frozenset[str]]:
+    tree = ast.parse(source)
+    return {
+        frozenset(keyword.arg for keyword in node.keywords if keyword.arg is not None)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == function_name
+    }

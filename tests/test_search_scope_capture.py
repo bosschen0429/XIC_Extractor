@@ -13,25 +13,21 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     cid_nl_method_subject_from_target,
 )
-from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
-from xic_extractor.peak_detection.models import (
-    PeakCandidate,
-    PeakDetectionResult,
-    PeakResult,
-)
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeAuthorizationError,
     SearchScopeContractError,
     TargetSearchScope,
     UntargetedSearchScope,
-    require_capture_candidate,
+    require_capture_binding,
     scope_allows_evidence_inspection,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
 def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
@@ -48,40 +44,6 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         sample_roles={"S1": "qc"},
     )
     targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
-    targeted = TargetSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=targeted_fixture.request,
-        samples=targeted_fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-        ),
-        evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=targeted_subject.method_subject_id,
-            ),
-        ),
-        declared_candidate_ids=("candidate-a", "candidate-b"),
-        capture_candidate_ids=("candidate-a",),
-        target_snapshot=targeted_fixture.target.snapshot,
-        target=targeted_fixture.target,
-    )
-    untargeted = UntargetedSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=untargeted_fixture.owners.request,
-        samples=untargeted_fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-        ),
-        evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=untargeted_fixture.method_subject.method_subject_id,
-            ),
-        ),
-        declared_candidate_ids=("candidate-a", "candidate-b"),
-        capture_candidate_ids=("candidate-a", "candidate-b"),
-    )
     targeted_sample = targeted_fixture.sample("S1")
     targeted_source = resolve_request_acquisition_source(
         processing_owners=targeted_fixture.owners,
@@ -92,8 +54,71 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         processing_owners=untargeted_fixture.owners,
         sample=untargeted_sample,
     )
-    rt = np.asarray([7.7, 7.8, 7.9, 8.0, 8.1, 8.2, 8.3])
-    intensity = np.asarray([0.0, 10.0, 50.0, 100.0, 50.0, 10.0, 0.0])
+    peak_config = _peak_config(tmp_path)
+    rt = np.linspace(7.7, 8.3, 61)
+    intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
+    targeted_binding = _capture_binding(
+        candidate_id="candidate-a",
+        sample=targeted_sample,
+        acquisition_source_id=targeted_source.acquisition_source_id,
+        mz=targeted_subject.precursor_mz,
+        ppm_tol=targeted_subject.precursor_tolerance_ppm,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+    )
+    untargeted_binding = _capture_binding(
+        candidate_id="candidate-a",
+        sample=untargeted_sample,
+        acquisition_source_id=untargeted_source.acquisition_source_id,
+        mz=untargeted_fixture.method_subject.precursor_mz,
+        ppm_tol=untargeted_fixture.method_subject.precursor_tolerance_ppm,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+    )
+    with pytest.raises(
+        SearchScopeContractError,
+        match="outside its query RT interval",
+    ):
+        replace(untargeted_binding, preferred_rt=9.5)
+    targeted = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=targeted_fixture.request,
+        samples=targeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=peak_config,
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=targeted_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=("candidate-a", "candidate-b"),
+        capture_bindings=(targeted_binding,),
+        target_snapshot=targeted_fixture.target.snapshot,
+        target=targeted_fixture.target,
+    )
+    untargeted = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=untargeted_fixture.owners.request,
+        samples=untargeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=peak_config,
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=untargeted_fixture.method_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=("candidate-a", "candidate-b"),
+        capture_bindings=(
+            untargeted_binding,
+            replace(untargeted_binding, candidate_id="candidate-b"),
+        ),
+    )
     targeted_trace = Trace.from_arrays(
         sample_name=targeted_sample.metadata.sample_name,
         mz=targeted_fixture.target.definition.target.mz,
@@ -116,25 +141,15 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         source="synthetic_scope_oracle",
         acquisition_source_id=untargeted_source.acquisition_source_id,
     )
-    peak_config = _peak_config(tmp_path)
-
     targeted_capture = capture_owner.capture_peak_hypotheses(
         scope=targeted,
         candidate_id="candidate-a",
         trace=targeted_trace,
-        peak_config=peak_config,
-        preferred_rt=8.0,
-        peak_finder=_synthetic_peak_finder,
-        resolver_mode=peak_config.resolver_mode,
     )
     untargeted_capture = capture_owner.capture_peak_hypotheses(
         scope=untargeted,
         candidate_id="candidate-a",
         trace=untargeted_trace,
-        peak_config=peak_config,
-        preferred_rt=8.0,
-        peak_finder=_synthetic_peak_finder,
-        resolver_mode=peak_config.resolver_mode,
     )
 
     with pytest.raises(
@@ -165,13 +180,11 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         targeted_capture,
         processing_owners=targeted_fixture.owners,
         sample=targeted_sample,
-        resolver_mode=peak_config.resolver_mode,
     )
     untargeted_observation = capture_owner.mint_captured_peak_observation(
         untargeted_capture,
         processing_owners=untargeted_fixture.owners,
         sample=untargeted_sample,
-        resolver_mode=peak_config.resolver_mode,
     )
     assert targeted_observation.content.mz == untargeted_observation.content.mz
     assert targeted_observation.content.rt == untargeted_observation.content.rt
@@ -185,18 +198,16 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     )
     assert scope_allows_evidence_inspection(targeted, "candidate-b") is True
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
-        require_capture_candidate(targeted, "candidate-b")
+        require_capture_binding(targeted, "candidate-b")
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
         capture_owner.capture_peak_hypotheses(
             scope=targeted,
             candidate_id="candidate-b",
             trace=targeted_trace,
-            peak_config=peak_config,
-            preferred_rt=8.0,
-            peak_finder=_synthetic_peak_finder,
-            resolver_mode=peak_config.resolver_mode,
         )
-    assert require_capture_candidate(untargeted, "candidate-b") == "candidate-b"
+    assert require_capture_binding(untargeted, "candidate-b").candidate_id == (
+        "candidate-b"
+    )
 
 
 def test_capture_binds_trace_coordinates_to_both_scope_variants(
@@ -213,41 +224,6 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
         sample_roles={"S1": "qc"},
     )
     targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
-    targeted_scope = TargetSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=targeted_fixture.request,
-        samples=targeted_fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-        ),
-        evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=targeted_subject.method_subject_id,
-            ),
-        ),
-        declared_candidate_ids=("candidate-a",),
-        capture_candidate_ids=("candidate-a",),
-        target_snapshot=targeted_fixture.target.snapshot,
-        target=targeted_fixture.target,
-    )
-    untargeted_subject = untargeted_fixture.method_subject
-    untargeted_scope = UntargetedSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=untargeted_fixture.owners.request,
-        samples=untargeted_fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-        ),
-        evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=untargeted_subject.method_subject_id,
-            ),
-        ),
-        declared_candidate_ids=("candidate-a",),
-        capture_candidate_ids=("candidate-a",),
-    )
     targeted_sample = targeted_fixture.sample("S1")
     targeted_source = resolve_request_acquisition_source(
         processing_owners=targeted_fixture.owners,
@@ -258,8 +234,93 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
         processing_owners=untargeted_fixture.owners,
         sample=untargeted_sample,
     )
-    rt = np.asarray([7.7, 7.8, 7.9, 8.0, 8.1, 8.2, 8.3])
-    intensity = np.asarray([0.0, 10.0, 50.0, 100.0, 50.0, 10.0, 0.0])
+    peak_config = _peak_config(tmp_path)
+    rt = np.linspace(7.7, 8.3, 61)
+    intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
+    half_tolerance_mz = untargeted_fixture.method_subject.precursor_mz * (
+        1.0
+        + untargeted_fixture.method_subject.precursor_tolerance_ppm / 2_000_000.0
+    )
+    targeted_binding = _capture_binding(
+        candidate_id="candidate-a",
+        sample=targeted_sample,
+        acquisition_source_id=targeted_source.acquisition_source_id,
+        mz=targeted_subject.precursor_mz,
+        ppm_tol=targeted_subject.precursor_tolerance_ppm,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+    )
+    untargeted_binding = _capture_binding(
+        candidate_id="candidate-a",
+        sample=untargeted_sample,
+        acquisition_source_id=untargeted_source.acquisition_source_id,
+        mz=half_tolerance_mz,
+        ppm_tol=untargeted_fixture.method_subject.precursor_tolerance_ppm,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+    )
+    targeted_scope = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=targeted_fixture.request,
+        samples=targeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=peak_config,
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=targeted_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=("candidate-a",),
+        capture_bindings=(targeted_binding,),
+        target_snapshot=targeted_fixture.target.snapshot,
+        target=targeted_fixture.target,
+    )
+    untargeted_subject = untargeted_fixture.method_subject
+    untargeted_scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=untargeted_fixture.owners.request,
+        samples=untargeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=peak_config,
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=untargeted_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=("candidate-a",),
+        capture_bindings=(untargeted_binding,),
+    )
+    with pytest.raises(
+        SearchScopeContractError,
+        match="outside configured Target RT interval",
+    ):
+        TargetSearchScope(
+            schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+            request=targeted_fixture.request,
+            samples=targeted_fixture.samples,
+            method_constraints=CaptureMethodConstraints(
+                boundary_policy="resolver_interval",
+                peak_config=peak_config,
+            ),
+            evidence_providers=targeted_scope.evidence_providers,
+            declared_candidate_ids=("candidate-a",),
+            capture_bindings=(
+                replace(
+                    targeted_binding,
+                    query_rt_min=7.0,
+                    query_rt_max=9.5,
+                    preferred_rt=9.0,
+                ),
+            ),
+            target_snapshot=targeted_fixture.target.snapshot,
+            target=targeted_fixture.target,
+        )
     targeted_trace = Trace.from_arrays(
         sample_name=targeted_sample.metadata.sample_name,
         mz=targeted_subject.precursor_mz,
@@ -270,9 +331,6 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
         ppm_tol=targeted_subject.precursor_tolerance_ppm,
         source="synthetic_scope_coordinate_oracle",
         acquisition_source_id=targeted_source.acquisition_source_id,
-    )
-    half_tolerance_mz = untargeted_subject.precursor_mz * (
-        1.0 + untargeted_subject.precursor_tolerance_ppm / 2_000_000.0
     )
     untargeted_trace = Trace.from_arrays(
         sample_name=untargeted_sample.metadata.sample_name,
@@ -285,28 +343,26 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
         source="synthetic_scope_coordinate_oracle",
         acquisition_source_id=untargeted_source.acquisition_source_id,
     )
-    peak_config = _peak_config(tmp_path)
-
     accepted = capture_owner.capture_peak_hypotheses(
         scope=untargeted_scope,
         candidate_id="candidate-a",
         trace=untargeted_trace,
-        peak_config=peak_config,
-        preferred_rt=8.0,
-        peak_finder=_synthetic_peak_finder,
-        resolver_mode="genesis",
     )
     assert accepted.trace.mz == half_tolerance_mz
 
-    outside_untargeted_mz = untargeted_subject.precursor_mz * (
-        1.0 + (untargeted_subject.precursor_tolerance_ppm + 1.0) / 1_000_000.0
-    )
     invalid_bindings = (
         (targeted_scope, replace(targeted_trace, mz=targeted_trace.mz + 100.0)),
         (targeted_scope, replace(targeted_trace, ppm_tol=targeted_trace.ppm_tol + 1.0)),
+        (targeted_scope, replace(targeted_trace, rt_min=targeted_trace.rt_min + 0.1)),
+        (targeted_scope, replace(targeted_trace, rt_max=targeted_trace.rt_max - 0.1)),
+        (targeted_scope, replace(targeted_trace, sample_name="different-sample")),
+        (
+            targeted_scope,
+            replace(targeted_trace, acquisition_source_id="different-source"),
+        ),
         (targeted_scope, replace(targeted_trace, mz=float("nan"))),
         (targeted_scope, replace(targeted_trace, ppm_tol=float("inf"))),
-        (untargeted_scope, replace(untargeted_trace, mz=outside_untargeted_mz)),
+        (untargeted_scope, replace(untargeted_trace, mz=untargeted_trace.mz + 1.0)),
         (
             untargeted_scope,
             replace(untargeted_trace, ppm_tol=untargeted_trace.ppm_tol + 1.0),
@@ -323,10 +379,6 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
                 scope=scope,
                 candidate_id="candidate-a",
                 trace=trace,
-                peak_config=peak_config,
-                preferred_rt=8.0,
-                peak_finder=_synthetic_peak_finder,
-                resolver_mode="genesis",
             )
 
 
@@ -342,12 +394,28 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
         sample_roles={"S1": "qc"},
     )
     targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
+    peak_config = _peak_config(tmp_path)
+    untargeted_sample = untargeted_fixture.sample("S1")
+    untargeted_source = resolve_request_acquisition_source(
+        processing_owners=untargeted_fixture.owners,
+        sample=untargeted_sample,
+    )
+    untargeted_binding = _capture_binding(
+        candidate_id="candidate-b",
+        sample=untargeted_sample,
+        acquisition_source_id=untargeted_source.acquisition_source_id,
+        mz=untargeted_fixture.method_subject.precursor_mz,
+        ppm_tol=untargeted_fixture.method_subject.precursor_tolerance_ppm,
+        rt_min=7.7,
+        rt_max=8.3,
+    )
     targeted = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         request=targeted_fixture.request,
         samples=targeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="targeted_gaussian15",
+            peak_config=peak_config,
         ),
         evidence_providers=(
             EvidenceProviderBinding(
@@ -356,7 +424,7 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
             ),
         ),
         declared_candidate_ids=("candidate-a", "candidate-b"),
-        capture_candidate_ids=("candidate-a",),
+        capture_bindings=(),
         target_snapshot=targeted_fixture.target.snapshot,
         target=targeted_fixture.target,
     )
@@ -366,6 +434,7 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
         samples=untargeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
+            peak_config=peak_config,
         ),
         evidence_providers=(
             EvidenceProviderBinding(
@@ -374,15 +443,17 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
             ),
         ),
         declared_candidate_ids=("candidate-b",),
-        capture_candidate_ids=("candidate-b",),
+        capture_bindings=(untargeted_binding,),
     )
 
     assert scope_allows_evidence_inspection(targeted, "candidate-b") is True
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
-        require_capture_candidate(targeted, "candidate-b")
+        require_capture_binding(targeted, "candidate-b")
     with pytest.raises(SearchScopeAuthorizationError, match="not declared"):
-        require_capture_candidate(untargeted, "candidate-a")
-    assert require_capture_candidate(untargeted, "candidate-b") == "candidate-b"
+        require_capture_binding(untargeted, "candidate-a")
+    assert require_capture_binding(untargeted, "candidate-b").candidate_id == (
+        "candidate-b"
+    )
 
 
 def test_scope_rejects_provider_not_bound_to_variant_definition(
@@ -398,6 +469,7 @@ def test_scope_rejects_provider_not_bound_to_variant_definition(
             samples=fixture.samples,
             method_constraints=CaptureMethodConstraints(
                 boundary_policy="targeted_gaussian15",
+                peak_config=_peak_config(tmp_path),
             ),
             evidence_providers=(
                 EvidenceProviderBinding(
@@ -406,7 +478,7 @@ def test_scope_rejects_provider_not_bound_to_variant_definition(
                 ),
             ),
             declared_candidate_ids=("candidate-a",),
-            capture_candidate_ids=("candidate-a",),
+            capture_bindings=(),
             target_snapshot=fixture.target.snapshot,
             target=fixture.target,
         )
@@ -423,6 +495,7 @@ def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> No
             samples=fixture.samples,
             method_constraints=CaptureMethodConstraints(
                 boundary_policy="resolver_interval",
+                peak_config=_peak_config(tmp_path),
             ),
             evidence_providers=(
                 EvidenceProviderBinding(
@@ -431,50 +504,46 @@ def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> No
                 ),
             ),
             declared_candidate_ids=("candidate-a",),
-            capture_candidate_ids=("candidate-a",),
+            capture_bindings=(),
         )
 
 
 def test_observation_seam_does_not_accept_caller_hypothesis_override() -> None:
-    assert "hypothesis" not in inspect.signature(
+    capture_parameters = inspect.signature(
+        capture_owner.capture_peak_hypotheses
+    ).parameters
+    observation_parameters = inspect.signature(
         capture_owner.mint_captured_peak_observation
     ).parameters
 
+    assert set(capture_parameters) == {"scope", "candidate_id", "trace"}
+    assert set(observation_parameters) == {
+        "capture",
+        "processing_owners",
+        "sample",
+    }
 
-def _synthetic_peak_finder(
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    _config: ExtractionConfig,
-    **_kwargs: object,
-) -> PeakDetectionResult:
-    area = integrate_area_counts_seconds(intensity, rt, 1, 6)
-    peak = PeakResult(
-        rt=8.0,
-        intensity=100.0,
-        intensity_smoothed=100.0,
-        area=area,
-        peak_start=7.8,
-        peak_end=8.2,
-    )
-    candidate = PeakCandidate(
-        peak=peak,
-        selection_apex_rt=8.0,
-        selection_apex_intensity=100.0,
-        selection_apex_index=3,
-        raw_apex_rt=8.0,
-        raw_apex_intensity=100.0,
-        raw_apex_index=3,
-        prominence=90.0,
-        proposal_sources=("synthetic",),
-        source_apex_rank=1,
-    )
-    return PeakDetectionResult(
-        status="OK",
-        peak=peak,
-        n_points=len(rt),
-        max_smoothed=100.0,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
+
+def _capture_binding(
+    *,
+    candidate_id: str,
+    sample: ResolvedCanonicalSampleIdentity,
+    acquisition_source_id: str,
+    mz: float,
+    ppm_tol: float,
+    rt_min: float,
+    rt_max: float,
+) -> CaptureCandidateBinding:
+    return CaptureCandidateBinding(
+        candidate_id=candidate_id,
+        sample_identity_id=sample.identity.sample_identity_id,
+        sample_name=sample.metadata.sample_name,
+        acquisition_source_id=acquisition_source_id,
+        query_mz=mz,
+        query_rt_min=rt_min,
+        query_rt_max=rt_max,
+        query_ppm_tol=ppm_tol,
+        preferred_rt=8.0,
     )
 
 

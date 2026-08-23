@@ -5,6 +5,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -43,6 +44,7 @@ class CaptureMethodConstraints:
     """Closed sample-local scientific constraints selected by an application."""
 
     boundary_policy: CaptureBoundaryPolicy
+    peak_config: ExtractionConfig
 
     def __post_init__(self) -> None:
         if self.boundary_policy not in {
@@ -50,6 +52,47 @@ class CaptureMethodConstraints:
             "targeted_gaussian15",
         }:
             raise SearchScopeContractError("unsupported capture boundary policy")
+        if not isinstance(self.peak_config, ExtractionConfig):
+            raise SearchScopeContractError(
+                "capture method constraints require owner-resolved ExtractionConfig"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureCandidateBinding:
+    """Bind one authorized candidate to its exact sample-local capture query."""
+
+    candidate_id: str
+    sample_identity_id: str
+    sample_name: str
+    acquisition_source_id: str
+    query_mz: float
+    query_rt_min: float
+    query_rt_max: float
+    query_ppm_tol: float
+    preferred_rt: float
+
+    def __post_init__(self) -> None:
+        _normalized_text(self.candidate_id, field="candidate_id")
+        _normalized_text(self.sample_identity_id, field="sample_identity_id")
+        _normalized_text(self.sample_name, field="sample_name")
+        _normalized_text(self.acquisition_source_id, field="acquisition_source_id")
+        _positive_finite_number(self.query_mz, field="query_mz")
+        _positive_finite_number(self.query_ppm_tol, field="query_ppm_tol")
+        rt_min = _nonnegative_finite_number(self.query_rt_min, field="query_rt_min")
+        rt_max = _nonnegative_finite_number(self.query_rt_max, field="query_rt_max")
+        preferred_rt = _nonnegative_finite_number(
+            self.preferred_rt,
+            field="preferred_rt",
+        )
+        if rt_min > rt_max:
+            raise SearchScopeContractError(
+                "capture candidate query RT interval must be ordered"
+            )
+        if not rt_min <= preferred_rt <= rt_max:
+            raise SearchScopeContractError(
+                "capture candidate preferred_rt is outside its query RT interval"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +115,7 @@ class TargetSearchScope:
     method_constraints: CaptureMethodConstraints
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
-    capture_candidate_ids: tuple[str, ...]
+    capture_bindings: tuple[CaptureCandidateBinding, ...]
     target_snapshot: TargetListSnapshot
     target: ResolvedTargetDefinition
 
@@ -84,7 +127,7 @@ class TargetSearchScope:
             method_constraints=self.method_constraints,
             evidence_providers=self.evidence_providers,
             declared_candidate_ids=self.declared_candidate_ids,
-            capture_candidate_ids=self.capture_candidate_ids,
+            capture_bindings=self.capture_bindings,
         )
         if not isinstance(self.target_snapshot, TargetListSnapshot):
             raise SearchScopeContractError("target_snapshot must be owner-minted")
@@ -108,6 +151,7 @@ class TargetSearchScope:
             self.evidence_providers,
             target=self.target,
         )
+        _validate_targeted_capture_bindings(self.capture_bindings, target=self.target)
 
     @property
     def variant(self) -> Literal["targeted"]:
@@ -122,7 +166,8 @@ class UntargetedSearchScope:
     method_constraints: CaptureMethodConstraints
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
-    capture_candidate_ids: tuple[str, ...]
+    capture_bindings: tuple[CaptureCandidateBinding, ...]
+
     def __post_init__(self) -> None:
         _validate_common_scope(
             schema_version=self.schema_version,
@@ -131,7 +176,7 @@ class UntargetedSearchScope:
             method_constraints=self.method_constraints,
             evidence_providers=self.evidence_providers,
             declared_candidate_ids=self.declared_candidate_ids,
-            capture_candidate_ids=self.capture_candidate_ids,
+            capture_bindings=self.capture_bindings,
         )
         if "target_list_snapshot" in _request_inputs(self.request):
             raise SearchScopeContractError(
@@ -139,6 +184,10 @@ class UntargetedSearchScope:
             )
         _validate_untargeted_evidence_provider(
             self.evidence_providers,
+            request=self.request,
+        )
+        _validate_untargeted_capture_bindings(
+            self.capture_bindings,
             request=self.request,
         )
 
@@ -160,14 +209,21 @@ def scope_allows_evidence_inspection(scope: SearchScope, candidate_id: str) -> b
     return candidate in scope.declared_candidate_ids
 
 
-def require_capture_candidate(scope: SearchScope, candidate_id: str) -> str:
+def require_capture_binding(
+    scope: SearchScope,
+    candidate_id: str,
+) -> CaptureCandidateBinding:
     _validate_scope_type(scope)
     candidate = _normalized_text(candidate_id, field="candidate_id")
     if candidate not in scope.declared_candidate_ids:
         raise SearchScopeAuthorizationError(
             f"candidate {candidate!r} is not declared by this SearchScope"
         )
-    if candidate not in scope.capture_candidate_ids:
+    binding = next(
+        (item for item in scope.capture_bindings if item.candidate_id == candidate),
+        None,
+    )
+    if binding is None:
         if isinstance(scope, TargetSearchScope):
             raise SearchScopeAuthorizationError(
                 "Target capture cannot authorize non-configured candidate "
@@ -176,7 +232,7 @@ def require_capture_candidate(scope: SearchScope, candidate_id: str) -> str:
         raise SearchScopeAuthorizationError(
             f"Untargeted capture cannot authorize candidate {candidate!r}"
         )
-    return candidate
+    return binding
 
 
 def validate_scope_owner_binding(
@@ -209,37 +265,40 @@ def validate_scope_owner_binding(
 def validate_scope_trace_coordinates(
     scope: SearchScope,
     *,
+    binding: CaptureCandidateBinding,
+    sample_name: object,
+    acquisition_source_id: object,
     mz: object,
+    rt_min: object,
+    rt_max: object,
     ppm_tol: object,
 ) -> None:
-    """Reject capture coordinates that conflict with the scope method owner."""
+    """Reject a trace that conflicts with its exact candidate capture binding."""
 
     _validate_scope_type(scope)
+    if binding not in scope.capture_bindings:
+        raise SearchScopeContractError(
+            "capture binding is outside this SearchScope"
+        )
+    trace_sample = _normalized_text(sample_name, field="trace sample_name")
+    trace_source = _normalized_text(
+        acquisition_source_id,
+        field="trace acquisition_source_id",
+    )
     trace_mz = _positive_finite_number(mz, field="trace mz")
     trace_ppm_tol = _positive_finite_number(ppm_tol, field="trace ppm_tol")
-    try:
-        if isinstance(scope, TargetSearchScope):
-            method_subject = cid_nl_method_subject_from_target(scope.target)
-            mz_matches = trace_mz == method_subject.precursor_mz
-        else:
-            method_subject = cid_nl_method_subject_from_request(scope.request)
-            mz_error_ppm = (
-                abs(trace_mz - method_subject.precursor_mz)
-                / method_subject.precursor_mz
-                * 1_000_000.0
-            )
-            mz_matches = mz_error_ppm <= method_subject.precursor_tolerance_ppm
-    except CidNlMethodSubjectContractError as exc:
-        raise SearchScopeContractError(str(exc)) from exc
-    ppm_matches = math.isclose(
-        trace_ppm_tol,
-        method_subject.precursor_tolerance_ppm,
-        rel_tol=0.0,
-        abs_tol=1e-12,
-    )
-    if not mz_matches or not ppm_matches:
+    trace_rt_min = _nonnegative_finite_number(rt_min, field="trace rt_min")
+    trace_rt_max = _nonnegative_finite_number(rt_max, field="trace rt_max")
+    if (
+        trace_sample != binding.sample_name
+        or trace_source != binding.acquisition_source_id
+        or trace_mz != binding.query_mz
+        or trace_rt_min != binding.query_rt_min
+        or trace_rt_max != binding.query_rt_max
+        or trace_ppm_tol != binding.query_ppm_tol
+    ):
         raise SearchScopeContractError(
-            "capture trace coordinates mismatch SearchScope method constraints"
+            "capture trace coordinates mismatch candidate capture binding"
         )
 
 
@@ -251,7 +310,7 @@ def _validate_common_scope(
     method_constraints: object,
     evidence_providers: object,
     declared_candidate_ids: object,
-    capture_candidate_ids: object,
+    capture_bindings: object,
 ) -> None:
     if schema_version != SEARCH_SCOPE_SCHEMA_VERSION:
         raise SearchScopeContractError(
@@ -304,14 +363,80 @@ def _validate_common_scope(
         declared_candidate_ids,
         field="declared_candidate_ids",
     )
-    capture = _candidate_ids(
-        capture_candidate_ids,
-        field="capture_candidate_ids",
-    )
-    if not set(capture).issubset(declared):
+    if not isinstance(capture_bindings, tuple) or any(
+        not isinstance(binding, CaptureCandidateBinding)
+        for binding in capture_bindings
+    ):
+        raise SearchScopeContractError(
+            "capture_bindings must be a typed tuple"
+        )
+    capture_ids = tuple(binding.candidate_id for binding in capture_bindings)
+    if len(capture_ids) != len(set(capture_ids)):
+        raise SearchScopeContractError(
+            "capture_bindings contains duplicate candidate IDs"
+        )
+    if not set(capture_ids).issubset(declared):
         raise SearchScopeContractError(
             "capture candidate universe must be a subset of declared evidence"
         )
+    samples_by_identity = {
+        sample.identity.sample_identity_id: sample for sample in samples
+    }
+    request_sources = {
+        item.adapter_input_key: item.acquisition_source_id
+        for item in request.acquisition_bindings
+    }
+    for binding in capture_bindings:
+        sample = samples_by_identity.get(binding.sample_identity_id)
+        if sample is None or sample.metadata.sample_name != binding.sample_name:
+            raise SearchScopeContractError(
+                "capture binding references a different canonical sample"
+            )
+        if request_sources.get(sample.lookup_token) != binding.acquisition_source_id:
+            raise SearchScopeContractError(
+                "capture binding acquisition source is not request-bound"
+            )
+
+
+def _validate_targeted_capture_bindings(
+    bindings: tuple[CaptureCandidateBinding, ...],
+    *,
+    target: ResolvedTargetDefinition,
+) -> None:
+    value = target.definition.target
+    for binding in bindings:
+        if binding.query_mz != value.mz or binding.query_ppm_tol != value.ppm_tol:
+            raise SearchScopeContractError(
+                "Target capture binding mismatches exact Target m/z/ppm"
+            )
+        if not value.rt_min <= binding.preferred_rt <= value.rt_max:
+            raise SearchScopeContractError(
+                "Target capture preferred_rt is outside configured Target RT interval"
+            )
+
+
+def _validate_untargeted_capture_bindings(
+    bindings: tuple[CaptureCandidateBinding, ...],
+    *,
+    request: ProcessingRequestIdentity,
+) -> None:
+    try:
+        subject = cid_nl_method_subject_from_request(request)
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(str(exc)) from exc
+    for binding in bindings:
+        mz_error_ppm = (
+            abs(binding.query_mz - subject.precursor_mz)
+            / subject.precursor_mz
+            * 1_000_000.0
+        )
+        if (
+            mz_error_ppm > subject.precursor_tolerance_ppm
+            or binding.query_ppm_tol != subject.precursor_tolerance_ppm
+        ):
+            raise SearchScopeContractError(
+                "Untargeted capture binding mismatches request-bound method subject"
+            )
 
 
 def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:
@@ -412,9 +537,23 @@ def _positive_finite_number(value: object, *, field: str) -> float:
     return float(value)
 
 
+def _nonnegative_finite_number(value: object, *, field: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) < 0.0
+    ):
+        raise SearchScopeContractError(
+            f"capture binding requires finite non-negative {field}"
+        )
+    return float(value)
+
+
 __all__ = (
     "SEARCH_SCOPE_SCHEMA_VERSION",
     "CaptureBoundaryPolicy",
+    "CaptureCandidateBinding",
     "CaptureMethodConstraints",
     "EvidenceProviderBinding",
     "SearchScope",
@@ -423,7 +562,7 @@ __all__ = (
     "SearchScopeVariant",
     "TargetSearchScope",
     "UntargetedSearchScope",
-    "require_capture_candidate",
+    "require_capture_binding",
     "scope_allows_evidence_inspection",
     "validate_scope_owner_binding",
     "validate_scope_trace_coordinates",
