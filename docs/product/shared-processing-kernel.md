@@ -6,9 +6,10 @@ below as implementation evidence; it no longer defines the full architectural
 seam. The shared kernel is a collaboration of deep existing modules, not
 permission to create a new `core/` package.
 
-Architecture status: `frozen`; runtime adoption is incomplete. This document
-changes no selected value, counted detection, Matrix, workbook, activation,
-writer, or export authority.
+Architecture status: the scientific lifecycle is `frozen`, while archive
+implementation locality remains `proposed` under ADR-0003; runtime adoption is
+incomplete. This document changes no selected value, counted detection, Matrix,
+workbook, activation, writer, or export authority.
 
 ## Problem And Success
 
@@ -255,6 +256,17 @@ may drift in different directions and adjacent injections may jump, so no
 universal monotonic trend is assumed. CrossSample alone accepts a proposal and
 mints any successor group.
 
+CrossSample owns one edge-eligibility classifier for initial grouping,
+claim-derived candidates, and repaired observations. It returns exactly
+`eligible`, `review_only`, or `excluded`; only `eligible` edges may connect a
+ModeTrack refinement neighborhood, and ModeTrack cannot overturn `excluded`.
+A bounded connected neighborhood is the atomic refinement unit. ModeTrack
+evaluates every coupled attach/reassign/split/merge action together, and
+CrossSample either mints the complete valid successor set or applies none. If an
+eligible neighborhood exceeds the validated work budget, the result is typed
+unassessable; splitting, truncation, or greedy order must not change scientific
+membership.
+
 A Targeted Alignment operation can therefore be computationally trivial in a
 clean case; it is not semantically absent.
 
@@ -273,6 +285,12 @@ at most one ObservationRepair epoch and returns an owner-backed observation or
 typed no-repair result. A repair that changes trajectory identity may cause one
 final ModeTrack rerun; value-only area or boundary changes do not. There is no
 recursive repair/refit loop.
+
+Repair provenance persists across executions. A later execution may classify a
+repair-derived observation as anchor-eligible only when the active
+method-specific evidence owner independently finds the required direct
+evidence. Repair acceptance or trajectory agreement alone never grants anchor
+status.
 
 ### Cell Decision
 

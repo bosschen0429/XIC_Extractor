@@ -181,7 +181,7 @@ defines the successor owner rather than claiming current implementation status.
 | `alignment/result/` | Shared-core closure into `FinalizedScientificAlignment`, then final closure of immutable Targeted/Untargeted result variants after projection completion | Re-running RAW, ModeTrack, Backfill, selection, or projection policy |
 | `alignment/projection/target/` | Consumes owner-issued `TargetSearchScope`; pre-cell zero/one/many `TargetRowBinding`, fixed `TargetKey` rows, and Target subjects; post-cell inclusion/count/reason policy and references to the existing Review Queue | Reminting SearchScope/Target identity, a second capture/repair/cell-decision implementation, or arbitrary winner selection |
 | `alignment/projection/untarget/` | Pre-cell `UntargetRowKey` and Group subjects; post-cell established-group row inclusion, archive routing, Untarget delivery-cell identity, and analytical-handoff projection | Target policy, provisional-row promotion by implication, or m/z/RT/display labels as identity |
-| `evidence_archive/` | Internal canonical typed-Parquet archive, retention-class projection, staged bundle/reference minting, and exact query/replay references | Product row/value decisions, delivery schema, TSV-mediated canonical typing, final bundle publication, or public Parquet-v2 activation |
+| Evidence Archive module locality (proposed; see `docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md`) | Internal canonical typed-Parquet persistence, retention-class projection, staged bundle/reference minting, and exact query/replay references | Product row/value decisions, delivery schema, TSV-mediated canonical typing, final bundle publication, public Parquet-v2 activation, or implementation before the owner seam is refrozen |
 | `explanation/` | Human reason rendering and stable archive/reference navigation from typed decisions | Parsing reason strings back into core decisions or minting scientific authority |
 | `delivery/` | Final `ArtifactPlan` compilation after render/query consumers stabilize, render-only writers, atomic bundle publication, required claim-group closure, and typed delivery receipts | Scientific recomputation, caller-authored emit booleans, or evidence-archive query policy |
 
@@ -219,12 +219,23 @@ defines the successor owner rather than claiming current implementation status.
   limited to trajectory-relevant anchors, members, apexes, injection order,
   evidence profile, and exclusions. Value-only area or boundary changes do not
   rerun it. CrossSample alone applies proposals and mints successors.
+- CrossSample owns the closed `eligible | review_only | excluded` edge
+  classifier used by initial grouping, claim candidates, and repaired
+  observations. Only `eligible` edges connect one bounded atomic ModeTrack
+  neighborhood; `excluded` cannot be reopened. CrossSample applies the complete
+  coupled successor set or none. An oversized eligible neighborhood is
+  unassessable and cannot be split, truncated, or processed greedily to alter
+  membership.
 - ObservationRepair may trigger at most one rebuilt trajectory snapshot and one
   final ModeTrack rerun when trajectory identity actually changes. CrossSample
   reconciles repaired observations, applies or rejects the optional final
   proposal, and mints the final receipt consumed by scientific closure. There is
   no repair/refit loop. A repaired observation is neither group membership nor
   a selected product value.
+- Repair provenance persists. A subsequent execution grants anchor eligibility
+  only when the active method-specific evidence owner freshly classifies the
+  required independent evidence; repair acceptance or trajectory agreement is
+  insufficient.
 - `FinalizedScientificAlignment` carries the exact canonical sample universe
   and one terminal search/observation state for every required subject; absence
   is never inferred from a missing row. Target binding considers only unique

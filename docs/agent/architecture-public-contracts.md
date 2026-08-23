@@ -95,6 +95,25 @@ owner and returns either a typed write decision or one of `not_searched`,
 `searched_no_observation`, `unresolved`, `rejected_observation`,
 `not_quantifiable`, or `unavailable`.
 
+CrossSample is also the sole edge-eligibility authority. Its closed result is
+`eligible`, `review_only`, or `excluded`; only `eligible` edges may connect one
+bounded atomic ModeTrack neighborhood, and `excluded` is not model-overridable.
+CrossSample applies the complete coupled successor proposal or none. An
+oversized eligible neighborhood is unassessable rather than split, truncated,
+or processed greedily. A repair-derived observation may become anchor-eligible
+in a later execution only through fresh method-specific independent-evidence
+classification; repair acceptance itself is never that classification.
+
+Evidence persistence, Explanation, and Delivery are separate authorities.
+Persisted evidence is a bounded lazy projection of a finalized owner result,
+not provisional science or a complete in-memory row list. Required artifact
+failure is fail-closed and cannot silently reduce evidence or switch formats;
+archive activation requires semantic parity plus total representation-cost
+evidence. Query results distinguish scientific absence from lifecycle
+unavailability and present-but-invalid content. The physical archive-owner seam
+remains proposed in `docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md`
+and must be refrozen before its implementation ticket becomes claimable.
+
 The complete search receipt is required to assert
 `searched_no_observation`; missing, partial, corrupt, or unbound evidence is
 `unavailable`. Blank/zero and human-rendered reason text are never semantic
