@@ -277,7 +277,17 @@ class OwnerPathRuntimeMarker:
                     os.O_WRONLY | os.O_CREAT | os.O_EXCL,
                     0o600,
                 )
-            except (FileExistsError, PermissionError) as exc:
+            except PermissionError as exc:
+                if not lock_path.is_file():
+                    raise
+                if time.monotonic() >= deadline:
+                    raise RuntimeFinalizationContractError(
+                        "runtime marker transaction is locked; concurrent or stale "
+                        "owner lock must be resolved before retry"
+                    ) from exc
+                time.sleep(_MARKER_LOCK_POLL_SECONDS)
+                continue
+            except FileExistsError as exc:
                 if time.monotonic() >= deadline:
                     raise RuntimeFinalizationContractError(
                         "runtime marker transaction is locked; concurrent or stale "
