@@ -199,6 +199,137 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     assert require_capture_candidate(untargeted, "candidate-b") == "candidate-b"
 
 
+def test_capture_binds_trace_coordinates_to_both_scope_variants(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "targeted").mkdir()
+    (tmp_path / "untargeted").mkdir()
+    targeted_fixture = build_package2_no_raw_fixture(
+        tmp_path / "targeted",
+        sample_stems=("S1",),
+    )
+    untargeted_fixture = build_issue175_no_raw_fixture(
+        tmp_path / "untargeted",
+        sample_roles={"S1": "qc"},
+    )
+    targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
+    targeted_scope = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=targeted_fixture.request,
+        samples=targeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=targeted_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=("candidate-a",),
+        capture_candidate_ids=("candidate-a",),
+        target_snapshot=targeted_fixture.target.snapshot,
+        target=targeted_fixture.target,
+    )
+    untargeted_subject = untargeted_fixture.method_subject
+    untargeted_scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=untargeted_fixture.owners.request,
+        samples=untargeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=untargeted_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=("candidate-a",),
+        capture_candidate_ids=("candidate-a",),
+    )
+    targeted_sample = targeted_fixture.sample("S1")
+    targeted_source = resolve_request_acquisition_source(
+        processing_owners=targeted_fixture.owners,
+        sample=targeted_sample,
+    )
+    untargeted_sample = untargeted_fixture.sample("S1")
+    untargeted_source = resolve_request_acquisition_source(
+        processing_owners=untargeted_fixture.owners,
+        sample=untargeted_sample,
+    )
+    rt = np.asarray([7.7, 7.8, 7.9, 8.0, 8.1, 8.2, 8.3])
+    intensity = np.asarray([0.0, 10.0, 50.0, 100.0, 50.0, 10.0, 0.0])
+    targeted_trace = Trace.from_arrays(
+        sample_name=targeted_sample.metadata.sample_name,
+        mz=targeted_subject.precursor_mz,
+        rt=rt,
+        intensity=intensity,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+        ppm_tol=targeted_subject.precursor_tolerance_ppm,
+        source="synthetic_scope_coordinate_oracle",
+        acquisition_source_id=targeted_source.acquisition_source_id,
+    )
+    half_tolerance_mz = untargeted_subject.precursor_mz * (
+        1.0 + untargeted_subject.precursor_tolerance_ppm / 2_000_000.0
+    )
+    untargeted_trace = Trace.from_arrays(
+        sample_name=untargeted_sample.metadata.sample_name,
+        mz=half_tolerance_mz,
+        rt=rt,
+        intensity=intensity,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+        ppm_tol=untargeted_subject.precursor_tolerance_ppm,
+        source="synthetic_scope_coordinate_oracle",
+        acquisition_source_id=untargeted_source.acquisition_source_id,
+    )
+    peak_config = _peak_config(tmp_path)
+
+    accepted = capture_owner.capture_peak_hypotheses(
+        scope=untargeted_scope,
+        candidate_id="candidate-a",
+        trace=untargeted_trace,
+        peak_config=peak_config,
+        preferred_rt=8.0,
+        peak_finder=_synthetic_peak_finder,
+        resolver_mode="genesis",
+    )
+    assert accepted.trace.mz == half_tolerance_mz
+
+    outside_untargeted_mz = untargeted_subject.precursor_mz * (
+        1.0 + (untargeted_subject.precursor_tolerance_ppm + 1.0) / 1_000_000.0
+    )
+    invalid_bindings = (
+        (targeted_scope, replace(targeted_trace, mz=targeted_trace.mz + 100.0)),
+        (targeted_scope, replace(targeted_trace, ppm_tol=targeted_trace.ppm_tol + 1.0)),
+        (targeted_scope, replace(targeted_trace, mz=float("nan"))),
+        (targeted_scope, replace(targeted_trace, ppm_tol=float("inf"))),
+        (untargeted_scope, replace(untargeted_trace, mz=outside_untargeted_mz)),
+        (
+            untargeted_scope,
+            replace(untargeted_trace, ppm_tol=untargeted_trace.ppm_tol + 1.0),
+        ),
+        (untargeted_scope, replace(untargeted_trace, mz=float("inf"))),
+        (untargeted_scope, replace(untargeted_trace, ppm_tol=float("nan"))),
+    )
+    for scope, trace in invalid_bindings:
+        with pytest.raises(
+            capture_owner.SampleLocalCaptureError,
+            match="trace coordinates",
+        ):
+            capture_owner.capture_peak_hypotheses(
+                scope=scope,
+                candidate_id="candidate-a",
+                trace=trace,
+                peak_config=peak_config,
+                preferred_rt=8.0,
+                peak_finder=_synthetic_peak_finder,
+                resolver_mode="genesis",
+            )
+
+
 def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> None:
     (tmp_path / "targeted").mkdir()
     (tmp_path / "untargeted").mkdir()

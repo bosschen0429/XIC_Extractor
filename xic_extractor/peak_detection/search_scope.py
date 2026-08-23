@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
@@ -205,6 +206,43 @@ def validate_scope_owner_binding(
             )
 
 
+def validate_scope_trace_coordinates(
+    scope: SearchScope,
+    *,
+    mz: object,
+    ppm_tol: object,
+) -> None:
+    """Reject capture coordinates that conflict with the scope method owner."""
+
+    _validate_scope_type(scope)
+    trace_mz = _positive_finite_number(mz, field="trace mz")
+    trace_ppm_tol = _positive_finite_number(ppm_tol, field="trace ppm_tol")
+    try:
+        if isinstance(scope, TargetSearchScope):
+            method_subject = cid_nl_method_subject_from_target(scope.target)
+            mz_matches = trace_mz == method_subject.precursor_mz
+        else:
+            method_subject = cid_nl_method_subject_from_request(scope.request)
+            mz_error_ppm = (
+                abs(trace_mz - method_subject.precursor_mz)
+                / method_subject.precursor_mz
+                * 1_000_000.0
+            )
+            mz_matches = mz_error_ppm <= method_subject.precursor_tolerance_ppm
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(str(exc)) from exc
+    ppm_matches = math.isclose(
+        trace_ppm_tol,
+        method_subject.precursor_tolerance_ppm,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    )
+    if not mz_matches or not ppm_matches:
+        raise SearchScopeContractError(
+            "capture trace coordinates mismatch SearchScope method constraints"
+        )
+
+
 def _validate_common_scope(
     *,
     schema_version: object,
@@ -361,6 +399,19 @@ def _normalized_text(value: object, *, field: str) -> str:
     return value
 
 
+def _positive_finite_number(value: object, *, field: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0.0
+    ):
+        raise SearchScopeContractError(
+            f"capture trace coordinates require positive finite {field}"
+        )
+    return float(value)
+
+
 __all__ = (
     "SEARCH_SCOPE_SCHEMA_VERSION",
     "CaptureBoundaryPolicy",
@@ -375,4 +426,5 @@ __all__ = (
     "require_capture_candidate",
     "scope_allows_evidence_inspection",
     "validate_scope_owner_binding",
+    "validate_scope_trace_coordinates",
 )

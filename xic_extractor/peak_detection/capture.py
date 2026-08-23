@@ -27,6 +27,7 @@ from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     require_capture_candidate,
     validate_scope_owner_binding,
+    validate_scope_trace_coordinates,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
 from xic_extractor.processing_identity import ProcessingOwnerReferences
@@ -100,6 +101,14 @@ def capture_peak_hypotheses(
         sample.metadata.sample_name for sample in scope.samples
     }:
         raise SampleLocalCaptureError("capture trace sample is outside SearchScope")
+    try:
+        validate_scope_trace_coordinates(
+            scope,
+            mz=trace.mz,
+            ppm_tol=trace.ppm_tol,
+        )
+    except SearchScopeContractError as exc:
+        raise SampleLocalCaptureError(str(exc)) from exc
     if not isinstance(peak_config, ExtractionConfig):
         raise SampleLocalCaptureError("peak_config has the wrong owner type")
     detection = detect_ms1_trace_peak(
