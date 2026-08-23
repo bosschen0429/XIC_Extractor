@@ -75,7 +75,8 @@ capture, CrossSample, ModeTrack, Backfill, or selected-value implementation.
 
 ## Boundaries
 
-- **Owns:** `TargetSearchScope`, fixed `TargetKey` row projection, pre-cell
+- **Consumes:** owner-issued `TargetSearchScope`.
+- **Owns:** fixed `TargetKey` row projection, pre-cell
   `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
   typed confidence/reason/product-state/counting decisions, existing Review Queue
   routing, MS1 rescue policy scope, and target-pair RT rules.

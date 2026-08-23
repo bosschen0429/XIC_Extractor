@@ -140,6 +140,14 @@ def test_alignment_owner_summaries_match_canonical_contract() -> None:
         "docs/architecture-contract.md"
     ]
 
+    targeted_source = paths["docs/product/targeted-selection.md"]
+    assert "- **Owns:** `TargetSearchScope`" not in targeted_source
+    assert "- **Consumes:** owner-issued `TargetSearchScope`." in targeted_source
+    assert (
+        "| `alignment/projection/target/` | Consumes owner-issued "
+        "`TargetSearchScope`;" in paths["docs/architecture-contract.md"]
+    )
+
 
 def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
