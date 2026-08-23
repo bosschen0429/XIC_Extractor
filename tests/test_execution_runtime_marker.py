@@ -383,6 +383,37 @@ def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
     assert snapshot.processing_attempt_id == attempt.processing_attempt_id
 
 
+def test_windows_sharing_violation_retries_without_directory_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    attempt = _attempt(tmp_path)
+    runtime = _runtime(attempt)
+    real_open = os.open
+    opened_paths: list[str] = []
+
+    def sharing_violation_once(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+    ) -> int:
+        opened_paths.append(str(path))
+        if str(path).endswith(".lock") and len(opened_paths) == 1:
+            raise PermissionError(13, "synthetic sharing violation", path, 32)
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(runtime_marker_module.os, "open", sharing_violation_once)
+
+    snapshot = marker.record_launch(runtime)
+
+    assert snapshot.processing_attempt_id == attempt.processing_attempt_id
+    assert not any(path.endswith(".probe") for path in opened_paths)
+
+
 def test_marker_lock_does_not_recast_unrelated_permission_denial(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -392,6 +423,8 @@ def test_marker_lock_does_not_recast_unrelated_permission_denial(
         "runtime-attempt-artifacts:a",
     )
     runtime = _runtime(_attempt(tmp_path))
+    lock_path = tmp_path / ".attempt.runtime.json.lock"
+    lock_path.write_bytes(b"existing-lock")
     real_open = os.open
 
     def deny_lock(
@@ -399,7 +432,7 @@ def test_marker_lock_does_not_recast_unrelated_permission_denial(
         flags: int,
         mode: int = 0o777,
     ) -> int:
-        if str(path).endswith(".lock"):
+        if Path(path).parent == tmp_path:
             raise PermissionError(13, "synthetic directory ACL denial", path)
         return real_open(path, flags, mode)
 

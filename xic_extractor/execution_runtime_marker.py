@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import errno
 import hashlib
 import json
 import os
@@ -278,7 +279,32 @@ class OwnerPathRuntimeMarker:
                     0o600,
                 )
             except PermissionError as exc:
-                if not lock_path.is_file():
+                if os.name != "nt":
+                    raise
+                winerror = getattr(exc, "winerror", None)
+                transient_lock_denial = winerror in {32, 33}
+                if (
+                    winerror is None
+                    and exc.errno == errno.EACCES
+                    and lock_path.is_file()
+                ):
+                    probe_path = lock_path.with_name(
+                        f".{lock_path.name}.{time.monotonic_ns()}.probe"
+                    )
+                    try:
+                        probe_descriptor = os.open(
+                            probe_path,
+                            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                            0o600,
+                        )
+                    except PermissionError:
+                        raise exc from None
+                    try:
+                        os.close(probe_descriptor)
+                    finally:
+                        probe_path.unlink(missing_ok=True)
+                    transient_lock_denial = True
+                if not transient_lock_denial:
                     raise
                 if time.monotonic() >= deadline:
                     raise RuntimeFinalizationContractError(
