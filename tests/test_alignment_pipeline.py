@@ -19,6 +19,7 @@ from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
@@ -743,6 +744,267 @@ def test_pipeline_processing_request_binds_owner_selection_config_only(
     assert value_only_change == baseline
 
 
+def test_pipeline_processing_request_binds_supplied_injection_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    samples = ("Sample_A", "Sample_B")
+    batch_index = _write_batch(tmp_path, samples)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    for sample in samples:
+        (raw_dir / f"{sample}.raw").write_bytes(b"stable acquisition")
+    forward_order = tmp_path / "forward_injection_order.csv"
+    forward_order.write_text(
+        "Sample_Name,Injection_Order\nSample_A,1\nSample_B,2\nIgnored,3\n",
+        encoding="utf-8",
+    )
+    reverse_order = tmp_path / "reverse_injection_order.csv"
+    reverse_order.write_text(
+        "Sample_Name,Injection_Order\nSample_A,2\nSample_B,1\n",
+        encoding="utf-8",
+    )
+    equivalent_forward_order = tmp_path / "equivalent_forward_injection_order.csv"
+    equivalent_forward_order.write_text(
+        "Sample_Name,Injection_Order\nSample_A,1\nSample_B,2\n",
+        encoding="utf-8",
+    )
+    equivalent_sample_metadata = tmp_path / "equivalent_sample_metadata.tsv"
+    equivalent_sample_metadata.write_text(
+        "\t".join(
+            (
+                "schema_version",
+                "sample_name",
+                "raw_stem",
+                "injection_order",
+                "sample_role",
+                "batch_id",
+                "prep_batch_id",
+                "matrix_type",
+                "group",
+                "excluded",
+                "exclusion_reason",
+            )
+        )
+        + "\n"
+        + "sample_metadata_v1\tSample_A\tSample_A\t1\tunknown\t\t\t\t\tFALSE\t\n"
+        + "sample_metadata_v1\tSample_B\tSample_B\t2\tunknown\t\t\t\t\tFALSE\t\n",
+        encoding="utf-8",
+    )
+    request_ids: list[str] = []
+
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+
+    def capture_owner_request(_candidates, **kwargs):
+        context = kwargs["cross_sample_identity_context"]
+        request_ids.append(context.processing_owners.request.processing_request_id)
+        return SimpleNamespace(owners=(), assignments=(), ambiguous_records=())
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        capture_owner_request,
+    )
+
+    for index, injection_order in enumerate(
+        (
+            forward_order,
+            reverse_order,
+            equivalent_forward_order,
+            equivalent_sample_metadata,
+        ),
+        start=1,
+    ):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / f"out-{index}",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            sample_column_injection_order=injection_order,
+            raw_opener=FakeRawOpener(),
+        )
+
+    assert request_ids[0] != request_ids[1]
+    assert request_ids[0] == request_ids[2]
+    assert request_ids[0] == request_ids[3]
+
+
+def test_pipeline_processing_request_binds_drift_prior_decisions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "Sample_A.raw").write_bytes(b"stable acquisition")
+    request_ids: list[str] = []
+
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+
+    def capture_owner_request(_candidates, **kwargs):
+        context = kwargs["cross_sample_identity_context"]
+        request_ids.append(context.processing_owners.request.processing_request_id)
+        return SimpleNamespace(owners=(), assignments=(), ambiguous_records=())
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        capture_owner_request,
+    )
+
+    for index, drift_lookup in enumerate(
+        (
+            _DriftLookup(delta_min=0.1),
+            _DriftLookup(delta_min=0.2),
+            _DriftLookup(delta_min=0.1, injection_order=2),
+            _DriftLookup(delta_min=0.1, source="batch_istd_trend"),
+        ),
+        start=1,
+    ):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / f"out-drift-{index}",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=FakeRawOpener(),
+            drift_lookup=drift_lookup,
+        )
+
+    baseline, delta_change, diagnostic_order_change, source_change = request_ids
+    assert delta_change != baseline
+    assert diagnostic_order_change == baseline
+    assert source_change != baseline
+
+
+def test_pipeline_freezes_one_drift_snapshot_for_request_and_grouping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "Sample_A.raw").write_bytes(b"stable acquisition")
+    drift_lookup = _StatefulDriftLookup()
+    captured: dict[str, object] = {}
+
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+
+    def capture_owner_request(_candidates, **kwargs):
+        context = kwargs["cross_sample_identity_context"]
+        captured["request_inputs"] = json.loads(
+            context.processing_owners.request.normalized_scientific_inputs_json
+        )
+        return SimpleNamespace(owners=(), assignments=(), ambiguous_records=())
+
+    def capture_cluster(_owners, **kwargs):
+        bound_lookup = kwargs["drift_lookup"]
+        captured["cluster_delta"] = bound_lookup.sample_delta_min("Sample_A")
+        captured["cluster_order"] = bound_lookup.injection_order("Sample_A")
+        return ()
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        capture_owner_request,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "cluster_sample_local_owners",
+        capture_cluster,
+    )
+
+    pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out-stateful-drift",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        raw_opener=FakeRawOpener(),
+        drift_lookup=drift_lookup,
+    )
+
+    request_drift = captured["request_inputs"]["drift_prior_inputs"]
+    assert request_drift["sample_inputs"] == [
+        {
+            "sample_stem": "Sample_A",
+            "rt_drift_delta_min": 0.1,
+        }
+    ]
+    assert captured["cluster_delta"] == 0.1
+    assert captured["cluster_order"] == 1
+    assert drift_lookup.delta_calls == 1
+    assert drift_lookup.order_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "delta", "order", "message"),
+    (
+        ("unknown", 0.1, 1, "source"),
+        ("targeted_istd_trend", True, 1, "delta"),
+        ("targeted_istd_trend", "0.1", 1, "delta"),
+        ("targeted_istd_trend", float("nan"), 1, "delta"),
+        ("targeted_istd_trend", float("inf"), 1, "delta"),
+        ("targeted_istd_trend", 0.1, True, "injection order"),
+        ("targeted_istd_trend", 0.1, "1", "injection order"),
+        ("targeted_istd_trend", 0.1, 0, "injection order"),
+    ),
+)
+def test_pipeline_rejects_invalid_drift_snapshot_inputs(
+    tmp_path: Path,
+    source: object,
+    delta: object,
+    order: object,
+    message: str,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+
+    with pytest.raises(ValueError, match=message):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out-invalid-drift",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=FakeRawOpener(),
+            drift_lookup=_InvalidDriftLookup(
+                source=source,
+                delta=delta,
+                order=order,
+            ),
+        )
+
+
+def test_pipeline_rejects_forged_targeted_istd_anchor_subclass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    drift_lookup = _DriftLookup()
+    drift_lookup.istd_identity_anchor = _ForgedTargetedIstdIdentityAnchor(
+        target_snapshot=object(),
+        observed_labels=(),
+    )
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+
+    with pytest.raises(TypeError, match="owner-minted"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out-forged-anchor",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=FakeRawOpener(),
+            drift_lookup=drift_lookup,
+        )
+
+
 def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     tmp_path: Path,
     monkeypatch,
@@ -1387,19 +1649,73 @@ def test_run_alignment_passes_drift_lookup_to_owner_clustering(
         drift_lookup=drift_lookup,
     )
 
-    assert calls["drift_lookup"] is drift_lookup
+    assert calls["drift_lookup"] is not drift_lookup
+    assert calls["drift_lookup"].source == "targeted_istd_trend"
+    assert calls["drift_lookup"].sample_delta_min("Sample_A") == 0.1
+    assert calls["drift_lookup"].injection_order("Sample_A") == 1
     assert calls["injection_order"] is None
     assert calls["edge_evidence_sink"] == []
 
 
 class _DriftLookup:
-    source = "targeted_istd_trend"
+    def __init__(
+        self,
+        *,
+        delta_min: float = 0.1,
+        injection_order: int = 1,
+        source: str = "targeted_istd_trend",
+    ) -> None:
+        self._delta_min = delta_min
+        self._injection_order = injection_order
+        self.source = source
 
     def sample_delta_min(self, sample_stem: str) -> float | None:
-        return {"Sample_A": 0.1}.get(sample_stem)
+        return self._delta_min if sample_stem == "Sample_A" else None
 
     def injection_order(self, sample_stem: str) -> int | None:
-        return {"Sample_A": 1}.get(sample_stem)
+        return self._injection_order if sample_stem == "Sample_A" else None
+
+
+class _StatefulDriftLookup:
+    source = "targeted_istd_trend"
+
+    def __init__(self) -> None:
+        self.delta_calls = 0
+        self.order_calls = 0
+
+    def sample_delta_min(self, sample_stem: str) -> float | None:
+        if sample_stem != "Sample_A":
+            return None
+        self.delta_calls += 1
+        return self.delta_calls / 10.0
+
+    def injection_order(self, sample_stem: str) -> int | None:
+        if sample_stem != "Sample_A":
+            return None
+        self.order_calls += 1
+        return self.order_calls
+
+
+class _InvalidDriftLookup:
+    def __init__(self, *, source: object, delta: object, order: object) -> None:
+        self.source = source
+        self._delta = delta
+        self._order = order
+
+    def sample_delta_min(self, _sample_stem: str) -> object:
+        return self._delta
+
+    def injection_order(self, _sample_stem: str) -> object:
+        return self._order
+
+
+class _ForgedTargetedIstdIdentityAnchor(TargetedIstdIdentityAnchor):
+    def __post_init__(self) -> None:
+        pass
+
+    @property
+    def target_config_identity(self) -> str:
+        return "forged-target-config"
 
 
 def _write_owner_closed_batch(

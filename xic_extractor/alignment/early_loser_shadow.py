@@ -889,7 +889,9 @@ def _canonical_sha256(value: object) -> str:
 def _source_owner_feature_payload(feature: OwnerAlignedFeature) -> dict[str, object]:
     payload = asdict(feature)
     anchor = feature.targeted_istd_anchor
-    if isinstance(anchor, TargetedIstdIdentityAnchor):
+    if anchor is not None and type(anchor) is not TargetedIstdIdentityAnchor:
+        raise TypeError("early-loser ISTD anchor must be owner-minted")
+    if anchor is not None:
         payload["targeted_istd_anchor"] = targeted_istd_identity_anchor_payload(
             anchor
         )

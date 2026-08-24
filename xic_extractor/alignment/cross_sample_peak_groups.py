@@ -814,7 +814,7 @@ class CrossSamplePreConsolidationEdgeFacts:
                 "pre consolidation neutral-loss tag is required"
             )
         if any(
-            anchor is not None and not isinstance(anchor, TargetedIstdIdentityAnchor)
+            anchor is not None and type(anchor) is not TargetedIstdIdentityAnchor
             for anchor in (
                 self.left_targeted_istd_anchor,
                 self.right_targeted_istd_anchor,
@@ -2022,8 +2022,13 @@ def construct_cross_sample_peak_group_hypotheses(
         processing_request_id=processing_request_id,
     )
     targeted_istd_anchor = getattr(drift_lookup, "istd_identity_anchor", None)
-    if not isinstance(targeted_istd_anchor, TargetedIstdIdentityAnchor):
-        targeted_istd_anchor = None
+    if (
+        targeted_istd_anchor is not None
+        and type(targeted_istd_anchor) is not TargetedIstdIdentityAnchor
+    ):
+        raise CrossSampleContractError(
+            "targeted ISTD anchor must be owner-minted"
+        )
     clean = tuple(owner for owner in owners if not owner.identity_conflict)
     conflict_hypotheses = tuple(
         _hypothesis_from_owner_group(
@@ -2098,6 +2103,7 @@ def construct_cross_sample_peak_group_hypotheses(
             injection_order=injection_order,
             config=config,
             drift_lookup=drift_lookup,
+            targeted_istd_anchor=targeted_istd_anchor,
             edge_evidence_sink=edge_evidence_sink,
             edge_cache=edge_cache,
             edge_evaluator=edge_evaluator,
@@ -2564,6 +2570,7 @@ def _bind_targeted_istd_trajectory_provenance(
     injection_order: Mapping[str, int] | None,
     config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None,
+    targeted_istd_anchor: TargetedIstdIdentityAnchor | None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None,
     edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
     edge_evaluator: OwnerEdgeEvaluator,
@@ -2574,8 +2581,8 @@ def _bind_targeted_istd_trajectory_provenance(
 ]:
     """Bind typed ISTD provenance and reconcile bounded anchor trajectories."""
 
-    anchor = getattr(drift_lookup, "istd_identity_anchor", None)
-    if injection_order is None or not isinstance(anchor, TargetedIstdIdentityAnchor):
+    anchor = targeted_istd_anchor
+    if injection_order is None or anchor is None:
         return groups, frozenset(), frozenset()
 
     passthrough: list[tuple[SampleLocalMS1Owner, ...]] = []

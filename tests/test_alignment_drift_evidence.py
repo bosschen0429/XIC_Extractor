@@ -9,12 +9,29 @@ from xic_extractor.alignment.drift_evidence import (
     LocalFeatureLandmarkEvidence,
     LocalTrajectoryEvidenceLookup,
     SampleDriftEvidence,
+    TargetedIstdIdentityAnchor,
     assess_local_trajectory,
     build_targeted_istd_identity_anchor,
     read_targeted_istd_drift_evidence,
+    targeted_istd_identity_anchor_payload,
 )
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
+
+
+class _ForgedTargetedIstdIdentityAnchor(TargetedIstdIdentityAnchor):
+    def __post_init__(self) -> None:
+        pass
+
+
+def test_targeted_istd_payload_rejects_forged_anchor_subclass() -> None:
+    forged = _ForgedTargetedIstdIdentityAnchor(
+        target_snapshot=object(),  # type: ignore[arg-type]
+        observed_labels=(),
+    )
+
+    with pytest.raises(TypeError, match="owner-minted"):
+        targeted_istd_identity_anchor_payload(forged)
 
 
 def test_lookup_returns_median_sample_delta_and_injection_order() -> None:

@@ -16,6 +16,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
+    TargetedIstdIdentityAnchor,
     build_targeted_istd_identity_anchor,
 )
 from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
@@ -37,6 +38,27 @@ from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
     typed_identity_digest,
 )
+
+
+class _ForgedTargetedIstdIdentityAnchor(TargetedIstdIdentityAnchor):
+    def __post_init__(self) -> None:
+        pass
+
+
+def test_cross_sample_rejects_forged_targeted_istd_anchor_subclass() -> None:
+    forged = _ForgedTargetedIstdIdentityAnchor(
+        target_snapshot=object(),  # type: ignore[arg-type]
+        observed_labels=(),
+    )
+    drift_lookup = _DriftLookup(deltas={}, orders={})
+    drift_lookup.istd_identity_anchor = forged
+
+    with pytest.raises(CrossSampleContractError, match="owner-minted"):
+        peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+            (_owner("sample-a", "forged-anchor"),),
+            config=AlignmentConfig(),
+            drift_lookup=drift_lookup,
+        )
 
 
 def test_owner_clustering_allows_plausible_rt_drift_with_complete_link() -> None:
@@ -1455,6 +1477,7 @@ def test_targeted_istd_reconciliation_uses_complete_union_for_continuity() -> No
             },
             config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
             drift_lookup=drift_lookup,
+            targeted_istd_anchor=drift_lookup.istd_identity_anchor,
             edge_evidence_sink=None,
             edge_cache={},
             edge_evaluator=evaluate_owner_edge,
@@ -1514,6 +1537,7 @@ def test_targeted_istd_reconciliation_excludes_unconnected_hard_compatible_group
             injection_order={"sample-1": 1, "sample-2": 2, "sample-3": 3},
             config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
             drift_lookup=drift_lookup,
+            targeted_istd_anchor=drift_lookup.istd_identity_anchor,
             edge_evidence_sink=None,
             edge_cache={},
             edge_evaluator=evaluate_owner_edge,

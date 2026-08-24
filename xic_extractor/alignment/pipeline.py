@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from xic_extractor.alignment.artifact_write_receipts import (
@@ -37,7 +39,9 @@ from xic_extractor.alignment.early_loser_shadow import (
     compare_early_loser_shadow_with_final_authority,
 )
 from xic_extractor.alignment.edge_scoring import (
+    SUPPORTED_DRIFT_PRIOR_SOURCES,
     DriftLookupProtocol,
+    DriftPriorSource,
     OwnerEdgeEvidence,
 )
 from xic_extractor.alignment.identity_coherence.adapter import (
@@ -213,6 +217,65 @@ _ALIGNMENT_OWNER_CANDIDATE_INPUT_FIELDS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _BoundAlignmentDriftLookup:
+    """Immutable decision snapshot shared by request minting and grouping."""
+
+    source: DriftPriorSource
+    sample_deltas: Mapping[str, float | None]
+    injection_orders: Mapping[str, int | None]
+    istd_identity_anchor: TargetedIstdIdentityAnchor | None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.source, str)
+            or self.source not in SUPPORTED_DRIFT_PRIOR_SOURCES
+        ):
+            raise ValueError("drift prior source is not supported")
+        if (
+            self.istd_identity_anchor is not None
+            and type(self.istd_identity_anchor) is not TargetedIstdIdentityAnchor
+        ):
+            raise TypeError("drift prior anchor must be owner-minted")
+        validated_deltas: dict[str, float | None] = {}
+        for sample_stem, value in self.sample_deltas.items():
+            if value is None:
+                validated_deltas[sample_stem] = None
+                continue
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                raise ValueError("drift prior delta must be finite numeric or None")
+            numeric = float(value)
+            if not math.isfinite(numeric):
+                raise ValueError("drift prior delta must be finite numeric or None")
+            validated_deltas[sample_stem] = numeric
+        validated_orders: dict[str, int | None] = {}
+        for sample_stem, value in self.injection_orders.items():
+            if value is None:
+                validated_orders[sample_stem] = None
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(
+                    "drift prior injection order must be a positive integer or None"
+                )
+            validated_orders[sample_stem] = value
+        object.__setattr__(
+            self,
+            "sample_deltas",
+            MappingProxyType(validated_deltas),
+        )
+        object.__setattr__(
+            self,
+            "injection_orders",
+            MappingProxyType(validated_orders),
+        )
+
+    def sample_delta_min(self, sample_stem: str) -> float | None:
+        return self.sample_deltas.get(sample_stem)
+
+    def injection_order(self, sample_stem: str) -> int | None:
+        return self.injection_orders.get(sample_stem)
+
+
 def _typed_targeted_istd_anchor(
     drift_lookup: DriftLookupProtocol | None,
 ) -> TargetedIstdIdentityAnchor | None:
@@ -224,7 +287,11 @@ def _typed_targeted_istd_anchor(
     """
 
     candidate = getattr(drift_lookup, "istd_identity_anchor", None)
-    return candidate if isinstance(candidate, TargetedIstdIdentityAnchor) else None
+    if candidate is None:
+        return None
+    if type(candidate) is not TargetedIstdIdentityAnchor:
+        raise TypeError("targeted ISTD anchor must be owner-minted")
+    return candidate
 
 
 def _raw_owner_build_candidates(
@@ -440,6 +507,9 @@ def run_alignment(
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     targeted_istd_anchor = _typed_targeted_istd_anchor(drift_lookup)
+    drift_prior_source: DriftPriorSource = (
+        drift_lookup.source if drift_lookup is not None else "none"
+    )
     recorder.record(
         "alignment.run_config",
         elapsed_sec=0.0,
@@ -460,9 +530,7 @@ def run_alignment(
             "require_discovery_owner_closure": require_discovery_owner_closure,
             "emit_provisional_matrix": emit_provisional_matrix,
             "emit_early_loser_shadow": emit_early_loser_shadow,
-            "drift_prior_source": (
-                drift_lookup.source if drift_lookup is not None else "none"
-            ),
+            "drift_prior_source": drift_prior_source,
             "targeted_istd_anchor_identity": getattr(
                 targeted_istd_anchor,
                 "target_config_identity",
@@ -480,6 +548,22 @@ def run_alignment(
             discovery_batch_index,
             require_owner_closure=require_discovery_owner_closure,
         )
+    bound_drift_lookup = (
+        _BoundAlignmentDriftLookup(
+            source=drift_prior_source,
+            sample_deltas={
+                sample_stem: drift_lookup.sample_delta_min(sample_stem)
+                for sample_stem in batch.sample_order
+            },
+            injection_orders={
+                sample_stem: drift_lookup.injection_order(sample_stem)
+                for sample_stem in batch.sample_order
+            },
+            istd_identity_anchor=targeted_istd_anchor,
+        )
+        if drift_lookup is not None
+        else None
+    )
     cross_sample_acquisition_sources = (
         _expected_acquisition_sources(batch)
         if all(
@@ -625,11 +709,35 @@ def run_alignment(
                         for sample_stem, raw_path in raw_paths.items()
                     }
                 stage.metrics["raw_count"] = len(raw_sources)
+        injection_order: dict[str, int] | None = None
+        injection_order_source_schema: str | None = None
+        if sample_column_injection_order is not None:
+            injection_order, injection_order_source_schema = (
+                _read_sample_column_injection_order(sample_column_injection_order)
+            )
+            recorder.record(
+                "alignment.sample_column_injection_order",
+                elapsed_sec=0.0,
+                metrics={
+                    "ordered_samples": sum(
+                        1 for sample in batch.sample_order if sample in injection_order
+                    ),
+                    "unordered_samples": sum(
+                        1
+                        for sample in batch.sample_order
+                        if sample not in injection_order
+                    ),
+                    "source": str(sample_column_injection_order),
+                    "source_schema": injection_order_source_schema,
+                },
+            )
         cross_sample_identity_context = _alignment_cross_sample_identity_context(
             batch=batch,
             candidates=candidates,
             alignment_config=alignment_config,
             peak_config=peak_config,
+            injection_order=injection_order,
+            drift_lookup=bound_drift_lookup,
             expected_acquisition_sources=cross_sample_acquisition_sources,
             discovery_physical_bindings=discovery_physical_bindings,
         )
@@ -700,31 +808,10 @@ def run_alignment(
                     cross_sample_identity_context=cross_sample_identity_context,
                 )
                 record_timed_raw_sources(timed_raw_sources_, recorder=recorder)
-        injection_order: dict[str, int] | None = None
-        injection_order_source_schema: str | None = None
-        if sample_column_injection_order is not None:
-            injection_order, injection_order_source_schema = (
-                _read_sample_column_injection_order(sample_column_injection_order)
-            )
-            recorder.record(
-                "alignment.sample_column_injection_order",
-                elapsed_sec=0.0,
-                metrics={
-                    "ordered_samples": sum(
-                        1 for sample in batch.sample_order if sample in injection_order
-                    ),
-                    "unordered_samples": sum(
-                        1
-                        for sample in batch.sample_order
-                        if sample not in injection_order
-                    ),
-                    "source": str(sample_column_injection_order),
-                    "source_schema": injection_order_source_schema,
-                },
-            )
         edge_evidence: list[OwnerEdgeEvidence] | None = (
             []
-            if outputs.edge_evidence_tsv is not None or drift_lookup is not None
+            if outputs.edge_evidence_tsv is not None
+            or bound_drift_lookup is not None
             else None
         )
         with recorder.stage("alignment.cluster_owners"):
@@ -741,7 +828,7 @@ def run_alignment(
                     config=alignment_config,
                     sample_universe=frozenset(batch.sample_order),
                     injection_order=injection_order,
-                    drift_lookup=drift_lookup,
+                    drift_lookup=bound_drift_lookup,
                     edge_evidence_sink=edge_evidence,
                 )
             owner_features = (
@@ -1250,6 +1337,8 @@ def _alignment_cross_sample_identity_context(
     candidates: Sequence[DiscoveryCandidate],
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
+    injection_order: Mapping[str, int] | None,
+    drift_lookup: DriftLookupProtocol | None,
     expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
     discovery_physical_bindings: Sequence[DiscoveryCandidatePhysicalBinding] | None,
 ) -> AlignmentCrossSampleIdentityContext:
@@ -1332,6 +1421,24 @@ def _alignment_cross_sample_identity_context(
     physical_binding_inputs.sort(
         key=lambda item: (item["candidate_id"], item["selection_subject_id"])
     )
+    targeted_istd_anchor = _typed_targeted_istd_anchor(drift_lookup)
+    drift_prior_inputs = {
+        "source": drift_lookup.source if drift_lookup is not None else "none",
+        "sample_inputs": [
+            {
+                "sample_stem": sample_stem,
+                "rt_drift_delta_min": drift_lookup.sample_delta_min(sample_stem),
+            }
+            for sample_stem in batch.sample_order
+        ]
+        if drift_lookup is not None
+        else [],
+        "targeted_istd_anchor_identity": (
+            targeted_istd_anchor.target_config_identity
+            if targeted_istd_anchor is not None
+            else None
+        ),
+    }
     request = build_processing_request_identity(
         acquisition_sources=sources,
         acquisition_bindings=bindings,
@@ -1341,6 +1448,12 @@ def _alignment_cross_sample_identity_context(
         scientific_inputs={
             "owner_candidate_inputs": list(owner_candidate_inputs),
             "physical_binding_inputs": physical_binding_inputs,
+            "sample_injection_order": {
+                sample_stem: injection_order[sample_stem]
+                for sample_stem in batch.sample_order
+                if injection_order is not None and sample_stem in injection_order
+            },
+            "drift_prior_inputs": drift_prior_inputs,
             "alignment_config": _alignment_identity_json(asdict(alignment_config)),
             "owner_selection_peak_config": {
                 "schema_version": "alignment-owner-selection-config-v1",

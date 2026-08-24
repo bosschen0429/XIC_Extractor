@@ -203,7 +203,7 @@ def targeted_istd_identity_anchor_payload(
 ) -> dict[str, object]:
     """Project owner semantics without exposing its private mint capability."""
 
-    if not isinstance(anchor, TargetedIstdIdentityAnchor):
+    if type(anchor) is not TargetedIstdIdentityAnchor:
         raise TypeError("targeted ISTD payload requires an owner-minted anchor")
     return {
         "target_snapshot": target_list_snapshot_payload(anchor.target_snapshot),

@@ -6,12 +6,14 @@ from dataclasses import replace
 
 import pytest
 
+import xic_extractor.alignment.early_loser_shadow as early_loser_shadow_module
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
     mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import (
+    TargetedIstdIdentityAnchor,
     build_targeted_istd_identity_anchor,
 )
 from xic_extractor.alignment.early_loser_shadow import (
@@ -42,6 +44,25 @@ _TEST_PROCESSING_REQUEST_ID = typed_identity_digest(
     "xic.processing-request.v1:",
     canonical_identity_basis_bytes({"schema_version": "early-loser-shadow-test"}),
 )
+
+
+class _ForgedTargetedIstdIdentityAnchor(TargetedIstdIdentityAnchor):
+    def __post_init__(self) -> None:
+        pass
+
+
+def test_shadow_hash_rejects_forged_targeted_istd_anchor_subclass() -> None:
+    forged = _ForgedTargetedIstdIdentityAnchor(
+        target_snapshot=object(),  # type: ignore[arg-type]
+        observed_labels=(),
+    )
+    feature = replace(
+        _feature("FORGED-ISTD", ("sample-a",), mz=500.0),
+        targeted_istd_anchor=forged,
+    )
+
+    with pytest.raises(TypeError, match="owner-minted"):
+        early_loser_shadow_module._source_owner_feature_payload(feature)
 
 
 def test_shadow_accepts_canonical_pre_backfill_successor_lineage() -> None:
