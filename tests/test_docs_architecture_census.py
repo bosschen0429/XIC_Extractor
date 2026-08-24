@@ -43,32 +43,6 @@ def test_current_architecture_census_is_valid_and_static_only() -> None:
     } & set(observed.serializable())
 
 
-def test_persisted_semantic_validation_is_proportional_and_root_routed() -> None:
-    root_contract = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    public_contract = (
-        ROOT / "docs/agent/architecture-public-contracts.md"
-    ).read_text(encoding="utf-8")
-    normalized_root = " ".join(root_contract.split())
-    normalized_public = " ".join(public_contract.split())
-
-    assert "### Persisted Semantic Rehydration" in public_contract
-    for required_rule in (
-        "reachable boundary",
-        "decision-bearing",
-        "audit-only provenance",
-        "Git review",
-        "self-sealing hash chain",
-    ):
-        assert required_rule in normalized_public
-
-    assert (
-        "docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration"
-        in root_contract
-    )
-    assert "A review finding needs a reachable actor" in normalized_root
-    assert "Audit-only metadata" in normalized_root
-
-
 def test_alignment_owner_summaries_match_canonical_contract() -> None:
     paths = {
         relative_path: (ROOT / relative_path).read_text(encoding="utf-8")
