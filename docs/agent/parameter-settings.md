@@ -1,14 +1,9 @@
 # Agent Parameter Settings
 
-本檔只記錄 XIC Extractor 常用、穩定、跨任務會重複踩到的本機設定。任務特定
-artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、plot/report，
-不放在這裡；請查當前 spec、plan、validation note 或本輪 `output/` index。
-跨 worktree 會重複使用的 accepted validation inputs 例外：必須放在
-`local_validation_artifacts/`，不能依賴某個 `.worktrees/<branch>/output/`。
-
-這份文件是 operational memory，不是一次性備忘錄。當某個 RAW / validation
-命令實際跑通，或某個啟動方式反覆失敗，應把穩定參數形狀與教訓更新到本檔。
-不要只把教訓留在單次 conversation 或 phase note。
+本檔只擁有 XIC Extractor 穩定的本機 runner、env、preflight 與 RAW launch
+contract。任務 output、benchmark 結論與一次性 artifact 留在 active issue、
+validation note 或 `output/`；跨 worktree 的 accepted inputs 放在 ignored
+`local_validation_artifacts/`，其 current locator 由 diagnostic ledger 擁有。
 
 ## Read Routes
 
@@ -28,71 +23,21 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
 | 85RAW launch 或 profiling | [Alignment And Handoff](#alignment-and-handoff) 與 [85RAW Command Contract](#85raw-command-contract) |
 | sandbox、approval、shell 或 launcher failure | [Preflight](#preflight) 與 [Syntax Anti-patterns](#syntax-anti-patterns) |
 
-跨 worktree 會重複遇到的診斷結論放在
-`docs/diagnostic-ledger.md`。在重跑昂貴 RAW validation 或把已知 target
-重新標成 blocker 前，先讀 ledger；只有 current code 或 artifact freshness
-足以改變結論時才重跑。
-
-維護規則：
-
-- 只固定跨任務會重複使用的 runner、資料根目錄、DLL 目錄、validation tier、
-  command shape、preflight check、以及反覆踩雷的 anti-pattern。
-- 任務特定 output path、phase-specific discovery index、一次性 benchmark 結論
-  留在 validation note；本檔只引用該 note 作為 evidence。
-- Current `discovery_batch_index_v2` producers write `candidate_csv` and
-  `review_csv` relative to the index. Copy the complete Discovery directory to
-  `local_validation_artifacts/...` without rewriting those locators. Historical
-  indexes that contain worktree-absolute paths require a one-time migration to
-  index-relative locators before reuse.
-- 成功 run 要記錄「可重用的參數形狀」與 evidence note；失敗 run 要記錄
-  「不可再用的啟動方式」與替代做法。
-- 若後續 P-spec / C-spec 改變正式驗收形狀，先更新本檔再開長時間 RAW run。
+重跑昂貴 validation 前先讀 `docs/diagnostic-ledger.md`；只有 current code、
+input 或 artifact freshness 足以改變既有結論時才重跑。
 
 ## Python Runner
 
-本機 operator runtime 固定為 Windows Native；每個 worktree 的唯一 project
-runner 是該 worktree 自己的 `.venv\Scripts\python.exe`：
+本機 operator runtime 固定為 Windows Native。每個 worktree 的 project tests、
+scripts 與 RAW commands 都使用該 checkout 的
+`.venv\Scripts\python.exe`（Python `>=3.11,<3.14`）；bootstrap 驗證 locked dev
+dependencies、editable install、`pytest` 與 `pythonnet`。
 
-| Surface | Runner | 契約 |
-| --- | --- | --- |
-| local dev/test/RAW | `.venv\Scripts\python.exe` | Python `>=3.11,<3.14`；locked dev dependencies、`pytest` 與 `pythonnet` 由 bootstrap 驗證 |
-| hosted primary CI | workflow-provided Python 3.12 | clean-checkout default gate |
-| hosted compatibility CI | workflow-provided Python 3.11 | lower-bound compatibility gate |
-| `.venv/bin/python` | WSL 內、已有 task-specific CoreCLR/Thermo net8 canary 的 bounded RAW run | Package 3A canary 使用 Python 3.12.3、`PYTHONNET_RUNTIME=coreclr` 與官方 Thermo net8 `8.0.37` assemblies 通過；不是未經 canary 的通用替代 runner |
-
-Bare `python` 只可作為 bootstrap driver 或檢查 launcher identity；不得用來跑
-project tests、scripts 或 RAW。即使 bare launcher 恰好有 pytest，也不代表它
-符合 locked environment、editable install 或 pythonnet 契約。
-
-規則：
-
-- 會讀 `.raw`、呼叫 Thermo DLL、或 import `xic_extractor.raw_reader` 的命令，
-  預設用 `.venv\Scripts\python.exe`。WSL 只有在 task-specific packet 已封存
-  current `.venv/bin/python`、`PYTHONNET_RUNTIME=coreclr`、官方 Thermo net8 DLL
-  identity 與同 lane RAW canary 時才可使用；Package 3A 的 bounded canary owner
-  是 `output/package3a_trace_canary_20260727/README.md`。
-- no-RAW pytest、repo scripts 與 RAW validation 都使用 worktree `.venv`。
-- worktree 尚未建立 `.venv` 或 bootstrap check 失敗時，先執行本頁的
-  `scripts/bootstrap_worktree.py` bootstrap；不得改用 bare `python` 跑 project
-  tests，也不得借用其他 worktree 的 `.venv`。
-- 在 worktree 內跑正式 85RAW 時，`scripts.run_alignment
-  --expected-sample-count 85` 會要求 Python executable 位於該 worktree 的
-  `.venv` 底下。不要用 root repo 的絕對路徑
-  `"${env:XIC_REPO_ROOT}\.venv\Scripts\python.exe"` 直接啟動
-  worktree 的 85RAW；這會被 canonical guard 拒絕。
-- 每個 worktree 必須有自己的 `.venv`；只有 uv package cache
-  (`.uv-cache`) 在 linked worktrees 間共用。不要建立或保留指向 root repo
-  `.venv` 的 junction，否則 editable install 與 bootstrap stamp 會指向錯誤
-  checkout。
-- 舊 worktree 若仍使用 shared-venv junction，先確認它確實是 junction，再只
-  移除 junction 本身，最後執行本頁的 bootstrap：
-
-```powershell
-$venv = Get-Item .venv -Force
-if ($venv.LinkType -ne 'Junction') { throw '.venv is not a junction; stop and inspect it' }
-Remove-Item .venv
-uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py
-```
+Bare `python` 只作 bootstrap driver 或 launcher identity probe。每個 worktree
+擁有自己的 `.venv`，linked worktrees 只共用 `.uv-cache`；缺少環境或 bootstrap
+check 失敗時走 [Preflight](#preflight)，不借用 root repo 或另一個 worktree 的
+interpreter。85RAW runner也會拒絕不在目前 worktree `.venv` 下的 executable。
+WSL 是 task-specific canary exception，其 runtime packet 由全域 Runtime KB 擁有。
 
 ## Stable Local Paths
 
@@ -119,9 +64,12 @@ Get-Content .env.xic-local |
 | Thermo RAW validation subset | `$env:XIC_RAW_VALIDATION_DIR` | Historical 8RAW validation subset。 |
 | Thermo RawFileReader DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` | RAW commands 必須使用這個 DLL dir。 |
 | manual 2RAW truth data | `$env:XIC_MANUAL_2RAW_ROOT` | Resolver / manual-truth calibration。 |
-| accepted 8RAW discovery input（v2） | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` | 目前唯一可用的 8RAW accepted input。`discovery_batch_index_v2`、index-relative locators、每個 sample 帶 `discovery_physical_facts.v1.json`。2026-08-18 驗證：8RAW alignment 輸出與 `output/20260818-compact-backfill-8raw-final-c9d26f76/` 五個 artifact 逐 byte 相同。 |
-| retired：accepted P8b 8RAW / 85RAW discovery input | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/discovery_batch_index.csv` | **v1，`scripts.run_alignment` 直接拒絕**：`discovery_batch_index_v2 owner closure is required`（`--preflight-only` exit 2）。兩者皆為絕對 locator、0 個 physical-facts sidecar。85RAW 目前**沒有**可用的 v2 accepted input。 |
-| targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx` | SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7`；`targeted_gt_alignment_audit.py` 的 8RAW default positive checkpoint workbook；不要用 85-sample workbook 對 8RAW alignment，否則會產生 off-scope `MISS`。 |
+
+Reusable accepted-input paths and hashes live in
+[`docs/diagnostic-ledger.md#stable-inputs`](../diagnostic-ledger.md#stable-inputs).
+They are ignored local artifacts, so verify the named path and run the owning
+CLI with `--preflight-only` before use. Current Alignment requires a v2 index
+with owner closure; retired v1 inputs are not a fallback.
 
 標準 DNA dR Alignment run shape 必須成對提供 `--sample-info` 與
 `--targeted-istd-workbook`。兩者一起建立 targeted ISTD drift prior，讓
@@ -131,29 +79,6 @@ Alignment 使用既有 injection-order／RT evidence path；CLI 仍會拒絕只�
 `--sample-column-injection-order` 則是獨立的 optional input；它不只是重新排欄，
 也會參與 Alignment 的 injection-trajectory rescue，可能改變 family partition
 與 Matrix content。
-
-`local_validation_artifacts/` 是 gitignored，所以新 worktree 不會自動帶到
-accepted input。開跑前先 `Test-Path`；缺了就從既有 v2 Discovery 目錄複製，
-不要退回 `accepted_p8b`。
-
-辨識一份 index 是否可用（三項都要成立）：
-
-- 第一欄 `schema_version` 是 `discovery_batch_index_v2`；
-- `candidate_csv` / `review_csv` 是 index-relative，不是絕對路徑；
-- 每個 sample 目錄有 `discovery_physical_facts.v1.json`。
-
-`require_owner_closure=True` 硬編碼在 `scripts/run_alignment.py`，**沒有 CLI
-開關**可以繞過 v1 index。要新建一份 accepted input，就把來源 Discovery 目錄的
-`discovery_batch_index.csv` 與每個 sample 的三個檔案（`discovery_candidates.csv`、
-`discovery_review.csv`、`discovery_physical_facts.v1.json`）整份複製到
-`local_validation_artifacts/discovery/<name>/`，不要改寫 locators，然後用
-`--preflight-only` 確認 exit 0。當前 8RAW accepted input 即由
-`output/8raw-full-batch-continuity-final-gui-20260817/result/`（30,748 candidates）
-這樣複製而來。
-
-實驗性 mzML 路徑不列為常用 setting。即使本機有 mzML，production premise 仍是
-直接讀 `.raw`，不轉檔。只有使用者明確要求 external-reference audit 時才查
-mzML 相關路徑。
 
 ## Preflight
 
@@ -327,45 +252,11 @@ Canonical launch shape:
 
 Run the same command with `--preflight-only` before the first RAW launch.
 
-`--timing-live-output` is the heartbeat artifact for timeout-prone 85RAW runs.
-The versioned `timing.live.v2` artifact contains bounded `recent_records` and
-`recent_measurement_observations`, plus total/dropped counters and the latest
-stage/sample heartbeat. It does not expose a truncated legacy `records` field or
-rewrite the complete timing history for every event. `timing.json` retains the
-complete final history. If the process is killed by an external timeout, use the
-live file to identify the last completed stage/sample before rerunning anything.
-Each live update uses a temporary sibling and atomic replacement, so a failed
-requested update raises without corrupting the last-good heartbeat artifact.
-
-W0 diagnostic timing is additive and remains `diagnostic_only`. The final timing
-payload records `measurement_contract` (cache state, aggregation, task-specific
-repetition/noise design, and programme budgets) and mechanical
-`measurement_observations`. A disabled recorder performs no implicit heartbeat,
-observation, contract, or live-sidecar work. Parallel Discovery reports partial
-pickle payload-size estimates only for successfully submitted requests and
-observed results; executor framing and confirmed transport bytes remain outside
-the current owner. Other workflow IPC and RSS without a reliable owner remain
-`unavailable` or `partial` with a reason, never measured zero. Nested spans are
-reported as inclusive nested locality separately from the exclusive wall
-attribution that counts every wall span once. Measurement summaries execute the
-declared `sum`, `max`, or `last` aggregation and reject mixed unit/aggregation
-contracts for one metric scope. Instrumented fingerprint attempts emit exactly
-one measured or failed observation; failed stable-file checks retain bytes read
-when known.
-The runner records
-cache state as `uncontrolled_os_cache_no_eviction`: it never claims cold-cache
-evidence because the validation contract does not flush the host OS cache. Paired
-repetitions should reverse baseline/candidate order when practical. The current programme
-decision uses a first 85RAW milestone of 2700 seconds with at least 25% paired
-comparable improvement, followed by 1800 seconds; these are not XIC-wide rules.
-
-Do not launch 85RAW from the Codex shell with `Start-Process` / background mode
-and then let the shell command return. In this environment, background launch
-attempts have repeatedly exited or been cleaned up without completing, sometimes
-with empty stdout/stderr. The verified 85RAW acceptance run used a foreground
-process with heartbeat sidecars. If background execution is required, it must be
-an explicitly user-approved external terminal / automation, and the heartbeat
-artifact must still be polled.
+`--timing-live-output` is the bounded heartbeat for timeout-prone runs;
+`timing.json` is the complete final history. After an interrupted run, inspect
+the live file for the last stage/sample before deciding whether to rerun.
+Measurement interpretation and comparability belong to
+`xic-performance-diagnosis`, not this launch contract.
 
 For micro-profiling, start with 8RAW or a scoped 85RAW diagnostic:
 
