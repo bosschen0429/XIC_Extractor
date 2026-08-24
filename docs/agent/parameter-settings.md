@@ -104,42 +104,18 @@ worktree 的 ignored `.venv`，也不要臨時逐套件安裝。
 如果本檔列出的 stable path 存在，就使用它。除非 `Test-Path` 失敗或使用者
 提供更新路徑，否則不要重新搜尋，也不要自行替換成 sibling directory。
 
-repo-local doctor 預設會執行 bounded runtime canaries：Windows runtime owner、
-worktree Python、bootstrap state、Git read 與 workspace write。它不讀 RAW：
+Repo-local doctor 驗證 runtime、worktree Python、bootstrap、Git 與 workspace
+write，但不讀 RAW。只有 command／sandbox／GitHub boundary 與下一步不明時才加
+需要的 probe；current flags 由 CLI help 擁有：
 
 ```powershell
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write --command "<command-to-check>"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --help
 ```
 
-任務確實需要 GitHub 時才加 `--probe-github`。如果目前 Codex runtime 已宣告
-sandbox network disabled，doctor 不會先執行一條必敗的 `git ls-remote`；它會直接
-回報 `github_network_approval_required`。如果 network 已啟用，canary 才會區分
-DNS、connection、auth/access failure：
-
-```powershell
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-github
-```
-
-Doctor 的 top-level status 直接決定下一步：
-
-| Status | 固定下一步 |
-| --- | --- |
-| `READY` | 在目前 sandbox 執行 |
-| `REWRITE_COMMAND` | 依 finding 改寫命令，不執行原形狀 |
-| `APPROVAL_REQUIRED` | 對同一個必要命令提出 bounded approval；不要先製造一次失敗 |
-| `ENVIRONMENT_REPAIR_REQUIRED` | 停止產品除錯，修復 named runtime layer 後再跑 doctor |
-| `HUMAN_DECISION_REQUIRED` | 等待 credentials、destructive action 或風險取捨的人工決定 |
-| `INCONCLUSIVE` | 只取得 finding 指定的下一個證據，不猜測 |
-
-只想分類命令、不做 runtime acceptance 時才加 `--command-only`。
-`--probe-git-write` 是 Git metadata write canary，不是一般 preflight。一般
-`git status` 已包含在 doctor；staging 前仍先核對 dirty scope。Repo 不定義 permission
-profile，也不覆寫 host sandbox。任何需要額外 filesystem、Git 或 network 權限的命令，
-都對同一個精確命令使用 **Approve for me**。
-
-```powershell
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --strict --command ".venv\Scripts\python.exe -m scripts.run_alignment --expected-sample-count 85 ..."
-```
+Follow the reported top-level status and exact next action. Product debugging
+starts only after the runtime result is `READY`; command rewrites, approvals,
+environment repair, human decisions, and inconclusive probes remain runtime
+outcomes rather than product findings.
 
 ## Validation Tiers
 
