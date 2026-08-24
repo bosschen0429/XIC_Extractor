@@ -168,6 +168,23 @@ and refreeze the issue before delivering it. A finding outside the finite
 universe routes to the issue that owns its reachable actor; passing review is
 not authority to absorb it.
 
+Before changing code for a review finding, attribute the failure against the
+frozen issue and current diff. Fix it in the current PR only when it violates a
+named acceptance/invariant inside the finite universe, or when the current diff
+introduces a reachable observable loss there. Route a reachable pre-existing
+gap outside that contract to its owning issue. Return a request for a new owner,
+public behavior, product choice, or acceptance rule to issue refreeze. Reject a
+finding that cannot name a reachable actor, input, decision, and observable
+loss. Use the earliest evidence-backed divergence from the frozen contract or
+base diff; do not treat the review comment itself as design authority.
+
+Review closeout is complete when every finding that belongs to this PR is fixed
+and verified on the reviewed head, while every other finding has an explicit
+route, refreeze, or evidence-based rejection. Record those dispositions in the
+existing PR review/receipt surface when they affect merge readiness; do not add
+a second finding ledger or keep expanding the diff until all adjacent gaps are
+gone.
+
 The implementation Issue template and PR template are projections of this
 section. Blank or programmatically created issues remain supported for maps,
 research, and exceptional shapes, but implementation issues must still carry
