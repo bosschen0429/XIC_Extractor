@@ -41,6 +41,5 @@ not widen or narrow the skill trigger.
   trigger when the CLI or persisted output is new or behaviorally changed,
   because the skill must bind the public contract and boundary projection. Do
   not trigger for wording-only help text or docs about an unchanged CLI; those
-  remain ordinary docs work. This follows the public-contract gate in
-  `docs/agent/subagent-routing.md#hard-triggers` without turning all CLI wording
-  into architecture work.
+  remain ordinary docs work. This follows the skill's public-contract trigger
+  without turning all CLI wording into architecture work.

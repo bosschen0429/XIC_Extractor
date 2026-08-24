@@ -1,4 +1,4 @@
-# Issue tracker: GitHub
+# Issue Tracker: GitHub
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 This file owns GitHub mechanics only. The implementation issue-to-PR shape and

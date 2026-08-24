@@ -20,7 +20,8 @@ for the active task unless a hard gate below says otherwise.
 - Shared Target/Untarget lifecycle, semantic owners, and public contracts:
   [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
   and [`architecture-contract.md`](docs/architecture-contract.md)
-- Issue-to-PR scope, execution, planning, review, and handoff mechanics:
+- Issue-to-PR scope, GitHub issue mechanics, execution, review, and handoff:
+  [`issue-tracker.md`](docs/agent/issue-tracker.md),
   [`execution-gates.md`](docs/agent/execution-gates.md),
   [`planning-workflows.md`](docs/agent/planning-workflows.md),
   [`communication-review.md`](docs/agent/communication-review.md), and
@@ -36,27 +37,10 @@ for the active task unless a hard gate below says otherwise.
   [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
 - Historical productization anchor lookup only:
   [`2026-06-15-productization-control-plane.md`](docs/superpowers/plans/2026-06-15-productization-control-plane.md)
-- Repo layout, agent system, engineering conventions, and opt-in XIC skills:
+- Repo layout, agent system, and opt-in XIC skills:
   [`project-layout.md`](docs/project-layout.md),
   [`codex-operating-system.md`](docs/agent/codex-operating-system.md),
-  `docs/engineering-skills/`, and [`.codex/skills`](.codex/skills)
-
-## Agent skills
-
-### Issue tracker
-
-Issues and PRDs are tracked in this repository's GitHub Issues. See
-`docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Use the five default Matt Pocock triage labels. See
-`docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Use the single-context domain documentation layout. See
-`docs/agents/domain.md`.
+  and [`.codex/skills`](.codex/skills)
 
 ## Hard Defaults
 

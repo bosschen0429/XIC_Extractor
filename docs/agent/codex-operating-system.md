@@ -37,10 +37,9 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 - Read-side productization status snapshots are ordinary ignored reports under
   `output/` or private Obsidian notes. They do not promote tiers; promote only
   durable public summaries to `docs/superpowers/productization/evidence/`.
-- `.codex/agents/*.toml`: currently empty by design. XIC review differences are
-  task lenses in `docs/agent/subagent-routing.md`; add a project-local agent only
-  for a verified capability boundary that global agents, skills, canonical
-  docs, and bounded task packets cannot provide.
+- `.codex/agents/*.toml`: currently empty by design. Add a project-local agent
+  only for a verified capability boundary that global agents, skills,
+  canonical docs, and bounded task packets cannot provide.
 - Automations: only for recurring workspace jobs or heartbeat follow-ups that
   would otherwise be forgotten; do not turn every checklist into an automation.
 

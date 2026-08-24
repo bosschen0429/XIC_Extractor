@@ -110,7 +110,7 @@ surface, material cost, or acceptance. Otherwise the issue remains
 Unresolved reporter or product input keeps the `needs-info` label. After the
 Current Packet passes this gate, remove `needs-info` and apply the repository's
 `ready-for-agent` state before production edits. The label meanings are owned by
-`docs/agents/triage-labels.md`.
+`docs/agent/triage-labels.md`.
 
 Review incident thresholds and corrective handling remain owned by the root
 review-class rule and the existing root-class closure workflow. Treat one
@@ -203,7 +203,7 @@ issue may still need more than one PR. Do not split one coherent behavior
 mechanically into model, serializer, tests, and docs PRs. A parent issue retains
 the overall outcome, global constraints, and final acceptance; each child issue
 owns one bounded slice and names its parent and real blockers. Wayfinding
-map/child mechanics remain owned by `docs/agents/issue-tracker.md`, while
+map/child mechanics remain owned by `docs/agent/issue-tracker.md`, while
 stacked delivery and final issue closure remain owned below.
 
 At merge closeout, ask whether the change creates or changes a durable claim,
@@ -351,9 +351,10 @@ a new source of evidence instead of another blind retry.
 
 ## Skills And Subagents
 
-- The global Codex Agent Router owns generic agent selection and dispatch.
-  `docs/agent/subagent-routing.md` adds only the XIC lenses, triggers, and
-  evidence boundaries that belong in task packets.
+- The global Codex Agent Router owns generic agent selection, dispatch, roles,
+  concurrency, and review orchestration. Task packets add only constraints from
+  the selected XIC owner or repo skill; this repo does not mirror global agent
+  roles or routing lenses.
 - Reusable workflows belong in global skills first. Repo-local `.codex/skills/`
   entries should exist only for XIC-specific checklists that cannot live cleanly
   in routing docs.

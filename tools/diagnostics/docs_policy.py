@@ -365,7 +365,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/product/",
     "docs/user/",
     "docs/agent/",
-    "docs/engineering-skills/",
     "docs/solutions/",
     "docs/superpowers/schemas/",
     "docs/superpowers/validation/",

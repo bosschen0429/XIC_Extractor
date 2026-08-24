@@ -247,6 +247,32 @@ def test_repo_surfaces_expose_one_issue_to_pr_scope_firewall() -> None:
     assert "- Scope delta from issue:" in pr_template
 
 
+def test_agent_docs_use_one_purposeful_namespace() -> None:
+    assert not any(Path("docs/agents").rglob("*"))
+    assert not any(Path("docs/engineering-skills").rglob("*"))
+    assert not Path("docs/agent/subagent-routing.md").exists()
+    assert Path("docs/agent/issue-tracker.md").is_file()
+    assert Path("docs/agent/triage-labels.md").is_file()
+
+    referrer_paths = (
+        Path("AGENTS.md"),
+        Path("docs/agent/planning-workflows.md"),
+        Path("docs/agent/codex-operating-system.md"),
+        Path(".codex/skills/xic-raw-validation/SKILL.md"),
+        Path(".codex/skills/xic-raw-validation/evals/trigger-cases.md"),
+        Path(".codex/skills/xic-architecture-preflight/evals/trigger-cases.md"),
+        Path("tools/diagnostics/docs_policy.py"),
+    )
+    retired_routes = (
+        "docs/agents/",
+        "docs/engineering-skills/",
+        "docs/agent/subagent-routing.md",
+    )
+    for path in referrer_paths:
+        content = path.read_text(encoding="utf-8")
+        assert not any(route in content for route in retired_routes), path
+
+
 def test_unedited_template_and_placeholder_are_rejected() -> None:
     template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
     errors = validate_pr_body(template, HEAD_SHA)
