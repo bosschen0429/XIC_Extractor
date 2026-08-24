@@ -1028,8 +1028,13 @@ def test_source_copy_stub_batch_is_not_counted_as_candidate_referrer(
     assert candidate["referrer_status"] == "none"
 
 
+@pytest.mark.parametrize(
+    "placement",
+    ["private_obsidian_note", "ignored_artifact"],
+)
 def test_repo_docs_routing_review_blocks_non_repo_placement(
     tmp_path: Path,
+    placement: str,
 ) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
@@ -1042,7 +1047,7 @@ def test_repo_docs_routing_review_blocks_non_repo_placement(
             [
                 "# Private review note",
                 "",
-                "Doc placement: private_obsidian_note",
+                f"Doc placement: {placement}",
                 "",
                 "Review rationale and branch sequencing.",
             ]

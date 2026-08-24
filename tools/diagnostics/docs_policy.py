@@ -120,10 +120,10 @@ DOC_PLACEMENTS_REQUIRING_REPO_OWNER = {
     "formal_repo_doc",
     "repo_subcontract_doc",
     "repo_support_doc",
-    "ignored_artifact",
 }
 NON_REPO_DOC_PLACEMENTS = {
     "private_obsidian_note",
+    "ignored_artifact",
     "throwaway_scratch",
 }
 DOC_KIND_VALUES = {
