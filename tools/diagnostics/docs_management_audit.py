@@ -248,7 +248,7 @@ def audit_repo(
                     "blocker",
                     "docs",
                     (
-                        "tracked repo docs declare non-repo placement; "
+                        "tracked repo docs declare invalid or retired placement; "
                         f"{invalid_count} file(s) need routing repair"
                     ),
                 )

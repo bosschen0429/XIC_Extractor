@@ -1147,19 +1147,6 @@ def check_entry(
             )
         )
 
-    if placement and placement not in DOC_PLACEMENT_VALUES:
-        problems.append(
-            PlacementProblem(
-                path=path,
-                reason=f"unknown doc placement value: {placement}",
-                required_marker=(
-                    f"{DOC_PLACEMENT_MARKER} <one of "
-                    f"{', '.join(sorted(DOC_PLACEMENT_VALUES))}>"
-                ),
-            )
-        )
-        return [*problems, *lifecycle_problems]
-
     if placement in DOC_RETIRED_PLACEMENT_VALUES:
         problems.append(
             PlacementProblem(
@@ -1174,6 +1161,19 @@ def check_entry(
                 ),
             )
         )
+
+    elif placement and placement not in DOC_PLACEMENT_VALUES:
+        problems.append(
+            PlacementProblem(
+                path=path,
+                reason=f"unknown doc placement value: {placement}",
+                required_marker=(
+                    f"{DOC_PLACEMENT_MARKER} <one of "
+                    f"{', '.join(sorted(DOC_PLACEMENT_VALUES))}>"
+                ),
+            )
+        )
+        return [*problems, *lifecycle_problems]
 
     if placement and doc_placement_is_non_repo(placement):
         problems.append(

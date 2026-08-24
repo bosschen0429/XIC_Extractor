@@ -569,14 +569,14 @@ def test_formal_repo_doc_placement_upgrades_canonical_owner() -> None:
     assert classification.is_high_risk_source == "metadata_cleared"
 
 
-def test_any_placement_clears_high_risk() -> None:
+def test_declared_repo_support_placement_clears_high_risk() -> None:
     classification = classify_doc(
         "docs/superpowers/notes/private-review.md",
         "\n".join(
             [
                 "# Private review",
                 "",
-                "Doc placement: repo_stub_plus_obsidian",
+                "Doc placement: repo_support_doc",
                 "Doc kind: note",
                 "Doc lifecycle: archived",
                 "Repo owner: docs/superpowers/notes/private-review.md",

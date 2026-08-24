@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
+    DOC_RETIRED_PLACEMENT_VALUES,
     DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES,
     DOC_ROUTING_TOPIC_PREFIX,
@@ -496,7 +497,6 @@ def _obsidian_lane(path: str, disposition: str) -> str:
     if disposition not in {
         "formalize_then_obsidian",
         "needs_human_review",
-        "repo_stub_plus_obsidian",
         "invalid_repo_placement",
     }:
         return "none"
@@ -527,7 +527,7 @@ def _obsidian_lane(path: str, disposition: str) -> str:
 def _doc_route(disposition: str) -> str:
     if disposition == "invalid_repo_placement":
         return DOC_ROUTE_OBSIDIAN_ORIGINAL
-    if disposition in {"formalize_then_obsidian", "repo_stub_plus_obsidian"}:
+    if disposition == "formalize_then_obsidian":
         return DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL
     if disposition == "needs_human_review":
         return DOC_ROUTE_NEEDS_DECISION
@@ -547,13 +547,6 @@ def _repo_body_role(route: str) -> str:
 def _digestion_status(record: DocsRoutingCandidate, cluster_status: str) -> str:
     if record.doc_route == DOC_ROUTE_NEEDS_DECISION:
         return "needs_route_decision"
-    if record.disposition in {
-        "repo_stub_plus_obsidian",
-        "repo_stub_plus_formal_doc",
-    }:
-        if record.repo_owner and record.lifecycle_status == "declared":
-            return "support_surface_retained"
-        return "support_surface_review"
     if record.doc_route in {
         DOC_ROUTE_OBSIDIAN_ORIGINAL,
         DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL,
@@ -663,10 +656,6 @@ def _digestion_next_action(status: str) -> str:
 def _support_retention_reason(record: DocsRoutingCandidate) -> str:
     if record.topic_role != "repo_supporting_artifact":
         return "not_support_surface"
-    if record.disposition == "repo_stub_plus_obsidian":
-        return "source_copy_stub_retained"
-    if record.disposition == "repo_stub_plus_formal_doc":
-        return "formal_doc_stub_retained"
     referrers = record.sample_referrers
     if any(path in referrers for path in DOC_ROUTING_AUTHORITY_REFERRER_PATHS):
         return "authority_or_status_anchor"
@@ -709,23 +698,13 @@ def _support_next_action(reason: str) -> str:
         )
     if reason == "active_support_surface":
         return "keep current until its declared exit rule fires"
-    if reason == "source_copy_stub_retained":
-        return (
-            "keep the compact repo stub; original source copy already belongs "
-            "in Obsidian and should not re-enter the compressible queue"
-        )
-    if reason == "formal_doc_stub_retained":
-        return (
-            "keep the compact repo stub only while historical links need this "
-            "path; stable public claims belong to the declared formal owner"
-        )
     if reason == "archived_compressible_support":
         return (
             "eligible for owner absorption and Obsidian source-copy handling; "
             "preserve the path until a fresh referrer scan is clean"
         )
     if reason == "ordinary_support_surface":
-        return "review for owner absorption, compact stub, or Obsidian-only route"
+        return "review for owner absorption, retirement, or Obsidian-only route"
     return "not a support surface"
 
 
@@ -824,8 +803,6 @@ def _topic_role(classification: object, disposition: str) -> str:
     if classification.is_topic_index:
         return "repo_topic_index"
     if classification.is_specs_index:
-        return "repo_supporting_artifact"
-    if disposition in {"repo_stub_plus_obsidian", "repo_stub_plus_formal_doc"}:
         return "repo_supporting_artifact"
     if disposition in {
         "formalize_then_obsidian",
@@ -1257,6 +1234,22 @@ def _classify_docs_routing_candidate(
     classification = classify_doc(normalized, text)
     placement = classification.placement
     repo_owner = classification.repo_owner
+    if placement in DOC_RETIRED_PLACEMENT_VALUES:
+        return DocsRoutingCandidate(
+            path=normalized,
+            disposition="invalid_repo_placement",
+            reason=f"tracked repo doc declares retired placement {placement!r}",
+            placement=placement,
+            repo_owner=repo_owner,
+            **_routing_metadata(normalized, text, "invalid_repo_placement"),
+            required_before_move=(
+                "absorb durable claims into the canonical owner, preserve any "
+                "needed original outside the repo, close exact referrers, then "
+                "retire the tracked document without a replacement stub"
+            ),
+            candidate=True,
+        )
+
     if placement and doc_placement_is_non_repo(placement):
         return DocsRoutingCandidate(
             path=normalized,
@@ -1272,45 +1265,6 @@ def _classify_docs_routing_candidate(
                 "source_repo_path pointer"
             ),
             candidate=True,
-        )
-
-    if placement == "repo_stub_plus_obsidian":
-        return DocsRoutingCandidate(
-            path=normalized,
-            disposition="repo_stub_plus_obsidian",
-            reason=(
-                "tracked repo stub keeps a compact public pointer to an "
-                "Obsidian original"
-            ),
-            placement=placement,
-            repo_owner=repo_owner,
-            **_routing_metadata(normalized, text, "repo_stub_plus_obsidian"),
-            required_before_move=(
-                "keep while exact repo referrers remain; before removal, run a "
-                "referrer scan, confirm the distilled repo owner is sufficient, "
-                "preserve the Obsidian original pointer, and record lifecycle "
-                "status/exit rule"
-            ),
-            candidate=False,
-        )
-
-    if placement == "repo_stub_plus_formal_doc":
-        return DocsRoutingCandidate(
-            path=normalized,
-            disposition="repo_stub_plus_formal_doc",
-            reason=(
-                "tracked repo stub keeps a compact public pointer to a formal "
-                "repo owner"
-            ),
-            placement=placement,
-            repo_owner=repo_owner,
-            **_routing_metadata(normalized, text, "repo_stub_plus_formal_doc"),
-            required_before_move=(
-                "keep while exact repo referrers remain; before removal, run a "
-                "referrer scan and confirm the declared repo owner contains the "
-                "stable public claims"
-            ),
-            candidate=False,
         )
 
     if classification.is_docs_routing_handoff:

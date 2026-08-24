@@ -106,10 +106,6 @@ DOC_PLACEMENT_VALUES = {
     "formal_repo_doc",
     "repo_subcontract_doc",
     "repo_support_doc",
-    "repo_active_stub",
-    "branch_closeout_summary",
-    "repo_stub_plus_obsidian",
-    "repo_stub_plus_formal_doc",
     "private_obsidian_note",
     "ignored_artifact",
     "throwaway_scratch",
@@ -124,10 +120,6 @@ DOC_PLACEMENTS_REQUIRING_REPO_OWNER = {
     "formal_repo_doc",
     "repo_subcontract_doc",
     "repo_support_doc",
-    "repo_active_stub",
-    "branch_closeout_summary",
-    "repo_stub_plus_obsidian",
-    "repo_stub_plus_formal_doc",
     "ignored_artifact",
 }
 NON_REPO_DOC_PLACEMENTS = {

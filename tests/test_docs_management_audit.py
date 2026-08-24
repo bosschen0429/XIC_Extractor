@@ -1061,7 +1061,7 @@ def test_repo_docs_routing_review_blocks_non_repo_placement(
     )
     assert any(
         msg.severity == "blocker"
-        and "tracked repo docs declare non-repo placement" in msg.message
+        and "tracked repo docs declare invalid or retired placement" in msg.message
         for msg in result.messages
     )
 
@@ -1352,44 +1352,36 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
     assert index_path not in cluster["owner_paths"]
 
 
-def test_complete_support_doc_is_not_reopened_by_same_topic_cleanup_candidate(
+@pytest.mark.parametrize(
+    ("placement", "repo_owner"),
+    [
+        ("repo_active_stub", "docs/agent/obsidian-handoff-contract.md"),
+        ("branch_closeout_summary", "docs/agent/obsidian-handoff-contract.md"),
+        ("repo_stub_plus_obsidian", "docs/agent/obsidian-handoff-contract.md"),
+        ("repo_stub_plus_formal_doc", "docs/product/peak-model-selection.md"),
+    ],
+)
+def test_retired_stub_placements_are_routed_as_invalid_candidates(
     tmp_path: Path,
+    placement: str,
+    repo_owner: str,
 ) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    support_path = "docs/superpowers/README.md"
-    candidate_path = "docs/superpowers/notes/2026-06-25-cleanup-inventory.md"
-    _write(
-        root / support_path,
-        "\n".join(
-            [
-                "# Superpowers",
-                "",
-                "Doc placement: repo_support_doc",
-                "Doc kind: manifest",
-                "Doc lifecycle: active",
-                "Repo owner: docs/project-layout.md",
-                "Doc exit rule: update when docs workflow routing changes.",
-                "",
-                "Docs workflow routing index.",
-            ]
-        ),
-    )
+    candidate_path = "docs/superpowers/notes/2026-06-25-retired-stub.md"
     _write(
         root / candidate_path,
         "\n".join(
             [
-                "# Cleanup inventory",
+                "# Retired stub",
                 "",
-                "Doc placement: repo_stub_plus_obsidian",
+                f"Doc placement: {placement}",
                 "Doc kind: note",
                 "Doc lifecycle: archived",
-                "Repo owner: docs/agent/obsidian-handoff-contract.md",
+                f"Repo owner: {repo_owner}",
                 "Doc exit rule: retire after referrer closeout.",
-                "",
-                "Docs workflow cleanup inventory.",
             ]
         ),
     )
@@ -1397,62 +1389,14 @@ def test_complete_support_doc_is_not_reopened_by_same_topic_cleanup_candidate(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if item["topic_key"] == "docs workflow or historical context"
-    )
-    assert support_path in cluster["supporting_sample_paths"]
-    assert candidate_path in cluster["supporting_sample_paths"]
-    assert "support_surface_retained:2" in cluster["digestion_status_counts"]
-    assert "source_copy_stub_retained:1" in cluster["support_retention_counts"]
-    assert candidate_path not in cluster["compressible_support_sample_paths"]
-    retained_review_paths = {
-        item["path"] for item in review["top_route_retained_reviews"]
-    }
-    assert candidate_path not in retained_review_paths
-
-
-def test_formal_doc_stub_is_not_reopened_as_compressible_support(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    stub_path = (
-        "docs/superpowers/notes/"
-        "2026-06-02-selected-hypothesis-model-selection-characterization-map.md"
-    )
-    _write(
-        root / stub_path,
-        "\n".join(
-            [
-                "# Selected-Hypothesis Model-Selection Characterization Map",
-                "",
-                "Doc placement: repo_stub_plus_formal_doc",
-                "Doc kind: note",
-                "Doc lifecycle: archived",
-                "Repo owner: docs/product/peak-model-selection.md",
-                "Doc exit rule: retire after exact referrers no longer need this path.",
-                "",
-                "Status: `repo_stub_plus_formal_doc`",
-                "",
-                "Formalized in docs/product/peak-model-selection.md.",
-            ]
-        ),
-    )
-
-    result = _run_audit(root, vault)
-
-    review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if item["topic_key"] == "evidence semantics"
-    )
-    assert "formal_doc_stub_retained:1" in cluster["support_retention_counts"]
-    assert stub_path not in cluster["compressible_support_sample_paths"]
+    assert review["candidate_files"] == 1
+    assert review["disposition_counts"] == {"invalid_repo_placement": 1}
+    candidate = review["top_candidates"][0]
+    assert candidate["path"] == candidate_path
+    assert candidate["doc_route"] == "obsidian_original"
+    assert candidate["repo_body_role"] == "original_not_repo"
+    assert candidate["topic_role"] == "needs_distillation_or_route"
+    assert candidate["support_retention_reason"] == "not_support_surface"
 
 
 def test_complete_support_docs_are_not_reopened_by_multiple_support_surfaces(
