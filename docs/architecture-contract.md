@@ -157,6 +157,13 @@ registered temporary resources and caches while respecting lineage pins.
   still names it. Tests, historical artifacts, and the former implementation
   are not consumer evidence; when an internal function is replaced, delete its
   old implementation, alias, and migration shim in the same change.
+- Migration tests follow the invariant's current semantic owner. Move them to
+  the successor surface or delete implementation-detail coverage; retain legacy
+  tests only for a current public compatibility contract, explicit migration or
+  rejection behavior, or parity during an active transition.
+- An `audit_only`, `shadow_only`, or `diagnostic_only` migration path names the
+  smallest next production or adapter transfer in its exit rule, not only the
+  evidence still missing.
 
 ## Frozen Alignment Owner Decomposition
 

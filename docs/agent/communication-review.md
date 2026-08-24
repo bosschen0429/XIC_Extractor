@@ -89,6 +89,23 @@ head. Record every decision-bearing claim with these exact columns:
   traceability. A reviewer still decides whether the chosen oracle supports the
   claim and whether the stated limitation is accurate.
 
+## Issue Closure Ownership
+
+Issue linkage is part of delivery ownership, not a second progress ledger. A PR
+that completes its issue and targets the default branch uses a GitHub closing
+keyword. When several PRs deliver one issue, only the completing PR uses it; an
+intermediate or non-default-branch PR uses `Refs #N`. The PR that finally
+integrates the work into the default branch owns closure.
+
+Do not place a supported closing-keyword form (`close`, `closes`, `closed`,
+`fix`, `fixes`, `fixed`, `resolve`, `resolves`, or `resolved`) immediately
+before the issue number in an intermediate PR, including uppercase, colon, or
+negated variants that GitHub may still classify as closing references. If no
+completing PR remains, verify default-branch integration against the merged-PR
+census, add one evidence comment, and close manually. Stop when completion
+cannot be verified. Use native `blocked_by` only for a real open prerequisite,
+not parent/child membership, optional sequencing, or intentional deferral.
+
 ## Review Checklist
 
 After completing changes, quickly check:

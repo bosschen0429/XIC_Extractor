@@ -229,8 +229,9 @@ issue may still need more than one PR. Do not split one coherent behavior
 mechanically into model, serializer, tests, and docs PRs. A parent issue retains
 the overall outcome, global constraints, and final acceptance; each child issue
 owns one bounded slice and names its parent and real blockers. Wayfinding
-map/child mechanics remain owned by `docs/agent/issue-tracker.md`, while
-stacked delivery and final issue closure remain owned below.
+map/child mechanics remain owned by `docs/agent/issue-tracker.md`; stacked
+delivery uses `xic-pr-stack-repair`, and final issue closure is owned by
+`docs/agent/communication-review.md#issue-closure-ownership`.
 
 At merge closeout, ask whether the change creates or changes a durable claim,
 or reveals that the canonical owner does not yet express it, for product
@@ -243,92 +244,6 @@ rationale. Do not copy the entire PRD, issue history, or review chronology into
 formal docs. If no durable claim changed or is missing, no documentation churn
 is required. Content placement and historical-note absorption remain owned by
 `docs/agent/obsidian-handoff-contract.md#source-of-truth-promotion-rule`.
-
-## Productization Work Cycle
-
-Productization planning limits active work instead of turning every diagnostic
-idea into a lane. Per maintenance cycle, keep at most one primary productization
-lane, one supporting-infrastructure lane, and one diagnostic-only lane. Starting
-another requires closing one as promoted, parked with an explicit reopening
-condition, externalized/killed, or abandoned with a reason.
-
-Before work starts, record the lane key, current structured state, intended
-state for this change, capability owner, affected public surface, expected
-behavior diff and required non-changes, evidence tier, stop/rollback rule, and
-downstream consumer. If product values or identity may change and no
-expected-diff plan exists, stop the intake.
-
-At maintenance and closeout:
-
-- verify current state only against the structured status index and authority
-  manifest, not a branch diary or compatibility index;
-- confirm new diagnostics, reports, and sidecars have a promote, kill,
-  externalize, or missing-evidence exit rule;
-- check schema/version, CLI/config/GUI documentation, downstream handoff,
-  expected diff, replay/provenance, and reviewer/audit records where relevant;
-- name the validation evidence actually used and do not equate tests passing
-  with production readiness;
-- remove stale ownerless plans and conflicting narrative state instead of
-  appending another board;
-- resolve only the active branch's handoff when one exists, and fold normal
-  durable closeout into the PR body.
-
-Periodically count active lanes. If the WIP limit is exceeded, freeze new work,
-select one lane to advance, and select one to park, kill, archive, or
-externalize. Review aging diagnostic artifacts and ownerless public docs before
-adding new ones.
-
-## Stacked PR And Ledger Ownership
-
-Stacked PRs are allowed only when each PR has one owner surface and can pass CI
-from a clean checkout of its base. Before opening, retargeting, or repairing a
-stacked PR series, write or inspect a stack map that lists:
-
-- base and head branch for every PR;
-- repeated files across PRs, especially global ledgers such as productization
-  status indexes, authority manifests, schemas, active handoffs, and artifact
-  inventories;
-- tracked fixtures versus externalized local artifacts;
-- which PR owns schema/product behavior, which PR owns artifact hygiene, and
-  which PR owns final rollup ledger updates;
-- whether default CI requires ignored `output/`, `.worktrees/`, or
-  `local_validation_artifacts/` bytes.
-
-If two or more PRs mutate the same global ledger or handoff, do not keep
-repairing each PR independently. Split out a prerequisite boundary PR or a final
-rollup PR so intermediate PRs carry scope-local manifests rather than a
-different snapshot of the whole productization world.
-
-Never use a later cleanup PR as an implicit prerequisite for an earlier PR's CI.
-If a PR externalizes bulky outputs, the same PR must also remove default CI
-requirements for those ignored local bytes. Local rendered review assets may be
-validated by explicit opt-in flags such as `--require-rendered-local`, but the
-default check must validate only tracked contract artifacts: schemas, summaries,
-minimal fixtures, paths, row counts, and hashes.
-
-### Issue Closure Ownership
-
-Issue linkage is part of delivery ownership, not a second progress ledger. A PR
-that completes its issue and targets the repository's default branch uses a
-GitHub closing keyword. When several PRs deliver one issue, only the completing
-PR uses that keyword; in a stack this is normally the final rollup PR already
-responsible for shared-ledger reconciliation. If the completing PR targets a
-non-default branch, use `Refs #N` there. The later PR that integrates the work
-into the default branch owns the closing keyword; if no such PR remains, verify
-default-branch integration and use the evidence-backed manual closure path below.
-
-Intermediate and non-default-branch PRs use `Refs #N` only. They must not place
-any supported closing-keyword form (`close`, `closes`, `closed`, `fix`, `fixes`,
-`fixed`, `resolve`, `resolves`, or `resolved`) immediately before the issue
-number, including uppercase or colon variants and negated sentences, because
-GitHub may still classify that text as a closing reference.
-
-If historical work has no remaining completing PR, reconcile the issue against
-the merged-PR census and canonical evidence, add one evidence comment, and close
-it manually. Stop instead when completion cannot be verified. Open/closed plus
-that evidence chain is the default lifecycle; do not mirror programme progress
-vocabularies as labels. Use native `blocked_by` only for a real open prerequisite,
-not parent/child membership, optional sequencing, or intentional deferral.
 
 ## Goal Contract XIC Delta
 
@@ -343,31 +258,3 @@ handoff, and closeout. An XIC goal adds only project-specific bindings:
   a runtime goal cannot refreeze acceptance or absorb another owner;
 - close against this document's delivery completion gate and the applicable XIC
   validation owner; goal status alone is not completion evidence.
-
-## Legacy Owner Transformation Policy
-
-- The project direction is explicit transformation: successor modules absorb the
-  useful capability and product invariants of legacy owners, fix the legacy pain
-  points, then retire or reduce the legacy owner to a thin compatibility adapter.
-- When the user explicitly asks to absorb a legacy owner into an existing
-  successor model, do not stop at another shadow/report/spec layer if a bounded
-  ownership-transfer slice can be named.
-- A valid ownership-transfer slice names: current owner, successor owner,
-  public surface, preserved invariant, expected product diff or parity oracle,
-  and the focused tests that prove it.
-- After those are named, prefer implementing one narrow transfer over creating a
-  new broad plan. Review gates should close the decision and then unblock
-  execution; they should not become an indefinite replacement for migration.
-- Tests protect product invariants, not old module shapes. When a successor owns
-  an invariant, migrate the test to the successor surface or delete the
-  legacy-specific test. Keep legacy tests only for public compatibility,
-  explicit rejection/migration behavior, or parity during an active transition.
-- Do not preserve a legacy owner merely because tests exist. First classify what
-  the tests protect: product invariant, compatibility contract, diagnostic
-  evidence, or obsolete implementation detail.
-- Keep public safety rules: if selected peak, selected area, confidence, reason,
-  matrix identity, workbook schema, TSV schema, or config behavior would change,
-  require an expected-diff contract and focused output tests before promotion.
-- `audit_only`, `shadow_only`, and `diagnostic_only` artifacts must still name an
-  exit rule, but for owner-migration work the exit rule should include the
-  smallest next production or adapter transfer, not only the missing evidence.
