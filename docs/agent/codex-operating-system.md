@@ -47,12 +47,13 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 
 The hook set is intentionally small:
 
-- `UserPromptSubmit`: scans the prompt for XIC high-risk keywords and injects
-  workflow context for architecture preflight, performance diagnosis, RAW
-  validation, productization, or stacked/superseded-PR repair. Mixed behavior
-  edits plus RAW validation retain both architecture and RAW preflights;
-  synthetic/no-RAW validation and generic heartbeat/schema work stay out of the
-  RAW-launch gate unless the prompt explicitly names RAW execution or acceptance.
+- `UserPromptSubmit`: scans the prompt for bounded performance, RAW-validation,
+  productization, or stacked/superseded-PR signals and injects their workflow
+  context. Architecture preflight remains model-routed from its boundary-based
+  skill description instead of a diagnostic/evidence/Matrix keyword bucket;
+  the performance workflow still hands qualifying code edits to it. Synthetic/
+  no-RAW validation and generic heartbeat/schema work stay out of the RAW-launch
+  gate unless the prompt explicitly names RAW execution or acceptance.
   The hook also blocks prompt text that looks like a pasted secret. Productization
   prompts point first to
   `docs/superpowers/plans/2026-06-15-productization-control-plane.md` as a
@@ -233,7 +234,7 @@ Before closeout:
 
 ```powershell
 git diff --check
-Get-Content .codex\hooks\fixtures\prompt_architecture.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
+Get-Content .codex\hooks\fixtures\prompt_performance.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
 Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
 
 Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_post_tool_guard.py

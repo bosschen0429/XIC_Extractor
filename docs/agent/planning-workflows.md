@@ -344,24 +344,6 @@ handoff, and closeout. An XIC goal adds only project-specific bindings:
 - close against this document's delivery completion gate and the applicable XIC
   validation owner; goal status alone is not completion evidence.
 
-## Skills And Subagents
-
-- The global Codex Agent Router owns generic agent selection, dispatch, roles,
-  concurrency, and review orchestration. Task packets add only constraints from
-  the selected XIC owner or repo skill; this repo does not mirror global agent
-  roles or routing lenses.
-- Reusable workflows belong in global skills first. Repo-local `.codex/skills/`
-  entries should exist only for XIC-specific checklists that cannot live cleanly
-  in routing docs.
-- Use `xic-architecture-preflight` before implementing or planning non-trivial
-  diagnostics, RAW-backed evidence, preset-performance changes,
-  matrix/activation/value-delta paths, model-selection work, HCD-PI, Delta Mass,
-  CID-NL expansion, or other evidence-provider additions.
-- Use the global code-review workflow for explicit fixed-point review. Repeated
-  hosted findings follow the root review-incident rule: stop instance patches,
-  classify plan/design/implementation/oracle failure, and redesign or delete
-  when the failure universe cannot be bounded.
-
 ## Legacy Owner Transformation Policy
 
 - The project direction is explicit transformation: successor modules absorb the

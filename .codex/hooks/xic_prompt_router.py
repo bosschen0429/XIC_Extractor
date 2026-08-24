@@ -19,25 +19,10 @@ SECRET_PATTERNS = [
     ),
 ]
 
-ARCHITECTURE_PATTERNS = [
-    r"\bRAW\b",
-    r"85\s*-?\s*RAW",
-    r"8\s*-?\s*RAW",
-    r"matrix",
-    r"activation",
-    r"value[\s_-]?delta",
-    r"CID[\s_-]?NL",
-    r"HCD[\s_-]?PI",
-    r"Delta Mass",
-    r"evidence",
-    r"diagnostic",
-    r"架構|診斷|證據",
-]
-
-# Performance work has a dedicated diagnosis skill that must run before
-# architecture-preflight, so route it explicitly instead of letting the broad
-# architecture bucket claim it. Bare "optimize" is excluded unless a perf noun
-# is nearby, so ordinary "optimize docs/skills" prompts do not fire this.
+# Performance work has a dedicated diagnosis skill whose workflow hands
+# boundary-changing code to architecture-preflight. Bare "optimize" is excluded
+# unless a perf noun is nearby, so ordinary "optimize docs/skills" prompts do not
+# fire this.
 PERFORMANCE_PATTERNS = [
     r"performance|perf\b|bottleneck",
     r"(optimi[sz]e|optimi[sz]ation|speed\s*up|faster|加速|優化|优化)[^\n]{0,40}"
@@ -49,8 +34,8 @@ PERFORMANCE_PATTERNS = [
 ]
 
 # RAW-backed validation launch/acceptance is its own preflight skill. Match run
-# or acceptance intent (not a bare RAW mention) so RAW code edits still route to
-# architecture-preflight.
+# or acceptance intent; a bare RAW mention remains with the current owner and
+# model-invoked architecture boundary instead of a keyword bucket.
 RAW_VALIDATION_PATTERNS = [
     r"(8|85)\s*-?\s*RAW[^\n]{0,40}(valid|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat)",
     r"(valid|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat)[^\n]{0,40}(8|85)\s*-?\s*RAW",
@@ -78,11 +63,6 @@ RAW_BACKED_EVIDENCE_PATTERNS = [
     r"(?:artifact|evidence|validation|result|產物|證據|結果)",
     r"(?:artifact|evidence|validation|result|產物|證據|結果)[^\n]{0,40}"
     r"\bRAW[-\s]?backed\b",
-]
-
-EDIT_INTENT_PATTERNS = [
-    r"\b(change|modify|edit|implement|fix|refactor|rewrite|add|remove|design|plan|propose|optimi[sz]e)\b",
-    r"修改|改動|改|實作|修正|修復|重構|重寫|新增|移除|設計|規劃|計畫|優化|优化",
 ]
 
 # Stacked/superseded PR CI trouble is a boundary problem, not an ordinary
@@ -142,8 +122,6 @@ def main() -> int:
     raw_validation = matches(RAW_VALIDATION_PATTERNS) and (
         explicit_raw_acceptance or not matches(NO_RAW_PATTERNS)
     )
-    edit_intent = matches(EDIT_INTENT_PATTERNS)
-
     if perf:
         contexts.append(
             "XIC performance context detected: use xic-performance-diagnosis first. "
@@ -160,16 +138,6 @@ def main() -> int:
             "State the decision the run can close, sample set, documented runner/DLL/RAW paths, output "
             "level, heartbeat/timeout, and why existing artifacts cannot answer it. Do not launch 85RAW "
             "via background Start-Process from the Codex shell without explicit approval."
-        )
-
-    # Pure performance/RAW execution prompts use their focused preflight. Any
-    # mixed behavior edit keeps architecture preflight as well; a run or
-    # performance gate must not hide the pre-edit contract.
-    if matches(ARCHITECTURE_PATTERNS) and edit_intent:
-        contexts.append(
-            "XIC high-risk work detected: before edits, use xic-architecture-preflight. "
-            "Name existing owner/helper reuse, evidence-provider role, call-cost model, "
-            "public contracts at risk, validation gate, and stop rule."
         )
 
     if matches(PR_STACK_PATTERNS):

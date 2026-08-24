@@ -6,14 +6,14 @@ not widen or narrow the skill trigger.
 ## Should Trigger
 
 - "Change matrix extraction behavior, then run 85RAW validation." This exact
-  prompt is exercised by `.codex/hooks/fixtures/assert_hook_outputs.py`; root
-  `AGENTS.md` requires the architecture preflight for the Matrix behavior edit
-  before the separate RAW gate.
+  prompt is exercised by `.codex/hooks/fixtures/assert_hook_outputs.py` to prove
+  the keyword hook supplies only the RAW gate. Root `AGENTS.md` and the skill
+  description still require architecture preflight for the Matrix behavior
+  edit.
 - "Optimize matrix extraction performance, then run 85RAW validation." This
   exact prompt is exercised by `.codex/hooks/fixtures/assert_hook_outputs.py`.
-  `docs/agent/planning-workflows.md#skills-and-subagents` requires the skill for
-  preset-performance changes, and root `AGENTS.md` requires it after
-  `xic-performance-diagnosis` and before code edits.
+  Root `AGENTS.md` requires it after `xic-performance-diagnosis` and before code
+  edits.
 - "Implement immutable manifest fingerprint reuse and a manifest-bound atomic
   publish bundle." This is the delivered Issue #213 / PR #215 boundary task.
   The skill description requires preflight when crossing an evidence/runtime
@@ -34,6 +34,9 @@ not widen or narrow the skill trigger.
 - "Explain the current Matrix ownership without changing it." Read-only
   explanation is explicitly excluded by the skill description; answer from the
   current architecture owners.
+- "Add one owner-local diagnostic field without changing a public output or
+  evidence/runtime boundary." A diagnostic label alone is not an architecture
+  trigger; use the established owner's focused verification.
 
 ## Boundary Case
 

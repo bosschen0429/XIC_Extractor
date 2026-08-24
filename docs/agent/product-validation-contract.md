@@ -128,10 +128,12 @@ passing alone never establishes production readiness.
   matrix-writing authority without an explicit activation/export contract.
 - Diagnostic TSVs, shadow reports, wrappers, and sidecars prove observability,
   not product usability.
-- Before non-trivial diagnostics, RAW-backed evidence, preset performance,
-  matrix activation, or new evidence-provider work, run a reuse/call-cost
-  preflight: existing owner/helper, spine layer, call-cost model, public
-  contract risk, validation gate, and stop rule.
+- When validation work meets the architecture boundary in
+  `docs/architecture-contract.md`, use `xic-architecture-preflight` before
+  edits. Established-owner diagnostics and RAW validation bind reuse, call
+  cost, validation gate, and stop in their current task/validation owner; use
+  `xic-raw-validation` for RAW launch or artifact acceptance. A diagnostic,
+  method, or RAW label alone does not create an architecture gate.
 - Prefer establishing the future spine or dual-write contract before polishing
   legacy DTOs, resolver names, or scoring split points likely to move during
   handoff migration.

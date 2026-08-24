@@ -355,10 +355,12 @@ Naming rule:
   and compatibility/migration code together unless the public-contract rule
   above identifies a current consumer. Git history is the recovery path.
 
-Before implementing non-trivial diagnostics, RAW-backed evidence, preset
-performance optimization, matrix activation, HCD-PI, Delta Mass, CID-NL
-expansion, or other evidence-provider work, use
-`.codex/skills/xic-architecture-preflight/SKILL.md` to name the existing owner,
+Architecture preflight applies when work creates or replaces a semantic owner,
+crosses an evidence/runtime boundary, or changes Matrix, activation, a public
+contract, or scientific authority. A technology, method, diagnostic, or RAW
+label alone is not a trigger; focused work inside an established owner stays on
+that owner's ordinary verification path. When the boundary applies, use
+`.codex/skills/xic-architecture-preflight/SKILL.md` to bind the existing owner,
 reuse target, call-cost model, public contract risk, validation gate, and stop
 rule.
 
