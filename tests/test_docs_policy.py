@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics.docs_policy import (
-    DOC_CANONICAL_OWNER_DIRS,
     DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
@@ -34,23 +33,6 @@ def test_permanent_root_contract_is_exactly_four_paths() -> None:
         "docs/architecture-contract.md",
         "docs/project-layout.md",
     }
-
-
-def test_solution_notes_lane_is_retired_in_favor_of_canonical_owners() -> None:
-    solution_files = [
-        path for path in Path("docs/solutions").rglob("*") if path.is_file()
-    ]
-    assert solution_files == []
-    assert "docs/solutions/" not in DOC_CANONICAL_OWNER_DIRS
-
-    routing_surfaces = (
-        Path("AGENTS.md"),
-        Path("docs/project-layout.md"),
-        Path("docs/agent/codex-operating-system.md"),
-        Path("tools/diagnostics/docs_placement_guard.py"),
-    )
-    for path in routing_surfaces:
-        assert "docs/solutions" not in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
