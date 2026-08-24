@@ -494,8 +494,6 @@ def _retirement_blocker(
     ):
         return ""
     classification = classify_doc(rel_path, text)
-    if classification.placement == "repo_active_stub":
-        return "active repo stub"
     if classification.doc_lifecycle in KEEP_LIFECYCLES:
         return f"{classification.doc_lifecycle} lifecycle"
     if classification.lifecycle_status != "declared":

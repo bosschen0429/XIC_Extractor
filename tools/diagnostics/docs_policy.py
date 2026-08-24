@@ -62,11 +62,6 @@ DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH = f"{HANDOFF_CURRENT_DIR}ACTIVE.local.md"
 PRODUCTIZATION_STATUS_ANCHOR_PATH = (
     "docs/superpowers/productization/status/cc-framework-improvements-productization.md"
 )
-# Backward-compatible import name for existing hook code. The file is no longer
-# a handoff; keep the alias until hook call sites are renamed in a focused pass.
-PRODUCTIZATION_STATUS_HANDOFF_PATH = PRODUCTIZATION_STATUS_ANCHOR_PATH
-CLOSEOUT_DIR = "docs/superpowers/closeouts/"
-
 PRODUCTIZATION_SCHEMA_REL = (
     "docs/superpowers/schemas/productization_control_plane_schema.v3.json"
 )
@@ -373,7 +368,7 @@ DOC_CANONICAL_OWNER_FILES = {
     "docs/project-layout.md",
     "docs/superpowers/README.md",
     "docs/superpowers/handoffs/README.md",
-    PRODUCTIZATION_STATUS_HANDOFF_PATH,
+    PRODUCTIZATION_STATUS_ANCHOR_PATH,
     CONTROL_PLANE_PATH,
 }
 HIGH_RISK_DOC_DIRS = [
@@ -463,7 +458,6 @@ class DocPathClassification:
     is_canonical_owner: bool
     is_high_risk_repo_doc: bool
     is_lifecycle_managed: bool
-    is_branch_closeout_summary: bool
     is_misplaced_handoff_public_record: bool
     is_docs_routing_scan_target: bool
     is_docs_routing_handoff: bool
@@ -503,7 +497,6 @@ class DocClassification:
     is_high_risk_repo_doc: bool
     is_high_risk_source: str
     is_lifecycle_managed: bool
-    is_branch_closeout_summary: bool
     is_misplaced_handoff_public_record: bool
     is_docs_routing_scan_target: bool
     is_docs_routing_handoff: bool
@@ -603,17 +596,6 @@ def is_repo_doc_path(path: str) -> bool:
     )
 
 
-def is_branch_closeout_summary_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./").lower()
-    return normalized.startswith(CLOSEOUT_DIR) and normalized.endswith(
-        "_branch-closeout-summary.md"
-    )
-
-
-def is_public_handoff_archive_evidence_path(path: str) -> bool:
-    return False
-
-
 def is_misplaced_handoff_public_record_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
     if not (
@@ -633,16 +615,12 @@ def is_canonical_doc_owner_path(path: str) -> bool:
         return True
     if normalized in DOC_ROOT_ALLOWLIST_FILES:
         return True
-    if is_public_handoff_archive_evidence_path(normalized):
-        return True
     return any(path_is_under(normalized, root) for root in DOC_CANONICAL_OWNER_DIRS)
 
 
 def is_high_risk_repo_doc_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
     if normalized in DOC_CANONICAL_OWNER_FILES:
-        return False
-    if is_branch_closeout_summary_path(normalized):
         return False
     return any(path_is_under(normalized, root) for root in HIGH_RISK_DOC_DIRS)
 
@@ -733,7 +711,6 @@ def classify_doc_path(path: str) -> DocPathClassification:
         is_canonical_owner=is_canonical_doc_owner_path(normalized),
         is_high_risk_repo_doc=is_high_risk_repo_doc_path(normalized),
         is_lifecycle_managed=is_lifecycle_managed_doc_path(normalized),
-        is_branch_closeout_summary=is_branch_closeout_summary_path(normalized),
         is_misplaced_handoff_public_record=(
             is_misplaced_handoff_public_record_path(normalized)
         ),
@@ -845,7 +822,6 @@ def classify_doc(path: str, text: str) -> DocClassification:
         is_high_risk_repo_doc=is_high_risk_repo_doc,
         is_high_risk_source=is_high_risk_source,
         is_lifecycle_managed=path_classification.is_lifecycle_managed,
-        is_branch_closeout_summary=path_classification.is_branch_closeout_summary,
         is_misplaced_handoff_public_record=(
             path_classification.is_misplaced_handoff_public_record
         ),

@@ -445,7 +445,6 @@ def test_repo_only_completed_transient_stub_state_is_blocker(
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 1
-    assert review["allowed_stub_files"] == 0
     assert any(
         "completed transient docs remain in repo" in msg.message
         for msg in result.messages

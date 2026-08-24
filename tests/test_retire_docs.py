@@ -244,14 +244,14 @@ def test_completed_unreferenced_spec_without_retirement_evidence_is_kept(
     assert spec.exists()
 
 
-def test_completed_unreferenced_spec_with_pass_can_retire_evidence_retires(
+def test_completed_legacy_stub_with_pass_can_retire_evidence_retires(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
     vault = tmp_path / "vault"
     rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
     spec = repo / rel
-    text = _completed_spec()
+    text = _completed_spec().replace("formal_repo_doc", "repo_active_stub")
     _write(spec, text)
 
     result = retire_files(

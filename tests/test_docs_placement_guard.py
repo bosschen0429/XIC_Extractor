@@ -1256,39 +1256,6 @@ def test_repo_subcontract_doc_without_owner_fails(tmp_path: Path) -> None:
     assert any("requires a repo owner" in problem for problem in problems)
 
 
-def test_branch_closeout_summary_is_rejected_even_with_pr_body_seed(
-    tmp_path: Path,
-) -> None:
-    path = (
-        "docs/superpowers/closeouts/2026-07-01_codex-example_branch-closeout-summary.md"
-    )
-    _write(
-        tmp_path,
-        path,
-        "\n".join(
-            [
-                "# Branch closeout",
-                "",
-                "## Problem",
-                "",
-                "## Solution",
-                "",
-                "## Verification",
-                "",
-                "## Residual Risk",
-                "",
-                "## PR Body Seed",
-                "",
-                "Problem: example.",
-            ]
-        ),
-    )
-
-    result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
-
-    assert any("retired docs lane" in problem.reason for problem in result.problems)
-
-
 def test_file_management_cleanup_history_is_rejected(tmp_path: Path) -> None:
     path = (
         "docs/superpowers/file-management/docs-cleanup/"
@@ -1389,7 +1356,7 @@ def test_productization_status_handoff_remains_canonical(tmp_path: Path) -> None
     assert result.problems == ()
 
 
-def test_branch_closeout_summary_is_rejected_without_pr_body_seed(
+def test_branch_closeout_lane_is_rejected(
     tmp_path: Path,
 ) -> None:
     path = (

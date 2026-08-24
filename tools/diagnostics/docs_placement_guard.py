@@ -1196,10 +1196,7 @@ def check_entry(
             )
         )
 
-    if (
-        classification.is_canonical_owner
-        and not classification.is_branch_closeout_summary
-    ):
+    if classification.is_canonical_owner:
         if path.startswith("docs/user/"):
             if placement and placement != "formal_repo_doc":
                 problems.append(
