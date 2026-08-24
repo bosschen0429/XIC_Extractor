@@ -2216,6 +2216,7 @@ def _owner(
             "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
             "canonical_sample_identity_id": f"test-sample:{sample_stem}",
             "subject": {"kind": "physical_observation", "id": physical_id},
+            "physical_observation_ids": [physical_id],
         }
     )
     return SampleLocalMS1Owner(

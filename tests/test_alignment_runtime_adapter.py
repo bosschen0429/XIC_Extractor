@@ -399,6 +399,58 @@ def test_alignment_scientific_carriers_roundtrip_in_manifest_order(
     )
 
 
+def test_alignment_runtime_rejects_cross_work_unit_member_overlap(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        mint_cross_sample_group_identity,
+    )
+
+    attempt = _attempt(tmp_path, stem="cross-work-population")
+    first = _group("group:first", attempt=attempt)
+    second = _group("group:second", attempt=attempt)
+    combined = mint_cross_sample_group_identity(
+        processing_request_id=attempt.processing_request_id,
+        member_subjects=(*first.member_subjects, *second.member_subjects),
+    )
+    overlapping = replace(
+        second,
+        group_hypothesis_id=combined.group_hypothesis_id,
+        processing_request_id=combined.processing_request_id,
+        member_subjects=combined.member_subjects,
+        identity_basis_bytes=combined.basis_bytes,
+        disposition=combined.disposition,
+    )
+    jobs = tuple(
+        _NoRawAlignmentJob(
+            attempt,
+            work_unit_key,
+            resource_key,
+            canonical_alignment_peak_group_binding_bytes(groups),
+            cross_sample_peak_groups=groups,
+        )
+        for work_unit_key, resource_key, groups in (
+            ("sample:a", "process:sample:a", (first,)),
+            ("sample:b", "process:sample:b", (overlapping,)),
+        )
+    )
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="across groups"):
+        execute_alignment_process_runtime(
+            _runtime(attempt, ("sample:a", "sample:b")),
+            jobs,
+            worker=_run_no_raw_alignment_job,
+            error_factory=_alignment_job_error,
+            max_workers=1,
+            resource_reservations=_reservations(attempt),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=OwnerPathRuntimeMarker(
+                tmp_path / "cross-work-population.runtime.json",
+                "alignment-runtime-artifacts:cross-work-population",
+            ),
+        )
+
+
 def test_alignment_scientific_carrier_rejects_payload_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -634,6 +686,7 @@ def _group(
             "processing_request_id": processing_request_id,
             "canonical_sample_identity_id": sample_id,
             "subject": {"kind": "physical_observation", "id": subject_id},
+            "physical_observation_ids": [subject_id],
         }
     )
     member = CrossSampleGroupMemberSubject(

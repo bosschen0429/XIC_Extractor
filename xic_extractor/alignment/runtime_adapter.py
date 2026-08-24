@@ -239,6 +239,9 @@ class AlignmentRuntimeApplicationResult:
                     settlement.owner_result_ref.upstream_artifact_ids
                 ),
             )
+        _validate_cross_sample_application_population(
+            self.successful_cross_sample_peak_groups
+        )
         if (
             self.successful_observation_batches
             or self.finalization.supervisor.terminal_outcome
@@ -532,7 +535,32 @@ def canonical_alignment_peak_group_binding_bytes(
                 "processing_request_id": group.processing_request_id,
                 "identity_basis": group.identity_basis_bytes.decode("utf-8"),
                 "disposition": group.disposition,
-                "lineage": [asdict(edge) for edge in group.lineage],
+                "members": [
+                    {
+                        "member_subject_id": member.member_subject_id,
+                        "basis": member.basis_bytes.decode("utf-8"),
+                        "physical_observation_ids": list(
+                            member.physical_observation_ids
+                        ),
+                    }
+                    for member in group.member_subjects
+                ],
+                "lineage": [
+                    {
+                        "predecessor_group_hypothesis_id": (
+                            edge.predecessor_group_hypothesis_id
+                        ),
+                        "successor_group_hypothesis_id": (
+                            edge.successor_group_hypothesis_id
+                        ),
+                        "processing_request_id": edge.processing_request_id,
+                        "predecessor_identity_basis": (
+                            edge.predecessor_identity_basis_bytes.decode("utf-8")
+                        ),
+                        "member_subject_ids": list(edge.member_subject_ids),
+                    }
+                    for edge in group.lineage
+                ],
             }
             for group in groups
         ],
@@ -572,6 +600,28 @@ def _validated_cross_sample_population(
         )
     except CrossSampleContractError as exc:
         raise AlignmentRuntimeAdapterError(str(exc)) from exc
+
+
+def _validate_cross_sample_application_population(
+    results: tuple[
+        tuple[str, tuple[CrossSamplePeakGroupHypothesis, ...]],
+        ...,
+    ],
+) -> None:
+    unique: dict[str, CrossSamplePeakGroupHypothesis] = {}
+    for _work_unit_key, groups in results:
+        for group in groups:
+            prior = unique.get(group.group_hypothesis_id)
+            if prior is not None:
+                if canonical_alignment_peak_group_binding_bytes((prior,)) != (
+                    canonical_alignment_peak_group_binding_bytes((group,))
+                ):
+                    raise AlignmentRuntimeAdapterError(
+                        "repeated canonical group has conflicting internal state"
+                    )
+                continue
+            unique[group.group_hypothesis_id] = group
+    _validated_cross_sample_population(tuple(unique.values()))
 
 
 def resolve_alignment_application_peak_group_result(

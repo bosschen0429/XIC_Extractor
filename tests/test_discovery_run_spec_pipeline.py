@@ -222,6 +222,13 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         "run_owner_build_process",
         reject_old_owner_build,
     )
+
+    def alignment_raw_opener(path, dll_dir, *, expected_acquisition_source=None):
+        del dll_dir
+        handle = serial_handles[path]
+        assert expected_acquisition_source == handle.acquisition_source
+        return handle
+
     alignment_outputs = alignment_pipeline.run_alignment(
         discovery_batch_index=serial.batch_index_csv,
         raw_dir=tmp_path,
@@ -229,7 +236,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         output_dir=tmp_path / "alignment",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
-        raw_opener=lambda path, dll_dir: serial_handles[path],
+        raw_opener=alignment_raw_opener,
         audit_evidence_mode="none",
         discovery_processing_run_spec=spec,
         discovery_physical_bindings_by_sample={

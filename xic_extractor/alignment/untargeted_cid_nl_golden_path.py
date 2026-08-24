@@ -572,7 +572,18 @@ def build_untargeted_cid_nl_mode_track_projection(
     matrix_rows = []
     identity_rows = []
     proposals = []
-    for row_index, fact in enumerate(mode_track_facts, start=1):
+    render_facts = tuple(
+        sorted(
+            mode_track_facts,
+            key=lambda fact: (
+                fact.group.public_family_id,
+                fact.group.group_center_mz,
+                fact.group.group_center_rt,
+                fact.group.group_hypothesis_id,
+            ),
+        )
+    )
+    for row_index, fact in enumerate(render_facts, start=1):
         group_id = fact.group.group_hypothesis_id
         direct = {
             item.canonical_sample_identity_id: item
@@ -688,7 +699,7 @@ def build_untargeted_cid_nl_mode_track_projection(
         for row in acceptance_rows
     )
     return UntargetedCidNlModeTrackProjection(
-        mode_track_facts=mode_track_facts,
+        mode_track_facts=render_facts,
         backfill_decisions=(),
         matrix_header=matrix_header,
         input_quant_matrix_rows=_freeze_rows(matrix_rows),

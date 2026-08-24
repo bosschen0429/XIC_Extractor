@@ -73,6 +73,11 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
         observation=issue161_peak(fixture, "sample-a", apex_rt=8.03),
     )
     assert first.member_subject_id != second.member_subject_id
+    with pytest.raises(CrossSampleContractError, match="physical observation member"):
+        replace(
+            first,
+            physical_observation_ids=second.physical_observation_ids,
+        )
 
     with pytest.raises(CrossSampleContractError, match="canonical sample"):
         mint_cross_sample_group_identity(
@@ -313,6 +318,31 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
         == forward.successors[0].group_hypothesis_id
         for item in forward.lineage
     )
+    incomplete = replace(
+        forward.lineage[0],
+        member_subject_ids=(members[0].member_subject_id,),
+    )
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        CrossSamplePeakGroupHypothesis,
+        validate_cross_sample_peak_group_identity,
+    )
+
+    successor = forward.successors[0]
+    carrier = CrossSamplePeakGroupHypothesis(
+        group_hypothesis_id=successor.group_hypothesis_id,
+        public_family_id="FAM000001",
+        owner_ids=(),
+        event_ids=(),
+        event_member_count=0,
+        processing_request_id=successor.processing_request_id,
+        member_subjects=successor.member_subjects,
+        identity_basis_bytes=successor.basis_bytes,
+        disposition=successor.disposition,
+        lineage=(incomplete,),
+    )
+    with pytest.raises(CrossSampleContractError, match="incomplete"):
+        validate_cross_sample_peak_group_identity(carrier, require_canonical=True)
 
 
 def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
@@ -349,20 +379,70 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
     assert tuple(group.member_subjects for group in predecessors) == tuple(
         (member,) for member in members
     )
+    with pytest.raises(CrossSampleContractError, match="current population subset"):
+        apply_coupled_successor_proposal(
+            predecessors=predecessors,
+            successor_member_sets=(members,),
+            edges=(
+                _neighborhood_edge(
+                    members[0], members[1], disposition="eligible"
+                ),
+            ),
+            budget=CrossSampleNeighborhoodBudget(
+                max_members=2,
+                max_eligible_edges=1,
+            ),
+            population=(predecessors[0],),
+        )
 
 
 def test_caller_cannot_reopen_excluded_neighborhood_edge(tmp_path) -> None:
+    from dataclasses import replace as dc_replace
+    from types import SimpleNamespace
+
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleContractError,
-        CrossSampleNeighborhoodEdge,
+        CrossSampleNeighborhoodBudget,
+        build_bounded_connected_neighborhood,
     )
 
     _, members = _subjects(tmp_path, "sample-a", "sample-b")
-    with pytest.raises(CrossSampleContractError, match="classified by CrossSample"):
-        CrossSampleNeighborhoodEdge(
-            left_member_subject_id=members[0].member_subject_id,
-            right_member_subject_id=members[1].member_subject_id,
+    excluded = _neighborhood_edge(
+        members[0], members[1], disposition="excluded"
+    )
+    with pytest.raises(CrossSampleContractError, match="contradicts"):
+        dc_replace(
+            excluded,
             disposition="eligible",
+        )
+    with pytest.raises(CrossSampleContractError, match="owner-member pair"):
+        dc_replace(excluded, left_owner=excluded.right_owner)
+    with pytest.raises(CrossSampleContractError, match="exact CrossSample"):
+        build_bounded_connected_neighborhood(
+            member_subjects=members,
+            edges=(
+                SimpleNamespace(
+                    left_member_subject_id=members[0].member_subject_id,
+                    right_member_subject_id=members[1].member_subject_id,
+                    disposition="eligible",
+                ),
+            ),
+            budget=CrossSampleNeighborhoodBudget(
+                max_members=2,
+                max_eligible_edges=1,
+            ),
+        )
+    eligible = _neighborhood_edge(
+        members[0], members[1], disposition="eligible"
+    )
+    with pytest.raises(CrossSampleContractError, match="repeats an undirected"):
+        build_bounded_connected_neighborhood(
+            member_subjects=members,
+            edges=(excluded, eligible),
+            budget=CrossSampleNeighborhoodBudget(
+                max_members=2,
+                max_eligible_edges=1,
+            ),
         )
 
 
@@ -404,12 +484,27 @@ def _neighborhood_edge(left, right, *, disposition):
     from dataclasses import replace as dc_replace
 
     from tests.alignment_pipeline_helpers import owner_edge_evidence
+    from tests.test_alignment_owner_clustering import _owner
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
         classify_cross_sample_initial_neighborhood_edge,
     )
 
-    raw_edge = owner_edge_evidence()
+    left_owner = replace(
+        _owner(f"edge-{left.member_subject_id[-8:]}", "000001"),
+        cross_sample_member_subject=left,
+    )
+    right_owner = replace(
+        _owner(f"edge-{right.member_subject_id[-8:]}", "000001"),
+        cross_sample_member_subject=right,
+    )
+    raw_edge = dc_replace(
+        owner_edge_evidence(),
+        left_owner_id=left_owner.owner_id,
+        right_owner_id=right_owner.owner_id,
+        left_sample_stem=left_owner.sample_stem,
+        right_sample_stem=right_owner.sample_stem,
+    )
     if disposition == "excluded":
         raw_edge = dc_replace(
             raw_edge,
@@ -419,8 +514,8 @@ def _neighborhood_edge(left, right, *, disposition):
     elif disposition != "eligible":
         raise AssertionError(f"unsupported test disposition {disposition!r}")
     return classify_cross_sample_initial_neighborhood_edge(
-        left_member_subject_id=left.member_subject_id,
-        right_member_subject_id=right.member_subject_id,
+        left_owner=left_owner,
+        right_owner=right_owner,
         edge=raw_edge,
         context="hard_gate",
         config=AlignmentConfig(),
