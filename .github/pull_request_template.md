@@ -18,6 +18,14 @@
 <!-- Choose exactly one: yes, no. -->
 - Public contracts at risk:
 <!-- Choose one or more comma-separated values: CLI, config, TSV-CSV schema, workbook, run metadata, matrix identity, selected peak-area, counted detection, none. Use none alone. -->
+- Execution base:
+<!-- Enter the complete 40-character code-evidence commit used to freeze the issue scope. -->
+- Semantic owner:
+<!-- Name the one owner surface this PR changes. -->
+- Finite production universe:
+<!-- Name the reachable production entries/current direct consumers in scope and the census locator; exclude future lifecycle consumers. -->
+- Scope delta from issue:
+<!-- Enter None plus a rationale, or link the self-contained issue refreeze that authorizes the delta. -->
 
 ## Review guide
 

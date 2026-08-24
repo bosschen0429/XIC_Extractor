@@ -1,8 +1,9 @@
 # Planning And Workflows
 
-This file owns planning discipline, reusable workflow routing, and owner
-migration policy. Stable runners and validation command shapes remain in
-`docs/agent/parameter-settings.md`.
+This file owns planning discipline, reusable workflow routing, owner migration
+policy, and the issue-to-PR contract shared by `.github/ISSUE_TEMPLATE/` and
+`.github/pull_request_template.md`. Stable runners and validation command
+shapes remain in `docs/agent/parameter-settings.md`.
 
 ## Planning And Review
 
@@ -132,6 +133,47 @@ when the work crossed this gate. Use PR metadata and existing receipts; do not
 create another progress ledger merely to measure the workflow. Until a
 prospective issue supplies this evidence, describe rework prevention as a
 hypothesis rather than a verified benefit.
+
+### Issue-To-PR Scope And Template Ownership
+
+The implementation issue freezes the work that a PR may deliver. Before an
+issue becomes `ready-for-agent`, its body or one self-contained Current Packet
+must state all of these fields:
+
+1. **Execution base** — the exact code-evidence commit used to enumerate the
+   current implementation and consumers.
+2. **Semantic owner and finite production universe** — one owner plus the named
+   reachable production entries and current direct consumers in scope, with the
+   census locator/query and exclusions. Eventual lifecycle consumers are not
+   current consumers.
+3. **Owner-local asset disposition** — retained, adapted, replaced, and
+   retirement-candidate paths, including a current consumer or zero-reference
+   evidence and each adapter's removal condition.
+4. **Boundary** — observable loss, intended outcome, explicit non-goals,
+   downstream ticket handoffs, preserved invariants, acceptance evidence, and
+   the condition that stops at another owner or behavior decision.
+
+`Sole owner`, `shared lifecycle`, `migrate consumers`, and `retire legacy`
+describe authority or eventual direction only within that finite universe.
+They do not authorize a ticket to implement downstream callers, unrelated
+algorithms, or catch-all cleanup. A missing field is a plan gap: keep or return
+the issue to `needs-info` instead of filling the gap during implementation.
+
+The PR carries a compact scope-transfer receipt: execution base, semantic
+owner, finite production universe, and either `none` plus a rationale for scope
+delta or a link to the superseding issue refreeze. Every production diff must
+fit that receipt. When implementation or review discovers a change to outcome,
+scope, ownership, product behavior, material cost, or acceptance, stop the diff
+and refreeze the issue before delivering it. A finding outside the finite
+universe routes to the issue that owns its reachable actor; passing review is
+not authority to absorb it.
+
+The implementation Issue template and PR template are projections of this
+section. Blank or programmatically created issues remain supported for maps,
+research, and exceptional shapes, but implementation issues must still carry
+the same fields. Template changes that weaken, rename, or add issue-to-PR scope
+fields update this owner, both projections where applicable, the PR-body
+validator, and focused tests in one coherent change.
 
 ### Issue, PR, And Repository Authority
 

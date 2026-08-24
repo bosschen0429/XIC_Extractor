@@ -20,7 +20,7 @@ for the active task unless a hard gate below says otherwise.
 - Shared Target/Untarget lifecycle, semantic owners, and public contracts:
   [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
   and [`architecture-contract.md`](docs/architecture-contract.md)
-- Execution, PR, planning, review, and handoff mechanics:
+- Issue-to-PR scope, execution, planning, review, and handoff mechanics:
   [`execution-gates.md`](docs/agent/execution-gates.md),
   [`planning-workflows.md`](docs/agent/planning-workflows.md),
   [`communication-review.md`](docs/agent/communication-review.md), and
@@ -184,6 +184,17 @@ must remain clean-checkout safe.
   Every task shapes its objective, current evidence, boundaries, acceptance,
   and stop rule; only direction-changing uncertainty or material risk escalates
   to a Current Packet.
+- **Issue-to-PR scope firewall:** before production edits for issue-backed work,
+  require an execution base, one named semantic owner, a finite current
+  production entry/consumer universe, owner-local asset disposition, explicit
+  downstream non-goals, acceptance, and a cross-owner stop rule. `Sole owner`
+  fixes authority location, not ticket scope. A missing material field returns
+  the issue to `needs-info`; it is not reconstructed opportunistically in code.
+- A PR stays inside that frozen universe. A review finding outside it is routed
+  to its owning issue; a finding that changes outcome, scope, ownership,
+  product behavior, material cost, or acceptance first refreezes the issue.
+  Structural parity and eventual lifecycle reachability do not authorize the
+  current PR to absorb another ticket.
 - Use `xic-architecture-preflight` only when work creates or replaces a semantic
   owner, grants writer authority, changes a runtime/public contract, or launches
   scientific evidence. Focused work inside an established owner skips it.
