@@ -343,330 +343,57 @@ instead of inheriting CID-NL 8RAW/85RAW gates by default.
 
 ### No-RAW Tests
 
-No-RAW tests:
-
 ```powershell
 .venv\Scripts\python.exe -m pytest <narrow-test-shard> -q
 ```
 
 ### Untargeted CID-NL Bridge
 
-One known-SUPPORT RAW canary:
-
 ```powershell
-.venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_real_data `
-  --discovery-batch-index <current-discovery-batch-index.csv> `
-  --raw-dir $env:XIC_RAW_VALIDATION_DIR `
-  --sample-metadata <sample-metadata.tsv> `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --output-dir <new-task-specific-output-dir> `
-  --manifest-root . `
-  --sample-stem <known-support-sample-stem> `
-  --expected-sample-count 1 `
-  --precursor-mz <untargeted-subject-precursor-mz> `
-  --timing-output <new-task-specific-output-dir>\timing.json `
-  --timing-live-output <new-task-specific-output-dir>\timing.live.json
+.venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_real_data --help
 ```
 
 The source Discovery batch index does not currently own a settings sidecar.
 Therefore the M7 subject and any non-default Discovery/peak settings must be
-passed exactly as used by the source run; do not tune them from M7 output.
-Historical accepted P8b CSVs may support no-RAW compatibility checks, but they
-predate the current candidate/provenance contract and must not be used as the
-real-RAW M7 authority. After the 1RAW canary succeeds, remove `--sample-stem`,
-change the guard to
-`--expected-sample-count 8`, and use a new output directory for the 8RAW smoke.
-The runner writes `m7_summary.json`, `runtime.json`, the immutable source
-artifact, and a pending production-acceptance manifest. It writes a QMV
-automatically only when no Backfill acceptance row is pending; otherwise the
-run remains `diagnostic_only` until a supplied acceptance manifest passes the
-existing M6 gate.
+passed exactly as used by the source run. Start with one known-support sample;
+only widen the sample count after that canary succeeds. This bridge remains
+`diagnostic_only` while Backfill acceptance is pending.
 
 ### ModeTrack Diagnostic
 
-Opt-in runner for debugging or reviewing a batch (the
-reviewed #180 85-sample lane remains the retained example):
-
 ```powershell
-.venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_mode_track `
-  --raw-dir $env:XIC_RAW_ROOT `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --sample-metadata docs\superpowers\fixtures\issue180_m9_gate_c_sample_metadata_v1.tsv `
-  --preset dna_dr `
-  --precursor-mz 349.215 `
-  --review-bundle-dir docs\superpowers\validation\issue180_m9_gate_c_closed_writer_v3\review_transfer `
-  --output-dir output\issue159-mode-track-table `
-  --manifest-root . `
-  --expected-sample-count 85 `
-  --expected-backfill-cell-count 26 `
-  --expected-backfill-family-count FAM000004=10 `
-  --expected-backfill-family-count FAM000007=11 `
-  --expected-backfill-family-count FAM000009=5 `
-  --sample-identity-namespace issue180-m9-gate-c
+.venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_mode_track --help
 ```
 
-Append `--preflight-only` to close the RAW/DLL/metadata/review/output universe
-and validate the review/replay SHA, schema, 26-cell census, and 10/11/5 family
-distribution without opening RAW files. Remove it only after the RAW run is
-explicitly authorized.
-
-This command is `diagnostic_only` and is not part of normal Alignment or a
-productization lane. It runs Discovery, the current Untargeted
-CID-NL RAW owner, ModeTrack bootstrap/alignment, conservative Backfill, and the
-existing acceptance/QMV owner in one process. The review bundle supplies the
-already-reviewed physical observations; its old checked manifest is not an
-input. Fresh typed values remain authoritative in memory. The attempt directory
-retains Discovery/runtime/source audit artifacts, while the requested output
-directory appears atomically only after both `alignment_matrix.tsv` and
-`alignment_matrix.xlsx` are complete. The published bundle also contains
-`publication_receipt.json`. This compact byte-bound receipt records the exact
-manual-review and observation-replay digests, its reduced
-`owner_validated_physical_subject_binding_only` claim, and byte bindings for the
-published tables. It does not grant authenticity or product authority after a
-caller re-seals edited bytes. A failed stage leaves the requested final output
-directory absent.
+Run `--preflight-only` before opening RAW files. This opt-in runner is a
+`diagnostic_only` review path, not normal Alignment or a productization lane;
+its publication receipt proves byte binding, not authenticity or product
+authority.
 
 ### Provisional Matrix
 
-Full-universe provisional Matrix runner:
-
 ```powershell
-.venv\Scripts\python.exe -m scripts.run_untargeted_provisional_matrix `
-  --raw-dir $env:XIC_RAW_ROOT `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --sample-metadata docs\superpowers\fixtures\issue180_m9_gate_c_sample_metadata_v1.tsv `
-  --preset dna_dr `
-  --output-dir output\issue159-full-universe-provisional-matrix `
-  --manifest-root . `
-  --expected-sample-count 85 `
-  --raw-workers 11 `
-  --raw-xic-batch-size 64 `
-  --owner-build-xic-backend raw-super-window `
-  --owner-backfill-window-strategy super-window `
-  --owner-backfill-superwindow-span-factor 2
+.venv\Scripts\python.exe -m scripts.run_untargeted_provisional_matrix --help
 ```
 
-Append `--preflight-only` before the first RAW launch. This runner has no
-precursor, family allowlist, or reviewed-cell input. It sends the complete fresh
-Discovery batch through the existing cross-sample group and `full-audit`
-Backfill owner. Its primary outputs are
-`provisional_alignment_matrix.tsv`, `provisional_row_identity.tsv`,
-`provisional_cell_provenance.tsv`, and `provisional_matrix_summary.json` under
-the run's `workflow/alignment/` directory. Rows remain explicitly
-`row_identity_status=provisional` and `identity_settlement_status=not_run`;
-Backfill values are diagnostic candidates, not ProductWriter authority. The
-runner does not modify or replace the default `alignment_matrix.tsv` contract.
-Duplicate or later-mergeable provisional rows are an accepted limitation of
-this 60-percent closure, not evidence that final chemical identity is settled.
-The final directory also retains `inputs/sample_metadata.<source-suffix>` and a
-byte-/structure-bound `run_manifest.json`. The retained metadata preserves the
-source `.csv`, `.tsv`, or `.txt` suffix. The runner derives the revision from
-its clean executing checkout. `--code-revision <sha>` is an optional equality
-assertion, not the source of the recorded revision. The manifest records the
-preset, creation-time owner-validated Discovery and Alignment settings, and the
-complete typed runner configuration. The runtime record includes the fixed
-`validation-minimal` output level, disabled audit-evidence mode, an empty
-selected-family source, and retained-metadata sample order. Publication-envelope
-schema v2 also records the Discovery receipt census and artifact schema versions.
-It binds all four provisional artifacts by SHA-256 and byte size. The persisted
-validator checks those bytes and structural invariants before atomic publish. It
-does not reload the current preset, replay the Discovery owner, or parse the four
-artifacts into domain owners, prove their cross-artifact semantics, or grant
-authenticity, semantic replay, or product authority after caller re-sealing. A
-copied bundle can support byte/structure comparison only; a stronger claim
-requires a separately activated owner consumer.
-
-For this runner, atomic publication is a **closed single-writer visibility
-contract**. The publication owner and its in-process collaborators stop writing
-the attempt directory before manifest binding; the final directory then appears
-with one rename. This is not an OS-level seal against another same-permission
-process changing staging during the last validation-to-rename interval. Such a
-threat model requires a separate storage/lifecycle design. Visible bundles remain
-untrusted projections, and every consumer that claims byte binding must run the
-independent manifest validator against the bytes it opens.
-
-`--raw-workers` is one shared machine budget for process-parallel Discovery and
-the existing Alignment process stages. Discovery workers receive only pickleable
-paths/settings/identity values, open and dispose one RAW handle inside the spawned
-process, and write one sample-owned artifact directory. The parent writes the
-batch index in retained sample-metadata order, independent of worker completion
-order. A terminal worker failure stops new submission, cancels pending futures,
-and reports the first owner failure plus every observed failed/completed job.
-The mechanical census partitions completed, failed, cancelled, in-flight, and
-unsubmitted ordinals. Cancellation does not become a scientific missing state.
-Set `--raw-workers 1` to use the serial
-rollback path. Fused Discovery + owner construction is not enabled by this
-contract.
+Run `--preflight-only` before opening RAW files. Its rows remain provisional and
+Backfill values remain diagnostic candidates; this runner does not replace the
+default Matrix contract or grant ProductWriter authority. A copied bundle proves
+only the bytes and structure validated by its manifest.
 
 ### Alignment And Handoff
 
-Validation / downstream handoff alignment should use the minimal machine gate
-surface by default. For 85RAW validation, the current canonical shape is
-`validation-minimal + production-equivalent + validation-fast + super-window +
-timing heartbeat`:
-
 ```powershell
-.venv\Scripts\python.exe -m scripts.run_alignment `
-  --discovery-batch-index <current-spec-discovery-batch-index.csv> `
-  --raw-dir $env:XIC_RAW_ROOT `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --output-dir <task-specific-output-dir> `
-  --sample-info <sample-info.csv> `
-  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
-  --expected-sample-count 85 `
-  --output-level validation-minimal `
-  --backfill-scope production-equivalent `
-  --audit-evidence-mode none `
-  --performance-profile validation-fast `
-  --raw-workers 11 `
-  --owner-backfill-window-strategy super-window `
-  --owner-backfill-superwindow-span-factor 2 `
-  --timing-output <task-specific-output-dir>\timing.json `
-  --timing-live-output <task-specific-output-dir>\timing.live.json
+.venv\Scripts\python.exe -m scripts.run_alignment --help
 ```
 
-`validation-minimal` writes the primary machine gate surface:
-
-- `alignment_matrix.tsv`: downstream correction / statistics handoff.
-- `alignment_review.tsv`: targeted benchmark and decision diagnostics.
-- `alignment_matrix_identity.tsv`: matrix row/cell identity sidecar.
-- `alignment_backfill_cell_evidence.tsv`: compact cell-level ledger for
-  backfill evidence chain, gallery, and overlay review queues.
-
-It does not write `.xlsx`, HTML, full `alignment_cells.tsv`, owner-edge,
-status-matrix, event-owner, or ambiguous-owner debug outputs. Use `debug`,
-`validation`, or `--emit-alignment-cells` only when a human review surface or
-deep debug artifact explicitly needs the full 80-column cell ledger. In `auto`
-audit mode, `validation-minimal` resolves to no heavy audit evidence unless an
-explicit integration audit destination is requested. Some lightweight sidecars, such as
-`skipped_evidence_ledger.tsv` and `alignment_run_metadata.json`, may still be
-emitted when backfill scope needs machine-readable skip provenance.
-
-Backfill reconciliation gallery delivery has one extra lightweight requirement:
-add `--emit-alignment-backfill-seed-audit` to emit
-`alignment_owner_backfill_seed_audit.tsv`. That file provides seed-specific
-provenance for retained-gate review queues and overlay joins, but it does not
-force the full `alignment_cells.tsv` or all-candidate audit. Use
-`--emit-alignment-backfill-candidate-audit` only for deep owner-backfill debug;
-it is not required for normal seed-specific or family overlay galleries.
-
-For overlay rendering, first run retained backfill evidence gate and render only
-its `alignment_retained_backfill_overlay_review_queue.tsv`. Use
-`family_ms1_overlay_batch.py --no-pdf --reuse-existing` and chunk large queues
-with `--start-rank` / `--limit` when needed. The batch renderer reuses completed
-PNG/trace bundles and extracts RAW traces in sample-batched mode, so each chunk
-opens each sample RAW at most once instead of reopening RAW per family. Within
-each sample, overlapping scan windows are grouped into bounded super-windows and
-cropped back to the original request windows; the batch summary JSON records RAW
-opens, XIC requests, exact scan windows, super-window groups, chromatogram calls,
-and trace point counts. Preset/in-process callers write the final batch outputs
-once, while the standalone CLI keeps incremental summary rewrites for resumable
-manual rendering. For product publication that needs compact RAW-backed evidence
-but not images, use `family_ms1_overlay_batch.py --evidence-only`; this writes
-trace TSV/JSON and summary rows with blank PNG/PDF fields.
-
-For normal DNA dR runs, use the preset surface to bind Discovery and Alignment
-settings to the single Owner Backfill/Matrix transaction:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.run_alignment `
-  --preset dna_dr `
-  --discovery-batch-index <current-spec-discovery-batch-index.csv> `
-  --raw-dir $env:XIC_RAW_ROOT `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --output-dir <task-specific-output-dir> `
-  --sample-info <sample-info.csv> `
-  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
-  --expected-sample-count 85 `
-  --output-level validation-minimal `
-  --backfill-scope production-equivalent `
-  --audit-evidence-mode none `
-  --performance-profile validation-fast `
-  --raw-workers 11 `
-  --owner-backfill-window-strategy super-window `
-  --owner-backfill-superwindow-span-factor 2 `
-  --timing-output <task-specific-output-dir>\timing.json `
-  --timing-live-output <task-specific-output-dir>\timing.live.json
-```
-
-Both built-ins now stop after generic Alignment, Owner Backfill, and the
-canonical Matrix writer. `--preset dna_dr` uses the configured `raw` Owner Build
-backend. `--preset dna_dr_product_ready` is a historical compatibility name for
-the `raw_superwindow` Owner Build profile; selecting it does not evaluate or
-assert product readiness. Neither built-in runs Standard Peak RAW/XIC,
-productization, consolidation, activation, or source-Matrix republication.
-
-The former `standard_peak_backfill*` and `backfill_expansion*` preset keys, plus
-`--standard-peak-backfill-publication-mode` and
-`--standard-peak-evidence-cache-dir`, are retired from normal execution. The
-loader/CLI rejects them before Alignment or RAW work rather than silently
-changing science. T5D deleted the former Standard Peak preset, machine,
-authority, activation, productization, consolidation, stage-replay, and
-publication-checker entries. Retained overlay, shift-aware, calibration, and
-gallery tools remain explicit offline falsifiers/renderers only. There is no
-new integrated HOLD-diagnostic contract: without original-owner subject and run
-rehydration their semantic result is unavailable. None is a normal preset tail
-or can publish a Matrix value.
-
-When `--timing-output` or `--timing-live-output` is supplied, normal preset
-timing covers the Alignment/Owner Backfill transaction; there is no Standard
-Peak post-alignment preset stage.
-Use this shape for HEARTBEAT monitoring; older artifacts may only contain the base `pipeline:
-alignment` timing and therefore under-report preset-tail bottlenecks.
-Timing JSON now keeps the raw `records` list and also emits derived
-`summaries.stage_summary` and `summaries.raw_xic_locality_summary` sections.
-Use those derived summaries for no-RAW bottleneck triage before changing RAW
-batching/cache code: `raw_xic_locality_summary` reports stage-level
-`extract_xic_count`, `extract_xic_batch_count`, `raw_chromatogram_call_count`,
-`point_count`, and per-XIC/per-batch ratios without re-reading RAW files.
-
-The built-in `dna_dr_product_ready` preset no longer invokes a publication
-checker. T5D deleted that historical checker and its stage replay because both
-encoded the retired Standard Peak publication contract. Historical publication
-artifacts remain retained diagnostic context only; their packet-local checks do
-not authenticate historical origin or readiness for a current run.
-
-Before starting 85RAW, verify the batch index actually contains 85 samples. Do
-not reuse the historical 8RAW index by path similarity. Prefer the CLI preflight
-guard because it uses the same discovery-batch parser, checks candidate CSV
-existence and RAW path existence, and prints the launch contract without loading
-candidate CSV rows or opening RAW files:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.run_alignment `
-  --discovery-batch-index <current-spec-discovery-batch-index.csv> `
-  --raw-dir $env:XIC_RAW_ROOT `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --output-dir <task-specific-output-dir> `
-  --sample-info <sample-info.csv> `
-  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
-  --expected-sample-count 85 `
-  --output-level validation-minimal `
-  --backfill-scope production-equivalent `
-  --audit-evidence-mode none `
-  --performance-profile validation-fast `
-  --raw-workers 11 `
-  --owner-backfill-window-strategy super-window `
-  --owner-backfill-superwindow-span-factor 2 `
-  --timing-output <task-specific-output-dir>\timing.json `
-  --timing-live-output <task-specific-output-dir>\timing.live.json `
-  --preflight-only
-```
-
-When `--expected-sample-count 85` is present, `scripts.run_alignment` also
-enforces the canonical 85RAW launch contract: `validation-minimal`,
-`production-equivalent`, `audit-evidence-mode none`, `validation-fast`,
-`super-window`, timing JSON + live heartbeat, and a Python executable under this
-worktree's `.venv`.
-
-Manual fallback:
-
-```powershell
-(Import-Csv <current-spec-discovery-batch-index.csv>).Count
-```
-
-If this prints `8`, stop and locate the current 85RAW discovery artifact from
-the named validation owner or live GitHub Issue before running alignment.
+Use `docs/product/alignment.md` for output and handoff semantics,
+`docs/product/presets.md` for preset compatibility, and
+`tools/diagnostics/INDEX.md` for retired Standard Peak history. The reusable
+85RAW launch, preflight, heartbeat, and profiling shape lives only in
+[85RAW Command Contract](#85raw-command-contract). Current CLI help owns the
+flag inventory; task-specific paths and accepted parameter values belong to the
+active issue or validation owner.
 
 ## 85RAW Command Contract
 
@@ -681,17 +408,7 @@ commands should pin `--raw-workers 11` explicitly for this machine. The formal
 85RAW shape also needs output thinning, production-equivalent backfill,
 audit-evidence cutoff, super-window, and heartbeat output.
 
-RAW / alignment commands:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.run_alignment `
-  --discovery-batch-index <current-spec-discovery-batch-index.csv> `
-  --raw-dir $env:XIC_RAW_ROOT `
-  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
-  --output-dir <task-specific-output-dir>
-```
-
-Long RAW alignment runs should be observable while they are running:
+Canonical launch shape:
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.run_alignment `
@@ -699,9 +416,21 @@ Long RAW alignment runs should be observable while they are running:
   --raw-dir $env:XIC_RAW_ROOT `
   --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
   --output-dir <task-specific-output-dir> `
+  --sample-info <sample-info.csv> `
+  --targeted-istd-workbook <targeted-istd-workbook.xlsx> `
+  --expected-sample-count 85 `
+  --output-level validation-minimal `
+  --backfill-scope production-equivalent `
+  --audit-evidence-mode none `
+  --performance-profile validation-fast `
+  --raw-workers 11 `
+  --owner-backfill-window-strategy super-window `
+  --owner-backfill-superwindow-span-factor 2 `
   --timing-output <task-specific-output-dir>\timing.json `
   --timing-live-output <task-specific-output-dir>\timing.live.json
 ```
+
+Run the same command with `--preflight-only` before the first RAW launch.
 
 `--timing-live-output` is the heartbeat artifact for timeout-prone 85RAW runs.
 The versioned `timing.live.v2` artifact contains bounded `recent_records` and
