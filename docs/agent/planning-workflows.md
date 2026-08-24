@@ -185,6 +185,15 @@ existing PR review/receipt surface when they affect merge readiness; do not add
 a second finding ledger or keep expanding the diff until all adjacent gaps are
 gone.
 
+Delivery is complete only when the intended outcome is observable through the
+named production entry and current consumers, every in-scope acceptance item is
+closed, required verification and review bind the delivered head, and no
+remaining step is required to make the diff usable within its declared scope.
+Code presence, tests passing, scaffolding, or an intermediate PR are not a
+completion claim. If a required item remains, keep the issue open and describe
+the PR as intermediate; if completing it would cross the frozen boundary,
+refreeze or hand it off instead of silently redefining done.
+
 The implementation Issue template and PR template are projections of this
 section. Blank or programmatically created issues remain supported for maps,
 research, and exceptional shapes, but implementation issues must still carry
