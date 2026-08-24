@@ -330,50 +330,19 @@ that evidence chain is the default lifecycle; do not mirror programme progress
 vocabularies as labels. Use native `blocked_by` only for a real open prerequisite,
 not parent/child membership, optional sequencing, or intentional deferral.
 
-## Goal Contract Shape
+## Goal Contract XIC Delta
 
-Use goals for phase-sized, cross-turn, RAW/data-backed, PR-ready, CI/release-like,
-or repeatedly drifting work. Do not use a runtime goal for tiny bug fixes, simple
-status checks, or one-command validations with an obvious done state.
+Use the global `goal-execution` workflow for goal triggers, shape, execution,
+handoff, and closeout. An XIC goal adds only project-specific bindings:
 
-A useful goal is one measurable objective plus enough context to prevent drift.
-It should include:
-
-```markdown
-Objective:
-Context:
-Constraints:
-In scope:
-Out of scope:
-Current surfaces/artifacts:
-Plan:
-Verification:
-Boundaries:
-Iteration policy:
-Done when:
-Pause if:
-Stop rules:
-Handoff:
-```
-
-Keep `Objective` singular. If two outcomes need different verification gates,
-split them into separate goals or state which one is primary. `Done when` must
-be auditable from files, commands, PR state, or validation artifacts. `Stop
-rules` must name conditions that require user decision instead of continued
-blind continuation.
-
-When drafting a goal for a vague request, give the best executable version
-first rather than a blank form. Choose conservative defaults for low-risk
-unknowns and ask only when the answer changes cost, risk, ownership, public
-contracts, or product direction. If the domain is unfamiliar, make discovery of
-repo docs, existing scripts, sample data, or official references part of the
-goal before implementation.
-
-Keep `Done when` for completion evidence and `Pause if` for human/external
-blockers such as credentials, production data, destructive operations,
-permissions, budget, unclear ownership, or product-direction decisions.
-Iteration should be bounded: after the same failure shape repeats twice, require
-a new source of evidence instead of another blind retry.
+- point context at the active semantic, product, validation, and runtime owners
+  plus the current artifacts; do not copy those owners into the goal;
+- name the method-appropriate evidence tier, RAW/runtime cost, and the condition
+  that makes an expensive run decision-bearing;
+- for issue-backed work, preserve the issue or Current Packet as scope authority;
+  a runtime goal cannot refreeze acceptance or absorb another owner;
+- close against this document's delivery completion gate and the applicable XIC
+  validation owner; goal status alone is not completion evidence.
 
 ## Skills And Subagents
 
