@@ -21,7 +21,7 @@ for the active task unless a hard gate below says otherwise.
 - Test architecture and whether a change warrants new regression coverage:
   [`testing.md`](docs/agent/testing.md)
 - Shared Target/Untarget lifecycle, semantic owners, and public contracts:
-  [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
+  [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes)
   and [`architecture-contract.md`](docs/architecture-contract.md)
 - Issue scope, task shaping, refreeze, and delivery completion:
   [`planning-workflows.md`](docs/agent/planning-workflows.md)
@@ -33,16 +33,15 @@ for the active task unless a hard gate below says otherwise.
 - Review communication, PR receipts, and handoff placement:
   [`communication-review.md`](docs/agent/communication-review.md) and
   [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md)
-- Existing diagnostics and measured conclusions:
+- Script/diagnostic exposure, lifecycle, and retirement:
+  [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md); current
+  catalog and measured conclusions:
   [`diagnostic-ledger.md`](docs/diagnostic-ledger.md),
   and [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md)
-- Productization capabilities, mutable state, writer authority, and promotion:
+- Productization capabilities, mutable state, and writer authority:
   [`productization.md`](docs/product/productization.md),
   [`productization_status_index_v1.tsv`](docs/superpowers/validation/productization_status_index_v1.tsv),
-  [`productization_authority_manifest.v1.json`](docs/superpowers/schemas/productization_authority_manifest.v1.json), and
-  [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
-- Historical productization anchor lookup only:
-  [`2026-06-15-productization-control-plane.md`](docs/superpowers/plans/2026-06-15-productization-control-plane.md)
+  and [`productization_authority_manifest.v1.json`](docs/superpowers/schemas/productization_authority_manifest.v1.json)
 - Repo layout, agent system, and opt-in XIC skills:
   [`project-layout.md`](docs/project-layout.md),
   [`codex-operating-system.md`](docs/agent/codex-operating-system.md),
@@ -147,20 +146,13 @@ must remain clean-checkout safe.
 
 ## Architecture Guardrails
 
-- Preserve dependency direction. Domain logic must not import GUI, workbook
-  builders, CLI scripts, process backends, report renderers, or RAW/CSV
-  adapters.
-- Treat `tools/diagnostics/` as maintained product-adjacent code. CLIs
-  orchestrate; reusable loading, classification, models, summaries, plotting,
-  and writers belong in package modules.
-- Diagnostic writers render only. They must not recompute domain evidence or
-  re-scan RAW files.
 - Runtime consumers submit typed work/resource/artifact/acquisition receipts and
   external telemetry samples to `execution_runtime_owner`; only that owner may
   construct lifecycle, observability, or finalization projections. Adapters must
   enter through its atomic execution/finalization API, not call partial lifecycle
   primitives, accept caller-authored ledgers/counts, or expose settlement-only
-  public bypasses. See `docs/agent/architecture-public-contracts.md`.
+  public bypasses. See
+  `docs/agent/architecture-public-contracts.md#runtime-construction-authority`.
 - Validate persisted content only at a reachable decision boundary. Fields that
   grant writer authority, change product output, or drive a domain/runtime
   decision use their existing semantic owner. Audit-only metadata is telemetry,

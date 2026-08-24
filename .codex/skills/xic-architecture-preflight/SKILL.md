@@ -75,10 +75,11 @@ plan before edits.
 
 ## 3. Close Boundary Projections
 
-Read `docs/agent/architecture-public-contracts.md` when a model, worker result,
-event, artifact, settlement, receipt, serializer, recovery marker, comparator,
-or writer crosses a boundary. For each non-trivial source-to-target projection,
-record:
+Follow `docs/agent/architecture-public-contracts.md#read-routes` when a model,
+worker result, event, artifact, settlement, receipt, serializer, recovery
+marker, comparator, or writer crosses a boundary. Start with
+`#boundary-projection-closure` for each non-trivial source-to-target projection
+and record:
 
 | Boundary | Source owner -> target consumer | Identity / cardinality | Preserved semantics | Deliberate loss / reduced claim | Failure / provenance / durable binding | Oracle |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -95,10 +96,11 @@ certify. If the change has no non-trivial projection, record `N/A` and why.
 ## 4. Bind Authority And Acceptance
 
 Classify the evidence-provider role and state the shortest human-explainable
-product rule. Read `docs/agent/architecture-public-contracts.md` when CLI,
-config, schema, workbook/report, or persisted identifiers may change. Always
-state whether matrix identity, activation, value delta, selected peak/area, or
-counted detection changes.
+product rule. Read
+`docs/agent/architecture-public-contracts.md#public-contracts` when CLI, config,
+schema, workbook/report, or persisted identifiers may change. Always state
+whether matrix identity, activation, value delta, selected peak/area, or counted
+detection changes.
 
 Choose the lowest gate that can falsify the expected behavior: focused tests,
 no-RAW artifact parity, lane-specific 8RAW/85RAW, targeted benchmark, or manual
