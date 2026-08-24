@@ -26,7 +26,7 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
 | provisional full-universe Matrix | [Provisional Matrix](#provisional-matrix) |
 | Alignment、Owner Backfill 或 Matrix handoff | [Alignment And Handoff](#alignment-and-handoff) |
 | 85RAW launch 或 profiling | [Alignment And Handoff](#alignment-and-handoff) 與 [85RAW Command Contract](#85raw-command-contract) |
-| sandbox、approval、shell 或 launcher failure | [Sandbox Friction Playbook](#sandbox-friction-playbook) 與 [Syntax Anti-patterns](#syntax-anti-patterns) |
+| sandbox、approval、shell 或 launcher failure | [Preflight](#preflight) 與 [Syntax Anti-patterns](#syntax-anti-patterns) |
 
 跨 worktree 會重複遇到的診斷結論放在
 `docs/diagnostic-ledger.md`。在重跑昂貴 RAW validation 或把已知 target
@@ -215,111 +215,6 @@ profile，也不覆寫 host sandbox。任何需要額外 filesystem、Git 或 ne
 ```powershell
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --strict --command ".venv\Scripts\python.exe -m scripts.run_alignment --expected-sample-count 85 ..."
 ```
-
-## Sandbox Friction Playbook
-
-Repo 不擁有 permission profile、sandbox mode、GitHub allowlist 或 shell-environment
-permission workaround。Host 的 **Approve for me** 是唯一 permission escalation path。
-Doctor 只分類 exact failure 並指出同一個必要命令；它不要求修改 project config。
-
-```powershell
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write --probe-git-write --probe-github
-gh api rate_limit
-```
-
-第一個命令驗證 workspace、Git metadata 與 GitHub origin。第二個命令直接驗證
-`api.github.com`；兩者都是 read-only network canary。若 sandbox 阻擋必要命令，
-直接對同一個精確命令使用 **Approve for me**。
-
-### Approval-First Commands
-
-下列類型在這台 Windows / Codex sandbox 上已反覆出現「先跑一次被拒，再用同
-一條命令提權重跑」的浪費。不要把這些當未知問題重複試錯；如果任務需要它們，
-直接用 `sandbox_permissions=require_escalated` 送同一條命令，並使用窄
-`prefix_rule`。如果不需要它們，改用已存在 artifact 或離線替代，不要先跑。
-
-| 命令類型 | 固定處理 | 不要做 |
-| --- | --- | --- |
-| `uv lock`、`uv sync --extra dev --group dev`、會下載 dependency 的 `uv run --with ...` | 任務需要更新 lock/env 時直接提權；保留 `$env:UV_CACHE_DIR='.uv-cache'`；prefix 只給 `uv lock` 或 `uv sync` 這種窄命令。本 repo 同時使用 optional `dev` extra 與 dependency group；需要完整 dev env 時用 `uv sync --extra dev --group dev` | 不要先在 sandbox 裡等 PyPI 被擋；不要只跑 `uv sync --group dev`，那會漏掉 optional dev extra 裡的 pytest stack；不要因為 `uv sync` 被擋就改成未 lock 的臨時安裝 |
-| `uv run python -m playwright install chromium`、browser binary install/update | 只有 browser binary 缺失時才提權安裝；gallery smoke 先用 `tools\diagnostics\gallery_browser_smoke.py`，它會 fallback 到 system Chrome/Edge | 不要用 MCP timeout 或 Chrome extension 狀態當作自動化 smoke 的唯一驗收 |
-| 會讀 `$env:XIC_RAW_ROOT` / `$env:XIC_RAW_VALIDATION_DIR` RAW 或載入 `$env:THERMO_RAWFILE_READER_DLL_DIR` DLL 的命令 | 先跑本檔 Preflight 的 `Test-Path` 與 `.venv\Scripts\python.exe` runtime check；命令本身用 `.venv\Scripts\python.exe`；若 sandbox / DLL loading / external executable spawn 被擋，直接提權重跑同一條命令 | 不要先用 bare `python` 撞一次；不要掃 sibling directory 猜 RAW/DLL；不要把較窄 no-RAW pytest 當成 RAW 驗證替代 |
-| GUI/browser 開啟、外部 terminal、`Start-Process` 類命令 | 只有使用者明確需要互動視窗或外部 terminal 時才提權；長 RAW run 優先用前景 heartbeat command，不用 GUI | 不要用背景 helper 隱性取代可審計的 foreground RAW run |
-| 寫入 `$CODEX_HOME` / `.codex` config、plugin/skill install、全域 hook/config | 只有使用者明確要求改 agent environment 時才提權；完成後寫 smoke / rollback note | 不要為了單次 repo 任務擴大成全域設定 |
-
-如果命令不在上表，才回到「先 doctor、再決定」：
-
-```powershell
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --command "<command-to-check>"
-```
-
-常見 friction 不要全部用放寬 sandbox 解決：
-
-| 症狀 | 先做什麼 | 不要做什麼 |
-| --- | --- | --- |
-| 寫入 RAW/DLL storage、桌面資料夾、`$CODEX_HOME` / `%USERPROFILE%\.codex` 失敗 | 把 output / cache / sidecar 改到目前 worktree 的 `output/...` 或 sandbox-provided temp dir；若真的要改全域 Codex 設定，先明確取得使用者要求 | 不要切 `danger-full-access` 或擴大 writable root 只為了省一次路徑修正 |
-| package install、`npx`、下載文件、GitHub/網路失敗 | 確認這是任務必要條件後，用 narrow approval / prefix；成功後記錄穩定命令或替代離線路徑 | 不要把 network access 永久打開當預設 |
-| pytest / Python 產生 cache 被擋 | 在 worktree 內跑；必要時加 `$env:PYTHONDONTWRITEBYTECODE='1'` 和 `-p no:cacheprovider`；verification run 可 workspace-write 只為 verification side effects，驗證後要回報 `git status` 是否只剩預期 side effects | 不要讓 verification run 改 source |
-| pytest 回 `no tests ran` 或 `not found` | 先用 `rg -n "<test_name>|def test_" tests\...` 找實際名稱；必要時跑 `.venv\Scripts\python.exe -m pytest --collect-only -q <test-file>` 後再下精準 node id | 不要把 `no tests ran` 當成測試失敗或通過；不要猜 node id 一直重跑 |
-| RAW / DLL 讀不到 | 先跑本檔 Preflight 的 `Test-Path` 與 Python runner check；RAW 命令用 `.venv\Scripts\python.exe` | 不要用 bare `python` 重試 RAW，也不要掃 sibling directory 猜路徑 |
-| PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `.venv\Scripts\python.exe -c` 或 PowerShell here-string pipe 到同一 worktree interpreter；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |
-| 長時間 85RAW 卡住 | 用 foreground command + `--timing-live-output`；先看 heartbeat / timing artifact 再重跑 | 不要背景 `Start-Process` 後回來輪詢 |
-| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、`.gitconfig` unreadable 或 permission denied | 先跑 doctor 並確認 worktree；對同一個精確 Git 命令使用 **Approve for me** | 不要用 `git add -A`、`git add --all` 或 `git add .` 擴大 staging scope；不要新增 repo-local permission profile、sandbox override 或 shell-environment workaround；不要把 host permission failure 誤判成程式碼問題 |
-| 要續接舊 worktree / 舊 artifact | 先 `git worktree list` 與 `Test-Path` exact artifact；若 worktree/output 不存在，改用 `local_validation_artifacts/` 或明確重建 smoke path | 不要假設上一輪 worktree 還存在；不要把 `.worktrees/<branch>/output/...` 當長期可重用 input |
-| 遞迴掃描太慢、掃到 access denied、或 output/build/.worktrees 噪音 | 優先用 `git ls-files`、`rg --files`、targeted `rg`，再讀特定 range | 不要用 blanket `Get-ChildItem -Recurse` 掃整個 repo、`output/`、`.worktrees/`、或 build/cache 目錄 |
-| output / workbook overwrite `Permission denied` | 先假設檔案可能被 Excel/browser/previewer 鎖住；改寫到 timestamped 或 suffixed output，並回報原檔可能被鎖 | 不要強刪或反覆覆蓋；不要把 permission denied 當成 pipeline 邏輯失敗 |
-
-已獲准的 Git metadata mutation 若在 elevated Windows user 下回報 `dubious
-ownership`，先確認目前目錄就是目標 worktree，再只對這次 Git invocation 加
-exact exception：
-
-```powershell
-$xicRepoRoot = (Resolve-Path .).Path.Replace('\', '/')
-git -c "safe.directory=$xicRepoRoot" add -- <task-files...>
-git -c "safe.directory=$xicRepoRoot" push
-```
-
-後續 commit／push 同樣把 `-c "safe.directory=$xicRepoRoot"` 放在 subcommand
-前。`git -c` 由 repo execpolicy 的獨立 `prompt` rule 擁有；pre-tool guard 只放行
-直接、非 wrapper 的 `git -c ... push` 進入該 prompt，其他 optioned push 仍會
-拒絕並要求改寫。明確的 `bash -c`、`pwsh -Command`、`cmd /c`、`wsl`、`env`、
-`command`、`exec` wrapper 不進行 payload 解析，一律回
-`REWRITE_COMMAND`／hook denial；把 payload 改成目前 shell 的直接命令。
-不要寫入 global `safe.directory`，也不要把其他 repo 加進例外。
-
-Repo command policy 只解析 canonical lowercase、單一直接 `git` invocation。
-`git.exe`／`git.cmd`／`git.bat`／`git.ps1`／`git.com`／`git.sh`、大小寫或
-path-qualified executable alias、compound block、assignment
-RHS、redirection、command substitution、malformed quoting 與不支援的 Git
-global option 都 fail closed；不要為了繞過這個 gate 再包一層 shell。Quoted Git
-文字只有在頂層 `grep`、`findstr`、`Select-String`、`Write-Host`、`Write-Output`、
-`echo` 或 `printf` 中視為普通資料；`rg` 的 `--pre` 可啟動外部 command，因此不在
-inert allowlist。Outer wrapper executable 即使前面有 assignment、call operator
-也 fail closed；普通 simple command 的 argument／path／option value
-位置可把 wrapper 文字當資料。Bounded locator 只辨識 outer executable，包括
-POSIX assignment prefix 或 initial call operator 後的位置；redirection prefix、
-PowerShell assignment RHS、later compound segment、shell control words 與 dynamic
-executable expression 都不由 repo wrapper parser 解讀。任何 non-direct
-Git-bearing shape 仍 fail closed。Git
-subcommand 必須是 canonical lowercase，避免 Windows 執行成功但 exact execpolicy
-prefix 沒命中。無法命中 prompt prefix 的 optioned `clone`、`fetch`、
-`ls-remote`、`pull`、`push` 都由 hook 與 doctor 一致要求 rewrite。任意 Python、
-eval 或其他程式內部動態啟動 subprocess 不由 repo parser 宣稱覆蓋，仍由 host
-sandbox 與 global destructive-action contract 管理。
-其他 launcher／control prefix 也不由 repo parser 模擬，仍由相同 host/global
-authority 管理。
-
-只有在「失敗模式重複、doctor 或現有 preflight 無法降低風險、且人工 approval
-本身變成主要摩擦」時，才考慮新增 project-local execpolicy 或 hook。新增前
-必須回答：
-
-1. 這個規則是否只允許一個可預期、可重複的安全命令形狀？
-2. 它是否會允許任意 Python / shell / deletion / network access？
-3. 它是否比把 output 改到 worktree、固定 runner、或更新本檔更好？
-4. 它是否有 smoke check，且不會把使用者真正該審的決策藏起來？
-
-Repo 不以 `.codex/config.toml` 定義 permission profile 或 Git global-config
-isolation。`.codex/rules/xic-safety.rules` 只保留 destructive／external action 的
-block 或 prompt；所有額外 permission 由 host **Approve for me** 處理。
 
 ## Validation Tiers
 
