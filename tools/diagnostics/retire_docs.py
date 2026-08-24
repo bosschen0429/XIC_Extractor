@@ -76,14 +76,18 @@ def _find_in_vault(
     *,
     rel_path: str,
     source_text: str,
+    source_bytes_hash: str,
 ) -> Path | None:
     normalized = _normalize_title(title)
+    normalized_source_copy = _normalize_title(
+        source_copy_note_title(rel_path, source_bytes_hash)
+    )
     for md in vault_path.rglob("*.md"):
-        if _normalize_title(md.name) == normalized and _vault_copy_matches(
-            md,
-            rel_path,
-            source_text,
-        ):
+        known_title = _normalize_title(md.name) in {
+            normalized,
+            normalized_source_copy,
+        }
+        if known_title and _vault_copy_matches(md, rel_path, source_text):
             return md
     return None
 
@@ -458,6 +462,7 @@ def _ensure_vault_copy(
         vault_path,
         rel_path=rel_path,
         source_text=source_text,
+        source_bytes_hash=_source_bytes_hash(fpath.read_bytes()),
     )
     if vault_match:
         result.already_in_vault.append((rel_path, vault_match))
@@ -659,6 +664,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if args.evidence is None:
             parser.error("--source-copy-only requires --evidence")
+            return 1
+        if vault_path is None:
+            print(
+                "ERROR: --source-copy-only requires a configured vault path.",
+                file=sys.stderr,
+            )
             return 1
         source = (
             args.files[0].resolve()

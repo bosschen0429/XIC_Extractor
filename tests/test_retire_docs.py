@@ -425,6 +425,35 @@ def test_retirement_reuses_existing_vault_copy_only_when_source_matches(
     assert result.retired == [rel]
 
 
+def test_retirement_reuses_verified_hash_named_source_copy(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
+    spec = repo / rel
+    text = _completed_spec()
+    _write(spec, text)
+    source_copy = copy_source_only(
+        spec,
+        repo,
+        vault,
+        evidence=_same_path_copy_evidence(rel, text),
+        execute=True,
+    )
+    assert source_copy.destination is not None
+
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_retirement_evidence(rel, text),
+    )
+
+    assert result.already_in_vault == [(rel, source_copy.destination)]
+    assert result.copied_to_vault == []
+    assert result.retired == [rel]
+
+
 def test_retirement_does_not_trust_same_title_unrelated_vault_note(
     tmp_path: Path,
 ) -> None:
