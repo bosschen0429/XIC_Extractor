@@ -17,6 +17,8 @@ for the active task unless a hard gate below says otherwise.
 - Evidence semantics, method-specific QC/calibration, and validation policy:
   [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
   and [`lc-msms-evidence-rules.md`](docs/lc-msms-evidence-rules.md)
+- Test architecture and whether a change warrants new regression coverage:
+  [`testing.md`](docs/agent/testing.md)
 - Shared Target/Untarget lifecycle, semantic owners, and public contracts:
   [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
   and [`architecture-contract.md`](docs/architecture-contract.md)

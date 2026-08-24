@@ -23,6 +23,36 @@
 
 真實資料驗證優先使用 validation harness，`parallel_workers=4` 作為預設人工驗收設定。不要在一般 unit/contract tests 直接依賴本機 RAW 路徑。
 
+## Test Usefulness Gate
+
+每個變更都要驗證，但不一定要新增測試。先選能否證變更的最低既有 observation。
+只有以下條件全部成立時才新增或修改測試：
+
+1. 它保護可觀測行為、public contract、reachable regression 或現行 semantic
+   owner boundary。
+2. 輸入可重現 failure mechanism，assertion 能區分預期結果與 observable loss。
+3. 既有 tests、validators、schema checks、referrer census、artifact inspection
+   或 diff review 尚不能完成同一判斷。
+4. 當前 branch、migration 或 cleanup 結束後，這個 check 仍有用途。
+
+新增或修正 production behavior 且已有穩定 oracle 時，採 test-first。新增或修改
+的 check 必須證明它會因所保護的行為而失敗；這項要求約束的是 check，不是每一個
+repository change。
+
+若沒有 current consumer 依賴該結構，不要用測試固定一次性 cleanup state、private
+helper、branch-local migration step 或特定目錄／檔名。文件退休與 referrer cleanup
+優先使用既有 placement／audit checks、exact referrer census、rendered/read-back
+inspection 與 review。若沒有 observation 能改變決策，就記錄這個結果，不要製造
+RED。
+
+保留新測試前，必須說清楚：
+
+- 它保護的 actor／input 與 observable loss；
+- 現有 verifier set 為何不足；
+- temporary compatibility test 的移除條件。
+
+答不出來就不新增測試。
+
 ## 2. File Layout
 
 目前維持 `tests\test_*.py` 扁平結構，因為 repo 已經採用這個模式且 `pyproject.toml` 設定 `testpaths = ["tests"]`。
