@@ -383,6 +383,7 @@ def _topic_hint(path: str, text: str) -> tuple[str, str]:
     if (
         path_haystack.startswith("docs/superpowers/file-management/")
         or path_haystack.startswith("docs/superpowers/closeouts/")
+        or path_haystack.startswith("docs/superpowers/handoffs/")
         or path_haystack in docs_workflow_routing_paths
     ):
         return (
@@ -927,17 +928,33 @@ def _is_referrer_scan_target(rel_path: str) -> bool:
 
 def _exact_referrer_paths(
     repository_view: _docs_scan.RepositoryTextView,
-    candidate_path: str,
+    candidate: DocsRoutingCandidate,
 ) -> list[str]:
+    candidate_path = candidate.path
+    family_prefix = ""
+    needles = [candidate_path]
+    if (
+        candidate.disposition == "keep_repo_validation_or_fixture"
+        and candidate_path.endswith("/README.md")
+    ):
+        family_prefix = candidate_path.rsplit("/", 1)[0] + "/"
+        needles.append(family_prefix.rstrip("/").rsplit("/", 1)[-1])
+        needles.extend(
+            rel_path
+            for rel_path in repository_view.paths
+            if rel_path.startswith(family_prefix)
+        )
     referrers: list[str] = []
     for rel_path in repository_view.text_paths:
         normalized = rel_path.replace("\\", "/")
-        if normalized == candidate_path:
+        if normalized == candidate_path or (
+            family_prefix and normalized.startswith(family_prefix)
+        ):
             continue
         if not _is_referrer_scan_target(normalized):
             continue
         text = repository_view.read_text(normalized)
-        if candidate_path in text:
+        if any(needle in text for needle in needles):
             referrers.append(normalized)
     return sorted(set(referrers))
 
@@ -946,7 +963,7 @@ def _with_referrer_status(
     repository_view: _docs_scan.RepositoryTextView,
     candidate: DocsRoutingCandidate,
 ) -> DocsRoutingCandidate:
-    referrers = _exact_referrer_paths(repository_view, candidate.path)
+    referrers = _exact_referrer_paths(repository_view, candidate)
     if not referrers:
         return replace(
             candidate,
@@ -966,6 +983,26 @@ def _with_referrer_status(
         referrer_status="exact_repo_referrers_present",
         exact_referrers=len(referrers),
         sample_referrers="; ".join(sample_referrers[:5]),
+    )
+
+
+def _with_unbound_validation_review(
+    candidate: DocsRoutingCandidate,
+) -> DocsRoutingCandidate:
+    if (
+        candidate.disposition != "keep_repo_validation_or_fixture"
+        or candidate.exact_referrers
+    ):
+        return candidate
+    return replace(
+        candidate,
+        disposition="review_unbound_validation_surface",
+        reason="validation surface has no declared owner or external family referrer",
+        required_before_move=(
+            "absorb any durable claim into its owner, then retire the unbound "
+            "surface or add the current machine consumer"
+        ),
+        candidate=True,
     )
 
 
@@ -1366,6 +1403,7 @@ def docs_routing_review(
         _with_referrer_status(repository_view, record)
         for record in records
     ]
+    records = [_with_unbound_validation_review(record) for record in records]
     records = _with_support_retention(records)
     candidates = [
         record

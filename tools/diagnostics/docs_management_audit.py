@@ -57,7 +57,6 @@ LOCAL_PATH_PATTERNS = (
     re.compile(r"C:\\Vaults(?:\\|$)", re.IGNORECASE),
     re.compile(r"C:\\Xcalibur(?:\\|$)", re.IGNORECASE),
     re.compile(r"C:\\Python\d+(?:\\|$)", re.IGNORECASE),
-    re.compile(r"Research Vault", re.IGNORECASE),
 )
 VALID_LIFECYCLES = {"draft", "reviewed", "verified", "disputed", "archived"}
 VALID_TIERS = {"core", "supporting", "peripheral"}

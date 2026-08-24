@@ -30,7 +30,6 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     classify_doc,
     normalize_path_text,
-    retired_tracked_dir_for_path,
     source_copy_locator_note_title,
     source_copy_locator_sha256,
     source_copy_locator_text,
@@ -394,8 +393,6 @@ def _retirement_evidence_blocker(
             return "discard_git_history requires a discard_reason"
         if entry.get("operator_approved_temporal_retirement") is not True:
             return "discard_git_history requires operator approval"
-        if not retired_tracked_dir_for_path(rel_path):
-            return "discard_git_history is limited to retired tracked docs lanes"
     elif history_disposition == "obsidian_source_copy":
         if entry.get("source_copy_readback_verified") is not True:
             return "retirement evidence source copy readback is not verified"
@@ -486,14 +483,14 @@ def _retirement_blocker(
     text: str,
     evidence_entry: dict[str, object] | None,
 ) -> str:
+    classification = classify_doc(rel_path, text)
     if (
         evidence_entry is not None
         and evidence_entry.get("history_disposition") == "discard_git_history"
         and evidence_entry.get("operator_approved_temporal_retirement") is True
-        and retired_tracked_dir_for_path(rel_path)
+        and classification.doc_lifecycle not in KEEP_LIFECYCLES
     ):
         return ""
-    classification = classify_doc(rel_path, text)
     if classification.doc_lifecycle in KEEP_LIFECYCLES:
         return f"{classification.doc_lifecycle} lifecycle"
     if classification.lifecycle_status != "declared":
@@ -521,7 +518,7 @@ def retire_files(
     for fpath in files:
         rel = fpath.relative_to(repo_root).as_posix()
 
-        if _should_keep(rel):
+        if _should_keep(rel) and Path(rel).name != "README.md":
             result.kept.append((rel, "protected file"))
             continue
 

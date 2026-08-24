@@ -1045,7 +1045,7 @@ def test_repo_docs_routing_review_blocks_non_repo_placement(
     )
 
 
-def test_repo_docs_routing_review_scans_superpowers_without_moving_validation(
+def test_repo_docs_routing_review_surfaces_unbound_validation_for_absorption(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -1061,15 +1061,32 @@ def test_repo_docs_routing_review_scans_superpowers_without_moving_validation(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["docs_routing_review"]
+    assert review["candidate_files"] == 1
+    candidate = review["top_candidates"][0]
+    assert candidate["path"] == validation_path
+    assert candidate["disposition"] == "review_unbound_validation_surface"
+    assert candidate["exact_referrers"] == 0
+
+
+def test_repo_docs_routing_review_retains_validation_family_with_consumer(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    family = "docs/superpowers/validation/current-packet"
+    validation_path = f"{family}/README.md"
+    summary_path = f"{family}/current_packet_summary.json"
+    _write(root / validation_path, "# Validation Packet\n")
+    _write(root / summary_path, "{}\n")
+    _write(root / "scripts/check_current_packet.py", f'PATH = "{summary_path}"\n')
+
+    result = _run_audit(root, vault)
+
+    review = result.summary["repo"]["docs_routing_review"]
     assert review["candidate_files"] == 0
-    assert review["route_retained_files"] == review["kept_files"]
     assert review["all_disposition_counts"]["keep_repo_validation_or_fixture"] == 1
-    assert review["all_doc_route_counts"]["repo_product_doc"] >= 1
-    assert review["top_candidates"] == []
-    assert validation_path not in {item["path"] for item in review["top_candidates"]}
-    assert not [
-        msg for msg in result.messages if "repo docs routing review" in msg.message
-    ]
 
 
 def test_repo_docs_routing_review_keeps_canonical_superpowers_readme(
@@ -1817,7 +1834,7 @@ def test_repo_docs_topic_review_separates_support_surfaces_from_owners(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["docs_routing_review"]
-    assert review["candidate_files"] == 0
+    assert review["candidate_files"] == 2
     assert review["topic_cluster_group_counts"]["multiple_support_surfaces"] >= 1
     cluster = next(
         item
@@ -1829,14 +1846,12 @@ def test_repo_docs_topic_review_separates_support_surfaces_from_owners(
     assert cluster["supporting_count"] == 2
     assert cluster["digestion_review_count"] == 2
     assert "support_surface_review:2" in cluster["digestion_status_counts"]
-    retained_review_paths = {
+    candidate_paths = {
         item["path"]
-        for item in review["top_route_retained_reviews"]
+        for item in review["top_candidates"]
         if item["digestion_status"] == "support_surface_review"
     }
-    assert validation_path in retained_review_paths
-    assert manifest_path in retained_review_paths
-    assert review["route_retained_review_files"] >= 2
+    assert candidate_paths == {validation_path, manifest_path}
     assert not [
         msg
         for msg in result.messages
