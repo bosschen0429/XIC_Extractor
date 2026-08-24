@@ -1227,21 +1227,6 @@ def check_entry(
                 )
         return [*problems, *lifecycle_problems]
 
-    if classification.is_misplaced_handoff_public_record:
-        problems.append(
-            PlacementProblem(
-                path=path,
-                reason=(
-                    "public productization or file-management records do not "
-                    "belong under handoffs/current or handoffs/archive"
-                ),
-                required_marker=(
-                    "Move to docs/superpowers/productization/, "
-                    "a canonical file-management owner, or the PR body."
-                ),
-            )
-        )
-
     if problems:
         return [*problems, *lifecycle_problems]
 

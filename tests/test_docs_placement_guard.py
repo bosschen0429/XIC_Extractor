@@ -1272,22 +1272,6 @@ def test_file_management_cleanup_history_is_rejected(tmp_path: Path) -> None:
     assert any("retired docs lane" in problem.reason for problem in result.problems)
 
 
-def test_handoff_archive_cleanup_evidence_without_marker_fails(tmp_path: Path) -> None:
-    path = (
-        "docs/superpowers/handoffs/archive/"
-        "2026-07-01_codex-docs-cleanup_git-rm-candidate-manifest.md"
-    )
-    _write(
-        tmp_path,
-        path,
-        "# Candidate manifest\n\nPublic cleanup evidence in the wrong lane.\n",
-    )
-
-    problems = _problems(tmp_path, "A", path)
-
-    assert any("do not belong under handoffs" in problem for problem in problems)
-
-
 def test_handoff_archive_private_diary_without_marker_fails(tmp_path: Path) -> None:
     path = "docs/superpowers/handoffs/archive/2026-07-01_codex-example_branch-diary.md"
     _write(

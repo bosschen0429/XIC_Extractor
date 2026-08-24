@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -391,16 +390,6 @@ DOC_LIFECYCLE_MANAGED_DIRS = [
     "docs/superpowers/reports/",
     SUPERPOWERS_SPEC_DIR,
 ]
-MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS = [
-    re.compile(r"(?:^|[_-])branch-closeout-summary(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])file-management-approval-plan(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])git-rm-candidate-manifest(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])historical-referrer", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])productization_handoff-prune(?:[_\-.]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])public-surface-stub-audit(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])source-of-truth-queue(?:\.|$)", re.IGNORECASE),
-]
-
 DOC_ROUTING_SCAN_PREFIXES = ("docs/superpowers/",)
 DOC_ROUTING_HANDOFF_PREFIX = "docs/superpowers/handoffs/"
 DOC_ROUTING_VALIDATION_PREFIXES = (
@@ -454,7 +443,6 @@ class DocPathClassification:
     is_canonical_owner: bool
     is_high_risk_repo_doc: bool
     is_lifecycle_managed: bool
-    is_misplaced_handoff_public_record: bool
     is_docs_routing_scan_target: bool
     is_docs_routing_handoff: bool
     is_validation_or_fixture: bool
@@ -492,7 +480,6 @@ class DocClassification:
     is_high_risk_repo_doc: bool
     is_high_risk_source: str
     is_lifecycle_managed: bool
-    is_misplaced_handoff_public_record: bool
     is_docs_routing_scan_target: bool
     is_docs_routing_handoff: bool
     is_validation_or_fixture: bool
@@ -587,19 +574,6 @@ def is_repo_doc_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
     return is_markdown_path(normalized) and (
         normalized in DOC_CANONICAL_OWNER_FILES or normalized.startswith("docs/")
-    )
-
-
-def is_misplaced_handoff_public_record_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./")
-    if not (
-        normalized.startswith(HANDOFF_CURRENT_DIR)
-        or normalized.startswith(HANDOFF_ARCHIVE_DIR)
-    ):
-        return False
-    filename = normalized.rsplit("/", 1)[-1]
-    return any(
-        pattern.search(filename) for pattern in MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
     )
 
 
@@ -704,9 +678,6 @@ def classify_doc_path(path: str) -> DocPathClassification:
         is_canonical_owner=is_canonical_doc_owner_path(normalized),
         is_high_risk_repo_doc=is_high_risk_repo_doc_path(normalized),
         is_lifecycle_managed=is_lifecycle_managed_doc_path(normalized),
-        is_misplaced_handoff_public_record=(
-            is_misplaced_handoff_public_record_path(normalized)
-        ),
         is_docs_routing_scan_target=is_docs_routing_scan_target(normalized),
         is_docs_routing_handoff=(
             normalized.startswith(DOC_ROUTING_HANDOFF_PREFIX)
@@ -814,9 +785,6 @@ def classify_doc(path: str, text: str) -> DocClassification:
         is_high_risk_repo_doc=is_high_risk_repo_doc,
         is_high_risk_source=is_high_risk_source,
         is_lifecycle_managed=path_classification.is_lifecycle_managed,
-        is_misplaced_handoff_public_record=(
-            path_classification.is_misplaced_handoff_public_record
-        ),
         is_docs_routing_scan_target=path_classification.is_docs_routing_scan_target,
         is_docs_routing_handoff=path_classification.is_docs_routing_handoff,
         is_validation_or_fixture=path_classification.is_validation_or_fixture,
