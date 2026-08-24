@@ -259,7 +259,8 @@ def test_pipeline_target_anchor_metadata_requires_typed_owner_anchor() -> None:
             target_snapshot=SimpleNamespace(snapshot_id="forged-snapshot"),
         )
     )
-    assert pipeline_module._typed_targeted_istd_anchor(fake_lookup) is None
+    with pytest.raises(TypeError, match="owner-minted"):
+        pipeline_module._typed_targeted_istd_anchor(fake_lookup)
 
     target = Target(
         label="d3-5-hmdC",

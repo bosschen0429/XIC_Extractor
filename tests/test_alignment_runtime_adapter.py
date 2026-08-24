@@ -347,8 +347,8 @@ def test_alignment_scientific_carriers_roundtrip_in_manifest_order(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path, stem="carrier")
-    groups_a = (_group("group:a"),)
-    groups_b = (_group("group:b"),)
+    groups_a = (_group("group:a", attempt=attempt),)
+    groups_b = (_group("group:b", attempt=attempt),)
     upstream_a = mint_alignment_process_result_artifact(
         processing_attempt=attempt,
         work_unit_key="upstream:a",
@@ -406,7 +406,7 @@ def test_alignment_scientific_carrier_rejects_payload_mismatch(
         processing_attempt=attempt,
         work_unit_key="sample:a",
         owner_result_payload=canonical_alignment_peak_group_result_bytes(
-            (_group("group:artifact"),)
+            (_group("group:artifact", attempt=attempt),)
         ),
     )
 
@@ -422,7 +422,7 @@ def test_alignment_scientific_carrier_rejects_payload_mismatch(
             open_outcome=RuntimeResourceOpenOutcome.OPENED,
             cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
             runtime_artifacts=(artifact,),
-            cross_sample_peak_groups=(_group("group:carrier"),),
+            cross_sample_peak_groups=(_group("group:carrier", attempt=attempt),),
             cross_sample_peak_group_upstream_artifact_ids=(),
         )
 
@@ -430,7 +430,7 @@ def test_alignment_scientific_carrier_rejects_payload_mismatch(
         processing_attempt=attempt,
         work_unit_key="sample:a",
         owner_result_payload=canonical_alignment_peak_group_result_bytes(
-            (_group("group:carrier"),)
+            (_group("group:carrier", attempt=attempt),)
         ),
     )
     with pytest.raises(AlignmentRuntimeAdapterError, match="caller-provided"):
@@ -445,7 +445,7 @@ def test_alignment_scientific_carrier_rejects_payload_mismatch(
             open_outcome=RuntimeResourceOpenOutcome.OPENED,
             cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
             runtime_artifacts=(matching_artifact,),
-            cross_sample_peak_groups=(_group("group:carrier"),),
+            cross_sample_peak_groups=(_group("group:carrier", attempt=attempt),),
         )
 
 
@@ -479,7 +479,7 @@ def test_alignment_unsuccessful_work_cannot_carry_scientific_result(
             resource_key="process:sample:a",
             open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
             cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-            cross_sample_peak_groups=(_group("group:forbidden"),),
+            cross_sample_peak_groups=(_group("group:forbidden", attempt=attempt),),
             cross_sample_peak_group_upstream_artifact_ids=(),
         )
 
@@ -488,8 +488,8 @@ def test_alignment_conflicting_replay_does_not_expose_scientific_carrier(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path, stem="conflict")
-    first = (_group("group:first"),)
-    conflicting = (_group("group:conflicting"),)
+    first = (_group("group:first", attempt=attempt),)
+    conflicting = (_group("group:conflicting", attempt=attempt),)
     jobs = (
         _NoRawAlignmentJob(
             attempt,
@@ -525,13 +525,100 @@ def test_alignment_conflicting_replay_does_not_expose_scientific_carrier(
     assert result.successful_cross_sample_peak_groups == ()
 
 
-def _group(group_id: str) -> CrossSamplePeakGroupHypothesis:
+def test_alignment_scientific_serializer_rejects_display_only_group() -> None:
+    display_only = CrossSamplePeakGroupHypothesis(
+        group_hypothesis_id="FAM000001",
+        public_family_id="FAM000001",
+        owner_ids=("owner:display",),
+        event_ids=("event:display",),
+        event_member_count=1,
+    )
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="canonical identity"):
+        canonical_alignment_peak_group_result_bytes((display_only,))
+
+
+def test_alignment_scientific_carrier_rejects_crossed_request(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="settlement-request")
+    crossed_attempt = _attempt(tmp_path, stem="crossed-request")
+    crossed_group = _group("group:crossed", attempt=crossed_attempt)
+    payload = canonical_alignment_peak_group_result_bytes((crossed_group,))
+    artifact = mint_alignment_process_result_artifact(
+        processing_attempt=attempt,
+        work_unit_key="sample:a",
+        owner_result_payload=payload,
+    )
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="crossed settlement"):
+        AlignmentRuntimeProcessResult(
+            settlement=mint_work_unit_settlement(
+                attempt=attempt,
+                work_unit_key="sample:a",
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=artifact,
+            ),
+            resource_key="process:sample:a",
+            open_outcome=RuntimeResourceOpenOutcome.OPENED,
+            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            runtime_artifacts=(artifact,),
+            cross_sample_peak_groups=(crossed_group,),
+            cross_sample_peak_group_upstream_artifact_ids=(),
+        )
+
+
+def _group(
+    group_id: str,
+    *,
+    attempt: ProcessingAttemptIdentity,
+) -> CrossSamplePeakGroupHypothesis:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleGroupMemberSubject,
+        mint_cross_sample_group_identity,
+    )
+    from xic_extractor.processing_identity import (
+        canonical_identity_basis_bytes,
+        typed_identity_digest,
+    )
+
+    processing_request_id = attempt.processing_request_id
+    subject_id = f"xic.peak-observation-content.v1:{group_id}"
+    sample_id = f"xic.sample.v1:{group_id}"
+    member_basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": processing_request_id,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "physical_observation", "id": subject_id},
+        }
+    )
+    member = CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(
+            "xic.group-member-subject.v1:",
+            member_basis,
+        ),
+        processing_request_id=processing_request_id,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=member_basis,
+    )
+    identity = mint_cross_sample_group_identity(
+        processing_request_id=processing_request_id,
+        member_subjects=(member,),
+    )
     return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=group_id,
+        group_hypothesis_id=identity.group_hypothesis_id,
         public_family_id=group_id,
         owner_ids=(f"owner:{group_id}",),
         event_ids=(f"event:{group_id}",),
         event_member_count=1,
+        processing_request_id=identity.processing_request_id,
+        member_subjects=identity.member_subjects,
+        identity_basis_bytes=identity.basis_bytes,
+        disposition=identity.disposition,
     )
 
 

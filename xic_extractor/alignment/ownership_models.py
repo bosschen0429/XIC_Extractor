@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleGroupMemberSubject,
+    )
 
 OwnerAssignmentStatus = Literal["primary", "supporting", "ambiguous", "unresolved"]
 
@@ -42,6 +47,7 @@ class SampleLocalMS1Owner:
     selected_integration: IntegrationResult | None = None
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
+    cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
 
     def __post_init__(self) -> None:
         integration = self.selected_integration

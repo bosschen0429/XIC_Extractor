@@ -41,6 +41,7 @@ class IdentityContractError(ValueError):
 _ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source.v1:"
 _PROCESSING_REQUEST_PREFIX = "xic.processing-request.v1:"
 _PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt.v1:"
+PROCESSING_REQUEST_ID_PREFIX = _PROCESSING_REQUEST_PREFIX
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
 
@@ -58,6 +59,63 @@ def _canonical_json(value: Any) -> str:
         )
     except (TypeError, ValueError) as exc:
         raise IdentityContractError("identity payload is not canonical JSON") from exc
+
+
+def canonical_identity_basis_bytes(value: Mapping[str, object]) -> bytes:
+    """Return canonical UTF-8 JSON bytes for a closed typed identity basis."""
+
+    if not isinstance(value, Mapping):
+        raise IdentityContractError("identity basis must be a JSON object")
+    _validate_json_object_keys(value)
+    return _canonical_json(dict(value)).encode("utf-8")
+
+
+def typed_identity_digest(prefix: str, basis_bytes: bytes) -> str:
+    """Mint a typed SHA-256 identity from exact canonical basis bytes."""
+
+    if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
+        raise IdentityContractError(
+            "typed identity prefix must be non-empty and end in ':'"
+        )
+    if not isinstance(basis_bytes, bytes) or not basis_bytes:
+        raise IdentityContractError("identity basis must be non-empty UTF-8 bytes")
+    try:
+        parsed = json.loads(basis_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise IdentityContractError(
+            "identity basis must be canonical UTF-8 JSON"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise IdentityContractError("identity basis must be a JSON object")
+    if canonical_identity_basis_bytes(parsed) != basis_bytes:
+        raise IdentityContractError("identity basis bytes are not canonical JSON")
+    return f"{prefix}{hashlib.sha256(basis_bytes).hexdigest()}"
+
+
+def validate_typed_identity_basis(
+    identity_id: object,
+    *,
+    prefix: str,
+    basis_bytes: bytes,
+    field: str,
+) -> str:
+    """Validate that a typed identity commits to the retained basis bytes."""
+
+    value = _validate_typed_id(identity_id, prefix=prefix, field=field)
+    if value != typed_identity_digest(prefix, basis_bytes):
+        raise IdentityContractError(f"{field} mismatches its exact basis bytes")
+    return value
+
+
+def validate_typed_identity_id(
+    identity_id: object,
+    *,
+    prefix: str,
+    field: str,
+) -> str:
+    """Validate a typed identity whose authoritative basis is external."""
+
+    return _validate_typed_id(identity_id, prefix=prefix, field=field)
 
 
 def _canonical_object_json(value: Mapping[str, object]) -> str:
@@ -100,8 +158,7 @@ def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
 
 
 def _typed_digest(prefix: str, basis: Mapping[str, object]) -> str:
-    digest = hashlib.sha256(_canonical_json(basis).encode("utf-8")).hexdigest()
-    return f"{prefix}{digest}"
+    return typed_identity_digest(prefix, canonical_identity_basis_bytes(basis))
 
 
 def _require_nonempty_text(value: object, *, field: str) -> str:
@@ -1028,11 +1085,13 @@ __all__ = [
     "AcquisitionSourceIdentity",
     "FileContentFingerprint",
     "IdentityContractError",
+    "PROCESSING_REQUEST_ID_PREFIX",
     "ProcessingAttemptIdentity",
     "ProcessingOwnerReferences",
     "ProcessingRequestIdentity",
     "build_acquisition_source_identity",
     "build_processing_request_identity",
+    "canonical_identity_basis_bytes",
     "canonical_current_attempt_artifact_closure",
     "canonical_evidence_artifact_closure",
     "compose_processing_owner_references",
@@ -1040,4 +1099,7 @@ __all__ = [
     "issue_processing_attempt",
     "retry_predecessor_attempt_ids",
     "resolve_request_acquisition_source",
+    "typed_identity_digest",
+    "validate_typed_identity_basis",
+    "validate_typed_identity_id",
 ]

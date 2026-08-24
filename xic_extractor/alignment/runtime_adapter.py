@@ -477,7 +477,9 @@ def canonical_alignment_peak_group_result_bytes(
     """Serialize one Alignment-owned scientific result without runtime policy."""
 
     from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
         CrossSamplePeakGroupHypothesis,
+        validate_cross_sample_peak_group_identity,
     )
 
     if not isinstance(groups, tuple) or any(
@@ -486,10 +488,29 @@ def canonical_alignment_peak_group_result_bytes(
         raise AlignmentRuntimeAdapterError(
             "groups must be a tuple of CrossSamplePeakGroupHypothesis values"
         )
+    try:
+        for group in groups:
+            validate_cross_sample_peak_group_identity(group, require_canonical=True)
+    except CrossSampleContractError as exc:
+        raise AlignmentRuntimeAdapterError(str(exc)) from exc
+    projected_groups = []
+    for group in groups:
+        projection = asdict(group)
+        for field_name in (
+            "processing_request_id",
+            "member_subjects",
+            "identity_basis_bytes",
+            "disposition",
+            "lineage",
+        ):
+            projection.pop(field_name)
+        for owner in projection["owners"]:
+            owner.pop("cross_sample_member_subject")
+        projected_groups.append(projection)
     return (
         json.dumps(
             {
-                "groups": [asdict(group) for group in groups],
+                "groups": projected_groups,
                 "schema_version": "alignment_peak_group_result_v1",
             },
             ensure_ascii=False,
@@ -704,6 +725,11 @@ def _validate_cross_sample_peak_group_binding(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     upstream_artifact_ids: tuple[str, ...],
 ) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        validate_cross_sample_peak_group_identity,
+    )
+
     artifact = settlement.owner_result_ref
     if artifact is None:
         raise AlignmentRuntimeAdapterError(
@@ -713,6 +739,18 @@ def _validate_cross_sample_peak_group_binding(
         raise AlignmentRuntimeAdapterError(
             "cross-sample peak groups require an Alignment-owned result artifact"
         )
+    try:
+        for group in groups:
+            validate_cross_sample_peak_group_identity(group, require_canonical=True)
+            if (
+                group.processing_request_id
+                != artifact.producer_processing_request_id
+            ):
+                raise CrossSampleContractError(
+                    "cross-sample group crossed settlement request"
+                )
+    except CrossSampleContractError as exc:
+        raise AlignmentRuntimeAdapterError(str(exc)) from exc
     if not isinstance(upstream_artifact_ids, tuple) or any(
         not isinstance(artifact_id, str) or not artifact_id
         for artifact_id in upstream_artifact_ids

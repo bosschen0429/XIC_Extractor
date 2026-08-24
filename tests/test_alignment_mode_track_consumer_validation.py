@@ -291,9 +291,14 @@ def test_consumer_validator_replays_exact_assignment_decision(
 ) -> None:
     scenario, batch = _batch_for_case(tmp_path, "uniquely_assigned")
     assignment = batch.assignments[0]
+    different_group_id = next(
+        track.group_hypothesis_id
+        for track in scenario.models.tracks
+        if track.group_hypothesis_id != assignment.group_hypothesis_id
+    )
     replacement = {
         "state": "technical_unassessable",
-        "group_hypothesis_id": scenario.models.tracks[1].group_hypothesis_id,
+        "group_hypothesis_id": different_group_id,
         "reason_codes": ("trajectory_crossing",),
     }[field]
     object.__setattr__(assignment, field, replacement)

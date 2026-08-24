@@ -15,6 +15,9 @@ from tests.alignment_pipeline_helpers import (
 )
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
+from tests.alignment_pipeline_helpers import (
+    write_owner_closed_partial_batch as _write_owner_closed_partial_batch,
+)
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.matrix import AlignmentMatrix
@@ -417,7 +420,7 @@ def test_pipeline_provisional_matrix_flags_fail_closed(
 
 
 def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> None:
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    batch_index = _write_batch(tmp_path, ("Sample_A",), owner_closed=False)
 
     with pytest.raises(ValueError, match="owner closure is required"):
         pipeline_module.run_alignment(
@@ -429,6 +432,37 @@ def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> No
             peak_config=_peak_config(),
             require_discovery_owner_closure=True,
         )
+
+
+def test_pipeline_legacy_raw_only_route_fails_before_cross_sample_grouping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",), owner_closed=False)
+    grouping_called = False
+
+    def fail_grouping(*_args, **_kwargs):
+        nonlocal grouping_called
+        grouping_called = True
+        raise AssertionError("grouping must not receive an unclosed owner")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "cluster_sample_local_owners",
+        fail_grouping,
+    )
+
+    with pytest.raises(ValueError, match="owner-closed acquisition"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+        )
+
+    assert grouping_called is False
 
 
 def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
@@ -550,15 +584,149 @@ def test_pipeline_owner_closure_rejects_raw_replaced_after_discovery(
     assert not (tmp_path / "out").exists()
 
 
+def test_cross_sample_request_binds_decisions_not_presentation_or_excluded_rows(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "Sample_A.raw"
+    raw_path.write_bytes(b"stable acquisition")
+    roots = tuple(tmp_path / f"request-{index}" for index in range(5))
+    for root in roots:
+        root.mkdir()
+    batches = (
+        _write_owner_closed_batch(roots[0], raw_path),
+        _write_owner_closed_batch(
+            roots[1], raw_path, candidate_updates={"evidence_score": "81"}
+        ),
+        _write_owner_closed_batch(
+            roots[2], raw_path, candidate_updates={"review_priority": "LOW"}
+        ),
+        _write_owner_closed_batch(
+            roots[3],
+            raw_path,
+            candidate_updates={
+                "discovery_candidate_state": "rejected_noise_or_outside_rt"
+            },
+        ),
+        _write_owner_closed_batch(
+            roots[4],
+            raw_path,
+            candidate_updates={
+                "discovery_candidate_state": "rejected_noise_or_outside_rt",
+                "evidence_score": "81",
+            },
+        ),
+    )
+    baseline, decision_change, presentation_change, rejected, rejected_change = (
+        _cross_sample_request_id(batch_index) for batch_index in batches
+    )
+
+    assert decision_change != baseline
+    assert presentation_change == baseline
+    assert rejected_change == rejected
+
+
+def test_cross_sample_request_binds_owner_config_not_value_profile(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "Sample_A.raw"
+    raw_path.write_bytes(b"stable acquisition")
+    batch_index = _write_owner_closed_batch(tmp_path, raw_path)
+
+    baseline = _cross_sample_request_id(batch_index)
+    owner_decision_change = _cross_sample_request_id(
+        batch_index,
+        peak_config=replace(_peak_config(), resolver_min_absolute_height=26.0),
+    )
+    value_profile_change = _cross_sample_request_id(
+        batch_index,
+        peak_config=replace(_peak_config(), signal_processing_window_points=21),
+    )
+
+    assert owner_decision_change != baseline
+    assert value_profile_change == baseline
+
+
+def test_cross_sample_request_binds_drift_decisions_not_diagnostic_order(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "Sample_A.raw"
+    raw_path.write_bytes(b"stable acquisition")
+    batch_index = _write_owner_closed_batch(tmp_path, raw_path)
+
+    baseline = _cross_sample_request_id(
+        batch_index,
+        drift_lookup=_DriftLookup(delta_min=0.1, injection_order=1),
+    )
+    delta_change = _cross_sample_request_id(
+        batch_index,
+        drift_lookup=_DriftLookup(delta_min=0.2, injection_order=1),
+    )
+    diagnostic_order_change = _cross_sample_request_id(
+        batch_index,
+        drift_lookup=_DriftLookup(delta_min=0.1, injection_order=2),
+    )
+    source_change = _cross_sample_request_id(
+        batch_index,
+        drift_lookup=_DriftLookup(
+            delta_min=0.1,
+            injection_order=1,
+            source="batch_istd_trend",
+        ),
+    )
+
+    assert delta_change != baseline
+    assert diagnostic_order_change == baseline
+    assert source_change != baseline
+
+
+def test_cross_sample_request_binds_supplied_sample_order(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_a = raw_dir / "Sample_A.raw"
+    raw_b = raw_dir / "Sample_B.raw"
+    raw_a.write_bytes(b"stable acquisition a")
+    raw_b.write_bytes(b"stable acquisition b")
+    batch_index = _write_owner_closed_partial_batch(
+        tmp_path,
+        sample_order=("Sample_A", "Sample_B"),
+        candidate_samples=("Sample_A", "Sample_B"),
+        raw_files={"Sample_A": raw_a, "Sample_B": raw_b},
+    )
+
+    forward = _cross_sample_request_id(
+        batch_index,
+        injection_order={"Sample_A": 1, "Sample_B": 2},
+    )
+    reverse = _cross_sample_request_id(
+        batch_index,
+        injection_order={"Sample_A": 2, "Sample_B": 1},
+    )
+    equivalent = _cross_sample_request_id(
+        batch_index,
+        injection_order={"Sample_B": 2, "Sample_A": 1},
+    )
+
+    assert forward != reverse
+    assert forward == equivalent
+
+
 def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
-    (raw_dir / "Sample_B.raw").write_text("raw", encoding="utf-8")
+    (raw_dir / "Sample_A.raw").write_text("raw-a", encoding="utf-8")
+    (raw_dir / "Sample_B.raw").write_text("raw-b", encoding="utf-8")
+    batch_index = _write_owner_closed_partial_batch(
+        tmp_path,
+        sample_order=("Sample_A", "Sample_B"),
+        candidate_samples=("Sample_A", "Sample_B"),
+        raw_files={
+            "Sample_A": raw_dir / "Sample_A.raw",
+            "Sample_B": raw_dir / "Sample_B.raw",
+        },
+    )
     calls: dict[str, object] = {}
     read_candidates = pipeline_module.read_discovery_candidates_csv
 
@@ -568,8 +736,8 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
             return current
         return (
             *current,
-            SimpleNamespace(
-                sample_stem="Sample_A",
+            replace(
+                current[0],
                 discovery_candidate_state="ms1_feature_nl_rescued",
             ),
             SimpleNamespace(
@@ -592,6 +760,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         emit_region_audit,
         region_audit_family_ids,
         audit_evidence_mode,
+        cross_sample_identity_context,
     ):
         calls["candidates"] = tuple(candidate.sample_stem for candidate in candidates)
         calls["candidate_states"] = tuple(
@@ -604,6 +773,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         calls["owner_emit_region_audit"] = emit_region_audit
         calls["owner_region_audit_family_ids"] = region_audit_family_ids
         calls["owner_audit_evidence_mode"] = audit_evidence_mode
+        calls["cross_sample_identity_context"] = cross_sample_identity_context
         return SimpleNamespace(owners=("owner",), ambiguous_records=())
 
     def fake_cluster_owners(
@@ -747,6 +917,7 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         run_spec_id="run-spec-id",
         run_spec_hash="run-spec-hash",
     )
+    cross_sample_identity_context = object()
     calls: dict[str, object] = {}
 
     def ordered_bindings(**kwargs):
@@ -758,9 +929,15 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     def reject_old_owner_build(*_args, **_kwargs):
         raise AssertionError("same-run Discovery facts called the old owner builder")
 
-    def build_from_bindings(bindings, *, alignment_config):
+    def build_from_bindings(
+        bindings,
+        *,
+        alignment_config,
+        cross_sample_identity_context,
+    ):
         calls["bindings"] = bindings
         calls["alignment_config"] = alignment_config
+        calls["cross_sample_identity_context"] = cross_sample_identity_context
         return SimpleNamespace(owners=(), ambiguous_records=())
 
     monkeypatch.setattr(
@@ -782,6 +959,11 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         pipeline_module,
         "build_sample_local_owners_from_discovery_bindings",
         build_from_bindings,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_alignment_cross_sample_identity_context",
+        lambda **_kwargs: cross_sample_identity_context,
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -817,6 +999,7 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     assert calls["processing_run_spec"] is processing_run_spec
     assert calls["bindings"] == (canonical_binding,)
     assert calls["alignment_config"] == AlignmentConfig()
+    assert calls["cross_sample_identity_context"] is cross_sample_identity_context
     assert outputs.owner_build_route_receipt is not None
     assert outputs.owner_build_route_receipt.as_dict() == {
         "configured_owner_build_xic_backend": "raw",
@@ -836,10 +1019,13 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    batch_index = _write_owner_closed_batch(
+        tmp_path,
+        raw_dir / "Sample_A.raw",
+    )
     calls = {}
     owner = SimpleNamespace(owner_id="OWN-Sample_A-000001")
     feature = SimpleNamespace(
@@ -949,11 +1135,19 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
     monkeypatch,
 ) -> None:
     _allow_product_quantitative_projection_authority(monkeypatch)
-    batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
-    (raw_dir / "Sample_B.raw").write_text("raw", encoding="utf-8")
+    (raw_dir / "Sample_A.raw").write_text("raw-a", encoding="utf-8")
+    (raw_dir / "Sample_B.raw").write_text("raw-b", encoding="utf-8")
+    batch_index = _write_owner_closed_partial_batch(
+        tmp_path,
+        sample_order=("Sample_A", "Sample_B"),
+        candidate_samples=("Sample_A", "Sample_B"),
+        raw_files={
+            "Sample_A": raw_dir / "Sample_A.raw",
+            "Sample_B": raw_dir / "Sample_B.raw",
+        },
+    )
     feature = _scope_feature("FAM001", owners=("Sample_A",))
     calls = {}
 
@@ -1021,11 +1215,19 @@ def test_pipeline_production_equivalent_validation_does_not_enable_heavy_audit(
     monkeypatch,
 ) -> None:
     _allow_product_quantitative_projection_authority(monkeypatch)
-    batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
-    (raw_dir / "Sample_B.raw").write_text("raw", encoding="utf-8")
+    (raw_dir / "Sample_A.raw").write_text("raw-a", encoding="utf-8")
+    (raw_dir / "Sample_B.raw").write_text("raw-b", encoding="utf-8")
+    batch_index = _write_owner_closed_partial_batch(
+        tmp_path,
+        sample_order=("Sample_A", "Sample_B"),
+        candidate_samples=("Sample_A", "Sample_B"),
+        raw_files={
+            "Sample_A": raw_dir / "Sample_A.raw",
+            "Sample_B": raw_dir / "Sample_B.raw",
+        },
+    )
     calls: dict[str, object] = {}
 
     _patch_owner_pipeline_to_matrix(monkeypatch)
@@ -1060,11 +1262,19 @@ def test_pipeline_asls_flag_without_audit_destination_stays_slim(
     monkeypatch,
 ) -> None:
     _allow_product_quantitative_projection_authority(monkeypatch)
-    batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
-    (raw_dir / "Sample_B.raw").write_text("raw", encoding="utf-8")
+    (raw_dir / "Sample_A.raw").write_text("raw-a", encoding="utf-8")
+    (raw_dir / "Sample_B.raw").write_text("raw-b", encoding="utf-8")
+    batch_index = _write_owner_closed_partial_batch(
+        tmp_path,
+        sample_order=("Sample_A", "Sample_B"),
+        candidate_samples=("Sample_A", "Sample_B"),
+        raw_files={
+            "Sample_A": raw_dir / "Sample_A.raw",
+            "Sample_B": raw_dir / "Sample_B.raw",
+        },
+    )
     calls: dict[str, object] = {}
 
     _patch_owner_pipeline_to_matrix(monkeypatch)
@@ -1098,10 +1308,13 @@ def test_pipeline_rejects_selected_audit_mode_outside_selected_scope(
     monkeypatch,
 ) -> None:
     _allow_product_quantitative_projection_authority(monkeypatch)
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    batch_index = _write_owner_closed_batch(
+        tmp_path,
+        raw_dir / "Sample_A.raw",
+    )
     _patch_owner_pipeline_to_matrix(monkeypatch)
 
     with pytest.raises(ValueError, match="selected-families"):
@@ -1122,10 +1335,13 @@ def test_pipeline_applies_claim_registry_before_writing(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    batch_index = _write_owner_closed_batch(
+        tmp_path,
+        raw_dir / "Sample_A.raw",
+    )
     owner_matrix = _matrix(("Sample_A",))
     claimed_matrix = _matrix(("Sample_A",))
     calls = {}
@@ -1173,10 +1389,13 @@ def test_run_alignment_passes_drift_lookup_to_owner_clustering(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    batch_index = _write_owner_closed_batch(
+        tmp_path,
+        raw_dir / "Sample_A.raw",
+    )
     drift_lookup = _DriftLookup()
     calls = {}
     _patch_owner_pipeline_to_matrix(monkeypatch)
@@ -1212,28 +1431,56 @@ def test_run_alignment_passes_drift_lookup_to_owner_clustering(
         drift_lookup=drift_lookup,
     )
 
-    assert calls["drift_lookup"] is drift_lookup
+    bound_lookup = calls["drift_lookup"]
+    assert isinstance(bound_lookup, pipeline_module._BoundAlignmentDriftLookup)
+    assert bound_lookup.source == drift_lookup.source
+    assert bound_lookup.sample_delta_min("Sample_A") == 0.1
+    assert bound_lookup.injection_order("Sample_A") == 1
     assert calls["injection_order"] is None
     assert calls["edge_evidence_sink"] == []
 
 
 class _DriftLookup:
-    source = "targeted_istd_trend"
+    def __init__(
+        self,
+        *,
+        delta_min: float = 0.1,
+        injection_order: int = 1,
+        source: str = "targeted_istd_trend",
+    ) -> None:
+        self._delta_min = delta_min
+        self._injection_order = injection_order
+        self.source = source
 
     def sample_delta_min(self, sample_stem: str) -> float | None:
-        return {"Sample_A": 0.1}.get(sample_stem)
+        return self._delta_min if sample_stem == "Sample_A" else None
 
     def injection_order(self, sample_stem: str) -> int | None:
-        return {"Sample_A": 1}.get(sample_stem)
+        return self._injection_order if sample_stem == "Sample_A" else None
 
 
-def _write_owner_closed_batch(tmp_path: Path, raw_path: Path) -> Path:
+def _write_owner_closed_batch(
+    tmp_path: Path,
+    raw_path: Path,
+    *,
+    candidate_updates: dict[str, str] | None = None,
+) -> Path:
     batch_index = _write_batch(
         tmp_path,
         ("Sample_A",),
         raw_files={"Sample_A": str(raw_path)},
     )
     candidate_csv = batch_index.parent / "Sample_A" / "discovery_candidates.csv"
+    if candidate_updates:
+        with candidate_csv.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = tuple(reader.fieldnames or ())
+            rows = list(reader)
+        rows[0].update(candidate_updates)
+        with candidate_csv.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
     candidates = read_discovery_candidates_csv(candidate_csv)
     acquisition_source = build_acquisition_source_identity(
         raw_path,
@@ -1275,6 +1522,52 @@ def _write_owner_closed_batch(tmp_path: Path, raw_path: Path) -> Path:
         writer.writeheader()
         writer.writerow(row)
     return batch_index
+
+
+def _cross_sample_request_id(
+    batch_index: Path,
+    *,
+    peak_config=None,
+    injection_order: dict[str, int] | None = None,
+    drift_lookup=None,
+) -> str:
+    batch = pipeline_module.read_discovery_batch_index(batch_index)
+    candidates = tuple(
+        candidate
+        for sample_stem in batch.sample_order
+        for candidate in read_discovery_candidates_csv(
+            batch.candidate_csvs[sample_stem]
+        )
+    )
+    bound_drift = (
+        pipeline_module._BoundAlignmentDriftLookup(
+            source=drift_lookup.source,
+            sample_deltas={
+                sample_stem: drift_lookup.sample_delta_min(sample_stem)
+                for sample_stem in batch.sample_order
+            },
+            injection_orders={
+                sample_stem: drift_lookup.injection_order(sample_stem)
+                for sample_stem in batch.sample_order
+            },
+            istd_identity_anchor=None,
+        )
+        if drift_lookup is not None
+        else None
+    )
+    context = pipeline_module._alignment_cross_sample_identity_context(
+        batch=batch,
+        candidates=candidates,
+        alignment_config=AlignmentConfig(),
+        peak_config=peak_config or _peak_config(),
+        injection_order=injection_order,
+        drift_lookup=bound_drift,
+        expected_acquisition_sources=pipeline_module._expected_acquisition_sources(
+            batch
+        ),
+        discovery_physical_bindings=None,
+    )
+    return context.processing_owners.request.processing_request_id
 
 
 def _scope_feature(

@@ -627,7 +627,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
         == sample_assessments[0][0].identity.sample_identity_id
     )
 
-    assert single.group.group_hypothesis_id == combined.group.group_hypothesis_id
+    assert single.group.group_hypothesis_id != combined.group.group_hypothesis_id
     assert single.group.owner_ids != combined.group.owner_ids
     assert single.cells[0].artifact.evidence_artifact_id != (
         combined_a.artifact.evidence_artifact_id

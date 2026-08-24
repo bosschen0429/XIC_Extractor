@@ -87,6 +87,7 @@ from xic_extractor.alignment.owner_backfill_runtime_projection import (
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.alignment.ownership import (
+    AlignmentCrossSampleIdentityContext,
     OwnershipBuildResult,
     build_sample_local_owners,
 )
@@ -140,6 +141,7 @@ class OwnerBuildSampleJob:
     emit_region_audit: bool = False
     region_audit_family_ids: frozenset[str] | None = None
     audit_evidence_mode: str = "full"
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None = None
 
 
 @dataclass(frozen=True)
@@ -378,6 +380,7 @@ def run_owner_build_process(
     audit_evidence_mode: str = "full",
     runner: Callable[..., list[OwnerBuildWorkerResult]] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None = None,
 ) -> OwnerBuildProcessOutput:
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
@@ -417,6 +420,7 @@ def run_owner_build_process(
                 emit_region_audit=emit_region_audit,
                 region_audit_family_ids=region_audit_family_ids,
                 audit_evidence_mode=audit_evidence_mode,
+                cross_sample_identity_context=cross_sample_identity_context,
             )
             result = _owner_build_sample_result(
                 sample_index=index,
@@ -446,6 +450,7 @@ def run_owner_build_process(
                 emit_region_audit=emit_region_audit,
                 region_audit_family_ids=region_audit_family_ids,
                 audit_evidence_mode=audit_evidence_mode,
+                cross_sample_identity_context=cross_sample_identity_context,
             )
         )
     active_runner = runner or run_owner_build_jobs
@@ -568,6 +573,7 @@ def extract_owner_build_sample_job(
                 emit_region_audit=job.emit_region_audit,
                 region_audit_family_ids=job.region_audit_family_ids,
                 audit_evidence_mode=job.audit_evidence_mode,
+                cross_sample_identity_context=job.cross_sample_identity_context,
             )
         return _owner_build_sample_result(
             sample_index=job.sample_index,

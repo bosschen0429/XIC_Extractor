@@ -122,6 +122,29 @@ def test_integration_trace_evidence_preserves_compatibility_fields() -> None:
     assert enriched.ms1_morphology_trace_method == "gaussian_15"
 
 
+def test_integration_trace_evidence_records_exact_selected_scan_indices() -> None:
+    integration = IntegrationResult(
+        rt_left_min=1.0,
+        rt_apex_min=2.0,
+        rt_right_min=3.0,
+        raw_apex_rt_min=2.0,
+        rt_width_min=2.0,
+        height_raw=50.0,
+        height_smoothed=45.0,
+        area_raw_counts_seconds=4000.0,
+        integration_method="raw_trapezoid",
+        boundary_sources=("test_trace",),
+    )
+
+    enriched = integration_with_trace_evidence(
+        integration,
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+        [10.0, 12.0, 50.0, 12.0, 10.0],
+    )
+
+    assert enriched.raw_scan_indices == (1, 2, 3)
+
+
 def test_integration_only_evidence_skips_shape_projection(monkeypatch) -> None:
     integration = IntegrationResult(
         rt_left_min=1.0,
