@@ -43,7 +43,6 @@ self-ownership，因此不需要 generic lifecycle metadata：
 | `docs/user/` | 使用者文件 |
 | `docs/product/` | 產品 topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
-| `docs/architecture/` | Architecture support documents |
 | `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
