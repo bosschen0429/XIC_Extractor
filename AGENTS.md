@@ -28,8 +28,8 @@ for the active task unless a hard gate below says otherwise.
 - GitHub issue mechanics and triage labels:
   [`issue-tracker.md`](docs/agent/issue-tracker.md) and
   [`triage-labels.md`](docs/agent/triage-labels.md)
-- Execution failures, validation commands, CI, and PR verification:
-  [`execution-gates.md`](docs/agent/execution-gates.md)
+- Clean-checkout artifacts, long RAW, CI evidence, and PR verification:
+  [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes)
 - Review communication, PR receipts, and handoff placement:
   [`communication-review.md`](docs/agent/communication-review.md) and
   [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md)
