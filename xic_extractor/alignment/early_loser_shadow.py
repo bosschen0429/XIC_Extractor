@@ -238,7 +238,6 @@ def _source_owner_snapshot_projection(
         "member_subjects",
         "identity_basis_bytes",
         "disposition",
-        "cross_sample_lineage",
     ):
         projection.pop(field_name)
     for owner in projection["owners"]:

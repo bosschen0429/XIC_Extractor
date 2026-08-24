@@ -82,6 +82,7 @@ _DUPLICATE_OWNER_GROUP_POLICY = "owner_duplicate_group_resolved"
 _BOUNDED_CONTINUITY_RT_SPAN_SEC = 300.0
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
 _CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group.v1:"
+_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX = "xic.cross-sample-lineage-edge.v1:"
 _DISCOVERY_PHYSICAL_SELECTION_SUBJECT_PREFIX = "discovery-physical-work.v1:"
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
@@ -566,6 +567,11 @@ class CrossSampleNeighborhoodEdge:
     config: AlignmentConfig
     left_owner: SampleLocalMS1Owner
     right_owner: SampleLocalMS1Owner
+    drift_lookup: DriftLookupProtocol | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         left = _required_text(self.left_member_subject_id, field="left member")
@@ -597,8 +603,18 @@ class CrossSampleNeighborhoodEdge:
             raise CrossSampleContractError(
                 "neighborhood evidence crossed its exact owner-member pair"
             )
+        exact_evidence = evaluate_owner_edge(
+            self.left_owner,
+            self.right_owner,
+            config=self.config,
+            drift_lookup=self.drift_lookup,
+        )
+        if self.initial_evidence != exact_evidence:
+            raise CrossSampleContractError(
+                "neighborhood edge does not retain exact owner evidence"
+            )
         expected = classify_cross_sample_initial_edge(
-            self.initial_evidence,
+            exact_evidence,
             context=self.initial_context,
             config=self.config,
         )
@@ -612,12 +628,18 @@ def classify_cross_sample_initial_neighborhood_edge(
     *,
     left_owner: SampleLocalMS1Owner,
     right_owner: SampleLocalMS1Owner,
-    edge: OwnerEdgeEvidence,
     context: CrossSampleInitialEdgeContext,
     config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None = None,
 ) -> CrossSampleNeighborhoodEdge:
-    """Mint a sealed neighborhood edge from raw initial-grouping evidence."""
+    """Mint a sealed edge by evaluating the exact owner pair inside CrossSample."""
 
+    edge = evaluate_owner_edge(
+        left_owner,
+        right_owner,
+        config=config,
+        drift_lookup=drift_lookup,
+    )
     disposition = classify_cross_sample_initial_edge(
         edge,
         context=context,
@@ -638,6 +660,7 @@ def classify_cross_sample_initial_neighborhood_edge(
         config=config,
         left_owner=left_owner,
         right_owner=right_owner,
+        drift_lookup=drift_lookup,
     )
 
 
@@ -828,11 +851,14 @@ def build_bounded_connected_neighborhood(
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleLineageEdge:
+    lineage_edge_id: str
     predecessor_group_hypothesis_id: str
     successor_group_hypothesis_id: str
     processing_request_id: str
     predecessor_identity_basis_bytes: bytes
+    predecessor_group_hypothesis_ids: tuple[str, ...]
     member_subject_ids: tuple[str, ...]
+    basis_bytes: bytes
 
     def __post_init__(self) -> None:
         predecessor = _required_text(
@@ -879,6 +905,26 @@ class CrossSampleLineageEdge:
             or predecessor_basis["processing_request_id"] != request_id
         ):
             raise CrossSampleContractError("lineage predecessor crossed request")
+        predecessor_member_ids = predecessor_basis["member_subject_ids"]
+        if (
+            not isinstance(predecessor_member_ids, list)
+            or not predecessor_member_ids
+            or any(
+                not isinstance(item, str) or not item
+                for item in predecessor_member_ids
+            )
+            or sorted(set(predecessor_member_ids)) != predecessor_member_ids
+        ):
+            raise CrossSampleContractError("lineage predecessor basis is malformed")
+        predecessor_ids = self.predecessor_group_hypothesis_ids
+        if (
+            not predecessor_ids
+            or tuple(sorted(set(predecessor_ids))) != predecessor_ids
+            or predecessor not in predecessor_ids
+        ):
+            raise CrossSampleContractError(
+                "lineage predecessor closure must be non-empty and canonical"
+            )
         if (
             not self.member_subject_ids
             or tuple(sorted(set(self.member_subject_ids)))
@@ -887,14 +933,181 @@ class CrossSampleLineageEdge:
             raise CrossSampleContractError(
                 "lineage member closure must be non-empty and canonical"
             )
+        if not set(predecessor_member_ids).intersection(self.member_subject_ids):
+            raise CrossSampleContractError(
+                "lineage predecessor does not overlap successor membership"
+            )
+        basis = canonical_identity_basis_bytes(
+            {
+                "schema_version": "cross_sample_lineage_edge_v1",
+                "processing_request_id": request_id,
+                "predecessor_group_hypothesis_id": predecessor,
+                "predecessor_identity_basis": predecessor_basis,
+                "predecessor_group_hypothesis_ids": list(predecessor_ids),
+                "successor_group_hypothesis_id": successor,
+                "member_subject_ids": list(self.member_subject_ids),
+            }
+        )
+        if self.basis_bytes != basis:
+            raise CrossSampleContractError("lineage edge basis bytes are not exact")
+        try:
+            validate_typed_identity_basis(
+                self.lineage_edge_id,
+                prefix=_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX,
+                basis_bytes=basis,
+                field="lineage_edge_id",
+            )
+        except ValueError as exc:
+            raise CrossSampleContractError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleSuccessorApplication:
     status: CrossSampleNeighborhoodStatus
+    predecessors: tuple[CrossSampleGroupIdentity, ...]
     successors: tuple[CrossSampleGroupIdentity, ...]
     lineage: tuple[CrossSampleLineageEdge, ...]
     reason: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.predecessors) is not tuple
+            or type(self.successors) is not tuple
+            or type(self.lineage) is not tuple
+        ):
+            raise CrossSampleContractError(
+                "successor application closures must be immutable tuples"
+            )
+        if not self.predecessors or any(
+            not isinstance(group, CrossSampleGroupIdentity)
+            for group in self.predecessors
+        ):
+            raise CrossSampleContractError(
+                "successor application requires typed predecessors"
+            )
+        predecessor_ids = tuple(
+            group.group_hypothesis_id for group in self.predecessors
+        )
+        if predecessor_ids != tuple(sorted(predecessor_ids)):
+            raise CrossSampleContractError(
+                "successor application predecessors are not canonical-sorted"
+            )
+        validate_cross_sample_group_population(self.predecessors)
+        if self.status == "unassessable":
+            if self.successors or self.lineage or self.reason != (
+                "eligible_neighborhood_exceeds_budget"
+            ):
+                raise CrossSampleContractError(
+                    "unassessable successor application is not atomic"
+                )
+            return
+        if self.status != "assessable" or not self.successors:
+            raise CrossSampleContractError("successor application status is invalid")
+        successor_ids = tuple(
+            group.group_hypothesis_id for group in self.successors
+        )
+        if successor_ids != tuple(sorted(successor_ids)):
+            raise CrossSampleContractError(
+                "successor application successors are not canonical-sorted"
+            )
+        predecessor_members = sorted(
+            member.member_subject_id
+            for group in self.predecessors
+            for member in group.member_subjects
+        )
+        successor_members = sorted(
+            member.member_subject_id
+            for group in self.successors
+            for member in group.member_subjects
+        )
+        if predecessor_members != successor_members:
+            raise CrossSampleContractError(
+                "successor application is not a complete partition"
+            )
+        expected_lineage = _expected_cross_sample_lineage(
+            predecessors=self.predecessors,
+            successors=self.successors,
+        )
+        if self.lineage != expected_lineage:
+            raise CrossSampleContractError(
+                "successor application lineage is not the complete atomic closure"
+            )
+        unchanged = set(predecessor_ids) == set(successor_ids)
+        expected_reason = (
+            "unchanged_membership_no_lineage" if unchanged else "membership_changed"
+        )
+        if self.reason != expected_reason:
+            raise CrossSampleContractError(
+                "successor application reason contradicts its transition"
+            )
+
+
+def _mint_cross_sample_lineage_edge(
+    *,
+    predecessor: CrossSampleGroupIdentity,
+    successor: CrossSampleGroupIdentity,
+    predecessor_group_hypothesis_ids: tuple[str, ...],
+) -> CrossSampleLineageEdge:
+    member_subject_ids = tuple(
+        member.member_subject_id for member in successor.member_subjects
+    )
+    predecessor_basis = json.loads(predecessor.basis_bytes.decode("utf-8"))
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_lineage_edge_v1",
+            "processing_request_id": predecessor.processing_request_id,
+            "predecessor_group_hypothesis_id": predecessor.group_hypothesis_id,
+            "predecessor_identity_basis": predecessor_basis,
+            "predecessor_group_hypothesis_ids": list(
+                predecessor_group_hypothesis_ids
+            ),
+            "successor_group_hypothesis_id": successor.group_hypothesis_id,
+            "member_subject_ids": list(member_subject_ids),
+        }
+    )
+    return CrossSampleLineageEdge(
+        lineage_edge_id=typed_identity_digest(
+            _CROSS_SAMPLE_LINEAGE_EDGE_PREFIX,
+            basis,
+        ),
+        predecessor_group_hypothesis_id=predecessor.group_hypothesis_id,
+        successor_group_hypothesis_id=successor.group_hypothesis_id,
+        processing_request_id=predecessor.processing_request_id,
+        predecessor_identity_basis_bytes=predecessor.basis_bytes,
+        predecessor_group_hypothesis_ids=predecessor_group_hypothesis_ids,
+        member_subject_ids=member_subject_ids,
+        basis_bytes=basis,
+    )
+
+
+def _expected_cross_sample_lineage(
+    *,
+    predecessors: tuple[CrossSampleGroupIdentity, ...],
+    successors: tuple[CrossSampleGroupIdentity, ...],
+) -> tuple[CrossSampleLineageEdge, ...]:
+    lineage_edges: list[CrossSampleLineageEdge] = []
+    for successor in successors:
+        relevant_predecessors = tuple(
+            predecessor
+            for predecessor in predecessors
+            if set(predecessor.member_subjects).intersection(
+                successor.member_subjects
+            )
+            and predecessor.group_hypothesis_id != successor.group_hypothesis_id
+        )
+        predecessor_closure = tuple(
+            predecessor.group_hypothesis_id
+            for predecessor in relevant_predecessors
+        )
+        lineage_edges.extend(
+            _mint_cross_sample_lineage_edge(
+                predecessor=predecessor,
+                successor=successor,
+                predecessor_group_hypothesis_ids=predecessor_closure,
+            )
+            for predecessor in relevant_predecessors
+        )
+    return tuple(lineage_edges)
 
 
 def apply_coupled_successor_proposal(
@@ -905,7 +1118,9 @@ def apply_coupled_successor_proposal(
     budget: CrossSampleNeighborhoodBudget,
     population: Sequence[CrossSampleGroupIdentity],
 ) -> CrossSampleSuccessorApplication:
-    predecessor_groups = tuple(predecessors)
+    predecessor_groups = tuple(
+        sorted(predecessors, key=lambda group: group.group_hypothesis_id)
+    )
     if not predecessor_groups:
         raise CrossSampleContractError("successor requires a predecessor")
     validate_cross_sample_group_population(population)
@@ -934,6 +1149,7 @@ def apply_coupled_successor_proposal(
     if neighborhood.status == "unassessable":
         return CrossSampleSuccessorApplication(
             status="unassessable",
+            predecessors=predecessor_groups,
             successors=(),
             lineage=(),
             reason="eligible_neighborhood_exceeds_budget",
@@ -981,29 +1197,18 @@ def apply_coupled_successor_proposal(
     if predecessor_ids_set == successor_ids_set:
         return CrossSampleSuccessorApplication(
             status="assessable",
+            predecessors=predecessor_groups,
             successors=successors,
             lineage=(),
             reason="unchanged_membership_no_lineage",
         )
-    lineage = tuple(
-        CrossSampleLineageEdge(
-            predecessor_group_hypothesis_id=predecessor.group_hypothesis_id,
-            successor_group_hypothesis_id=successor.group_hypothesis_id,
-            processing_request_id=predecessor.processing_request_id,
-            predecessor_identity_basis_bytes=predecessor.basis_bytes,
-            member_subject_ids=tuple(
-                member.member_subject_id for member in successor.member_subjects
-            ),
-        )
-        for predecessor in sorted(
-            predecessor_groups, key=lambda group: group.group_hypothesis_id
-        )
-        for successor in successors
-        if set(predecessor.member_subjects).intersection(successor.member_subjects)
-        and predecessor.group_hypothesis_id != successor.group_hypothesis_id
+    lineage = _expected_cross_sample_lineage(
+        predecessors=predecessor_groups,
+        successors=successors,
     )
     return CrossSampleSuccessorApplication(
         status="assessable",
+        predecessors=predecessor_groups,
         successors=successors,
         lineage=lineage,
         reason="membership_changed",
@@ -1088,7 +1293,6 @@ class CrossSamplePeakGroupHypothesis:
     member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
     identity_basis_bytes: bytes = b""
     disposition: CrossSampleGroupDisposition = "established"
-    lineage: tuple[CrossSampleLineageEdge, ...] = ()
     source: str = "owner_aligned_feature_shadow"
     neutral_loss_tag: str = ""
     group_center_mz: float | None = None
@@ -1206,14 +1410,6 @@ def validate_cross_sample_peak_group_identity(
         basis_bytes=group.identity_basis_bytes,
         disposition=group.disposition,
     )
-    member_ids = {member.member_subject_id for member in identity.member_subjects}
-    for edge in group.lineage:
-        if edge.successor_group_hypothesis_id != group.group_hypothesis_id:
-            raise CrossSampleContractError("lineage crossed its successor identity")
-        if edge.processing_request_id != identity.processing_request_id:
-            raise CrossSampleContractError("lineage crossed processing request")
-        if set(edge.member_subject_ids) != member_ids:
-            raise CrossSampleContractError("lineage member closure is incomplete")
     return identity
 
 

@@ -7,7 +7,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleGroupMemberSubject,
-    CrossSampleLineageEdge,
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
     review_only_peak_group_hypotheses_from_ambiguous_records,
@@ -55,7 +54,6 @@ class OwnerAlignedFeature:
     member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
     identity_basis_bytes: bytes = b""
     disposition: CrossSampleGroupDisposition = "established"
-    cross_sample_lineage: tuple[CrossSampleLineageEdge, ...] = ()
     group_construction_role: str = "successor_constructor"
     group_delivery_role: str = "owner_aligned_feature_compatibility_facade"
     group_membership_source: str = "owner_aligned_feature_successor_projection"
@@ -166,7 +164,6 @@ def _feature_from_peak_group_hypothesis(
         member_subjects=hypothesis.member_subjects,
         identity_basis_bytes=hypothesis.identity_basis_bytes,
         disposition=hypothesis.disposition,
-        cross_sample_lineage=hypothesis.lineage,
         group_construction_role=hypothesis.group_construction_role,
         group_delivery_role="owner_aligned_feature_compatibility_facade",
         group_membership_source="owner_aligned_feature_successor_projection",

@@ -262,7 +262,6 @@ def test_disposition_and_value_only_projection_do_not_mint_lineage(tmp_path) -> 
     )
     value_changed = replace(carrier, group_center_mz=501.0)
     assert value_changed.group_hypothesis_id == carrier.group_hypothesis_id
-    assert value_changed.lineage == carrier.lineage == ()
 
     application = apply_coupled_successor_proposal(
         predecessors=(unresolved,),
@@ -282,7 +281,13 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
         mint_cross_sample_group_identity,
     )
 
-    fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
+    fixture, all_members = _subjects(
+        tmp_path,
+        "sample-a",
+        "sample-b",
+        "sample-c",
+    )
+    members = all_members[:2]
     predecessors = tuple(
         mint_cross_sample_group_identity(
             processing_request_id=fixture.request.processing_request_id,
@@ -318,31 +323,63 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
         == forward.successors[0].group_hypothesis_id
         for item in forward.lineage
     )
-    incomplete = replace(
-        forward.lineage[0],
-        member_subject_ids=(members[0].member_subject_id,),
-    )
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleContractError,
-        CrossSamplePeakGroupHypothesis,
-        validate_cross_sample_peak_group_identity,
     )
 
-    successor = forward.successors[0]
-    carrier = CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=successor.group_hypothesis_id,
-        public_family_id="FAM000001",
-        owner_ids=(),
-        event_ids=(),
-        event_member_count=0,
-        processing_request_id=successor.processing_request_id,
-        member_subjects=successor.member_subjects,
-        identity_basis_bytes=successor.basis_bytes,
-        disposition=successor.disposition,
-        lineage=(incomplete,),
+    with pytest.raises(CrossSampleContractError, match="atomic closure"):
+        replace(forward, lineage=())
+    with pytest.raises(CrossSampleContractError, match="atomic closure"):
+        replace(forward, lineage=tuple(reversed(forward.lineage)))
+    with pytest.raises(CrossSampleContractError, match="immutable tuples"):
+        replace(forward, lineage=list(forward.lineage))  # type: ignore[arg-type]
+    with pytest.raises(CrossSampleContractError, match="status is invalid"):
+        replace(forward, successors=())
+
+    with pytest.raises(CrossSampleContractError, match="overlap|basis bytes"):
+        replace(
+            forward.lineage[0],
+            member_subject_ids=(members[0].member_subject_id,),
+        )
+    unrelated = mint_cross_sample_group_identity(
+        processing_request_id=fixture.request.processing_request_id,
+        member_subjects=(all_members[2],),
     )
-    with pytest.raises(CrossSampleContractError, match="incomplete"):
-        validate_cross_sample_peak_group_identity(carrier, require_canonical=True)
+    with pytest.raises(
+        CrossSampleContractError,
+        match="predecessor closure|basis bytes",
+    ):
+        replace(
+            forward.lineage[0],
+            predecessor_group_hypothesis_id=unrelated.group_hypothesis_id,
+            predecessor_identity_basis_bytes=unrelated.basis_bytes,
+        )
+    from xic_extractor.processing_identity import (
+        canonical_identity_basis_bytes,
+        typed_identity_digest,
+    )
+
+    impossible_basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_group_v1",
+            "processing_request_id": fixture.request.processing_request_id,
+            "member_subject_ids": [
+                members[0].member_subject_id,
+                members[0].member_subject_id,
+            ],
+        }
+    )
+    impossible_id = typed_identity_digest(
+        "xic.cross-sample-group.v1:",
+        impossible_basis,
+    )
+    with pytest.raises(CrossSampleContractError, match="basis is malformed"):
+        replace(
+            forward.lineage[0],
+            predecessor_group_hypothesis_id=impossible_id,
+            predecessor_identity_basis_bytes=impossible_basis,
+            predecessor_group_hypothesis_ids=(impossible_id,),
+        )
 
 
 def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
@@ -393,6 +430,28 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
                 max_eligible_edges=1,
             ),
             population=(predecessors[0],),
+        )
+
+
+def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        CrossSampleSuccessorApplication,
+        mint_cross_sample_group_identity,
+    )
+
+    fixture, (member,) = _subjects(tmp_path, "sample-a")
+    predecessor = mint_cross_sample_group_identity(
+        processing_request_id=fixture.request.processing_request_id,
+        member_subjects=(member,),
+    )
+    with pytest.raises(CrossSampleContractError, match="immutable tuples"):
+        CrossSampleSuccessorApplication(
+            status="unassessable",
+            predecessors=[predecessor],  # type: ignore[arg-type]
+            successors=[],  # type: ignore[arg-type]
+            lineage=[],  # type: ignore[arg-type]
+            reason="eligible_neighborhood_exceeds_budget",
         )
 
 
@@ -481,9 +540,6 @@ def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> No
 
 
 def _neighborhood_edge(left, right, *, disposition):
-    from dataclasses import replace as dc_replace
-
-    from tests.alignment_pipeline_helpers import owner_edge_evidence
     from tests.test_alignment_owner_clustering import _owner
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -498,25 +554,31 @@ def _neighborhood_edge(left, right, *, disposition):
         _owner(f"edge-{right.member_subject_id[-8:]}", "000001"),
         cross_sample_member_subject=right,
     )
-    raw_edge = dc_replace(
-        owner_edge_evidence(),
-        left_owner_id=left_owner.owner_id,
-        right_owner_id=right_owner.owner_id,
-        left_sample_stem=left_owner.sample_stem,
-        right_sample_stem=right_owner.sample_stem,
-    )
     if disposition == "excluded":
-        raw_edge = dc_replace(
-            raw_edge,
-            decision="blocked_edge",
-            failure_reason="same_sample",
-        )
+        right_owner = replace(right_owner, identity_conflict=True)
     elif disposition != "eligible":
         raise AssertionError(f"unsupported test disposition {disposition!r}")
     return classify_cross_sample_initial_neighborhood_edge(
         left_owner=left_owner,
         right_owner=right_owner,
-        edge=raw_edge,
         context="hard_gate",
         config=AlignmentConfig(),
     )
+
+
+def test_neighborhood_edge_rejects_relabelled_owner_evidence(tmp_path) -> None:
+    fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
+    del fixture
+    edge = _neighborhood_edge(members[0], members[1], disposition="eligible")
+    forged = replace(
+        edge.initial_evidence,
+        decision="blocked_edge",
+        failure_reason="same_sample",
+    )
+
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+    )
+
+    with pytest.raises(CrossSampleContractError, match="exact owner evidence"):
+        replace(edge, initial_evidence=forged, disposition="excluded")

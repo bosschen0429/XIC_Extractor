@@ -495,11 +495,10 @@ def canonical_alignment_peak_group_result_bytes(
         projection = asdict(group)
         for field_name in (
             "processing_request_id",
-            "member_subjects",
-            "identity_basis_bytes",
-            "disposition",
-            "lineage",
-        ):
+                "member_subjects",
+                "identity_basis_bytes",
+                "disposition",
+            ):
             projection.pop(field_name)
         for owner in projection["owners"]:
             owner.pop("cross_sample_member_subject")
@@ -544,22 +543,6 @@ def canonical_alignment_peak_group_binding_bytes(
                         ),
                     }
                     for member in group.member_subjects
-                ],
-                "lineage": [
-                    {
-                        "predecessor_group_hypothesis_id": (
-                            edge.predecessor_group_hypothesis_id
-                        ),
-                        "successor_group_hypothesis_id": (
-                            edge.successor_group_hypothesis_id
-                        ),
-                        "processing_request_id": edge.processing_request_id,
-                        "predecessor_identity_basis": (
-                            edge.predecessor_identity_basis_bytes.decode("utf-8")
-                        ),
-                        "member_subject_ids": list(edge.member_subject_ids),
-                    }
-                    for edge in group.lineage
                 ],
             }
             for group in groups
