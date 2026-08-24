@@ -26,10 +26,9 @@ for the active task unless a hard gate below says otherwise.
   [`planning-workflows.md`](docs/agent/planning-workflows.md),
   [`communication-review.md`](docs/agent/communication-review.md), and
   [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md)
-- Existing diagnostics and solved patterns:
+- Existing diagnostics and measured conclusions:
   [`diagnostic-ledger.md`](docs/diagnostic-ledger.md),
-  [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and
-  [`docs/solutions/README.md`](docs/solutions/README.md)
+  and [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md)
 - Productization capabilities, mutable state, writer authority, and promotion:
   [`productization.md`](docs/product/productization.md),
   [`productization_status_index_v1.tsv`](docs/superpowers/validation/productization_status_index_v1.tsv),

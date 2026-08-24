@@ -44,7 +44,6 @@ self-ownership，因此不需要 generic lifecycle metadata：
 | `docs/product/` | 產品 topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
 | `docs/architecture/` | Architecture support documents |
-| `docs/solutions/` | 可重用、已驗證的解法 |
 | `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
@@ -69,6 +68,10 @@ self-ownership，因此不需要 generic lifecycle metadata：
 施工 PRD、計畫、acceptance、work decomposition 放 GitHub Issue；交付敘事放 PR
 body；next 1–3 actions 放 ignored local handoff。不要建立 tracked plan、spec、
 closeout、active stub 或永久歷史 stub。
+
+踩坑後若得到可重用規則，直接更新對該決策有權威的 product、agent、validation
+或 diagnostic owner；一次性命令、數字與事故敘事留在 PR／Git 歷史。不得另建
+`solutions`、`lessons` 或同義的事後知識支線。
 
 唯一的 exact-path machine exception 必須保持原路徑，但不得當作新檔模板：
 

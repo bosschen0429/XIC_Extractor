@@ -12,9 +12,9 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
   planning, validation, architecture, and public contracts.
 - `.codex/skills/`: XIC-specific reusable workflows that need a checklist at
   execution time.
-- `docs/solutions/`: searchable reusable lessons from solved XIC problems.
-  Follow `docs/solutions/README.md` directly after a non-obvious fix,
-  productization decision, or validation lesson; no wrapper skill is required.
+- Reusable lessons update the existing decision owner directly. Delivery
+  evidence and chronology stay in the PR/Git history; do not create a parallel
+  solution-note lane that future agents must remember to search.
 - `.codex/rules/*.rules`: command-prefix policy for destructive or high-impact
   operations.
 - `.codex/hooks.json` and `.codex/hooks/*.py`: low-noise lifecycle checks.

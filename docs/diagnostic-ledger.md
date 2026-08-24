@@ -323,6 +323,34 @@ current code changes RAW locality, owner-backfill request grouping,
 super-window batching/cropping, validation-fast settings, output surfaces used
 by the gate, or the cited artifacts become stale or contradictory.
 
+### 2026-06-29 Rejected One-Shot Performance Candidates
+
+Verdict: `rejected` for the measured Owner Backfill scan-index/span variants
+and for wiring Standard Peak `--best-shift-only` into the one-shot matrix-only
+preset. These remain diagnostic or explicit options; they are not accepted
+performance defaults.
+
+Key facts:
+
+- On 8RAW, `ms1-index-hybrid` preserved checked public hashes but slowed
+  `alignment.owner_backfill` from 14.56 s to 64.89 s. The `ms1-index`
+  owner-backfill and owner-build variants both changed public outputs and were
+  also slower than the exact baseline.
+- Super-window span factor 1 preserved public TSV hashes but increased RAW calls
+  from 72 to 17,910 and slowed Owner Backfill to 50.55 s. Factor 3 increased
+  point volume from 9.16M to 15.62M without a useful timing margin over factor
+  2.
+- Standard Peak `--best-shift-only` improved a no-RAW replay from 13.546 s to
+  9.201 s with identical best-shift summaries, but the complete 8RAW target
+  stage did not improve: shift batch moved 18.903 s to 19.123 s and chunk moved
+  26.033 s to 26.742 s.
+
+Do not rerun 85RAW or promote any of these candidates from a microbenchmark.
+Reopen a bounded 8RAW comparison only after the implementation changes RAW
+locality, removes duplicated exact work, changes the complete Standard Peak
+stage cost, or new evidence contradicts these measurements. Any public-output
+change remains an expected-diff product decision, not a performance-only edit.
+
 ### 2026-06-15 Replay Executor Validation
 
 Verdict: `run_ok` and `gate_ok` for targeted CLI CSV/workbook replay parity on
