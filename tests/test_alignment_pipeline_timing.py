@@ -52,8 +52,6 @@ def test_pipeline_records_alignment_timing_stages(
         "alignment.backfill_scope",
         "alignment.owner_backfill",
         "alignment.build_matrix",
-        "alignment.claim_registry",
-        "alignment.primary_consolidation",
         "alignment.pre_backfill_recenter",
         "alignment.write_outputs",
     ]

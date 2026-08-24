@@ -193,8 +193,8 @@ pre-Backfill identity consolidation as a proposal, but the original owner
 features still enter the existing Backfill request plan and execution path.
 The flag requires `--backfill-scope full-audit` and fails closed when combined
 with the activated `--preconsolidate-owner-families` path.
-After the claim registry and primary consolidation finish, the shadow compares
-every proposal row with the typed final Matrix authority and writes
+After owner Matrix construction and the current CrossSample projections finish,
+the shadow compares every proposal row with the typed final Matrix authority and writes
 `alignment_early_loser_shadow.json`.
 
 The packet preserves the proposal source stage, direct and terminal winners,

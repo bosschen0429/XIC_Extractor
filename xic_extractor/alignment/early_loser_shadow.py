@@ -6,6 +6,10 @@ from dataclasses import asdict, dataclass
 from typing import Literal, Mapping
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import (
+    TargetedIstdIdentityAnchor,
+    targeted_istd_identity_anchor_payload,
+)
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.output_rows import row_id
 from xic_extractor.alignment.owner_backfill_request_plan import (
@@ -239,7 +243,7 @@ def build_early_loser_shadow_proposal(
         run_id=run_id,
         source_owner_snapshot_sha256=_canonical_sha256(
             [
-                asdict(feature)
+                _source_owner_feature_payload(feature)
                 for feature in sorted(
                     features,
                     key=_shadow_source_sort_key,
@@ -395,8 +399,8 @@ def compare_early_loser_shadow_with_final_authority(
         backfill_scope="full-audit",
         validation_status="diagnostic_only",
         authority=(
-            "diagnostic_projection_only_final_claim_and_primary_consolidation_"
-            "remain_authoritative"
+            "diagnostic_projection_only_cross_sample_and_"
+            "production_cell_decision_remain_authoritative"
         ),
         verdict=verdict,
         verdict_reason=verdict_reason,
@@ -880,6 +884,16 @@ def _canonical_sha256(value: object) -> str:
         allow_nan=False,
     )
     return hashlib.sha256((payload + "\n").encode("utf-8")).hexdigest()
+
+
+def _source_owner_feature_payload(feature: OwnerAlignedFeature) -> dict[str, object]:
+    payload = asdict(feature)
+    anchor = feature.targeted_istd_anchor
+    if isinstance(anchor, TargetedIstdIdentityAnchor):
+        payload["targeted_istd_anchor"] = targeted_istd_identity_anchor_payload(
+            anchor
+        )
+    return payload
 
 
 def _json_hash_value(value: object) -> object:

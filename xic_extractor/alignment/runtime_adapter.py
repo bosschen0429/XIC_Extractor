@@ -545,7 +545,11 @@ def _jsonable_alignment_group(group: CrossSamplePeakGroupHypothesis) -> object:
             return [render(item) for item in value]
         return value
 
-    return render(asdict(group))
+    payload = asdict(group)
+    # The Targeted ISTD anchor is run-local grouping context, not part of the
+    # retained alignment_peak_group_result_v1 public carrier.
+    payload.pop("targeted_istd_anchor", None)
+    return render(payload)
 
 
 def resolve_alignment_application_peak_group_result(

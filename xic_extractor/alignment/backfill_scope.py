@@ -295,7 +295,9 @@ def _has_cross_sample_backfill_scope_edge(
         )
     except CrossSampleContractError:
         return False
-    return edge.disposition == "eligible"
+    # A review-only edge can justify collecting bounded evidence, but it never
+    # connects a CrossSample membership neighborhood.
+    return edge.disposition in {"eligible", "review_only"}
 
 
 def _rt_window_neighbors(

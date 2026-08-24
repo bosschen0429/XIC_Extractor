@@ -791,18 +791,13 @@ def test_pre_consolidation_excludes_numeric_compatible_different_istd_anchors(
     assert edge.disposition == "excluded"
 
 
-def test_claim_disposition_and_backfill_exclude_different_istd_anchors(
+def test_backfill_excludes_different_istd_anchors(
     tmp_path,
 ) -> None:
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleBackfillScopeEdgeFacts,
-        CrossSampleClaimEdgeFacts,
-        CrossSamplePrimaryDispositionEdgeFacts,
         classify_cross_sample_backfill_scope_edge,
-        classify_cross_sample_claim_edge,
-        classify_cross_sample_primary_disposition_edge,
-        group_member_subject_from_peak_observation,
         mint_cross_sample_group_identity,
     )
     from xic_extractor.alignment.drift_evidence import (
@@ -812,11 +807,6 @@ def test_claim_disposition_and_backfill_exclude_different_istd_anchors(
     from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
     fixture, first, second = _subjects(tmp_path)
-    same_sample_distinct = group_member_subject_from_peak_observation(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("sample-a"),
-        observation=issue161_peak(fixture, "sample-a", apex_rt=8.05),
-    )
     left_group = mint_cross_sample_group_identity(
         processing_request_id=fixture.request.processing_request_id,
         member_subjects=(first,),
@@ -824,10 +814,6 @@ def test_claim_disposition_and_backfill_exclude_different_istd_anchors(
     right_group = mint_cross_sample_group_identity(
         processing_request_id=fixture.request.processing_request_id,
         member_subjects=(second,),
-    )
-    same_sample_group = mint_cross_sample_group_identity(
-        processing_request_id=fixture.request.processing_request_id,
-        member_subjects=(same_sample_distinct,),
     )
 
     def anchor(label: str, namespace: str):
@@ -852,59 +838,6 @@ def test_claim_disposition_and_backfill_exclude_different_istd_anchors(
     right_anchor = anchor("istd-right", "right")
     config = AlignmentConfig()
     assert (
-        classify_cross_sample_claim_edge(
-            CrossSampleClaimEdgeFacts(
-                left_group=left_group,
-                right_group=right_group,
-                left_member_subject=first,
-                right_member_subject=second,
-                left_family_mz=500.0,
-                right_family_mz=500.0,
-                left_apex_rt=8.5,
-                right_apex_rt=8.5,
-                left_peak_start_rt=8.4,
-                left_peak_end_rt=8.6,
-                right_peak_start_rt=8.4,
-                right_peak_end_rt=8.6,
-                context="claim_candidate",
-                left_neutral_loss_tag="NL116",
-                right_neutral_loss_tag="NL116",
-                left_targeted_istd_anchor=left_anchor,
-                right_targeted_istd_anchor=right_anchor,
-            ),
-            config=config,
-        )
-        == "excluded"
-    )
-    assert (
-        classify_cross_sample_primary_disposition_edge(
-            CrossSamplePrimaryDispositionEdgeFacts(
-                left_group=left_group,
-                right_group=same_sample_group,
-                left_detected_members=(first,),
-                right_detected_members=(same_sample_distinct,),
-                left_detected_count=1,
-                right_detected_count=2,
-                left_rescue_count=2,
-                right_rescue_count=2,
-                left_neutral_loss_tag="NL116",
-                right_neutral_loss_tag="NL116",
-                left_precursor_mz=500.0,
-                right_precursor_mz=500.0,
-                left_product_mz=384.0,
-                right_product_mz=384.0,
-                left_observed_loss_da=116.0474,
-                right_observed_loss_da=116.0474,
-                left_rt_min=8.5,
-                right_rt_min=8.5,
-                left_targeted_istd_anchor=left_anchor,
-                right_targeted_istd_anchor=right_anchor,
-            ),
-            config=config,
-        ).disposition
-        == "excluded"
-    )
-    assert (
         classify_cross_sample_backfill_scope_edge(
             CrossSampleBackfillScopeEdgeFacts(
                 left_group=left_group,
@@ -925,6 +858,66 @@ def test_claim_disposition_and_backfill_exclude_different_istd_anchors(
             config=config,
         ).disposition
         == "excluded"
+    )
+
+
+def test_backfill_scope_keeps_same_sample_numeric_candidate_review_only(
+    tmp_path,
+) -> None:
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleBackfillScopeEdgeFacts,
+        CrossSampleNeighborhoodBudget,
+        build_bounded_connected_neighborhood,
+        classify_cross_sample_backfill_scope_edge,
+        group_member_subject_from_peak_observation,
+        mint_cross_sample_group_identity,
+    )
+
+    fixture, first, _ = _subjects(tmp_path)
+    same_sample_distinct = group_member_subject_from_peak_observation(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample-a"),
+        observation=issue161_peak(fixture, "sample-a", apex_rt=8.05),
+    )
+    left_group = mint_cross_sample_group_identity(
+        processing_request_id=fixture.request.processing_request_id,
+        member_subjects=(first,),
+    )
+    right_group = mint_cross_sample_group_identity(
+        processing_request_id=fixture.request.processing_request_id,
+        member_subjects=(same_sample_distinct,),
+    )
+
+    edge = classify_cross_sample_backfill_scope_edge(
+        CrossSampleBackfillScopeEdgeFacts(
+            left_group=left_group,
+            right_group=right_group,
+            left_neutral_loss_tag="NL116",
+            right_neutral_loss_tag="NL116",
+            left_precursor_mz=500.0,
+            right_precursor_mz=500.0,
+            left_product_mz=384.0,
+            right_product_mz=384.0,
+            left_observed_loss_da=116.0474,
+            right_observed_loss_da=116.0474,
+            left_rt_min=8.5,
+            right_rt_min=8.5,
+        ),
+        config=AlignmentConfig(),
+    )
+
+    assert edge.disposition == "review_only"
+    neighborhood = build_bounded_connected_neighborhood(
+        member_subjects=(first, same_sample_distinct),
+        edges=(edge,),
+        budget=CrossSampleNeighborhoodBudget(max_members=2, max_eligible_edges=1),
+    )
+    assert neighborhood.connected_components == tuple(
+        (member_subject_id,)
+        for member_subject_id in sorted(
+            (first.member_subject_id, same_sample_distinct.member_subject_id)
+        )
     )
 
 

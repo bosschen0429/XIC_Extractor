@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -571,6 +571,55 @@ def test_alignment_scientific_serializer_rejects_display_only_group() -> None:
 
     with pytest.raises(AlignmentRuntimeAdapterError, match="canonical identity"):
         canonical_alignment_peak_group_result_bytes((display_only,))
+
+
+def test_alignment_scientific_serializer_omits_private_targeted_istd_anchor(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.drift_evidence import (
+        build_targeted_istd_identity_anchor,
+    )
+    from xic_extractor.configuration.models import Target
+    from xic_extractor.configuration.target_identity import mint_target_list_snapshot
+
+    attempt = _attempt(tmp_path, stem="targeted-istd")
+    target = Target(
+        label="ISTD",
+        mz=500.0,
+        rt_min=8.0,
+        rt_max=9.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    anchor = build_targeted_istd_identity_anchor(
+        mint_target_list_snapshot((target,), identity_namespace="runtime-istd"),
+        observed_labels=(target.label,),
+    )
+
+    unanchored = _group(
+        "group:targeted-istd",
+        processing_request_id=attempt.processing_request_id,
+    )
+    payload = canonical_alignment_peak_group_result_bytes(
+        (
+            replace(
+                unanchored,
+                targeted_istd_anchor=anchor,
+            ),
+        )
+    )
+    rendered = json.loads(payload)
+    unanchored_rendered = json.loads(
+        canonical_alignment_peak_group_result_bytes((unanchored,))
+    )
+
+    assert "targeted_istd_anchor" not in rendered["groups"][0]
+    assert "_mint_token" not in payload.decode("utf-8")
+    assert rendered == unanchored_rendered
 
 
 def _group(

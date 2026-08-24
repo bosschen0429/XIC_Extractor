@@ -467,8 +467,8 @@ surface, not an active phase plan:
   models, resolver implementations, selection, recovery, integration, and trace
   quality into focused peak-detection modules.
 - `xic_extractor/alignment/`: migrate in dependency order to the frozen owner
-  decomposition above. `primary_consolidation.py`, `matrix_identity.py`,
-  `production_decisions.py`, `pipeline.py`, `identity_coherence/`, current
+  decomposition above. `matrix_identity.py`, `production_decisions.py`,
+  `pipeline.py`, `identity_coherence/`, current
   Backfill files, and output-level flags are evidence-bearing legacy sources,
   not permanent owner shapes. Characterize before moving; delete replaced
   implementations and adapters after their named consumer census reaches zero.

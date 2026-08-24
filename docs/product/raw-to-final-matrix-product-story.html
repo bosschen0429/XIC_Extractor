@@ -711,29 +711,7 @@
                 </td>
               </tr>
               <tr>
-                <td><span class="step-number">d</span>Claim Registry</td>
-                <td>
-                  檢查同一樣本中是否有多個 family row 搶同一個 MS1 peak（5 ppm fuzzy match）。
-                  若有，指定 winner 並把 loser 標記為 duplicate。
-                </td>
-                <td>
-                  Backfill 後可能出現「兩個 family 其實共用同一個 MS1 峰」的情況。
-                  不處理會導致同一個峰的面積被重複計算。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">e</span>Primary 合併</td>
-                <td>
-                  跨 neutral-loss tag 的 family，若 precursor m/z 與 RT 高度接近，
-                  合併為同一個 primary family（一個化合物掉多種碎片）。
-                </td>
-                <td>
-                  Step b 的 tag 閘門會把同一化合物的不同 NL transition 分成不同 cluster。
-                  Backfill 完成後才能安全合併，因為每個 NL 需要獨立 backfill（tag-specific product m/z）。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">f</span>Matrix Identity</td>
+                <td><span class="step-number">d</span>Matrix Identity</td>
                 <td>
                   評估每個 family 的 identity evidence 強度，決定是否進 primary matrix。
                   產出 <code>identity_decision</code>（production / provisional / audit）
@@ -746,7 +724,7 @@
                 </td>
               </tr>
               <tr>
-                <td><span class="step-number">g</span>Production 決策</td>
+                <td><span class="step-number">e</span>Production 決策</td>
                 <td>
                   對 matrix 中每個 cell 做最終判定：寫入面積、留空（blank）、
                   或標記為 duplicate/ambiguous/absent。
@@ -761,10 +739,9 @@
 
           <div class="callout">
             <strong>漏斗規則的關鍵設計：</strong>
-            tag 閘門在 Step b 刻意分開不同 NL transition → 各自獨立 backfill →
-            Step d 發現共享 MS1 peak → Step e 合併回同一個 family。
-            這個順序反映 LC-MS/MS 的物理事實：一個化合物可以碎出多種 fragments，
-            每種 fragment 的 product m/z 不同，必須分別回 RAW 搜尋。
+            tag 閘門在 Step b 刻意分開不同 NL transition，再各自獨立 backfill。
+            數值接近本身不再授權事後 winner 或跨 family 合併；membership 只能由
+            CrossSample 的 owner-backed identity 與 lineage 改變。
           </div>
 
           <details>
@@ -777,8 +754,6 @@
                 <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code> — group hypothesis 模型</li>
                 <li><code>xic_extractor/alignment/edge_scoring.py</code> — 跨樣本 RT/m/z 評分</li>
                 <li><code>xic_extractor/alignment/owner_backfill.py</code> — 缺值 rescue 抽取</li>
-                <li><code>xic_extractor/alignment/claim_registry.py</code> — MS1 peak duplicate 處理</li>
-                <li><code>xic_extractor/alignment/primary_consolidation.py</code> — 跨 NL-tag family 合併</li>
                 <li><code>xic_extractor/alignment/matrix_identity.py</code> — row identity decision</li>
                 <li><code>xic_extractor/alignment/production_decisions.py</code> — cell production decision</li>
               </ul>
@@ -968,8 +943,6 @@
             <li><code>xic_extractor/alignment/owner_clustering.py</code></li>
             <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code></li>
             <li><code>xic_extractor/alignment/owner_backfill.py</code></li>
-            <li><code>xic_extractor/alignment/claim_registry.py</code></li>
-            <li><code>xic_extractor/alignment/primary_consolidation.py</code></li>
             <li><code>xic_extractor/alignment/matrix_identity.py</code></li>
             <li><code>xic_extractor/alignment/production_decisions.py</code></li>
             <li><code>xic_extractor/alignment/tsv_writer.py</code></li>

@@ -101,11 +101,11 @@ def test_timing_recorder_records_exception_stage_before_reraising() -> None:
     recorder = TimingRecorder("alignment", run_id="run-2", timer=_Timer([1.0, 1.25]))
 
     with pytest.raises(ValueError, match="boom"):
-        with recorder.stage("alignment.claim_registry"):
+        with recorder.stage("alignment.build_matrix"):
             raise ValueError("boom")
 
     assert len(recorder.records) == 1
-    assert recorder.records[0].stage == "alignment.claim_registry"
+    assert recorder.records[0].stage == "alignment.build_matrix"
     assert recorder.records[0].elapsed_sec == pytest.approx(0.25)
 
 

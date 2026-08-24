@@ -10,26 +10,17 @@ This packet is evidence for a later default-activation expected-diff goal. It
 does not grant ProductWriter authority, does not update the tracked default
 QuantMatrix activation bundle, and does not change Backfill writer authority.
 
-## Code Contract
+## Historical Code Contract (retired)
 
-Primary family consolidation may merge duplicate-claim families when they are
-the same neutral-loss identity by the normal precursor/product/loss tolerances.
-The shared-MS1 fallback is now limited to different neutral-loss tags. Same-tag
-rows with distinct product identity must remain separate primary row candidates
-instead of being collapsed into a broader MS1 peak winner.
+This packet recorded the former claim-registry and primary-consolidation
+heuristics. Issue #302 retired those paths because a valid canonical population
+left them no owner-closed mutation and the remaining Matrix-value winner rule
+was a second disposition owner. The old focused commands were removed with the
+implementation and must not be reused as a current contract.
 
-Focused regression:
-
-```powershell
-python -m pytest tests/test_alignment_primary_consolidation.py::test_same_tag_product_distinct_rows_do_not_merge_by_shared_ms1_peak -q
-```
-
-This test was red before the consolidation fix and green after it. The existing
-cross-tag shared-MS1 behavior remains covered by:
-
-```powershell
-python -m pytest tests/test_alignment_primary_consolidation.py::test_consolidation_merges_shared_ms1_peak_across_nl_evidence_tags -q
-```
+The retained 8RAW/85RAW observations below are historical evidence only. Current
+behavior is pinned by the CrossSample identity/lineage tests and by
+`tests/test_alignment_pipeline.py::test_pipeline_writes_owner_matrix_without_retired_post_grouping_heuristics`.
 
 ## 8RAW Validation
 

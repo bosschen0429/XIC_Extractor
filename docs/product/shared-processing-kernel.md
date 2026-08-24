@@ -150,7 +150,7 @@ adding a parallel framework.
 | `PeakHypothesis` | Candidate chromatographic identity, selected integration, typed evidence, and audit | `peak_detection.hypotheses`; current builder is still Targeted-shaped |
 | `PeakHypothesisSelectionDecision` | Deterministic sample-local hypothesis selection/externalization | `peak_detection.selection_decision` |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample membership and canonical group-hypothesis identity | `alignment.cross_sample_peak_groups` |
-| `GroupDispositionDecision` | Exactly one of established/provisional/unresolved/rejected, independent of output inclusion | Current policy is spread across grouping, matrix identity, and consolidation code |
+| `GroupDispositionDecision` | Exactly one of established/provisional/unresolved/rejected, independent of output inclusion | `alignment.cross_sample_peak_groups` owns disposition; Matrix identity and output inclusion remain separate projections |
 | ModeTrack snapshot/proposal | Request-bound trajectory evidence and proposal-only refinement | Reuse and deepen current `identity_coherence` / ModeTrack capability |
 | `CellObservationRef` | Sample × existing-group closure over orthogonal technical, method-result, identity, human-review, and authority axes | Bounded CID-NL M1 owner exists under `alignment.cell_observations`; production callers remain unmigrated |
 | `ObservationRepair` request/decision | Revisit one eligible pre-existing Target or group cell; return owner-backed observation facts and audit, never a writer decision | Current request plan and Owner Backfill result are Untargeted-shaped starting points |
@@ -378,10 +378,9 @@ the bounded tracer and must have an explicit retirement or kill decision.
 The frozen migration starts from these observed gaps:
 
 1. `alignment/pipeline.py` transports a mutable Matrix through grouping,
-   consolidation, Backfill, production decisions, and writer composition.
-2. `matrix_identity.py`, consolidation code, and output policy jointly decide
-   group meaning, provisional/primary inclusion, cell counts, and Backfill
-   behavior.
+   Backfill, production decisions, and writer composition.
+2. `matrix_identity.py` and output policy still project provisional/primary
+   inclusion and cell counts after CrossSample has closed group meaning.
 3. Current `group_hypothesis_id` construction commonly uses ordinal `FAM...`
    labels and is not stable under order/parallelism or suitable as a delivery
    cell identity.

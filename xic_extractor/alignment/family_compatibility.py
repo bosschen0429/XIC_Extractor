@@ -1,8 +1,8 @@
-"""Numeric projection facade retained for two current consumers only.
+"""Numeric projection facade retained for one current consumer only.
 
-`backfill_scope.py` and `primary_consolidation.py` still consume legacy row
-numeric fields through this adapter.  Remove this module when both consume the
-CrossSample owner-native typed numeric projection directly.
+`backfill_scope.py` still consumes legacy row numeric fields through this
+adapter. Remove this module when that caller consumes the CrossSample
+owner-native typed numeric projection directly.
 """
 
 from __future__ import annotations

@@ -434,6 +434,9 @@ def _summary(
         "audit_evidence_mode": text_value(metadata.get("audit_evidence_mode")),
         "owner_backfill_elapsed_sec": stages.get("alignment.owner_backfill", 0.0),
         "build_matrix_elapsed_sec": stages.get("alignment.build_matrix", 0.0),
+        # Retained to preserve the persisted v1 summary schema. Current runs
+        # report 0.0 because these stages were retired by Issue #302. Remove
+        # the keys only with a versioned v2 schema migration.
         "claim_registry_elapsed_sec": stages.get("alignment.claim_registry", 0.0),
         "primary_consolidation_elapsed_sec": stages.get(
             "alignment.primary_consolidation",

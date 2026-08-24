@@ -14,7 +14,6 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
-from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
 from xic_extractor.alignment.owner_backfill import (
@@ -41,9 +40,6 @@ from xic_extractor.alignment.owner_backfill_runtime_projection import (
     validate_owner_backfill_runtime_feature,
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
-from xic_extractor.alignment.primary_consolidation import (
-    consolidate_primary_family_rows,
-)
 from xic_extractor.alignment.process_backend import (
     OwnerBackfillSampleJob,
     OwnerBackfillSampleResult,
@@ -944,19 +940,14 @@ def test_exact_reuse_preserves_cells_candidate_audit_and_final_matrix(
         ambiguous_by_sample={},
         rescued_cells=exact.cells,
     )
-    baseline_claimed = apply_ms1_peak_claim_registry(baseline_matrix, config)
-    exact_claimed = apply_ms1_peak_claim_registry(exact_matrix, config)
-    assert exact_claimed == baseline_claimed
-    baseline_final = consolidate_primary_family_rows(baseline_claimed, config)
-    exact_final = consolidate_primary_family_rows(exact_claimed, config)
-    assert exact_final == baseline_final
+    assert exact_matrix == baseline_matrix
     baseline_tsv = write_alignment_cells_tsv(
         tmp_path / "baseline_cells.tsv",
-        baseline_final,
+        baseline_matrix,
     )
     exact_tsv = write_alignment_cells_tsv(
         tmp_path / "exact_cells.tsv",
-        exact_final,
+        exact_matrix,
     )
     assert exact_tsv.read_bytes() == baseline_tsv.read_bytes()
 

@@ -1099,6 +1099,11 @@ Manual same-peak verdict rows are optional override/review evidence; when they
 are absent, the trial consumes `same_peak_verdict` from the normal-peak
 decision TSV. It does not read RAW, load `alignment_cells.tsv`,
 apply activation, mutate alignment artifacts, or claim production readiness. It
+retains the v1 `claim_registry_elapsed_sec` and
+`primary_consolidation_elapsed_sec` summary keys solely to preserve the
+persisted v1 summary schema and historical timing artifacts; current runs report
+`0.0` because those stages are retired. Remove the keys only with a versioned
+v2 schema migration. It
 uses `raw85_matched_peak_hypothesis_id + sample` as the transfer trial key
 rather than cross-run source FAM IDs. The 2026-06-09 artifact-only trial found
 `normal_peak_required_count=11`, `primary_loser_count=9`,

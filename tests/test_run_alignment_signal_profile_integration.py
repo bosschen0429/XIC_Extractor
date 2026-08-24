@@ -21,7 +21,6 @@ import xic_extractor.alignment.process_backend as process_backend_module
 import xic_extractor.alignment.process_execution as process_execution_module
 from scripts import run_alignment
 from tests.alignment_pipeline_helpers import write_owner_closed_partial_batch
-from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.output_levels import artifact_names_for_output_level
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
@@ -39,9 +38,6 @@ from xic_extractor.alignment.pipeline_outputs import (
 )
 from xic_extractor.alignment.pre_backfill_consolidation import (
     recenter_pre_backfill_identity_families,
-)
-from xic_extractor.alignment.primary_consolidation import (
-    consolidate_primary_family_rows,
 )
 from xic_extractor.alignment.process_backend import (
     OwnerBackfillSampleJob,
@@ -1035,8 +1031,6 @@ def _rebuild_process_matrix(
     alignment_config = backfill_jobs[0].alignment_config
     assert all(job.alignment_config == alignment_config for job in backfill_jobs)
     matrix = process_output.matrix
-    matrix = apply_ms1_peak_claim_registry(matrix, alignment_config)
-    matrix = consolidate_primary_family_rows(matrix, alignment_config)
     matrix = recenter_pre_backfill_identity_families(matrix)
     return matrix, alignment_config
 

@@ -62,6 +62,38 @@ def test_production_equivalent_keeps_single_detected_consolidation_candidate() -
     assert result.skipped == ()
 
 
+def test_production_equivalent_keeps_same_sample_consolidation_candidates() -> None:
+    left = _feature("FAM001", owners=("S1",), rt=8.50)
+    right = _feature("FAM002", owners=("S1",), rt=8.52)
+
+    result = select_backfill_features(
+        (left, right),
+        sample_order=("S1", "S2", "S3"),
+        raw_sample_stems=frozenset({"S1", "S2", "S3"}),
+        alignment_config=AlignmentConfig(),
+        scope="production-equivalent",
+    )
+
+    assert result.features == (left, right)
+    assert result.skipped == ()
+
+
+def test_production_equivalent_skips_same_sample_hard_gate_mismatch() -> None:
+    left = _feature("FAM001", owners=("S1",), mz=500.0, rt=8.50)
+    right = _feature("FAM002", owners=("S1",), mz=510.0, rt=8.52)
+
+    result = select_backfill_features(
+        (left, right),
+        sample_order=("S1", "S2", "S3"),
+        raw_sample_stems=frozenset({"S1", "S2", "S3"}),
+        alignment_config=AlignmentConfig(),
+        scope="production-equivalent",
+    )
+
+    assert result.features == ()
+    assert len(result.skipped) == 4
+
+
 def test_production_equivalent_keeps_confirmed_single_detected_family() -> None:
     feature = _feature("FAM_CONFIRM", owners=("S1",), confirm=True, owner_area=1.0)
 

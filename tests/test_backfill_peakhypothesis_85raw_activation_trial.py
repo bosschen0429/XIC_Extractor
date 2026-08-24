@@ -40,6 +40,8 @@ def test_trial_counts_primary_loser_override_without_loading_cells(
     assert index.summary["expected_matrix_diff_count"] == 1
     assert index.summary["unexpected_diff_count"] == 0
     assert index.summary["owner_backfill_elapsed_sec"] == pytest.approx(408.94)
+    assert index.summary["claim_registry_elapsed_sec"] == pytest.approx(57.68)
+    assert index.summary["primary_consolidation_elapsed_sec"] == pytest.approx(89.63)
     assert index.summary["write_outputs_elapsed_sec"] == pytest.approx(219.65)
 
     rows = {row["source_peak_hypothesis_id"]: row for row in index.trial_rows}

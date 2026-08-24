@@ -1019,6 +1019,8 @@ def _summary(
             "loser_row_with_rescue_count": review.loser_row_with_rescue_count,
             "loser_quantifiable_rescue_count": (review.loser_quantifiable_rescue_count),
             "loser_review_rescue_count": review.loser_review_rescue_count,
+            # Historical v1 artifact label. Remove when this ledger drops
+            # retained pre-Issue-302 settlement artifact support.
             "earliest_retained_settlement_stage": (
                 "alignment.primary_consolidation_post_backfill"
                 if not timing.pre_backfill_consolidation_observed
@@ -1281,6 +1283,8 @@ def _earliest_settlement_stage(
     *,
     timing: _TimingCensus,
 ) -> str:
+    """Interpret retained v1 settlement states, not a current pipeline stage."""
+
     if consolidation_state not in {"primary_winner", "primary_loser"}:
         return "not_settled_in_retained_run"
     if timing.pre_backfill_consolidation_observed:

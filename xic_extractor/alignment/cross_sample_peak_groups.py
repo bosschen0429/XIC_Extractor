@@ -66,7 +66,7 @@ _BOUNDED_CONTINUITY_RT_SPAN_SEC = 300.0
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
 _CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group.v1:"
 _DISCOVERY_PHYSICAL_SELECTION_SUBJECT_PREFIX = "discovery-physical-work.v1:"
-_PRIMARY_DISPOSITION_PRODUCT_PRECURSOR_SHIFT_TOLERANCE_DA = 0.02
+_BACKFILL_PRODUCT_PRECURSOR_SHIFT_TOLERANCE_DA = 0.02
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
     "established",
@@ -778,75 +778,6 @@ def classify_cross_sample_edge(
 
 
 @dataclass(frozen=True, slots=True)
-class CrossSampleClaimEdgeFacts:
-    """Owner-backed facts for one candidate MS1 claim comparison."""
-
-    left_group: CrossSampleGroupIdentity
-    right_group: CrossSampleGroupIdentity
-    left_member_subject: CrossSampleGroupMemberSubject
-    right_member_subject: CrossSampleGroupMemberSubject
-
-    left_family_mz: float
-    right_family_mz: float
-    left_apex_rt: float
-    right_apex_rt: float
-    left_peak_start_rt: float
-    left_peak_end_rt: float
-    right_peak_start_rt: float
-    right_peak_end_rt: float
-    context: CrossSampleEdgeContext
-    comparison_kind: Literal["numeric_candidate", "exact_candidate"] = (
-        "numeric_candidate"
-    )
-    left_neutral_loss_tag: str = ""
-    right_neutral_loss_tag: str = ""
-    left_targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
-    right_targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
-
-    def __post_init__(self) -> None:
-        if self.context not in {"claim_candidate", "repair_derived_observation"}:
-            raise CrossSampleContractError("claim edge context is not closed")
-        if self.comparison_kind not in {"numeric_candidate", "exact_candidate"}:
-            raise CrossSampleContractError("claim comparison kind is not closed")
-        if any(
-            anchor is not None and not isinstance(anchor, TargetedIstdIdentityAnchor)
-            for anchor in (
-                self.left_targeted_istd_anchor,
-                self.right_targeted_istd_anchor,
-            )
-        ):
-            raise CrossSampleContractError("claim ISTD anchor is not typed")
-        if (
-            self.left_targeted_istd_anchor is not None
-            or self.right_targeted_istd_anchor is not None
-        ) and (not self.left_neutral_loss_tag or not self.right_neutral_loss_tag):
-            raise CrossSampleContractError("claim ISTD edge requires neutral-loss tags")
-        _validate_owner_backed_edge_members(
-            left_group=self.left_group,
-            right_group=self.right_group,
-            left_member=self.left_member_subject,
-            right_member=self.right_member_subject,
-            field="claim edge",
-        )
-        if not all(
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(value)
-            for value in (
-                self.left_family_mz,
-                self.right_family_mz,
-                self.left_apex_rt,
-                self.right_apex_rt,
-                self.left_peak_start_rt,
-                self.left_peak_end_rt,
-                self.right_peak_start_rt,
-                self.right_peak_end_rt,
-            )
-        ):
-            raise CrossSampleContractError("claim edge facts must be finite")
-
-
-@dataclass(frozen=True, slots=True)
 class CrossSamplePreConsolidationEdgeFacts:
     """Closed owner-backed facts for a pre-backfill group compatibility edge."""
 
@@ -909,86 +840,6 @@ class CrossSamplePreConsolidationEdgeFacts:
 
 
 @dataclass(frozen=True, slots=True)
-class CrossSamplePrimaryConsolidationEdgeFacts:
-    """Owner-backed raw facts for a claim-derived primary consolidation edge."""
-
-    left_group: CrossSampleGroupIdentity
-    right_group: CrossSampleGroupIdentity
-    left_member_subject: CrossSampleGroupMemberSubject
-    right_member_subject: CrossSampleGroupMemberSubject
-    left_neutral_loss_tag: str
-    right_neutral_loss_tag: str
-    left_precursor_mz: float
-    right_precursor_mz: float
-    left_product_mz: float
-    right_product_mz: float
-    left_observed_loss_da: float
-    right_observed_loss_da: float
-    left_rt_min: float
-    right_rt_min: float
-    claim_source_group_hypothesis_id: str = ""
-    claim_winner_group_hypothesis_id: str = ""
-    left_targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
-    right_targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
-
-    def __post_init__(self) -> None:
-        _validate_owner_backed_edge_members(
-            left_group=self.left_group,
-            right_group=self.right_group,
-            left_member=self.left_member_subject,
-            right_member=self.right_member_subject,
-            field="primary consolidation edge",
-        )
-        if bool(self.claim_source_group_hypothesis_id) != bool(
-            self.claim_winner_group_hypothesis_id
-        ):
-            raise CrossSampleContractError(
-                "primary consolidation claim closure is incomplete"
-            )
-        if self.claim_source_group_hypothesis_id and (
-            self.claim_source_group_hypothesis_id
-            != self.left_group.group_hypothesis_id
-            or self.claim_winner_group_hypothesis_id
-            != self.right_group.group_hypothesis_id
-        ):
-            raise CrossSampleContractError(
-                "primary consolidation claim closure crossed canonical groups"
-            )
-        if not self.left_neutral_loss_tag or not self.right_neutral_loss_tag:
-            raise CrossSampleContractError(
-                "primary consolidation neutral-loss tag is required"
-            )
-        if any(
-            anchor is not None and not isinstance(anchor, TargetedIstdIdentityAnchor)
-            for anchor in (
-                self.left_targeted_istd_anchor,
-                self.right_targeted_istd_anchor,
-            )
-        ):
-            raise CrossSampleContractError(
-                "primary consolidation ISTD anchor is not typed"
-            )
-        if not all(
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(value)
-            for value in (
-                self.left_precursor_mz,
-                self.right_precursor_mz,
-                self.left_product_mz,
-                self.right_product_mz,
-                self.left_observed_loss_da,
-                self.right_observed_loss_da,
-                self.left_rt_min,
-                self.right_rt_min,
-            )
-        ):
-            raise CrossSampleContractError(
-                "primary consolidation facts must be finite"
-            )
-
-
-@dataclass(frozen=True, slots=True)
 class _TargetedIstdAnchorObservation:
     """Minimal typed observation consumed by the existing ISTD anchor owner."""
 
@@ -1044,107 +895,6 @@ def _targeted_istd_facts_are_compatible(
 
 
 @dataclass(frozen=True, slots=True)
-class CrossSamplePrimaryDispositionEdgeFacts:
-    """Raw owner-backed evidence for a disposition-only primary comparison."""
-
-    left_group: CrossSampleGroupIdentity
-    right_group: CrossSampleGroupIdentity
-    left_detected_members: tuple[CrossSampleGroupMemberSubject, ...]
-    right_detected_members: tuple[CrossSampleGroupMemberSubject, ...]
-    left_detected_count: int
-    right_detected_count: int
-    left_rescue_count: int
-    right_rescue_count: int
-    left_neutral_loss_tag: str
-    right_neutral_loss_tag: str
-    left_precursor_mz: float
-    right_precursor_mz: float
-    left_product_mz: float
-    right_product_mz: float
-    left_observed_loss_da: float
-    right_observed_loss_da: float
-    left_rt_min: float
-    right_rt_min: float
-    left_targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
-    right_targeted_istd_anchor: TargetedIstdIdentityAnchor | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.left_group, CrossSampleGroupIdentity) or not isinstance(
-            self.right_group,
-            CrossSampleGroupIdentity,
-        ):
-            raise CrossSampleContractError(
-                "primary disposition groups must be canonical"
-            )
-        if self.left_group == self.right_group:
-            raise CrossSampleContractError(
-                "primary disposition edge cannot self-connect"
-            )
-        if (
-            self.left_group.processing_request_id
-            != self.right_group.processing_request_id
-        ):
-            raise CrossSampleContractError(
-                "primary disposition edge crossed request"
-            )
-        for group, members, side in (
-            (self.left_group, self.left_detected_members, "left"),
-            (self.right_group, self.right_detected_members, "right"),
-        ):
-            member_ids = tuple(member.member_subject_id for member in members)
-            if len(set(member_ids)) != len(member_ids) or any(
-                member not in group.member_subjects for member in members
-            ):
-                raise CrossSampleContractError(
-                    f"primary disposition {side} detected members lack closure"
-                )
-        if not all(
-            isinstance(value, int) and not isinstance(value, bool) and value >= 0
-            for value in (
-                self.left_detected_count,
-                self.right_detected_count,
-                self.left_rescue_count,
-                self.right_rescue_count,
-            )
-        ):
-            raise CrossSampleContractError(
-                "primary disposition counts must be non-negative integers"
-            )
-        if not self.left_neutral_loss_tag or not self.right_neutral_loss_tag:
-            raise CrossSampleContractError(
-                "primary disposition neutral-loss tag is required"
-            )
-        if any(
-            anchor is not None and not isinstance(anchor, TargetedIstdIdentityAnchor)
-            for anchor in (
-                self.left_targeted_istd_anchor,
-                self.right_targeted_istd_anchor,
-            )
-        ):
-            raise CrossSampleContractError(
-                "primary disposition ISTD anchor is not typed"
-            )
-        if not all(
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(value)
-            for value in (
-                self.left_precursor_mz,
-                self.right_precursor_mz,
-                self.left_product_mz,
-                self.right_product_mz,
-                self.left_observed_loss_da,
-                self.right_observed_loss_da,
-                self.left_rt_min,
-                self.right_rt_min,
-            )
-        ):
-            raise CrossSampleContractError(
-                "primary disposition facts must be finite"
-            )
-
-
-@dataclass(frozen=True, slots=True)
 class CrossSampleBackfillScopeEdgeFacts:
     """Owner-backed raw facts for the legacy backfill-scope neighbor check."""
 
@@ -1180,38 +930,6 @@ class CrossSampleBackfillScopeEdgeFacts:
             left_targeted_istd_anchor=self.left_targeted_istd_anchor,
             right_targeted_istd_anchor=self.right_targeted_istd_anchor,
         )
-
-
-def _validate_owner_backed_edge_members(
-    *,
-    left_group: CrossSampleGroupIdentity,
-    right_group: CrossSampleGroupIdentity,
-    left_member: CrossSampleGroupMemberSubject,
-    right_member: CrossSampleGroupMemberSubject,
-    field: str,
-) -> None:
-    if not isinstance(left_group, CrossSampleGroupIdentity) or not isinstance(
-        right_group,
-        CrossSampleGroupIdentity,
-    ):
-        raise CrossSampleContractError(f"{field} groups must be canonical")
-    if not isinstance(left_member, CrossSampleGroupMemberSubject) or not isinstance(
-        right_member,
-        CrossSampleGroupMemberSubject,
-    ):
-        raise CrossSampleContractError(f"{field} members must be canonical")
-    if left_group.processing_request_id != right_group.processing_request_id:
-        raise CrossSampleContractError(f"{field} crossed processing request")
-    if (
-        left_member not in left_group.member_subjects
-        or right_member not in right_group.member_subjects
-    ):
-        raise CrossSampleContractError(f"{field} member is outside its canonical group")
-    if (
-        left_member.processing_request_id != left_group.processing_request_id
-        or right_member.processing_request_id != right_group.processing_request_id
-    ):
-        raise CrossSampleContractError(f"{field} member crossed processing request")
 
 
 def classify_cross_sample_pre_consolidation_edge(
@@ -1267,147 +985,6 @@ def classify_cross_sample_pre_consolidation_edge(
     )
 
 
-def classify_cross_sample_primary_consolidation_edge(
-    facts: CrossSamplePrimaryConsolidationEdgeFacts,
-    *,
-    config: AlignmentConfig,
-) -> CrossSampleNeighborhoodEdge:
-    """Classify primary claim facts from their raw owner-backed values."""
-
-    if not isinstance(facts, CrossSamplePrimaryConsolidationEdgeFacts):
-        raise CrossSampleContractError("primary consolidation facts must be typed")
-    same_sample = (
-        facts.left_member_subject.canonical_sample_identity_id
-        == facts.right_member_subject.canonical_sample_identity_id
-    )
-    same_sample_exact_claim = (
-        same_sample
-        and facts.claim_source_group_hypothesis_id
-        == facts.left_group.group_hypothesis_id
-        and facts.claim_winner_group_hypothesis_id
-        == facts.right_group.group_hypothesis_id
-    )
-    same_tag = facts.left_neutral_loss_tag == facts.right_neutral_loss_tag
-    same_precursor_and_rt = (
-        _ppm(facts.left_precursor_mz, facts.right_precursor_mz) <= config.max_ppm
-        and abs(facts.left_rt_min - facts.right_rt_min) * 60.0
-        <= config.identity_rt_candidate_window_sec
-    )
-    primary_compatible = (
-        facts.left_group.disposition not in {"unresolved", "rejected"}
-        and facts.right_group.disposition not in {"unresolved", "rejected"}
-        and same_tag
-        and same_precursor_and_rt
-        and _ppm(facts.left_product_mz, facts.right_product_mz)
-        <= config.product_mz_tolerance_ppm
-        and _ppm(facts.left_observed_loss_da, facts.right_observed_loss_da)
-        <= config.observed_loss_tolerance_ppm
-        and _targeted_istd_facts_are_compatible(
-            left_anchor=facts.left_targeted_istd_anchor,
-            right_anchor=facts.right_targeted_istd_anchor,
-            left_tag=facts.left_neutral_loss_tag,
-            right_tag=facts.right_neutral_loss_tag,
-            left_mz=facts.left_precursor_mz,
-            right_mz=facts.right_precursor_mz,
-            left_rt=facts.left_rt_min,
-            right_rt=facts.right_rt_min,
-        )
-    )
-    shared_ms1_compatible = (
-        facts.left_group.disposition not in {"unresolved", "rejected"}
-        and facts.right_group.disposition not in {"unresolved", "rejected"}
-        and not same_tag
-        and same_precursor_and_rt
-        and _targeted_istd_facts_are_compatible(
-            left_anchor=facts.left_targeted_istd_anchor,
-            right_anchor=facts.right_targeted_istd_anchor,
-            left_tag=facts.left_neutral_loss_tag,
-            right_tag=facts.right_neutral_loss_tag,
-            left_mz=facts.left_precursor_mz,
-            right_mz=facts.right_precursor_mz,
-            left_rt=facts.left_rt_min,
-            right_rt=facts.right_rt_min,
-        )
-    )
-    return CrossSampleNeighborhoodEdge(
-        left_member_subject_id=facts.left_member_subject.member_subject_id,
-        right_member_subject_id=facts.right_member_subject.member_subject_id,
-        disposition=classify_cross_sample_edge(
-            "strong_edge"
-            if (not same_sample or same_sample_exact_claim)
-            and (primary_compatible or shared_ms1_compatible)
-            else "blocked_edge",
-            context="claim_candidate",
-        ),
-    )
-
-
-def classify_cross_sample_primary_disposition_edge(
-    facts: CrossSamplePrimaryDispositionEdgeFacts,
-    *,
-    config: AlignmentConfig,
-) -> CrossSampleNeighborhoodEdge:
-    """Classify disposition-only primary evidence inside CrossSample."""
-
-    if not isinstance(facts, CrossSamplePrimaryDispositionEdgeFacts):
-        raise CrossSampleContractError("primary disposition facts must be typed")
-    left_detected_samples = {
-        member.canonical_sample_identity_id for member in facts.left_detected_members
-    }
-    right_detected_samples = {
-        member.canonical_sample_identity_id for member in facts.right_detected_members
-    }
-    product_matches = (
-        _ppm(facts.left_product_mz, facts.right_product_mz)
-        <= config.product_mz_tolerance_ppm
-    )
-    precursor_delta = facts.right_precursor_mz - facts.left_precursor_mz
-    product_delta = facts.right_product_mz - facts.left_product_mz
-    compatible = (
-        facts.left_group.disposition not in {"unresolved", "rejected"}
-        and facts.right_group.disposition not in {"unresolved", "rejected"}
-        and facts.left_neutral_loss_tag == facts.right_neutral_loss_tag
-        and _ppm(facts.left_precursor_mz, facts.right_precursor_mz)
-        <= config.max_ppm
-        and abs(facts.left_rt_min - facts.right_rt_min) * 60.0
-        <= config.identity_rt_candidate_window_sec
-        and _ppm(facts.left_observed_loss_da, facts.right_observed_loss_da)
-        <= config.observed_loss_tolerance_ppm
-        and (
-            product_matches
-            or abs(product_delta - precursor_delta)
-            <= _PRIMARY_DISPOSITION_PRODUCT_PRECURSOR_SHIFT_TOLERANCE_DA
-        )
-        and bool(left_detected_samples.intersection(right_detected_samples))
-        and (
-            facts.left_rescue_count > facts.left_detected_count > 0
-            and facts.right_detected_count >= 2
-            or facts.right_rescue_count > facts.right_detected_count > 0
-            and facts.left_detected_count >= 2
-        )
-        and _targeted_istd_facts_are_compatible(
-            left_anchor=facts.left_targeted_istd_anchor,
-            right_anchor=facts.right_targeted_istd_anchor,
-            left_tag=facts.left_neutral_loss_tag,
-            right_tag=facts.right_neutral_loss_tag,
-            left_mz=facts.left_precursor_mz,
-            right_mz=facts.right_precursor_mz,
-            left_rt=facts.left_rt_min,
-            right_rt=facts.right_rt_min,
-        )
-    )
-    return CrossSampleNeighborhoodEdge(
-        left_member_subject_id=facts.left_group.member_subjects[0].member_subject_id,
-        right_member_subject_id=(
-            facts.right_group.member_subjects[0].member_subject_id
-        ),
-        disposition=classify_cross_sample_edge(
-            "strong_edge" if compatible else "blocked_edge",
-            context="claim_candidate",
-        ),
-    )
-
-
 def classify_cross_sample_backfill_scope_edge(
     facts: CrossSampleBackfillScopeEdgeFacts,
     *,
@@ -1432,10 +1009,9 @@ def classify_cross_sample_backfill_scope_edge(
     )
     precursor_delta = facts.right_precursor_mz - facts.left_precursor_mz
     product_delta = facts.right_product_mz - facts.left_product_mz
-    compatible = (
+    non_occupancy_hard_gates_pass = (
         facts.left_group.disposition not in {"unresolved", "rejected"}
         and facts.right_group.disposition not in {"unresolved", "rejected"}
-        and not same_sample
         and facts.left_neutral_loss_tag == facts.right_neutral_loss_tag
         and _ppm(facts.left_precursor_mz, facts.right_precursor_mz) <= config.max_ppm
         and abs(facts.left_rt_min - facts.right_rt_min) * 60.0
@@ -1445,7 +1021,7 @@ def classify_cross_sample_backfill_scope_edge(
         and (
             product_matches
             or abs(product_delta - precursor_delta)
-            <= _PRIMARY_DISPOSITION_PRODUCT_PRECURSOR_SHIFT_TOLERANCE_DA
+            <= _BACKFILL_PRODUCT_PRECURSOR_SHIFT_TOLERANCE_DA
         )
         and _targeted_istd_facts_are_compatible(
             left_anchor=facts.left_targeted_istd_anchor,
@@ -1462,7 +1038,13 @@ def classify_cross_sample_backfill_scope_edge(
         left_member_subject_id=facts.left_group.member_subjects[0].member_subject_id,
         right_member_subject_id=facts.right_group.member_subjects[0].member_subject_id,
         disposition=classify_cross_sample_edge(
-            "strong_edge" if compatible else "blocked_edge",
+            (
+                "blocked_edge"
+                if not non_occupancy_hard_gates_pass
+                else "weak_edge"
+                if same_sample
+                else "strong_edge"
+            ),
             context="claim_candidate",
         ),
     )
@@ -1488,72 +1070,6 @@ def predecessor_membership_neighborhood_edges(
                 )
             )
     return tuple(edges)
-
-
-def classify_cross_sample_claim_edge(
-    facts: CrossSampleClaimEdgeFacts,
-    *,
-    config: AlignmentConfig,
-) -> CrossSampleEdgeDisposition:
-    """Classify the historic duplicate-claim predicate through CrossSample.
-
-    This deliberately retains the existing ppm/apex/window mathematics, but
-    only this owner may translate it into downstream eligibility.
-    """
-
-    if not isinstance(facts, CrossSampleClaimEdgeFacts):
-        raise CrossSampleContractError("claim edge facts must be typed")
-    ppm = (
-        abs(facts.left_family_mz - facts.right_family_mz)
-        / max(abs(facts.left_family_mz), 1e-12)
-        * 1_000_000.0
-    )
-    apex_delta_sec = abs(facts.left_apex_rt - facts.right_apex_rt) * 60.0
-    left_width = facts.left_peak_end_rt - facts.left_peak_start_rt
-    right_width = facts.right_peak_end_rt - facts.right_peak_start_rt
-    overlap = min(facts.left_peak_end_rt, facts.right_peak_end_rt) - max(
-        facts.left_peak_start_rt,
-        facts.right_peak_start_rt,
-    )
-    overlap_fraction = (
-        overlap / min(left_width, right_width)
-        if left_width > 0 and right_width > 0 and overlap > 0
-        else 0.0
-    )
-    shared_physical_ids = set(
-        facts.left_member_subject.physical_observation_ids
-    ).intersection(facts.right_member_subject.physical_observation_ids)
-    numeric_compatible = (
-        ppm <= config.duplicate_fold_ppm
-        and apex_delta_sec <= config.owner_apex_close_sec
-        and overlap_fraction >= config.owner_window_overlap_fraction
-    )
-    compatible = (
-        bool(shared_physical_ids)
-        if facts.comparison_kind == "exact_candidate"
-        else bool(shared_physical_ids) or numeric_compatible
-    )
-    decision: EdgeDecision = (
-        "strong_edge"
-        if facts.left_group.disposition not in {"unresolved", "rejected"}
-        and facts.right_group.disposition not in {"unresolved", "rejected"}
-        and _targeted_istd_facts_are_compatible(
-            left_anchor=facts.left_targeted_istd_anchor,
-            right_anchor=facts.right_targeted_istd_anchor,
-            left_tag=facts.left_neutral_loss_tag,
-            right_tag=facts.right_neutral_loss_tag,
-            left_mz=facts.left_family_mz,
-            right_mz=facts.right_family_mz,
-            left_rt=facts.left_apex_rt,
-            right_rt=facts.right_apex_rt,
-        )
-        and compatible
-        else "blocked_edge"
-    )
-    return classify_cross_sample_edge(
-        decision,
-        context=facts.context,
-    )
 
 
 def build_bounded_connected_neighborhood(

@@ -14,7 +14,10 @@ from openpyxl import load_workbook
 
 from xic_extractor.alignment.identity_gates import is_dr_neutral_loss_tag
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import TargetListSnapshot
+from xic_extractor.configuration.target_identity import (
+    TargetListSnapshot,
+    target_list_snapshot_payload,
+)
 from xic_extractor.injection_rolling import read_injection_order, rolling_median_rt
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
@@ -193,6 +196,19 @@ def build_targeted_istd_identity_anchor(
         observed_labels=labels,
         _mint_token=_TARGETED_ISTD_ANCHOR_MINT_TOKEN,
     )
+
+
+def targeted_istd_identity_anchor_payload(
+    anchor: TargetedIstdIdentityAnchor,
+) -> dict[str, object]:
+    """Project owner semantics without exposing its private mint capability."""
+
+    if not isinstance(anchor, TargetedIstdIdentityAnchor):
+        raise TypeError("targeted ISTD payload requires an owner-minted anchor")
+    return {
+        "target_snapshot": target_list_snapshot_payload(anchor.target_snapshot),
+        "observed_labels": list(anchor.observed_labels),
+    }
 
 
 @dataclass(frozen=True, slots=True)

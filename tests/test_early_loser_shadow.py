@@ -11,6 +11,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
     mint_cross_sample_group_identity,
 )
+from xic_extractor.alignment.drift_evidence import (
+    build_targeted_istd_identity_anchor,
+)
 from xic_extractor.alignment.early_loser_shadow import (
     EARLY_LOSER_SHADOW_SCHEMA_VERSION,
     build_early_loser_shadow_proposal,
@@ -28,6 +31,8 @@ from xic_extractor.alignment.ownership_models import (
 from xic_extractor.alignment.pre_backfill_consolidation import (
     consolidate_pre_backfill_identity_families,
 )
+from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
     typed_identity_digest,
@@ -90,6 +95,40 @@ def test_shadow_is_order_deterministic() -> None:
     )
 
     assert forward == reversed_report
+
+
+def test_shadow_hash_projects_targeted_istd_anchor_semantics() -> None:
+    feature = _feature("ISTD", ("sample-a",), mz=500.0)
+
+    def anchor(label: str):
+        target = Target(
+            label=label,
+            mz=500.0,
+            rt_min=8.0,
+            rt_max=9.0,
+            ppm_tol=20.0,
+            neutral_loss_da=116.0474,
+            nl_ppm_warn=20.0,
+            nl_ppm_max=50.0,
+            is_istd=True,
+            istd_pair="",
+        )
+        return build_targeted_istd_identity_anchor(
+            mint_target_list_snapshot(
+                (target,),
+                identity_namespace="early-shadow-istd",
+            ),
+            observed_labels=(label,),
+        )
+
+    first = _proposal((replace(feature, targeted_istd_anchor=anchor("ISTD-A")),))
+    equivalent = _proposal(
+        (replace(feature, targeted_istd_anchor=anchor("ISTD-A")),)
+    )
+    distinct = _proposal((replace(feature, targeted_istd_anchor=anchor("ISTD-B")),))
+
+    assert first.source_owner_snapshot_sha256 == equivalent.source_owner_snapshot_sha256
+    assert first.source_owner_snapshot_sha256 != distinct.source_owner_snapshot_sha256
 
 
 def test_shadow_rejects_final_without_canonical_successor_lineage() -> None:
@@ -169,7 +208,10 @@ def test_shadow_is_no_write_and_renders_complete_expected_diff(tmp_path) -> None
     assert source == source_snapshot
     assert final == final_snapshot
     assert rendered["schema_version"] == EARLY_LOSER_SHADOW_SCHEMA_VERSION
-    assert rendered["authority"].startswith("diagnostic_projection_only")
+    assert rendered["authority"] == (
+        "diagnostic_projection_only_cross_sample_and_"
+        "production_cell_decision_remain_authoritative"
+    )
     assert rendered["activation_allowed"] is False
     assert rendered["run_id"] == "test-early-loser-shadow"
     assert rendered["backfill_scope"] == "full-audit"

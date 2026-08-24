@@ -22,7 +22,6 @@ from xic_extractor.alignment.backfill_transaction import (
     OwnerBackfillSampleDeliveryReceipt,
     OwnerBackfillTransactionOutput,
 )
-from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
@@ -97,9 +96,6 @@ from xic_extractor.alignment.pipeline_outputs import (
 from xic_extractor.alignment.pre_backfill_consolidation import (
     consolidate_pre_backfill_identity_families,
     recenter_pre_backfill_identity_families,
-)
-from xic_extractor.alignment.primary_consolidation import (
-    consolidate_primary_family_rows,
 )
 from xic_extractor.alignment.process_backend import (
     OwnerBackfillSampleResult,
@@ -986,10 +982,6 @@ def run_alignment(
                 )
             else:
                 matrix = backfill_transaction_output.matrix
-        with recorder.stage("alignment.claim_registry"):
-            matrix = apply_ms1_peak_claim_registry(matrix, alignment_config)
-        with recorder.stage("alignment.primary_consolidation"):
-            matrix = consolidate_primary_family_rows(matrix, alignment_config)
         with recorder.stage("alignment.pre_backfill_recenter"):
             matrix = recenter_pre_backfill_identity_families(matrix)
         production_decisions = build_production_decisions(matrix, alignment_config)

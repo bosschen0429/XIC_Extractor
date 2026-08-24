@@ -29,9 +29,6 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     write_owner_backfill_peak_fact_provenance_tsv,
 )
 from xic_extractor.alignment.pipeline import _owner_backfill_peak_fact_provenance
-from xic_extractor.alignment.primary_consolidation import (
-    consolidate_primary_family_rows,
-)
 from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -181,7 +178,7 @@ def test_pipeline_v2_does_not_mint_primary_lineage_from_unowned_duplicate_cell(
     )
     config = AlignmentConfig()
 
-    matrix = consolidate_primary_family_rows(pre_consolidation, config)
+    matrix = pre_consolidation
     duplicate = next(
         cell
         for cell in matrix.cells
