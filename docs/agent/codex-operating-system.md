@@ -185,17 +185,10 @@ adjudication shows ceremony without a decision benefit. Retirement removes
 routes and stale refs; move any still-valid invariant to its canonical rule or
 contract owner.
 
-Structural retirement is the cheap first pass. The current five repo-local
-skills were adjudicated against the three structural grounds as follows; this
-is a structural retention decision, not an effectiveness claim:
-
-| Skill | Only restates an owner | Ignored packet without a gate | Global duplicate without an XIC stop rule | Structural verdict |
-| --- | --- | --- | --- | --- |
-| `xic-architecture-preflight` | no; it binds one XIC semantic owner and boundary map | no; its pre-edit contract can stop mutation | no; XIC evidence-spine and authority stops are distinct | retain |
-| `xic-docs-compression` | no; it composes the repo audit, absorption, referrer, and retirement gates | no; retirement requires the existing evidence/checker path | no; XIC validation and lifecycle placement are distinct | retain |
-| `xic-performance-diagnosis` | no; it adjudicates XIC timing comparability and RAW/XIC call cost | no; only `optimization_ready` opens implementation | no; XIC parity, locality, and authority ceilings are distinct | retain |
-| `xic-pr-stack-repair` | no; it owns the XIC stack map and clean-checkout boundary decision | no; stale or cross-ledger stacks stop for rebuild | no; XIC ledgers, retained artifacts, and validation gates are distinct | retain |
-| `xic-raw-validation` | no; it binds lane-specific launch or existing-artifact acceptance | no; launch and acceptance have explicit stop gates | no; Thermo DLL, 8RAW/85RAW, and product-authority limits are distinct | retain |
+Discover the current repo-local skill set from `.codex/skills`; do not maintain
+a parallel keep/retire inventory here. When a skill meets a retirement trigger,
+adjudicate that named skill against the criteria above and its current route,
+consumer, stop, and outcome evidence.
 
 Effect evidence is produced on demand, not by a standing telemetry harness. An
 adjudication opens only when a structural ground appears, the same delivery or

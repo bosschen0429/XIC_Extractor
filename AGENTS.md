@@ -22,11 +22,15 @@ for the active task unless a hard gate below says otherwise.
 - Shared Target/Untarget lifecycle, semantic owners, and public contracts:
   [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
   and [`architecture-contract.md`](docs/architecture-contract.md)
-- Issue-to-PR scope, GitHub issue mechanics, execution, review, and handoff:
-  [`issue-tracker.md`](docs/agent/issue-tracker.md),
-  [`execution-gates.md`](docs/agent/execution-gates.md),
-  [`planning-workflows.md`](docs/agent/planning-workflows.md),
-  [`communication-review.md`](docs/agent/communication-review.md), and
+- Issue scope, task shaping, refreeze, and delivery completion:
+  [`planning-workflows.md`](docs/agent/planning-workflows.md)
+- GitHub issue mechanics and triage labels:
+  [`issue-tracker.md`](docs/agent/issue-tracker.md) and
+  [`triage-labels.md`](docs/agent/triage-labels.md)
+- Execution failures, validation commands, CI, and PR verification:
+  [`execution-gates.md`](docs/agent/execution-gates.md)
+- Review communication, PR receipts, and handoff placement:
+  [`communication-review.md`](docs/agent/communication-review.md) and
   [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md)
 - Existing diagnostics and measured conclusions:
   [`diagnostic-ledger.md`](docs/diagnostic-ledger.md),
