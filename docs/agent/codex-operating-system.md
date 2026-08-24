@@ -5,6 +5,17 @@ skills, minimal hooks, and explicit subagent routing. The goal is to catch
 high-cost mistakes early while keeping tooling aggressive, explicit, and
 decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 
+## Read Routes
+
+| Task branch | Read |
+| --- | --- |
+| decide where agent guidance belongs | [Placement Model](#placement-model) |
+| inspect current hooks or command rules | [Current Repo-Local Hooks](#current-repo-local-hooks) and [Current Repo-Local Rules](#current-repo-local-rules) |
+| trace contract to enforcement | [Governance Enforcement Index](#governance-enforcement-index) |
+| add, retain, or retire agent machinery | [Adoption Rules](#adoption-rules) |
+| promote a repeated lesson | [Self-Improvement Rule](#self-improvement-rule) |
+| change hooks, rules, or execution config | [Change Protocol](#change-protocol) and [Trust And Review](#trust-and-review) |
+
 ## Placement Model
 
 - `AGENTS.md`: always-loaded repo invariants and hard gates only.
@@ -15,72 +26,37 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 - Reusable lessons update the existing decision owner directly. Delivery
   evidence and chronology stay in the PR/Git history; do not create a parallel
   solution-note lane that future agents must remember to search.
+- Productization state, authority, promotion, and historical compatibility route
+  through [`docs/product/productization.md`](../product/productization.md).
+- Active/private handoff placement routes through
+  [`obsidian-handoff-contract.md`](obsidian-handoff-contract.md); PR closeout
+  routes through [`communication-review.md`](communication-review.md).
 - `.codex/rules/*.rules`: command-prefix policy for destructive or high-impact
   operations.
 - `.codex/hooks.json` and `.codex/hooks/*.py`: low-noise lifecycle checks.
-- `docs/superpowers/plans/2026-06-15-productization-control-plane.md`:
-  compatibility index for stable historical productization anchors. Mutable
-  lane state lives in the status index, writer authority in the authority
-  manifest, readiness/promotion semantics in the product-validation contract,
-  and stable capability narratives in product-topic owners.
-- `docs/superpowers/handoffs/current/ACTIVE.local.md`: ignored local
-  plain-language continuation summary for the active branch or PR workflow. It
-  is a compact current-state snapshot, not an append-only log. Rewrite and
-  prune it when status changes; use a branch-named ignored local file only when
-  multiple branches need simultaneous state. Handoffs do not override the
-  structured productization owners, named specs, validation notes, PR body, or
-  git state. Keep them under about 200 lines unless explicitly justified.
-  Completed phase history belongs in Obsidian by default.
-- `.gitignore` keeps local handoffs untracked, and the staged docs placement
-  guard rejects force-added `current/` or `archive/` files. Active context stays
-  ignored and durable closeout belongs in the PR body.
-- Read-side productization status snapshots are ordinary ignored reports under
-  `output/` or private Obsidian notes. They do not promote tiers; promote only
-  durable public summaries to `docs/superpowers/productization/evidence/`.
-- `.codex/agents/*.toml`: currently empty by design. Add a project-local agent
-  only for a verified capability boundary that global agents, skills,
-  canonical docs, and bounded task packets cannot provide.
-- Automations: only for recurring workspace jobs or heartbeat follow-ups that
-  would otherwise be forgotten; do not turn every checklist into an automation.
+- `.codex/agents/*.toml`: project-local agents require a verified capability
+  boundary that global agents, skills, owners, and bounded task packets cannot
+  provide.
 
 ## Current Repo-Local Hooks
 
-The hook set is intentionally small:
+`.codex/hooks.json` and the referenced hook scripts are the current hook
+inventory; fixtures and `tests/test_config_codex_hooks.py` own the behavior
+matrix. This owner records only the decision boundary:
 
-- `UserPromptSubmit`: scans the prompt for bounded performance, RAW-validation,
-  productization, or stacked/superseded-PR signals and injects their workflow
-  context. Architecture preflight remains model-routed from its boundary-based
-  skill description instead of a diagnostic/evidence/Matrix keyword bucket;
-  the performance workflow still hands qualifying code edits to it. Synthetic/
-  no-RAW validation and generic heartbeat/schema work stay out of the RAW-launch
-  gate unless the prompt explicitly names RAW execution or acceptance.
-  The hook also blocks prompt text that looks like a pasted secret. Productization
-  prompts point first to
-  `docs/superpowers/plans/2026-06-15-productization-control-plane.md` as a
-  compatibility lookup, then route mutable lane state, writer authority, and
-  readiness/promotion decisions to their separate canonical owners.
-  Ordinary review, goal, handoff, closeout, and compaction prompts remain with
-  their global workflows and load XIC owners only when the task actually crosses
-  an XIC contract boundary.
-- `PreToolUse`: rejects nested shell/command wrappers found at the bounded outer
-  executable position before inspecting their payload, blocks ambiguous or
-  optioned destructive Git forms, commit forms that can sweep unrelated paths,
-  and background RAW launches through `Start-Process`. It adds one reminder when
-  execution-affecting config changes require the smoke-and-scan contract below.
-- `PostToolUse`: catches pytest runs that collected zero tests or used an invalid
-  node id. Other failures and governance decisions remain visible in their
-  command output or canonical owner instead of being reclassified after every
-  tool call.
+| Event | Decision boundary |
+| --- | --- |
+| `UserPromptSubmit` | Route bounded performance, RAW-validation, productization, and stacked-PR work; reject pasted-secret shapes. Architecture preflight remains model-routed by boundary. |
+| `PreToolUse` | Reject unsupported wrappers and unsafe Git/commit/RAW-background shapes; remind on execution-config verification. |
+| `PostToolUse` | Reject zero-test and invalid-node pytest results. |
 
 Hooks are guardrails, not full enforcement. Keep them deterministic, fast, and
 rarely chatty. If a hook fires too often without changing behavior, remove or
 narrow it.
 
-Global skills such as `handoff` and `worktree-report` are convenience
-entrypoints, not pinned XIC authority. If a global skill differs from this
-version-controlled repo contract, follow this repo's `AGENTS.md`, this operating
-document, the structured productization owners, and the hook fixtures. Update
-the global skill later only as an environment-maintenance follow-up.
+Global skills are convenience entrypoints, not XIC authority. A conflict routes
+to version-controlled repo owners and hook fixtures; global-skill maintenance is
+a separate environment task.
 
 ## Current Repo-Local Rules
 
@@ -230,66 +206,20 @@ details into nested docs alongside any additions.
 
 Changes to `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook
 scripts, execpolicy, or subagent TOML are execution-affecting config changes.
-Before closeout:
+Before closeout, verify the consolidated fixture behavior and focused config
+tests rather than copying their individual cases into this owner:
 
 ```powershell
 git diff --check
-Get-Content .codex\hooks\fixtures\prompt_performance.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
-Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
-
-Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_post_tool_guard.py
-
 .venv\Scripts\python.exe .codex\hooks\fixtures\assert_hook_outputs.py
 .venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git -C C:\repo push origin HEAD"
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git --git-dir C:\repo\.git push origin HEAD"
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "cmd /c git push origin HEAD"
-codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add -A
-codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add --all
-codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add .
-codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add README.md
-codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git -c safe.directory=C:/repo push origin HEAD
-codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git push
 ```
 
-All `git add` checks and direct `git push` must remain unmatched by repo-local
-rules; the invocation-scoped `git -c ... push` recovery remains `prompt`. The
-two direct doctor checks with `-C` and `--git-dir` must report
-`REWRITE_COMMAND`, matching the hook's inability to route them to an exact
-prompt prefix. The nested `cmd /c` check must also report `REWRITE_COMMAND`.
-Execpolicy rules match exact argument prefixes, so the pre-tool hook lets direct
-`git -c ... push` reach its dedicated prompt rule and keeps direct read-only
-`git -C ...` usable. Explicit `bash -c`, `pwsh -Command`, `cmd /c`, `wsl`,
-`env`, `command`, and `exec` wrappers are rejected without parsing their
-payload, including POSIX-assignment- or initial-call-operator-prefixed forms.
-Compound, assignment-RHS, path-qualified, malformed, or unsupported direct Git
-forms are also rejected and must be rewritten as one direct command. Optioned
-`clone`, `fetch`, `ls-remote`, `pull`, and `push` commands that miss a prompt
-prefix are rewrites in both the hook and doctor.
-
-Git subcommands must use canonical lowercase spelling because the execpolicy
-rules use exact prefixes. Wrapper words in ordinary simple-command argument or
-path positions and option values are data, not wrapper executables. The bounded
-locator recognizes only the outer executable, including after a POSIX
-assignment prefix or initial call operator. Redirection prefixes, PowerShell
-assignment RHS, later compound segments, shell control words, and dynamic
-executable expressions remain outside repository wrapper parsing. Any
-non-direct Git-bearing shape still fails closed.
-The separate RAW hard guard still detects `Start-Process` plus a RAW signal or
-propagated RAW argument variable anywhere in the same non-inert lexical segment;
-it does not combine unrelated evidence across segments.
-An inert text command is exempt only when it has no evaluated subexpression,
-command substitution, or unquoted control structure.
-Other launcher/control prefixes and dynamically constructed executables remain
-outside repository parsing and under host sandbox/global safety authority.
-
-Redirection and command substitution are ambiguous. Quoted Git text is inert
-only for top-level `grep`, `findstr`, `Select-String`, `Write-Host`,
-`Write-Output`, `echo`, or `printf` commands. `rg` is intentionally excluded
-because its `--pre` mode can execute a command for each input path.
-
-Also scan the diff for secrets, private local paths, absolute machine-specific
-paths, and accidentally tracked local Codex config.
+The fixture/test pair is the source of truth for direct, optioned, wrapped,
+destructive, inert-text, and RAW-background command cases. Closeout also scans
+the diff for secrets, private or absolute machine paths, and accidentally
+tracked local Codex config. Report repository verification separately from host
+activation.
 
 ## Trust And Review
 

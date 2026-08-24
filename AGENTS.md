@@ -44,7 +44,7 @@ for the active task unless a hard gate below says otherwise.
   and [`productization_authority_manifest.v1.json`](docs/superpowers/schemas/productization_authority_manifest.v1.json)
 - Repo layout, agent system, and opt-in XIC skills:
   [`project-layout.md`](docs/project-layout.md),
-  [`codex-operating-system.md`](docs/agent/codex-operating-system.md),
+  [`codex-operating-system.md#read-routes`](docs/agent/codex-operating-system.md#read-routes),
   and [`.codex/skills`](.codex/skills)
 
 ## Hard Defaults
@@ -86,7 +86,8 @@ for the active task unless a hard gate below says otherwise.
   `docs/diagnostic-ledger.md` before rerunning known targets or failure modes.
 - Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook
   scripts, execpolicy, and subagent TOML as execution-affecting config. Changes
-  follow the smoke and scan contract in `docs/agent/codex-operating-system.md`.
+  follow the smoke and scan contract in
+  `docs/agent/codex-operating-system.md#change-protocol`.
 - External structural-context tools are optional reconnaissance. Use one only
   when the current checkout has a healthy matching index; otherwise fall back
   to `rg` and targeted reads. CI, validation, and correctness claims must not
