@@ -894,7 +894,7 @@ def deletion_retirement_problem(
             path=path,
             reason="exact repo referrers require retargeting before deletion",
             required_marker=(
-                "Retarget repo referrers to the durable owner or keep a stub."
+                "Retarget repo referrers to the durable owner before deletion."
             ),
         )
     if evidence_referrers != tuple(sorted(referrers)):
@@ -1204,8 +1204,8 @@ def check_entry(
                         path=path,
                         reason=(
                             f"{placement} is not valid in docs/user; user docs "
-                            "must be public user guides, not branch stubs, "
-                            "Obsidian stubs, closeouts, or artifact records"
+                            "must be public user guides, not retired migration, "
+                            "closeout, or artifact records"
                         ),
                         required_marker=(
                             f"{DOC_PLACEMENT_MARKER} formal_repo_doc "

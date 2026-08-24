@@ -991,33 +991,8 @@ def test_generated_topic_indexes_are_not_counted_as_candidate_referrers(
         f"path\n{candidate_path}\n",
     )
     _write(
-        root / "docs/superpowers/topics/backfill-and-quant-matrix/README.md",
+        root / "output/docs-topic-indexes/backfill-and-quant-matrix/README.md",
         f"# Backfill Index\n\n- `{candidate_path}`\n",
-    )
-
-    result = _run_audit(root, vault)
-
-    candidate = result.summary["repo"]["docs_routing_review"]["top_candidates"][0]
-    assert candidate["path"] == candidate_path
-    assert candidate["referrer_status"] == "none"
-
-
-def test_source_copy_stub_batch_is_not_counted_as_candidate_referrer(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    candidate_path = "docs/superpowers/plans/2026-07-01-backfill-plan.md"
-    _write(
-        root / candidate_path,
-        "# Backfill plan\n\nImplementation diary and command transcript.\n",
-    )
-    _write(
-        root / "docs/superpowers/file-management/docs-cleanup/"
-        "2026-07-01_obsidian-source-copy-stub-batch.md",
-        f"# Source-Copy Batch\n\n| Source path |\n| --- |\n| `{candidate_path}` |\n",
     )
 
     result = _run_audit(root, vault)
@@ -1825,40 +1800,6 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     assert "### Bound Support Samples" in readme
     assert f"- `{authority_bound_path}`" in readme
     assert f"- `{compressible_path}`" in readme
-
-
-def test_topic_folder_slug_overrides_index_body_keywords(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    index_path = "docs/superpowers/topics/run-provenance/README.md"
-    _write(
-        root / index_path,
-        "\n".join(
-            [
-                "# Run Provenance Topic Index",
-                "",
-                "Doc placement: formal_repo_doc",
-                "Repo owner: docs/superpowers/topics/run-provenance/README.md",
-                "",
-                "This index does not define matrix authority.",
-            ]
-        ),
-    )
-
-    result = _run_audit(root, vault)
-
-    review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if item["topic_key"] == "run provenance"
-    )
-    assert cluster["topic_index_count"] == 1
-    assert cluster["topic_index_paths"] == index_path
 
 
 def test_repo_docs_topic_review_separates_support_surfaces_from_owners(

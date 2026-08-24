@@ -17,7 +17,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_RETIRED_PLACEMENT_VALUES,
     DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES,
-    DOC_ROUTING_TOPIC_PREFIX,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_INDEX_REL,
@@ -36,12 +35,8 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
 DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS = (
     re.compile(r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.md$"),
     re.compile(r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.tsv$"),
-    re.compile(
-        r"docs/superpowers/file-management/docs-cleanup/.*source-copy-stub-batch\.md$"
-    ),
     re.compile(r"docs/superpowers/file-management/docs-cleanup/.*topic-clusters\.tsv$"),
     re.compile(r"output/docs-topic-indexes/[^/]+/README\.md$"),
-    re.compile(r"docs/superpowers/topics/[^/]+/README\.md$"),
 )
 DOC_ROUTE_OBSIDIAN_ORIGINAL = "obsidian_original"
 DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL = (
@@ -190,7 +185,6 @@ TOPIC_CLUSTER_MANIFEST_FIELDS = (
     "subcontract_count",
     "supporting_count",
     "candidate_count",
-    "topic_index_count",
     "delegated_handoff_count",
     "repo_owner_hint",
     "suggested_repo_topic_folder",
@@ -200,7 +194,6 @@ TOPIC_CLUSTER_MANIFEST_FIELDS = (
     "owner_claims",
     "subcontract_paths",
     "subcontract_claims",
-    "topic_index_paths",
     "supporting_sample_paths",
     "candidate_paths",
     "sample_paths",
@@ -396,19 +389,6 @@ def _topic_hint(path: str, text: str) -> tuple[str, str]:
             "docs workflow or historical context",
             "docs/project-layout.md; docs/agent/obsidian-handoff-contract.md",
         )
-    if path_haystack.startswith(DOC_ROUTING_TOPIC_PREFIX):
-        topic_slug = path_haystack.removeprefix(DOC_ROUTING_TOPIC_PREFIX).split(
-            "/", 1
-        )[0]
-        for information_value, _needles, repo_owner_hint in DOC_ROUTING_TOPIC_RULES:
-            if DOC_TOPIC_FOLDER_SLUGS.get(information_value) == topic_slug:
-                return information_value, repo_owner_hint
-        if DOC_TOPIC_FOLDER_SLUGS["docs workflow or historical context"] == topic_slug:
-            return (
-                "docs workflow or historical context",
-                "docs/project-layout.md; docs/agent/obsidian-handoff-contract.md",
-            )
-
     repo_owner_haystack = repo_owner_value(text).lower().replace("\\", "/")
     for owner_hint, information_value, repo_owner_hint in DOC_ROUTING_OWNER_TOPIC_RULES:
         if owner_hint in repo_owner_haystack:
@@ -456,8 +436,8 @@ def _topic_next_action(status: str) -> str:
     if status == "potential_duplicate_owner":
         return (
             "resolve files claiming the same repo owner; keep one owner, demote "
-            "siblings to support/archive/stub, and regenerate an ignored topic "
-            "index only if browsing support surfaces is still useful"
+            "siblings to bounded support or retire them, and regenerate an "
+            "ignored topic index only if browsing support surfaces is still useful"
         )
     if status == "multiple_subtopic_owners":
         return (
@@ -552,8 +532,6 @@ def _digestion_status(record: DocsRoutingCandidate, cluster_status: str) -> str:
         DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL,
     }:
         return "needs_distillation_to_owner_and_obsidian"
-    if record.topic_role == "repo_topic_index":
-        return "generated_index"
     if record.topic_role == "delegated_handoff":
         return "delegated_handoff_retention"
     if record.topic_role == "repo_subcontract_owner":
@@ -642,8 +620,6 @@ def _digestion_next_action(status: str) -> str:
             "keep the owner but review support files for backlinks, overlap, and "
             "exit rules"
         )
-    if status == "generated_index":
-        return "regenerate from docs_management_audit; do not hand-author authority"
     if status == "delegated_handoff_retention":
         return "move active context to ignored handoff storage; do not track it"
     if status == "support_surface_retained":
@@ -677,14 +653,14 @@ def _support_retention_reason(record: DocsRoutingCandidate) -> str:
 def _support_next_action(reason: str) -> str:
     if reason == "authority_or_status_anchor":
         return (
-            "do not stub, move, or rewrite until the status index or authority "
+            "do not move or rewrite until the status index or authority "
             "manifest has a replacement compact artifact, hash update, and "
             "focused checker coverage"
         )
     if reason == "exact_referrer_bound_support":
         return (
             "retarget exact repo referrers to the owner or a compact oracle "
-            "reference before stubbing, moving, or deleting"
+            "reference before moving or deleting"
         )
     if reason == "mechanical_referrer_anchor":
         return (
@@ -786,10 +762,6 @@ def _archived_retention_anchor(record: DocsRoutingCandidate) -> bool:
     return exit_rule.startswith("keep ")
 
 
-def _is_topic_index_path(path: str) -> bool:
-    return classify_doc_path(path).is_topic_index
-
-
 def _is_specs_index_path(path: str) -> bool:
     return classify_doc_path(path).is_specs_index
 
@@ -800,8 +772,6 @@ def _is_superpowers_spec_path(path: str) -> bool:
 
 def _topic_role(classification: object, disposition: str) -> str:
     placement = classification.placement
-    if classification.is_topic_index:
-        return "repo_topic_index"
     if classification.is_specs_index:
         return "repo_supporting_artifact"
     if disposition in {
@@ -1133,11 +1103,6 @@ def _topic_cluster_rows(
                 "ordinary_support_surface",
             }
         ]
-        topic_index_paths = [
-            record.path
-            for record in sorted_group
-            if record.topic_role == "repo_topic_index"
-        ]
         candidate_paths = [
             record.path
             for record in sorted_group
@@ -1154,7 +1119,6 @@ def _topic_cluster_rows(
                 "subcontract_count": roles.get("repo_subcontract_owner", 0),
                 "supporting_count": roles.get("repo_supporting_artifact", 0),
                 "candidate_count": roles.get("needs_distillation_or_route", 0),
-                "topic_index_count": roles.get("repo_topic_index", 0),
                 "delegated_handoff_count": roles.get("delegated_handoff", 0),
                 "suggested_repo_topic_folder": (
                     _suggested_repo_topic_folder(topic_key)
@@ -1185,8 +1149,6 @@ def _topic_cluster_rows(
                 "subcontract_paths": "; ".join(subcontract_paths[:8])
                 or "none",
                 "subcontract_claims": "; ".join(subcontract_claims[:8])
-                or "none",
-                "topic_index_paths": "; ".join(topic_index_paths[:8])
                 or "none",
                 "supporting_sample_paths": "; ".join(supporting_paths[:8])
                 or "none",
