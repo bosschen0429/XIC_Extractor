@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -170,7 +170,51 @@ from xic_extractor.sample_metadata import (
 _RawSourceTimingStats = RawSourceTimingStats
 _TimedRawSource = TimedRawSource
 AlignmentRawHandle = _AlignmentRawHandle
-RawOpener = Callable[[Path, Path], AbstractContextManager[AlignmentRawHandle]]
+
+
+class RawOpener(Protocol):
+    def __call__(
+        self,
+        raw_path: Path,
+        dll_dir: Path,
+        *,
+        expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    ) -> AbstractContextManager[AlignmentRawHandle]: ...
+
+
+_ALIGNMENT_OWNER_SELECTION_PEAK_CONFIG_FIELDS = (
+    "smooth_window",
+    "smooth_polyorder",
+    "peak_rel_height",
+    "peak_min_prominence_ratio",
+    "resolver_mode",
+    "resolver_chrom_threshold",
+    "resolver_min_search_range_min",
+    "resolver_min_relative_height",
+    "resolver_min_absolute_height",
+    "resolver_min_ratio_top_edge",
+    "resolver_peak_duration_min",
+    "resolver_peak_duration_max",
+    "resolver_min_scans",
+)
+
+_ALIGNMENT_OWNER_CANDIDATE_INPUT_FIELDS = (
+    "candidate_id",
+    "sample_stem",
+    "best_ms2_scan_id",
+    "neutral_loss_tag",
+    "precursor_mz",
+    "product_mz",
+    "observed_neutral_loss_da",
+    "best_seed_rt",
+    "evidence_score",
+    "seed_event_count",
+    "ms1_apex_rt",
+    "ms1_peak_rt_start",
+    "ms1_peak_rt_end",
+    "ms1_search_rt_min",
+    "ms1_search_rt_max",
+)
 
 
 def _typed_targeted_istd_anchor(
@@ -448,16 +492,14 @@ def run_alignment(
         )
         else None
     )
-    expected_acquisition_sources = (
-        cross_sample_acquisition_sources if require_discovery_owner_closure else None
-    )
+    expected_acquisition_sources = cross_sample_acquisition_sources
     with recorder.stage("alignment.read_candidates") as stage:
-        if require_discovery_owner_closure:
+        if cross_sample_acquisition_sources is not None:
             candidates_by_sample = {
                 sample_stem: read_owner_bound_discovery_candidates_csv(
                     batch.candidate_csvs[sample_stem],
                     receipt=_required_candidate_receipt(batch, sample_stem),
-                    require_successor_columns=True,
+                    require_successor_columns=require_discovery_owner_closure,
                 )
                 for sample_stem in batch.sample_order
             }
@@ -576,7 +618,7 @@ def run_alignment(
                 else:
                     raw_sources = {
                         sample_stem: stack.enter_context(
-                            _default_raw_opener(
+                            opener(
                                 raw_path,
                                 dll_dir,
                                 expected_acquisition_source=(
@@ -1262,33 +1304,59 @@ def _alignment_cross_sample_identity_context(
         )
         for index, sample_stem in enumerate(batch.sample_order, start=1)
     )
-    canonical_candidates = tuple(
-        sorted(
+    owner_candidate_inputs = tuple(
+        {
+            field: getattr(candidate, field)
+            for field in _ALIGNMENT_OWNER_CANDIDATE_INPUT_FIELDS
+        }
+        for candidate in sorted(
             (
-                {
-                    "candidate_id": candidate.candidate_id,
-                    "sample_stem": candidate.sample_stem,
-                    "precursor_mz": candidate.precursor_mz,
-                    "product_mz": candidate.product_mz,
-                    "observed_neutral_loss_da": candidate.observed_neutral_loss_da,
-                    "best_seed_rt": candidate.best_seed_rt,
-                    "discovery_candidate_state": candidate.discovery_candidate_state,
-                }
+                candidate
                 for candidate in candidates
                 if isinstance(candidate, DiscoveryCandidate)
+                and discovery_candidate_is_owner_build_eligible(candidate)
             ),
-            key=lambda value: (str(value["sample_stem"]), str(value["candidate_id"])),
+            key=lambda candidate: (candidate.sample_stem, candidate.candidate_id),
         )
+    )
+    physical_binding_inputs: list[dict[str, str]] = []
+    for binding in discovery_physical_bindings or ():
+        if not isinstance(
+            binding, DiscoveryCandidatePhysicalBinding
+        ) or not discovery_candidate_is_owner_build_eligible(binding.candidate):
+            continue
+        facts = binding.physical_evaluation.facts
+        physical_binding_inputs.append(
+            {
+                "candidate_id": binding.candidate.candidate_id,
+                "selection_subject_id": binding.selection_subject_id,
+                "physical_decision_id": (
+                    facts.fact_content_id
+                    if facts is not None
+                    else binding.physical_evaluation.answer.physical_answer_id
+                ),
+            }
+        )
+    physical_binding_inputs.sort(
+        key=lambda item: (item["candidate_id"], item["selection_subject_id"])
     )
     request = build_processing_request_identity(
         acquisition_sources=sources,
         acquisition_bindings=bindings,
-        scientific_input_schema_version="alignment-cross-sample-input-v1",
+        scientific_input_schema_version="alignment-cross-sample-input-v2",
         processing_algorithm_version="alignment-cross-sample-owner-v1",
         processing_contract_version="alignment-cross-sample-identity-v1",
         scientific_inputs={
-            "candidate_universe": list(canonical_candidates),
+            "owner_candidate_inputs": list(owner_candidate_inputs),
+            "physical_binding_inputs": physical_binding_inputs,
             "alignment_config": _alignment_identity_json(asdict(alignment_config)),
+            "owner_selection_peak_config": {
+                "schema_version": "alignment-owner-selection-config-v1",
+                **{
+                    field: getattr(peak_config, field)
+                    for field in _ALIGNMENT_OWNER_SELECTION_PEAK_CONFIG_FIELDS
+                },
+            },
         },
     )
     snapshot = mint_sample_metadata_snapshot(

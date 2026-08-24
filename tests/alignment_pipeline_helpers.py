@@ -71,7 +71,14 @@ class FakeRawOpener:
         self.calls: list[tuple[Path, Path]] = []
         self.handles: list[FakeRawContext] = []
 
-    def __call__(self, raw_path: Path, dll_dir: Path):
+    def __call__(
+        self,
+        raw_path: Path,
+        dll_dir: Path,
+        *,
+        expected_acquisition_source=None,
+    ):
+        del expected_acquisition_source
         self.calls.append((raw_path, dll_dir))
         handle = FakeRawContext(raw_path)
         self.handles.append(handle)

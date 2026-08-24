@@ -421,7 +421,7 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     opener = FakeRawOpener()
     calls = {}
     recorder = TimingRecorder("alignment", run_id="test-process-backfill")
-    read_candidates = pipeline_module.read_discovery_candidates_csv
+    read_candidates = pipeline_module.read_owner_bound_discovery_candidates_csv
 
     def read_with_review_only_orphan(path, **kwargs):
         current = read_candidates(path, **kwargs)
@@ -492,7 +492,7 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "read_discovery_candidates_csv",
+        "read_owner_bound_discovery_candidates_csv",
         read_with_review_only_orphan,
     )
     monkeypatch.setattr(

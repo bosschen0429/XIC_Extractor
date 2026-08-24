@@ -1,5 +1,6 @@
 import csv
 import json
+from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -581,6 +582,167 @@ def test_pipeline_owner_closure_rejects_raw_replaced_after_discovery(
     assert not (tmp_path / "out").exists()
 
 
+@pytest.mark.parametrize("use_custom_opener", (False, True))
+def test_pipeline_align_only_rejects_raw_replaced_after_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_custom_opener: bool,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_path = raw_dir / "Sample_A.raw"
+    raw_path.write_bytes(b"discovery bytes")
+    batch_index = _write_owner_closed_batch(tmp_path, raw_path)
+    raw_path.write_bytes(b"replacement bytes")
+    owner_build_called = False
+
+    @contextmanager
+    def owner_bound_opener(path, _dll_dir, *, expected_acquisition_source=None):
+        if expected_acquisition_source is not None:
+            actual = build_acquisition_source_identity(
+                path,
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+            if actual != expected_acquisition_source:
+                raise ValueError("RAW path content does not match expected acquisition")
+        yield SimpleNamespace()
+
+    def fail_owner_build(*_args, **_kwargs):
+        nonlocal owner_build_called
+        owner_build_called = True
+        raise AssertionError("owner build must not start")
+
+    monkeypatch.setattr(pipeline_module, "_default_raw_opener", owner_bound_opener)
+    monkeypatch.setattr(pipeline_module, "build_sample_local_owners", fail_owner_build)
+
+    kwargs = {"raw_opener": owner_bound_opener} if use_custom_opener else {}
+    with pytest.raises(ValueError, match="RAW path content does not match"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            **kwargs,
+        )
+
+    assert owner_build_called is False
+    assert not (tmp_path / "out").exists()
+
+
+def test_pipeline_processing_request_binds_owner_candidate_decisions_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "Sample_A.raw"
+    raw_path.write_bytes(b"stable acquisition")
+    roots = tuple(tmp_path / f"batch-{index}" for index in range(5))
+    for root in roots:
+        root.mkdir()
+    batches = (
+        _write_owner_closed_batch(roots[0], raw_path),
+        _write_owner_closed_batch(
+            roots[1], raw_path, candidate_updates={"evidence_score": "81"}
+        ),
+        _write_owner_closed_batch(
+            roots[2], raw_path, candidate_updates={"review_priority": "LOW"}
+        ),
+        _write_owner_closed_batch(
+            roots[3],
+            raw_path,
+            candidate_updates={
+                "discovery_candidate_state": "rejected_noise_or_outside_rt"
+            },
+        ),
+        _write_owner_closed_batch(
+            roots[4],
+            raw_path,
+            candidate_updates={
+                "discovery_candidate_state": "rejected_noise_or_outside_rt",
+                "evidence_score": "81",
+            },
+        ),
+    )
+    request_ids: list[str] = []
+
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+
+    def capture_owner_request(_candidates, **kwargs):
+        context = kwargs["cross_sample_identity_context"]
+        request_ids.append(context.processing_owners.request.processing_request_id)
+        return SimpleNamespace(owners=(), assignments=(), ambiguous_records=())
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        capture_owner_request,
+    )
+
+    for index, batch_index in enumerate(batches, start=1):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / f"out-{index}",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=FakeRawOpener(),
+        )
+
+    baseline, decision_change, presentation_change, rejected, rejected_change = (
+        request_ids
+    )
+    assert decision_change != baseline
+    assert presentation_change == baseline
+    assert rejected_change == rejected
+
+
+def test_pipeline_processing_request_binds_owner_selection_config_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "Sample_A.raw"
+    raw_path.write_bytes(b"stable acquisition")
+    batch_index = _write_owner_closed_batch(tmp_path, raw_path)
+    request_ids: list[str] = []
+
+    _patch_owner_pipeline_to_matrix(monkeypatch)
+
+    def capture_owner_request(_candidates, **kwargs):
+        context = kwargs["cross_sample_identity_context"]
+        request_ids.append(context.processing_owners.request.processing_request_id)
+        return SimpleNamespace(owners=(), assignments=(), ambiguous_records=())
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        capture_owner_request,
+    )
+
+    configs = (
+        _peak_config(),
+        replace(_peak_config(), resolver_min_absolute_height=26.0),
+        replace(_peak_config(), signal_processing_window_points=21),
+    )
+    for index, peak_config in enumerate(configs, start=1):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / f"out-{index}",
+            alignment_config=AlignmentConfig(),
+            peak_config=peak_config,
+            output_level="debug",
+            raw_opener=FakeRawOpener(),
+        )
+
+    baseline, decision_change, value_only_change = request_ids
+    assert decision_change != baseline
+    assert value_only_change == baseline
+
+
 def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     tmp_path: Path,
     monkeypatch,
@@ -591,7 +753,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     (raw_dir / "Sample_B.raw").write_text("raw", encoding="utf-8")
     calls: dict[str, object] = {}
-    read_candidates = pipeline_module.read_discovery_candidates_csv
+    read_candidates = pipeline_module.read_owner_bound_discovery_candidates_csv
 
     def read_with_review_only_orphan(path, **kwargs):
         current = read_candidates(path, **kwargs)
@@ -694,7 +856,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     monkeypatch.setattr(pipeline_module, "build_sample_local_owners", fake_build_owners)
     monkeypatch.setattr(
         pipeline_module,
-        "read_discovery_candidates_csv",
+        "read_owner_bound_discovery_candidates_csv",
         read_with_review_only_orphan,
     )
     monkeypatch.setattr(
@@ -865,6 +1027,7 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         "processing_run_spec_id": "run-spec-id",
         "processing_run_spec_hash": "run-spec-hash",
     }
+
 
 def test_pipeline_builds_owner_features_before_owner_matrix(
     tmp_path: Path,
@@ -1251,13 +1414,28 @@ class _DriftLookup:
         return {"Sample_A": 1}.get(sample_stem)
 
 
-def _write_owner_closed_batch(tmp_path: Path, raw_path: Path) -> Path:
+def _write_owner_closed_batch(
+    tmp_path: Path,
+    raw_path: Path,
+    *,
+    candidate_updates: Mapping[str, str] | None = None,
+) -> Path:
     batch_index = _write_batch(
         tmp_path,
         ("Sample_A",),
         raw_files={"Sample_A": str(raw_path)},
     )
     candidate_csv = batch_index.parent / "Sample_A" / "discovery_candidates.csv"
+    if candidate_updates:
+        with candidate_csv.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = tuple(reader.fieldnames or ())
+            rows = list(reader)
+        rows[0].update(candidate_updates)
+        with candidate_csv.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
     candidates = read_discovery_candidates_csv(candidate_csv)
     acquisition_source = build_acquisition_source_identity(
         raw_path,
