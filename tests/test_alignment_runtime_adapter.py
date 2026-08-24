@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -16,6 +16,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.runtime_adapter import (
     AlignmentRuntimeAdapterError,
     AlignmentRuntimeProcessResult,
+    canonical_alignment_peak_group_binding_bytes,
     canonical_alignment_peak_group_result_bytes,
     execute_alignment_process_runtime,
     mint_alignment_process_result_artifact,
@@ -364,7 +365,7 @@ def test_alignment_scientific_carriers_roundtrip_in_manifest_order(
             attempt,
             "sample:b",
             "process:sample:b",
-            canonical_alignment_peak_group_result_bytes(groups_b),
+            canonical_alignment_peak_group_binding_bytes(groups_b),
             cross_sample_peak_groups=groups_b,
             upstream_artifacts=(upstream_b,),
         ),
@@ -372,7 +373,7 @@ def test_alignment_scientific_carriers_roundtrip_in_manifest_order(
             attempt,
             "sample:a",
             "process:sample:a",
-            canonical_alignment_peak_group_result_bytes(groups_a),
+            canonical_alignment_peak_group_binding_bytes(groups_a),
             cross_sample_peak_groups=groups_a,
             upstream_artifacts=(upstream_a,),
         ),
@@ -405,7 +406,7 @@ def test_alignment_scientific_carrier_rejects_payload_mismatch(
     artifact = mint_alignment_process_result_artifact(
         processing_attempt=attempt,
         work_unit_key="sample:a",
-        owner_result_payload=canonical_alignment_peak_group_result_bytes(
+        owner_result_payload=canonical_alignment_peak_group_binding_bytes(
             (_group("group:artifact", attempt=attempt),)
         ),
     )
@@ -429,7 +430,7 @@ def test_alignment_scientific_carrier_rejects_payload_mismatch(
     matching_artifact = mint_alignment_process_result_artifact(
         processing_attempt=attempt,
         work_unit_key="sample:a",
-        owner_result_payload=canonical_alignment_peak_group_result_bytes(
+        owner_result_payload=canonical_alignment_peak_group_binding_bytes(
             (_group("group:carrier", attempt=attempt),)
         ),
     )
@@ -495,14 +496,14 @@ def test_alignment_conflicting_replay_does_not_expose_scientific_carrier(
             attempt,
             "sample:a",
             "process:sample:a",
-            canonical_alignment_peak_group_result_bytes(first),
+            canonical_alignment_peak_group_binding_bytes(first),
             cross_sample_peak_groups=first,
         ),
         _NoRawAlignmentJob(
             attempt,
             "sample:a",
             "process:sample:a",
-            canonical_alignment_peak_group_result_bytes(conflicting),
+            canonical_alignment_peak_group_binding_bytes(conflicting),
             cross_sample_peak_groups=conflicting,
         ),
     )
@@ -538,13 +539,55 @@ def test_alignment_scientific_serializer_rejects_display_only_group() -> None:
         canonical_alignment_peak_group_result_bytes((display_only,))
 
 
+def test_runtime_binding_closes_internal_disposition_without_changing_v1_projection(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="internal-binding")
+    group = _group("group:binding", attempt=attempt)
+    redisposed = replace(group, disposition="unresolved")
+
+    assert canonical_alignment_peak_group_result_bytes((group,)) == (
+        canonical_alignment_peak_group_result_bytes((redisposed,))
+    )
+    assert canonical_alignment_peak_group_binding_bytes((group,)) != (
+        canonical_alignment_peak_group_binding_bytes((redisposed,))
+    )
+
+
+def test_runtime_rejects_duplicate_member_across_group_population(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        mint_cross_sample_group_identity,
+    )
+
+    attempt = _attempt(tmp_path, stem="population")
+    first = _group("group:first", attempt=attempt)
+    second = _group("group:second", attempt=attempt)
+    combined = mint_cross_sample_group_identity(
+        processing_request_id=attempt.processing_request_id,
+        member_subjects=(*first.member_subjects, *second.member_subjects),
+    )
+    overlapping = replace(
+        second,
+        group_hypothesis_id=combined.group_hypothesis_id,
+        processing_request_id=combined.processing_request_id,
+        member_subjects=combined.member_subjects,
+        identity_basis_bytes=combined.basis_bytes,
+        disposition=combined.disposition,
+    )
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="across groups"):
+        canonical_alignment_peak_group_result_bytes((first, overlapping))
+
+
 def test_alignment_scientific_carrier_rejects_crossed_request(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path, stem="settlement-request")
     crossed_attempt = _attempt(tmp_path, stem="crossed-request")
     crossed_group = _group("group:crossed", attempt=crossed_attempt)
-    payload = canonical_alignment_peak_group_result_bytes((crossed_group,))
+    payload = canonical_alignment_peak_group_binding_bytes((crossed_group,))
     artifact = mint_alignment_process_result_artifact(
         processing_attempt=attempt,
         work_unit_key="sample:a",

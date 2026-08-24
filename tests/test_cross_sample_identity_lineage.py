@@ -72,6 +72,7 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
         sample=fixture.sample("sample-a"),
         observation=issue161_peak(fixture, "sample-a", apex_rt=8.03),
     )
+    assert first.member_subject_id != second.member_subject_id
 
     with pytest.raises(CrossSampleContractError, match="canonical sample"):
         mint_cross_sample_group_identity(
@@ -99,7 +100,6 @@ def test_group_identity_is_order_and_parallelism_invariant(tmp_path) -> None:
 def test_excluded_edge_cannot_connect_neighborhood(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleNeighborhoodBudget,
-        CrossSampleNeighborhoodEdge,
         build_bounded_connected_neighborhood,
     )
 
@@ -107,11 +107,7 @@ def test_excluded_edge_cannot_connect_neighborhood(tmp_path) -> None:
     neighborhood = build_bounded_connected_neighborhood(
         member_subjects=members,
         edges=(
-            CrossSampleNeighborhoodEdge(
-                left_member_subject_id=members[0].member_subject_id,
-                right_member_subject_id=members[1].member_subject_id,
-                disposition="excluded",
-            ),
+            _neighborhood_edge(members[0], members[1], disposition="excluded"),
         ),
         budget=CrossSampleNeighborhoodBudget(max_members=2, max_eligible_edges=1),
     )
@@ -125,7 +121,6 @@ def test_excluded_edge_cannot_connect_neighborhood(tmp_path) -> None:
 def test_oversized_coupled_successor_applies_nothing(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleNeighborhoodBudget,
-        CrossSampleNeighborhoodEdge,
         apply_coupled_successor_proposal,
         mint_cross_sample_group_identity,
     )
@@ -142,11 +137,7 @@ def test_oversized_coupled_successor_applies_nothing(tmp_path) -> None:
         predecessors=predecessors,
         successor_member_sets=(members,),
         edges=tuple(
-            CrossSampleNeighborhoodEdge(
-                left_member_subject_id=left.member_subject_id,
-                right_member_subject_id=right.member_subject_id,
-                disposition="eligible",
-            )
+            _neighborhood_edge(left, right, disposition="eligible")
             for left, right in zip(members, members[1:])
         ),
         budget=CrossSampleNeighborhoodBudget(max_members=2, max_eligible_edges=2),
@@ -282,7 +273,6 @@ def test_disposition_and_value_only_projection_do_not_mint_lineage(tmp_path) -> 
 def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleNeighborhoodBudget,
-        CrossSampleNeighborhoodEdge,
         apply_coupled_successor_proposal,
         mint_cross_sample_group_identity,
     )
@@ -295,11 +285,7 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
         )
         for member in members
     )
-    edge = CrossSampleNeighborhoodEdge(
-        left_member_subject_id=members[0].member_subject_id,
-        right_member_subject_id=members[1].member_subject_id,
-        disposition="eligible",
-    )
+    edge = _neighborhood_edge(members[0], members[1], disposition="eligible")
     kwargs = {
         "successor_member_sets": (members,),
         "edges": (edge,),
@@ -333,7 +319,6 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleContractError,
         CrossSampleNeighborhoodBudget,
-        CrossSampleNeighborhoodEdge,
         apply_coupled_successor_proposal,
         mint_cross_sample_group_identity,
     )
@@ -351,10 +336,8 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
             predecessors=predecessors,
             successor_member_sets=((members[0],),),
             edges=(
-                CrossSampleNeighborhoodEdge(
-                    left_member_subject_id=members[0].member_subject_id,
-                    right_member_subject_id=members[1].member_subject_id,
-                    disposition="eligible",
+                _neighborhood_edge(
+                    members[0], members[1], disposition="eligible"
                 ),
             ),
             budget=CrossSampleNeighborhoodBudget(
@@ -366,6 +349,21 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
     assert tuple(group.member_subjects for group in predecessors) == tuple(
         (member,) for member in members
     )
+
+
+def test_caller_cannot_reopen_excluded_neighborhood_edge(tmp_path) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        CrossSampleNeighborhoodEdge,
+    )
+
+    _, members = _subjects(tmp_path, "sample-a", "sample-b")
+    with pytest.raises(CrossSampleContractError, match="classified by CrossSample"):
+        CrossSampleNeighborhoodEdge(
+            left_member_subject_id=members[0].member_subject_id,
+            right_member_subject_id=members[1].member_subject_id,
+            disposition="eligible",
+        )
 
 
 def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> None:
@@ -400,3 +398,30 @@ def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> No
         context="hard_gate",
         config=AlignmentConfig(),
     ) == "excluded"
+
+
+def _neighborhood_edge(left, right, *, disposition):
+    from dataclasses import replace as dc_replace
+
+    from tests.alignment_pipeline_helpers import owner_edge_evidence
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        classify_cross_sample_initial_neighborhood_edge,
+    )
+
+    raw_edge = owner_edge_evidence()
+    if disposition == "excluded":
+        raw_edge = dc_replace(
+            raw_edge,
+            decision="blocked_edge",
+            failure_reason="same_sample",
+        )
+    elif disposition != "eligible":
+        raise AssertionError(f"unsupported test disposition {disposition!r}")
+    return classify_cross_sample_initial_neighborhood_edge(
+        left_member_subject_id=left.member_subject_id,
+        right_member_subject_id=right.member_subject_id,
+        edge=raw_edge,
+        context="hard_gate",
+        config=AlignmentConfig(),
+    )

@@ -82,6 +82,7 @@ _BOUNDED_CONTINUITY_RT_SPAN_SEC = 300.0
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
 _CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group.v1:"
 _DISCOVERY_PHYSICAL_SELECTION_SUBJECT_PREFIX = "discovery-physical-work.v1:"
+_NEIGHBORHOOD_EDGE_MINT_TOKEN = object()
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
     "established",
@@ -141,7 +142,7 @@ class CrossSampleGroupMemberSubject:
             if self.subject_kind == "peak_hypothesis"
             else (
                 "xic.peak-observation-content.v1:",
-                _DISCOVERY_PHYSICAL_SELECTION_SUBJECT_PREFIX,
+                "physical-facts.v1:",
             )
         )
         if not subject_id.startswith(expected_prefixes):
@@ -157,11 +158,9 @@ class CrossSampleGroupMemberSubject:
                     raise CrossSampleContractError(
                         "physical observation member must bind its tagged observation"
                     )
-            elif len(physical_ids) != 1 or not physical_ids[0].startswith(
-                ("xic.peak-observation-content.v1:", "physical-facts.v1:")
-            ):
+            elif physical_ids != (subject_id,):
                 raise CrossSampleContractError(
-                    "Discovery member must retain one exact physical audit fact"
+                    "physical observation member must bind its tagged observation"
                 )
         basis = canonical_identity_basis_bytes(
             {
@@ -368,7 +367,7 @@ def group_member_subject_from_discovery_physical_selection(
             "schema_version": "group_member_subject_v1",
             "processing_request_id": request_id,
             "canonical_sample_identity_id": sample_id,
-            "subject": {"kind": "physical_observation", "id": selection_id},
+            "subject": {"kind": "physical_observation", "id": physical_id},
         }
     )
     return CrossSampleGroupMemberSubject(
@@ -376,7 +375,7 @@ def group_member_subject_from_discovery_physical_selection(
         processing_request_id=request_id,
         canonical_sample_identity_id=sample_id,
         subject_kind="physical_observation",
-        subject_id=selection_id,
+        subject_id=physical_id,
         physical_observation_ids=(physical_id,),
         basis_bytes=basis,
     )
@@ -558,6 +557,7 @@ class CrossSampleNeighborhoodEdge:
     left_member_subject_id: str
     right_member_subject_id: str
     disposition: CrossSampleEdgeDisposition
+    _mint_token: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         left = _required_text(self.left_member_subject_id, field="left member")
@@ -566,6 +566,33 @@ class CrossSampleNeighborhoodEdge:
             raise CrossSampleContractError("neighborhood edge cannot be a self-edge")
         if self.disposition not in {"eligible", "review_only", "excluded"}:
             raise CrossSampleContractError("edge disposition is not closed")
+        if self._mint_token is not _NEIGHBORHOOD_EDGE_MINT_TOKEN:
+            raise CrossSampleContractError(
+                "neighborhood edge must be classified by CrossSample"
+            )
+
+
+def classify_cross_sample_initial_neighborhood_edge(
+    *,
+    left_member_subject_id: str,
+    right_member_subject_id: str,
+    edge: OwnerEdgeEvidence,
+    context: CrossSampleInitialEdgeContext,
+    config: AlignmentConfig,
+) -> CrossSampleNeighborhoodEdge:
+    """Mint a sealed neighborhood edge from raw initial-grouping evidence."""
+
+    disposition = classify_cross_sample_initial_edge(
+        edge,
+        context=context,
+        config=config,
+    )
+    return CrossSampleNeighborhoodEdge(
+        left_member_subject_id=left_member_subject_id,
+        right_member_subject_id=right_member_subject_id,
+        disposition=disposition,
+        _mint_token=_NEIGHBORHOOD_EDGE_MINT_TOKEN,
+    )
 
 
 def classify_cross_sample_initial_edge(
@@ -1031,7 +1058,7 @@ def validate_cross_sample_peak_group_identity(
     group: CrossSamplePeakGroupHypothesis,
     *,
     require_canonical: bool = False,
-) -> None:
+) -> CrossSampleGroupIdentity | None:
     """Replay the canonical identity retained by a scientific group carrier."""
 
     if not isinstance(group, CrossSamplePeakGroupHypothesis):
@@ -1046,7 +1073,7 @@ def validate_cross_sample_peak_group_identity(
             raise CrossSampleContractError(
                 "scientific CrossSample carrier is missing canonical identity"
             )
-        return
+        return None
     if not (
         group.processing_request_id
         and group.member_subjects
@@ -1068,6 +1095,7 @@ def validate_cross_sample_peak_group_identity(
             raise CrossSampleContractError("lineage crossed its successor identity")
         if not set(edge.member_subject_ids).issubset(member_ids):
             raise CrossSampleContractError("lineage contains a forged member closure")
+    return identity
 
 
 @dataclass(frozen=True)
@@ -1349,57 +1377,6 @@ def review_only_peak_group_hypotheses_from_ambiguous_records(
             ),
         )
     return tuple(hypotheses)
-
-
-def cross_sample_peak_group_hypothesis_from_owner_feature(
-    feature: OwnerAlignedFeature,
-    *,
-    edge_evidence: Sequence[OwnerEdgeEvidence] = (),
-) -> CrossSamplePeakGroupHypothesis:
-    event_ids = tuple(
-        event_id for owner in feature.owners for event_id in owner.event_candidate_ids
-    )
-    edge_facts = cross_sample_peak_group_edge_facts_from_owner_edges(
-        edge_evidence,
-        owner_ids=feature.event_cluster_ids,
-    )
-    review_fact = cross_sample_peak_group_review_fact_from_owner_feature(feature)
-    review_facts = () if review_fact is None else (review_fact,)
-    hard_gate_challenge_facts = (
-        cross_sample_peak_group_hard_gate_challenge_facts_from_owner_edges(
-            edge_evidence,
-            owner_ids=feature.event_cluster_ids,
-        )
-    )
-    return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=feature.feature_family_id,
-        public_family_id=feature.feature_family_id,
-        owner_ids=feature.event_cluster_ids,
-        event_ids=event_ids,
-        event_member_count=feature.event_member_count,
-        processing_request_id=feature.processing_request_id,
-        member_subjects=feature.member_subjects,
-        identity_basis_bytes=feature.identity_basis_bytes,
-        disposition=feature.disposition,
-        lineage=feature.cross_sample_lineage,
-        neutral_loss_tag=feature.neutral_loss_tag,
-        group_center_mz=feature.family_center_mz,
-        group_center_rt=feature.family_center_rt,
-        group_product_mz=feature.family_product_mz,
-        group_observed_neutral_loss_da=feature.family_observed_neutral_loss_da,
-        has_anchor=feature.has_anchor,
-        owners=feature.owners,
-        evidence=feature.evidence,
-        identity_conflict=feature.identity_conflict,
-        review_only=feature.review_only,
-        confirm_local_owners_with_backfill=(feature.confirm_local_owners_with_backfill),
-        backfill_seed_centers=feature.backfill_seed_centers,
-        ambiguous_sample_stem=feature.ambiguous_sample_stem,
-        ambiguous_candidate_ids=feature.ambiguous_candidate_ids,
-        edge_facts=edge_facts,
-        review_facts=review_facts,
-        hard_gate_challenge_facts=hard_gate_challenge_facts,
-    )
 
 
 def cross_sample_peak_group_edge_fact_from_owner_edge(

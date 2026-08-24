@@ -22,7 +22,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.runtime_adapter import (
     AlignmentRuntimeApplicationResult,
     AlignmentRuntimeProcessResult,
-    canonical_alignment_peak_group_result_bytes,
+    canonical_alignment_peak_group_binding_bytes,
     execute_alignment_process_runtime,
     mint_alignment_process_result_artifact,
 )
@@ -216,7 +216,7 @@ def execute_targeted_method_alignment_job(
         target=job.target,
         config=job.config,
     )
-    payload = canonical_alignment_peak_group_result_bytes(groups)
+    payload = canonical_alignment_peak_group_binding_bytes(groups)
     artifact = mint_alignment_process_result_artifact(
         processing_attempt=job.attempt,
         work_unit_key=job.work_unit_key,

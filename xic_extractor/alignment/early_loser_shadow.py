@@ -197,7 +197,7 @@ def build_early_loser_shadow_proposal(
         run_id=run_id,
         source_owner_snapshot_sha256=_canonical_sha256(
             [
-                asdict(feature)
+                _source_owner_snapshot_projection(feature)
                 for feature in sorted(
                     features,
                     key=delivery_group_hypothesis_id,
@@ -225,6 +225,25 @@ def build_early_loser_shadow_proposal(
             alignment_config=alignment_config,
         ),
     )
+
+
+def _source_owner_snapshot_projection(
+    feature: OwnerAlignedFeature,
+) -> dict[str, object]:
+    """Preserve the v1 diagnostic snapshot while identity stays internal."""
+
+    projection = asdict(feature)
+    for field_name in (
+        "processing_request_id",
+        "member_subjects",
+        "identity_basis_bytes",
+        "disposition",
+        "cross_sample_lineage",
+    ):
+        projection.pop(field_name)
+    for owner in projection["owners"]:
+        owner.pop("cross_sample_member_subject")
+    return projection
 
 
 def compare_early_loser_shadow_with_final_authority(
