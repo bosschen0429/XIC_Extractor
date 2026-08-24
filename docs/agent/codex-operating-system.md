@@ -213,6 +213,14 @@ guidance, first decide the scope:
 - hook/rule: deterministic early brake for repeated high-cost failure;
 - no durable rule: one-off situation.
 
+Treat a new lesson as a candidate, not an immediate repo rule. Promote it only
+when the same mechanism recurs, existing issue/PR evidence already shows the
+class is broader than one incident, or a deterministic high-cost or irreversible
+boundary justifies prevention before recurrence. Until then, keep the evidence
+on its existing issue, PR, or appropriate memory owner; do not create a candidate
+registry. Promotion adds the smallest decision-changing rule to the existing
+owner and removes displaced wording instead of preserving the incident story.
+
 Before adding new guidance, search the relevant owner for an existing rule to
 tighten. If root `AGENTS.md` grows past about 200 lines, consolidate or move
 details into nested docs alongside any additions.
