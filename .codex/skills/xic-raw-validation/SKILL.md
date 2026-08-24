@@ -38,10 +38,12 @@ question. Otherwise choose `accept-existing`.
 
 1. State the smallest missing oracle and why the existing evidence cannot
    supply it.
-2. Read `docs/agent/parameter-settings.md` and materialize its current launch
-   contract: documented runner and RAW/DLL paths, input identity and expected
-   sample count, foreground command, task-specific output, required artifacts,
-   heartbeat/timing evidence, timeout, and stop condition.
+2. Follow the active rows in
+   `docs/agent/parameter-settings.md#read-routes`: RAW/DLL inputs, validation
+   scale, and the exact runner subsection. Add the 85RAW row only for that
+   sample universe. Materialize the documented runner and paths, input identity
+   and expected sample count, foreground command, task-specific output,
+   required artifacts, heartbeat/timing evidence, timeout, and stop condition.
 3. For 85RAW, likely >30-minute, production-equivalent, or readiness-affecting
    validation, make the preflight result explicit before launch and stop until
    the command, inputs, acceptance oracle, heartbeat, and authority ceiling are

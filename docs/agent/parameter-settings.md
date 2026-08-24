@@ -10,6 +10,24 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
 命令實際跑通，或某個啟動方式反覆失敗，應把穩定參數形狀與教訓更新到本檔。
 不要只把教訓留在單次 conversation 或 phase note。
 
+## Read Routes
+
+先選一個 task branch；只有命令實際跨界時才加讀另一列。其餘段落是 reference，
+不是每次都要載入的前置清單。
+
+| Task branch | Read |
+| --- | --- |
+| project Python 或 no-RAW tests | [Python Runner](#python-runner) 與 [No-RAW Tests](#no-raw-tests) |
+| 新 worktree 或 PR verification bootstrap | [Python Runner](#python-runner) 與 [Preflight](#preflight) |
+| RAW/DLL input 或 local validation artifacts | [Python Runner](#python-runner)、[Stable Local Paths](#stable-local-paths) 與 [Preflight](#preflight) |
+| 選擇 validation scale | [Validation Tiers](#validation-tiers)，再讀任務指定的 method-specific validation owner |
+| Untargeted CID-NL real-data bridge | [Untargeted CID-NL Bridge](#untargeted-cid-nl-bridge) |
+| ModeTrack diagnostic | [ModeTrack Diagnostic](#modetrack-diagnostic) |
+| provisional full-universe Matrix | [Provisional Matrix](#provisional-matrix) |
+| Alignment、Owner Backfill 或 Matrix handoff | [Alignment And Handoff](#alignment-and-handoff) |
+| 85RAW launch 或 profiling | [Alignment And Handoff](#alignment-and-handoff) 與 [85RAW Command Contract](#85raw-command-contract) |
+| sandbox、approval、shell 或 launcher failure | [Sandbox Friction Playbook](#sandbox-friction-playbook) 與 [Syntax Anti-patterns](#syntax-anti-patterns) |
+
 跨 worktree 會重複遇到的診斷結論放在
 `docs/diagnostic-ledger.md`。在重跑昂貴 RAW validation 或把已知 target
 重新標成 blocker 前，先讀 ledger；只有 current code 或 artifact freshness
@@ -319,10 +337,11 @@ instead of inheriting CID-NL 8RAW/85RAW gates by default.
 | 85RAW | lane-specified full tissue validation | 85RAW tissue root | 昂貴 gate；只有該 lane 明確要求且前置 gate 通過後才跑 |
 
 如果某 lane 明確使用 8RAW -> 85RAW gate，而 8RAW gate 是 `inconclusive`，
-不要為了「看看結果」直接開 85RAW。先說明 blocker，修正或重訂 gate 後再進
-下一層。
+先讀其 JSON/TSV status 並關閉 named blocker，再進下一層。
 
 ## Common Command Shapes
+
+### No-RAW Tests
 
 No-RAW tests:
 
@@ -330,7 +349,9 @@ No-RAW tests:
 .venv\Scripts\python.exe -m pytest <narrow-test-shard> -q
 ```
 
-Untargeted CID-NL M7 real-data bridge, one known-SUPPORT RAW canary:
+### Untargeted CID-NL Bridge
+
+One known-SUPPORT RAW canary:
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_real_data `
@@ -361,7 +382,9 @@ automatically only when no Backfill acceptance row is pending; otherwise the
 run remains `diagnostic_only` until a supplied acceptance manifest passes the
 existing M6 gate.
 
-Opt-in ModeTrack diagnostic runner for debugging or reviewing a batch (the
+### ModeTrack Diagnostic
+
+Opt-in runner for debugging or reviewing a batch (the
 reviewed #180 85-sample lane remains the retained example):
 
 ```powershell
@@ -402,6 +425,8 @@ manual-review and observation-replay digests, its reduced
 published tables. It does not grant authenticity or product authority after a
 caller re-seals edited bytes. A failed stage leaves the requested final output
 directory absent.
+
+### Provisional Matrix
 
 Full-universe provisional Matrix runner:
 
@@ -472,6 +497,8 @@ unsubmitted ordinals. Cancellation does not become a scientific missing state.
 Set `--raw-workers 1` to use the serial
 rollback path. Fused Discovery + owner construction is not enabled by this
 contract.
+
+### Alignment And Handoff
 
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is
@@ -748,50 +775,3 @@ emit the same minimal machine contract and heartbeat shape documented here.
   `&&` or Unix-style `export`.
 - For Markdown edits, run a cheap fence check before finishing when code blocks
   were added or removed.
-
-## Agent Rules
-
-1. 所有 project tests（包含 no-RAW pytest）都用目前 worktree 的
-   `.venv\Scripts\python.exe -m pytest`；RAW/DLL 命令同樣使用該 worktree
-   interpreter，並另外遵守本頁的 RAW preflight。Bare `python` 只保留給
-   documented bootstrap driver 或 launcher-identity check。
-2. 選 RAW / DLL 目錄前，先查本檔並 `Test-Path`。不要先掃 filesystem。
-3. 已列在 `Approval-First Commands` 的命令不要先在 sandbox 裡撞一次；
-   任務必要時直接用 narrow approval 跑固定命令，否則改用既有 artifact 或
-   離線替代。
-4. RAW / DLL 命令若因 sandbox、DLL loading、或 external executable spawn
-   被擋，提權重跑同一條 `.venv\Scripts\python.exe ...` 命令；不要換成
-   bare `python`、不要改 RAW/DLL path、不要用 no-RAW pytest 替代。
-5. phase-specific artifacts 不要寫進本檔；查當前 spec、plan、validation note
-   或 task output index。
-6. `.mzML` 不是 production input。除非使用者明確要求，否則不要把 mzML 當成
-   fallback 或替代資料源。
-7. 如果 stable path 缺失，停止並回報缺失路徑與失敗命令。不要靜默換成另一份
-   資料。
-8. gate 回 non-zero 時，先讀 JSON/TSV status。不要在 status 還沒釐清時進入
-   更大的 validation tier。
-9. 85RAW 或任何可能超過 30 分鐘的 RAW run 必須加 `--timing-live-output`；
-   沒有 heartbeat artifact 就不要宣稱已完成可審計 profiling。
-10. validation / downstream handoff 預設用 `--output-level validation-minimal`。
-    `.xlsx` 和 HTML 不是正式交付契約；只有明確需要人工檢視或 debug 時才產生。
-11. 85RAW 正式驗收預設加 `--performance-profile validation-fast`,
-    `--raw-workers 11` 與
-    `--owner-backfill-window-strategy super-window`。如果刻意不用，必須在
-    validation note 說明原因。
-12. 85RAW 開跑前先檢查 discovery index sample count、candidate CSV path、
-    RAW path；8RAW index 不可拿來跑 full tissue validation。正式 alignment
-    run 用 `--expected-sample-count 85` 固化 sample-count 檢查。
-13. 不要把 `.worktrees/<branch>/output/...` 當成 reusable validation input。
-    若只有某個 worktree 有 accepted discovery artifact，先移到
-    `local_validation_artifacts/` 並重寫 index 內部絕對路徑，再跑 preflight。
-14. 不要用 Codex shell 的 background `Start-Process` 跑 85RAW 後就回來輪詢；
-    這個模式已反覆失敗。用前景 run 搭配足夠 timeout，或先取得使用者同意
-    轉到外部 terminal / automation。
-15. 每次長時間 RAW run 後，若發現新的穩定參數或反覆失敗模式，更新本檔；
-    不要只把教訓留在聊天紀錄。
-16. PowerShell 語法錯誤、ruff E501、Markdown fence mismatch 這類可重複避免
-    的錯誤，修完後要把穩定教訓寫回本檔或相關 repo-local contract。
-17. 遇到已知 target 或 failure mode，例如 `d3-N6-medA` RT drift / primary
-    delivery 問題，先讀 `docs/diagnostic-ledger.md`。不要把 ledger 已經
-    解釋過的 RT drift、area mismatch、或 mixed-surface warning 當成新的
-    hard blocker；除非 current artifact 與 ledger 明確矛盾。

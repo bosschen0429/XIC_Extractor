@@ -9,8 +9,9 @@ influence every turn; nested docs carry the longer contracts.
 These are routing targets, not a per-turn checklist. Read only the owner needed
 for the active task unless a hard gate below says otherwise.
 
-- Python, Thermo RAW/DLL, validation tiers, and command shapes:
-  [`parameter-settings.md`](docs/agent/parameter-settings.md)
+- Project Python, worktree bootstrap, RAW/DLL, validation scale, command shapes,
+  or sandbox friction: choose the active branch in
+  [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes)
 - Product vocabulary and topic authority:
   [`domain-glossary.md`](docs/product/domain-glossary.md) and
   [`docs/product/README.md`](docs/product/README.md)
@@ -52,11 +53,12 @@ for the active task unless a hard gate below says otherwise.
 - Before non-trivial edits, confirm intended worktree, branch, and dirty diff
   scope. Do not stage, rewrite, or revert unrelated user changes.
 - In a newly created worktree, run the bootstrap command in
-  `docs/agent/parameter-settings.md` before the first project `uv run`. Before
-  PR verification, run its offline `--check`; do not infer missing packages
-  from a different worktree's ignored `.venv`.
-- Before Python, RAW, DLL, or validation commands, read
-  `docs/agent/parameter-settings.md` and use documented runners and paths.
+  `docs/agent/parameter-settings.md#preflight` before the first project `uv run`.
+  Before PR verification, run its offline `--check`; do not infer missing
+  packages from a different worktree's ignored `.venv`.
+- Before Python, RAW, DLL, or validation commands, follow the active
+  `docs/agent/parameter-settings.md#read-routes` row and use its runner, paths,
+  and command shape.
 - Keep run-specific outputs under ignored task-specific `output/` paths. Track
   only artifacts required by a current runtime, CI, or public consumer.
 - Keep active plans and handoffs as short, self-contained current-state stubs;
@@ -77,8 +79,9 @@ for the active task unless a hard gate below says otherwise.
   `SNAPSHOT_MARKER` in `tools/testing/test_shards.py`.
 - Do not launch 85RAW or likely long RAW runs through background
   `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
-  command shapes in `docs/agent/parameter-settings.md`, or get explicit approval
-  for an external terminal or automation.
+  command shapes in
+  `docs/agent/parameter-settings.md#85raw-command-contract`, or get explicit
+  approval for an external terminal or automation.
 - Search `tools/diagnostics/INDEX.md`, relevant notes, and existing validation
   outputs before inventing a new diagnostic workflow. Search
   `docs/diagnostic-ledger.md` before rerunning known targets or failure modes.
