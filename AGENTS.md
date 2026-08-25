@@ -1,196 +1,69 @@
 # XIC Extractor Agent Contract
 
-Repo-local rules for communication, validation, domain evidence, and code
-boundaries. Global Codex rules still apply. Keep this root file small enough to
-influence every turn; nested docs carry the longer contracts.
+This root file is the high-frequency control plane. Global Codex rules still
+apply. Read only the route triggered by the current task; the linked owner
+carries definitions, command details, and low-frequency exceptions.
 
 ## Task Routes
 
-These are routing targets, not a per-turn checklist. Read only the owner needed
-for the active task unless a hard gate below says otherwise.
+| Trigger | Required route |
+| --- | --- |
+| Project Python, worktree bootstrap, RAW/DLL, validation scale, command shape, or sandbox friction | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
+| Product term, method evidence, readiness claim, or validation policy | Route through [`docs/product/README.md`](docs/product/README.md), [`domain-glossary.md`](docs/product/domain-glossary.md), and [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
+| Test selection, new regression coverage, fixture design, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
+| Semantic owner, Target/Untarget lifecycle, persisted decision, runtime receipt, writer, schema, or public contract | Choose one branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes), then use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
+| Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
+| Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
+| Review communication, PR receipt, handoff, or Obsidian placement | Read [`communication-review.md`](docs/agent/communication-review.md) and [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
+| Script/diagnostic creation, reuse, rerun, exposure, or retirement | Read [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md), search [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and check [`diagnostic-ledger.md`](docs/diagnostic-ledger.md). |
+| Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
+| Hook, rule, agent config, skill, Git command policy, or long-task state | Choose one branch in [`codex-operating-system.md#read-routes`](docs/agent/codex-operating-system.md#read-routes). |
+| GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
+| File placement or repository layout | Read [`project-layout.md`](docs/project-layout.md). |
 
-- Project Python, worktree bootstrap, RAW/DLL, validation scale, command shapes,
-  or sandbox friction: choose the active branch in
-  [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes)
-- Product vocabulary and topic authority:
-  [`domain-glossary.md`](docs/product/domain-glossary.md) and
-  [`docs/product/README.md`](docs/product/README.md)
-- Evidence semantics, method-specific QC/calibration, and validation policy:
-  [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
-  and [`lc-msms-evidence-rules.md`](docs/lc-msms-evidence-rules.md)
-- Test architecture and whether a change warrants new regression coverage:
-  [`testing.md`](docs/agent/testing.md)
-- Shared Target/Untarget lifecycle, semantic owners, and public contracts:
-  [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes)
-  and [`architecture-contract.md`](docs/architecture-contract.md)
-- Issue scope, task shaping, refreeze, and delivery completion:
-  [`planning-workflows.md`](docs/agent/planning-workflows.md)
-- GitHub issue mechanics and triage labels:
-  [`issue-tracker.md`](docs/agent/issue-tracker.md) and
-  [`triage-labels.md`](docs/agent/triage-labels.md)
-- Clean-checkout artifacts, long RAW, CI evidence, and PR verification:
-  [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes)
-- Review communication, PR receipts, and handoff placement:
-  [`communication-review.md`](docs/agent/communication-review.md) and
-  [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md)
-- Script/diagnostic exposure, lifecycle, and retirement:
-  [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md); current
-  catalog and measured conclusions:
-  [`diagnostic-ledger.md`](docs/diagnostic-ledger.md),
-  and [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md)
-- Productization capabilities, mutable state, and writer authority:
-  [`productization.md`](docs/product/productization.md),
-  [`productization_status_index_v1.tsv`](docs/superpowers/validation/productization_status_index_v1.tsv),
-  and [`productization_authority_manifest.v1.json`](docs/superpowers/schemas/productization_authority_manifest.v1.json)
-- Repo layout, agent system, and opt-in XIC skills:
-  [`project-layout.md`](docs/project-layout.md),
-  [`codex-operating-system.md#read-routes`](docs/agent/codex-operating-system.md#read-routes),
-  and [`.codex/skills`](.codex/skills)
+## Always-On Gates
 
-## Hard Defaults
-
-- Before non-trivial edits, confirm intended worktree, branch, and dirty diff
-  scope. Do not stage, rewrite, or revert unrelated user changes.
-- In a newly created worktree, run the bootstrap command in
-  `docs/agent/parameter-settings.md#preflight` before the first project `uv run`.
-  Before PR verification, run its offline `--check`; do not infer missing
-  packages from a different worktree's ignored `.venv`.
-- Before Python, RAW, DLL, or validation commands, follow the active
-  `docs/agent/parameter-settings.md#read-routes` row and use its runner, paths,
-  and command shape.
-- Keep run-specific outputs under ignored task-specific `output/` paths. Track
-  only artifacts required by a current runtime, CI, or public consumer.
-- Keep active plans and handoffs as short, self-contained current-state stubs;
-  use the PR body for normal durable closeout. Detailed retention and Obsidian
-  routing live in the handoff owners above.
-- State validation evidence status explicitly using the canonical Evidence
-  labels in `docs/product/README.md`.
-- Tests passing is not production readiness. For extraction, alignment, scoring,
-  and matrix behavior changes, report which method-appropriate evidence was
-  used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,
-  method-specific real samples, or manual EIC/MS2 review.
-- Tests marked `ledger_snapshot` are deliberately absent from CI. They pin a
-  recorded value from `docs/superpowers/validation/`, so a legitimate
-  re-analysis reds them. Run them on demand with
-  `uv run python -m tools.testing.test_shards --snapshots`. The exclusion is
-  per test, not per file: a rejection path or a monkeypatched dependency in the
-  same file stays unmarked and runs in CI. Its removal condition is on
-  `SNAPSHOT_MARKER` in `tools/testing/test_shards.py`.
-- Do not launch 85RAW or likely long RAW runs through background
-  `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
-  command shapes in
-  `docs/agent/parameter-settings.md#85raw-command-contract`, or get explicit
-  approval for an external terminal or automation.
-- Search `tools/diagnostics/INDEX.md`, relevant notes, and existing validation
-  outputs before inventing a new diagnostic workflow. Search
-  `docs/diagnostic-ledger.md` before rerunning known targets or failure modes.
-- Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook
-  scripts, execpolicy, and subagent TOML as execution-affecting config. Changes
-  follow the smoke and scan contract in
-  `docs/agent/codex-operating-system.md#change-protocol`.
-- External structural-context tools are optional reconnaissance. Use one only
-  when the current checkout has a healthy matching index; otherwise fall back
-  to `rg` and targeted reads. CI, validation, and correctness claims must not
-  depend on an external local index.
-- Prefer the simplest current path: abstractions need two current callers,
+- **Mutation gate:** before non-trivial edits, verify worktree, branch, and dirty
+  scope. Preserve unrelated changes; stage only task files.
+- **Task shape:** name the objective, current owner/evidence, boundaries,
+  acceptance, and stop rule before implementation. Direction-changing
+  uncertainty escalates through the planning route before mutation continues.
+- **Scope budget:** implement the requested behavior and reachable regressions.
+  Adjacent cleanup, future-proofing, compatibility, and defensive branches need
+  a current acceptance requirement, consumer, or reachable trust boundary.
+- **Test value:** use the cheapest existing observation that can disprove the
+  change. Add or modify a test only for current observable behavior, a public
+  contract, or a reproducible regression with a stable oracle. Cleanup and
+  retirement remove obsolete tests with the code and close through existing
+  behavior, referrer census, artifact inspection, or diff review—not tombstone
+  tests for private helpers, deleted paths, or one-time repository state.
+- **Final-state artifacts:** code, comments, tests, and docs describe current
+  behavior and non-obvious constraints. Cleanup history and rejected options
+  stay in Git/PR history unless a current consumer needs the rationale.
+- **Runtime owner:** use the active worktree's documented Python runner and
+  bootstrap. Run-specific artifacts stay under ignored task-specific `output/`;
+  tracked artifacts require a current runtime, CI, or public consumer.
+- **Git boundary:** run one direct Git command per shell step. Parallelize
+  independent reads inside one orchestrator call and return bounded summaries,
+  anomalies, counts, and locators. Routine sync uses
+  `git pull --ff-only --no-stat` after inspecting only the current branch.
+- **Long-task spine:** long-running or cross-session work uses ignored
+  `output/agent-state/<task-id>/state.json` via
+  `python -m tools.agent_task_state`. Validate the task base on resume, advance
+  only at semantic phase transitions, and render handoffs from that state.
+- **Boundary preflight:** use `xic-architecture-preflight` for a new/replaced
+  semantic owner, writer authority, runtime/public contract, or scientific
+  evidence launch. Performance work first uses `xic-performance-diagnosis`;
+  RAW launch or artifact acceptance uses `xic-raw-validation`.
+- **Evidence claim:** report the canonical Evidence label and the actual method-
+  appropriate oracle. Passing tests proves engineering regression coverage,
+  not scientific or production readiness.
+- **Execution config:** changes to `.codex` hooks, rules, config, execpolicy, or
+  subagent definitions run the smoke, focused tests, diff check, and secret/
+  local-path scan in the operating-system change protocol.
+- **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
+  follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
+  Hosted checks on the final remote SHA remain merge authority.
+- **Simplify pass:** before closeout, delete machinery whose removal preserves
+  the current requirement and tests. An abstraction needs two current callers,
   configuration a current second value, and compatibility a current consumer.
-
-## PR Gate
-
-Before opening a PR, changing its remote head, or marking it ready, follow the
-canonical [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
-The root contract intentionally does not mirror its command list. Default CI
-must remain clean-checkout safe.
-
-## Product North Star
-
-- XIC Extractor is an LC-MS evidence and model-selection system, not a
-  single-dataset or CID-NL-only pipeline.
-- 8RAW and 85RAW are lane-specific validation fixtures and stress oracles, not
-  architecture boundaries or universal Discovery gates. Pt pattern and other
-  methods use the evidence named by their own lane.
-- CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 pattern, shape, standards, library
-  matches, and future learned models are evidence providers. They feed
-  `EvidenceVector`, `PeakHypothesis`, model selection, and `AuditTrail`; they
-  must not directly become permanent matrix-writing authority without an
-  explicit activation/export contract.
-- Product rules must be short, human-explainable, and domain-meaningful. If a
-  rule reads like nested dataset-specific qualifiers, treat it as a temporary
-  validation slice until it is collapsed into a simpler gate or killed.
-
-## Alignment Core Invariants
-
-- **Shared core:** Untargeted is the general lifecycle; Targeted is a constrained
-  application over the same capture, CrossSample, ModeTrack, ObservationRepair,
-  and cell-decision core. `broad` describes evidence coverage, not an
-  Untargeted-only algorithm; Targeted retains only configured targets through
-  its own search scope and projection.
-- **Authority:** CrossSample alone changes group membership; ModeTrack only
-  proposes; ObservationRepair yields one bounded repair or no-repair result;
-  `ProductionCellDecision` alone selects a value. Target and Group subjects stay
-  distinct, with binding before and projection completion after cell decision.
-- **Method evidence:** QC/RT evidence follows the active method; unsupported
-  CID/HCD opportunity is unavailable, not negative. Direct local evidence
-  outranks RT priors. A singleton cannot establish a cross-sample
-  trajectory; feature-specific directions, adjacent-injection jumps, and an
-  unassessable result remain valid.
-- **Reuse and migration:** Deepen existing Target identity, CrossSample,
-  ModeTrack/`identity_coherence`, ObservationRepair, and `delivery_lineage.py`
-  before minting an equivalent owner. Move one owner under structural/public
-  parity, then promote behavior separately. Each lane migrates named consumers
-  and retires superseded algorithms, adapters, and assets after zero-ref proof;
-  there is no permanent fallback or catch-all cleanup lane.
-- **Surface split:** Keep user-facing review/output surfaces small and stable;
-  keep machine evidence in compact typed/queryable archives. Diagnostics,
-  archive records, and reason strings never gain implicit value or writer
-  authority. Canonical archive typing does not round-trip through TSV.
-
-## Architecture Guardrails
-
-- Runtime consumers submit typed work/resource/artifact/acquisition receipts and
-  external telemetry samples to `execution_runtime_owner`; only that owner may
-  construct lifecycle, observability, or finalization projections. Adapters must
-  enter through its atomic execution/finalization API, not call partial lifecycle
-  primitives, accept caller-authored ledgers/counts, or expose settlement-only
-  public bypasses. See
-  `docs/agent/architecture-public-contracts.md#runtime-construction-authority`.
-- Validate persisted content only at a reachable decision boundary. Fields that
-  grant writer authority, change product output, or drive a domain/runtime
-  decision use their existing semantic owner. Audit-only metadata is telemetry,
-  not an acceptance condition. If its source is absent, drop the claim instead
-  of adding validators or receipts. Coordinated tracked edits are a Git-review
-  concern unless an external caller can supply the content independently. See
-  `docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration`.
-
-## Workflow Routing
-
-- Before non-trivial implementation, follow the proportional task-shaping loop
-  in `docs/agent/planning-workflows.md#task-shaping-and-premise-compilation`.
-  Every task shapes its objective, current evidence, boundaries, acceptance,
-  and stop rule; only direction-changing uncertainty or material risk escalates
-  to a Current Packet.
-- **Issue-to-PR scope firewall:** before production edits for issue-backed work,
-  require an execution base, one named semantic owner, a finite current
-  production entry/consumer universe, owner-local asset disposition, explicit
-  downstream non-goals, acceptance, and a cross-owner stop rule. `Sole owner`
-  fixes authority location, not ticket scope. A missing material field returns
-  the issue to `needs-info`; it is not reconstructed opportunistically in code.
-- A PR stays inside that frozen universe. A review finding outside it is routed
-  to its owning issue; a finding that changes outcome, scope, ownership,
-  product behavior, material cost, or acceptance first refreezes the issue.
-  Structural parity and eventual lifecycle reachability do not authorize the
-  current PR to absorb another ticket.
-- Use `xic-architecture-preflight` only when work creates or replaces a semantic
-  owner, grants writer authority, changes a runtime/public contract, or launches
-  scientific evidence. Focused work inside an established owner skips it.
-- Before XIC preset/runtime performance work, use `xic-performance-diagnosis` to
-  inspect timing artifacts, rank bottlenecks, classify call cost and workload,
-  and define correctness gates; then use `xic-architecture-preflight` before code
-  edits. This does not replace `xic-raw-validation` before launching or accepting
-  RAW-backed validation.
-- A review finding needs a reachable actor, input, decision, and observable loss.
-  Audit metadata or coordinated repo edits alone do not justify a product gate.
-  Repeated findings from one mechanism stop patch-by-patch work: shrink the
-  claim, delete or replace the mechanism, or reject the unsupported finding
-  instead of adding another checker. Unspecified product choices return to the
-  issue/spec; reviewers do not define them implicitly.

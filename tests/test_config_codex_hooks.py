@@ -551,6 +551,16 @@ def test_pre_hook_denies_git_text_inside_shell_control_blocks(command: str) -> N
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+def test_pre_hook_rewrite_routes_independent_reads_to_bounded_executor_batch() -> None:
+    completed = _run_pre_hook("git status --short; git remote -v")
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    reason = output["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "parallel executor calls" in reason
+    assert "summarize their outputs" in reason
+
+
 @pytest.mark.parametrize(
     "command",
     [

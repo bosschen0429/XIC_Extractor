@@ -24,7 +24,7 @@ self-ownership，因此不需要 generic lifecycle metadata：
 
 | Path | Purpose / required route |
 | --- | --- |
-| `AGENTS.md` | Repo agent routing；必須連到 parameter、product、evidence、architecture、execution、diagnostics、project layout owners |
+| `AGENTS.md` | Bounded repo agent routing；必須連到 parameter、product、evidence、architecture、execution、diagnostics、project layout owners |
 | `README.md` | 公開入口；必須連到 user、product、architecture、project layout 與 LC-MS/MS evidence |
 | `docs/architecture-contract.md` | Architecture/dependency owner；必須由 root docs 可達 |
 | `docs/project-layout.md` | File placement and documentation lifecycle owner；必須連到 architecture、product 與 [documentation boundary contract](agent/obsidian-handoff-contract.md) |

@@ -35,9 +35,10 @@
    或 diff review 尚不能完成同一判斷。
 4. 當前 branch、migration 或 cleanup 結束後，這個 check 仍有用途。
 
-新增或修正 production behavior 且已有穩定 oracle 時，採 test-first。新增或修改
-的 check 必須證明它會因所保護的行為而失敗；這項要求約束的是 check，不是每一個
-repository change。
+新增或修正 production behavior 且已有穩定 oracle 時，採 test-first。TDD 是取得
+可信 observation 的手段，不是交付目標；RED 必須重現 observable loss，而不是只證明
+symbol、file 或 scaffold 尚不存在。新增或修改的 check 必須證明它會因所保護的行為
+而失敗；這項要求約束的是 check，不是每一個 repository change。
 
 若沒有 current consumer 依賴該結構，不要用測試固定一次性 cleanup state、private
 helper、branch-local migration step 或特定目錄／檔名。文件退休與 referrer cleanup
@@ -52,6 +53,21 @@ RED。
 - temporary compatibility test 的移除條件。
 
 答不出來就不新增測試。
+
+## Ledger Snapshot Lane
+
+Tests marked `ledger_snapshot` pin recorded values under
+`docs/superpowers/validation/` and are excluded individually from default CI;
+the rest of the same file still runs. Run only this lane with:
+
+```powershell
+.venv\Scripts\python.exe -m tools.testing.test_shards --snapshots
+```
+
+A legitimate re-analysis may turn a snapshot red. Keep rejection paths and
+monkeypatched dependency checks unmarked when their behavior remains a default
+CI contract. `SNAPSHOT_MARKER` in `tools/testing/test_shards.py` owns the exact
+inventory rule and removal condition.
 
 ## 2. File Layout
 
