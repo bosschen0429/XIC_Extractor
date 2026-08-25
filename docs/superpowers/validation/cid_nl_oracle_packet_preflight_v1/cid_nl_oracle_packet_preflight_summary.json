@@ -154,8 +154,6 @@
   },
   "no_raw_contract": {
     "status": "complete",
-    "independent_spec_review": "independent_spec_review.md",
-    "independent_spec_review_verdict": "APPROVE",
     "decision_contract": "https://github.com/Chao-hu-Lab/XIC_Extractor/issues/125",
     "review_adjudication_schema": "../../schemas/cid_nl_oracle_review_adjudication_schema.v1.json",
     "reference_universe_schema": "../../schemas/cid_nl_reference_universe_manifest_schema.v1.json",
