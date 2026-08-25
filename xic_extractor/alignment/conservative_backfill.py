@@ -28,7 +28,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     validate_cid_nl_assessment_hypothesis_closure,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track import (
     ModeTrackAssignment,
     ModeTrackAssignmentBatch,
     ModeTrackModelSet,

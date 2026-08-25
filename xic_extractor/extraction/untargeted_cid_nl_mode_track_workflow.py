@@ -15,11 +15,10 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track import (
+    ModeTrackRefinementTransaction,
     ModeTrackTrajectoryPolicy,
-)
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
-    bootstrap_mode_tracks_from_cid_nl_support,
+    bootstrap_mode_track_refinement_from_cid_nl_support,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlModeTrackProjection,
@@ -60,6 +59,7 @@ class ModeTrackWorkflowRun:
     projection: UntargetedCidNlModeTrackProjection
     discovery_index: Path
     call_cost: Mapping[str, int]
+    refinement_transactions: tuple[ModeTrackRefinementTransaction, ...] = ()
 
 
 def run_untargeted_cid_nl_mode_track_workflow(
@@ -169,12 +169,14 @@ def run_untargeted_cid_nl_mode_track_workflow(
             strict=True,
         )
     )
-    _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    refinement = bootstrap_mode_track_refinement_from_cid_nl_support(
         processing_owners=context.processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=_mode_track_trajectory_policy(),
     )
+    model_set = refinement.model_set
+    batches = refinement.assignment_batches
     facts = assess_mode_track_conservative_backfill_groups(
         processing_owners=context.processing_owners,
         model_set=model_set,
@@ -194,6 +196,7 @@ def run_untargeted_cid_nl_mode_track_workflow(
             discovery_raw_open_count=len(raw_files),
             m7_call_cost=m7_call_cost,
         ),
+        refinement_transactions=refinement.transactions,
     )
 
 

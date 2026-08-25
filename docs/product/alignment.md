@@ -382,10 +382,13 @@ claim. Public or legacy family labels, `method_subject_id`, display labels, and
 ordinals do not mint or replace the internal Family context.
 
 This describes current activation state, not a reason to build another
-trajectory module. The target architecture reuses and deepens this capability
-behind a proposal-only `alignment/mode_track/` interface. Existing diagnostic
-writers and validation packages stay outside that scientific interface and are
-retired or retained only by named consumers after migration.
+trajectory module. The opt-in CID-NL diagnostic workflow now routes this
+capability through the proposal-only `alignment/mode_track/` interface. That
+owner binds each proposal to an immutable trajectory input, returns a closed
+accepted/rejected/insufficient/unassessable result, and delegates accepted
+membership changes to the existing CrossSample atomic successor application.
+Existing diagnostic writers and validation packages remain outside that
+scientific interface; no normal Alignment route or product writer activates it.
 
 The initial model set is fit once per Family from canonical direct-SUPPORT
 assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint

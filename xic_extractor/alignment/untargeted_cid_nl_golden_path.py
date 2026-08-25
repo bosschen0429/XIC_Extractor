@@ -31,10 +31,10 @@ from xic_extractor.alignment.conservative_backfill import (
     map_conservative_backfill_candidates,
     mint_conservative_backfill_recovery_candidate_universe,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
+from xic_extractor.alignment.mode_track import (
     ModeTrackAssignment,
 )
-from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
 from xic_extractor.alignment.production_acceptance import (
     CheckedProductionAcceptanceManifest,
     ProductionAcceptanceManifestError,
