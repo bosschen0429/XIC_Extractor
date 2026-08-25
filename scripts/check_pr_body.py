@@ -101,6 +101,10 @@ def validate_pr_body(body: str, expected_head_sha: str) -> tuple[str, ...]:
         errors,
         allow_none=True,
     )
+    execution_base = _require_field(scope, "Execution base", errors)
+    _require_field(scope, "Semantic owner", errors)
+    _require_field(scope, "Finite production universe", errors)
+    scope_delta = _require_field(scope, "Scope delta from issue", errors)
 
     normalized_lane = _normalize_value(lane)
     if lane is not None and normalized_lane not in ALLOWED_LANES:
@@ -123,6 +127,20 @@ def validate_pr_body(body: str, expected_head_sha: str) -> tuple[str, ...]:
             errors.append("Public contracts at risk must select allowed options")
         elif "none" in selected_contracts and len(selected_contracts) != 1:
             errors.append("Public contracts at risk must use none by itself")
+
+    normalized_execution_base = _normalize_value(execution_base)
+    if (
+        execution_base is not None
+        and SHA_RE.fullmatch(normalized_execution_base) is None
+    ):
+        errors.append(
+            "Execution base must be exactly 40 hexadecimal characters"
+        )
+    if scope_delta is not None and not _valid_scope_delta(scope_delta):
+        errors.append(
+            "Scope delta from issue must use None with a rationale or an "
+            "explicit refreeze issue linkage in the form Refreeze: #N"
+        )
 
     verification = _first_section(sections, "verification")
     reviewed_head = _require_field(verification, "Reviewed head", errors)
@@ -516,6 +534,20 @@ def _valid_issue_linkage(value: str) -> bool:
         normalized,
     )
     return no_issue is not None and not _is_placeholder(no_issue.group(1))
+
+
+def _valid_scope_delta(value: str) -> bool:
+    normalized = " ".join(_plain_markdown(value).split())
+    none_with_rationale = re.fullmatch(
+        r"(?is)None\s*(?:[-—:;]|because\b)\s*(.+)",
+        normalized,
+    )
+    if none_with_rationale is not None:
+        return not _is_placeholder(none_with_rationale.group(1))
+    return re.fullmatch(
+        r"(?i)Refreeze\s*:\s*(?:#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)",
+        normalized,
+    ) is not None
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

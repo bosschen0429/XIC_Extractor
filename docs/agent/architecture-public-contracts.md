@@ -4,6 +4,22 @@ This file owns high-level dependency guardrails and public contract surfaces.
 The fuller decomposition contract remains in
 `docs/architecture-contract.md`.
 
+## Read Routes
+
+Choose the branch that matches the changed boundary; add another only when the
+same change crosses it.
+
+| Task branch | Read |
+| --- | --- |
+| dependency direction or diagnostic placement | [Architecture Guardrails](#architecture-guardrails) |
+| model/record source-to-target projection | [Boundary Projection Closure](#boundary-projection-closure) |
+| persisted artifact rehydration | [Persisted Semantic Rehydration](#persisted-semantic-rehydration) |
+| atomic writer, publication, or recovery closure | [Closed Writer Transaction Authority](#closed-writer-transaction-authority) |
+| runtime receipts, resources, lifecycle, settlement, or finalization | [Runtime Construction Authority](#runtime-construction-authority) |
+| executable census or static dependency floor | [Executable Census And Dependency Gate](#executable-census-and-dependency-gate) |
+| command exposure, lifecycle, or retirement | [Script And Diagnostic Tool Lifecycle](script-tool-lifecycle.md) |
+| CLI, config, schema, output, or persisted identity | [Public Contracts](#public-contracts) |
+
 ## Architecture Guardrails
 
 - Preserve dependency direction. Domain logic must not import GUI, workbook

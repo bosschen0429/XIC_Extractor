@@ -54,22 +54,6 @@ Having `main()`, living under `scripts/`, being importable, or having a test
 does not by itself make a command public. Conversely, a product artifact may be
 public even when its producer is not installed as a console command.
 
-## Installed Commands
-
-The installed surface is read from `pyproject.toml` and currently comprises:
-
-| Command | Owner |
-| --- | --- |
-| `xic-extractor` | `gui.main:main` |
-| `xic-extractor-cli` | `scripts.run_extraction:main` |
-| `xic-discovery-cli` | `scripts.run_discovery:main` |
-| `xic-pt-pattern-discovery-cli` | `scripts.run_pt_pattern_discovery:main` |
-| `xic-align-cli` | `scripts.run_alignment:main` |
-| `xic-align-validate-cli` | `scripts.run_alignment_validation:main` |
-
-Update this table in the same change as `[project.scripts]`. Do not infer that
-another `run_*.py` file is installed or public from its name.
-
 ## Diagnostic Boundaries
 
 `tools/diagnostics/` is maintained product-adjacent code. Entry points

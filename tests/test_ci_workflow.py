@@ -1,5 +1,6 @@
 import ast
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -174,6 +175,10 @@ The PR template and checker now require one traceable receipt per claim.
 - Lane: workflow-only
 - Product output change: no
 - Public contracts at risk: none
+- Execution base: 0123456789abcdef0123456789abcdef01234567
+- Semantic owner: scripts/check_pr_body.py
+- Finite production universe: PR bodies validated by scripts/check_pr_body.py in CI.
+- Scope delta from issue: None; scope matches the issue.
 
 ## Review guide
 
@@ -204,6 +209,65 @@ Review the checker failure semantics, then confirm the CI step uses the event he
 
 def test_complete_valid_pr_body() -> None:
     assert validate_pr_body(_valid_pr_body(), HEAD_SHA) == ()
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "Execution base",
+        "Semantic owner",
+        "Finite production universe",
+        "Scope delta from issue",
+    ),
+)
+def test_pr_body_requires_issue_to_pr_scope_receipt(field: str) -> None:
+    body = re.sub(rf"(?m)^- {re.escape(field)}:.*\n", "", _valid_pr_body())
+
+    assert f"{field} is missing or empty" in validate_pr_body(body, HEAD_SHA)
+
+
+def test_scope_delta_rejects_unlinked_expansion() -> None:
+    body = _replace_pr_field(
+        _valid_pr_body(),
+        "Scope delta from issue",
+        "expanded for convenience",
+    )
+
+    assert any(
+        "Scope delta from issue" in error and "refreeze" in error
+        for error in validate_pr_body(body, HEAD_SHA)
+    )
+
+
+def test_scope_delta_accepts_explicit_issue_refreeze() -> None:
+    body = _replace_pr_field(
+        _valid_pr_body(),
+        "Scope delta from issue",
+        "Refreeze: #654",
+    )
+
+    assert validate_pr_body(body, HEAD_SHA) == ()
+
+
+def test_repo_surfaces_expose_one_issue_to_pr_scope_firewall() -> None:
+    root_contract = Path("AGENTS.md").read_text(encoding="utf-8")
+    workflow_owner = Path("docs/agent/planning-workflows.md").read_text(
+        encoding="utf-8"
+    )
+    issue_template = Path(
+        ".github/ISSUE_TEMPLATE/implementation_change.yml"
+    ).read_text(encoding="utf-8")
+    pr_template = Path(".github/pull_request_template.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Issue-to-PR scope firewall" in root_contract
+    assert "Issue-To-PR Scope And Template Ownership" in workflow_owner
+    assert "finite production universe" in issue_template.casefold()
+    assert "- Execution base:" in pr_template
+    assert "- Semantic owner:" in pr_template
+    assert "- Finite production universe:" in pr_template
+    assert "- Scope delta from issue:" in pr_template
 
 
 def test_unedited_template_and_placeholder_are_rejected() -> None:

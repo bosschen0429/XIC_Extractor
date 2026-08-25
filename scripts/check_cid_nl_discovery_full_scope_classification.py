@@ -291,12 +291,6 @@ def build_cid_nl_discovery_full_scope_classification(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    _write_readme(
-        docs_dir / "README.md",
-        payload=payload,
-        manifest_tsv=manifest_tsv,
-        checks_tsv=checks_tsv,
-    )
     return payload
 
 
@@ -931,75 +925,6 @@ def _summary_payload(
             "and omitted no-target rows are preserved no-write context."
         ),
     }
-
-
-def _write_readme(
-    path: Path,
-    *,
-    payload: Mapping[str, Any],
-    manifest_tsv: Path,
-    checks_tsv: Path,
-) -> None:
-    summary_path = _relative_or_absolute(
-        path.parent / "cid_nl_discovery_full_scope_classification_summary.json"
-    )
-    lines = [
-        "# CID-NL Discovery Full-Scope Classification v1",
-        "",
-        "Status: `pass`.",
-        "",
-        "This is a no-RAW classification contract for the current CID-NL "
-        "Discovery candidate universe. It proves that the 147 candidate cells "
-        "are fully partitioned before any future product gate is considered.",
-        "",
-        "## Buckets",
-        "",
-        (
-            "- Accepted Discovery default bucket: "
-            f"`{payload['accepted_discovery_cell_count']}` cells."
-        ),
-        (
-            "- Held outside the current bundle: "
-            f"`{payload['held_candidate_cell_count']}` cells."
-        ),
-        (
-            "- Blocked by current paired-overlay evidence: "
-            f"`{payload['blocked_candidate_cell_count']}` cells."
-        ),
-        (
-            "- Existing successor context preserved with no write: "
-            f"`{payload['existing_successor_context_cell_count']}` cells."
-        ),
-        (
-            "- Omitted no-target context preserved with no write: "
-            f"`{payload['omitted_no_target_cell_count']}` cells."
-        ),
-        "",
-        "The accepted bucket is exactly the already activated 95-cell CID-NL "
-        "Discovery default scope. Held and blocked rows are not review debt "
-        "hidden behind another slice; they are explicit non-activation buckets.",
-        "",
-        "## Authority Boundary",
-        "",
-        "This classification checker does not change ProductWriter, default "
-        "matrix, workbook, GUI, selected peak/area, or counted detections. "
-        "CID-NL/MS2 evidence remains evidence-provider input. Candidate rows "
-        "are not matrix rows.",
-        "",
-        "## Replay Scope",
-        "",
-        "The `--check-only` path verifies the retained compact summary, checks, "
-        "and manifest. Source feature-gate output remains externalized; rebuild "
-        "this contract from that output when source-level parity must be tested.",
-        "",
-        "## Files",
-        "",
-        f"- Summary JSON: `{summary_path}`",
-        f"- Compact manifest: `{_relative_or_absolute(manifest_tsv)}`",
-        f"- Checks TSV: `{_relative_or_absolute(checks_tsv)}`",
-        "",
-    ]
-    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _accepted_rows(

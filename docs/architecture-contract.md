@@ -157,6 +157,13 @@ registered temporary resources and caches while respecting lineage pins.
   still names it. Tests, historical artifacts, and the former implementation
   are not consumer evidence; when an internal function is replaced, delete its
   old implementation, alias, and migration shim in the same change.
+- Migration tests follow the invariant's current semantic owner. Move them to
+  the successor surface or delete implementation-detail coverage; retain legacy
+  tests only for a current public compatibility contract, explicit migration or
+  rejection behavior, or parity during an active transition.
+- An `audit_only`, `shadow_only`, or `diagnostic_only` migration path names the
+  smallest next production or adapter transfer in its exit rule, not only the
+  evidence still missing.
 
 ## Frozen Alignment Owner Decomposition
 
@@ -355,10 +362,12 @@ Naming rule:
   and compatibility/migration code together unless the public-contract rule
   above identifies a current consumer. Git history is the recovery path.
 
-Before implementing non-trivial diagnostics, RAW-backed evidence, preset
-performance optimization, matrix activation, HCD-PI, Delta Mass, CID-NL
-expansion, or other evidence-provider work, use
-`.codex/skills/xic-architecture-preflight/SKILL.md` to name the existing owner,
+Architecture preflight applies when work creates or replaces a semantic owner,
+crosses an evidence/runtime boundary, or changes Matrix, activation, a public
+contract, or scientific authority. A technology, method, diagnostic, or RAW
+label alone is not a trigger; focused work inside an established owner stays on
+that owner's ordinary verification path. When the boundary applies, use
+`.codex/skills/xic-architecture-preflight/SKILL.md` to bind the existing owner,
 reuse target, call-cost model, public contract risk, validation gate, and stop
 rule.
 

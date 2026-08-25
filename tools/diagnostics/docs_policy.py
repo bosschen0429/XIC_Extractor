@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,11 +61,6 @@ DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH = f"{HANDOFF_CURRENT_DIR}ACTIVE.local.md"
 PRODUCTIZATION_STATUS_ANCHOR_PATH = (
     "docs/superpowers/productization/status/cc-framework-improvements-productization.md"
 )
-# Backward-compatible import name for existing hook code. The file is no longer
-# a handoff; keep the alias until hook call sites are renamed in a focused pass.
-PRODUCTIZATION_STATUS_HANDOFF_PATH = PRODUCTIZATION_STATUS_ANCHOR_PATH
-CLOSEOUT_DIR = "docs/superpowers/closeouts/"
-
 PRODUCTIZATION_SCHEMA_REL = (
     "docs/superpowers/schemas/productization_control_plane_schema.v3.json"
 )
@@ -106,10 +100,6 @@ DOC_PLACEMENT_VALUES = {
     "formal_repo_doc",
     "repo_subcontract_doc",
     "repo_support_doc",
-    "repo_active_stub",
-    "branch_closeout_summary",
-    "repo_stub_plus_obsidian",
-    "repo_stub_plus_formal_doc",
     "private_obsidian_note",
     "ignored_artifact",
     "throwaway_scratch",
@@ -124,14 +114,10 @@ DOC_PLACEMENTS_REQUIRING_REPO_OWNER = {
     "formal_repo_doc",
     "repo_subcontract_doc",
     "repo_support_doc",
-    "repo_active_stub",
-    "branch_closeout_summary",
-    "repo_stub_plus_obsidian",
-    "repo_stub_plus_formal_doc",
-    "ignored_artifact",
 }
 NON_REPO_DOC_PLACEMENTS = {
     "private_obsidian_note",
+    "ignored_artifact",
     "throwaway_scratch",
 }
 DOC_KIND_VALUES = {
@@ -180,7 +166,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
             "docs/architecture-contract.md",
             "docs/agent/execution-gates.md",
             "tools/diagnostics/INDEX.md",
-            "docs/solutions/README.md",
             "docs/product/productization.md",
             "docs/project-layout.md",
             "docs/agent/codex-operating-system.md",
@@ -365,8 +350,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/product/",
     "docs/user/",
     "docs/agent/",
-    "docs/engineering-skills/",
-    "docs/solutions/",
     "docs/superpowers/schemas/",
     "docs/superpowers/validation/",
     "docs/superpowers/fixtures/",
@@ -384,7 +367,7 @@ DOC_CANONICAL_OWNER_FILES = {
     "docs/project-layout.md",
     "docs/superpowers/README.md",
     "docs/superpowers/handoffs/README.md",
-    PRODUCTIZATION_STATUS_HANDOFF_PATH,
+    PRODUCTIZATION_STATUS_ANCHOR_PATH,
     CONTROL_PLANE_PATH,
 }
 HIGH_RISK_DOC_DIRS = [
@@ -407,16 +390,6 @@ DOC_LIFECYCLE_MANAGED_DIRS = [
     "docs/superpowers/reports/",
     SUPERPOWERS_SPEC_DIR,
 ]
-MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS = [
-    re.compile(r"(?:^|[_-])branch-closeout-summary(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])file-management-approval-plan(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])git-rm-candidate-manifest(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])historical-referrer", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])productization_handoff-prune(?:[_\-.]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])public-surface-stub-audit(?:\.|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[_-])source-of-truth-queue(?:\.|$)", re.IGNORECASE),
-]
-
 DOC_ROUTING_SCAN_PREFIXES = ("docs/superpowers/",)
 DOC_ROUTING_HANDOFF_PREFIX = "docs/superpowers/handoffs/"
 DOC_ROUTING_VALIDATION_PREFIXES = (
@@ -442,10 +415,6 @@ DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES = (
     "tools/",
     "docs/superpowers/file-management/docs-cleanup/referrers/",
 )
-# Legacy generated topic-index location. The repo no longer tracks this tree;
-# keep the classifier so historical manifests or local scratch indexes do not
-# accidentally become candidate referrers or topic owners.
-DOC_ROUTING_TOPIC_PREFIX = "docs/superpowers/topics/"
 DOC_ROUTING_SCHEMAS_INDEX_PATH = "docs/superpowers/schemas/README.md"
 DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
     {
@@ -474,14 +443,11 @@ class DocPathClassification:
     is_canonical_owner: bool
     is_high_risk_repo_doc: bool
     is_lifecycle_managed: bool
-    is_branch_closeout_summary: bool
-    is_misplaced_handoff_public_record: bool
     is_docs_routing_scan_target: bool
     is_docs_routing_handoff: bool
     is_validation_or_fixture: bool
     is_governance_artifact: bool
     is_legacy_history: bool
-    is_topic_index: bool
     is_specs_index: bool
     is_superpowers_spec: bool
     is_docs_root_file: bool
@@ -514,14 +480,11 @@ class DocClassification:
     is_high_risk_repo_doc: bool
     is_high_risk_source: str
     is_lifecycle_managed: bool
-    is_branch_closeout_summary: bool
-    is_misplaced_handoff_public_record: bool
     is_docs_routing_scan_target: bool
     is_docs_routing_handoff: bool
     is_validation_or_fixture: bool
     is_governance_artifact: bool
     is_legacy_history: bool
-    is_topic_index: bool
     is_specs_index: bool
     is_superpowers_spec: bool
     is_docs_root_file: bool
@@ -614,37 +577,11 @@ def is_repo_doc_path(path: str) -> bool:
     )
 
 
-def is_branch_closeout_summary_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./").lower()
-    return normalized.startswith(CLOSEOUT_DIR) and normalized.endswith(
-        "_branch-closeout-summary.md"
-    )
-
-
-def is_public_handoff_archive_evidence_path(path: str) -> bool:
-    return False
-
-
-def is_misplaced_handoff_public_record_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./")
-    if not (
-        normalized.startswith(HANDOFF_CURRENT_DIR)
-        or normalized.startswith(HANDOFF_ARCHIVE_DIR)
-    ):
-        return False
-    filename = normalized.rsplit("/", 1)[-1]
-    return any(
-        pattern.search(filename) for pattern in MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
-    )
-
-
 def is_canonical_doc_owner_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
     if normalized in DOC_CANONICAL_OWNER_FILES:
         return True
     if normalized in DOC_ROOT_ALLOWLIST_FILES:
-        return True
-    if is_public_handoff_archive_evidence_path(normalized):
         return True
     return any(path_is_under(normalized, root) for root in DOC_CANONICAL_OWNER_DIRS)
 
@@ -652,8 +589,6 @@ def is_canonical_doc_owner_path(path: str) -> bool:
 def is_high_risk_repo_doc_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
     if normalized in DOC_CANONICAL_OWNER_FILES:
-        return False
-    if is_branch_closeout_summary_path(normalized):
         return False
     return any(path_is_under(normalized, root) for root in HIGH_RISK_DOC_DIRS)
 
@@ -726,10 +661,39 @@ def infer_doc_kind_from_path(path: str) -> str:
     return "product_doc"
 
 
+def validation_readme_reference_scope(
+    path: str,
+    visible_paths: tuple[str, ...] | list[str],
+) -> tuple[str, tuple[str, ...]]:
+    """Return the family prefix and reference needles for a validation README."""
+
+    normalized = normalize_path_text(path).lstrip("./")
+    path_classification = classify_doc_path(normalized)
+    if (
+        not path_classification.is_validation_or_fixture
+        or not normalized.endswith("/README.md")
+    ):
+        return "", (normalized,)
+    family_prefix = normalized.rsplit("/", 1)[0] + "/"
+    normalized_visible_paths = tuple(
+        normalize_path_text(candidate).lstrip("./")
+        for candidate in visible_paths
+    )
+    needles = {
+        normalized,
+        family_prefix.rstrip("/").rsplit("/", 1)[-1],
+        *(
+            candidate
+            for candidate in normalized_visible_paths
+            if candidate.startswith(family_prefix)
+        ),
+    }
+    return family_prefix, tuple(sorted(needles))
+
+
 def classify_doc_path(path: str) -> DocPathClassification:
     normalized = normalize_path_text(path).lstrip("./")
     normalized_lower = normalized.lower()
-    is_topic_index = normalized_lower.startswith(DOC_ROUTING_TOPIC_PREFIX)
     is_specs_index = normalized_lower == DOC_ROUTING_SCHEMAS_INDEX_PATH
     is_superpowers_spec = (
         normalized_lower.startswith(SUPERPOWERS_SPEC_DIR) and not is_specs_index
@@ -744,10 +708,6 @@ def classify_doc_path(path: str) -> DocPathClassification:
         is_canonical_owner=is_canonical_doc_owner_path(normalized),
         is_high_risk_repo_doc=is_high_risk_repo_doc_path(normalized),
         is_lifecycle_managed=is_lifecycle_managed_doc_path(normalized),
-        is_branch_closeout_summary=is_branch_closeout_summary_path(normalized),
-        is_misplaced_handoff_public_record=(
-            is_misplaced_handoff_public_record_path(normalized)
-        ),
         is_docs_routing_scan_target=is_docs_routing_scan_target(normalized),
         is_docs_routing_handoff=(
             normalized.startswith(DOC_ROUTING_HANDOFF_PREFIX)
@@ -762,7 +722,6 @@ def classify_doc_path(path: str) -> DocPathClassification:
         is_legacy_history=path_startswith_any(
             normalized, DOC_ROUTING_LEGACY_HISTORY_PREFIXES
         ),
-        is_topic_index=is_topic_index,
         is_specs_index=is_specs_index,
         is_superpowers_spec=is_superpowers_spec,
         is_docs_root_file=is_docs_root_file,
@@ -856,16 +815,11 @@ def classify_doc(path: str, text: str) -> DocClassification:
         is_high_risk_repo_doc=is_high_risk_repo_doc,
         is_high_risk_source=is_high_risk_source,
         is_lifecycle_managed=path_classification.is_lifecycle_managed,
-        is_branch_closeout_summary=path_classification.is_branch_closeout_summary,
-        is_misplaced_handoff_public_record=(
-            path_classification.is_misplaced_handoff_public_record
-        ),
         is_docs_routing_scan_target=path_classification.is_docs_routing_scan_target,
         is_docs_routing_handoff=path_classification.is_docs_routing_handoff,
         is_validation_or_fixture=path_classification.is_validation_or_fixture,
         is_governance_artifact=path_classification.is_governance_artifact,
         is_legacy_history=path_classification.is_legacy_history,
-        is_topic_index=path_classification.is_topic_index,
         is_specs_index=path_classification.is_specs_index,
         is_superpowers_spec=path_classification.is_superpowers_spec,
         is_docs_root_file=path_classification.is_docs_root_file,

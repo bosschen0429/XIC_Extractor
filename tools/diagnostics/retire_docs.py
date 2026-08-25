@@ -30,11 +30,11 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     classify_doc,
     normalize_path_text,
-    retired_tracked_dir_for_path,
     source_copy_locator_note_title,
     source_copy_locator_sha256,
     source_copy_locator_text,
     source_copy_note_title,
+    validation_readme_reference_scope,
 )
 
 VAULT_ARCHIVE_DIR = "XIC/Archives/Repo Retired"
@@ -52,6 +52,15 @@ AUTO_RETIRE_LIFECYCLES = {
     "retired",
 }
 KEEP_LIFECYCLES = {"active", "draft"}
+DISCARD_GIT_HISTORY_DOC_KINDS = {
+    "plan",
+    "spec",
+    "handoff",
+    "closeout",
+    "note",
+    "report",
+    "validation_artifact",
+}
 
 KEEP_PATTERNS = {
     "README.md",
@@ -76,14 +85,18 @@ def _find_in_vault(
     *,
     rel_path: str,
     source_text: str,
+    source_bytes_hash: str,
 ) -> Path | None:
     normalized = _normalize_title(title)
+    normalized_source_copy = _normalize_title(
+        source_copy_note_title(rel_path, source_bytes_hash)
+    )
     for md in vault_path.rglob("*.md"):
-        if _normalize_title(md.name) == normalized and _vault_copy_matches(
-            md,
-            rel_path,
-            source_text,
-        ):
+        known_title = _normalize_title(md.name) in {
+            normalized,
+            normalized_source_copy,
+        }
+        if known_title and _vault_copy_matches(md, rel_path, source_text):
             return md
     return None
 
@@ -148,10 +161,17 @@ def _exact_referrers(
     excluded_paths: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
     normalized = _docs_scan.normalize_repo_rel_path(rel_path)
+    scan_paths = _scan_paths(repo_root)
+    family_prefix, needles = validation_readme_reference_scope(
+        normalized,
+        list(scan_paths),
+    )
     referrers: list[str] = []
-    for scan_rel in _scan_paths(repo_root):
+    for scan_rel in scan_paths:
         scan_rel = _docs_scan.normalize_repo_rel_path(scan_rel)
-        if scan_rel == normalized:
+        if scan_rel == normalized or (
+            family_prefix and scan_rel.startswith(family_prefix)
+        ):
             continue
         if scan_rel in excluded_paths:
             continue
@@ -160,7 +180,8 @@ def _exact_referrers(
         scan_path = repo_root / scan_rel
         if not _docs_scan.is_local_path_scan_target(scan_path, scan_rel):
             continue
-        if normalized in _docs_scan.read_text(scan_path):
+        text = _docs_scan.read_text(scan_path)
+        if any(needle in text for needle in needles):
             referrers.append(scan_rel)
     return tuple(sorted(referrers))
 
@@ -390,8 +411,6 @@ def _retirement_evidence_blocker(
             return "discard_git_history requires a discard_reason"
         if entry.get("operator_approved_temporal_retirement") is not True:
             return "discard_git_history requires operator approval"
-        if not retired_tracked_dir_for_path(rel_path):
-            return "discard_git_history is limited to retired tracked docs lanes"
     elif history_disposition == "obsidian_source_copy":
         if entry.get("source_copy_readback_verified") is not True:
             return "retirement evidence source copy readback is not verified"
@@ -458,6 +477,7 @@ def _ensure_vault_copy(
         vault_path,
         rel_path=rel_path,
         source_text=source_text,
+        source_bytes_hash=_source_bytes_hash(fpath.read_bytes()),
     )
     if vault_match:
         result.already_in_vault.append((rel_path, vault_match))
@@ -481,16 +501,19 @@ def _retirement_blocker(
     text: str,
     evidence_entry: dict[str, object] | None,
 ) -> str:
+    classification = classify_doc(rel_path, text)
     if (
         evidence_entry is not None
         and evidence_entry.get("history_disposition") == "discard_git_history"
         and evidence_entry.get("operator_approved_temporal_retirement") is True
-        and retired_tracked_dir_for_path(rel_path)
     ):
+        if classification.doc_kind not in DISCARD_GIT_HISTORY_DOC_KINDS:
+            return (
+                "discard_git_history is limited to disposable construction records"
+            )
+        if classification.doc_lifecycle in KEEP_LIFECYCLES:
+            return f"{classification.doc_lifecycle} lifecycle"
         return ""
-    classification = classify_doc(rel_path, text)
-    if classification.placement == "repo_active_stub":
-        return "active repo stub"
     if classification.doc_lifecycle in KEEP_LIFECYCLES:
         return f"{classification.doc_lifecycle} lifecycle"
     if classification.lifecycle_status != "declared":
@@ -518,7 +541,7 @@ def retire_files(
     for fpath in files:
         rel = fpath.relative_to(repo_root).as_posix()
 
-        if _should_keep(rel):
+        if _should_keep(rel) and Path(rel).name != "README.md":
             result.kept.append((rel, "protected file"))
             continue
 
@@ -659,6 +682,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if args.evidence is None:
             parser.error("--source-copy-only requires --evidence")
+            return 1
+        if vault_path is None:
+            print(
+                "ERROR: --source-copy-only requires a configured vault path.",
+                file=sys.stderr,
+            )
             return 1
         source = (
             args.files[0].resolve()

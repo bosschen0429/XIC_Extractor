@@ -7,16 +7,15 @@ or narrow the skill trigger.
 
 - "準備跑 85RAW alignment 驗證，先確認 runner 跟 DLL 路徑。" This prompt is
   exercised by `.codex/hooks/fixtures/assert_hook_outputs.py`; root `AGENTS.md`
-  and `docs/agent/subagent-routing.md#hard-triggers` require RAW preflight for an
-  85RAW launch.
+  and the skill description require RAW preflight for an 85RAW launch.
 - "Accept the existing RAW-backed validation artifacts without reading or
   rerunning RAW." The hook fixture exercises this prompt, and the skill
   description plus Branch B require the same gate when deciding whether
   existing RAW artifacts can satisfy acceptance.
 - "Run the approved current-master 85RAW production-equivalent Alignment and
   Backfill comparison." This is the completed Issue #195 evidence step.
-  `docs/agent/subagent-routing.md#hard-triggers` explicitly requires the skill
-  for a RAW-backed production-equivalent 85RAW run.
+  Branch A explicitly requires the skill's preflight for a RAW-backed
+  production-equivalent 85RAW run.
 - "Run current-master 8RAW before deciding whether the 85RAW comparison is
   necessary." This is the lower-cost precondition recorded on Issue #195. The
   skill description covers RAW launches; Branch A must bind the decision and
@@ -41,10 +40,11 @@ or narrow the skill trigger.
 ## Boundary Case
 
 - "改 85RAW 的 Matrix 抽取邏輯。" Decision: the dataset name alone does not make
-  this a RAW-validation task. The existing hook fixture routes the behavior
-  edit to `xic-architecture-preflight` and keeps `xic-raw-validation` absent.
-  If the request also says to launch, rerun, or accept 85RAW evidence, both
-  skills apply under `docs/agent/subagent-routing.md#hard-triggers`.
+  this a RAW-validation task. The hook fixture remains silent for this bare
+  label; the root contract and skill descriptions model-route the behavior edit
+  to `xic-architecture-preflight` while keeping `xic-raw-validation` absent. If
+  the request also says to launch, rerun, or accept 85RAW evidence, the two skill
+  descriptions own separate behavior-edit and RAW-evidence gates.
 
 ## Format Decision
 

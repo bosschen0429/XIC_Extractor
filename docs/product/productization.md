@@ -49,6 +49,23 @@ structured owner, the structured owner wins and the narrative must be corrected.
 - The compatibility index preserves stable lookup keys only. It must not grow a
   new maintenance log or duplicate rule prose from canonical owners.
 
+## Work Intake And Closeout
+
+Per maintenance cycle, keep at most one primary productization lane, one
+supporting-infrastructure lane, and one lane dedicated to diagnostics. Starting
+another requires promoting, parking with a reopening condition, externalizing/killing,
+or abandoning one current lane. A new lane names its structured current and
+intended state, capability owner, affected public surface, expected behavior
+diff and required non-changes, evidence tier, downstream consumer, and
+stop/rollback rule. If values or identity may change without an expected-diff
+plan, stop intake.
+
+Read current state from the status index and authority manifests, not a branch
+diary or compatibility index. Diagnostics, reports, and sidecars need a
+promote, kill, externalize, or missing-evidence exit. Closeout names the evidence
+actually used, resolves only the active branch handoff, and keeps the durable
+delivery receipt in the PR body rather than another progress board.
+
 ## Promotion Inputs
 
 A product-surface change should route to the promotion contract when it can

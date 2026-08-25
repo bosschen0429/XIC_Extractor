@@ -16,7 +16,6 @@ HOOKS_CONFIG = ROOT / ".codex" / "hooks.json"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
 OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
-PARAMETER_SETTINGS = ROOT / "docs" / "agent" / "parameter-settings.md"
 HOOK_COMMAND_PATTERNS = {
     "command": re.compile(
         r'^python3 "\$\(git rev-parse --show-toplevel\)/\.codex/hooks/'
@@ -272,15 +271,6 @@ def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
         text=True,
         timeout=30,
     )
-
-
-def test_elevated_git_ownership_recovery_stays_invocation_scoped() -> None:
-    settings = PARAMETER_SETTINGS.read_text(encoding="utf-8")
-
-    assert "$xicRepoRoot = (Resolve-Path .).Path.Replace('\\', '/')" in settings
-    assert 'git -c "safe.directory=$xicRepoRoot" add -- <task-files...>' in settings
-    assert 'git -c "safe.directory=$xicRepoRoot" push' in settings
-    assert "不要寫入 global `safe.directory`" in settings
 
 
 def test_all_enabled_hook_references_resolve_start_and_noop() -> None:

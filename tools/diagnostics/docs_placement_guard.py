@@ -894,7 +894,7 @@ def deletion_retirement_problem(
             path=path,
             reason="exact repo referrers require retargeting before deletion",
             required_marker=(
-                "Retarget repo referrers to the durable owner or keep a stub."
+                "Retarget repo referrers to the durable owner before deletion."
             ),
         )
     if evidence_referrers != tuple(sorted(referrers)):
@@ -1103,7 +1103,7 @@ def check_entry(
                     path=path,
                     reason=f"invalid governance enforcement index: {reason}",
                     required_marker=(
-                        "Restore the exact six-row governance read-back contract "
+                        "Restore the exact five-row governance read-back contract "
                         "and resolvable owner/executable/fixture locators."
                     ),
                 )
@@ -1121,8 +1121,8 @@ def check_entry(
                 reason=(
                     "docs root only allows cross-cutting authority docs; "
                     "move this file under docs/agent, docs/product, "
-                    "docs/architecture, docs/validation, docs/user, "
-                    "docs/solutions, or docs/superpowers"
+                    "docs/architecture, docs/validation, docs/user, or "
+                    "docs/superpowers"
                 ),
                 required_marker=(
                     "Use docs/project-layout.md root allowlist; do not add "
@@ -1147,19 +1147,6 @@ def check_entry(
             )
         )
 
-    if placement and placement not in DOC_PLACEMENT_VALUES:
-        problems.append(
-            PlacementProblem(
-                path=path,
-                reason=f"unknown doc placement value: {placement}",
-                required_marker=(
-                    f"{DOC_PLACEMENT_MARKER} <one of "
-                    f"{', '.join(sorted(DOC_PLACEMENT_VALUES))}>"
-                ),
-            )
-        )
-        return [*problems, *lifecycle_problems]
-
     if placement in DOC_RETIRED_PLACEMENT_VALUES:
         problems.append(
             PlacementProblem(
@@ -1174,6 +1161,19 @@ def check_entry(
                 ),
             )
         )
+
+    elif placement and placement not in DOC_PLACEMENT_VALUES:
+        problems.append(
+            PlacementProblem(
+                path=path,
+                reason=f"unknown doc placement value: {placement}",
+                required_marker=(
+                    f"{DOC_PLACEMENT_MARKER} <one of "
+                    f"{', '.join(sorted(DOC_PLACEMENT_VALUES))}>"
+                ),
+            )
+        )
+        return [*problems, *lifecycle_problems]
 
     if placement and doc_placement_is_non_repo(placement):
         problems.append(
@@ -1196,10 +1196,7 @@ def check_entry(
             )
         )
 
-    if (
-        classification.is_canonical_owner
-        and not classification.is_branch_closeout_summary
-    ):
+    if classification.is_canonical_owner:
         if path.startswith("docs/user/"):
             if placement and placement != "formal_repo_doc":
                 problems.append(
@@ -1207,8 +1204,8 @@ def check_entry(
                         path=path,
                         reason=(
                             f"{placement} is not valid in docs/user; user docs "
-                            "must be public user guides, not branch stubs, "
-                            "Obsidian stubs, closeouts, or artifact records"
+                            "must be public user guides, not retired migration, "
+                            "closeout, or artifact records"
                         ),
                         required_marker=(
                             f"{DOC_PLACEMENT_MARKER} formal_repo_doc "
@@ -1229,21 +1226,6 @@ def check_entry(
                     )
                 )
         return [*problems, *lifecycle_problems]
-
-    if classification.is_misplaced_handoff_public_record:
-        problems.append(
-            PlacementProblem(
-                path=path,
-                reason=(
-                    "public productization or file-management records do not "
-                    "belong under handoffs/current or handoffs/archive"
-                ),
-                required_marker=(
-                    "Move to docs/superpowers/productization/, "
-                    "a canonical file-management owner, or the PR body."
-                ),
-            )
-        )
 
     if problems:
         return [*problems, *lifecycle_problems]

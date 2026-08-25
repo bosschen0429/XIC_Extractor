@@ -1,42 +1,20 @@
 # Execution Gates
 
-This file owns operational gates, PR gates, and repeated local pitfalls. The
-root `AGENTS.md` keeps only the highest-frequency subset.
+This file owns clean-checkout artifact, long-RAW launch, and PR verification
+gates. Runner, sandbox, and command details remain with their routed owners.
 
-## Before Work
+## Read Routes
 
-- Before non-trivial edits, confirm intended worktree, branch, and dirty diff
-  scope. Do not stage, rewrite, or revert unrelated user changes.
-- Before Python, RAW, DLL, or validation commands, read
-  `docs/agent/parameter-settings.md` and use documented runners and paths.
-- Before product checks, require the per-worktree bootstrap and Windows-native
-  runtime acceptance:
+| Task branch | Read |
+| --- | --- |
+| clean-checkout or externalized artifact gate | [Artifact Boundary Gate](#artifact-boundary-gate) |
+| 85RAW or long RAW launch | [RAW And Long Runs](#raw-and-long-runs) |
+| CI evidence, push, PR, or ready-for-review | [PR Verification Gate](#pr-verification-gate) |
 
-```powershell
-uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
-.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
-```
-
-The doctor returns a machine-actionable status. `READY` may run in the current
-sandbox; `REWRITE_COMMAND` must change shape before execution;
-`APPROVAL_REQUIRED` goes directly to a bounded approval;
-`ENVIRONMENT_REPAIR_REQUIRED` stops product debugging until the named runtime
-layer changes; `HUMAN_DECISION_REQUIRED` waits for the operator; and
-`INCONCLUSIVE` collects only the finding's named next evidence. Add
-`--probe-github` only when the task needs GitHub; a runtime that advertises
-disabled sandbox networking must not first launch a predictably failing canary.
-
-## Outputs And Validation Status
-
-- Keep outputs under task-specific `output/` or `docs/superpowers/` paths. New
-  diagnostic output groups need a summary or index.
-- State validation evidence status explicitly using the canonical Evidence
-  labels in `docs/product/README.md`.
-- Tests passing is not the same as production readiness. For extraction,
-  alignment, scoring, and matrix behavior changes, report which
-  method-appropriate evidence was used: synthetic tests, lane-specified
-  8RAW/85RAW, targeted benchmark, method-specific real samples, or manual
-  EIC/MS2 review.
+Python, worktree bootstrap, sandbox friction, validation scale, and command
+shapes route through `docs/agent/parameter-settings.md#read-routes`.
+Execution-config changes route through
+`docs/agent/codex-operating-system.md#change-protocol`.
 
 ## Artifact Boundary Gate
 
@@ -66,45 +44,9 @@ prerequisite. Do not assume a later cleanup PR will make an earlier PR pass.
 
 - Do not launch 85RAW or likely long RAW runs through background
   `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
-  command shapes in `docs/agent/parameter-settings.md`, or get explicit approval
-  for an external terminal or automation.
-- Known approval-first commands are documented in
-  `docs/agent/parameter-settings.md`: dependency sync/lock, Playwright browser
-  install, RAW/DLL loading, GUI/external-terminal launch, and global Codex
-  config changes should not be re-tried once in sandbox just to fail. If the
-  task needs them, request the documented narrow approval up front; otherwise
-  use existing artifacts or the offline path.
-
-## Diagnostic Reuse
-
-- Search `tools/diagnostics/INDEX.md`, relevant notes, and existing validation
-  outputs before inventing a new diagnostic workflow.
-- Search `docs/diagnostic-ledger.md` before rerunning known targets or failure
-  modes.
-
-## Local Pitfalls
-
-Use the same operational playbook for repeated local pitfalls:
-
-- guessed pytest node ids that collect zero tests;
-- Windows git `.git\index.lock` or ref-lock friction;
-- stale or deleted `.worktrees`;
-- noisy recursive scans over generated outputs;
-- locked workbook/report files.
-
-Do not keep retrying the failing shape. Switch to the documented fixed command
-pattern.
-
-## Execution-Affecting Config
-
-Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook scripts,
-execpolicy, and subagent TOML as execution-affecting config. Changes need:
-
-- hook/script smoke check where applicable;
-- `codex execpolicy check` for changed `.rules` decisions;
-- `git diff --check`;
-- secret, private local path, and accidentally tracked local config scan.
-
+  command shapes in
+  `docs/agent/parameter-settings.md#85raw-command-contract`, or get explicit
+  approval for an external terminal or automation.
 ## PR Verification Gate
 
 Validation evidence belongs to a commit SHA. Run the smallest focused checks

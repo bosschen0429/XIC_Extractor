@@ -244,14 +244,14 @@ def test_completed_unreferenced_spec_without_retirement_evidence_is_kept(
     assert spec.exists()
 
 
-def test_completed_unreferenced_spec_with_pass_can_retire_evidence_retires(
+def test_completed_legacy_stub_with_pass_can_retire_evidence_retires(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
     vault = tmp_path / "vault"
     rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
     spec = repo / rel
-    text = _completed_spec()
+    text = _completed_spec().replace("formal_repo_doc", "repo_active_stub")
     _write(spec, text)
 
     result = retire_files(
@@ -306,6 +306,29 @@ def test_discard_requires_explicit_reason_and_operator_approval(
 
     assert result.kept == [(rel, "discard_git_history requires a discard_reason")]
     assert spec.exists()
+
+
+def test_discard_rejects_maintained_owner_without_construction_kind(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/product/maintained-owner.md"
+    owner = repo / rel
+    text = "# Maintained owner\n"
+    _write(owner, text)
+
+    result = retire_files(
+        [owner],
+        repo,
+        None,
+        execute=True,
+        evidence=_discard_evidence(rel, text),
+    )
+
+    assert result.kept == [
+        (rel, "discard_git_history is limited to disposable construction records")
+    ]
+    assert owner.exists()
 
 
 def test_discard_batch_ignores_refs_between_approved_batch_members(
@@ -421,6 +444,35 @@ def test_retirement_reuses_existing_vault_copy_only_when_source_matches(
     assert result.already_in_vault == [
         (rel, vault / "somewhere/2026-07-01-backfill-spec.md")
     ]
+    assert result.copied_to_vault == []
+    assert result.retired == [rel]
+
+
+def test_retirement_reuses_verified_hash_named_source_copy(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
+    spec = repo / rel
+    text = _completed_spec()
+    _write(spec, text)
+    source_copy = copy_source_only(
+        spec,
+        repo,
+        vault,
+        evidence=_same_path_copy_evidence(rel, text),
+        execute=True,
+    )
+    assert source_copy.destination is not None
+
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_retirement_evidence(rel, text),
+    )
+
+    assert result.already_in_vault == [(rel, source_copy.destination)]
     assert result.copied_to_vault == []
     assert result.retired == [rel]
 
@@ -624,15 +676,19 @@ def test_active_spec_is_kept_even_when_swept(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     vault = tmp_path / "vault"
     spec = repo / "docs/superpowers/specs/2026-07-01-active-spec.md"
-    _write(
-        spec,
-        _completed_spec().replace(
-            "Doc lifecycle: implemented",
-            "Doc lifecycle: active",
-        ),
+    text = _completed_spec().replace(
+        "Doc lifecycle: implemented",
+        "Doc lifecycle: active",
     )
+    _write(spec, text)
 
-    result = retire_files([spec], repo, vault, execute=True)
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_discard_evidence(spec.relative_to(repo).as_posix(), text),
+    )
 
     assert result.retired == []
     assert result.kept == [
@@ -717,6 +773,53 @@ def test_sweep_finds_markdown_transient_candidates_only(tmp_path: Path) -> None:
     result = find_retire_candidates(repo)
 
     assert result == [spec]
+
+
+def test_explicit_reviewed_readme_with_retirement_evidence_can_retire(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/superpowers/validation/archived-diagnostic/README.md"
+    readme = repo / rel
+    text = "# Historical diagnostic without lifecycle metadata\n"
+    _write(readme, text)
+
+    result = retire_files(
+        [readme],
+        repo,
+        None,
+        execute=True,
+        evidence=_discard_evidence(rel, text),
+    )
+
+    assert result.retired == [rel], (result.kept, result.errors)
+    assert not readme.exists()
+
+
+def test_validation_readme_with_family_consumer_cannot_retire(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/superpowers/validation/current-packet/README.md"
+    artifact_rel = "docs/superpowers/validation/current-packet/summary.json"
+    readme = repo / rel
+    text = "# Current validation packet\n"
+    _write(readme, text)
+    _write(repo / artifact_rel, "{}\n")
+    _write(repo / "scripts/check_current_packet.py", f'PATH = "{artifact_rel}"\n')
+
+    result = retire_files(
+        [readme],
+        repo,
+        None,
+        execute=True,
+        evidence=_discard_evidence(rel, text),
+    )
+
+    assert result.referrer_bound == [
+        (rel, ("scripts/check_current_packet.py",))
+    ]
+    assert readme.exists()
 
 
 def test_retire_docs_cli_returns_nonzero_on_result_errors(

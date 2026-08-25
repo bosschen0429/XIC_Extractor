@@ -57,7 +57,6 @@ LOCAL_PATH_PATTERNS = (
     re.compile(r"C:\\Vaults(?:\\|$)", re.IGNORECASE),
     re.compile(r"C:\\Xcalibur(?:\\|$)", re.IGNORECASE),
     re.compile(r"C:\\Python\d+(?:\\|$)", re.IGNORECASE),
-    re.compile(r"Research Vault", re.IGNORECASE),
 )
 VALID_LIFECYCLES = {"draft", "reviewed", "verified", "disputed", "archived"}
 VALID_TIERS = {"core", "supporting", "peripheral"}
@@ -74,9 +73,6 @@ COMPLETED_TRANSIENT_LIFECYCLES = {
     "archived",
     "retired",
 }
-COMPLETED_TRANSIENT_ALLOWED_STUB_PLACEMENTS: frozenset[str] = frozenset()
-
-
 @dataclass(frozen=True)
 class AuditMessage:
     severity: str
@@ -248,7 +244,7 @@ def audit_repo(
                     "blocker",
                     "docs",
                     (
-                        "tracked repo docs declare non-repo placement; "
+                        "tracked repo docs declare invalid or retired placement; "
                         f"{invalid_count} file(s) need routing repair"
                     ),
                 )
@@ -408,7 +404,6 @@ def completed_transient_review_for_repo(
     repository_view: _docs_scan.RepositoryTextView,
 ) -> dict[str, object]:
     completed_files: list[dict[str, str]] = []
-    allowed_stubs: list[dict[str, str]] = []
     for raw_path in repository_view.paths:
         rel_path = raw_path.replace("\\", "/")
         if not rel_path.startswith(COMPLETED_TRANSIENT_SCAN_PREFIXES):
@@ -424,24 +419,20 @@ def completed_transient_review_for_repo(
         if classification.doc_lifecycle not in COMPLETED_TRANSIENT_LIFECYCLES:
             continue
 
-        row = {
-            "path": rel_path,
-            "doc_kind": classification.doc_kind,
-            "doc_lifecycle": classification.doc_lifecycle,
-            "doc_placement": classification.placement or "missing",
-            "repo_owner": classification.repo_owner or "missing",
-            "doc_exit_rule": classification.doc_exit_rule,
-        }
-        if classification.placement in COMPLETED_TRANSIENT_ALLOWED_STUB_PLACEMENTS:
-            allowed_stubs.append(row)
-        else:
-            completed_files.append(row)
+        completed_files.append(
+            {
+                "path": rel_path,
+                "doc_kind": classification.doc_kind,
+                "doc_lifecycle": classification.doc_lifecycle,
+                "doc_placement": classification.placement or "missing",
+                "repo_owner": classification.repo_owner or "missing",
+                "doc_exit_rule": classification.doc_exit_rule,
+            }
+        )
 
     return {
         "completed_files": len(completed_files),
         "top_completed_files": completed_files[:25],
-        "allowed_stub_files": len(allowed_stubs),
-        "top_allowed_stubs": allowed_stubs[:25],
     }
 
 

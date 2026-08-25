@@ -383,6 +383,11 @@ def test_governance_index_rejects_mechanism_drift() -> None:
         "invalid governance enforcement index" in problem.reason
         for problem in result.problems
     )
+    assert all(
+        "five-row governance read-back contract" in problem.required_marker
+        for problem in result.problems
+        if "invalid governance enforcement index" in problem.reason
+    )
 
 
 def test_governance_index_ignores_fenced_only_table() -> None:
@@ -1256,39 +1261,6 @@ def test_repo_subcontract_doc_without_owner_fails(tmp_path: Path) -> None:
     assert any("requires a repo owner" in problem for problem in problems)
 
 
-def test_branch_closeout_summary_is_rejected_even_with_pr_body_seed(
-    tmp_path: Path,
-) -> None:
-    path = (
-        "docs/superpowers/closeouts/2026-07-01_codex-example_branch-closeout-summary.md"
-    )
-    _write(
-        tmp_path,
-        path,
-        "\n".join(
-            [
-                "# Branch closeout",
-                "",
-                "## Problem",
-                "",
-                "## Solution",
-                "",
-                "## Verification",
-                "",
-                "## Residual Risk",
-                "",
-                "## PR Body Seed",
-                "",
-                "Problem: example.",
-            ]
-        ),
-    )
-
-    result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
-
-    assert any("retired docs lane" in problem.reason for problem in result.problems)
-
-
 def test_file_management_cleanup_history_is_rejected(tmp_path: Path) -> None:
     path = (
         "docs/superpowers/file-management/docs-cleanup/"
@@ -1303,22 +1275,6 @@ def test_file_management_cleanup_history_is_rejected(tmp_path: Path) -> None:
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
     assert any("retired docs lane" in problem.reason for problem in result.problems)
-
-
-def test_handoff_archive_cleanup_evidence_without_marker_fails(tmp_path: Path) -> None:
-    path = (
-        "docs/superpowers/handoffs/archive/"
-        "2026-07-01_codex-docs-cleanup_git-rm-candidate-manifest.md"
-    )
-    _write(
-        tmp_path,
-        path,
-        "# Candidate manifest\n\nPublic cleanup evidence in the wrong lane.\n",
-    )
-
-    problems = _problems(tmp_path, "A", path)
-
-    assert any("do not belong under handoffs" in problem for problem in problems)
 
 
 def test_handoff_archive_private_diary_without_marker_fails(tmp_path: Path) -> None:
@@ -1389,7 +1345,7 @@ def test_productization_status_handoff_remains_canonical(tmp_path: Path) -> None
     assert result.problems == ()
 
 
-def test_branch_closeout_summary_is_rejected_without_pr_body_seed(
+def test_branch_closeout_lane_is_rejected(
     tmp_path: Path,
 ) -> None:
     path = (

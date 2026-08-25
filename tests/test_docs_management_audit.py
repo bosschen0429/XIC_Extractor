@@ -88,7 +88,6 @@ def _write_permanent_root_contracts(root: Path) -> None:
         "docs/agent/product-validation-contract.md",
         "docs/agent/execution-gates.md",
         "tools/diagnostics/INDEX.md",
-        "docs/solutions/README.md",
         "docs/product/productization.md",
         "docs/agent/codex-operating-system.md",
         "docs/user/README.md",
@@ -141,7 +140,6 @@ def _write_permanent_root_contracts(root: Path) -> None:
                 "- [Architecture](docs/architecture-contract.md)",
                 "- [Execution](docs/agent/execution-gates.md)",
                 "- [Diagnostics](tools/diagnostics/INDEX.md)",
-                "- [Solutions](docs/solutions/README.md)",
                 "- [Productization](docs/product/productization.md)",
                 "- [Layout](docs/project-layout.md)",
                 "- [Agent system](docs/agent/codex-operating-system.md)",
@@ -447,7 +445,6 @@ def test_repo_only_completed_transient_stub_state_is_blocker(
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 1
-    assert review["allowed_stub_files"] == 0
     assert any(
         "completed transient docs remain in repo" in msg.message
         for msg in result.messages
@@ -994,7 +991,7 @@ def test_generated_topic_indexes_are_not_counted_as_candidate_referrers(
         f"path\n{candidate_path}\n",
     )
     _write(
-        root / "docs/superpowers/topics/backfill-and-quant-matrix/README.md",
+        root / "output/docs-topic-indexes/backfill-and-quant-matrix/README.md",
         f"# Backfill Index\n\n- `{candidate_path}`\n",
     )
 
@@ -1005,33 +1002,13 @@ def test_generated_topic_indexes_are_not_counted_as_candidate_referrers(
     assert candidate["referrer_status"] == "none"
 
 
-def test_source_copy_stub_batch_is_not_counted_as_candidate_referrer(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    candidate_path = "docs/superpowers/plans/2026-07-01-backfill-plan.md"
-    _write(
-        root / candidate_path,
-        "# Backfill plan\n\nImplementation diary and command transcript.\n",
-    )
-    _write(
-        root / "docs/superpowers/file-management/docs-cleanup/"
-        "2026-07-01_obsidian-source-copy-stub-batch.md",
-        f"# Source-Copy Batch\n\n| Source path |\n| --- |\n| `{candidate_path}` |\n",
-    )
-
-    result = _run_audit(root, vault)
-
-    candidate = result.summary["repo"]["docs_routing_review"]["top_candidates"][0]
-    assert candidate["path"] == candidate_path
-    assert candidate["referrer_status"] == "none"
-
-
+@pytest.mark.parametrize(
+    "placement",
+    ["private_obsidian_note", "ignored_artifact"],
+)
 def test_repo_docs_routing_review_blocks_non_repo_placement(
     tmp_path: Path,
+    placement: str,
 ) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
@@ -1044,7 +1021,7 @@ def test_repo_docs_routing_review_blocks_non_repo_placement(
             [
                 "# Private review note",
                 "",
-                "Doc placement: private_obsidian_note",
+                f"Doc placement: {placement}",
                 "",
                 "Review rationale and branch sequencing.",
             ]
@@ -1063,12 +1040,12 @@ def test_repo_docs_routing_review_blocks_non_repo_placement(
     )
     assert any(
         msg.severity == "blocker"
-        and "tracked repo docs declare non-repo placement" in msg.message
+        and "tracked repo docs declare invalid or retired placement" in msg.message
         for msg in result.messages
     )
 
 
-def test_repo_docs_routing_review_scans_superpowers_without_moving_validation(
+def test_repo_docs_routing_review_surfaces_unbound_validation_for_absorption(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -1084,15 +1061,40 @@ def test_repo_docs_routing_review_scans_superpowers_without_moving_validation(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["docs_routing_review"]
+    assert review["candidate_files"] == 1
+    candidate = review["top_candidates"][0]
+    assert candidate["path"] == validation_path
+    assert candidate["disposition"] == "review_unbound_validation_surface"
+    assert candidate["exact_referrers"] == 0
+    cluster = next(
+        item
+        for item in review["top_topic_clusters"]
+        if validation_path in item["candidate_paths"]
+    )
+    assert cluster["candidate_count"] == 1
+    assert candidate["digestion_status"] != "support_surface_retained"
+    assert "owner" in candidate["digestion_next_action"]
+
+
+def test_repo_docs_routing_review_retains_validation_family_with_consumer(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    family = "docs/superpowers/validation/current-packet"
+    validation_path = f"{family}/README.md"
+    summary_path = f"{family}/current_packet_summary.json"
+    _write(root / validation_path, "# Validation Packet\n")
+    _write(root / summary_path, "{}\n")
+    _write(root / "scripts/check_current_packet.py", f'PATH = "{summary_path}"\n')
+
+    result = _run_audit(root, vault)
+
+    review = result.summary["repo"]["docs_routing_review"]
     assert review["candidate_files"] == 0
-    assert review["route_retained_files"] == review["kept_files"]
     assert review["all_disposition_counts"]["keep_repo_validation_or_fixture"] == 1
-    assert review["all_doc_route_counts"]["repo_product_doc"] >= 1
-    assert review["top_candidates"] == []
-    assert validation_path not in {item["path"] for item in review["top_candidates"]}
-    assert not [
-        msg for msg in result.messages if "repo docs routing review" in msg.message
-    ]
 
 
 def test_repo_docs_routing_review_keeps_canonical_superpowers_readme(
@@ -1354,44 +1356,36 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
     assert index_path not in cluster["owner_paths"]
 
 
-def test_complete_support_doc_is_not_reopened_by_same_topic_cleanup_candidate(
+@pytest.mark.parametrize(
+    ("placement", "repo_owner"),
+    [
+        ("repo_active_stub", "docs/agent/obsidian-handoff-contract.md"),
+        ("branch_closeout_summary", "docs/agent/obsidian-handoff-contract.md"),
+        ("repo_stub_plus_obsidian", "docs/agent/obsidian-handoff-contract.md"),
+        ("repo_stub_plus_formal_doc", "docs/product/peak-model-selection.md"),
+    ],
+)
+def test_retired_stub_placements_are_routed_as_invalid_candidates(
     tmp_path: Path,
+    placement: str,
+    repo_owner: str,
 ) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    support_path = "docs/superpowers/README.md"
-    candidate_path = "docs/superpowers/notes/2026-06-25-cleanup-inventory.md"
-    _write(
-        root / support_path,
-        "\n".join(
-            [
-                "# Superpowers",
-                "",
-                "Doc placement: repo_support_doc",
-                "Doc kind: manifest",
-                "Doc lifecycle: active",
-                "Repo owner: docs/project-layout.md",
-                "Doc exit rule: update when docs workflow routing changes.",
-                "",
-                "Docs workflow routing index.",
-            ]
-        ),
-    )
+    candidate_path = "docs/superpowers/notes/2026-06-25-retired-stub.md"
     _write(
         root / candidate_path,
         "\n".join(
             [
-                "# Cleanup inventory",
+                "# Retired stub",
                 "",
-                "Doc placement: repo_stub_plus_obsidian",
+                f"Doc placement: {placement}",
                 "Doc kind: note",
                 "Doc lifecycle: archived",
-                "Repo owner: docs/agent/obsidian-handoff-contract.md",
+                f"Repo owner: {repo_owner}",
                 "Doc exit rule: retire after referrer closeout.",
-                "",
-                "Docs workflow cleanup inventory.",
             ]
         ),
     )
@@ -1399,62 +1393,14 @@ def test_complete_support_doc_is_not_reopened_by_same_topic_cleanup_candidate(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if item["topic_key"] == "docs workflow or historical context"
-    )
-    assert support_path in cluster["supporting_sample_paths"]
-    assert candidate_path in cluster["supporting_sample_paths"]
-    assert "support_surface_retained:2" in cluster["digestion_status_counts"]
-    assert "source_copy_stub_retained:1" in cluster["support_retention_counts"]
-    assert candidate_path not in cluster["compressible_support_sample_paths"]
-    retained_review_paths = {
-        item["path"] for item in review["top_route_retained_reviews"]
-    }
-    assert candidate_path not in retained_review_paths
-
-
-def test_formal_doc_stub_is_not_reopened_as_compressible_support(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    stub_path = (
-        "docs/superpowers/notes/"
-        "2026-06-02-selected-hypothesis-model-selection-characterization-map.md"
-    )
-    _write(
-        root / stub_path,
-        "\n".join(
-            [
-                "# Selected-Hypothesis Model-Selection Characterization Map",
-                "",
-                "Doc placement: repo_stub_plus_formal_doc",
-                "Doc kind: note",
-                "Doc lifecycle: archived",
-                "Repo owner: docs/product/peak-model-selection.md",
-                "Doc exit rule: retire after exact referrers no longer need this path.",
-                "",
-                "Status: `repo_stub_plus_formal_doc`",
-                "",
-                "Formalized in docs/product/peak-model-selection.md.",
-            ]
-        ),
-    )
-
-    result = _run_audit(root, vault)
-
-    review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if item["topic_key"] == "evidence semantics"
-    )
-    assert "formal_doc_stub_retained:1" in cluster["support_retention_counts"]
-    assert stub_path not in cluster["compressible_support_sample_paths"]
+    assert review["candidate_files"] == 1
+    assert review["disposition_counts"] == {"invalid_repo_placement": 1}
+    candidate = review["top_candidates"][0]
+    assert candidate["path"] == candidate_path
+    assert candidate["doc_route"] == "obsidian_original"
+    assert candidate["repo_body_role"] == "original_not_repo"
+    assert candidate["topic_role"] == "needs_distillation_or_route"
+    assert candidate["support_retention_reason"] == "not_support_surface"
 
 
 def test_complete_support_docs_are_not_reopened_by_multiple_support_surfaces(
@@ -1881,40 +1827,6 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     assert f"- `{compressible_path}`" in readme
 
 
-def test_topic_folder_slug_overrides_index_body_keywords(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "repo"
-    vault = tmp_path / "vault"
-    _clean_repo(root)
-    _clean_vault(vault)
-    index_path = "docs/superpowers/topics/run-provenance/README.md"
-    _write(
-        root / index_path,
-        "\n".join(
-            [
-                "# Run Provenance Topic Index",
-                "",
-                "Doc placement: formal_repo_doc",
-                "Repo owner: docs/superpowers/topics/run-provenance/README.md",
-                "",
-                "This index does not define matrix authority.",
-            ]
-        ),
-    )
-
-    result = _run_audit(root, vault)
-
-    review = result.summary["repo"]["docs_routing_review"]
-    cluster = next(
-        item
-        for item in review["top_topic_clusters"]
-        if item["topic_key"] == "run provenance"
-    )
-    assert cluster["topic_index_count"] == 1
-    assert cluster["topic_index_paths"] == index_path
-
-
 def test_repo_docs_topic_review_separates_support_surfaces_from_owners(
     tmp_path: Path,
 ) -> None:
@@ -1930,26 +1842,25 @@ def test_repo_docs_topic_review_separates_support_surfaces_from_owners(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["docs_routing_review"]
-    assert review["candidate_files"] == 0
-    assert review["topic_cluster_group_counts"]["multiple_support_surfaces"] >= 1
+    assert review["candidate_files"] == 2
     cluster = next(
         item
         for item in review["top_topic_clusters"]
         if validation_path in item["sample_paths"]
     )
-    assert cluster["topic_cluster_status"] == "multiple_support_surfaces"
+    assert cluster["topic_cluster_status"] == "external_owner_with_cleanup_candidates"
     assert cluster["topic_owner_count"] == 0
     assert cluster["supporting_count"] == 2
     assert cluster["digestion_review_count"] == 2
-    assert "support_surface_review:2" in cluster["digestion_status_counts"]
-    retained_review_paths = {
+    assert "external_owner_with_cleanup_candidates:2" in cluster[
+        "digestion_status_counts"
+    ]
+    candidate_paths = {
         item["path"]
-        for item in review["top_route_retained_reviews"]
-        if item["digestion_status"] == "support_surface_review"
+        for item in review["top_candidates"]
+        if item["digestion_status"] == "external_owner_with_cleanup_candidates"
     }
-    assert validation_path in retained_review_paths
-    assert manifest_path in retained_review_paths
-    assert review["route_retained_review_files"] >= 2
+    assert candidate_paths == {validation_path, manifest_path}
     assert not [
         msg
         for msg in result.messages

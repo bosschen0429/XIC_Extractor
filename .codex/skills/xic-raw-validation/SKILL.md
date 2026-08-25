@@ -38,14 +38,17 @@ question. Otherwise choose `accept-existing`.
 
 1. State the smallest missing oracle and why the existing evidence cannot
    supply it.
-2. Read `docs/agent/parameter-settings.md` and materialize its current launch
-   contract: documented runner and RAW/DLL paths, input identity and expected
-   sample count, foreground command, task-specific output, required artifacts,
-   heartbeat/timing evidence, timeout, and stop condition.
+2. Follow the active rows in
+   `docs/agent/parameter-settings.md#read-routes`: RAW/DLL inputs, validation
+   scale, and the exact runner subsection. Add the 85RAW row only for that
+   sample universe. Materialize the documented runner and paths, input identity
+   and expected sample count, foreground command, task-specific output,
+   required artifacts, heartbeat/timing evidence, timeout, and stop condition.
 3. For 85RAW, likely >30-minute, production-equivalent, or readiness-affecting
-   validation, obtain the independent preflight review defined by the
-   `validation / science evidence` lens in
-   `docs/agent/subagent-routing.md`.
+   validation, make the preflight result explicit before launch and stop until
+   the command, inputs, acceptance oracle, heartbeat, and authority ceiling are
+   closed. Independent review follows the active global workflow when one was
+   requested; this skill does not define another agent router.
 4. Launch only when the task authorizes execution. Monitor the canonical
    heartbeat and preserve exact command, code state, configuration, inputs, and
    partial outputs if execution stops.
@@ -103,8 +106,7 @@ Stop / retry condition:
 ```
 
 Use the validation evidence-status vocabulary owned by
-`docs/product/README.md` and the independent acceptance review defined in
-`docs/agent/subagent-routing.md`. A coherent artifact packet can establish a
+`docs/product/README.md`. A coherent artifact packet can establish a
 historical run result without establishing current reproducibility, science
 acceptance when required, or product readiness. Diagnostic sidecars and gate
 results grant no counted-detection, selected-value, matrix, workbook,

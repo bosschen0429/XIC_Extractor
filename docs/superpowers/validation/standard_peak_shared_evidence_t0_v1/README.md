@@ -128,7 +128,6 @@ ignored `output/` content.
 
 | Source | SHA-256 | Use |
 | --- | --- | --- |
-| `docs/solutions/validation/standard-peak-best-shift-only-no-full-run-gain.md` | `7c33ffd9e9a0cbb3de8894de713aff9b32df77e4c4ce85b63f6c7f3fe0d0839d` | no-RAW and complete-stage timing falsification; LF-normalized text hash |
 | `docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/artifacts/heldout_oracle__summary.json` | `4e90c569f6a9c408f45f637efaf81677337af3c252f37ab01285d5312e61f20a` | held-out boundary/area oracle result |
 | `docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/artifacts/85raw_large_cohort__standard_peak_activation_inputs_summary.json` | `46e2fb03577cd7cf803442a029b029a8390eed584502fc7f7de98c5a6b293d8e` | 7,307/4,613 activation population |
 | `docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/quant_matrix_promotion_packet_v2_summary.json` | `da676819bcde2738c9b2ea587900ec6e4e71089d51886233d4a4e0c4ff792d4d` | bounded promotion packet |
@@ -138,7 +137,7 @@ ignored `output/` content.
 | `docs/superpowers/validation/productization_status_index_v1.tsv` | `01f82c06dfc4d627565e20307512b7e418b6194bf45bde6186177c3d67edb993` | current productization status |
 | `docs/superpowers/schemas/productization_authority_manifest.v1.json` | `cde7d135dda6c2b38bc6ee5c03da9012ae9bf936f57186dfec1c5808aea6f9d0` | authority manifest |
 | `docs/finding_class_ledger.tsv` | `a98868fce414ea3d29797d074275ac546fb014ec37a328356190c12e3dd4ec57` | recurring classes A/B/C/D/E/G |
-| `docs/diagnostic-ledger.md` | `76e652b89b498abdb23ad742c532ef5715768a830bd73825db99c8f689a1d5bc` | retained owner/cost evidence; LF-normalized text hash |
+| `docs/diagnostic-ledger.md` | `0dad29bcda55665aa001f3c28ea724075cf96970aa5e80bc3d7a298bc0bc8bd5` | retained owner/cost evidence; LF-normalized text hash |
 | `tools/diagnostics/INDEX.md` | `c7facd47b1ffd05124f5fa9055db931610098a21cd3db3dfd01e10ffa21e7c23` | retained diagnostic/oracle index |
 
 Persisted artifacts remain untrusted projections after deserialization. The

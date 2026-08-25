@@ -73,7 +73,6 @@ def _topic_index_markdown(cluster: dict[str, object]) -> str:
         f"- Owner-like files: {cluster['topic_owner_count']}",
         f"- Support files: {cluster['supporting_count']}",
         f"- Cleanup candidates: {cluster['candidate_count']}",
-        f"- Topic index files: {cluster['topic_index_count']}",
         f"- Delegated handoff files: {cluster['delegated_handoff_count']}",
         f"- Digestion review files: {digestion_review_count}",
         f"- Digestion status counts: `{digestion_status_counts}`",
@@ -89,9 +88,8 @@ def _topic_index_markdown(cluster: dict[str, object]) -> str:
         "packets, mechanical referrer anchors, archived retention records, "
         "or exact references. Compressible support surfaces are the first "
         "place to absorb stable claims into owners and move long originals "
-        "to Obsidian after a fresh referrer scan. Source-copy stubs have "
-        "already been compacted; formal-doc stubs already point at their repo "
-        "owner. Both should stay out of that queue.",
+        "to Obsidian after a fresh referrer scan. Retired placement values are "
+        "invalid inputs, not retained support surfaces.",
         "",
         "### Bound Support Samples",
         "",

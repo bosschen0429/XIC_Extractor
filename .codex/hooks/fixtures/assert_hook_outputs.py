@@ -108,26 +108,25 @@ def main() -> int:
         if unexpected in text:
             raise AssertionError(f"did not expect {unexpected!r} in {text}")
 
-    # Performance work routes to xic-performance-diagnosis, not the broad
-    # architecture reminder.
+    # Performance work routes to xic-performance-diagnosis, which owns the
+    # architecture handoff for code edits.
     perf_out = router_output(
         "這個 preset 的 performance bottleneck 在哪？先看 timing.json"
     )
     assert_contains(perf_out, "xic-performance-diagnosis")
-    assert_absent(perf_out, "high-risk work detected")
 
-    # RAW-run/validation intent routes to xic-raw-validation and suppresses the
-    # architecture reminder even though the prompt mentions 85RAW.
+    # RAW-run/validation intent routes to xic-raw-validation.
     raw_out = router_output("準備跑 85RAW alignment 驗證，先確認 runner 跟 DLL 路徑")
     assert_contains(raw_out, "xic-raw-validation")
-    assert_absent(raw_out, "high-risk work detected")
+    assert_absent(raw_out, "xic-architecture-preflight")
 
-    # A mixed behavior edit plus RAW validation needs both preflights.
+    # The keyword hook supplies the RAW gate without claiming semantic
+    # architecture scope; the model-invoked skill owns that decision.
     mixed_raw_edit_out = router_output(
         "Change matrix extraction behavior, then run 85RAW validation."
     )
     assert_contains(mixed_raw_edit_out, "xic-raw-validation")
-    assert_contains(mixed_raw_edit_out, "xic-architecture-preflight")
+    assert_absent(mixed_raw_edit_out, "xic-architecture-preflight")
 
     mixed_perf_raw_edit_out = router_output(
         "Optimize matrix extraction performance, then run 85RAW validation."
@@ -157,10 +156,8 @@ def main() -> int:
     )
     assert_contains(reordered_raw_accept_out, "xic-raw-validation")
 
-    # A bare RAW code edit still routes to architecture-preflight, not raw-validation.
-    raw_code_out = router_output("改 85RAW 的 matrix 抽取邏輯")
-    assert_contains(raw_code_out, "high-risk work detected")
-    assert_absent(raw_code_out, "xic-raw-validation")
+    # A bare RAW/matrix code label is insufficient for hook-level routing.
+    assert_router_silent("改 85RAW 的 matrix 抽取邏輯")
 
     # Synthetic/no-RAW validation and generic heartbeat/schema work must not be
     # turned into RAW/DLL launch preflight.

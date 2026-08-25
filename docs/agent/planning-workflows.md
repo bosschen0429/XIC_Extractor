@@ -1,8 +1,9 @@
 # Planning And Workflows
 
-This file owns planning discipline, reusable workflow routing, and owner
-migration policy. Stable runners and validation command shapes remain in
-`docs/agent/parameter-settings.md`.
+This file owns planning discipline, reusable workflow routing, owner migration
+policy, and the issue-to-PR contract shared by `.github/ISSUE_TEMPLATE/` and
+`.github/pull_request_template.md`. Stable runners and validation command
+shapes remain in `docs/agent/parameter-settings.md`.
 
 ## Planning And Review
 
@@ -109,7 +110,7 @@ surface, material cost, or acceptance. Otherwise the issue remains
 Unresolved reporter or product input keeps the `needs-info` label. After the
 Current Packet passes this gate, remove `needs-info` and apply the repository's
 `ready-for-agent` state before production edits. The label meanings are owned by
-`docs/agents/triage-labels.md`.
+`docs/agent/triage-labels.md`.
 
 Review incident thresholds and corrective handling remain owned by the root
 review-class rule and the existing root-class closure workflow. Treat one
@@ -132,6 +133,73 @@ when the work crossed this gate. Use PR metadata and existing receipts; do not
 create another progress ledger merely to measure the workflow. Until a
 prospective issue supplies this evidence, describe rework prevention as a
 hypothesis rather than a verified benefit.
+
+### Issue-To-PR Scope And Template Ownership
+
+The implementation issue freezes the work that a PR may deliver. Before an
+issue becomes `ready-for-agent`, its body or one self-contained Current Packet
+must state all of these fields:
+
+1. **Execution base** — the exact code-evidence commit used to enumerate the
+   current implementation and consumers.
+2. **Semantic owner and finite production universe** — one owner plus the named
+   reachable production entries and current direct consumers in scope, with the
+   census locator/query and exclusions. Eventual lifecycle consumers are not
+   current consumers.
+3. **Owner-local asset disposition** — retained, adapted, replaced, and
+   retirement-candidate paths, including a current consumer or zero-reference
+   evidence and each adapter's removal condition.
+4. **Boundary** — observable loss, intended outcome, explicit non-goals,
+   downstream ticket handoffs, preserved invariants, acceptance evidence, and
+   the condition that stops at another owner or behavior decision.
+
+`Sole owner`, `shared lifecycle`, `migrate consumers`, and `retire legacy`
+describe authority or eventual direction only within that finite universe.
+They do not authorize a ticket to implement downstream callers, unrelated
+algorithms, or catch-all cleanup. A missing field is a plan gap: keep or return
+the issue to `needs-info` instead of filling the gap during implementation.
+
+The PR carries a compact scope-transfer receipt: execution base, semantic
+owner, finite production universe, and either `none` plus a rationale for scope
+delta or a link to the superseding issue refreeze. Every production diff must
+fit that receipt. When implementation or review discovers a change to outcome,
+scope, ownership, product behavior, material cost, or acceptance, stop the diff
+and refreeze the issue before delivering it. A finding outside the finite
+universe routes to the issue that owns its reachable actor; passing review is
+not authority to absorb it.
+
+Before changing code for a review finding, attribute the failure against the
+frozen issue and current diff. Fix it in the current PR only when it violates a
+named acceptance/invariant inside the finite universe, or when the current diff
+introduces a reachable observable loss there. Route a reachable pre-existing
+gap outside that contract to its owning issue. Return a request for a new owner,
+public behavior, product choice, or acceptance rule to issue refreeze. Reject a
+finding that cannot name a reachable actor, input, decision, and observable
+loss. Use the earliest evidence-backed divergence from the frozen contract or
+base diff; do not treat the review comment itself as design authority.
+
+Review closeout is complete when every finding that belongs to this PR is fixed
+and verified on the reviewed head, while every other finding has an explicit
+route, refreeze, or evidence-based rejection. Record those dispositions in the
+existing PR review/receipt surface when they affect merge readiness; do not add
+a second finding ledger or keep expanding the diff until all adjacent gaps are
+gone.
+
+Delivery is complete only when the intended outcome is observable through the
+named production entry and current consumers, every in-scope acceptance item is
+closed, required verification and review bind the delivered head, and no
+remaining step is required to make the diff usable within its declared scope.
+Code presence, tests passing, scaffolding, or an intermediate PR are not a
+completion claim. If a required item remains, keep the issue open and describe
+the PR as intermediate; if completing it would cross the frozen boundary,
+refreeze or hand it off instead of silently redefining done.
+
+The implementation Issue template and PR template are projections of this
+section. Blank or programmatically created issues remain supported for maps,
+research, and exceptional shapes, but implementation issues must still carry
+the same fields. Template changes that weaken, rename, or add issue-to-PR scope
+fields update this owner, both projections where applicable, the PR-body
+validator, and focused tests in one coherent change.
 
 ### Issue, PR, And Repository Authority
 
@@ -161,8 +229,9 @@ issue may still need more than one PR. Do not split one coherent behavior
 mechanically into model, serializer, tests, and docs PRs. A parent issue retains
 the overall outcome, global constraints, and final acceptance; each child issue
 owns one bounded slice and names its parent and real blockers. Wayfinding
-map/child mechanics remain owned by `docs/agents/issue-tracker.md`, while
-stacked delivery and final issue closure remain owned below.
+map/child mechanics remain owned by `docs/agent/issue-tracker.md`; stacked
+delivery uses `xic-pr-stack-repair`, and final issue closure is owned by
+`docs/agent/communication-review.md#issue-closure-ownership`.
 
 At merge closeout, ask whether the change creates or changes a durable claim,
 or reveals that the canonical owner does not yet express it, for product
@@ -176,178 +245,16 @@ formal docs. If no durable claim changed or is missing, no documentation churn
 is required. Content placement and historical-note absorption remain owned by
 `docs/agent/obsidian-handoff-contract.md#source-of-truth-promotion-rule`.
 
-## Productization Work Cycle
+## Goal Contract XIC Delta
 
-Productization planning limits active work instead of turning every diagnostic
-idea into a lane. Per maintenance cycle, keep at most one primary productization
-lane, one supporting-infrastructure lane, and one diagnostic-only lane. Starting
-another requires closing one as promoted, parked with an explicit reopening
-condition, externalized/killed, or abandoned with a reason.
+Use the global `goal-execution` workflow for goal triggers, shape, execution,
+handoff, and closeout. An XIC goal adds only project-specific bindings:
 
-Before work starts, record the lane key, current structured state, intended
-state for this change, capability owner, affected public surface, expected
-behavior diff and required non-changes, evidence tier, stop/rollback rule, and
-downstream consumer. If product values or identity may change and no
-expected-diff plan exists, stop the intake.
-
-At maintenance and closeout:
-
-- verify current state only against the structured status index and authority
-  manifest, not a branch diary or compatibility index;
-- confirm new diagnostics, reports, and sidecars have a promote, kill,
-  externalize, or missing-evidence exit rule;
-- check schema/version, CLI/config/GUI documentation, downstream handoff,
-  expected diff, replay/provenance, and reviewer/audit records where relevant;
-- name the validation evidence actually used and do not equate tests passing
-  with production readiness;
-- remove stale ownerless plans and conflicting narrative state instead of
-  appending another board;
-- resolve only the active branch's handoff when one exists, and fold normal
-  durable closeout into the PR body.
-
-Periodically count active lanes. If the WIP limit is exceeded, freeze new work,
-select one lane to advance, and select one to park, kill, archive, or
-externalize. Review aging diagnostic artifacts and ownerless public docs before
-adding new ones.
-
-## Stacked PR And Ledger Ownership
-
-Stacked PRs are allowed only when each PR has one owner surface and can pass CI
-from a clean checkout of its base. Before opening, retargeting, or repairing a
-stacked PR series, write or inspect a stack map that lists:
-
-- base and head branch for every PR;
-- repeated files across PRs, especially global ledgers such as productization
-  status indexes, authority manifests, schemas, active handoffs, and artifact
-  inventories;
-- tracked fixtures versus externalized local artifacts;
-- which PR owns schema/product behavior, which PR owns artifact hygiene, and
-  which PR owns final rollup ledger updates;
-- whether default CI requires ignored `output/`, `.worktrees/`, or
-  `local_validation_artifacts/` bytes.
-
-If two or more PRs mutate the same global ledger or handoff, do not keep
-repairing each PR independently. Split out a prerequisite boundary PR or a final
-rollup PR so intermediate PRs carry scope-local manifests rather than a
-different snapshot of the whole productization world.
-
-Never use a later cleanup PR as an implicit prerequisite for an earlier PR's CI.
-If a PR externalizes bulky outputs, the same PR must also remove default CI
-requirements for those ignored local bytes. Local rendered review assets may be
-validated by explicit opt-in flags such as `--require-rendered-local`, but the
-default check must validate only tracked contract artifacts: schemas, summaries,
-minimal fixtures, paths, row counts, and hashes.
-
-### Issue Closure Ownership
-
-Issue linkage is part of delivery ownership, not a second progress ledger. A PR
-that completes its issue and targets the repository's default branch uses a
-GitHub closing keyword. When several PRs deliver one issue, only the completing
-PR uses that keyword; in a stack this is normally the final rollup PR already
-responsible for shared-ledger reconciliation. If the completing PR targets a
-non-default branch, use `Refs #N` there. The later PR that integrates the work
-into the default branch owns the closing keyword; if no such PR remains, verify
-default-branch integration and use the evidence-backed manual closure path below.
-
-Intermediate and non-default-branch PRs use `Refs #N` only. They must not place
-any supported closing-keyword form (`close`, `closes`, `closed`, `fix`, `fixes`,
-`fixed`, `resolve`, `resolves`, or `resolved`) immediately before the issue
-number, including uppercase or colon variants and negated sentences, because
-GitHub may still classify that text as a closing reference.
-
-If historical work has no remaining completing PR, reconcile the issue against
-the merged-PR census and canonical evidence, add one evidence comment, and close
-it manually. Stop instead when completion cannot be verified. Open/closed plus
-that evidence chain is the default lifecycle; do not mirror programme progress
-vocabularies as labels. Use native `blocked_by` only for a real open prerequisite,
-not parent/child membership, optional sequencing, or intentional deferral.
-
-## Goal Contract Shape
-
-Use goals for phase-sized, cross-turn, RAW/data-backed, PR-ready, CI/release-like,
-or repeatedly drifting work. Do not use a runtime goal for tiny bug fixes, simple
-status checks, or one-command validations with an obvious done state.
-
-A useful goal is one measurable objective plus enough context to prevent drift.
-It should include:
-
-```markdown
-Objective:
-Context:
-Constraints:
-In scope:
-Out of scope:
-Current surfaces/artifacts:
-Plan:
-Verification:
-Boundaries:
-Iteration policy:
-Done when:
-Pause if:
-Stop rules:
-Handoff:
-```
-
-Keep `Objective` singular. If two outcomes need different verification gates,
-split them into separate goals or state which one is primary. `Done when` must
-be auditable from files, commands, PR state, or validation artifacts. `Stop
-rules` must name conditions that require user decision instead of continued
-blind continuation.
-
-When drafting a goal for a vague request, give the best executable version
-first rather than a blank form. Choose conservative defaults for low-risk
-unknowns and ask only when the answer changes cost, risk, ownership, public
-contracts, or product direction. If the domain is unfamiliar, make discovery of
-repo docs, existing scripts, sample data, or official references part of the
-goal before implementation.
-
-Keep `Done when` for completion evidence and `Pause if` for human/external
-blockers such as credentials, production data, destructive operations,
-permissions, budget, unclear ownership, or product-direction decisions.
-Iteration should be bounded: after the same failure shape repeats twice, require
-a new source of evidence instead of another blind retry.
-
-## Skills And Subagents
-
-- The global Codex Agent Router owns generic agent selection and dispatch.
-  `docs/agent/subagent-routing.md` adds only the XIC lenses, triggers, and
-  evidence boundaries that belong in task packets.
-- Reusable workflows belong in global skills first. Repo-local `.codex/skills/`
-  entries should exist only for XIC-specific checklists that cannot live cleanly
-  in routing docs.
-- Use `xic-architecture-preflight` before implementing or planning non-trivial
-  diagnostics, RAW-backed evidence, preset-performance changes,
-  matrix/activation/value-delta paths, model-selection work, HCD-PI, Delta Mass,
-  CID-NL expansion, or other evidence-provider additions.
-- Use the global code-review workflow for explicit fixed-point review. Repeated
-  hosted findings follow the root review-incident rule: stop instance patches,
-  classify plan/design/implementation/oracle failure, and redesign or delete
-  when the failure universe cannot be bounded.
-
-## Legacy Owner Transformation Policy
-
-- The project direction is explicit transformation: successor modules absorb the
-  useful capability and product invariants of legacy owners, fix the legacy pain
-  points, then retire or reduce the legacy owner to a thin compatibility adapter.
-- When the user explicitly asks to absorb a legacy owner into an existing
-  successor model, do not stop at another shadow/report/spec layer if a bounded
-  ownership-transfer slice can be named.
-- A valid ownership-transfer slice names: current owner, successor owner,
-  public surface, preserved invariant, expected product diff or parity oracle,
-  and the focused tests that prove it.
-- After those are named, prefer implementing one narrow transfer over creating a
-  new broad plan. Review gates should close the decision and then unblock
-  execution; they should not become an indefinite replacement for migration.
-- Tests protect product invariants, not old module shapes. When a successor owns
-  an invariant, migrate the test to the successor surface or delete the
-  legacy-specific test. Keep legacy tests only for public compatibility,
-  explicit rejection/migration behavior, or parity during an active transition.
-- Do not preserve a legacy owner merely because tests exist. First classify what
-  the tests protect: product invariant, compatibility contract, diagnostic
-  evidence, or obsolete implementation detail.
-- Keep public safety rules: if selected peak, selected area, confidence, reason,
-  matrix identity, workbook schema, TSV schema, or config behavior would change,
-  require an expected-diff contract and focused output tests before promotion.
-- `audit_only`, `shadow_only`, and `diagnostic_only` artifacts must still name an
-  exit rule, but for owner-migration work the exit rule should include the
-  smallest next production or adapter transfer, not only the missing evidence.
+- point context at the active semantic, product, validation, and runtime owners
+  plus the current artifacts; do not copy those owners into the goal;
+- name the method-appropriate evidence tier, RAW/runtime cost, and the condition
+  that makes an expensive run decision-bearing;
+- for issue-backed work, preserve the issue or Current Packet as scope authority;
+  a runtime goal cannot refreeze acceptance or absorb another owner;
+- close against this document's delivery completion gate and the applicable XIC
+  validation owner; goal status alone is not completion evidence.

@@ -21,8 +21,10 @@ Locate the narrow artifact roots and record availability, completeness,
 freshness, producing code, config, input, and backend identity. For a pair,
 state the intended isolated change and every unrelated difference found. Search
 `tools/diagnostics/INDEX.md` and `docs/diagnostic-ledger.md` before proposing a
-new measurement path. Read `docs/agent/parameter-settings.md` for RAW/preset
-command and timing owners.
+new measurement path. Read
+`docs/agent/parameter-settings.md#alignment-and-handoff` for the current
+RAW/preset command; add `#85raw-command-contract` only for its launch and timing
+contract.
 
 Completion criterion: one branch is selected; every run has a workload,
 artifact state, timing coverage, and producing state or an explicit `unknown`.

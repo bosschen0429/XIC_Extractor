@@ -1,0 +1,55 @@
+name: Implementation Change
+description: Define a bounded issue-to-PR implementation contract.
+title: "[Implementation] "
+labels:
+  - needs-triage
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and observable loss
+      description: State what should work and the current user, product, scientific, or engineering cost.
+    validations:
+      required: true
+  - type: input
+    id: execution_base
+    attributes:
+      label: Execution base
+      description: Enter the exact 40-character code-evidence commit used for the current census.
+    validations:
+      required: true
+  - type: textarea
+    id: owner_universe
+    attributes:
+      label: Semantic owner and finite production universe
+      description: Name one owner, the reachable production entries/current direct consumers, the census locator or query, and explicit exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: asset_disposition
+    attributes:
+      label: Owner-local asset disposition
+      description: Classify retained, adapted, replaced, and retirement-candidate paths; give current consumers, zero-reference evidence, and adapter removal conditions.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: In scope, non-goals, and downstream handoffs
+      description: Bound this ticket; name later tickets that own reachable future work instead of absorbing them here.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: State the focused falsifier, representative production check, preserved invariants, and expected product diff or parity claim.
+    validations:
+      required: true
+  - type: textarea
+    id: stop_rule
+    attributes:
+      label: Stop and refreeze rule
+      description: Name the ownership, behavior, public-surface, cost, or acceptance change that returns this issue to needs-info before implementation continues.
+    validations:
+      required: true

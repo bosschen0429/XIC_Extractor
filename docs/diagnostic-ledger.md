@@ -57,12 +57,11 @@ dated productization control-plane path is compatibility lookup only.
 | Purpose | Stable path |
 | --- | --- |
 | Accepted 8RAW discovery input (v2) | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` |
-| Accepted 85RAW discovery input | none; no v2 index exists yet. See `docs/agent/parameter-settings.md`. |
+| Accepted 85RAW discovery input | none; no v2 index exists yet. |
 | Retired v1 discovery inputs | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/`; `scripts.run_alignment` rejects them with `discovery_batch_index_v2 owner closure is required` |
 | Targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx`, SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7` |
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
-| RAW-capable Python | `"${env:XIC_REPO_ROOT}\.venv\Scripts\python.exe"` |
 
 ## Known Diagnostic Conclusions
 
@@ -322,6 +321,34 @@ Do not rerun 85RAW just to re-prove super-window acceptance. Rerun only after
 current code changes RAW locality, owner-backfill request grouping,
 super-window batching/cropping, validation-fast settings, output surfaces used
 by the gate, or the cited artifacts become stale or contradictory.
+
+### 2026-06-29 Rejected One-Shot Performance Candidates
+
+Verdict: `rejected` for the measured Owner Backfill scan-index/span variants
+and for wiring Standard Peak `--best-shift-only` into the one-shot matrix-only
+preset. These remain diagnostic or explicit options; they are not accepted
+performance defaults.
+
+Key facts:
+
+- On 8RAW, `ms1-index-hybrid` preserved checked public hashes but slowed
+  `alignment.owner_backfill` from 14.56 s to 64.89 s. The `ms1-index`
+  owner-backfill and owner-build variants both changed public outputs and were
+  also slower than the exact baseline.
+- Super-window span factor 1 preserved public TSV hashes but increased RAW calls
+  from 72 to 17,910 and slowed Owner Backfill to 50.55 s. Factor 3 increased
+  point volume from 9.16M to 15.62M without a useful timing margin over factor
+  2.
+- Standard Peak `--best-shift-only` improved a no-RAW replay from 13.546 s to
+  9.201 s with identical best-shift summaries, but the complete 8RAW target
+  stage did not improve: shift batch moved 18.903 s to 19.123 s and chunk moved
+  26.033 s to 26.742 s.
+
+Do not rerun 85RAW or promote any of these candidates from a microbenchmark.
+Reopen a bounded 8RAW comparison only after the implementation changes RAW
+locality, removes duplicated exact work, changes the complete Standard Peak
+stage cost, or new evidence contradicts these measurements. Any public-output
+change remains an expected-diff product decision, not a performance-only edit.
 
 ### 2026-06-15 Replay Executor Validation
 

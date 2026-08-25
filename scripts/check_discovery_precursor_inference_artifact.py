@@ -120,28 +120,6 @@ def check_discovery_precursor_inference_artifact(
     return problems
 
 
-def write_summary(
-    summary_json: Path,
-    *,
-    candidates_csv: Path,
-    problems: list[str],
-) -> None:
-    payload = {
-        "schema_version": "discovery_precursor_inference_check_v1",
-        "status": "pass" if not problems else "fail",
-        "candidates_csv": _relative_or_absolute(candidates_csv),
-        "candidates_csv_sha256": (
-            _sha256(candidates_csv) if candidates_csv.exists() else ""
-        ),
-        "problems": problems,
-    }
-    summary_json.parent.mkdir(parents=True, exist_ok=True)
-    summary_json.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-
 def _read_rows(
     candidates_csv: Path,
     problems: list[str],
@@ -351,12 +329,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         default=DEFAULT_EXPECTED_ROW_COUNT,
     )
-    parser.add_argument("--summary-json", type=Path)
-    parser.add_argument(
-        "--check-only",
-        action="store_true",
-        help="Accepted for symmetry with other productization checkers.",
-    )
     return parser.parse_args(argv)
 
 
@@ -367,12 +339,6 @@ def main(argv: list[str] | None = None) -> int:
         candidates_csv=candidates_csv,
         expected_row_count=args.expected_row_count,
     )
-    if args.summary_json is not None:
-        write_summary(
-            args.summary_json,
-            candidates_csv=candidates_csv,
-            problems=problems,
-        )
     if problems:
         for problem in problems:
             print(f"discovery_precursor_inference_problem: {problem}")
