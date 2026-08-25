@@ -1,72 +1,53 @@
-"""Finite CID-NL adapter from retained ModeTrack fitting to CrossSample."""
+"""Compose CID-NL direct support into sibling ModeTracks and assignments."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
-    CrossSampleGroupIdentity,
-    CrossSampleGroupMemberSubject,
-    CrossSampleNeighborhoodBudget,
-    CrossSampleSuccessorApplication,
-    build_bounded_connected_neighborhood,
-    classify_cross_sample_initial_neighborhood_edge,
-    validate_cross_sample_group_population,
-    validate_cross_sample_peak_group_identity,
+    construct_cross_sample_peak_group_hypotheses,
 )
-from xic_extractor.alignment.identity_coherence.family_context import FamilyContextRef
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
-    ModeTrackAssignment,
+from xic_extractor.alignment.drift_evidence import (
+    LocalTrajectoryEvidenceLookup,
+    assess_local_trajectory,
+)
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_peak_hypotheses_from_assessment_universe,
+    owner_from_cid_nl_assessment_observation,
+    owner_from_cid_nl_assessment_support,
+)
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignmentBatch,
     ModeTrackModelSet,
     ModeTrackTrajectoryPolicy,
+    assign_mode_tracks,
+    fit_mode_track_model_set,
+    mint_mode_track_candidate_observation,
+    mint_mode_track_support_anchor,
+    validate_mode_track_assignment_batch_for_consumption,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
-    bootstrap_mode_tracks_from_cid_nl_support,
+from xic_extractor.alignment.mode_track.family_context import (
+    FamilyContextRef,
+    mint_family_context_ref,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
+)
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-from .contracts import (
-    AcceptedModeTrackRefinement,
-    ModeTrackEvidenceProfile,
-    ModeTrackRefinementContractError,
-    ModeTrackRefinementProposal,
-    ModeTrackTrajectoryInput,
-    RejectedModeTrackRefinement,
-    apply_accepted_mode_track_refinement,
-    mint_mode_track_trajectory_input,
-    propose_mode_track_successor_partition,
-)
-
-MODE_TRACK_NEIGHBORHOOD_BUDGET = CrossSampleNeighborhoodBudget(
-    max_members=86,
-    max_eligible_edges=3655,
-)
+_FAMILY_CONTEXT_POLICY_VERSION = "cid-nl-method-subject-family-v1"
 
 
-@dataclass(frozen=True, slots=True)
-class ModeTrackRefinementTransaction:
-    trajectory_input: ModeTrackTrajectoryInput
-    proposal: ModeTrackRefinementProposal
-    application: CrossSampleSuccessorApplication | None
+class ModeTrackProducerError(ValueError):
+    """Raised when direct support cannot close one ModeTrack composition."""
 
 
-@dataclass(frozen=True, slots=True)
-class ModeTrackRefinementRun:
-    family_context: FamilyContextRef
-    model_set: ModeTrackModelSet
-    assignment_batches: tuple[ModeTrackAssignmentBatch, ...]
-    transactions: tuple[ModeTrackRefinementTransaction, ...]
-    final_population: tuple[CrossSampleGroupIdentity, ...]
-
-
-def bootstrap_mode_track_refinement_from_cid_nl_support(
+def bootstrap_mode_tracks_from_cid_nl_support(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample_assessments: tuple[
@@ -74,225 +55,198 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
     ],
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
-) -> ModeTrackRefinementRun:
-    family_context, model_set, assignment_batches = (
-        bootstrap_mode_tracks_from_cid_nl_support(
-            processing_owners=processing_owners,
-            sample_assessments=sample_assessments,
-            alignment_config=alignment_config,
-            trajectory_policy=trajectory_policy,
-        )
-    )
-    groups = family_context.mode_tracks
-    predecessors = validate_cross_sample_group_population(
-        tuple(
-            _required_group_identity(group)
-            for group in groups
-        )
-    )
-    owners = tuple(owner for group in groups for owner in group.owners)
-    owner_by_member_id = {
-        _required_owner_member(owner).member_subject_id: owner for owner in owners
-    }
-    classified_edges = tuple(
-        classify_cross_sample_initial_neighborhood_edge(
-            left_owner=owners[left_index],
-            right_owner=owners[right_index],
-            context="complete_link",
-            config=alignment_config,
-        )
-        for left_index in range(len(owners))
-        for right_index in range(left_index + 1, len(owners))
-    )
-    members = tuple(
-        member for predecessor in predecessors for member in predecessor.member_subjects
-    )
-    full_neighborhood = build_bounded_connected_neighborhood(
-        member_subjects=members,
-        edges=classified_edges,
-        budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
-    )
-    predecessor_by_member_id = {
-        member.member_subject_id: predecessor
-        for predecessor in predecessors
-        for member in predecessor.member_subjects
-    }
-    injection_order = _injection_order(assignment_batches)
-    anchor_owner_ids = {
-        anchor.peak_hypothesis_id
-        for track in model_set.tracks
-        for anchor in track.anchors
-    }
-    assignment_by_owner_id = _assignment_by_owner_id(assignment_batches)
-    if set(assignment_by_owner_id) != {
-        owner.owner_id for owner in owners
-    }:
-        raise ModeTrackRefinementContractError(
-            "ModeTrack assignments do not close the owner population"
-        )
-    evidence_profile = ModeTrackEvidenceProfile(
-        trajectory_policy_version=trajectory_policy.trajectory_policy_version,
-        band_policy_version=trajectory_policy.band_policy_version,
-        prediction_half_width_min=trajectory_policy.prediction_half_width_min,
-        max_interpolation_gap=trajectory_policy.max_interpolation_gap,
-        max_extrapolation_gap=trajectory_policy.max_extrapolation_gap,
-    )
+) -> tuple[
+    FamilyContextRef,
+    ModeTrackModelSet,
+    tuple[ModeTrackAssignmentBatch, ...],
+]:
+    """Run the existing M3/M8 owners for one bounded CID-NL support universe."""
 
-    population = predecessors
-    transactions = []
-    for component in full_neighborhood.connected_components:
-        component_ids = frozenset(component)
-        component_predecessors = tuple(
-            sorted(
-                {predecessor_by_member_id[member_id] for member_id in component_ids},
-                key=lambda group: group.group_hypothesis_id,
-            )
+    if not sample_assessments:
+        raise ModeTrackProducerError("sample_assessments must not be empty")
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise ModeTrackProducerError("processing_owners must be owner-validated")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise ModeTrackProducerError("alignment_config must be explicit and typed")
+    if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
+        raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
+
+    sample_ids = tuple(
+        sample.identity.sample_identity_id for sample, _ in sample_assessments
+    )
+    if len(sample_ids) != len(set(sample_ids)):
+        raise ModeTrackProducerError("each sample may contribute one assessment")
+    method_subject_ids = {
+        assessment.content.method_subject.method_subject_id
+        for _, assessment in sample_assessments
+    }
+    if len(method_subject_ids) != 1:
+        raise ModeTrackProducerError(
+            "all assessments must share one exact CID-NL method subject"
         )
-        if any(
-            not {
-                member.member_subject_id for member in group.member_subjects
-            }.issubset(component_ids)
-            for group in component_predecessors
-        ):
-            raise ModeTrackRefinementContractError(
-                "one predecessor spans disconnected eligible components"
-            )
-        component_owners = tuple(
-            owner_by_member_id[member_id] for member_id in sorted(component_ids)
+
+    hypotheses_by_sample: dict[str, tuple[PeakHypothesis, ...]] = {}
+    assessment_by_sample: dict[str, CidNlMethodAssessmentRef] = {}
+    sample_by_id: dict[str, ResolvedCanonicalSampleIdentity] = {}
+    owners: list[SampleLocalMS1Owner] = []
+    for sample, assessment in sample_assessments:
+        sample_id = sample.identity.sample_identity_id
+        hypotheses = compose_peak_hypotheses_from_assessment_universe(
+            processing_owners=processing_owners,
+            sample=sample,
+            assessment=assessment,
         )
-        component_edges = tuple(
-            edge
-            for edge in classified_edges
-            if edge.left_member_subject_id in component_ids
-            and edge.right_member_subject_id in component_ids
+        hypotheses_by_sample[sample_id] = hypotheses
+        assessment_by_sample[sample_id] = assessment
+        sample_by_id[sample_id] = sample
+        for hypothesis in hypotheses:
+            if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
+                owners.append(
+                    owner_from_cid_nl_assessment_support(
+                        sample=sample,
+                        assessment=assessment,
+                        hypothesis=hypothesis,
+                    )
+                )
+            else:
+                owners.append(
+                    owner_from_cid_nl_assessment_observation(
+                        processing_owners=processing_owners,
+                        sample=sample,
+                        assessment=assessment,
+                        hypothesis=hypothesis,
+                    )
+                )
+
+    if not owners:
+        raise ModeTrackProducerError(
+            "bootstrap assessments must retain at least one physical hypothesis"
         )
-        trajectory_input = mint_mode_track_trajectory_input(
-            predecessors=component_predecessors,
-            owners=component_owners,
-            classified_edges=component_edges,
-            anchor_owner_ids=tuple(
-                owner.owner_id
-                for owner in component_owners
-                if owner.owner_id in anchor_owner_ids
-            ),
-            injection_order={
-                owner.sample_stem: injection_order[owner.sample_stem]
-                for owner in component_owners
-            },
-            evidence_profile=evidence_profile,
-            budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+    provisional_groups = construct_cross_sample_peak_group_hypotheses(
+        tuple(owners),
+        config=alignment_config,
+    )
+    if not provisional_groups or any(track.review_only for track in provisional_groups):
+        raise ModeTrackProducerError(
+            "direct support did not produce consumable cross-sample groups"
         )
-        rejected_reasons = tuple(
+    provisional_group_ids = {
+        owner_id: track.group_hypothesis_id
+        for track in provisional_groups
+        for owner_id in track.owner_ids
+    }
+    hypothesis_ids = {
+        hypothesis.hypothesis_id
+        for hypotheses in hypotheses_by_sample.values()
+        for hypothesis in hypotheses
+    }
+    if set(provisional_group_ids) != hypothesis_ids:
+        raise ModeTrackProducerError(
+            "every physical PeakHypothesis must own exactly one provisional group"
+        )
+
+    direct_group_ids = {
+        provisional_group_ids[hypothesis.hypothesis_id]
+        for hypotheses in hypotheses_by_sample.values()
+        for hypothesis in hypotheses
+        if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+    }
+    if not direct_group_ids:
+        raise ModeTrackProducerError(
+            "no provisional group has a direct CID-NL trajectory anchor"
+        )
+    tracks = provisional_groups
+    hypotheses = tuple(
+        hypothesis
+        for sample_id in sorted(hypotheses_by_sample)
+        for hypothesis in hypotheses_by_sample[sample_id]
+    )
+    method_subject = sample_assessments[0][1].content.method_subject
+    mz_delta = (
+        method_subject.precursor_mz
+        * method_subject.precursor_tolerance_ppm
+        / 1_000_000.0
+    )
+    family_context = mint_family_context_ref(
+        mz_interval=(
+            method_subject.precursor_mz - mz_delta,
+            method_subject.precursor_mz + mz_delta,
+        ),
+        rt_interval=(
+            min(hypothesis.integration.rt_left_min for hypothesis in hypotheses),
+            max(hypothesis.integration.rt_right_min for hypothesis in hypotheses),
+        ),
+        context_policy_version=_FAMILY_CONTEXT_POLICY_VERSION,
+        source_lineage_refs=tuple(
             sorted(
                 {
-                    f"assignment_{assignment_by_owner_id[owner.owner_id].state}"
-                    for owner in component_owners
-                    if assignment_by_owner_id[owner.owner_id].state
-                    != "uniquely_assigned"
+                    *(hypothesis.hypothesis_id for hypothesis in hypotheses),
+                    *(
+                        assessment.artifact.content_identity.artifact_content_id
+                        for _, assessment in sample_assessments
+                    ),
                 }
             )
+        ),
+        mode_tracks=tracks,
+    )
+    track_by_id = {track.group_hypothesis_id: track for track in tracks}
+    anchors = tuple(
+        mint_mode_track_support_anchor(
+            processing_owners=processing_owners,
+            track=track_by_id[provisional_group_ids[hypothesis.hypothesis_id]],
+            sample=sample_by_id[sample_id],
+            direct_support_assessment=assessment_by_sample[sample_id],
+            peak_hypothesis=hypothesis,
         )
-        if rejected_reasons:
-            proposal: ModeTrackRefinementProposal = RejectedModeTrackRefinement(
-                variant="rejected_refinement",
-                trajectory_input_id=trajectory_input.trajectory_input_id,
-                reason_codes=rejected_reasons,
-            )
-        else:
-            successor_members_by_group: dict[str, list[str]] = {}
-            for owner in component_owners:
-                assignment = assignment_by_owner_id[owner.owner_id]
-                if assignment.group_hypothesis_id is None:
-                    raise ModeTrackRefinementContractError(
-                        "unique assignment omitted its target group"
-                    )
-                successor_members_by_group.setdefault(
-                    assignment.group_hypothesis_id,
-                    [],
-                ).append(_required_owner_member(owner).member_subject_id)
-            proposal = propose_mode_track_successor_partition(
-                trajectory_input=trajectory_input,
-                successor_member_subject_ids=tuple(
-                    tuple(member_ids)
-                    for _, member_ids in sorted(successor_members_by_group.items())
-                ),
-            )
-        application = None
-        if type(proposal) is AcceptedModeTrackRefinement:
-            application = apply_accepted_mode_track_refinement(
-                trajectory_input=trajectory_input,
-                proposal=proposal,
-                population=population,
-            )
-            unaffected = tuple(
-                group for group in population if group not in application.predecessors
-            )
-            population = validate_cross_sample_group_population(
-                (*unaffected, *application.successors)
-            )
-        transactions.append(
-            ModeTrackRefinementTransaction(
-                trajectory_input=trajectory_input,
-                proposal=proposal,
-                application=application,
-            )
-        )
-    return ModeTrackRefinementRun(
+        for sample_id in sorted(hypotheses_by_sample)
+        for hypothesis in hypotheses_by_sample[sample_id]
+        if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+    )
+    model_set = fit_mode_track_model_set(
+        processing_owners=processing_owners,
         family_context=family_context,
-        model_set=model_set,
-        assignment_batches=assignment_batches,
-        transactions=tuple(transactions),
-        final_population=population,
+        direct_support_anchors=anchors,
+        policy=trajectory_policy,
     )
 
-
-def _required_group_identity(group) -> CrossSampleGroupIdentity:
-    identity = validate_cross_sample_peak_group_identity(group, require_canonical=True)
-    if identity is None:
-        raise ModeTrackRefinementContractError(
-            "ModeTrack group is missing canonical CrossSample identity"
+    batches = []
+    for sample_id in sorted(hypotheses_by_sample):
+        sample = sample_by_id[sample_id]
+        assessment = assessment_by_sample[sample_id]
+        candidates = tuple(
+            mint_mode_track_candidate_observation(
+                processing_owners=processing_owners,
+                sample=sample,
+                peak_hypothesis=hypothesis,
+                direct_support_assessment=(
+                    assessment
+                    if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+                    else None
+                ),
+            )
+            for hypothesis in hypotheses_by_sample[sample_id]
         )
-    return identity
-
-
-def _injection_order(
-    batches: tuple[ModeTrackAssignmentBatch, ...],
-) -> dict[str, int]:
-    result: dict[str, int] = {}
-    for batch in batches:
-        for assignment in batch.assignments:
-            sample_stem = assignment.sample.metadata.raw_stem
-            prior = result.setdefault(sample_stem, assignment.injection_order)
-            if prior != assignment.injection_order:
-                raise ModeTrackRefinementContractError(
-                    "ModeTrack assignments crossed injection order"
-                )
-    return result
-
-
-def _assignment_by_owner_id(
-    batches: tuple[ModeTrackAssignmentBatch, ...],
-) -> dict[str, ModeTrackAssignment]:
-    result: dict[str, ModeTrackAssignment] = {}
-    for batch in batches:
-        for assignment in batch.assignments:
-            owner_id = assignment.peak_hypothesis_id
-            if owner_id is None:
-                continue
-            if owner_id in result:
-                raise ModeTrackRefinementContractError(
-                    "ModeTrack emitted duplicate owner assignments"
-                )
-            result[owner_id] = assignment
-    return result
-
-
-def _required_owner_member(
-    owner: SampleLocalMS1Owner,
-) -> CrossSampleGroupMemberSubject:
-    member = owner.cross_sample_member_subject
-    if member is None:
-        raise ModeTrackRefinementContractError(
-            "ModeTrack owner is missing its canonical member"
+        batch = assign_mode_tracks(
+            processing_owners=processing_owners,
+            sample=sample,
+            model_set=model_set,
+            candidates=candidates,
+            trajectory_assessment=assess_local_trajectory(
+                LocalTrajectoryEvidenceLookup(points=()),
+                (sample.metadata.raw_stem,),
+            ),
         )
-    return member
+        validate_mode_track_assignment_batch_for_consumption(
+            processing_owners=processing_owners,
+            model_set=model_set,
+            assignment_batch=batch,
+        )
+        batches.append(batch)
+    return family_context, model_set, tuple(batches)
+
+
+__all__ = [
+    "ModeTrackProducerError",
+    "bootstrap_mode_tracks_from_cid_nl_support",
+]

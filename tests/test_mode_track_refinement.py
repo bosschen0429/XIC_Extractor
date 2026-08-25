@@ -41,7 +41,7 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
     kwargs = {
         "predecessors": predecessors,
         "classified_edges": edges,
-        "anchor_owner_ids": tuple(owner.owner_id for owner in owners),
+        "anchor_ids": tuple(f"anchor:{owner.owner_id}" for owner in owners),
         "injection_order": {"sample-a": 1, "sample-b": 2},
         "evidence_profile": ModeTrackEvidenceProfile(
             trajectory_policy_version="anchor-trajectory-v1",
@@ -69,8 +69,31 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
         ),
         **kwargs,
     )
+    context_changed = mint_mode_track_trajectory_input(
+        owners=owners,
+        **{
+            **kwargs,
+            "classified_edges": (
+                classify_cross_sample_initial_neighborhood_edge(
+                    left_owner=owners[0],
+                    right_owner=owners[1],
+                    context="complete_link",
+                    config=AlignmentConfig(),
+                ),
+            ),
+        },
+    )
+    anchor_changed = mint_mode_track_trajectory_input(
+        owners=owners,
+        **{
+            **kwargs,
+            "anchor_ids": ("anchor:replacement",),
+        },
+    )
 
     assert value_changed.trajectory_input_id == original.trajectory_input_id
+    assert context_changed.trajectory_input_id == original.trajectory_input_id
+    assert anchor_changed.trajectory_input_id != original.trajectory_input_id
     with pytest.raises(ModeTrackRefinementContractError, match="identity mismatch"):
         replace(original, trajectory_input_id="trajectory:forged")
 
@@ -110,7 +133,7 @@ def test_accepted_proposal_bound_to_another_snapshot_fails_closed() -> None:
         "predecessors": predecessors,
         "owners": owners,
         "classified_edges": (edge,),
-        "anchor_owner_ids": tuple(owner.owner_id for owner in owners),
+        "anchor_ids": tuple(f"anchor:{owner.owner_id}" for owner in owners),
         "injection_order": {"sample-a": 1, "sample-b": 2},
         "budget": CrossSampleNeighborhoodBudget(
             max_members=86,
@@ -212,18 +235,19 @@ def test_oversized_neighborhood_is_unassessable_without_subset_processing() -> N
     )
     edges = tuple(
         classify_cross_sample_initial_neighborhood_edge(
-            left_owner=owners[index],
-            right_owner=owners[index + 1],
+            left_owner=owners[left_index],
+            right_owner=owners[right_index],
             context="hard_gate",
             config=AlignmentConfig(),
         )
-        for index in range(2)
+        for left_index in range(len(owners))
+        for right_index in range(left_index + 1, len(owners))
     )
     trajectory_input = mint_mode_track_trajectory_input(
         predecessors=predecessors,
         owners=owners,
         classified_edges=edges,
-        anchor_owner_ids=tuple(owner.owner_id for owner in owners),
+        anchor_ids=tuple(f"anchor:{owner.owner_id}" for owner in owners),
         injection_order={f"sample-{index}": index + 1 for index in range(3)},
         evidence_profile=ModeTrackEvidenceProfile(
             "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
@@ -300,6 +324,15 @@ def test_cid_nl_bootstrap_applies_accepted_components_through_cross_sample(
         type(transaction.proposal) is InsufficientModeTrackTraining
         for transaction in result.transactions
     )
+    assert {
+        anchor_id
+        for transaction in result.transactions
+        for anchor_id in transaction.trajectory_input.anchor_ids
+    } == {
+        anchor.anchor_id
+        for track in result.model_set.tracks
+        for anchor in track.anchors
+    }
 
 
 def test_successor_partition_is_complete_and_order_independent() -> None:
@@ -338,7 +371,7 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
                 config=AlignmentConfig(),
             ),
         ),
-        anchor_owner_ids=tuple(owner.owner_id for owner in owners),
+        anchor_ids=tuple(f"anchor:{owner.owner_id}" for owner in owners),
         injection_order={"sample-a": 1, "sample-b": 2},
         evidence_profile=ModeTrackEvidenceProfile(
             "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
@@ -368,4 +401,77 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
         propose_mode_track_successor_partition(
             trajectory_input=trajectory_input,
             successor_member_subject_ids=((member_ids[0],),),
+        )
+
+
+def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        CrossSampleNeighborhoodBudget,
+        classify_cross_sample_initial_neighborhood_edge,
+        mint_cross_sample_group_identity,
+    )
+    from xic_extractor.alignment.mode_track import (
+        ModeTrackEvidenceProfile,
+        apply_accepted_mode_track_refinement,
+        mint_mode_track_trajectory_input,
+        propose_mode_track_successor_partition,
+    )
+
+    owners = (
+        _owner("sample-a", "000001", apex_rt=8.5),
+        _owner("sample-b", "000001", apex_rt=10.5),
+        _owner("sample-c", "000001", apex_rt=12.5),
+    )
+    config = AlignmentConfig(preferred_rt_sec=150.0)
+    members = tuple(owner.cross_sample_member_subject for owner in owners)
+    predecessors = tuple(
+        mint_cross_sample_group_identity(
+            processing_request_id=member.processing_request_id,
+            member_subjects=(member,),
+        )
+        for member in members
+    )
+    edges = tuple(
+        classify_cross_sample_initial_neighborhood_edge(
+            left_owner=owners[left_index],
+            right_owner=owners[right_index],
+            context="complete_link",
+            config=config,
+        )
+        for left_index in range(len(owners))
+        for right_index in range(left_index + 1, len(owners))
+    )
+    assert [edge.disposition for edge in edges] == [
+        "eligible",
+        "review_only",
+        "eligible",
+    ]
+    trajectory_input = mint_mode_track_trajectory_input(
+        predecessors=predecessors,
+        owners=owners,
+        classified_edges=edges,
+        anchor_ids=tuple(f"anchor:{owner.owner_id}" for owner in owners),
+        injection_order={
+            f"sample-{letter}": index + 1
+            for index, letter in enumerate("abc")
+        },
+        evidence_profile=ModeTrackEvidenceProfile(
+            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+        ),
+        budget=CrossSampleNeighborhoodBudget(86, 3655),
+    )
+    member_ids = tuple(member.member_subject_id for member in members)
+    proposal = propose_mode_track_successor_partition(
+        trajectory_input=trajectory_input,
+        successor_member_subject_ids=((member_ids[0], member_ids[2]), (member_ids[1],)),
+    )
+
+    with pytest.raises(CrossSampleContractError, match="reopens an excluded"):
+        apply_accepted_mode_track_refinement(
+            trajectory_input=trajectory_input,
+            proposal=proposal,
+            population=predecessors,
         )

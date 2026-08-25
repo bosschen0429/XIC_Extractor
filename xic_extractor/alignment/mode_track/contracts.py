@@ -66,7 +66,7 @@ class ModeTrackEvidenceProfile:
 class ModeTrackTrajectoryInput:
     trajectory_input_id: str
     processing_request_id: str
-    anchor_member_subject_ids: tuple[str, ...]
+    anchor_ids: tuple[str, ...]
     member_subject_ids: tuple[str, ...]
     member_apexes: tuple[tuple[str, float], ...]
     injection_order: tuple[tuple[str, int], ...]
@@ -77,13 +77,19 @@ class ModeTrackTrajectoryInput:
         compare=False,
         repr=False,
     )
-    eligible_edges: tuple[CrossSampleNeighborhoodEdge, ...] = field(
+    classified_edges: tuple[CrossSampleNeighborhoodEdge, ...] = field(
         compare=False,
         repr=False,
     )
     budget: CrossSampleNeighborhoodBudget = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if tuple(sorted(set(self.anchor_ids))) != self.anchor_ids:
+            raise ModeTrackRefinementContractError(
+                "trajectory anchor IDs must be canonical and unique"
+            )
+        for anchor_id in self.anchor_ids:
+            _required_text(anchor_id, field="anchor_id")
         predecessors = validate_cross_sample_group_population(self.predecessors)
         predecessor_members = tuple(
             member for group in predecessors for member in group.member_subjects
@@ -99,9 +105,18 @@ class ModeTrackTrajectoryInput:
             raise ModeTrackRefinementContractError(
                 "trajectory input rich predecessors do not match its identity"
             )
+        _validate_complete_classification(
+            member_subject_ids=self.member_subject_ids,
+            edges=self.classified_edges,
+        )
+        expected_exclusions = _canonical_exclusions(self.classified_edges)
+        if self.exclusions != expected_exclusions:
+            raise ModeTrackRefinementContractError(
+                "trajectory exclusions do not match its classified edges"
+            )
         neighborhood = build_bounded_connected_neighborhood(
             member_subjects=predecessor_members,
-            edges=self.eligible_edges,
+            edges=self.classified_edges,
             budget=self.budget,
         )
         if neighborhood.status != self.neighborhood_status:
@@ -113,13 +128,12 @@ class ModeTrackTrajectoryInput:
             canonical_identity_basis_bytes(
                 _trajectory_input_payload(
                     processing_request_id=self.processing_request_id,
-                    anchor_member_subject_ids=self.anchor_member_subject_ids,
+                    anchor_ids=self.anchor_ids,
                     member_subject_ids=self.member_subject_ids,
                     member_apexes=self.member_apexes,
                     injection_order=self.injection_order,
                     evidence_profile=self.evidence_profile,
                     exclusions=self.exclusions,
-                    eligible_edges=self.eligible_edges,
                 )
             ),
         )
@@ -209,7 +223,7 @@ def mint_mode_track_trajectory_input(
     predecessors: Sequence[CrossSampleGroupIdentity],
     owners: Sequence[SampleLocalMS1Owner],
     classified_edges: Sequence[CrossSampleNeighborhoodEdge],
-    anchor_owner_ids: Sequence[str],
+    anchor_ids: Sequence[str],
     injection_order: Mapping[str, int],
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
@@ -225,7 +239,7 @@ def mint_mode_track_trajectory_input(
         member for group in predecessor_groups for member in group.member_subjects
     )
     member_by_id = {member.member_subject_id: member for member in members}
-    owner_by_id: dict[str, SampleLocalMS1Owner] = {}
+    owner_ids: set[str] = set()
     owner_by_member: dict[str, SampleLocalMS1Owner] = {}
     for owner in owners:
         if not isinstance(owner, SampleLocalMS1Owner):
@@ -239,28 +253,20 @@ def mint_mode_track_trajectory_input(
             raise ModeTrackRefinementContractError(
                 "trajectory owner crossed its canonical member"
             )
-        if owner.owner_id in owner_by_id or member.member_subject_id in owner_by_member:
+        if owner.owner_id in owner_ids or member.member_subject_id in owner_by_member:
             raise ModeTrackRefinementContractError("trajectory owner is duplicated")
-        owner_by_id[owner.owner_id] = owner
+        owner_ids.add(owner.owner_id)
         owner_by_member[member.member_subject_id] = owner
     if set(owner_by_member) != set(member_by_id):
         raise ModeTrackRefinementContractError(
             "trajectory owners do not close the predecessor population"
         )
 
-    canonical_anchor_owner_ids = tuple(sorted(anchor_owner_ids))
-    if len(set(canonical_anchor_owner_ids)) != len(canonical_anchor_owner_ids) or any(
-        owner_id not in owner_by_id for owner_id in canonical_anchor_owner_ids
-    ):
-        raise ModeTrackRefinementContractError(
-            "trajectory anchors are not exact owners"
-        )
-    anchor_member_subject_ids = tuple(
-        sorted(
-            _required_owner_member(owner_by_id[owner_id]).member_subject_id
-            for owner_id in canonical_anchor_owner_ids
-        )
-    )
+    canonical_anchor_ids = tuple(sorted(anchor_ids))
+    if len(set(canonical_anchor_ids)) != len(canonical_anchor_ids):
+        raise ModeTrackRefinementContractError("trajectory anchors are duplicated")
+    for anchor_id in canonical_anchor_ids:
+        _required_text(anchor_id, field="anchor_id")
     member_subject_ids = tuple(sorted(member_by_id))
     member_apexes = tuple(
         sorted(
@@ -276,31 +282,24 @@ def mint_mode_track_trajectory_input(
         injection_order=injection_order,
     )
     edges = tuple(classified_edges)
+    _validate_complete_classification(
+        member_subject_ids=member_subject_ids,
+        edges=edges,
+    )
     neighborhood = build_bounded_connected_neighborhood(
         member_subjects=members,
         edges=edges,
         budget=budget,
     )
-    exclusions = tuple(
-        sorted(
-            (
-                min(edge.left_member_subject_id, edge.right_member_subject_id),
-                max(edge.left_member_subject_id, edge.right_member_subject_id),
-                edge.disposition,
-            )
-            for edge in edges
-            if edge.disposition != "eligible"
-        )
-    )
+    exclusions = _canonical_exclusions(edges)
     payload = _trajectory_input_payload(
         processing_request_id=processing_request_id,
-        anchor_member_subject_ids=anchor_member_subject_ids,
+        anchor_ids=canonical_anchor_ids,
         member_subject_ids=member_subject_ids,
         member_apexes=member_apexes,
         injection_order=canonical_injection_order,
         evidence_profile=evidence_profile,
         exclusions=exclusions,
-        eligible_edges=neighborhood.eligible_edges,
     )
     trajectory_input_id = typed_identity_digest(
         _TRAJECTORY_INPUT_PREFIX,
@@ -309,7 +308,7 @@ def mint_mode_track_trajectory_input(
     return ModeTrackTrajectoryInput(
         trajectory_input_id=trajectory_input_id,
         processing_request_id=processing_request_id,
-        anchor_member_subject_ids=anchor_member_subject_ids,
+        anchor_ids=canonical_anchor_ids,
         member_subject_ids=member_subject_ids,
         member_apexes=member_apexes,
         injection_order=canonical_injection_order,
@@ -317,7 +316,7 @@ def mint_mode_track_trajectory_input(
         exclusions=exclusions,
         neighborhood_status=neighborhood.status,
         predecessors=predecessor_groups,
-        eligible_edges=neighborhood.eligible_edges,
+        classified_edges=edges,
         budget=budget,
     )
 
@@ -335,7 +334,7 @@ def propose_mode_track_successor_partition(
             trajectory_input_id=trajectory_input.trajectory_input_id,
             reason="neighborhood_too_large",
         )
-    if not trajectory_input.anchor_member_subject_ids:
+    if not trajectory_input.anchor_ids:
         return InsufficientModeTrackTraining(
             variant="insufficient_training",
             trajectory_input_id=trajectory_input.trajectory_input_id,
@@ -404,7 +403,7 @@ def apply_accepted_mode_track_refinement(
     return apply_coupled_successor_proposal(
         predecessors=trajectory_input.predecessors,
         successor_member_sets=successor_member_sets,
-        edges=trajectory_input.eligible_edges,
+        edges=trajectory_input.classified_edges,
         budget=trajectory_input.budget,
         population=population,
     )
@@ -436,27 +435,17 @@ def _canonical_injection_order(
 def _trajectory_input_payload(
     *,
     processing_request_id: str,
-    anchor_member_subject_ids: tuple[str, ...],
+    anchor_ids: tuple[str, ...],
     member_subject_ids: tuple[str, ...],
     member_apexes: tuple[tuple[str, float], ...],
     injection_order: tuple[tuple[str, int], ...],
     evidence_profile: ModeTrackEvidenceProfile,
     exclusions: tuple[tuple[str, str, str], ...],
-    eligible_edges: tuple[CrossSampleNeighborhoodEdge, ...],
 ) -> dict[str, object]:
-    eligible_edge_pairs = tuple(
-        sorted(
-            (
-                min(edge.left_member_subject_id, edge.right_member_subject_id),
-                max(edge.left_member_subject_id, edge.right_member_subject_id),
-            )
-            for edge in eligible_edges
-        )
-    )
     return {
         "schema_version": "mode_track_trajectory_input_v1",
         "processing_request_id": processing_request_id,
-        "anchors": list(anchor_member_subject_ids),
+        "anchors": list(anchor_ids),
         "members": list(member_subject_ids),
         "apexes": [[member_id, apex] for member_id, apex in member_apexes],
         "injection_order": [
@@ -472,10 +461,49 @@ def _trajectory_input_payload(
             ),
             "max_interpolation_gap": evidence_profile.max_interpolation_gap,
             "max_extrapolation_gap": evidence_profile.max_extrapolation_gap,
-            "eligible_edges": [list(pair) for pair in eligible_edge_pairs],
         },
         "exclusions": [list(item) for item in exclusions],
     }
+
+
+def _validate_complete_classification(
+    *,
+    member_subject_ids: tuple[str, ...],
+    edges: tuple[CrossSampleNeighborhoodEdge, ...],
+) -> None:
+    expected_pairs = {
+        (left_id, right_id)
+        for left_index, left_id in enumerate(member_subject_ids)
+        for right_id in member_subject_ids[left_index + 1 :]
+    }
+    observed_pairs = {
+        tuple(
+            sorted(
+                (edge.left_member_subject_id, edge.right_member_subject_id)
+            )
+        )
+        for edge in edges
+    }
+    if len(observed_pairs) != len(edges) or observed_pairs != expected_pairs:
+        raise ModeTrackRefinementContractError(
+            "trajectory requires one exact classification for every member pair"
+        )
+
+
+def _canonical_exclusions(
+    edges: tuple[CrossSampleNeighborhoodEdge, ...],
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        sorted(
+            (
+                min(edge.left_member_subject_id, edge.right_member_subject_id),
+                max(edge.left_member_subject_id, edge.right_member_subject_id),
+                edge.disposition,
+            )
+            for edge in edges
+            if edge.disposition != "eligible"
+        )
+    )
 
 
 def _required_text(value: object, *, field: str) -> str:

@@ -1,13 +1,12 @@
 """Request-bound, proposal-only ModeTrack owner."""
 
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from .assignment import (
     ModeTrackAssignment,
     ModeTrackAssignmentBatch,
     ModeTrackModelSet,
     ModeTrackTrajectoryPolicy,
     validate_mode_track_assignment_batch_for_consumption,
 )
-
 from .contracts import (
     AcceptedModeTrackRefinement,
     InsufficientModeTrackTraining,
@@ -22,7 +21,7 @@ from .contracts import (
     mint_mode_track_trajectory_input,
     propose_mode_track_successor_partition,
 )
-from .producer import (
+from .refinement import (
     MODE_TRACK_NEIGHBORHOOD_BUDGET,
     ModeTrackRefinementRun,
     ModeTrackRefinementTransaction,

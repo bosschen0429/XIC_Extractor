@@ -16,6 +16,7 @@ import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -1175,6 +1176,23 @@ def apply_coupled_successor_proposal(
     ):
         raise CrossSampleContractError(
             "successor proposal spans disconnected eligible components"
+        )
+    eligible_pairs = {
+        frozenset(
+            (edge.left_member_subject_id, edge.right_member_subject_id)
+        )
+        for edge in neighborhood.eligible_edges
+    }
+    if any(
+        frozenset(
+            (left.member_subject_id, right.member_subject_id)
+        )
+        not in eligible_pairs
+        for member_set in proposed
+        for left, right in combinations(member_set, 2)
+    ):
+        raise CrossSampleContractError(
+            "successor proposal reopens an excluded member edge"
         )
     successors = tuple(
         sorted(

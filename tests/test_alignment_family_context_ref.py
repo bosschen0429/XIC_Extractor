@@ -8,7 +8,7 @@ import pytest
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.identity_coherence.family_context import (
+from xic_extractor.alignment.mode_track.family_context import (
     FamilyContextRef,
     canonical_family_context_ref_bytes,
     mint_family_context_ref,
