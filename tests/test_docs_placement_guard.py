@@ -363,6 +363,21 @@ def test_permanent_root_contract_rejects_missing_landmark_and_non_repo_placement
     assert any("not a repo-trackable placement" in reason for reason in reasons)
 
 
+def test_permanent_root_agent_contract_rejects_context_budget_sprawl() -> None:
+    root = Path(__file__).parents[1]
+    path = "AGENTS.md"
+    text = (root / path).read_text(encoding="utf-8")
+    text += "\n" + " ".join(f"sediment{index}" for index in range(900)) + "\n"
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    reasons = [problem.reason for problem in result.problems]
+    assert any("context word budget" in reason for reason in reasons)
+
+
 def test_governance_index_rejects_mechanism_drift() -> None:
     root = Path(__file__).parents[1]
     path = "docs/agent/codex-operating-system.md"

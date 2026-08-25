@@ -53,6 +53,21 @@ RED。
 
 答不出來就不新增測試。
 
+## Ledger Snapshot Lane
+
+Tests marked `ledger_snapshot` pin recorded values under
+`docs/superpowers/validation/` and are excluded individually from default CI;
+the rest of the same file still runs. Run only this lane with:
+
+```powershell
+.venv\Scripts\python.exe -m tools.testing.test_shards --snapshots
+```
+
+A legitimate re-analysis may turn a snapshot red. Keep rejection paths and
+monkeypatched dependency checks unmarked when their behavior remains a default
+CI contract. `SNAPSHOT_MARKER` in `tools/testing/test_shards.py` owns the exact
+inventory rule and removal condition.
+
 ## 2. File Layout
 
 目前維持 `tests\test_*.py` 扁平結構，因為 repo 已經採用這個模式且 `pyproject.toml` 設定 `testpaths = ["tests"]`。
