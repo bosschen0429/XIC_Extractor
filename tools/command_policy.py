@@ -43,16 +43,20 @@ GIT_GLOBAL_FLAGS = frozenset(
 AMBIGUOUS_GIT_CODE = "ambiguous_git_command"
 AMBIGUOUS_GIT_REASON = (
     "Git-bearing shell syntax is outside the supported command-policy grammar. "
-    "Use one single direct Git command without a compound block, assignment, "
+    "Use one single direct Git command per shell step without a compound block, "
+    "assignment, "
     "path-qualified executable, command expansion, redirection, or unsupported "
-    "global option. If Git text is data, use a supported top-level search/output "
-    "command."
+    "global option. Batch independent read steps as parallel executor calls and "
+    "summarize their outputs before returning them to the model. If Git text is "
+    "data, use a supported top-level search/output command."
 )
 UNSUPPORTED_WRAPPER_CODE = "unsupported_shell_wrapper"
 UNSUPPORTED_WRAPPER_REASON = (
     "Explicit nested shell and command wrappers are outside the repository "
     "command-policy grammar. Run the payload directly; Git operations must be "
-    "one single direct Git command."
+    "one single direct Git command per shell step. Batch independent read steps "
+    "as parallel executor calls and summarize their outputs before returning "
+    "them to the model."
 )
 
 _GIT_REFERENCE = re.compile(

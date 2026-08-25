@@ -54,6 +54,12 @@ Hooks are guardrails, not full enforcement. Keep them deterministic, fast, and
 rarely chatty. If a hook fires too often without changing behavior, remove or
 narrow it.
 
+The direct-Git boundary applies to each inner shell step, not to the number of
+outer tool calls. Batch independent read steps as parallel executor calls
+inside one orchestrator call, reduce their results before returning control,
+and expose only bounded summaries, anomalies, counts, and locators to the main
+context. Shell compound strings do not provide that output boundary.
+
 Global skills are convenience entrypoints, not XIC authority. A conflict routes
 to version-controlled repo owners and hook fixtures; global-skill maintenance is
 a separate environment task.
