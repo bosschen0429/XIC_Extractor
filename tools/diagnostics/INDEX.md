@@ -1,7 +1,7 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Total entry-points:** 110
-**Total files (incl. helpers):** 192 Python files under `tools/diagnostics/`
+**Total entry-points:** 111
+**Total files (incl. helpers):** 193 Python files under `tools/diagnostics/`
 **Count method:** top-level `### *.py` entry headings for entry-points;
 top-level `tools/diagnostics/*.py` files for total files.
 **Governing contracts:** `docs/architecture-contract.md` and
@@ -39,7 +39,7 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
 11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 14 tools
-12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
+12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 5 tools
 
 ---
 
@@ -2218,6 +2218,27 @@ frontmatter, summary, lifecycle, tier, and visibility tag.
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
 **Status note**: Read-only single-page metadata check. It does not edit vault
 pages, promote staged notes, update manifests, or change repo files.
+
+---
+
+### `codegraph_session_baseline.py`
+
+**Purpose**: Build a privacy-bounded, session-level observational baseline of
+actual MCP `codegraph_explore` and shell `codegraph explore` calls, payload
+size, follow-up search/read proxies, context pressure, compaction, active task
+time, retries, stale/wrong-result proxies, and operator corrections from
+existing Codex rollout JSONL. It also emits the frozen controls, complete
+ON/OFF arm definition, separate metric families, and decision rules for a
+future paired comparison.
+**Topic group**: `codegraph_session_baseline.py`
+**Originating task**: 2026-08-25 CodeGraph session-level value and side-effect
+baseline.
+**Status note**: Observational `diagnostic_only` evidence. Task stratification
+and behavior signals are explicit heuristics; historical correctness and
+acceptance remain unscored, and associations are not causal. Output excludes
+raw prompts, tool arguments/results, absolute source paths, and product
+authority. It does not modify CodeGraph MCP configuration, initialize
+instructions, routing rules, indexes, or session files.
 
 ---
 
