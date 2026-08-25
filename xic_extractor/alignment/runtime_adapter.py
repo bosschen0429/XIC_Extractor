@@ -239,6 +239,9 @@ class AlignmentRuntimeApplicationResult:
                     settlement.owner_result_ref.upstream_artifact_ids
                 ),
             )
+        _validate_cross_sample_application_population(
+            self.successful_cross_sample_peak_groups
+        )
         if (
             self.successful_observation_batches
             or self.finalization.supervisor.terminal_outcome
@@ -486,10 +489,24 @@ def canonical_alignment_peak_group_result_bytes(
         raise AlignmentRuntimeAdapterError(
             "groups must be a tuple of CrossSamplePeakGroupHypothesis values"
         )
+    _validated_cross_sample_population(groups)
+    projected_groups = []
+    for group in groups:
+        projection = asdict(group)
+        for field_name in (
+            "processing_request_id",
+                "member_subjects",
+                "identity_basis_bytes",
+                "disposition",
+            ):
+            projection.pop(field_name)
+        for owner in projection["owners"]:
+            owner.pop("cross_sample_member_subject")
+        projected_groups.append(projection)
     return (
         json.dumps(
             {
-                "groups": [asdict(group) for group in groups],
+                "groups": projected_groups,
                 "schema_version": "alignment_peak_group_result_v1",
             },
             ensure_ascii=False,
@@ -499,6 +516,95 @@ def canonical_alignment_peak_group_result_bytes(
         )
         + "\n"
     ).encode("utf-8")
+
+
+def canonical_alignment_peak_group_binding_bytes(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> bytes:
+    """Bind internal CrossSample authority without changing the v1 projection."""
+
+    _validated_cross_sample_population(groups)
+    public_payload = canonical_alignment_peak_group_result_bytes(groups)
+    payload = {
+        "schema_version": "alignment_cross_sample_result_binding_v1",
+        "public_result_sha256": hashlib.sha256(public_payload).hexdigest(),
+        "groups": [
+            {
+                "group_hypothesis_id": group.group_hypothesis_id,
+                "processing_request_id": group.processing_request_id,
+                "identity_basis": group.identity_basis_bytes.decode("utf-8"),
+                "disposition": group.disposition,
+                "members": [
+                    {
+                        "member_subject_id": member.member_subject_id,
+                        "basis": member.basis_bytes.decode("utf-8"),
+                        "physical_observation_ids": list(
+                            member.physical_observation_ids
+                        ),
+                    }
+                    for member in group.member_subjects
+                ],
+            }
+            for group in groups
+        ],
+    }
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _validated_cross_sample_population(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        validate_cross_sample_group_population,
+        validate_cross_sample_peak_group_identity,
+    )
+
+    try:
+        identities = tuple(
+            validate_cross_sample_peak_group_identity(group, require_canonical=True)
+            for group in groups
+        )
+        if any(identity is None for identity in identities):
+            raise CrossSampleContractError(
+                "scientific CrossSample population is missing canonical identity"
+            )
+        validate_cross_sample_group_population(
+            tuple(identity for identity in identities if identity is not None)
+        )
+    except CrossSampleContractError as exc:
+        raise AlignmentRuntimeAdapterError(str(exc)) from exc
+
+
+def _validate_cross_sample_application_population(
+    results: tuple[
+        tuple[str, tuple[CrossSamplePeakGroupHypothesis, ...]],
+        ...,
+    ],
+) -> None:
+    unique: dict[str, CrossSamplePeakGroupHypothesis] = {}
+    for _work_unit_key, groups in results:
+        for group in groups:
+            prior = unique.get(group.group_hypothesis_id)
+            if prior is not None:
+                if canonical_alignment_peak_group_binding_bytes((prior,)) != (
+                    canonical_alignment_peak_group_binding_bytes((group,))
+                ):
+                    raise AlignmentRuntimeAdapterError(
+                        "repeated canonical group has conflicting internal state"
+                    )
+                continue
+            unique[group.group_hypothesis_id] = group
+    _validated_cross_sample_population(tuple(unique.values()))
 
 
 def resolve_alignment_application_peak_group_result(
@@ -515,13 +621,13 @@ def resolve_alignment_application_peak_group_result(
         raise AlignmentRuntimeAdapterError(
             "integrity-failed Alignment runtime cannot resolve scientific results"
         )
-    expected = canonical_alignment_peak_group_result_bytes(groups)
+    expected = canonical_alignment_peak_group_binding_bytes(groups)
     matches = tuple(
         (work_unit_key, observed_groups)
         for work_unit_key, observed_groups in (
             application.successful_cross_sample_peak_groups
         )
-        if canonical_alignment_peak_group_result_bytes(observed_groups) == expected
+        if canonical_alignment_peak_group_binding_bytes(observed_groups) == expected
     )
     if len(matches) != 1:
         raise AlignmentRuntimeAdapterError(
@@ -704,6 +810,11 @@ def _validate_cross_sample_peak_group_binding(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     upstream_artifact_ids: tuple[str, ...],
 ) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        validate_cross_sample_peak_group_identity,
+    )
+
     artifact = settlement.owner_result_ref
     if artifact is None:
         raise AlignmentRuntimeAdapterError(
@@ -713,6 +824,18 @@ def _validate_cross_sample_peak_group_binding(
         raise AlignmentRuntimeAdapterError(
             "cross-sample peak groups require an Alignment-owned result artifact"
         )
+    try:
+        for group in groups:
+            validate_cross_sample_peak_group_identity(group, require_canonical=True)
+            if (
+                group.processing_request_id
+                != artifact.producer_processing_request_id
+            ):
+                raise CrossSampleContractError(
+                    "cross-sample group crossed settlement request"
+                )
+    except CrossSampleContractError as exc:
+        raise AlignmentRuntimeAdapterError(str(exc)) from exc
     if not isinstance(upstream_artifact_ids, tuple) or any(
         not isinstance(artifact_id, str) or not artifact_id
         for artifact_id in upstream_artifact_ids
@@ -724,7 +847,7 @@ def _validate_cross_sample_peak_group_binding(
         raise AlignmentRuntimeAdapterError(
             "Alignment result artifact must close the caller-provided upstream IDs"
         )
-    payload = canonical_alignment_peak_group_result_bytes(groups)
+    payload = canonical_alignment_peak_group_binding_bytes(groups)
     try:
         verify_evidence_artifact_payload(
             artifact,
@@ -750,8 +873,8 @@ def _coalesce_cross_sample_peak_groups(
     if existing is None:
         results[work_unit_key] = groups
         return
-    if canonical_alignment_peak_group_result_bytes(existing) != (
-        canonical_alignment_peak_group_result_bytes(groups)
+    if canonical_alignment_peak_group_binding_bytes(existing) != (
+        canonical_alignment_peak_group_binding_bytes(groups)
     ):
         raise AlignmentRuntimeAdapterError(
             "replayed Alignment cross-sample peak groups conflict with accepted work"
@@ -816,6 +939,7 @@ __all__ = [
     "AlignmentRuntimeApplicationResult",
     "AlignmentRuntimeProcessResult",
     "canonical_alignment_peak_group_result_bytes",
+    "canonical_alignment_peak_group_binding_bytes",
     "execute_alignment_process_runtime",
     "mint_alignment_process_result_artifact",
     "resolve_alignment_application_peak_group_result",

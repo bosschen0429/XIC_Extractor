@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+import math
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
-from dataclasses import replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Protocol
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -38,7 +40,9 @@ from xic_extractor.alignment.early_loser_shadow import (
     compare_early_loser_shadow_with_final_authority,
 )
 from xic_extractor.alignment.edge_scoring import (
+    SUPPORTED_DRIFT_PRIOR_SOURCES,
     DriftLookupProtocol,
+    DriftPriorSource,
     OwnerEdgeEvidence,
 )
 from xic_extractor.alignment.identity_coherence.adapter import (
@@ -83,6 +87,7 @@ from xic_extractor.alignment.owner_clustering import (
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import (
+    AlignmentCrossSampleIdentityContext,
     build_sample_local_owners,
     build_sample_local_owners_from_discovery_bindings,
     discovery_candidate_is_owner_build_eligible,
@@ -149,18 +154,114 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    AcquisitionSourceIdentity,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+)
 from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.sample_metadata import (
+    SampleMetadata,
     is_sample_metadata_source,
     load_sample_metadata,
+    mint_sample_metadata_snapshot,
+    resolve_canonical_sample_identity,
     sample_metadata_to_injection_order,
 )
 
 _RawSourceTimingStats = RawSourceTimingStats
 _TimedRawSource = TimedRawSource
 AlignmentRawHandle = _AlignmentRawHandle
-RawOpener = Callable[[Path, Path], AbstractContextManager[AlignmentRawHandle]]
+
+
+class RawOpener(Protocol):
+    def __call__(
+        self,
+        raw_path: Path,
+        dll_dir: Path,
+        *,
+        expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    ) -> AbstractContextManager[AlignmentRawHandle]: ...
+
+_ALIGNMENT_OWNER_SELECTION_PEAK_CONFIG_FIELDS = (
+    "smooth_window",
+    "smooth_polyorder",
+    "peak_rel_height",
+    "peak_min_prominence_ratio",
+    "resolver_mode",
+    "resolver_chrom_threshold",
+    "resolver_min_search_range_min",
+    "resolver_min_relative_height",
+    "resolver_min_absolute_height",
+    "resolver_min_ratio_top_edge",
+    "resolver_peak_duration_min",
+    "resolver_peak_duration_max",
+    "resolver_min_scans",
+)
+
+_ALIGNMENT_OWNER_CANDIDATE_INPUT_FIELDS = (
+    "candidate_id",
+    "sample_stem",
+    "best_ms2_scan_id",
+    "neutral_loss_tag",
+    "precursor_mz",
+    "product_mz",
+    "observed_neutral_loss_da",
+    "best_seed_rt",
+    "evidence_score",
+    "seed_event_count",
+    "ms1_apex_rt",
+    "ms1_peak_rt_start",
+    "ms1_peak_rt_end",
+    "ms1_search_rt_min",
+    "ms1_search_rt_max",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _BoundAlignmentDriftLookup:
+    source: DriftPriorSource
+    sample_deltas: Mapping[str, float | None]
+    injection_orders: Mapping[str, int | None]
+    istd_identity_anchor: TargetedIstdIdentityAnchor | None
+
+    def __post_init__(self) -> None:
+        if self.source not in SUPPORTED_DRIFT_PRIOR_SOURCES:
+            raise ValueError("drift prior source is not supported")
+        if (
+            self.istd_identity_anchor is not None
+            and type(self.istd_identity_anchor) is not TargetedIstdIdentityAnchor
+        ):
+            raise TypeError("drift prior anchor must be owner-minted")
+        deltas: dict[str, float | None] = {}
+        for sample_stem, value in self.sample_deltas.items():
+            if value is None:
+                deltas[sample_stem] = None
+            elif isinstance(value, bool) or not isinstance(value, int | float):
+                raise ValueError("drift prior delta must be finite numeric or None")
+            elif not math.isfinite(float(value)):
+                raise ValueError("drift prior delta must be finite numeric or None")
+            else:
+                deltas[sample_stem] = float(value)
+        orders: dict[str, int | None] = {}
+        for sample_stem, value in self.injection_orders.items():
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 1
+            ):
+                raise ValueError(
+                    "drift prior injection order must be positive or None"
+                )
+            orders[sample_stem] = value
+        object.__setattr__(self, "sample_deltas", MappingProxyType(deltas))
+        object.__setattr__(self, "injection_orders", MappingProxyType(orders))
+
+    def sample_delta_min(self, sample_stem: str) -> float | None:
+        return self.sample_deltas.get(sample_stem)
+
+    def injection_order(self, sample_stem: str) -> int | None:
+        return self.injection_orders.get(sample_stem)
 
 
 def _typed_targeted_istd_anchor(
@@ -174,11 +275,11 @@ def _typed_targeted_istd_anchor(
     """
 
     candidate = getattr(drift_lookup, "istd_identity_anchor", None)
-    return (
-        candidate
-        if isinstance(candidate, TargetedIstdIdentityAnchor)
-        else None
-    )
+    if candidate is None:
+        return None
+    if type(candidate) is not TargetedIstdIdentityAnchor:
+        raise TypeError("targeted ISTD anchor must be owner-minted")
+    return candidate
 
 
 def _raw_owner_build_candidates(
@@ -394,6 +495,9 @@ def run_alignment(
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     targeted_istd_anchor = _typed_targeted_istd_anchor(drift_lookup)
+    drift_prior_source: DriftPriorSource = (
+        drift_lookup.source if drift_lookup is not None else "none"
+    )
     recorder.record(
         "alignment.run_config",
         elapsed_sec=0.0,
@@ -414,9 +518,7 @@ def run_alignment(
             "require_discovery_owner_closure": require_discovery_owner_closure,
             "emit_provisional_matrix": emit_provisional_matrix,
             "emit_early_loser_shadow": emit_early_loser_shadow,
-            "drift_prior_source": (
-                drift_lookup.source if drift_lookup is not None else "none"
-            ),
+            "drift_prior_source": drift_prior_source,
             "targeted_istd_anchor_identity": getattr(
                 targeted_istd_anchor,
                 "target_config_identity",
@@ -434,9 +536,29 @@ def run_alignment(
             discovery_batch_index,
             require_owner_closure=require_discovery_owner_closure,
         )
-    expected_acquisition_sources = (
+    cross_sample_acquisition_sources = (
         _expected_acquisition_sources(batch)
-        if require_discovery_owner_closure
+        if all(
+            batch.candidate_receipts[sample_stem] is not None
+            for sample_stem in batch.sample_order
+        )
+        else None
+    )
+    expected_acquisition_sources = cross_sample_acquisition_sources
+    bound_drift_lookup = (
+        _BoundAlignmentDriftLookup(
+            source=drift_prior_source,
+            sample_deltas={
+                sample_stem: drift_lookup.sample_delta_min(sample_stem)
+                for sample_stem in batch.sample_order
+            },
+            injection_orders={
+                sample_stem: drift_lookup.injection_order(sample_stem)
+                for sample_stem in batch.sample_order
+            },
+            istd_identity_anchor=targeted_istd_anchor,
+        )
+        if drift_lookup is not None
         else None
     )
     with recorder.stage("alignment.read_candidates") as stage:
@@ -535,6 +657,36 @@ def run_alignment(
     region_audit_family_ids = (
         selected_family_ids if backfill_scope == "selected-families" else None
     )
+    injection_order: dict[str, int] | None = None
+    injection_order_source_schema: str | None = None
+    if sample_column_injection_order is not None:
+        injection_order, injection_order_source_schema = (
+            _read_sample_column_injection_order(sample_column_injection_order)
+        )
+        recorder.record(
+            "alignment.sample_column_injection_order",
+            elapsed_sec=0.0,
+            metrics={
+                "ordered_samples": sum(
+                    1 for sample in batch.sample_order if sample in injection_order
+                ),
+                "unordered_samples": sum(
+                    1 for sample in batch.sample_order if sample not in injection_order
+                ),
+                "source": str(sample_column_injection_order),
+                "source_schema": injection_order_source_schema,
+            },
+        )
+    cross_sample_identity_context = _alignment_cross_sample_identity_context(
+        batch=batch,
+        candidates=candidates,
+        alignment_config=alignment_config,
+        peak_config=peak_config,
+        injection_order=injection_order,
+        drift_lookup=bound_drift_lookup,
+        expected_acquisition_sources=cross_sample_acquisition_sources,
+        discovery_physical_bindings=discovery_physical_bindings,
+    )
 
     with ExitStack() as stack:
         raw_paths = _existing_raw_paths(
@@ -556,30 +708,27 @@ def run_alignment(
                 stage.metrics["raw_count"] = len(raw_paths)
                 stage.metrics["mode"] = "process_workers"
             else:
-                if expected_acquisition_sources is None:
-                    raw_sources = {
-                        sample_stem: stack.enter_context(opener(raw_path, dll_dir))
-                        for sample_stem, raw_path in raw_paths.items()
-                    }
-                else:
-                    raw_sources = {
-                        sample_stem: stack.enter_context(
-                            _default_raw_opener(
-                                raw_path,
-                                dll_dir,
-                                expected_acquisition_source=(
-                                    expected_acquisition_sources[sample_stem]
-                                ),
-                            )
+                raw_sources = {
+                    sample_stem: stack.enter_context(
+                        opener(
+                            raw_path,
+                            dll_dir,
+                            expected_acquisition_source=(
+                                expected_acquisition_sources[sample_stem]
+                                if expected_acquisition_sources is not None
+                                else None
+                            ),
                         )
-                        for sample_stem, raw_path in raw_paths.items()
-                    }
+                    )
+                    for sample_stem, raw_path in raw_paths.items()
+                }
                 stage.metrics["raw_count"] = len(raw_sources)
         with recorder.stage("alignment.build_owners"):
             if discovery_physical_bindings is not None:
                 ownership = build_sample_local_owners_from_discovery_bindings(
                     discovery_physical_bindings,
                     alignment_config=alignment_config,
+                    cross_sample_identity_context=cross_sample_identity_context,
                 )
             elif raw_workers > 1:
                 owner_output = run_owner_build_process(
@@ -596,6 +745,7 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    cross_sample_identity_context=cross_sample_identity_context,
                     progress_callback=lambda result: _record_owner_build_progress(
                         recorder,
                         result,
@@ -637,33 +787,13 @@ def run_alignment(
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
+                    cross_sample_identity_context=cross_sample_identity_context,
                 )
                 record_timed_raw_sources(timed_raw_sources_, recorder=recorder)
-        injection_order: dict[str, int] | None = None
-        injection_order_source_schema: str | None = None
-        if sample_column_injection_order is not None:
-            injection_order, injection_order_source_schema = (
-                _read_sample_column_injection_order(sample_column_injection_order)
-            )
-            recorder.record(
-                "alignment.sample_column_injection_order",
-                elapsed_sec=0.0,
-                metrics={
-                    "ordered_samples": sum(
-                        1 for sample in batch.sample_order if sample in injection_order
-                    ),
-                    "unordered_samples": sum(
-                        1
-                        for sample in batch.sample_order
-                        if sample not in injection_order
-                    ),
-                    "source": str(sample_column_injection_order),
-                    "source_schema": injection_order_source_schema,
-                },
-            )
         edge_evidence: list[OwnerEdgeEvidence] | None = (
             []
-            if outputs.edge_evidence_tsv is not None or drift_lookup is not None
+            if outputs.edge_evidence_tsv is not None
+            or bound_drift_lookup is not None
             else None
         )
         with recorder.stage("alignment.cluster_owners"):
@@ -680,7 +810,7 @@ def run_alignment(
                     config=alignment_config,
                     sample_universe=frozenset(batch.sample_order),
                     injection_order=injection_order,
-                    drift_lookup=drift_lookup,
+                    drift_lookup=bound_drift_lookup,
                     edge_evidence_sink=edge_evidence,
                 )
             owner_features = (
@@ -1185,6 +1315,174 @@ def _expected_acquisition_sources(
         sample_stem: _required_candidate_receipt(batch, sample_stem).acquisition_source
         for sample_stem in batch.sample_order
     }
+
+
+def _alignment_cross_sample_identity_context(
+    *,
+    batch: DiscoveryBatchInput,
+    candidates: Sequence[DiscoveryCandidate],
+    alignment_config: AlignmentConfig,
+    peak_config: ExtractionConfig,
+    injection_order: Mapping[str, int] | None,
+    drift_lookup: DriftLookupProtocol | None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
+    discovery_physical_bindings: Sequence[DiscoveryCandidatePhysicalBinding] | None,
+) -> AlignmentCrossSampleIdentityContext:
+    """Compile the exact internal request and sample owners used by CrossSample."""
+
+    sources_by_sample: dict[str, AcquisitionSourceIdentity]
+    if expected_acquisition_sources is not None:
+        sources_by_sample = dict(expected_acquisition_sources)
+    elif discovery_physical_bindings is not None:
+        sources_by_sample = {}
+        for binding in discovery_physical_bindings:
+            prior = sources_by_sample.setdefault(
+                binding.candidate.sample_stem,
+                binding.acquisition_source,
+            )
+            if prior != binding.acquisition_source:
+                raise ValueError("Discovery bindings disagree on acquisition source")
+    else:
+        raise ValueError(
+            "Alignment CrossSample identity requires owner-closed acquisition "
+            "receipts or typed Discovery physical bindings"
+        )
+    if set(sources_by_sample) != set(batch.sample_order):
+        raise ValueError("Alignment CrossSample identity lacks a sample acquisition")
+    sources = tuple(
+        sorted(
+            sources_by_sample.values(),
+            key=lambda source: source.acquisition_source_id,
+        )
+    )
+    bindings = tuple(
+        AcquisitionInputBinding(
+            acquisition_source_id=sources_by_sample[
+                sample_stem
+            ].acquisition_source_id,
+            adapter_input_key=sample_stem,
+            injection_order=index,
+        )
+        for index, sample_stem in enumerate(batch.sample_order, start=1)
+    )
+    owner_candidate_inputs = tuple(
+        {
+            field_name: getattr(candidate, field_name)
+            for field_name in _ALIGNMENT_OWNER_CANDIDATE_INPUT_FIELDS
+        }
+        for candidate in sorted(
+            (
+                candidate
+                for candidate in candidates
+                if discovery_candidate_is_owner_build_eligible(candidate)
+            ),
+            key=lambda candidate: (candidate.sample_stem, candidate.candidate_id),
+        )
+    )
+    physical_binding_inputs: list[dict[str, str]] = []
+    for binding in discovery_physical_bindings or ():
+        if not discovery_candidate_is_owner_build_eligible(binding.candidate):
+            continue
+        facts = binding.physical_evaluation.facts
+        physical_binding_inputs.append(
+            {
+                "candidate_id": binding.candidate.candidate_id,
+                "selection_subject_id": binding.selection_subject_id,
+                "physical_decision_id": (
+                    facts.fact_content_id
+                    if facts is not None
+                    else binding.physical_evaluation.answer.physical_answer_id
+                ),
+            }
+        )
+    physical_binding_inputs.sort(
+        key=lambda item: (item["candidate_id"], item["selection_subject_id"])
+    )
+    targeted_istd_anchor = _typed_targeted_istd_anchor(drift_lookup)
+    request = build_processing_request_identity(
+        acquisition_sources=sources,
+        acquisition_bindings=bindings,
+        scientific_input_schema_version="alignment-cross-sample-input-v2",
+        processing_algorithm_version="alignment-cross-sample-owner-v1",
+        processing_contract_version="alignment-cross-sample-identity-v1",
+        scientific_inputs={
+            "owner_candidate_inputs": list(owner_candidate_inputs),
+            "physical_binding_inputs": physical_binding_inputs,
+            "sample_injection_order": {
+                sample_stem: injection_order[sample_stem]
+                for sample_stem in batch.sample_order
+                if injection_order is not None and sample_stem in injection_order
+            },
+            "drift_prior_inputs": {
+                "source": drift_lookup.source if drift_lookup is not None else "none",
+                "sample_inputs": [
+                    {
+                        "sample_stem": sample_stem,
+                        "rt_drift_delta_min": drift_lookup.sample_delta_min(
+                            sample_stem
+                        ),
+                    }
+                    for sample_stem in batch.sample_order
+                ]
+                if drift_lookup is not None
+                else [],
+                "targeted_istd_anchor_identity": (
+                    targeted_istd_anchor.target_config_identity
+                    if targeted_istd_anchor is not None
+                    else None
+                ),
+            },
+            "alignment_config": _alignment_identity_json(asdict(alignment_config)),
+            "owner_selection_peak_config": {
+                "schema_version": "alignment-owner-selection-config-v1",
+                **{
+                    field_name: getattr(peak_config, field_name)
+                    for field_name in _ALIGNMENT_OWNER_SELECTION_PEAK_CONFIG_FIELDS
+                },
+            },
+        },
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        tuple(
+            SampleMetadata(
+                sample_name=sources_by_sample[
+                    sample_stem
+                ].acquisition_source_id,
+                raw_stem=sample_stem,
+                injection_order=index,
+            )
+            for index, sample_stem in enumerate(batch.sample_order, start=1)
+        ),
+        identity_namespace="alignment-discovery-owner-v1",
+    )
+    samples = tuple(
+        resolve_canonical_sample_identity(snapshot, sample_stem)
+        for sample_stem in batch.sample_order
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=snapshot,
+        sample_resolutions=samples,
+    )
+    return AlignmentCrossSampleIdentityContext(
+        processing_owners=owners,
+        samples_by_stem={sample.lookup_token: sample for sample in samples},
+    )
+
+
+def _alignment_identity_json(value: object) -> object:
+    if isinstance(value, Path):
+        return None
+    if isinstance(value, Mapping):
+        return {
+            str(key): _alignment_identity_json(nested)
+            for key, nested in value.items()
+            if not isinstance(nested, Path)
+        }
+    if isinstance(value, tuple | list):
+        return [_alignment_identity_json(item) for item in value]
+    return value
 
 
 def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResult:

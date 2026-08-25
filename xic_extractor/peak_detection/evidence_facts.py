@@ -2427,6 +2427,7 @@ def _integration_and_morphology_trace(
     )
     enriched = replace(
         integration,
+        raw_scan_indices=tuple(range(left_index, right_index)),
         area_baseline_corrected=baseline.area_baseline_corrected,
         area_uncertainty=baseline.area_uncertainty,
         area_uncertainty_formula_version=baseline.area_uncertainty_formula_version,

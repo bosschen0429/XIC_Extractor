@@ -153,6 +153,10 @@ def test_pipeline_records_alignment_extract_xic_inner_timing(
         "point_count": 3,
         "mean_xic_per_raw_chromatogram_call": None,
         "mean_xic_per_extract_batch": 1.0,
+        "logical_request_count": 1,
+        "canonical_request_class_count": 1,
+        "equivalent_logical_request_count": 0,
+        "exact_request_equivalence_available": True,
     }
 
 
@@ -250,13 +254,21 @@ def test_timed_raw_source_delegates_scan_window_lookup() -> None:
 
 
 class TraceRawOpener:
-    def __call__(self, raw_path: Path, dll_dir: Path):
-        return TraceRawContext(raw_path)
+    def __call__(
+        self,
+        raw_path: Path,
+        dll_dir: Path,
+        *,
+        expected_acquisition_source=None,
+    ):
+        del dll_dir
+        return TraceRawContext(raw_path, expected_acquisition_source)
 
 
 class TraceRawContext:
-    def __init__(self, raw_path: Path) -> None:
+    def __init__(self, raw_path: Path, acquisition_source) -> None:
         self.raw_path = raw_path
+        self.acquisition_source = acquisition_source
 
     def __enter__(self):
         return self
@@ -272,7 +284,7 @@ def _ok_alignment_peak(*args, **kwargs):
     peak = SimpleNamespace(
         rt=8.0,
         intensity=100.0,
-        area=25.0,
+        area=660.0,
         peak_start=7.9,
         peak_end=8.1,
     )

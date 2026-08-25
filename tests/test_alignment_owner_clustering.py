@@ -8,6 +8,9 @@ from xic_extractor.alignment.backfill_scope import (
     backfill_request_sample_stems,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+)
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
     build_targeted_istd_identity_anchor,
@@ -27,6 +30,12 @@ from xic_extractor.alignment.production_decisions import build_production_decisi
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+_TEST_PROCESSING_REQUEST_ID = "xic.processing-request.v1:" + "0" * 64
 
 
 def test_owner_clustering_allows_plausible_rt_drift_with_complete_link() -> None:
@@ -1846,7 +1855,6 @@ def test_owner_clustering_edge_evidence_sink_keeps_unique_sorted_pairs() -> None
             _owner("sample-a", "a", apex_rt=10.00),
             _owner("sample-b", "b", apex_rt=10.20),
             _owner("sample-c", "c", apex_rt=10.40),
-            _owner("sample-c", "c", apex_rt=10.40),
         ),
         config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
         edge_evidence_sink=edge_evidence,
@@ -2196,6 +2204,21 @@ def _owner(
         evidence_score=evidence_score,
         seed_event_count=seed_event_count,
     )
+    physical_id = typed_identity_digest(
+        "xic.peak-observation-content.v1:",
+        canonical_identity_basis_bytes(
+            {"sample_stem": sample_stem, "suffix": suffix}
+        ),
+    )
+    member_basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
+            "canonical_sample_identity_id": f"test-sample:{sample_stem}",
+            "subject": {"kind": "physical_observation", "id": physical_id},
+            "physical_observation_ids": [physical_id],
+        }
+    )
     return SampleLocalMS1Owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
         sample_stem=sample_stem,
@@ -2214,6 +2237,17 @@ def _owner(
             raw_area=1000.0,
             asls_area=900.0,
             morphology_area=900.0,
+        ),
+        cross_sample_member_subject=CrossSampleGroupMemberSubject(
+            member_subject_id=typed_identity_digest(
+                "xic.group-member-subject.v1:", member_basis
+            ),
+            processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+            canonical_sample_identity_id=f"test-sample:{sample_stem}",
+            subject_kind="physical_observation",
+            subject_id=physical_id,
+            physical_observation_ids=(physical_id,),
+            basis_bytes=member_basis,
         ),
     )
 

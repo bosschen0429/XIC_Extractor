@@ -55,7 +55,13 @@ class FakeRawOpener:
         self.calls: list[tuple[Path, Path]] = []
         self.handles: list[FakeRawContext] = []
 
-    def __call__(self, raw_path: Path, dll_dir: Path):
+    def __call__(
+        self,
+        raw_path: Path,
+        dll_dir: Path,
+        *,
+        expected_acquisition_source=None,
+    ):
         self.calls.append((raw_path, dll_dir))
         handle = FakeRawContext(raw_path)
         self.handles.append(handle)
@@ -85,6 +91,7 @@ def write_batch(
     sample_order: tuple[str, ...],
     *,
     raw_files: dict[str, str] | None = None,
+    owner_closed: bool = True,
 ) -> Path:
     batch_dir = tmp_path / "batch"
     batch_dir.mkdir(exist_ok=True)
@@ -99,18 +106,31 @@ def write_batch(
             DISCOVERY_CANDIDATE_COLUMNS,
             [candidate_row(sample_stem)],
         )
-        rows.append(
-            {
-                "sample_stem": sample_stem,
-                "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
-                "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-                "review_csv": "",
-            }
-        )
+        row = {
+            "sample_stem": sample_stem,
+            "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
+            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
+            "review_csv": "",
+        }
+        if owner_closed:
+            row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
+        rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
     write_csv(
         batch_index,
-        ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        (
+            (
+                "schema_version",
+                "sample_stem",
+                "raw_file",
+                "candidate_csv",
+                "review_csv",
+                "candidate_count",
+                *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+            )
+            if owner_closed
+            else ("sample_stem", "raw_file", "candidate_csv", "review_csv")
+        ),
         rows,
     )
     return batch_index
@@ -121,6 +141,7 @@ def write_partial_batch(
     *,
     sample_order: tuple[str, ...],
     candidate_samples: tuple[str, ...],
+    owner_closed: bool = True,
 ) -> Path:
     batch_dir = tmp_path / "batch"
     batch_dir.mkdir(exist_ok=True)
@@ -133,21 +154,61 @@ def write_partial_batch(
             [candidate_row(sample_stem)] if sample_stem in candidate_samples else []
         )
         write_csv(candidates_csv, DISCOVERY_CANDIDATE_COLUMNS, candidate_rows)
-        rows.append(
-            {
-                "sample_stem": sample_stem,
-                "raw_file": f"C:/stale/{sample_stem}.raw",
-                "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-                "review_csv": "",
-            }
-        )
+        row = {
+            "sample_stem": sample_stem,
+            "raw_file": f"C:/stale/{sample_stem}.raw",
+            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
+            "review_csv": "",
+        }
+        if owner_closed:
+            row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
+        rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
     write_csv(
         batch_index,
-        ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        (
+            (
+                "schema_version",
+                "sample_stem",
+                "raw_file",
+                "candidate_csv",
+                "review_csv",
+                "candidate_count",
+                *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+            )
+            if owner_closed
+            else ("sample_stem", "raw_file", "candidate_csv", "review_csv")
+        ),
         rows,
     )
     return batch_index
+
+
+def _owner_closed_receipt_fields(
+    sample_stem: str,
+    candidates_csv: Path,
+) -> dict[str, str]:
+    """Build a test-only receipt from one stable synthetic acquisition."""
+
+    source_path = candidates_csv.with_name("owner_closed_acquisition.raw")
+    source_path.write_bytes(f"owner-closed-acquisition:{sample_stem}".encode())
+    acquisition_source = build_acquisition_source_identity(
+        source_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    candidates = read_discovery_candidates_csv(candidates_csv)
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem=sample_stem,
+        acquisition_source=acquisition_source,
+        candidate_csv=candidates_csv,
+        candidates=candidates,
+    )
+    return {
+        "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+        "candidate_count": str(len(candidates)),
+        **discovery_receipt_index_fields(receipt),
+    }
 
 
 def write_owner_closed_partial_batch(

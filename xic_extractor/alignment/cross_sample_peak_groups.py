@@ -12,9 +12,10 @@ decisions within the pipeline.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -31,6 +32,26 @@ from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
     SampleLocalMS1Owner,
 )
+from xic_extractor.discovery.models import (
+    DiscoveryCandidate,
+    build_discovery_physical_selection_subject_id,
+)
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
+    validate_discovery_candidate_physical_binding,
+)
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.processing_identity import (
+    PROCESSING_REQUEST_ID_PREFIX,
+    ProcessingOwnerReferences,
+    canonical_identity_basis_bytes,
+    resolve_request_acquisition_source,
+    typed_identity_digest,
+    validate_typed_identity_basis,
+    validate_typed_identity_id,
+)
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
@@ -59,6 +80,1139 @@ CrossSamplePeakGroupConstructionRole: TypeAlias = Literal[
 _PRECURSOR_BUCKET_WIDTH_DA = 1.0
 _DUPLICATE_OWNER_GROUP_POLICY = "owner_duplicate_group_resolved"
 _BOUNDED_CONTINUITY_RT_SPAN_SEC = 300.0
+_GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
+_CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group.v1:"
+_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX = "xic.cross-sample-lineage-edge.v1:"
+_DISCOVERY_PHYSICAL_SELECTION_SUBJECT_PREFIX = "discovery-physical-work.v1:"
+
+CrossSampleGroupDisposition: TypeAlias = Literal[
+    "established",
+    "provisional",
+    "unresolved",
+    "rejected",
+]
+CrossSampleEdgeDisposition: TypeAlias = Literal[
+    "eligible",
+    "review_only",
+    "excluded",
+]
+CrossSampleNeighborhoodStatus: TypeAlias = Literal["assessable", "unassessable"]
+CrossSampleInitialEdgeContext: TypeAlias = Literal[
+    "hard_gate",
+    "complete_link",
+    "full_batch_continuity",
+    "targeted_istd_continuity",
+]
+
+
+class CrossSampleContractError(ValueError):
+    """Raised when canonical CrossSample state cannot close exactly."""
+
+
+def _required_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise CrossSampleContractError(f"{field} must be non-empty text")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleGroupMemberSubject:
+    member_subject_id: str
+    processing_request_id: str
+    canonical_sample_identity_id: str
+    subject_kind: Literal["peak_hypothesis", "physical_observation"]
+    subject_id: str
+    physical_observation_ids: tuple[str, ...]
+    basis_bytes: bytes
+
+    def __post_init__(self) -> None:
+        request_id = validate_typed_identity_id(
+            self.processing_request_id,
+            prefix=PROCESSING_REQUEST_ID_PREFIX,
+            field="processing_request_id",
+        )
+        sample_id = _required_text(
+            self.canonical_sample_identity_id,
+            field="canonical_sample_identity_id",
+        )
+        subject_id = _required_text(self.subject_id, field="subject_id")
+        if self.subject_kind not in {"peak_hypothesis", "physical_observation"}:
+            raise CrossSampleContractError("subject_kind is not a closed variant")
+        expected_prefixes = (
+            ("xic.peak-hypothesis.v1:",)
+            if self.subject_kind == "peak_hypothesis"
+            else (
+                "xic.peak-observation-content.v1:",
+                "physical-facts.v1:",
+            )
+        )
+        if not subject_id.startswith(expected_prefixes):
+            raise CrossSampleContractError("member subject is not owner-backed")
+        physical_ids = tuple(self.physical_observation_ids)
+        if not physical_ids or tuple(sorted(set(physical_ids))) != physical_ids:
+            raise CrossSampleContractError(
+                "physical_observation_ids must be unique and canonical-sorted"
+            )
+        if self.subject_kind == "physical_observation":
+            if subject_id.startswith("xic.peak-observation-content.v1:"):
+                if physical_ids != (subject_id,):
+                    raise CrossSampleContractError(
+                        "physical observation member must bind its tagged observation"
+                    )
+            elif physical_ids != (subject_id,):
+                raise CrossSampleContractError(
+                    "physical observation member must bind its tagged observation"
+                )
+        basis = canonical_identity_basis_bytes(
+            {
+                "schema_version": "group_member_subject_v1",
+                "processing_request_id": request_id,
+                "canonical_sample_identity_id": sample_id,
+                "subject": {"kind": self.subject_kind, "id": subject_id},
+                "physical_observation_ids": list(physical_ids),
+            }
+        )
+        if self.basis_bytes != basis:
+            raise CrossSampleContractError("member subject basis bytes are not exact")
+        try:
+            validate_typed_identity_basis(
+                self.member_subject_id,
+                prefix=_GROUP_MEMBER_SUBJECT_PREFIX,
+                basis_bytes=basis,
+                field="member_subject_id",
+            )
+        except ValueError as exc:
+            raise CrossSampleContractError(str(exc)) from exc
+
+
+def _request_id(
+    *,
+    processing_owners: ProcessingOwnerReferences | None,
+    processing_request_id: str | None,
+) -> str:
+    if processing_owners is not None:
+        if not isinstance(processing_owners, ProcessingOwnerReferences):
+            raise CrossSampleContractError("processing_owners must be owner-backed")
+        owner_request = processing_owners.request.processing_request_id
+        if processing_request_id is not None and processing_request_id != owner_request:
+            raise CrossSampleContractError(
+                "processing owner references crossed request"
+            )
+        return owner_request
+    if processing_request_id is None:
+        raise CrossSampleContractError("exact processing request identity is required")
+    return validate_typed_identity_id(
+        processing_request_id,
+        prefix=PROCESSING_REQUEST_ID_PREFIX,
+        field="processing_request_id",
+    )
+
+
+def group_member_subject_from_peak_observation(
+    *,
+    sample: ResolvedCanonicalSampleIdentity,
+    observation: PeakObservationRef,
+    processing_owners: ProcessingOwnerReferences | None = None,
+    processing_request_id: str | None = None,
+) -> CrossSampleGroupMemberSubject:
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise CrossSampleContractError("sample must be canonically resolved")
+    if not isinstance(observation, PeakObservationRef):
+        raise CrossSampleContractError("observation must be owner-backed")
+    request_id = _request_id(
+        processing_owners=processing_owners,
+        processing_request_id=processing_request_id,
+    )
+    sample_id = sample.identity.sample_identity_id
+    if (
+        observation.artifact.producer_processing_request_id != request_id
+        or observation.content.canonical_sample_identity_id != sample_id
+    ):
+        raise CrossSampleContractError("physical observation crossed owner binding")
+    subject_id = observation.content.peak_observation_content_id
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": request_id,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "physical_observation", "id": subject_id},
+            "physical_observation_ids": [subject_id],
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(_GROUP_MEMBER_SUBJECT_PREFIX, basis),
+        processing_request_id=request_id,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="physical_observation",
+        subject_id=subject_id,
+        physical_observation_ids=(subject_id,),
+        basis_bytes=basis,
+    )
+
+
+def group_member_subject_from_peak_hypothesis(
+    *,
+    sample: ResolvedCanonicalSampleIdentity,
+    hypothesis: PeakHypothesis,
+    processing_owners: ProcessingOwnerReferences | None = None,
+    processing_request_id: str | None = None,
+) -> CrossSampleGroupMemberSubject:
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise CrossSampleContractError("sample must be canonically resolved")
+    if not isinstance(hypothesis, PeakHypothesis) or not hypothesis.is_owner_backed:
+        raise CrossSampleContractError("hypothesis must be owner-backed")
+    request_id = _request_id(
+        processing_owners=processing_owners,
+        processing_request_id=processing_request_id,
+    )
+    if (
+        hypothesis.artifact is None
+        or hypothesis.artifact.producer_processing_request_id != request_id
+    ):
+        raise CrossSampleContractError("peak hypothesis crossed processing request")
+    sample_id = sample.identity.sample_identity_id
+    physical_ids = tuple(
+        sorted(
+            observation.content.peak_observation_content_id
+            for observation in hypothesis.peak_observation_refs
+        )
+    )
+    if not physical_ids or len(set(physical_ids)) != len(physical_ids) or any(
+        observation.content.canonical_sample_identity_id != sample_id
+        or observation.artifact.producer_processing_request_id != request_id
+        for observation in hypothesis.peak_observation_refs
+    ):
+        raise CrossSampleContractError("peak hypothesis crossed physical observation")
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": request_id,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "peak_hypothesis", "id": hypothesis.hypothesis_id},
+            "physical_observation_ids": list(physical_ids),
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(_GROUP_MEMBER_SUBJECT_PREFIX, basis),
+        processing_request_id=request_id,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="peak_hypothesis",
+        subject_id=hypothesis.hypothesis_id,
+        physical_observation_ids=physical_ids,
+        basis_bytes=basis,
+    )
+
+
+def group_member_subject_from_discovery_physical_selection(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    candidate: DiscoveryCandidate,
+    observation: PeakObservationRef | None = None,
+    physical_binding: DiscoveryCandidatePhysicalBinding | None = None,
+) -> CrossSampleGroupMemberSubject:
+    """Project an owner-closed Discovery selection into CrossSample."""
+
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise CrossSampleContractError("processing_owners must be owner-backed")
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise CrossSampleContractError("sample must be canonically resolved")
+    if not isinstance(candidate, DiscoveryCandidate):
+        raise CrossSampleContractError("candidate must be Discovery-owned")
+    if candidate.sample_stem != sample.lookup_token:
+        raise CrossSampleContractError("Discovery candidate crossed sample")
+    selection_id = build_discovery_physical_selection_subject_id(
+        sample_stem=candidate.sample_stem,
+        best_ms2_scan_id=candidate.best_ms2_scan_id,
+        precursor_mz=candidate.precursor_mz,
+        product_mz=candidate.product_mz,
+    )
+    if physical_binding is not None:
+        if observation is not None:
+            raise CrossSampleContractError(
+                "Discovery binding must not remint an observation"
+            )
+        try:
+            validate_discovery_candidate_physical_binding(physical_binding)
+        except ValueError as exc:
+            raise CrossSampleContractError(str(exc)) from exc
+        source = resolve_request_acquisition_source(
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+        if (
+            physical_binding.candidate != candidate
+            or physical_binding.selection_subject_id != selection_id
+            or physical_binding.acquisition_source.acquisition_source_id
+            != source.acquisition_source_id
+        ):
+            raise CrossSampleContractError("Discovery binding crossed owner facts")
+        facts = physical_binding.physical_evaluation.facts
+        if facts is None:
+            raise CrossSampleContractError("Discovery binding lost physical facts")
+        physical_id = facts.fact_content_id
+    else:
+        if observation is None:
+            raise CrossSampleContractError(
+                "Discovery selection requires an observation or physical binding"
+            )
+        if (
+            observation.artifact.producer_processing_request_id
+            != processing_owners.request.processing_request_id
+            or observation.content.canonical_sample_identity_id
+            != sample.identity.sample_identity_id
+        ):
+            raise CrossSampleContractError("Discovery observation crossed owner facts")
+        physical_id = observation.content.peak_observation_content_id
+    request_id = processing_owners.request.processing_request_id
+    sample_id = sample.identity.sample_identity_id
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": request_id,
+            "canonical_sample_identity_id": sample_id,
+            "subject": {"kind": "physical_observation", "id": physical_id},
+            "physical_observation_ids": [physical_id],
+        }
+    )
+    return CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(_GROUP_MEMBER_SUBJECT_PREFIX, basis),
+        processing_request_id=request_id,
+        canonical_sample_identity_id=sample_id,
+        subject_kind="physical_observation",
+        subject_id=physical_id,
+        physical_observation_ids=(physical_id,),
+        basis_bytes=basis,
+    )
+
+
+@dataclass(slots=True)
+class CrossSampleIdentityBasisRegistry:
+    _basis_by_id: dict[str, bytes] = field(default_factory=dict)
+
+    def register(self, identity_id: str, basis_bytes: bytes) -> None:
+        _required_text(identity_id, field="identity_id")
+        if not isinstance(basis_bytes, bytes) or not basis_bytes:
+            raise CrossSampleContractError("identity basis bytes must be non-empty")
+        prior = self._basis_by_id.get(identity_id)
+        if prior is not None and prior != basis_bytes:
+            raise CrossSampleContractError(
+                "identity digest collision: equal ID has unequal basis bytes"
+            )
+        self._basis_by_id[identity_id] = basis_bytes
+
+
+def _canonical_members(
+    member_subjects: Sequence[CrossSampleGroupMemberSubject],
+    *,
+    processing_request_id: str,
+) -> tuple[CrossSampleGroupMemberSubject, ...]:
+    if not member_subjects:
+        raise CrossSampleContractError("cross-sample group requires a member")
+    registry = CrossSampleIdentityBasisRegistry()
+    samples: set[str] = set()
+    physical: set[str] = set()
+    members: list[CrossSampleGroupMemberSubject] = []
+    for member in member_subjects:
+        if not isinstance(member, CrossSampleGroupMemberSubject):
+            raise CrossSampleContractError("group member is not a typed subject")
+        if member.processing_request_id != processing_request_id:
+            raise CrossSampleContractError("group member crossed processing request")
+        if member.canonical_sample_identity_id in samples:
+            raise CrossSampleContractError(
+                "group has two identity-bearing members for one canonical sample"
+            )
+        if physical.intersection(member.physical_observation_ids):
+            raise CrossSampleContractError("group duplicates a physical observation")
+        registry.register(member.member_subject_id, member.basis_bytes)
+        samples.add(member.canonical_sample_identity_id)
+        physical.update(member.physical_observation_ids)
+        members.append(member)
+    return tuple(sorted(members, key=lambda item: item.member_subject_id))
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleGroupIdentity:
+    group_hypothesis_id: str
+    processing_request_id: str
+    member_subjects: tuple[CrossSampleGroupMemberSubject, ...]
+    basis_bytes: bytes
+    disposition: CrossSampleGroupDisposition
+
+    def __post_init__(self) -> None:
+        request_id = validate_typed_identity_id(
+            self.processing_request_id,
+            prefix=PROCESSING_REQUEST_ID_PREFIX,
+            field="processing_request_id",
+        )
+        members = _canonical_members(
+            self.member_subjects,
+            processing_request_id=request_id,
+        )
+        if members != self.member_subjects:
+            raise CrossSampleContractError("group members are not canonical-sorted")
+        if self.disposition not in {
+            "established",
+            "provisional",
+            "unresolved",
+            "rejected",
+        }:
+            raise CrossSampleContractError("group disposition is not closed")
+        if len(members) == 1 and self.disposition == "established":
+            raise CrossSampleContractError("singleton group cannot be established")
+        basis = canonical_identity_basis_bytes(
+            {
+                "schema_version": "cross_sample_group_v1",
+                "processing_request_id": request_id,
+                "member_subject_ids": [item.member_subject_id for item in members],
+            }
+        )
+        if self.basis_bytes != basis:
+            raise CrossSampleContractError("group identity basis bytes are not exact")
+        try:
+            validate_typed_identity_basis(
+                self.group_hypothesis_id,
+                prefix=_CROSS_SAMPLE_GROUP_PREFIX,
+                basis_bytes=basis,
+                field="group_hypothesis_id",
+            )
+        except ValueError as exc:
+            raise CrossSampleContractError(str(exc)) from exc
+
+
+def mint_cross_sample_group_identity(
+    *,
+    processing_request_id: str,
+    member_subjects: Sequence[CrossSampleGroupMemberSubject],
+    disposition: CrossSampleGroupDisposition | None = None,
+) -> CrossSampleGroupIdentity:
+    request_id = validate_typed_identity_id(
+        processing_request_id,
+        prefix=PROCESSING_REQUEST_ID_PREFIX,
+        field="processing_request_id",
+    )
+    members = _canonical_members(member_subjects, processing_request_id=request_id)
+    resolved_disposition = disposition or (
+        "established" if len(members) >= 2 else "provisional"
+    )
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_group_v1",
+            "processing_request_id": request_id,
+            "member_subject_ids": [item.member_subject_id for item in members],
+        }
+    )
+    return CrossSampleGroupIdentity(
+        group_hypothesis_id=typed_identity_digest(_CROSS_SAMPLE_GROUP_PREFIX, basis),
+        processing_request_id=request_id,
+        member_subjects=members,
+        basis_bytes=basis,
+        disposition=resolved_disposition,
+    )
+
+
+def validate_cross_sample_group_population(
+    groups: Sequence[CrossSampleGroupIdentity],
+) -> tuple[CrossSampleGroupIdentity, ...]:
+    canonical = tuple(groups)
+    if not canonical:
+        return canonical
+    if len({group.processing_request_id for group in canonical}) != 1:
+        raise CrossSampleContractError("population crossed processing request")
+    group_ids: set[str] = set()
+    members: set[str] = set()
+    physical: set[str] = set()
+    for group in canonical:
+        if group.group_hypothesis_id in group_ids:
+            raise CrossSampleContractError("population duplicates a group identity")
+        for member in group.member_subjects:
+            if member.member_subject_id in members:
+                raise CrossSampleContractError(
+                    "population duplicates a canonical member across groups"
+                )
+            if physical.intersection(member.physical_observation_ids):
+                raise CrossSampleContractError(
+                    "population duplicates a physical observation across groups"
+                )
+            members.add(member.member_subject_id)
+            physical.update(member.physical_observation_ids)
+        group_ids.add(group.group_hypothesis_id)
+    return canonical
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleNeighborhoodBudget:
+    max_members: int
+    max_eligible_edges: int
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.max_members, bool)
+            or not isinstance(self.max_members, int)
+            or self.max_members < 1
+            or isinstance(self.max_eligible_edges, bool)
+            or not isinstance(self.max_eligible_edges, int)
+            or self.max_eligible_edges < 0
+        ):
+            raise CrossSampleContractError("neighborhood budget is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleNeighborhoodEdge:
+    left_member_subject_id: str
+    right_member_subject_id: str
+    disposition: CrossSampleEdgeDisposition
+    initial_evidence: OwnerEdgeEvidence
+    initial_context: CrossSampleInitialEdgeContext
+    config: AlignmentConfig
+    left_owner: SampleLocalMS1Owner
+    right_owner: SampleLocalMS1Owner
+    drift_lookup: DriftLookupProtocol | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        left = _required_text(self.left_member_subject_id, field="left member")
+        right = _required_text(self.right_member_subject_id, field="right member")
+        if left == right:
+            raise CrossSampleContractError("neighborhood edge cannot be a self-edge")
+        if self.disposition not in {"eligible", "review_only", "excluded"}:
+            raise CrossSampleContractError("edge disposition is not closed")
+        if not isinstance(self.initial_evidence, OwnerEdgeEvidence):
+            raise CrossSampleContractError(
+                "neighborhood edge must be classified by CrossSample"
+            )
+        if not isinstance(self.left_owner, SampleLocalMS1Owner) or not isinstance(
+            self.right_owner, SampleLocalMS1Owner
+        ):
+            raise CrossSampleContractError("neighborhood edge owners must be typed")
+        left_member = self.left_owner.cross_sample_member_subject
+        right_member = self.right_owner.cross_sample_member_subject
+        if (
+            left_member is None
+            or right_member is None
+            or left_member.member_subject_id != left
+            or right_member.member_subject_id != right
+            or self.initial_evidence.left_owner_id != self.left_owner.owner_id
+            or self.initial_evidence.right_owner_id != self.right_owner.owner_id
+            or self.initial_evidence.left_sample_stem != self.left_owner.sample_stem
+            or self.initial_evidence.right_sample_stem != self.right_owner.sample_stem
+        ):
+            raise CrossSampleContractError(
+                "neighborhood evidence crossed its exact owner-member pair"
+            )
+        exact_evidence = evaluate_owner_edge(
+            self.left_owner,
+            self.right_owner,
+            config=self.config,
+            drift_lookup=self.drift_lookup,
+        )
+        if self.initial_evidence != exact_evidence:
+            raise CrossSampleContractError(
+                "neighborhood edge does not retain exact owner evidence"
+            )
+        expected = classify_cross_sample_initial_edge(
+            exact_evidence,
+            context=self.initial_context,
+            config=self.config,
+        )
+        if self.disposition != expected:
+            raise CrossSampleContractError(
+                "neighborhood edge disposition contradicts owner classification"
+            )
+
+
+def classify_cross_sample_initial_neighborhood_edge(
+    *,
+    left_owner: SampleLocalMS1Owner,
+    right_owner: SampleLocalMS1Owner,
+    context: CrossSampleInitialEdgeContext,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None = None,
+) -> CrossSampleNeighborhoodEdge:
+    """Mint a sealed edge by evaluating the exact owner pair inside CrossSample."""
+
+    edge = evaluate_owner_edge(
+        left_owner,
+        right_owner,
+        config=config,
+        drift_lookup=drift_lookup,
+    )
+    disposition = classify_cross_sample_initial_edge(
+        edge,
+        context=context,
+        config=config,
+    )
+    left_member = left_owner.cross_sample_member_subject
+    right_member = right_owner.cross_sample_member_subject
+    if left_member is None or right_member is None:
+        raise CrossSampleContractError(
+            "initial neighborhood edge requires exact owner members"
+        )
+    return CrossSampleNeighborhoodEdge(
+        left_member_subject_id=left_member.member_subject_id,
+        right_member_subject_id=right_member.member_subject_id,
+        disposition=disposition,
+        initial_evidence=edge,
+        initial_context=context,
+        config=config,
+        left_owner=left_owner,
+        right_owner=right_owner,
+        drift_lookup=drift_lookup,
+    )
+
+
+def classify_cross_sample_initial_edge(
+    edge: OwnerEdgeEvidence,
+    *,
+    context: CrossSampleInitialEdgeContext,
+    config: AlignmentConfig,
+) -> CrossSampleEdgeDisposition:
+    """Classify raw owner evidence without caller-authored compatibility flags."""
+
+    if not isinstance(edge, OwnerEdgeEvidence):
+        raise CrossSampleContractError("initial edge evidence must be owner-minted")
+    if not isinstance(config, AlignmentConfig):
+        raise CrossSampleContractError("initial edge config must be typed")
+    if context not in {
+        "hard_gate",
+        "complete_link",
+        "full_batch_continuity",
+        "targeted_istd_continuity",
+    }:
+        raise CrossSampleContractError("initial edge context is not closed")
+    if edge.decision == "blocked_edge":
+        if context == "targeted_istd_continuity" and edge.failure_reason in {
+            "product_mz_out_of_tolerance",
+            "observed_loss_out_of_tolerance",
+        }:
+            return _targeted_istd_rt_disposition(edge, config=config)
+        return "excluded"
+    if context == "hard_gate":
+        return "eligible"
+    if edge.decision == "strong_edge":
+        return "eligible"
+    if context == "complete_link":
+        return "review_only"
+    if _full_batch_weak_edge_is_eligible(edge, config=config):
+        return "eligible"
+    if context == "targeted_istd_continuity":
+        return _targeted_istd_rt_disposition(edge, config=config)
+    return "review_only"
+
+
+def _full_batch_weak_edge_is_eligible(
+    edge: OwnerEdgeEvidence,
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    return (
+        edge.decision == "weak_edge"
+        and not edge.failure_reason
+        and edge.drift_prior_source == "none"
+        and edge.rt_raw_delta_sec <= config.preferred_rt_sec
+        and edge.owner_quality == "clean"
+        and edge.seed_support_level == "moderate"
+    )
+
+
+def _targeted_istd_rt_disposition(
+    edge: OwnerEdgeEvidence,
+    *,
+    config: AlignmentConfig,
+) -> CrossSampleEdgeDisposition:
+    if (
+        edge.owner_quality in {"weak", "ambiguous_nearby"}
+        or edge.seed_support_level == "weak"
+    ):
+        return "review_only"
+    rt_delta_sec = edge.rt_raw_delta_sec
+    if (
+        edge.drift_prior_source != "none"
+        and edge.rt_drift_corrected_delta_sec is not None
+    ):
+        rt_delta_sec = edge.rt_drift_corrected_delta_sec
+    return "eligible" if rt_delta_sec <= config.preferred_rt_sec else "review_only"
+
+
+def _components(
+    member_ids: tuple[str, ...],
+    eligible_edges: tuple[CrossSampleNeighborhoodEdge, ...],
+) -> tuple[tuple[str, ...], ...]:
+    adjacent: dict[str, set[str]] = {
+        member_id: set() for member_id in member_ids
+    }
+    for edge in eligible_edges:
+        adjacent[edge.left_member_subject_id].add(edge.right_member_subject_id)
+        adjacent[edge.right_member_subject_id].add(edge.left_member_subject_id)
+    remaining = set(member_ids)
+    components: list[tuple[str, ...]] = []
+    while remaining:
+        pending = [min(remaining)]
+        found: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in found:
+                continue
+            found.add(current)
+            pending.extend(sorted(adjacent[current] - found, reverse=True))
+        remaining.difference_update(found)
+        components.append(tuple(sorted(found)))
+    return tuple(sorted(components))
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleConnectedNeighborhood:
+    status: CrossSampleNeighborhoodStatus
+    member_subject_ids: tuple[str, ...]
+    eligible_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    connected_components: tuple[tuple[str, ...], ...]
+
+    def __post_init__(self) -> None:
+        if self.status not in {"assessable", "unassessable"}:
+            raise CrossSampleContractError("neighborhood status is not closed")
+        if tuple(sorted(set(self.member_subject_ids))) != self.member_subject_ids:
+            raise CrossSampleContractError("neighborhood members are not canonical")
+        if any(edge.disposition != "eligible" for edge in self.eligible_edges):
+            raise CrossSampleContractError("neighborhood retained a non-eligible edge")
+        member_ids = set(self.member_subject_ids)
+        if any(
+            edge.left_member_subject_id not in member_ids
+            or edge.right_member_subject_id not in member_ids
+            for edge in self.eligible_edges
+        ):
+            raise CrossSampleContractError("neighborhood edge references an outsider")
+        if self.connected_components != _components(
+            self.member_subject_ids,
+            self.eligible_edges,
+        ):
+            raise CrossSampleContractError("neighborhood components are not exact")
+
+
+def build_bounded_connected_neighborhood(
+    *,
+    member_subjects: Sequence[CrossSampleGroupMemberSubject],
+    edges: Sequence[CrossSampleNeighborhoodEdge],
+    budget: CrossSampleNeighborhoodBudget,
+) -> CrossSampleConnectedNeighborhood:
+    if not isinstance(budget, CrossSampleNeighborhoodBudget):
+        raise CrossSampleContractError("neighborhood budget must be typed")
+    members = tuple(member_subjects)
+    if any(type(edge) is not CrossSampleNeighborhoodEdge for edge in edges):
+        raise CrossSampleContractError(
+            "neighborhood edges must be exact CrossSample classifications"
+        )
+    edge_pairs = tuple(
+        tuple(sorted((edge.left_member_subject_id, edge.right_member_subject_id)))
+        for edge in edges
+    )
+    if len(set(edge_pairs)) != len(edge_pairs):
+        raise CrossSampleContractError(
+            "neighborhood repeats an undirected member edge"
+        )
+    owner_by_member: dict[str, str] = {}
+    for edge in edges:
+        for member_id, owner_id in (
+            (edge.left_member_subject_id, edge.left_owner.owner_id),
+            (edge.right_member_subject_id, edge.right_owner.owner_id),
+        ):
+            prior = owner_by_member.setdefault(member_id, owner_id)
+            if prior != owner_id:
+                raise CrossSampleContractError(
+                    "neighborhood member crossed owner bindings"
+                )
+    member_ids = tuple(sorted(member.member_subject_id for member in members))
+    if len(set(member_ids)) != len(member_ids):
+        raise CrossSampleContractError("neighborhood duplicates a member")
+    eligible = tuple(
+        sorted(
+            (edge for edge in edges if edge.disposition == "eligible"),
+            key=lambda edge: (
+                min(edge.left_member_subject_id, edge.right_member_subject_id),
+                max(edge.left_member_subject_id, edge.right_member_subject_id),
+            ),
+        )
+    )
+    status: CrossSampleNeighborhoodStatus = (
+        "assessable"
+        if len(member_ids) <= budget.max_members
+        and len(eligible) <= budget.max_eligible_edges
+        else "unassessable"
+    )
+    return CrossSampleConnectedNeighborhood(
+        status=status,
+        member_subject_ids=member_ids,
+        eligible_edges=eligible,
+        connected_components=_components(member_ids, eligible),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleLineageEdge:
+    lineage_edge_id: str
+    predecessor_group_hypothesis_id: str
+    successor_group_hypothesis_id: str
+    processing_request_id: str
+    predecessor_identity_basis_bytes: bytes
+    predecessor_group_hypothesis_ids: tuple[str, ...]
+    member_subject_ids: tuple[str, ...]
+    basis_bytes: bytes
+
+    def __post_init__(self) -> None:
+        predecessor = _required_text(
+            self.predecessor_group_hypothesis_id,
+            field="lineage predecessor",
+        )
+        successor = _required_text(
+            self.successor_group_hypothesis_id,
+            field="lineage successor",
+        )
+        if predecessor == successor:
+            raise CrossSampleContractError("lineage cannot be a self-edge")
+        request_id = validate_typed_identity_id(
+            self.processing_request_id,
+            prefix=PROCESSING_REQUEST_ID_PREFIX,
+            field="lineage processing_request_id",
+        )
+        try:
+            validate_typed_identity_basis(
+                predecessor,
+                prefix=_CROSS_SAMPLE_GROUP_PREFIX,
+                basis_bytes=self.predecessor_identity_basis_bytes,
+                field="lineage predecessor_group_hypothesis_id",
+            )
+            validate_typed_identity_id(
+                successor,
+                prefix=_CROSS_SAMPLE_GROUP_PREFIX,
+                field="lineage successor_group_hypothesis_id",
+            )
+            predecessor_basis = json.loads(
+                self.predecessor_identity_basis_bytes.decode("utf-8")
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise CrossSampleContractError(str(exc)) from exc
+        if (
+            not isinstance(predecessor_basis, dict)
+            or set(predecessor_basis)
+            != {
+                "schema_version",
+                "processing_request_id",
+                "member_subject_ids",
+            }
+            or predecessor_basis["schema_version"] != "cross_sample_group_v1"
+            or predecessor_basis["processing_request_id"] != request_id
+        ):
+            raise CrossSampleContractError("lineage predecessor crossed request")
+        predecessor_member_ids = predecessor_basis["member_subject_ids"]
+        if (
+            not isinstance(predecessor_member_ids, list)
+            or not predecessor_member_ids
+            or any(
+                not isinstance(item, str) or not item
+                for item in predecessor_member_ids
+            )
+            or sorted(set(predecessor_member_ids)) != predecessor_member_ids
+        ):
+            raise CrossSampleContractError("lineage predecessor basis is malformed")
+        predecessor_ids = self.predecessor_group_hypothesis_ids
+        if (
+            not predecessor_ids
+            or tuple(sorted(set(predecessor_ids))) != predecessor_ids
+            or predecessor not in predecessor_ids
+        ):
+            raise CrossSampleContractError(
+                "lineage predecessor closure must be non-empty and canonical"
+            )
+        if (
+            not self.member_subject_ids
+            or tuple(sorted(set(self.member_subject_ids)))
+            != self.member_subject_ids
+        ):
+            raise CrossSampleContractError(
+                "lineage member closure must be non-empty and canonical"
+            )
+        if not set(predecessor_member_ids).intersection(self.member_subject_ids):
+            raise CrossSampleContractError(
+                "lineage predecessor does not overlap successor membership"
+            )
+        basis = canonical_identity_basis_bytes(
+            {
+                "schema_version": "cross_sample_lineage_edge_v1",
+                "processing_request_id": request_id,
+                "predecessor_group_hypothesis_id": predecessor,
+                "predecessor_identity_basis": predecessor_basis,
+                "predecessor_group_hypothesis_ids": list(predecessor_ids),
+                "successor_group_hypothesis_id": successor,
+                "member_subject_ids": list(self.member_subject_ids),
+            }
+        )
+        if self.basis_bytes != basis:
+            raise CrossSampleContractError("lineage edge basis bytes are not exact")
+        try:
+            validate_typed_identity_basis(
+                self.lineage_edge_id,
+                prefix=_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX,
+                basis_bytes=basis,
+                field="lineage_edge_id",
+            )
+        except ValueError as exc:
+            raise CrossSampleContractError(str(exc)) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleSuccessorApplication:
+    status: CrossSampleNeighborhoodStatus
+    predecessors: tuple[CrossSampleGroupIdentity, ...]
+    successors: tuple[CrossSampleGroupIdentity, ...]
+    lineage: tuple[CrossSampleLineageEdge, ...]
+    reason: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.predecessors) is not tuple
+            or type(self.successors) is not tuple
+            or type(self.lineage) is not tuple
+        ):
+            raise CrossSampleContractError(
+                "successor application closures must be immutable tuples"
+            )
+        if not self.predecessors or any(
+            not isinstance(group, CrossSampleGroupIdentity)
+            for group in self.predecessors
+        ):
+            raise CrossSampleContractError(
+                "successor application requires typed predecessors"
+            )
+        predecessor_ids = tuple(
+            group.group_hypothesis_id for group in self.predecessors
+        )
+        if predecessor_ids != tuple(sorted(predecessor_ids)):
+            raise CrossSampleContractError(
+                "successor application predecessors are not canonical-sorted"
+            )
+        validate_cross_sample_group_population(self.predecessors)
+        if self.status == "unassessable":
+            if self.successors or self.lineage or self.reason != (
+                "eligible_neighborhood_exceeds_budget"
+            ):
+                raise CrossSampleContractError(
+                    "unassessable successor application is not atomic"
+                )
+            return
+        if self.status != "assessable" or not self.successors:
+            raise CrossSampleContractError("successor application status is invalid")
+        successor_ids = tuple(
+            group.group_hypothesis_id for group in self.successors
+        )
+        if successor_ids != tuple(sorted(successor_ids)):
+            raise CrossSampleContractError(
+                "successor application successors are not canonical-sorted"
+            )
+        predecessor_members = sorted(
+            member.member_subject_id
+            for group in self.predecessors
+            for member in group.member_subjects
+        )
+        successor_members = sorted(
+            member.member_subject_id
+            for group in self.successors
+            for member in group.member_subjects
+        )
+        if predecessor_members != successor_members:
+            raise CrossSampleContractError(
+                "successor application is not a complete partition"
+            )
+        expected_lineage = _expected_cross_sample_lineage(
+            predecessors=self.predecessors,
+            successors=self.successors,
+        )
+        if self.lineage != expected_lineage:
+            raise CrossSampleContractError(
+                "successor application lineage is not the complete atomic closure"
+            )
+        unchanged = set(predecessor_ids) == set(successor_ids)
+        expected_reason = (
+            "unchanged_membership_no_lineage" if unchanged else "membership_changed"
+        )
+        if self.reason != expected_reason:
+            raise CrossSampleContractError(
+                "successor application reason contradicts its transition"
+            )
+
+
+def _mint_cross_sample_lineage_edge(
+    *,
+    predecessor: CrossSampleGroupIdentity,
+    successor: CrossSampleGroupIdentity,
+    predecessor_group_hypothesis_ids: tuple[str, ...],
+) -> CrossSampleLineageEdge:
+    member_subject_ids = tuple(
+        member.member_subject_id for member in successor.member_subjects
+    )
+    predecessor_basis = json.loads(predecessor.basis_bytes.decode("utf-8"))
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_lineage_edge_v1",
+            "processing_request_id": predecessor.processing_request_id,
+            "predecessor_group_hypothesis_id": predecessor.group_hypothesis_id,
+            "predecessor_identity_basis": predecessor_basis,
+            "predecessor_group_hypothesis_ids": list(
+                predecessor_group_hypothesis_ids
+            ),
+            "successor_group_hypothesis_id": successor.group_hypothesis_id,
+            "member_subject_ids": list(member_subject_ids),
+        }
+    )
+    return CrossSampleLineageEdge(
+        lineage_edge_id=typed_identity_digest(
+            _CROSS_SAMPLE_LINEAGE_EDGE_PREFIX,
+            basis,
+        ),
+        predecessor_group_hypothesis_id=predecessor.group_hypothesis_id,
+        successor_group_hypothesis_id=successor.group_hypothesis_id,
+        processing_request_id=predecessor.processing_request_id,
+        predecessor_identity_basis_bytes=predecessor.basis_bytes,
+        predecessor_group_hypothesis_ids=predecessor_group_hypothesis_ids,
+        member_subject_ids=member_subject_ids,
+        basis_bytes=basis,
+    )
+
+
+def _expected_cross_sample_lineage(
+    *,
+    predecessors: tuple[CrossSampleGroupIdentity, ...],
+    successors: tuple[CrossSampleGroupIdentity, ...],
+) -> tuple[CrossSampleLineageEdge, ...]:
+    lineage_edges: list[CrossSampleLineageEdge] = []
+    for successor in successors:
+        relevant_predecessors = tuple(
+            predecessor
+            for predecessor in predecessors
+            if set(predecessor.member_subjects).intersection(
+                successor.member_subjects
+            )
+            and predecessor.group_hypothesis_id != successor.group_hypothesis_id
+        )
+        predecessor_closure = tuple(
+            predecessor.group_hypothesis_id
+            for predecessor in relevant_predecessors
+        )
+        lineage_edges.extend(
+            _mint_cross_sample_lineage_edge(
+                predecessor=predecessor,
+                successor=successor,
+                predecessor_group_hypothesis_ids=predecessor_closure,
+            )
+            for predecessor in relevant_predecessors
+        )
+    return tuple(lineage_edges)
+
+
+def apply_coupled_successor_proposal(
+    *,
+    predecessors: Sequence[CrossSampleGroupIdentity],
+    successor_member_sets: Sequence[Sequence[CrossSampleGroupMemberSubject]],
+    edges: Sequence[CrossSampleNeighborhoodEdge],
+    budget: CrossSampleNeighborhoodBudget,
+    population: Sequence[CrossSampleGroupIdentity],
+) -> CrossSampleSuccessorApplication:
+    predecessor_groups = tuple(
+        sorted(predecessors, key=lambda group: group.group_hypothesis_id)
+    )
+    if not predecessor_groups:
+        raise CrossSampleContractError("successor requires a predecessor")
+    validate_cross_sample_group_population(population)
+    population_by_id = {
+        group.group_hypothesis_id: group for group in population
+    }
+    if any(
+        population_by_id.get(group.group_hypothesis_id) != group
+        for group in predecessor_groups
+    ):
+        raise CrossSampleContractError(
+            "successor predecessors are not an exact current population subset"
+        )
+    request_ids = {group.processing_request_id for group in predecessor_groups}
+    if len(request_ids) != 1:
+        raise CrossSampleContractError("successor predecessors crossed request")
+    request_id = next(iter(request_ids))
+    predecessor_members = tuple(
+        member for group in predecessor_groups for member in group.member_subjects
+    )
+    neighborhood = build_bounded_connected_neighborhood(
+        member_subjects=predecessor_members,
+        edges=edges,
+        budget=budget,
+    )
+    if neighborhood.status == "unassessable":
+        return CrossSampleSuccessorApplication(
+            status="unassessable",
+            predecessors=predecessor_groups,
+            successors=(),
+            lineage=(),
+            reason="eligible_neighborhood_exceeds_budget",
+        )
+    proposed = tuple(tuple(member_set) for member_set in successor_member_sets)
+    proposed_ids = tuple(
+        member.member_subject_id for member_set in proposed for member in member_set
+    )
+    predecessor_ids = tuple(member.member_subject_id for member in predecessor_members)
+    if sorted(proposed_ids) != sorted(predecessor_ids) or len(set(proposed_ids)) != len(
+        proposed_ids
+    ):
+        raise CrossSampleContractError("successor proposal is not a complete partition")
+    component_by_member = {
+        member_id: index
+        for index, component in enumerate(neighborhood.connected_components)
+        for member_id in component
+    }
+    if any(
+        len({component_by_member[member.member_subject_id] for member in member_set})
+        != 1
+        for member_set in proposed
+    ):
+        raise CrossSampleContractError(
+            "successor proposal spans disconnected eligible components"
+        )
+    successors = tuple(
+        sorted(
+            (
+                mint_cross_sample_group_identity(
+                    processing_request_id=request_id,
+                    member_subjects=member_set,
+                )
+                for member_set in proposed
+            ),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    unaffected = tuple(group for group in population if group not in predecessor_groups)
+    validate_cross_sample_group_population((*unaffected, *successors))
+    predecessor_ids_set = {
+        group.group_hypothesis_id for group in predecessor_groups
+    }
+    successor_ids_set = {group.group_hypothesis_id for group in successors}
+    if predecessor_ids_set == successor_ids_set:
+        return CrossSampleSuccessorApplication(
+            status="assessable",
+            predecessors=predecessor_groups,
+            successors=successors,
+            lineage=(),
+            reason="unchanged_membership_no_lineage",
+        )
+    lineage = _expected_cross_sample_lineage(
+        predecessors=predecessor_groups,
+        successors=successors,
+    )
+    return CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=predecessor_groups,
+        successors=successors,
+        lineage=lineage,
+        reason="membership_changed",
+    )
 
 
 class OwnerEdgeEvaluator(Protocol):
@@ -126,7 +1280,7 @@ class CrossSamplePeakGroupHypothesis:
     Identity semantics:
     - ``group_hypothesis_id``: primary identity key for pipeline decisions.
     - ``public_family_id``: display label for output compatibility.
-      Identical to ``group_hypothesis_id`` in current implementation.
+      It is intentionally independent of ``group_hypothesis_id``.
     - ``feature_family_id`` property: legacy output alias for ``public_family_id``.
     """
 
@@ -135,6 +1289,10 @@ class CrossSamplePeakGroupHypothesis:
     owner_ids: tuple[str, ...]
     event_ids: tuple[str, ...]
     event_member_count: int
+    processing_request_id: str = ""
+    member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
+    identity_basis_bytes: bytes = b""
+    disposition: CrossSampleGroupDisposition = "established"
     source: str = "owner_aligned_feature_shadow"
     neutral_loss_tag: str = ""
     group_center_mz: float | None = None
@@ -217,6 +1375,44 @@ class CrossSamplePeakGroupHypothesis:
         return "cross_sample_peak_group_hypothesis"
 
 
+def validate_cross_sample_peak_group_identity(
+    group: CrossSamplePeakGroupHypothesis,
+    *,
+    require_canonical: bool = False,
+) -> CrossSampleGroupIdentity | None:
+    """Replay the canonical identity retained by a scientific group carrier."""
+
+    if not isinstance(group, CrossSamplePeakGroupHypothesis):
+        raise CrossSampleContractError("group must be a CrossSample hypothesis")
+    has_identity = bool(
+        group.processing_request_id
+        or group.member_subjects
+        or group.identity_basis_bytes
+    )
+    if not has_identity:
+        if require_canonical:
+            raise CrossSampleContractError(
+                "scientific CrossSample carrier is missing canonical identity"
+            )
+        return None
+    if not (
+        group.processing_request_id
+        and group.member_subjects
+        and group.identity_basis_bytes
+    ):
+        raise CrossSampleContractError(
+            "canonical CrossSample carrier has incomplete identity fields"
+        )
+    identity = CrossSampleGroupIdentity(
+        group_hypothesis_id=group.group_hypothesis_id,
+        processing_request_id=group.processing_request_id,
+        member_subjects=group.member_subjects,
+        basis_bytes=group.identity_basis_bytes,
+        disposition=group.disposition,
+    )
+    return identity
+
+
 @dataclass(frozen=True)
 class _GroupHardGateEnvelope:
     neutral_loss_tag: str
@@ -245,12 +1441,32 @@ def construct_cross_sample_peak_group_hypotheses(
     drift_lookup: DriftLookupProtocol | None = None,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
     edge_evaluator: OwnerEdgeEvaluator = evaluate_owner_edge,
+    processing_request_id: str | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    if not owners:
+        return ()
+    subjects = tuple(owner.cross_sample_member_subject for owner in owners)
+    if any(subject is None for subject in subjects):
+        raise CrossSampleContractError(
+            "every owner requires an exact member subject before grouping"
+        )
+    request_ids = {
+        subject.processing_request_id for subject in subjects if subject is not None
+    }
+    if len(request_ids) != 1:
+        raise CrossSampleContractError("owners crossed processing requests")
+    request_id = next(iter(request_ids))
+    if processing_request_id is not None and processing_request_id != request_id:
+        raise CrossSampleContractError("explicit request crossed owner subjects")
     clean = tuple(owner for owner in owners if not owner.identity_conflict)
     conflict_hypotheses = tuple(
         _hypothesis_from_owner_group(
             (owner,),
-            group_hypothesis_id=f"FAM{index:06d}",
+            group_identity=_identity_from_owners(
+                (owner,),
+                processing_request_id=request_id,
+                disposition="unresolved",
+            ),
             public_family_id=f"FAM{index:06d}",
             evidence="identity_conflict_review_only",
             identity_conflict=True,
@@ -334,18 +1550,42 @@ def construct_cross_sample_peak_group_hypotheses(
         if sample_universe is not None
         else {}
     )
-    group_ids = tuple(
+    public_group_ids = tuple(
         f"FAM{index + len(conflict_hypotheses):06d}"
         for index in range(1, len(groups) + 1)
+    )
+    group_identities = tuple(
+        _identity_from_owners(
+            tuple(group),
+            processing_request_id=request_id,
+            disposition=(
+                "unresolved" if index in resolved_duplicate_owner_groups else None
+            ),
+        )
+        for index, group in enumerate(groups)
+    )
+    validate_cross_sample_group_population(
+        tuple(
+            CrossSampleGroupIdentity(
+                group_hypothesis_id=hypothesis.group_hypothesis_id,
+                processing_request_id=hypothesis.processing_request_id,
+                member_subjects=hypothesis.member_subjects,
+                basis_bytes=hypothesis.identity_basis_bytes,
+                disposition=hypothesis.disposition,
+            )
+            for hypothesis in conflict_hypotheses
+        )
+        + group_identities
     )
     resolved_group_ids_by_winner: dict[int, list[str]] = {}
     for subordinate, winner in sorted(resolved_duplicate_owner_groups.items()):
         resolved_group_ids_by_winner.setdefault(winner, []).append(
-            group_ids[subordinate],
+            group_identities[subordinate].group_hypothesis_id,
         )
     clean_hypotheses: list[CrossSamplePeakGroupHypothesis] = []
     for index, group in enumerate(groups):
-        group_id = group_ids[index]
+        group_identity = group_identities[index]
+        public_group_id = public_group_ids[index]
         owner_id_set = frozenset(owner.owner_id for owner in group)
         evidence = _group_evidence(
             group,
@@ -362,12 +1602,12 @@ def construct_cross_sample_peak_group_hypotheses(
         )
         winner_index = resolved_duplicate_owner_groups.get(index)
         if winner_index is not None:
-            winner_id = group_ids[winner_index]
+            winner_id = group_identities[winner_index].group_hypothesis_id
             clean_hypotheses.append(
                 _hypothesis_from_owner_group(
                     tuple(group),
-                    group_hypothesis_id=group_id,
-                    public_family_id=group_id,
+                    group_identity=group_identity,
+                    public_family_id=public_group_id,
                     evidence=(
                         f"{evidence};{_DUPLICATE_OWNER_GROUP_POLICY}_loser;"
                         f"winner={winner_id}"
@@ -375,7 +1615,9 @@ def construct_cross_sample_peak_group_hypotheses(
                     review_only=True,
                     consolidation_state="primary_loser",
                     consolidation_winner_group_hypothesis_id=winner_id,
-                    consolidation_source_group_hypothesis_id=group_id,
+                    consolidation_source_group_hypothesis_id=(
+                        group_identity.group_hypothesis_id
+                    ),
                 ),
             )
             continue
@@ -384,8 +1626,8 @@ def construct_cross_sample_peak_group_hypotheses(
             clean_hypotheses.append(
                 _hypothesis_from_owner_group(
                     tuple(group),
-                    group_hypothesis_id=group_id,
-                    public_family_id=group_id,
+                    group_identity=group_identity,
+                    public_family_id=public_group_id,
                     evidence=evidence,
                 ),
             )
@@ -393,16 +1635,18 @@ def construct_cross_sample_peak_group_hypotheses(
         clean_hypotheses.append(
             _hypothesis_from_owner_group(
                 tuple(group),
-                group_hypothesis_id=group_id,
-                public_family_id=group_id,
+                group_identity=group_identity,
+                public_family_id=public_group_id,
                 evidence=(
                     f"{evidence};{_DUPLICATE_OWNER_GROUP_POLICY}_winner;"
                     f"resolved_group_count={len(resolved_ids)}"
                 ),
                 consolidation_state="primary_winner",
-                consolidation_winner_group_hypothesis_id=group_id,
+                consolidation_winner_group_hypothesis_id=(
+                    group_identity.group_hypothesis_id
+                ),
                 consolidation_source_group_hypothesis_id=";".join(
-                    (group_id, *resolved_ids),
+                    (group_identity.group_hypothesis_id, *resolved_ids),
                 ),
             ),
         )
@@ -448,52 +1692,6 @@ def review_only_peak_group_hypotheses_from_ambiguous_records(
             ),
         )
     return tuple(hypotheses)
-
-
-def cross_sample_peak_group_hypothesis_from_owner_feature(
-    feature: OwnerAlignedFeature,
-    *,
-    edge_evidence: Sequence[OwnerEdgeEvidence] = (),
-) -> CrossSamplePeakGroupHypothesis:
-    event_ids = tuple(
-        event_id for owner in feature.owners for event_id in owner.event_candidate_ids
-    )
-    edge_facts = cross_sample_peak_group_edge_facts_from_owner_edges(
-        edge_evidence,
-        owner_ids=feature.event_cluster_ids,
-    )
-    review_fact = cross_sample_peak_group_review_fact_from_owner_feature(feature)
-    review_facts = () if review_fact is None else (review_fact,)
-    hard_gate_challenge_facts = (
-        cross_sample_peak_group_hard_gate_challenge_facts_from_owner_edges(
-            edge_evidence,
-            owner_ids=feature.event_cluster_ids,
-        )
-    )
-    return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=feature.feature_family_id,
-        public_family_id=feature.feature_family_id,
-        owner_ids=feature.event_cluster_ids,
-        event_ids=event_ids,
-        event_member_count=feature.event_member_count,
-        neutral_loss_tag=feature.neutral_loss_tag,
-        group_center_mz=feature.family_center_mz,
-        group_center_rt=feature.family_center_rt,
-        group_product_mz=feature.family_product_mz,
-        group_observed_neutral_loss_da=feature.family_observed_neutral_loss_da,
-        has_anchor=feature.has_anchor,
-        owners=feature.owners,
-        evidence=feature.evidence,
-        identity_conflict=feature.identity_conflict,
-        review_only=feature.review_only,
-        confirm_local_owners_with_backfill=(feature.confirm_local_owners_with_backfill),
-        backfill_seed_centers=feature.backfill_seed_centers,
-        ambiguous_sample_stem=feature.ambiguous_sample_stem,
-        ambiguous_candidate_ids=feature.ambiguous_candidate_ids,
-        edge_facts=edge_facts,
-        review_facts=review_facts,
-        hard_gate_challenge_facts=hard_gate_challenge_facts,
-    )
 
 
 def cross_sample_peak_group_edge_fact_from_owner_edge(
@@ -795,7 +1993,14 @@ def _merged_group_passes_hard_gates(
                 edge_cache=edge_cache,
                 edge_evaluator=edge_evaluator,
             )
-            if edge.decision == "blocked_edge":
+            if (
+                classify_cross_sample_initial_edge(
+                    edge,
+                    context="hard_gate",
+                    config=config,
+                )
+                == "excluded"
+            ):
                 return False
     return True
 
@@ -816,16 +2021,20 @@ def _group_accepts_owner(
         if not _group_can_pass_hard_gates(owner, envelope, config):
             return False
         return all(
-            _edge_for_pair(
-                owner,
-                existing,
+            classify_cross_sample_initial_edge(
+                _edge_for_pair(
+                    owner,
+                    existing,
+                    config=config,
+                    drift_lookup=drift_lookup,
+                    edge_evidence_sink=edge_evidence_sink,
+                    edge_cache=edge_cache,
+                    edge_evaluator=edge_evaluator,
+                ),
+                context="complete_link",
                 config=config,
-                drift_lookup=drift_lookup,
-                edge_evidence_sink=edge_evidence_sink,
-                edge_cache=edge_cache,
-                edge_evaluator=edge_evaluator,
-            ).decision
-            == "strong_edge"
+            )
+            == "eligible"
             for existing in group
         )
     if owner.sample_stem in envelope.sample_stems:
@@ -852,15 +2061,13 @@ def _is_full_batch_continuity_edge(
     *,
     config: AlignmentConfig,
 ) -> bool:
-    if edge.decision == "strong_edge":
-        return True
     return (
-        edge.decision == "weak_edge"
-        and not edge.failure_reason
-        and edge.drift_prior_source == "none"
-        and edge.rt_raw_delta_sec <= config.preferred_rt_sec
-        and edge.owner_quality == "clean"
-        and edge.seed_support_level == "moderate"
+        classify_cross_sample_initial_edge(
+            edge,
+            context="full_batch_continuity",
+            config=config,
+        )
+        == "eligible"
     )
 
 
@@ -1257,25 +2464,14 @@ def _targeted_istd_continuity_edge(
     *,
     config: AlignmentConfig,
 ) -> bool:
-    if _is_full_batch_continuity_edge(edge, config=config):
-        return True
-    if edge.failure_reason and edge.failure_reason not in {
-        "product_mz_out_of_tolerance",
-        "observed_loss_out_of_tolerance",
-    }:
-        return False
-    if (
-        edge.owner_quality in {"weak", "ambiguous_nearby"}
-        or edge.seed_support_level == "weak"
-    ):
-        return False
-    rt_delta_sec = edge.rt_raw_delta_sec
-    if (
-        edge.drift_prior_source != "none"
-        and edge.rt_drift_corrected_delta_sec is not None
-    ):
-        rt_delta_sec = edge.rt_drift_corrected_delta_sec
-    return rt_delta_sec <= config.preferred_rt_sec
+    return (
+        classify_cross_sample_initial_edge(
+            edge,
+            context="targeted_istd_continuity",
+            config=config,
+        )
+        == "eligible"
+    )
 
 
 def _targeted_istd_candidate_is_valid(
@@ -1825,7 +3021,7 @@ def _owner_match_score(
 def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
-    group_hypothesis_id: str,
+    group_identity: CrossSampleGroupIdentity,
     public_family_id: str,
     evidence: str,
     identity_conflict: bool = False,
@@ -1846,11 +3042,15 @@ def _hypothesis_from_owner_group(
         event_id for owner in group for event_id in owner.event_candidate_ids
     )
     return CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=group_hypothesis_id,
+        group_hypothesis_id=group_identity.group_hypothesis_id,
         public_family_id=public_family_id,
         owner_ids=tuple(owner.owner_id for owner in group),
         event_ids=event_ids,
         event_member_count=sum(len(owner.all_events) for owner in group),
+        processing_request_id=group_identity.processing_request_id,
+        member_subjects=group_identity.member_subjects,
+        identity_basis_bytes=group_identity.basis_bytes,
+        disposition=group_identity.disposition,
         source="cross_sample_peak_group_successor_constructor",
         neutral_loss_tag=group[0].neutral_loss_tag,
         group_center_mz=center_mz,
@@ -1870,6 +3070,22 @@ def _hypothesis_from_owner_group(
         consolidation_source_group_hypothesis_id=(
             consolidation_source_group_hypothesis_id
         ),
+    )
+
+
+def _identity_from_owners(
+    owners: Sequence[SampleLocalMS1Owner],
+    *,
+    processing_request_id: str,
+    disposition: CrossSampleGroupDisposition | None = None,
+) -> CrossSampleGroupIdentity:
+    subjects = tuple(owner.cross_sample_member_subject for owner in owners)
+    if any(subject is None for subject in subjects):
+        raise CrossSampleContractError("owner is missing a CrossSample member subject")
+    return mint_cross_sample_group_identity(
+        processing_request_id=processing_request_id,
+        member_subjects=cast(tuple[CrossSampleGroupMemberSubject, ...], subjects),
+        disposition=disposition,
     )
 
 

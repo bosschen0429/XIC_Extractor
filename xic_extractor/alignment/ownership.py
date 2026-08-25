@@ -11,6 +11,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
+    group_member_subject_from_discovery_physical_selection,
+)
 from xic_extractor.alignment.matrix_handoff import integration_from_peak_trace
 from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
@@ -29,10 +33,17 @@ from xic_extractor.discovery.physical_fact_record import (
     validate_discovery_candidate_physical_binding,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.observations import mint_peak_observation_ref
 from xic_extractor.peak_detection.region_audit import (
     PeakRegionAuditSummary,
     build_peak_region_audit_summary,
 )
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import (
+    ProcessingOwnerReferences,
+    resolve_request_acquisition_source,
+)
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -74,6 +85,36 @@ class OwnershipBuildResult:
 
 
 @dataclass(frozen=True)
+class AlignmentCrossSampleIdentityContext:
+    """Exact owner context that Alignment hands through to CrossSample."""
+
+    processing_owners: ProcessingOwnerReferences
+    samples_by_stem: Mapping[str, ResolvedCanonicalSampleIdentity]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.processing_owners, ProcessingOwnerReferences):
+            raise TypeError("processing_owners must be owner-backed")
+        if not isinstance(self.samples_by_stem, Mapping) or not self.samples_by_stem:
+            raise TypeError("samples_by_stem must be a non-empty mapping")
+        expected = {
+            sample.lookup_token: sample
+            for sample in self.processing_owners.sample_resolutions
+        }
+        if set(self.samples_by_stem) != set(expected) or any(
+            self.samples_by_stem[stem] != expected[stem] for stem in expected
+        ):
+            raise ValueError("Alignment identity context crossed canonical samples")
+
+    def sample_for(self, sample_stem: str) -> ResolvedCanonicalSampleIdentity:
+        try:
+            return self.samples_by_stem[sample_stem]
+        except KeyError as exc:
+            raise ValueError(
+                "owner sample is outside Alignment identity context"
+            ) from exc
+
+
+@dataclass(frozen=True)
 class _ResolvedCandidate:
     candidate: Any
     event: IdentityEvent
@@ -86,6 +127,7 @@ class _ResolvedCandidate:
     selected_integration: IntegrationResult | None = None
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
+    cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +160,7 @@ def build_sample_local_owners(
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None = None,
 ) -> OwnershipBuildResult:
     if raw_xic_batch_size < 1:
         raise ValueError("raw_xic_batch_size must be >= 1")
@@ -132,10 +175,12 @@ def build_sample_local_owners(
         raw_xic_batch_size,
         effective_emit_region_audit,
         region_audit_family_ids,
+        cross_sample_identity_context,
     )
     return _ownership_result_from_outcomes(
         outcomes,
         alignment_config=alignment_config,
+        cross_sample_identity_context=cross_sample_identity_context,
     )
 
 
@@ -143,6 +188,7 @@ def build_sample_local_owners_from_discovery_bindings(
     bindings: Sequence[DiscoveryCandidatePhysicalBinding],
     *,
     alignment_config: AlignmentConfig,
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None = None,
 ) -> OwnershipBuildResult:
     """Build owners from Discovery's canonical in-memory physical results."""
 
@@ -169,6 +215,14 @@ def build_sample_local_owners_from_discovery_bindings(
         if integration is None:
             raise ValueError("available Discovery physical binding lost integration")
         seed_rt = _candidate_seed_rt(candidate)
+        member_subject = (
+            _member_subject_from_discovery_binding(
+                binding,
+                context=cross_sample_identity_context,
+            )
+            if cross_sample_identity_context is not None
+            else None
+        )
         outcomes.append(
             _ResolutionOutcome(
                 resolved=_ResolvedCandidate(
@@ -190,6 +244,7 @@ def build_sample_local_owners_from_discovery_bindings(
                         integration.rt_left_min,
                         integration.rt_right_min,
                     ),
+                    cross_sample_member_subject=member_subject,
                 ),
                 unresolved=None,
             )
@@ -197,6 +252,7 @@ def build_sample_local_owners_from_discovery_bindings(
     return _ownership_result_from_outcomes(
         tuple(outcomes),
         alignment_config=alignment_config,
+        cross_sample_identity_context=cross_sample_identity_context,
     )
 
 
@@ -204,6 +260,7 @@ def _ownership_result_from_outcomes(
     outcomes: Sequence[_ResolutionOutcome],
     *,
     alignment_config: AlignmentConfig,
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None = None,
 ) -> OwnershipBuildResult:
     resolved = tuple(
         outcome.resolved for outcome in outcomes if outcome.resolved is not None
@@ -222,6 +279,7 @@ def _ownership_result_from_outcomes(
             sample_stem,
             by_sample[sample_stem],
             alignment_config=alignment_config,
+            cross_sample_identity_context=cross_sample_identity_context,
         )
         owners.extend(sample_owners)
         assignments.extend(sample_assignments)
@@ -242,6 +300,7 @@ def _resolve_candidates(
     raw_xic_batch_size: int,
     emit_region_audit: bool,
     region_audit_family_ids: frozenset[str] | None,
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None,
 ) -> tuple[_ResolutionOutcome, ...]:
     outcomes: list[_ResolutionOutcome | None] = [None] * len(candidates)
     requests_by_sample: dict[
@@ -305,79 +364,10 @@ def _resolve_candidates(
                     peak_resolver,
                     ppm_tol=_request.ppm_tol,
                     emit_region_audit=item_emit_region_audit,
+                    request=_request,
+                    cross_sample_identity_context=cross_sample_identity_context,
                 )
     return tuple(outcome for outcome in outcomes if outcome is not None)
-
-
-def _resolve_candidate(
-    candidate: Any,
-    raw_sources: Mapping[str, OwnershipXICSource],
-    alignment_config: AlignmentConfig,
-    peak_config: ExtractionConfig,
-    peak_resolver: PeakResolver,
-    emit_region_audit: bool = False,
-    region_audit_family_ids: frozenset[str] | None = None,
-) -> _ResolutionOutcome:
-    sample_stem = str(candidate.sample_stem)
-    source = raw_sources.get(sample_stem)
-    if source is None:
-        return _unresolved_outcome(candidate, "missing_raw_source")
-    seed_rt = _candidate_seed_rt(candidate)
-    rt_min, rt_max = _candidate_resolution_rt_window(
-        candidate,
-        seed_rt,
-        alignment_config,
-    )
-    rt, intensity = source.extract_xic(
-        float(candidate.precursor_mz),
-        rt_min,
-        rt_max,
-        alignment_config.preferred_ppm,
-    )
-    rt_array, intensity_array = _validated_trace_arrays(rt, intensity)
-    peak = _resolve_peak(
-        candidate,
-        rt_array,
-        intensity_array,
-        peak_config,
-        seed_rt,
-        peak_resolver,
-        ppm_tol=alignment_config.preferred_ppm,
-        emit_region_audit=_emit_region_audit_for_candidate(
-            emit_region_audit,
-            candidate,
-            region_audit_family_ids,
-        ),
-    )
-    if peak is None:
-        return _unresolved_outcome(candidate, "peak_not_found")
-    quantification_apex, quantification_left, quantification_right = (
-        _resolved_peak_quantification_bounds(peak)
-    )
-    return _ResolutionOutcome(
-        resolved=_ResolvedCandidate(
-            candidate=candidate,
-            event=_identity_event(candidate, seed_rt=seed_rt),
-            apex_rt=peak.rt,
-            peak_start_rt=peak.peak_start,
-            peak_end_rt=peak.peak_end,
-            area=peak.area,
-            height=peak.intensity,
-            region_audit=peak.region_audit,
-            selected_integration=peak.selected_integration,
-            quantification_eligible=_quantification_eligible(
-                quantification_apex,
-                quantification_left,
-                quantification_right,
-            ),
-            quantification_exclusion_reason=_quantification_exclusion_reason(
-                quantification_apex,
-                quantification_left,
-                quantification_right,
-            ),
-        ),
-        unresolved=None,
-    )
 
 
 def _resolve_candidate_trace(
@@ -389,6 +379,8 @@ def _resolve_candidate_trace(
     *,
     ppm_tol: float,
     emit_region_audit: bool = False,
+    request: XICRequest,
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None,
 ) -> _ResolutionOutcome:
     rt_array, intensity_array = _validated_trace_arrays(trace.rt, trace.intensity)
     peak = _resolve_peak(
@@ -427,8 +419,74 @@ def _resolve_candidate_trace(
                 quantification_left,
                 quantification_right,
             ),
+            cross_sample_member_subject=_member_subject_from_raw_trace(
+                candidate=candidate,
+                trace=trace,
+                request=request,
+                integration=peak.selected_integration,
+                context=cross_sample_identity_context,
+            ),
         ),
         unresolved=None,
+    )
+
+
+def _member_subject_from_raw_trace(
+    *,
+    candidate: Any,
+    trace: XICTrace,
+    request: XICRequest,
+    integration: IntegrationResult | None,
+    context: AlignmentCrossSampleIdentityContext | None,
+) -> CrossSampleGroupMemberSubject | None:
+    if context is None:
+        return None
+    if integration is None:
+        raise ValueError("exact CrossSample identity requires measured integration")
+    sample_stem = str(candidate.sample_stem)
+    sample = context.sample_for(sample_stem)
+    source = resolve_request_acquisition_source(
+        processing_owners=context.processing_owners,
+        sample=sample,
+    )
+    owner_trace = Trace.from_arrays(
+        sample_name=sample.metadata.raw_stem,
+        mz=request.mz,
+        rt=trace.rt,
+        intensity=trace.intensity,
+        rt_min=request.rt_min,
+        rt_max=request.rt_max,
+        ppm_tol=request.ppm_tol,
+        source="alignment_owner_identity",
+        acquisition_source_id=source.acquisition_source_id,
+    )
+    observation = mint_peak_observation_ref(
+        processing_owners=context.processing_owners,
+        sample=sample,
+        trace=owner_trace,
+        integration=integration,
+        resolver_mode="alignment_owner",
+        proposal_sources=("alignment_owner",),
+    )
+    return group_member_subject_from_discovery_physical_selection(
+        processing_owners=context.processing_owners,
+        sample=sample,
+        candidate=candidate,
+        observation=observation,
+    )
+
+
+def _member_subject_from_discovery_binding(
+    binding: DiscoveryCandidatePhysicalBinding,
+    *,
+    context: AlignmentCrossSampleIdentityContext,
+) -> CrossSampleGroupMemberSubject:
+    sample = context.sample_for(binding.candidate.sample_stem)
+    return group_member_subject_from_discovery_physical_selection(
+        processing_owners=context.processing_owners,
+        sample=sample,
+        candidate=binding.candidate,
+        physical_binding=binding,
     )
 
 
@@ -664,6 +722,7 @@ def _owners_for_sample(
     resolved: list[_ResolvedCandidate],
     *,
     alignment_config: AlignmentConfig,
+    cross_sample_identity_context: AlignmentCrossSampleIdentityContext | None = None,
 ) -> tuple[
     list[SampleLocalMS1Owner],
     list[OwnerAssignment],
@@ -729,6 +788,7 @@ def _owners_for_sample(
                 quantification_exclusion_reason=(
                     primary.quantification_exclusion_reason
                 ),
+                cross_sample_member_subject=primary.cross_sample_member_subject,
             ),
         )
         assignments.append(
@@ -850,8 +910,7 @@ def _looks_like_unresolved_doublet(
     lower_height = min(left.height, right.height)
     higher_height = max(left.height, right.height)
     return (
-        lower_height / max(higher_height, 1e-12)
-        > config.owner_tail_max_secondary_ratio
+        lower_height / max(higher_height, 1e-12) > config.owner_tail_max_secondary_ratio
     )
 
 

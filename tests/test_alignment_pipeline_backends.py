@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -427,8 +428,8 @@ def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
         current = read_candidates(path, **kwargs)
         return (
             *current,
-            SimpleNamespace(
-                sample_stem="Sample_A",
+            replace(
+                current[0],
                 discovery_candidate_state="ms1_feature_nl_rescued",
             ),
             SimpleNamespace(
