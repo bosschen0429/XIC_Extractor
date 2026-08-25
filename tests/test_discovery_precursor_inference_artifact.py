@@ -5,7 +5,6 @@ from scripts.check_discovery_precursor_inference_artifact import (
     EXPECTED_ROWS,
     REQUIRED_COLUMNS,
     check_discovery_precursor_inference_artifact,
-    write_summary,
 )
 
 
@@ -77,18 +76,6 @@ def test_precursor_inference_checker_rejects_invalid_basis_values(
 
     assert any("invalid precursor_mz_basis" in problem for problem in problems)
     assert any("invalid neutral_loss_error_basis" in problem for problem in problems)
-
-
-def test_precursor_inference_checker_writes_summary(tmp_path: Path) -> None:
-    candidates_csv = tmp_path / "discovery_candidates.csv"
-    summary_json = tmp_path / "summary.json"
-    _write_candidates(candidates_csv, [_row(EXPECTED_ROWS[0]), _row(EXPECTED_ROWS[1])])
-
-    write_summary(summary_json, candidates_csv=candidates_csv, problems=[])
-
-    text = summary_json.read_text(encoding="utf-8")
-    assert '"status": "pass"' in text
-    assert '"candidates_csv_sha256":' in text
 
 
 def _write_candidates(path: Path, rows: list[dict[str, str]]) -> None:

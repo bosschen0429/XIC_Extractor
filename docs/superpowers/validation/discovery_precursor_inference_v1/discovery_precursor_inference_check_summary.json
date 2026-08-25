@@ -1,7 +1,0 @@
-{
-  "candidates_csv": "docs/superpowers/validation/discovery_precursor_inference_v1/TumorBC2312_DNA/discovery_candidates.csv",
-  "candidates_csv_sha256": "D08CD512410DA303A961CD4CA6D39938FBAAEB32AE0F3FDCEC038E3561455405",
-  "problems": [],
-  "schema_version": "discovery_precursor_inference_check_v1",
-  "status": "pass"
-}
