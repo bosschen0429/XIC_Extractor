@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleCoupledProposalContext,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
@@ -23,7 +24,10 @@ from xic_extractor.processing_identity import (
     typed_identity_digest,
 )
 
+from .assignment import ModeTrackSupportAnchor
+
 _TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
+_TRAJECTORY_INPUT_MINT_TOKEN = object()
 
 
 class ModeTrackRefinementContractError(ValueError):
@@ -73,56 +77,19 @@ class ModeTrackTrajectoryInput:
     evidence_profile: ModeTrackEvidenceProfile
     exclusions: tuple[tuple[str, str, str], ...]
     neighborhood_status: Literal["assessable", "unassessable"]
-    predecessors: tuple[CrossSampleGroupIdentity, ...] = field(
-        compare=False,
-        repr=False,
-    )
-    classified_edges: tuple[CrossSampleNeighborhoodEdge, ...] = field(
-        compare=False,
-        repr=False,
-    )
-    budget: CrossSampleNeighborhoodBudget = field(compare=False, repr=False)
+    _mint_token: InitVar[object] = field(kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _TRAJECTORY_INPUT_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "trajectory input must be minted by the ModeTrack owner"
+            )
         if tuple(sorted(set(self.anchor_ids))) != self.anchor_ids:
             raise ModeTrackRefinementContractError(
                 "trajectory anchor IDs must be canonical and unique"
             )
         for anchor_id in self.anchor_ids:
             _required_text(anchor_id, field="anchor_id")
-        predecessors = validate_cross_sample_group_population(self.predecessors)
-        predecessor_members = tuple(
-            member for group in predecessors for member in group.member_subjects
-        )
-        if (
-            {group.processing_request_id for group in predecessors}
-            != {self.processing_request_id}
-            or tuple(
-                sorted(member.member_subject_id for member in predecessor_members)
-            )
-            != self.member_subject_ids
-        ):
-            raise ModeTrackRefinementContractError(
-                "trajectory input rich predecessors do not match its identity"
-            )
-        _validate_complete_classification(
-            member_subject_ids=self.member_subject_ids,
-            edges=self.classified_edges,
-        )
-        expected_exclusions = _canonical_exclusions(self.classified_edges)
-        if self.exclusions != expected_exclusions:
-            raise ModeTrackRefinementContractError(
-                "trajectory exclusions do not match its classified edges"
-            )
-        neighborhood = build_bounded_connected_neighborhood(
-            member_subjects=predecessor_members,
-            edges=self.classified_edges,
-            budget=self.budget,
-        )
-        if neighborhood.status != self.neighborhood_status:
-            raise ModeTrackRefinementContractError(
-                "trajectory neighborhood status does not match its bounded snapshot"
-            )
         expected = typed_identity_digest(
             _TRAJECTORY_INPUT_PREFIX,
             canonical_identity_basis_bytes(
@@ -223,7 +190,7 @@ def mint_mode_track_trajectory_input(
     predecessors: Sequence[CrossSampleGroupIdentity],
     owners: Sequence[SampleLocalMS1Owner],
     classified_edges: Sequence[CrossSampleNeighborhoodEdge],
-    anchor_ids: Sequence[str],
+    anchors: Sequence[ModeTrackSupportAnchor],
     injection_order: Mapping[str, int],
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
@@ -239,7 +206,7 @@ def mint_mode_track_trajectory_input(
         member for group in predecessor_groups for member in group.member_subjects
     )
     member_by_id = {member.member_subject_id: member for member in members}
-    owner_ids: set[str] = set()
+    owner_by_id: dict[str, SampleLocalMS1Owner] = {}
     owner_by_member: dict[str, SampleLocalMS1Owner] = {}
     for owner in owners:
         if not isinstance(owner, SampleLocalMS1Owner):
@@ -253,20 +220,36 @@ def mint_mode_track_trajectory_input(
             raise ModeTrackRefinementContractError(
                 "trajectory owner crossed its canonical member"
             )
-        if owner.owner_id in owner_ids or member.member_subject_id in owner_by_member:
+        if owner.owner_id in owner_by_id or member.member_subject_id in owner_by_member:
             raise ModeTrackRefinementContractError("trajectory owner is duplicated")
-        owner_ids.add(owner.owner_id)
+        owner_by_id[owner.owner_id] = owner
         owner_by_member[member.member_subject_id] = owner
     if set(owner_by_member) != set(member_by_id):
         raise ModeTrackRefinementContractError(
             "trajectory owners do not close the predecessor population"
         )
 
-    canonical_anchor_ids = tuple(sorted(anchor_ids))
-    if len(set(canonical_anchor_ids)) != len(canonical_anchor_ids):
+    typed_anchors = tuple(anchors)
+    if any(type(anchor) is not ModeTrackSupportAnchor for anchor in typed_anchors):
+        raise ModeTrackRefinementContractError(
+            "trajectory anchors must be exact owner-validated anchors"
+    )
+    for anchor in typed_anchors:
+        anchor_owner = owner_by_id.get(anchor.peak_hypothesis_id)
+        if (
+            anchor.processing_request_id != processing_request_id
+            or anchor_owner is None
+            or anchor.canonical_sample_identity_id
+            != _required_owner_member(anchor_owner).canonical_sample_identity_id
+        ):
+            raise ModeTrackRefinementContractError(
+                "trajectory anchor crossed its request or canonical owner"
+            )
+    canonical_anchor_ids = tuple(sorted(anchor.anchor_id for anchor in typed_anchors))
+    if len(set(canonical_anchor_ids)) != len(canonical_anchor_ids) or len(
+        {anchor.peak_hypothesis_id for anchor in typed_anchors}
+    ) != len(typed_anchors):
         raise ModeTrackRefinementContractError("trajectory anchors are duplicated")
-    for anchor_id in canonical_anchor_ids:
-        _required_text(anchor_id, field="anchor_id")
     member_subject_ids = tuple(sorted(member_by_id))
     member_apexes = tuple(
         sorted(
@@ -315,9 +298,7 @@ def mint_mode_track_trajectory_input(
         evidence_profile=evidence_profile,
         exclusions=exclusions,
         neighborhood_status=neighborhood.status,
-        predecessors=predecessor_groups,
-        classified_edges=edges,
-        budget=budget,
+        _mint_token=_TRAJECTORY_INPUT_MINT_TOKEN,
     )
 
 
@@ -379,6 +360,7 @@ def apply_accepted_mode_track_refinement(
     *,
     trajectory_input: ModeTrackTrajectoryInput,
     proposal: AcceptedModeTrackRefinement,
+    application_context: CrossSampleCoupledProposalContext,
     population: Sequence[CrossSampleGroupIdentity],
 ) -> CrossSampleSuccessorApplication:
     if not isinstance(trajectory_input, ModeTrackTrajectoryInput) or type(
@@ -391,9 +373,42 @@ def apply_accepted_mode_track_refinement(
         raise ModeTrackRefinementContractError(
             "ModeTrack proposal is bound to another snapshot"
         )
+    if not isinstance(application_context, CrossSampleCoupledProposalContext):
+        raise ModeTrackRefinementContractError(
+            "ModeTrack application requires CrossSample-owned context"
+        )
+    context_member_ids = tuple(
+        sorted(
+            member.member_subject_id
+            for group in application_context.predecessors
+            for member in group.member_subjects
+        )
+    )
+    if context_member_ids != trajectory_input.member_subject_ids:
+        raise ModeTrackRefinementContractError(
+            "CrossSample application context crossed the trajectory snapshot"
+        )
+    context_members = tuple(
+        member
+        for group in application_context.predecessors
+        for member in group.member_subjects
+    )
+    context_neighborhood = build_bounded_connected_neighborhood(
+        member_subjects=context_members,
+        edges=application_context.classified_edges,
+        budget=application_context.budget,
+    )
+    if (
+        _canonical_exclusions(application_context.classified_edges)
+        != trajectory_input.exclusions
+        or context_neighborhood.status != trajectory_input.neighborhood_status
+    ):
+        raise ModeTrackRefinementContractError(
+            "CrossSample application context crossed trajectory exclusions or budget"
+        )
     member_by_id = {
         member.member_subject_id: member
-        for group in trajectory_input.predecessors
+        for group in application_context.predecessors
         for member in group.member_subjects
     }
     successor_member_sets = tuple(
@@ -401,10 +416,10 @@ def apply_accepted_mode_track_refinement(
         for group in proposal.successor_member_subject_ids
     )
     return apply_coupled_successor_proposal(
-        predecessors=trajectory_input.predecessors,
+        predecessors=application_context.predecessors,
         successor_member_sets=successor_member_sets,
-        edges=trajectory_input.classified_edges,
-        budget=trajectory_input.budget,
+        edges=application_context.classified_edges,
+        budget=application_context.budget,
         population=population,
     )
 

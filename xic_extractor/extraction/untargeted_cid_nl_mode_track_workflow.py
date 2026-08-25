@@ -220,13 +220,14 @@ def _apply_mode_track_refinement_transactions(
         tuple(
             predecessor
             for transaction in transactions
-            for predecessor in transaction.trajectory_input.predecessors
+            for predecessor in transaction.application_context.predecessors
         )
     )
     return tuple(
         apply_accepted_mode_track_refinement(
             trajectory_input=transaction.trajectory_input,
             proposal=transaction.proposal,
+            application_context=transaction.application_context,
             population=population,
         )
         for transaction in transactions

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleCoupledProposalContext,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
@@ -51,6 +52,7 @@ MODE_TRACK_NEIGHBORHOOD_BUDGET = CrossSampleNeighborhoodBudget(
 class ModeTrackRefinementTransaction:
     trajectory_input: ModeTrackTrajectoryInput
     proposal: ModeTrackRefinementProposal
+    application_context: CrossSampleCoupledProposalContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,8 +115,8 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         for member in predecessor.member_subjects
     }
     injection_order = _injection_order(assignment_batches)
-    anchor_id_by_owner_id = {
-        anchor.peak_hypothesis_id: anchor.anchor_id
+    anchor_by_owner_id = {
+        anchor.peak_hypothesis_id: anchor
         for track in model_set.tracks
         for anchor in track.anchors
     }
@@ -164,10 +166,10 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             predecessors=component_predecessors,
             owners=component_owners,
             classified_edges=component_edges,
-            anchor_ids=tuple(
-                anchor_id_by_owner_id[owner.owner_id]
+            anchors=tuple(
+                anchor_by_owner_id[owner.owner_id]
                 for owner in component_owners
-                if owner.owner_id in anchor_id_by_owner_id
+                if owner.owner_id in anchor_by_owner_id
             ),
             injection_order={
                 owner.sample_stem: injection_order[owner.sample_stem]
@@ -225,6 +227,11 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             ModeTrackRefinementTransaction(
                 trajectory_input=trajectory_input,
                 proposal=proposal,
+                application_context=CrossSampleCoupledProposalContext(
+                    predecessors=component_predecessors,
+                    classified_edges=component_edges,
+                    budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+                ),
             )
         )
     return ModeTrackRefinementRun(
