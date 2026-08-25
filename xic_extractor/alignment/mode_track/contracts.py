@@ -206,6 +206,11 @@ def mint_mode_track_trajectory_input(
         member for group in predecessor_groups for member in group.member_subjects
     )
     member_by_id = {member.member_subject_id: member for member in members}
+    predecessor_by_member_id = {
+        member.member_subject_id: predecessor
+        for predecessor in predecessor_groups
+        for member in predecessor.member_subjects
+    }
     owner_by_id: dict[str, SampleLocalMS1Owner] = {}
     owner_by_member: dict[str, SampleLocalMS1Owner] = {}
     for owner in owners:
@@ -241,6 +246,10 @@ def mint_mode_track_trajectory_input(
             or anchor_owner is None
             or anchor.canonical_sample_identity_id
             != _required_owner_member(anchor_owner).canonical_sample_identity_id
+            or anchor.group_hypothesis_id
+            != predecessor_by_member_id[
+                _required_owner_member(anchor_owner).member_subject_id
+            ].group_hypothesis_id
         ):
             raise ModeTrackRefinementContractError(
                 "trajectory anchor crossed its request or canonical owner"

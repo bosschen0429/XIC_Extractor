@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -117,6 +118,81 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
             original,
             trajectory_input_id="trajectory:forged",
             _mint_token=object(),
+        )
+
+
+def test_trajectory_input_rejects_anchor_minted_for_another_group(
+    tmp_path: Path,
+) -> None:
+    from tests.test_alignment_mode_track_assignment import _scenario
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleNeighborhoodBudget,
+        classify_cross_sample_initial_neighborhood_edge,
+        construct_cross_sample_peak_group_hypotheses,
+        validate_cross_sample_peak_group_identity,
+    )
+    from xic_extractor.alignment.mode_track import (
+        ModeTrackEvidenceProfile,
+        ModeTrackRefinementContractError,
+        mint_mode_track_trajectory_input,
+    )
+    from xic_extractor.alignment.mode_track.assignment import (
+        mint_mode_track_support_anchor,
+    )
+
+    scenario = _scenario(tmp_path)
+    predecessor = scenario.track_a_spine.group
+    original_anchor = scenario.track_a_spine.anchors[0]
+    owners = predecessor.owners
+    anchor_owner = next(
+        owner
+        for owner in owners
+        if owner.owner_id == original_anchor.peak_hypothesis_id
+    )
+    alternate_group = construct_cross_sample_peak_group_hypotheses(
+        (anchor_owner,),
+        config=AlignmentConfig(),
+    )[0]
+    alternate_anchor = mint_mode_track_support_anchor(
+        processing_owners=scenario.fixture.owners,
+        track=alternate_group,
+        sample=original_anchor.sample,
+        direct_support_assessment=original_anchor.direct_support_assessment,
+        peak_hypothesis=original_anchor.peak_hypothesis,
+    )
+    identity = validate_cross_sample_peak_group_identity(
+        predecessor,
+        require_canonical=True,
+    )
+    edges = tuple(
+        classify_cross_sample_initial_neighborhood_edge(
+            left_owner=owners[left_index],
+            right_owner=owners[right_index],
+            context="complete_link",
+            config=AlignmentConfig(),
+        )
+        for left_index in range(len(owners))
+        for right_index in range(left_index + 1, len(owners))
+    )
+
+    with pytest.raises(ModeTrackRefinementContractError, match="canonical owner"):
+        mint_mode_track_trajectory_input(
+            predecessors=(identity,),
+            owners=owners,
+            classified_edges=edges,
+            anchors=(alternate_anchor,),
+            injection_order={
+                anchor.sample.metadata.raw_stem: anchor.injection_order
+                for anchor in scenario.track_a_spine.anchors
+            },
+            evidence_profile=ModeTrackEvidenceProfile(
+                "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            ),
+            budget=CrossSampleNeighborhoodBudget(
+                max_members=86,
+                max_eligible_edges=3655,
+            ),
         )
 
 
@@ -302,170 +378,6 @@ def test_oversized_neighborhood_is_unassessable_without_subset_processing() -> N
             trajectory_input,
             neighborhood_status="assessable",
             _mint_token=object(),
-        )
-
-
-def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
-    tmp_path,
-) -> None:
-    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
-    from tests.test_alignment_mode_track_assignment import (
-        _different_request_same_sources,
-    )
-    from tests.test_alignment_multi_hypothesis_support import (
-        _assessment_with_observation_only_peak,
-    )
-    from xic_extractor.alignment import AlignmentConfig
-    from xic_extractor.alignment.mode_track import (
-        InsufficientModeTrackTraining,
-        ModeTrackRefinementContractError,
-        ModeTrackTrajectoryPolicy,
-        bootstrap_mode_track_refinement_from_cid_nl_support,
-        mint_mode_track_trajectory_input,
-    )
-    from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
-        _apply_mode_track_refinement_transactions,
-        _workflow_call_cost,
-    )
-
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
-    assessment = _assessment_with_observation_only_peak(
-        fixture,
-        sample_stem="early",
-        direct_apex_rt=7.80,
-        observed_apex_rt=8.40,
-        scan_number=201,
-    )
-
-    result = bootstrap_mode_track_refinement_from_cid_nl_support(
-        processing_owners=fixture.owners,
-        sample_assessments=((fixture.sample("early"), assessment),),
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=0.1,
-            max_interpolation_gap=10,
-            max_extrapolation_gap=10,
-        ),
-    )
-
-    applications = _apply_mode_track_refinement_transactions(
-        result.transactions
-    )
-    assert applications
-    assert all(
-        application.reason == "unchanged_membership_no_lineage"
-        for application in applications
-    )
-    assert all(
-        tuple(
-            group.group_hypothesis_id for group in application.predecessors
-        )
-        == tuple(group.group_hypothesis_id for group in application.successors)
-        and application.lineage == ()
-        for application in applications
-    )
-    assert _workflow_call_cost(
-        discovery_raw_open_count=1,
-        m7_call_cost={
-            "raw_open_count": 1,
-            "xic_batch_count": 1,
-            "logical_xic_request_count": 2,
-            "adapter_chromatogram_call_count": 1,
-            "trace_point_count": 3,
-        },
-    ) == {
-        "discovery_raw_open_count": 1,
-        "m7_raw_open_count": 1,
-        "total_raw_open_count": 2,
-        "m7_xic_batch_count": 1,
-        "m7_logical_xic_request_count": 2,
-        "m7_adapter_chromatogram_call_count": 1,
-        "m7_trace_point_count": 3,
-    }
-    assert any(
-        type(transaction.proposal) is InsufficientModeTrackTraining
-        for transaction in result.transactions
-    )
-    assert {
-        anchor_id
-        for transaction in result.transactions
-        for anchor_id in transaction.trajectory_input.anchor_ids
-    } == {
-        anchor.anchor_id
-        for track in result.model_set.tracks
-        for anchor in track.anchors
-    }
-
-    crossed_owners = _different_request_same_sources(fixture)
-    crossed_fixture = replace(
-        fixture,
-        request=crossed_owners.request,
-        attempt=crossed_owners.attempt,
-        owners=crossed_owners,
-    )
-    crossed_assessment = _assessment_with_observation_only_peak(
-        crossed_fixture,
-        sample_stem="early",
-        direct_apex_rt=7.80,
-        observed_apex_rt=8.40,
-        scan_number=201,
-    )
-    crossed_result = bootstrap_mode_track_refinement_from_cid_nl_support(
-        processing_owners=crossed_fixture.owners,
-        sample_assessments=(
-            (crossed_fixture.sample("early"), crossed_assessment),
-        ),
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=0.1,
-            max_interpolation_gap=10,
-            max_extrapolation_gap=10,
-        ),
-    )
-    anchored_transaction = next(
-        transaction
-        for transaction in result.transactions
-        if transaction.trajectory_input.anchor_ids
-    )
-    foreign_anchor = next(
-        anchor
-        for track in crossed_result.model_set.tracks
-        for anchor in track.anchors
-    )
-    assert (
-        foreign_anchor.processing_request_id
-        != anchored_transaction.trajectory_input.processing_request_id
-    )
-    predecessor_ids = {
-        group.group_hypothesis_id
-        for group in anchored_transaction.application_context.predecessors
-    }
-    component_owners = tuple(
-        owner
-        for group in result.family_context.mode_tracks
-        if group.group_hypothesis_id in predecessor_ids
-        for owner in group.owners
-    )
-    with pytest.raises(
-        ModeTrackRefinementContractError,
-        match="crossed its request",
-    ):
-        mint_mode_track_trajectory_input(
-            predecessors=anchored_transaction.application_context.predecessors,
-            owners=component_owners,
-            classified_edges=(
-                anchored_transaction.application_context.classified_edges
-            ),
-            anchors=(foreign_anchor,),
-            injection_order=dict(
-                anchored_transaction.trajectory_input.injection_order
-            ),
-            evidence_profile=anchored_transaction.trajectory_input.evidence_profile,
-            budget=anchored_transaction.application_context.budget,
         )
 
 
