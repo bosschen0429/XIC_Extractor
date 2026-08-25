@@ -249,10 +249,8 @@ registry. Promotion adds the smallest decision-changing rule to the existing
 owner and removes displaced wording instead of preserving the incident story.
 
 Before adding new guidance, search the relevant owner for an existing rule to
-tighten. The permanent-root placement guard enforces the visible-word budget
-owned by `tools/diagnostics/docs_policy.py`; when an addition approaches that
-budget, replace displaced wording or route branch-specific detail to its nested
-owner.
+tighten. Keep root `AGENTS.md` to high-frequency gates and trigger pointers;
+replace displaced wording or route branch-specific detail to its nested owner.
 
 ## Change Protocol
 

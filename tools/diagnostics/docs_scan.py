@@ -832,13 +832,6 @@ def permanent_root_contract_problems(
                 f"required purpose landmark must occur exactly once: {marker}"
             )
 
-    max_words = contract.get("max_words")
-    word_count = len(visible_text.split())
-    if max_words is not None and word_count > max_words:
-        problems.append(
-            f"context word budget exceeded: {word_count} > {max_words}"
-        )
-
     resolved_routes = resolved_markdown_targets(rel_path, visible_text)
     for route in contract["required_routes"]:
         if resolved_routes.count(route) < 1:

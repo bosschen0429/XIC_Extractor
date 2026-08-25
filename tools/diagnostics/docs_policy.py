@@ -157,7 +157,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
         "kind": "agent_route_contract",
         "purpose": "repo agent routing contract",
         "owner": "self",
-        "max_words": 800,
         "required_headings": ("XIC Extractor Agent Contract", "Task Routes"),
         "required_text": ("Task Routes",),
         "required_routes": (

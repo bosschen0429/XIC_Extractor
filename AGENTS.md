@@ -28,6 +28,18 @@ carries definitions, command details, and low-frequency exceptions.
 - **Task shape:** name the objective, current owner/evidence, boundaries,
   acceptance, and stop rule before implementation. Direction-changing
   uncertainty escalates through the planning route before mutation continues.
+- **Scope budget:** implement the requested behavior and reachable regressions.
+  Adjacent cleanup, future-proofing, compatibility, and defensive branches need
+  a current acceptance requirement, consumer, or reachable trust boundary.
+- **Test value:** use the cheapest existing observation that can disprove the
+  change. Add or modify a test only for current observable behavior, a public
+  contract, or a reproducible regression with a stable oracle. Cleanup and
+  retirement remove obsolete tests with the code and close through existing
+  behavior, referrer census, artifact inspection, or diff review—not tombstone
+  tests for private helpers, deleted paths, or one-time repository state.
+- **Final-state artifacts:** code, comments, tests, and docs describe current
+  behavior and non-obvious constraints. Cleanup history and rejected options
+  stay in Git/PR history unless a current consumer needs the rationale.
 - **Runtime owner:** use the active worktree's documented Python runner and
   bootstrap. Run-specific artifacts stay under ignored task-specific `output/`;
   tracked artifacts require a current runtime, CI, or public consumer.
@@ -52,5 +64,6 @@ carries definitions, command details, and low-frequency exceptions.
 - **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
   follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
   Hosted checks on the final remote SHA remain merge authority.
-- **Depth gate:** an abstraction needs two current callers, configuration a
-  current second value, and compatibility a current consumer.
+- **Simplify pass:** before closeout, delete machinery whose removal preserves
+  the current requirement and tests. An abstraction needs two current callers,
+  configuration a current second value, and compatibility a current consumer.
