@@ -88,6 +88,9 @@ for the active task unless a hard gate below says otherwise.
   scripts, execpolicy, and subagent TOML as execution-affecting config. Changes
   follow the smoke and scan contract in
   `docs/agent/codex-operating-system.md#change-protocol`.
+- Run each Git operation as one direct command per shell tool call. For routine
+  sync, inspect only the current branch and use `git pull --ff-only --no-stat`;
+  dispatch independent Git reads as separate parallel tool calls.
 - External structural-context tools are optional reconnaissance. Use one only
   when the current checkout has a healthy matching index; otherwise fall back
   to `rg` and targeted reads. CI, validation, and correctness claims must not
