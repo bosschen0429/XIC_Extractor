@@ -293,3 +293,160 @@ def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
     assert not (
         set(bootstrap_worktree.UV_SYNC_SEMANTIC_ENV_VARS) & set(captured_env)
     )
+
+
+def _ready_state() -> bootstrap_worktree.BootstrapState:
+    return bootstrap_worktree.BootstrapState(
+        ready=True,
+        reason="worktree development environment is ready",
+        contract_digest="digest",
+        distributions={"pytest": "1.0"},
+    )
+
+
+def test_default_cli_path_does_not_inspect_local_resources(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(bootstrap_worktree, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(bootstrap_worktree, "bootstrap", lambda _root: _ready_state())
+
+    def reject_local(*_args, **_kwargs):
+        raise AssertionError("default bootstrap must not inspect local resources")
+
+    monkeypatch.setattr(bootstrap_worktree, "_local_env_state", reject_local)
+    monkeypatch.setattr(bootstrap_worktree, "_codegraph_state", reject_local)
+
+    assert bootstrap_worktree.main([]) == 0
+    assert capsys.readouterr().out == (
+        "worktree development environment is ready\n"
+    )
+
+
+def test_local_bootstrap_materializes_env_with_rebound_worktree_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    main_root = tmp_path / "main"
+    worktree = tmp_path / "feature"
+    main_root.mkdir()
+    worktree.mkdir()
+    source = main_root / ".env.xic-local"
+    source.write_text(
+        "XIC_RAW_ROOT=D:\\RAW\nXIC_REPO_ROOT=C:\\old-root\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        bootstrap_worktree,
+        "_shared_cache_dir",
+        lambda _root: main_root / ".uv-cache",
+    )
+
+    state = bootstrap_worktree._local_env_state(worktree, provision=True)
+
+    assert state["ready"] is True
+    assert (worktree / ".env.xic-local").read_text(encoding="utf-8") == (
+        f"XIC_RAW_ROOT=D:\\RAW\nXIC_REPO_ROOT={worktree.resolve()}\n"
+    )
+    assert source.read_text(encoding="utf-8") == (
+        "XIC_RAW_ROOT=D:\\RAW\nXIC_REPO_ROOT=C:\\old-root\n"
+    )
+
+
+def test_local_bootstrap_rejects_existing_mismatched_env_without_writing(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / ".env.xic-local"
+    original = b"XIC_REPO_ROOT=C:\\wrong-root\r\nXIC_RAW_ROOT=D:\\RAW\r\n"
+    target.write_bytes(original)
+
+    state = bootstrap_worktree._local_env_state(tmp_path, provision=True)
+
+    assert state == {
+        "ready": False,
+        "reason": "local env root does not match this worktree",
+    }
+    assert target.read_bytes() == original
+
+
+def _codegraph_status(root: Path, **overrides) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "initialized": True,
+        "projectPath": str(root.resolve()),
+        "pendingChanges": {"total": 0},
+        "worktreeMismatch": None,
+        "index": {"reindexRecommended": False},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_local_bootstrap_initializes_absent_codegraph(
+    tmp_path: Path, monkeypatch
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    statuses = [
+        subprocess.CompletedProcess(
+            [],
+            0,
+            json.dumps(_codegraph_status(tmp_path, initialized=False)),
+            "",
+        ),
+        subprocess.CompletedProcess(
+            [], 0, json.dumps(_codegraph_status(tmp_path)), ""
+        ),
+    ]
+
+    def fake_run(command, **_kwargs):
+        commands.append(tuple(command))
+        if command[1] == "status":
+            return statuses.pop(0)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
+
+    state = bootstrap_worktree._codegraph_state(tmp_path, provision=True)
+
+    assert state["ready"] is True
+    assert [command[1] for command in commands] == ["status", "init", "status"]
+
+
+def test_local_bootstrap_syncs_pending_codegraph(
+    tmp_path: Path, monkeypatch
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    statuses = [
+        _codegraph_status(tmp_path, pendingChanges={"total": 2}),
+        _codegraph_status(tmp_path),
+    ]
+
+    def fake_run(command, **_kwargs):
+        commands.append(tuple(command))
+        if command[1] == "status":
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps(statuses.pop(0)), ""
+            )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
+
+    state = bootstrap_worktree._codegraph_state(tmp_path, provision=True)
+
+    assert state["ready"] is True
+    assert [command[1] for command in commands] == ["status", "sync", "status"]
+    assert "--quiet" in commands[1]
+
+
+def test_check_local_only_runs_codegraph_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(tuple(command))
+        return subprocess.CompletedProcess(command, 1, "", "not initialized")
+
+    monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
+
+    state = bootstrap_worktree._codegraph_state(tmp_path, provision=False)
+
+    assert state["ready"] is False
+    assert [command[1] for command in commands] == ["status"]

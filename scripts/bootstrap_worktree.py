@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -317,6 +318,156 @@ def bootstrap(root: Path) -> BootstrapState:
     return state
 
 
+def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
+    target = root / ".env.xic-local"
+
+    def inspect(path: Path) -> dict[str, object]:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return {"ready": False, "reason": "local env is missing"}
+        roots = [
+            line.removeprefix("XIC_REPO_ROOT=")
+            for line in lines
+            if line.startswith("XIC_REPO_ROOT=")
+        ]
+        if len(roots) != 1:
+            return {
+                "ready": False,
+                "reason": "local env must contain exactly one repo root line",
+            }
+        configured = Path(roots[0])
+        if not configured.is_absolute() or (
+            _root_identity(configured) != _root_identity(root)
+        ):
+            return {
+                "ready": False,
+                "reason": "local env root does not match this worktree",
+            }
+        return {"ready": True, "reason": "local env is ready"}
+
+    if target.exists() or target.is_symlink():
+        return inspect(target)
+    if not provision:
+        return {"ready": False, "reason": "local env is missing"}
+
+    source = _shared_cache_dir(root).parent / ".env.xic-local"
+    try:
+        text = source.read_bytes().decode("utf-8")
+    except (OSError, UnicodeError):
+        return {
+            "ready": False,
+            "reason": "main worktree local env is unavailable",
+        }
+    lines = text.splitlines(keepends=True)
+    root_indexes = [
+        index for index, line in enumerate(lines)
+        if line.startswith("XIC_REPO_ROOT=")
+    ]
+    if len(root_indexes) != 1:
+        return {
+            "ready": False,
+            "reason": "main worktree local env must contain exactly one repo root line",
+        }
+    index = root_indexes[0]
+    ending = "\r\n" if lines[index].endswith("\r\n") else (
+        "\n" if lines[index].endswith("\n") else ""
+    )
+    lines[index] = f"XIC_REPO_ROOT={root.resolve()}{ending}"
+    temp_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=root,
+            prefix=".env.xic-local.",
+            delete=False,
+        ) as temp:
+            temp.write("".join(lines))
+            temp_name = temp.name
+        os.replace(temp_name, target)
+    except OSError:
+        if temp_name:
+            Path(temp_name).unlink(missing_ok=True)
+        return {"ready": False, "reason": "local env materialization failed"}
+    return {"ready": True, "reason": "local env materialize completed"}
+
+
+def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
+    database = root / ".codegraph"
+    is_junction = getattr(database, "is_junction", None)
+    if database.is_symlink() or bool(is_junction and is_junction()):
+        return {
+            "ready": False,
+            "reason": "CodeGraph database is a link or junction",
+        }
+
+    def inspect() -> tuple[dict[str, object], str | None]:
+        try:
+            completed = subprocess.run(
+                ("codegraph", "status", "--json", str(root)),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return {"ready": False, "reason": "CodeGraph status unavailable"}, None
+        if completed.returncode != 0:
+            return {"ready": False, "reason": "CodeGraph status failed"}, None
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return {"ready": False, "reason": "CodeGraph status is invalid"}, None
+        if not isinstance(payload, dict):
+            return {"ready": False, "reason": "CodeGraph status is invalid"}, None
+        project_path = payload.get("projectPath")
+        if not isinstance(project_path, str) or (
+            _root_identity(Path(project_path)) != _root_identity(root)
+        ):
+            return {"ready": False, "reason": "CodeGraph project root mismatch"}, None
+        if payload.get("initialized") is not True:
+            return {"ready": False, "reason": "CodeGraph is not initialized"}, "init"
+        if payload.get("worktreeMismatch"):
+            return {"ready": False, "reason": "CodeGraph worktree mismatch"}, None
+        pending_changes = payload.get("pendingChanges", {})
+        pending = isinstance(pending_changes, dict) and any(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value != 0
+            for value in pending_changes.values()
+        )
+        index_state = payload.get("index", {})
+        reindex_recommended = isinstance(index_state, dict) and (
+            index_state.get("reindexRecommended") is True
+        )
+        if reindex_recommended:
+            return {"ready": False, "reason": "CodeGraph requires index"}, "index"
+        if pending:
+            return {"ready": False, "reason": "CodeGraph has pending changes"}, "sync"
+        return {"ready": True, "reason": "CodeGraph is ready"}, None
+
+    state, action = inspect()
+    if not provision or action is None:
+        return state
+    command = ["codegraph", action]
+    if action == "sync":
+        command.append("--quiet")
+    command.append(str(root))
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return {"ready": False, "reason": f"CodeGraph {action} unavailable"}
+    if completed.returncode != 0:
+        return {"ready": False, "reason": f"CodeGraph {action} failed"}
+    return inspect()[0]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -328,6 +479,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="emit a compact machine-readable result",
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="also provision or verify worktree-local env and CodeGraph",
     )
     return parser
 
@@ -344,17 +500,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Worktree bootstrap failed: {exc}", file=sys.stderr)
         return 1
 
+    local = None
+    if args.local:
+        env_state = _local_env_state(root, provision=not args.check)
+        codegraph_state = _codegraph_state(root, provision=not args.check)
+        local = {
+            "ready": bool(
+                state.ready and env_state["ready"] and codegraph_state["ready"]
+            ),
+            "env_ready": env_state["ready"],
+            "env_reason": env_state["reason"],
+            "codegraph_ready": codegraph_state["ready"],
+            "codegraph_reason": codegraph_state["reason"],
+        }
+
     if args.json:
-        print(json.dumps(state.as_dict(), sort_keys=True))
+        payload = state.as_dict()
+        if local is not None:
+            payload["local"] = local
+        print(json.dumps(payload, sort_keys=True))
     else:
         print(state.reason)
+        if local is not None:
+            print(f"Local env: {local['env_reason']}")
+            print(f"CodeGraph: {local['codegraph_reason']}")
         if not state.ready and not _venv_is_link(root):
             print(
                 "Run `uv run --cache-dir .uv-cache --no-project python "
                 "scripts/bootstrap_worktree.py` from this worktree.",
                 file=sys.stderr,
             )
-    return 0 if state.ready else 1
+    ready = state.ready if local is None else local["ready"]
+    return 0 if ready else 1
 
 
 if __name__ == "__main__":
