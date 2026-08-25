@@ -103,8 +103,7 @@ worktree 的 ignored `.venv`，也不要臨時逐套件安裝。
 
 `--local` 會從 main worktree 的 ignored `.env.xic-local` 建立 worktree-local
 副本，只把 `XIC_REPO_ROOT` 重新綁定目前 checkout；既有副本不會被覆寫。
-CodeGraph 則在每個 worktree 使用自己的 `.codegraph` database，不複製或共用。
-`--check --local --json` 只讀取 Python、local env 與 CodeGraph 狀態。
+`--check --local --json` 只讀取 Python 與 local env 狀態。
 
 如果本檔列出的 stable path 存在，就使用它。除非 `Test-Path` 失敗或使用者
 提供更新路徑，否則不要重新搜尋，也不要自行替換成 sibling directory。

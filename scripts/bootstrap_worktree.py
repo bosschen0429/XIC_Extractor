@@ -396,106 +396,6 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
     return {"ready": True, "reason": "local env materialize completed"}
 
 
-def _codegraph_command() -> tuple[str, ...]:
-    if os.name != "nt":
-        return (shutil.which("codegraph") or "codegraph",)
-    batch = shutil.which("codegraph.cmd")
-    powershell = shutil.which("powershell.exe")
-    if batch and powershell:
-        script = f"{batch[:-4]}.ps1"
-        if os.path.isfile(script):
-            return (
-                powershell,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-File",
-                script,
-            )
-    return ("codegraph",)
-
-
-def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
-    database = root / ".codegraph"
-    executable = _codegraph_command()
-    is_junction = getattr(database, "is_junction", None)
-    if database.is_symlink() or bool(is_junction and is_junction()):
-        return {
-            "ready": False,
-            "reason": "CodeGraph database is a link or junction",
-        }
-
-    def inspect() -> tuple[dict[str, object], str | None]:
-        try:
-            completed = subprocess.run(
-                (*executable, "status", "--json", str(root)),
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
-        except (OSError, UnicodeError):
-            return {"ready": False, "reason": "CodeGraph status unavailable"}, None
-        if completed.returncode != 0:
-            return {"ready": False, "reason": "CodeGraph status failed"}, None
-        try:
-            payload = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            return {"ready": False, "reason": "CodeGraph status is invalid"}, None
-        if not isinstance(payload, dict):
-            return {"ready": False, "reason": "CodeGraph status is invalid"}, None
-        project_path = payload.get("projectPath")
-        if not isinstance(project_path, str) or (
-            _root_identity(Path(project_path)) != _root_identity(root)
-        ):
-            action = "init" if not database.exists() else None
-            return {
-                "ready": False,
-                "reason": "CodeGraph project root mismatch",
-            }, action
-        if payload.get("initialized") is not True:
-            return {"ready": False, "reason": "CodeGraph is not initialized"}, "init"
-        if payload.get("worktreeMismatch"):
-            return {"ready": False, "reason": "CodeGraph worktree mismatch"}, None
-        pending_changes = payload.get("pendingChanges", {})
-        pending = isinstance(pending_changes, dict) and any(
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and value != 0
-            for value in pending_changes.values()
-        )
-        index_state = payload.get("index", {})
-        reindex_recommended = isinstance(index_state, dict) and (
-            index_state.get("reindexRecommended") is True
-        )
-        if reindex_recommended:
-            return {"ready": False, "reason": "CodeGraph requires index"}, "index"
-        if pending:
-            return {"ready": False, "reason": "CodeGraph has pending changes"}, "sync"
-        return {"ready": True, "reason": "CodeGraph is ready"}, None
-
-    state, action = inspect()
-    if not provision or action is None:
-        return state
-    command = [*executable, action]
-    if action == "sync":
-        command.append("--quiet")
-    command.append(str(root))
-    try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-    except (OSError, UnicodeError):
-        return {"ready": False, "reason": f"CodeGraph {action} unavailable"}
-    if completed.returncode != 0:
-        return {"ready": False, "reason": f"CodeGraph {action} failed"}
-    return inspect()[0]
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -511,7 +411,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--local",
         action="store_true",
-        help="also provision or verify worktree-local env and CodeGraph",
+        help="also provision or verify the worktree-local env",
     )
     return parser
 
@@ -531,15 +431,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     local = None
     if args.local:
         env_state = _local_env_state(root, provision=not args.check)
-        codegraph_state = _codegraph_state(root, provision=not args.check)
         local = {
-            "ready": bool(
-                state.ready and env_state["ready"] and codegraph_state["ready"]
-            ),
+            "ready": bool(state.ready and env_state["ready"]),
             "env_ready": env_state["ready"],
             "env_reason": env_state["reason"],
-            "codegraph_ready": codegraph_state["ready"],
-            "codegraph_reason": codegraph_state["reason"],
         }
 
     if args.json:
@@ -551,7 +446,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(state.reason)
         if local is not None:
             print(f"Local env: {local['env_reason']}")
-            print(f"CodeGraph: {local['codegraph_reason']}")
         if not state.ready and not _venv_is_link(root):
             print(
                 "Run `uv run --cache-dir .uv-cache --no-project python "

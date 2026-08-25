@@ -84,9 +84,8 @@ compiled blocks:
    point, semantic owner, and every live consumer reachable from the in-scope
    production entries and exported surfaces, including writer/renderer/cache/
    reuse paths and downstream readers. Record the census command/query, base
-   SHA, exclusions, call cost, counterexample, and acceptance evidence. Use
-   CodeGraph for static topology when its index is healthy. Where dynamic
-   dispatch, call count, or repeated work matters, execute the highest
+   SHA, exclusions, call cost, counterexample, and acceptance evidence. Where
+   dynamic dispatch, call count, or repeated work matters, execute the highest
    production entry with each named real consumer present. List every
    monkeypatch, no-op, or substitution; it cannot prove completeness for the
    path it replaces. A direct helper test does not prove that the CLI/main
