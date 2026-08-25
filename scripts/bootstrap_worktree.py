@@ -324,6 +324,8 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
     def inspect(path: Path) -> dict[str, object]:
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeError:
+            return {"ready": False, "reason": "local env is not valid UTF-8"}
         except OSError:
             return {"ready": False, "reason": "local env is missing"}
         roots = [
@@ -394,14 +396,28 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
     return {"ready": True, "reason": "local env materialize completed"}
 
 
-def _codegraph_executable() -> str:
-    command = "codegraph.cmd" if os.name == "nt" else "codegraph"
-    return shutil.which(command) or command
+def _codegraph_command() -> tuple[str, ...]:
+    if os.name != "nt":
+        return (shutil.which("codegraph") or "codegraph",)
+    batch = shutil.which("codegraph.cmd")
+    powershell = shutil.which("powershell.exe")
+    if batch and powershell:
+        script = f"{batch[:-4]}.ps1"
+        if os.path.isfile(script):
+            return (
+                powershell,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                script,
+            )
+    return ("codegraph",)
 
 
 def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
     database = root / ".codegraph"
-    executable = _codegraph_executable()
+    executable = _codegraph_command()
     is_junction = getattr(database, "is_junction", None)
     if database.is_symlink() or bool(is_junction and is_junction()):
         return {
@@ -412,12 +428,13 @@ def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
     def inspect() -> tuple[dict[str, object], str | None]:
         try:
             completed = subprocess.run(
-                (executable, "status", "--json", str(root)),
+                (*executable, "status", "--json", str(root)),
                 check=False,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
             )
-        except OSError:
+        except (OSError, UnicodeError):
             return {"ready": False, "reason": "CodeGraph status unavailable"}, None
         if completed.returncode != 0:
             return {"ready": False, "reason": "CodeGraph status failed"}, None
@@ -431,7 +448,11 @@ def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
         if not isinstance(project_path, str) or (
             _root_identity(Path(project_path)) != _root_identity(root)
         ):
-            return {"ready": False, "reason": "CodeGraph project root mismatch"}, None
+            action = "init" if not database.exists() else None
+            return {
+                "ready": False,
+                "reason": "CodeGraph project root mismatch",
+            }, action
         if payload.get("initialized") is not True:
             return {"ready": False, "reason": "CodeGraph is not initialized"}, "init"
         if payload.get("worktreeMismatch"):
@@ -456,7 +477,7 @@ def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
     state, action = inspect()
     if not provision or action is None:
         return state
-    command = [executable, action]
+    command = [*executable, action]
     if action == "sync":
         command.append("--quiet")
     command.append(str(root))
@@ -466,8 +487,9 @@ def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
-    except OSError:
+    except (OSError, UnicodeError):
         return {"ready": False, "reason": f"CodeGraph {action} unavailable"}
     if completed.returncode != 0:
         return {"ready": False, "reason": f"CodeGraph {action} failed"}

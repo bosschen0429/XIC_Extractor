@@ -445,6 +445,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
 
+        if args.output is not None and (
+            os.path.normcase(str(args.output.resolve()))
+            == os.path.normcase(str(args.state.resolve()))
+        ):
+            raise TaskStateError(
+                "handoff output must differ from authoritative state path"
+            )
         rendered = render_handoff(state)
         if args.output is None:
             print(rendered, end="")

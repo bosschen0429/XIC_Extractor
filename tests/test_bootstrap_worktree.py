@@ -367,6 +367,20 @@ def test_local_bootstrap_rejects_existing_mismatched_env_without_writing(
     assert target.read_bytes() == original
 
 
+def test_local_bootstrap_rejects_non_utf8_env_without_traceback(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / ".env.xic-local"
+    target.write_bytes(b"XIC_REPO_ROOT=\xff\n")
+
+    state = bootstrap_worktree._local_env_state(tmp_path, provision=False)
+
+    assert state == {
+        "ready": False,
+        "reason": "local env is not valid UTF-8",
+    }
+
+
 def _codegraph_status(root: Path, **overrides) -> dict[str, object]:
     payload: dict[str, object] = {
         "initialized": True,
@@ -379,17 +393,53 @@ def _codegraph_status(root: Path, **overrides) -> dict[str, object]:
     return payload
 
 
-def test_codegraph_resolves_windows_cmd_shim(monkeypatch) -> None:
-    requested: list[str] = []
+def test_codegraph_state_uses_windows_powershell_shim(
+    tmp_path: Path, monkeypatch
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    run_kwargs: list[dict[str, object]] = []
     monkeypatch.setattr(bootstrap_worktree.os, "name", "nt")
+
+    def fake_which(command: str) -> str | None:
+        if command == "codegraph.cmd":
+            return "C:\\tools\\codegraph.cmd"
+        if command == "powershell.exe":
+            return "C:\\Windows\\powershell.exe"
+        return None
+
     monkeypatch.setattr(
         bootstrap_worktree.shutil,
         "which",
-        lambda command: requested.append(command) or "resolved-codegraph.cmd",
+        fake_which,
     )
+    monkeypatch.setattr(bootstrap_worktree.os.path, "isfile", lambda _path: True)
 
-    assert bootstrap_worktree._codegraph_executable() == "resolved-codegraph.cmd"
-    assert requested == ["codegraph.cmd"]
+    def fake_run(command, **kwargs):
+        commands.append(tuple(command))
+        run_kwargs.append(kwargs)
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps(_codegraph_status(tmp_path)), ""
+        )
+
+    monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
+
+    state = bootstrap_worktree._codegraph_state(tmp_path, provision=False)
+
+    assert state["ready"] is True
+    assert commands == [
+        (
+            "C:\\Windows\\powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            "C:\\tools\\codegraph.ps1",
+            "status",
+            "--json",
+            str(tmp_path),
+        )
+    ]
+    assert run_kwargs[0]["encoding"] == "utf-8"
 
 
 def test_local_bootstrap_initializes_absent_codegraph(
@@ -400,7 +450,7 @@ def test_local_bootstrap_initializes_absent_codegraph(
         subprocess.CompletedProcess(
             [],
             0,
-            json.dumps(_codegraph_status(tmp_path, initialized=False)),
+            json.dumps(_codegraph_status(tmp_path.parent)),
             "",
         ),
         subprocess.CompletedProcess(
@@ -414,6 +464,9 @@ def test_local_bootstrap_initializes_absent_codegraph(
             return statuses.pop(0)
         return subprocess.CompletedProcess(command, 0, "", "")
 
+    monkeypatch.setattr(
+        bootstrap_worktree, "_codegraph_command", lambda: ("codegraph",)
+    )
     monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
 
     state = bootstrap_worktree._codegraph_state(tmp_path, provision=True)
@@ -439,6 +492,9 @@ def test_local_bootstrap_syncs_pending_codegraph(
             )
         return subprocess.CompletedProcess(command, 0, "", "")
 
+    monkeypatch.setattr(
+        bootstrap_worktree, "_codegraph_command", lambda: ("codegraph",)
+    )
     monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
 
     state = bootstrap_worktree._codegraph_state(tmp_path, provision=True)
@@ -457,6 +513,9 @@ def test_check_local_only_runs_codegraph_status(
         commands.append(tuple(command))
         return subprocess.CompletedProcess(command, 1, "", "not initialized")
 
+    monkeypatch.setattr(
+        bootstrap_worktree, "_codegraph_command", lambda: ("codegraph",)
+    )
     monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
 
     state = bootstrap_worktree._codegraph_state(tmp_path, provision=False)

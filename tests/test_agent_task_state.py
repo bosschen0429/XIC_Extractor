@@ -97,6 +97,31 @@ def test_cli_init_refuses_to_replace_existing_state(
     assert path.read_bytes() == previous
 
 
+def test_cli_handoff_refuses_to_replace_authoritative_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "state.json"
+    save_task_state(path, _state())
+    previous = path.read_bytes()
+
+    with pytest.raises(SystemExit) as raised:
+        main(
+            (
+                "handoff",
+                "--state",
+                str(path),
+                "--current-base-sha",
+                "abc123",
+                "--output",
+                str(path),
+            )
+        )
+
+    assert raised.value.code == 2
+    assert "must differ" in capsys.readouterr().err
+    assert path.read_bytes() == previous
+
+
 def test_resume_rejects_state_from_a_different_base(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     save_task_state(path, _state())
