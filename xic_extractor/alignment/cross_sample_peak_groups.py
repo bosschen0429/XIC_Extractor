@@ -1177,17 +1177,18 @@ def apply_coupled_successor_proposal(
         raise CrossSampleContractError(
             "successor proposal spans disconnected eligible components"
         )
-    eligible_pairs = {
+    excluded_pairs = {
         frozenset(
             (edge.left_member_subject_id, edge.right_member_subject_id)
         )
-        for edge in neighborhood.eligible_edges
+        for edge in edges
+        if edge.disposition == "excluded"
     }
     if any(
         frozenset(
             (left.member_subject_id, right.member_subject_id)
         )
-        not in eligible_pairs
+        in excluded_pairs
         for member_set in proposed
         for left, right in combinations(member_set, 2)
     ):

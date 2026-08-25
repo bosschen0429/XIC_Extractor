@@ -385,8 +385,9 @@ This describes current activation state, not a reason to build another
 trajectory module. The opt-in CID-NL diagnostic workflow now routes this
 capability through the proposal-only `alignment/mode_track/` interface. That
 owner binds each proposal to an immutable trajectory input, returns a closed
-accepted/rejected/insufficient/unassessable result, and delegates accepted
-membership changes to the existing CrossSample atomic successor application.
+accepted/rejected/insufficient/unassessable result. The workflow passes an
+accepted proposal to the existing CrossSample atomic successor application;
+ModeTrack does not apply or retain successor population state.
 Existing diagnostic writers and validation packages remain outside that
 scientific interface; no normal Alignment route or product writer activates it.
 

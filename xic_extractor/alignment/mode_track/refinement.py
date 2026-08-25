@@ -9,7 +9,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
-    CrossSampleSuccessorApplication,
     build_bounded_connected_neighborhood,
     classify_cross_sample_initial_neighborhood_edge,
     validate_cross_sample_group_population,
@@ -33,13 +32,11 @@ from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 from .contracts import (
-    AcceptedModeTrackRefinement,
     ModeTrackEvidenceProfile,
     ModeTrackRefinementContractError,
     ModeTrackRefinementProposal,
     ModeTrackTrajectoryInput,
     RejectedModeTrackRefinement,
-    apply_accepted_mode_track_refinement,
     mint_mode_track_trajectory_input,
     propose_mode_track_successor_partition,
 )
@@ -54,7 +51,6 @@ MODE_TRACK_NEIGHBORHOOD_BUDGET = CrossSampleNeighborhoodBudget(
 class ModeTrackRefinementTransaction:
     trajectory_input: ModeTrackTrajectoryInput
     proposal: ModeTrackRefinementProposal
-    application: CrossSampleSuccessorApplication | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +59,6 @@ class ModeTrackRefinementRun:
     model_set: ModeTrackModelSet
     assignment_batches: tuple[ModeTrackAssignmentBatch, ...]
     transactions: tuple[ModeTrackRefinementTransaction, ...]
-    final_population: tuple[CrossSampleGroupIdentity, ...]
 
 
 def bootstrap_mode_track_refinement_from_cid_nl_support(
@@ -138,7 +133,6 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         max_extrapolation_gap=trajectory_policy.max_extrapolation_gap,
     )
 
-    population = predecessors
     transactions = []
     for component in full_neighborhood.connected_components:
         component_ids = frozenset(component)
@@ -227,24 +221,10 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
                         )
                     ),
                 )
-        application = None
-        if type(proposal) is AcceptedModeTrackRefinement:
-            application = apply_accepted_mode_track_refinement(
-                trajectory_input=trajectory_input,
-                proposal=proposal,
-                population=population,
-            )
-            unaffected = tuple(
-                group for group in population if group not in application.predecessors
-            )
-            population = validate_cross_sample_group_population(
-                (*unaffected, *application.successors)
-            )
         transactions.append(
             ModeTrackRefinementTransaction(
                 trajectory_input=trajectory_input,
                 proposal=proposal,
-                application=application,
             )
         )
     return ModeTrackRefinementRun(
@@ -252,7 +232,6 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         model_set=model_set,
         assignment_batches=assignment_batches,
         transactions=tuple(transactions),
-        final_population=population,
     )
 
 

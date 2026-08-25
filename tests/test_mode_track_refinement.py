@@ -274,7 +274,7 @@ def test_oversized_neighborhood_is_unassessable_without_subset_processing() -> N
         replace(trajectory_input, neighborhood_status="assessable")
 
 
-def test_cid_nl_bootstrap_applies_accepted_components_through_cross_sample(
+def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
     tmp_path,
 ) -> None:
     from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
@@ -286,6 +286,10 @@ def test_cid_nl_bootstrap_applies_accepted_components_through_cross_sample(
         InsufficientModeTrackTraining,
         ModeTrackTrajectoryPolicy,
         bootstrap_mode_track_refinement_from_cid_nl_support,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
+        _apply_mode_track_refinement_transactions,
+        _workflow_call_cost,
     )
 
     fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
@@ -310,16 +314,40 @@ def test_cid_nl_bootstrap_applies_accepted_components_through_cross_sample(
         ),
     )
 
-    applications = tuple(
-        transaction.application
-        for transaction in result.transactions
-        if transaction.application is not None
+    applications = _apply_mode_track_refinement_transactions(
+        result.transactions
     )
     assert applications
     assert all(
         application.reason == "unchanged_membership_no_lineage"
         for application in applications
     )
+    assert all(
+        tuple(
+            group.group_hypothesis_id for group in application.predecessors
+        )
+        == tuple(group.group_hypothesis_id for group in application.successors)
+        and application.lineage == ()
+        for application in applications
+    )
+    assert _workflow_call_cost(
+        discovery_raw_open_count=1,
+        m7_call_cost={
+            "raw_open_count": 1,
+            "xic_batch_count": 1,
+            "logical_xic_request_count": 2,
+            "adapter_chromatogram_call_count": 1,
+            "trace_point_count": 3,
+        },
+    ) == {
+        "discovery_raw_open_count": 1,
+        "m7_raw_open_count": 1,
+        "total_raw_open_count": 2,
+        "m7_xic_batch_count": 1,
+        "m7_logical_xic_request_count": 2,
+        "m7_adapter_chromatogram_call_count": 1,
+        "m7_trace_point_count": 3,
+    }
     assert any(
         type(transaction.proposal) is InsufficientModeTrackTraining
         for transaction in result.transactions
@@ -421,11 +449,11 @@ def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
     )
 
     owners = (
-        _owner("sample-a", "000001", apex_rt=8.5),
-        _owner("sample-b", "000001", apex_rt=10.5),
-        _owner("sample-c", "000001", apex_rt=12.5),
+        _owner("sample-a", "000001", precursor_mz=500.0),
+        _owner("sample-b", "000001", precursor_mz=500.0175),
+        _owner("sample-c", "000001", precursor_mz=500.035),
     )
-    config = AlignmentConfig(preferred_rt_sec=150.0)
+    config = AlignmentConfig(preferred_ppm=40.0)
     members = tuple(owner.cross_sample_member_subject for owner in owners)
     predecessors = tuple(
         mint_cross_sample_group_identity(
@@ -446,7 +474,7 @@ def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
     )
     assert [edge.disposition for edge in edges] == [
         "eligible",
-        "review_only",
+        "excluded",
         "eligible",
     ]
     trajectory_input = mint_mode_track_trajectory_input(
