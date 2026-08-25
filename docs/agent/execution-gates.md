@@ -47,11 +47,6 @@ prerequisite. Do not assume a later cleanup PR will make an earlier PR pass.
   command shapes in
   `docs/agent/parameter-settings.md#85raw-command-contract`, or get explicit
   approval for an external terminal or automation.
-- Known approval-first commands are documented in
-  `docs/agent/parameter-settings.md#approval-first-commands`. If the task needs
-  one, request its documented narrow approval up front; otherwise use the
-  existing artifact or offline path.
-
 ## PR Verification Gate
 
 Validation evidence belongs to a commit SHA. Run the smallest focused checks

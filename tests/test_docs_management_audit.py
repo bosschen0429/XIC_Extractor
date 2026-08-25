@@ -1066,6 +1066,12 @@ def test_repo_docs_routing_review_surfaces_unbound_validation_for_absorption(
     assert candidate["path"] == validation_path
     assert candidate["disposition"] == "review_unbound_validation_surface"
     assert candidate["exact_referrers"] == 0
+    cluster = next(
+        item
+        for item in review["top_topic_clusters"]
+        if validation_path in item["candidate_paths"]
+    )
+    assert cluster["candidate_count"] == 1
 
 
 def test_repo_docs_routing_review_retains_validation_family_with_consumer(

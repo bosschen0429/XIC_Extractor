@@ -51,6 +51,15 @@ AUTO_RETIRE_LIFECYCLES = {
     "retired",
 }
 KEEP_LIFECYCLES = {"active", "draft"}
+DISCARD_GIT_HISTORY_DOC_KINDS = {
+    "plan",
+    "spec",
+    "handoff",
+    "closeout",
+    "note",
+    "report",
+    "validation_artifact",
+}
 
 KEEP_PATTERNS = {
     "README.md",
@@ -488,8 +497,13 @@ def _retirement_blocker(
         evidence_entry is not None
         and evidence_entry.get("history_disposition") == "discard_git_history"
         and evidence_entry.get("operator_approved_temporal_retirement") is True
-        and classification.doc_lifecycle not in KEEP_LIFECYCLES
     ):
+        if classification.doc_kind not in DISCARD_GIT_HISTORY_DOC_KINDS:
+            return (
+                "discard_git_history is limited to disposable construction records"
+            )
+        if classification.doc_lifecycle in KEEP_LIFECYCLES:
+            return f"{classification.doc_lifecycle} lifecycle"
         return ""
     if classification.doc_lifecycle in KEEP_LIFECYCLES:
         return f"{classification.doc_lifecycle} lifecycle"

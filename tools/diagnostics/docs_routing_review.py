@@ -1143,7 +1143,7 @@ def _topic_cluster_rows(
         candidate_paths = [
             record.path
             for record in sorted_group
-            if record.topic_role == "needs_distillation_or_route"
+            if record.candidate
         ]
         rows.append(
             {
@@ -1155,7 +1155,7 @@ def _topic_cluster_rows(
                 "topic_owner_claim_count": len(owner_claims),
                 "subcontract_count": roles.get("repo_subcontract_owner", 0),
                 "supporting_count": roles.get("repo_supporting_artifact", 0),
-                "candidate_count": roles.get("needs_distillation_or_route", 0),
+                "candidate_count": len(candidate_paths),
                 "delegated_handoff_count": roles.get("delegated_handoff", 0),
                 "suggested_repo_topic_folder": (
                     _suggested_repo_topic_folder(topic_key)
@@ -1391,19 +1391,20 @@ def docs_routing_review(
     repository_view: _docs_scan.RepositoryTextView,
 ) -> dict[str, object]:
     _docs_scan.require_repository_text_view(repository_view.root, repository_view)
-    records = _with_topic_cluster_status([
+    records = [
         record
         for rel_path in repository_view.paths
         if (
             record := _classify_docs_routing_candidate(repository_view, rel_path)
         )
         is not None
-    ])
+    ]
     records = [
         _with_referrer_status(repository_view, record)
         for record in records
     ]
     records = [_with_unbound_validation_review(record) for record in records]
+    records = _with_topic_cluster_status(records)
     records = _with_support_retention(records)
     candidates = [
         record

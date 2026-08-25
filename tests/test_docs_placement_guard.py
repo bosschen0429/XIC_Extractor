@@ -383,6 +383,11 @@ def test_governance_index_rejects_mechanism_drift() -> None:
         "invalid governance enforcement index" in problem.reason
         for problem in result.problems
     )
+    assert all(
+        "five-row governance read-back contract" in problem.required_marker
+        for problem in result.problems
+        if "invalid governance enforcement index" in problem.reason
+    )
 
 
 def test_governance_index_ignores_fenced_only_table() -> None:

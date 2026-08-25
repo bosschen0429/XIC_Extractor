@@ -226,6 +226,29 @@ def test_pr_body_requires_issue_to_pr_scope_receipt(field: str) -> None:
     assert f"{field} is missing or empty" in validate_pr_body(body, HEAD_SHA)
 
 
+def test_scope_delta_rejects_unlinked_expansion() -> None:
+    body = _replace_pr_field(
+        _valid_pr_body(),
+        "Scope delta from issue",
+        "expanded for convenience",
+    )
+
+    assert any(
+        "Scope delta from issue" in error and "refreeze" in error
+        for error in validate_pr_body(body, HEAD_SHA)
+    )
+
+
+def test_scope_delta_accepts_explicit_issue_refreeze() -> None:
+    body = _replace_pr_field(
+        _valid_pr_body(),
+        "Scope delta from issue",
+        "Refreeze: #654",
+    )
+
+    assert validate_pr_body(body, HEAD_SHA) == ()
+
+
 def test_repo_surfaces_expose_one_issue_to_pr_scope_firewall() -> None:
     root_contract = Path("AGENTS.md").read_text(encoding="utf-8")
     workflow_owner = Path("docs/agent/planning-workflows.md").read_text(

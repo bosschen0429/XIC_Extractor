@@ -136,7 +136,11 @@ def validate_pr_body(body: str, expected_head_sha: str) -> tuple[str, ...]:
         errors.append(
             "Execution base must be exactly 40 hexadecimal characters"
         )
-    _require_none_rationale(scope_delta, "Scope delta from issue", errors)
+    if scope_delta is not None and not _valid_scope_delta(scope_delta):
+        errors.append(
+            "Scope delta from issue must use None with a rationale or an "
+            "explicit refreeze issue linkage in the form Refreeze: #N"
+        )
 
     verification = _first_section(sections, "verification")
     reviewed_head = _require_field(verification, "Reviewed head", errors)
@@ -530,6 +534,20 @@ def _valid_issue_linkage(value: str) -> bool:
         normalized,
     )
     return no_issue is not None and not _is_placeholder(no_issue.group(1))
+
+
+def _valid_scope_delta(value: str) -> bool:
+    normalized = " ".join(_plain_markdown(value).split())
+    none_with_rationale = re.fullmatch(
+        r"(?is)None\s*(?:[-—:;]|because\b)\s*(.+)",
+        normalized,
+    )
+    if none_with_rationale is not None:
+        return not _is_placeholder(none_with_rationale.group(1))
+    return re.fullmatch(
+        r"(?i)Refreeze\s*:\s*(?:#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)",
+        normalized,
+    ) is not None
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

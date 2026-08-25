@@ -1103,7 +1103,7 @@ def check_entry(
                     path=path,
                     reason=f"invalid governance enforcement index: {reason}",
                     required_marker=(
-                        "Restore the exact six-row governance read-back contract "
+                        "Restore the exact five-row governance read-back contract "
                         "and resolvable owner/executable/fixture locators."
                     ),
                 )

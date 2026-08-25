@@ -308,6 +308,29 @@ def test_discard_requires_explicit_reason_and_operator_approval(
     assert spec.exists()
 
 
+def test_discard_rejects_maintained_owner_without_construction_kind(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/product/maintained-owner.md"
+    owner = repo / rel
+    text = "# Maintained owner\n"
+    _write(owner, text)
+
+    result = retire_files(
+        [owner],
+        repo,
+        None,
+        execute=True,
+        evidence=_discard_evidence(rel, text),
+    )
+
+    assert result.kept == [
+        (rel, "discard_git_history is limited to disposable construction records")
+    ]
+    assert owner.exists()
+
+
 def test_discard_batch_ignores_refs_between_approved_batch_members(
     tmp_path: Path,
 ) -> None:
