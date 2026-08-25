@@ -2240,6 +2240,24 @@ raw prompts, tool arguments/results, absolute source paths, and product
 authority. It does not modify CodeGraph MCP configuration, initialize
 instructions, routing rules, indexes, or session files.
 
+### `code_intelligence_paired_pilot.py`
+
+**Purpose**: Run one frozen read-only XIC exploration packet through isolated
+plain, CodeGraph, and codebase-memory arms, capturing Codex JSONL, token usage,
+wall time, provider/runtime failures, and frozen-locator recall in one bounded
+diagnostic report.
+**Topic group**: `codegraph_session_baseline.py`
+**Originating task**: 2026-08-25 three-arm CodeGraph replacement calibration.
+**Status note**: `diagnostic_only` and calibration-scoped. Prompts are supplied
+through stdin rather than shell command text; the plain arm removes the
+CodeGraph launcher directory from `PATH`, provider configuration is per child
+process, and no global MCP/config state is changed. Because Windows read-only
+sandboxing blocks child-process discovery on this host, the runner requires an
+explicit caller-supplied disposable worktree and uses `--approve-for-me`; task
+instructions remain read-only and post-run dirty state must be checked. A
+single run per arm does not establish performance causality or production
+adoption.
+
 ---
 
 ## Shared Infrastructure
