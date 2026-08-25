@@ -52,8 +52,8 @@ structured owner, the structured owner wins and the narrative must be corrected.
 ## Work Intake And Closeout
 
 Per maintenance cycle, keep at most one primary productization lane, one
-supporting-infrastructure lane, and one diagnostic-only lane. Starting another
-requires promoting, parking with a reopening condition, externalizing/killing,
+supporting-infrastructure lane, and one lane dedicated to diagnostics. Starting
+another requires promoting, parking with a reopening condition, externalizing/killing,
 or abandoning one current lane. A new lane names its structured current and
 intended state, capability owner, affected public surface, expected behavior
 diff and required non-changes, evidence tier, downstream consumer, and
