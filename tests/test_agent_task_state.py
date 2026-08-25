@@ -60,6 +60,43 @@ def test_failed_atomic_replace_preserves_previous_state(
     assert list(tmp_path.glob(".state.json.*.tmp")) == []
 
 
+def test_cli_init_refuses_to_replace_existing_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "state.json"
+    save_task_state(path, _state())
+    previous = path.read_bytes()
+
+    with pytest.raises(SystemExit) as raised:
+        main(
+            (
+                "init",
+                "--state",
+                str(path),
+                "--task-id",
+                "replacement",
+                "--objective",
+                "Do not replace the existing state",
+                "--active-node",
+                "state-spine",
+                "--owner",
+                "main",
+                "--base-sha",
+                "def456",
+                "--acceptance",
+                "replacement is rejected",
+                "--next",
+                "Stop",
+            )
+        )
+
+    error = capsys.readouterr().err
+    assert raised.value.code == 2
+    assert "already exists" in error
+    assert "transition" in error
+    assert path.read_bytes() == previous
+
+
 def test_resume_rejects_state_from_a_different_base(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     save_task_state(path, _state())

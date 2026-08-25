@@ -403,6 +403,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "init":
+            if args.state.exists():
+                raise TaskStateError(
+                    f"state already exists at {args.state}; "
+                    "use transition or choose a new path"
+                )
             state = create_task_state(
                 task_id=args.task_id,
                 objective=args.objective,
