@@ -379,6 +379,19 @@ def _codegraph_status(root: Path, **overrides) -> dict[str, object]:
     return payload
 
 
+def test_codegraph_resolves_windows_cmd_shim(monkeypatch) -> None:
+    requested: list[str] = []
+    monkeypatch.setattr(bootstrap_worktree.os, "name", "nt")
+    monkeypatch.setattr(
+        bootstrap_worktree.shutil,
+        "which",
+        lambda command: requested.append(command) or "resolved-codegraph.cmd",
+    )
+
+    assert bootstrap_worktree._codegraph_executable() == "resolved-codegraph.cmd"
+    assert requested == ["codegraph.cmd"]
+
+
 def test_local_bootstrap_initializes_absent_codegraph(
     tmp_path: Path, monkeypatch
 ) -> None:

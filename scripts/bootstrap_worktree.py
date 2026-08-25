@@ -394,8 +394,14 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
     return {"ready": True, "reason": "local env materialize completed"}
 
 
+def _codegraph_executable() -> str:
+    command = "codegraph.cmd" if os.name == "nt" else "codegraph"
+    return shutil.which(command) or command
+
+
 def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
     database = root / ".codegraph"
+    executable = _codegraph_executable()
     is_junction = getattr(database, "is_junction", None)
     if database.is_symlink() or bool(is_junction and is_junction()):
         return {
@@ -406,7 +412,7 @@ def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
     def inspect() -> tuple[dict[str, object], str | None]:
         try:
             completed = subprocess.run(
-                ("codegraph", "status", "--json", str(root)),
+                (executable, "status", "--json", str(root)),
                 check=False,
                 capture_output=True,
                 text=True,
@@ -450,7 +456,7 @@ def _codegraph_state(root: Path, *, provision: bool) -> dict[str, object]:
     state, action = inspect()
     if not provision or action is None:
         return state
-    command = ["codegraph", action]
+    command = [executable, action]
     if action == "sync":
         command.append("--quiet")
     command.append(str(root))
