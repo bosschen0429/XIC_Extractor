@@ -796,6 +796,32 @@ def test_explicit_reviewed_readme_with_retirement_evidence_can_retire(
     assert not readme.exists()
 
 
+def test_validation_readme_with_family_consumer_cannot_retire(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/superpowers/validation/current-packet/README.md"
+    artifact_rel = "docs/superpowers/validation/current-packet/summary.json"
+    readme = repo / rel
+    text = "# Current validation packet\n"
+    _write(readme, text)
+    _write(repo / artifact_rel, "{}\n")
+    _write(repo / "scripts/check_current_packet.py", f'PATH = "{artifact_rel}"\n')
+
+    result = retire_files(
+        [readme],
+        repo,
+        None,
+        execute=True,
+        evidence=_discard_evidence(rel, text),
+    )
+
+    assert result.referrer_bound == [
+        (rel, ("scripts/check_current_packet.py",))
+    ]
+    assert readme.exists()
+
+
 def test_retire_docs_cli_returns_nonzero_on_result_errors(
     tmp_path: Path,
     capsys,

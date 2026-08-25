@@ -30,6 +30,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     is_canonical_doc_owner_path,
     path_startswith_any,
     repo_owner_value,
+    validation_readme_reference_scope,
 )
 
 DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS = (
@@ -931,19 +932,10 @@ def _exact_referrer_paths(
     candidate: DocsRoutingCandidate,
 ) -> list[str]:
     candidate_path = candidate.path
-    family_prefix = ""
-    needles = [candidate_path]
-    if (
-        candidate.disposition == "keep_repo_validation_or_fixture"
-        and candidate_path.endswith("/README.md")
-    ):
-        family_prefix = candidate_path.rsplit("/", 1)[0] + "/"
-        needles.append(family_prefix.rstrip("/").rsplit("/", 1)[-1])
-        needles.extend(
-            rel_path
-            for rel_path in repository_view.paths
-            if rel_path.startswith(family_prefix)
-        )
+    family_prefix, needles = validation_readme_reference_scope(
+        candidate_path,
+        list(repository_view.paths),
+    )
     referrers: list[str] = []
     for rel_path in repository_view.text_paths:
         normalized = rel_path.replace("\\", "/")
@@ -1014,9 +1006,7 @@ def _topic_cluster_status(group: Sequence[DocsRoutingCandidate]) -> str:
     ]
     owner_count = len(owner_claims)
     repeated_claim_count = owner_count - len(set(owner_claims))
-    candidate_count = sum(
-        1 for record in group if record.topic_role == "needs_distillation_or_route"
-    )
+    candidate_count = sum(1 for record in group if record.candidate)
     subcontract_count = sum(
         1 for record in group if record.topic_role == "repo_subcontract_owner"
     )

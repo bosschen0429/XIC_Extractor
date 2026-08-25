@@ -34,6 +34,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     source_copy_locator_sha256,
     source_copy_locator_text,
     source_copy_note_title,
+    validation_readme_reference_scope,
 )
 
 VAULT_ARCHIVE_DIR = "XIC/Archives/Repo Retired"
@@ -160,10 +161,17 @@ def _exact_referrers(
     excluded_paths: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
     normalized = _docs_scan.normalize_repo_rel_path(rel_path)
+    scan_paths = _scan_paths(repo_root)
+    family_prefix, needles = validation_readme_reference_scope(
+        normalized,
+        list(scan_paths),
+    )
     referrers: list[str] = []
-    for scan_rel in _scan_paths(repo_root):
+    for scan_rel in scan_paths:
         scan_rel = _docs_scan.normalize_repo_rel_path(scan_rel)
-        if scan_rel == normalized:
+        if scan_rel == normalized or (
+            family_prefix and scan_rel.startswith(family_prefix)
+        ):
             continue
         if scan_rel in excluded_paths:
             continue
@@ -172,7 +180,8 @@ def _exact_referrers(
         scan_path = repo_root / scan_rel
         if not _docs_scan.is_local_path_scan_target(scan_path, scan_rel):
             continue
-        if normalized in _docs_scan.read_text(scan_path):
+        text = _docs_scan.read_text(scan_path)
+        if any(needle in text for needle in needles):
             referrers.append(scan_rel)
     return tuple(sorted(referrers))
 

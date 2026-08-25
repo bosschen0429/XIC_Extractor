@@ -1072,6 +1072,8 @@ def test_repo_docs_routing_review_surfaces_unbound_validation_for_absorption(
         if validation_path in item["candidate_paths"]
     )
     assert cluster["candidate_count"] == 1
+    assert candidate["digestion_status"] != "support_surface_retained"
+    assert "owner" in candidate["digestion_next_action"]
 
 
 def test_repo_docs_routing_review_retains_validation_family_with_consumer(
@@ -1841,21 +1843,22 @@ def test_repo_docs_topic_review_separates_support_surfaces_from_owners(
 
     review = result.summary["repo"]["docs_routing_review"]
     assert review["candidate_files"] == 2
-    assert review["topic_cluster_group_counts"]["multiple_support_surfaces"] >= 1
     cluster = next(
         item
         for item in review["top_topic_clusters"]
         if validation_path in item["sample_paths"]
     )
-    assert cluster["topic_cluster_status"] == "multiple_support_surfaces"
+    assert cluster["topic_cluster_status"] == "external_owner_with_cleanup_candidates"
     assert cluster["topic_owner_count"] == 0
     assert cluster["supporting_count"] == 2
     assert cluster["digestion_review_count"] == 2
-    assert "support_surface_review:2" in cluster["digestion_status_counts"]
+    assert "external_owner_with_cleanup_candidates:2" in cluster[
+        "digestion_status_counts"
+    ]
     candidate_paths = {
         item["path"]
         for item in review["top_candidates"]
-        if item["digestion_status"] == "support_surface_review"
+        if item["digestion_status"] == "external_owner_with_cleanup_candidates"
     }
     assert candidate_paths == {validation_path, manifest_path}
     assert not [

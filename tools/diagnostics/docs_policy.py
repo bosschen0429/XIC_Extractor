@@ -661,6 +661,36 @@ def infer_doc_kind_from_path(path: str) -> str:
     return "product_doc"
 
 
+def validation_readme_reference_scope(
+    path: str,
+    visible_paths: tuple[str, ...] | list[str],
+) -> tuple[str, tuple[str, ...]]:
+    """Return the family prefix and reference needles for a validation README."""
+
+    normalized = normalize_path_text(path).lstrip("./")
+    path_classification = classify_doc_path(normalized)
+    if (
+        not path_classification.is_validation_or_fixture
+        or not normalized.endswith("/README.md")
+    ):
+        return "", (normalized,)
+    family_prefix = normalized.rsplit("/", 1)[0] + "/"
+    normalized_visible_paths = tuple(
+        normalize_path_text(candidate).lstrip("./")
+        for candidate in visible_paths
+    )
+    needles = {
+        normalized,
+        family_prefix.rstrip("/").rsplit("/", 1)[-1],
+        *(
+            candidate
+            for candidate in normalized_visible_paths
+            if candidate.startswith(family_prefix)
+        ),
+    }
+    return family_prefix, tuple(sorted(needles))
+
+
 def classify_doc_path(path: str) -> DocPathClassification:
     normalized = normalize_path_text(path).lstrip("./")
     normalized_lower = normalized.lower()

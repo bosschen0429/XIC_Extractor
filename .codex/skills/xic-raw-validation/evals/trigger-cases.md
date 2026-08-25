@@ -40,10 +40,11 @@ or narrow the skill trigger.
 ## Boundary Case
 
 - "改 85RAW 的 Matrix 抽取邏輯。" Decision: the dataset name alone does not make
-  this a RAW-validation task. The existing hook fixture routes the behavior
-  edit to `xic-architecture-preflight` and keeps `xic-raw-validation` absent.
-  If the request also says to launch, rerun, or accept 85RAW evidence, the two
-  skill descriptions own separate behavior-edit and RAW-evidence gates.
+  this a RAW-validation task. The hook fixture remains silent for this bare
+  label; the root contract and skill descriptions model-route the behavior edit
+  to `xic-architecture-preflight` while keeping `xic-raw-validation` absent. If
+  the request also says to launch, rerun, or accept 85RAW evidence, the two skill
+  descriptions own separate behavior-edit and RAW-evidence gates.
 
 ## Format Decision
 
