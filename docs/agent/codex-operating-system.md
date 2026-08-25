@@ -11,6 +11,7 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 | --- | --- |
 | decide where agent guidance belongs | [Placement Model](#placement-model) |
 | inspect current hooks or command rules | [Current Repo-Local Hooks](#current-repo-local-hooks) and [Current Repo-Local Rules](#current-repo-local-rules) |
+| resume or hand off long-running work | [Durable Task State](#durable-task-state) |
 | trace contract to enforcement | [Governance Enforcement Index](#governance-enforcement-index) |
 | add, retain, or retire agent machinery | [Adoption Rules](#adoption-rules) |
 | promote a repeated lesson | [Self-Improvement Rule](#self-improvement-rule) |
@@ -37,6 +38,49 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 - `.codex/agents/*.toml`: project-local agents require a verified capability
   boundary that global agents, skills, owners, and bounded task packets cannot
   provide.
+
+## Durable Task State
+
+For long-running, cross-session, or repeatedly compacted work,
+`tools.agent_task_state` owns the minimal machine-readable current state. Store
+each task at ignored `output/agent-state/<task-id>/state.json`. The JSON is the
+authority; active Markdown handoffs are disposable human projections and must
+not be parsed to reconstruct state.
+
+The owner records one task objective, one active node, one owner, the frozen
+task/merge-base SHA, acceptance, evidence, decisions, rejected paths,
+blockers/waits, external side effects, the next transition, and a monotonic
+checkpoint version. Its bounded state machine is:
+
+```text
+shaped -> ready -> executing -> verifying -> reviewing -> done
+              \-> waiting / needs_decision / blocked
+terminal: done / superseded
+```
+
+Use it at semantic phase boundaries, not after every tool call. A resume must
+provide the current task base SHA and stop on mismatch. Only the recorded owner
+may advance a task; that owner may atomically transfer the next state to one
+`--new-owner`. Entry into `reviewing` and `done` requires evidence. This pilot
+does not schedule agents, infer state from JSONL, trigger compaction, or replace
+Issues, goals, plans, PR bodies, and product/runtime state owners.
+
+Initialize state after obtaining the task's frozen or merge-base SHA with a
+separate direct Git read:
+
+```powershell
+.venv\Scripts\python.exe -m tools.agent_task_state init `
+  --state output/agent-state/example/state.json `
+  --task-id example --objective "Deliver the bounded slice" `
+  --active-node shaping --owner main --base-sha <sha> `
+  --acceptance "focused verification passes" --next "Move to ready"
+```
+
+Resume with `show`, advance with `transition`, and generate an ignored handoff
+with `handoff --output docs/superpowers/handoffs/current/ACTIVE.local.md`.
+All three commands require `--current-base-sha` naming that same task base; a
+stale state is evidence to inspect and reconcile, not permission to overwrite
+it. Ordinary commits on the task branch do not change this base.
 
 ## Current Repo-Local Hooks
 

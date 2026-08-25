@@ -63,6 +63,11 @@ for the active task unless a hard gate below says otherwise.
 - Keep active plans and handoffs as short, self-contained current-state stubs;
   use the PR body for normal durable closeout. Detailed retention and Obsidian
   routing live in the handoff owners above.
+- For long-running or cross-session work, keep authoritative current state in
+  ignored `output/agent-state/<task-id>/state.json` through
+  `python -m tools.agent_task_state`. Validate its base before resuming, advance
+  it only at meaningful phase transitions, and derive handoffs from it instead
+  of reconstructing state from transcript history.
 - State validation evidence status explicitly using the canonical Evidence
   labels in `docs/product/README.md`.
 - Tests passing is not production readiness. For extraction, alignment, scoring,
