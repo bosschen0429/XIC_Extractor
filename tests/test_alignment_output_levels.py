@@ -6,15 +6,9 @@ from xic_extractor.alignment.output_levels import (
 )
 
 
-def test_production_output_level_includes_downstream_matrix_tsv():
-    # alignment_matrix.tsv is a mandatory downstream output on every run
-    # (owner contract); production must emit it, not just xlsx + identity + html.
+def test_production_output_level_is_matrix_only():
     assert artifact_names_for_output_level("production") == (
-        "alignment_results.xlsx",
         "alignment_matrix.tsv",
-        "alignment_matrix_identity.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
-        "review_report.html",
     )
 
 
@@ -73,7 +67,7 @@ def test_validation_minimal_output_level_is_machine_gate_surface_only():
 
 @pytest.mark.parametrize(
     "output_level",
-    ("production", "machine", "debug", "validation", "validation-minimal"),
+    ("machine", "debug", "validation", "validation-minimal"),
 )
 def test_all_output_levels_keep_same_provenance_filename_without_v1_alias(
     output_level,

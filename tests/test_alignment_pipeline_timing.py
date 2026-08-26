@@ -67,7 +67,7 @@ def test_pipeline_records_alignment_timing_stages(
         "owner_backfill_window_strategy": "exact",
         "owner_backfill_superwindow_span_factor": 2,
         "preconsolidate_owner_families": False,
-        "output_level": "machine",
+        "output_level": "production",
         "backfill_scope": "full-audit",
         "requested_audit_evidence_mode": "auto",
         "selected_family_count": 0,

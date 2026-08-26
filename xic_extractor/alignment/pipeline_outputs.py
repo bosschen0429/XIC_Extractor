@@ -381,11 +381,6 @@ def write_outputs_atomic(
     )
     if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
-    if (
-        outputs.owner_backfill_peak_fact_provenance_tsv is None
-        and owner_backfill_peak_fact_provenance.rows
-    ):
-        raise ValueError("physical-fact provenance rows require an output path")
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     provisional_projection = None
     provisional_output_paths = (

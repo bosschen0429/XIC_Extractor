@@ -280,13 +280,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         return _alignment_outputs(
             configured_backend=kwargs["owner_build_xic_backend"],
             processing_run_spec=kwargs["discovery_processing_run_spec"],
-            review_tsv=output_dir / "alignment_review.tsv",
             matrix_tsv=output_dir / "alignment_matrix.tsv",
-            matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
-            cells_tsv=output_dir / "alignment_cells.tsv",
-            backfill_seed_audit_tsv=(
-                output_dir / "alignment_owner_backfill_seed_audit.tsv"
-            ),
         )
 
     def fake_run_discovery_batch(*_args, **kwargs):
@@ -336,9 +330,9 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert len(bound_recipes) == 1
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
-    assert captured_alignment["output_level"] == "machine"
-    assert captured_alignment["emit_alignment_cells"] is True
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
+    assert captured_alignment["output_level"] == "production"
+    assert captured_alignment["emit_alignment_cells"] is False
+    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["audit_evidence_mode"] == "none"
     assert captured_alignment["require_discovery_owner_closure"] is (mode == "full")
     assert summary["gallery_html"] is None
@@ -347,9 +341,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     )
     assert "gallery_html" not in summary["alignment_outputs"]
     assert summary["alignment_outputs"] == {
-        "review_tsv": str(output_dir / "alignment_review.tsv"),
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
-        "cells_tsv": str(output_dir / "alignment_cells.tsv"),
     }
     assert progress_events == (
         [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
