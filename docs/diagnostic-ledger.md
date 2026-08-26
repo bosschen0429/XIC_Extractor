@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-07-24
+**Last updated:** 2026-08-26
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,25 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
+
+Verdict: `diagnosis_ready / diagnostic_only`. The retained Gate B receipt
+`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b_v1.json` contains
+85 samples, 86 physical hypotheses, 11 ModeTracks, a maximum track ownership of
+15, and no ModeTrack-added RAW opens or XIC calls. A no-RAW exact API replay of
+the CrossSample bounded-neighborhood operation at the full 86-member complete
+graph bound (3,655 eligible edges) ran 15 repetitions with median 0.103 s
+(range 0.095-0.127 s).
+
+Issue #303 therefore freezes `max_members=86` and
+`max_eligible_edges=3655` as the finite proposal boundary. Larger connected
+neighborhoods fail closed as `unassessable`; they must not be chunked into
+partial proposals. Reuse this conclusion unless the CrossSample neighborhood
+algorithm, the retained Gate B population bound, or the proposal boundary
+changes materially. This receipt grants no product activation, scientific
+readiness, Matrix, Backfill, or writer authority, and does not justify another
+RAW run.
 
 ### Retired AsLS / Linear-Edge Decision Gates
 

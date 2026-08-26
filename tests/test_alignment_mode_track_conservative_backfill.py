@@ -27,10 +27,10 @@ from tests.package2_no_raw_fixture import (
 from xic_extractor.alignment import conservative_backfill as backfill
 from xic_extractor.alignment import untargeted_cid_nl_golden_path as golden_path
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackTrajectoryPolicy,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
+from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (

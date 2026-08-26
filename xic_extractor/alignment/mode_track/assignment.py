@@ -15,7 +15,7 @@ from xic_extractor.alignment.drift_evidence import LocalTrajectoryAssessment
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     validate_cid_nl_assessment_hypothesis_closure,
 )
-from xic_extractor.alignment.identity_coherence.family_context import (
+from xic_extractor.alignment.mode_track.family_context import (
     FamilyContextRef,
     validate_family_context_ref_for_consumption,
 )

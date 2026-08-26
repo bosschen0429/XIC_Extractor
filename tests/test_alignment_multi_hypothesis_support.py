@@ -15,11 +15,11 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackTrajectoryPolicy,
     reinforce_mode_track_model_set,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
+from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (

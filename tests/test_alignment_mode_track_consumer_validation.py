@@ -14,17 +14,17 @@ from xic_extractor.alignment.drift_evidence import (
     LocalTrajectoryEvidenceLookup,
     assess_local_trajectory,
 )
-from xic_extractor.alignment.identity_coherence import mode_track_assignment as mta
-from xic_extractor.alignment.identity_coherence.family_context import (
-    mint_family_context_ref,
-)
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track import assignment as mta
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackContractError,
     assign_mode_tracks,
     canonical_mode_track_assignment_batch_bytes,
     fit_mode_track_model_set,
     reinforce_mode_track_model_set,
     validate_mode_track_assignment_batch_for_consumption,
+)
+from xic_extractor.alignment.mode_track.family_context import (
+    mint_family_context_ref,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 

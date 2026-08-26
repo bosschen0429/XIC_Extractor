@@ -25,10 +25,7 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
-from xic_extractor.alignment.identity_coherence.family_context import (
-    mint_family_context_ref,
-)
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignment,
     ModeTrackCandidateObservation,
     ModeTrackContractError,
@@ -44,6 +41,9 @@ from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     mint_mode_track_candidate_observation,
     mint_mode_track_support_anchor,
     reinforce_mode_track_model_set,
+)
+from xic_extractor.alignment.mode_track.family_context import (
+    mint_family_context_ref,
 )
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
@@ -1602,23 +1602,26 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
 
 
 def test_mode_track_owner_has_no_product_or_raw_scan_dependencies() -> None:
-    path = (
+    package_path = (
         Path(__file__).parents[1]
         / "xic_extractor"
         / "alignment"
-        / "identity_coherence"
-        / "mode_track_assignment.py"
+        / "mode_track"
     )
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imported = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
-    imported.update(
-        node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
-    )
+    imported = set()
+    for path in package_path.glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported.update(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        imported.update(
+            node.module or ""
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        )
     forbidden = (
         "matrix",
         "backfill",

@@ -11,15 +11,20 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     assess_mode_track_conservative_backfill_groups,
 )
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleSuccessorApplication,
+    validate_cross_sample_group_population,
+)
 from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track import (
+    AcceptedModeTrackRefinement,
+    ModeTrackRefinementTransaction,
     ModeTrackTrajectoryPolicy,
-)
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
-    bootstrap_mode_tracks_from_cid_nl_support,
+    apply_accepted_mode_track_refinement,
+    bootstrap_mode_track_refinement_from_cid_nl_support,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlModeTrackProjection,
@@ -60,6 +65,8 @@ class ModeTrackWorkflowRun:
     projection: UntargetedCidNlModeTrackProjection
     discovery_index: Path
     call_cost: Mapping[str, int]
+    refinement_transactions: tuple[ModeTrackRefinementTransaction, ...] = ()
+    cross_sample_applications: tuple[CrossSampleSuccessorApplication, ...] = ()
 
 
 def run_untargeted_cid_nl_mode_track_workflow(
@@ -169,12 +176,17 @@ def run_untargeted_cid_nl_mode_track_workflow(
             strict=True,
         )
     )
-    _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    refinement = bootstrap_mode_track_refinement_from_cid_nl_support(
         processing_owners=context.processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=_mode_track_trajectory_policy(),
     )
+    cross_sample_applications = _apply_mode_track_refinement_transactions(
+        refinement.transactions
+    )
+    model_set = refinement.model_set
+    batches = refinement.assignment_batches
     facts = assess_mode_track_conservative_backfill_groups(
         processing_owners=context.processing_owners,
         model_set=model_set,
@@ -194,6 +206,32 @@ def run_untargeted_cid_nl_mode_track_workflow(
             discovery_raw_open_count=len(raw_files),
             m7_call_cost=m7_call_cost,
         ),
+        refinement_transactions=refinement.transactions,
+        cross_sample_applications=cross_sample_applications,
+    )
+
+
+def _apply_mode_track_refinement_transactions(
+    transactions: tuple[ModeTrackRefinementTransaction, ...],
+) -> tuple[CrossSampleSuccessorApplication, ...]:
+    if not transactions:
+        return ()
+    population = validate_cross_sample_group_population(
+        tuple(
+            predecessor
+            for transaction in transactions
+            for predecessor in transaction.application_context.predecessors
+        )
+    )
+    return tuple(
+        apply_accepted_mode_track_refinement(
+            trajectory_input=transaction.trajectory_input,
+            proposal=transaction.proposal,
+            application_context=transaction.application_context,
+            population=population,
+        )
+        for transaction in transactions
+        if type(transaction.proposal) is AcceptedModeTrackRefinement
     )
 
 

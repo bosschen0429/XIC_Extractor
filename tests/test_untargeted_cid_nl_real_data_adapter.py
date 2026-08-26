@@ -18,12 +18,12 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackContractError,
     ModeTrackTrajectoryPolicy,
     mint_mode_track_support_anchor,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
+from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate

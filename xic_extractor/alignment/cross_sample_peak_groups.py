@@ -16,6 +16,7 @@ import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -850,6 +851,36 @@ def build_bounded_connected_neighborhood(
 
 
 @dataclass(frozen=True, slots=True)
+class CrossSampleCoupledProposalContext:
+    """Rich CrossSample-owned context kept outside a ModeTrack snapshot."""
+
+    predecessors: tuple[CrossSampleGroupIdentity, ...]
+    classified_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    budget: CrossSampleNeighborhoodBudget
+
+    def __post_init__(self) -> None:
+        if self.predecessors != tuple(
+            sorted(
+                self.predecessors,
+                key=lambda group: group.group_hypothesis_id,
+            )
+        ):
+            raise CrossSampleContractError(
+                "coupled proposal predecessors are not canonical-sorted"
+            )
+        validate_cross_sample_group_population(self.predecessors)
+        build_bounded_connected_neighborhood(
+            member_subjects=tuple(
+                member
+                for predecessor in self.predecessors
+                for member in predecessor.member_subjects
+            ),
+            edges=self.classified_edges,
+            budget=self.budget,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CrossSampleLineageEdge:
     lineage_edge_id: str
     predecessor_group_hypothesis_id: str
@@ -1176,10 +1207,39 @@ def apply_coupled_successor_proposal(
         raise CrossSampleContractError(
             "successor proposal spans disconnected eligible components"
         )
+    excluded_pairs = {
+        frozenset(
+            (edge.left_member_subject_id, edge.right_member_subject_id)
+        )
+        for edge in edges
+        if edge.disposition == "excluded"
+    }
+    if any(
+        frozenset(
+            (left.member_subject_id, right.member_subject_id)
+        )
+        in excluded_pairs
+        for member_set in proposed
+        for left, right in combinations(member_set, 2)
+    ):
+        raise CrossSampleContractError(
+            "successor proposal reopens an excluded member edge"
+        )
+    predecessor_by_members = {
+        frozenset(
+            member.member_subject_id for member in predecessor.member_subjects
+        ): predecessor
+        for predecessor in predecessor_groups
+    }
     successors = tuple(
         sorted(
             (
-                mint_cross_sample_group_identity(
+                predecessor_by_members.get(
+                    frozenset(
+                        member.member_subject_id for member in member_set
+                    )
+                )
+                or mint_cross_sample_group_identity(
                     processing_request_id=request_id,
                     member_subjects=member_set,
                 )

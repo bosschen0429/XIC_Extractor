@@ -15,11 +15,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
 )
-from xic_extractor.alignment.identity_coherence.family_context import (
-    FamilyContextRef,
-    mint_family_context_ref,
-)
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignmentBatch,
     ModeTrackModelSet,
     ModeTrackTrajectoryPolicy,
@@ -28,6 +24,10 @@ from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     mint_mode_track_candidate_observation,
     mint_mode_track_support_anchor,
     validate_mode_track_assignment_batch_for_consumption,
+)
+from xic_extractor.alignment.mode_track.family_context import (
+    FamilyContextRef,
+    mint_family_context_ref,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (

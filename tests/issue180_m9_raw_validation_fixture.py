@@ -19,10 +19,10 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackTrajectoryPolicy,
 )
-from xic_extractor.alignment.identity_coherence.mode_track_producer import (
+from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
 from xic_extractor.alignment.production_acceptance import (
