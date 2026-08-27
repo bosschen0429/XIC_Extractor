@@ -200,6 +200,45 @@ def test_finalizer_rejects_crossed_scope_and_request(
         )
 
 
+def test_finalizer_rejects_search_scope_subclasses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+
+    class ForgedUntargetedSearchScope(UntargetedSearchScope):
+        def __post_init__(self) -> None:
+            pass
+
+    forged_scope = ForgedUntargetedSearchScope(
+        schema_version=scope.schema_version,
+        request=scope.request,
+        samples=scope.samples,
+        method_constraints=scope.method_constraints,
+        evidence_providers=scope.evidence_providers,
+        declared_candidate_ids=scope.declared_candidate_ids,
+        capture_bindings=scope.capture_bindings,
+    )
+    forged_captures = tuple(
+        capture_peak_hypotheses(
+            scope=forged_scope,
+            candidate_id=capture.candidate_id,
+            trace=capture.trace,
+        )
+        for capture in captures
+    )
+
+    with pytest.raises(
+        FinalizedScientificAlignmentContractError,
+        match="Target or Untargeted SearchScope",
+    ):
+        finalize_scientific_alignment(
+            scope=forged_scope,
+            captures=forged_captures,
+            final_cross_sample_receipt=receipt,
+        )
+
+
 def test_finalized_values_cannot_be_forged_by_direct_construction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

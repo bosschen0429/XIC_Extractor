@@ -360,7 +360,7 @@ def _terminal_sort_key(subject: TerminalSearchObservation) -> tuple[str, str, st
 
 
 def _validate_scope(scope: object) -> None:
-    if not isinstance(scope, (TargetSearchScope, UntargetedSearchScope)):
+    if type(scope) not in (TargetSearchScope, UntargetedSearchScope):
         raise FinalizedScientificAlignmentContractError(
             "finalization requires a Target or Untargeted SearchScope"
         )
