@@ -159,6 +159,44 @@ def test_finalizer_rejects_inconclusive_capture_as_no_observation(
         )
 
 
+def test_finalizer_rejects_short_window_capture_as_no_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    original = captures[0].trace
+    rt = np.linspace(original.rt_min, original.rt_max, 4)
+    short_trace = Trace.from_arrays(
+        sample_name=original.sample_name,
+        mz=original.mz,
+        rt=rt,
+        intensity=np.ones_like(rt),
+        rt_min=original.rt_min,
+        rt_max=original.rt_max,
+        ppm_tol=original.ppm_tol,
+        source="finalized_scientific_alignment_short_window",
+        acquisition_source_id=original.acquisition_source_id,
+    )
+    incomplete = capture_peak_hypotheses(
+        scope=scope,
+        candidate_id=captures[0].candidate_id,
+        trace=short_trace,
+    )
+    assert incomplete.detection.status == "not_detected"
+    assert incomplete.detection.result is not None
+    assert incomplete.detection.result.status == "WINDOW_TOO_SHORT"
+
+    with pytest.raises(
+        FinalizedScientificAlignmentContractError,
+        match="not a closed searched-no-observation terminal",
+    ):
+        finalize_scientific_alignment(
+            scope=scope,
+            captures=(incomplete, captures[1]),
+            final_cross_sample_receipt=receipt,
+        )
+
+
 def test_finalizer_rejects_crossed_scope_and_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

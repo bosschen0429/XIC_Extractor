@@ -192,7 +192,13 @@ def _terminal_subject(
         raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     selected = capture.selected_hypothesis
     if selected is None:
-        if capture.detection.status != "not_detected":
+        if (
+            capture.detection.status != "not_detected"
+            or (
+                capture.detection.result is not None
+                and capture.detection.result.status == "WINDOW_TOO_SHORT"
+            )
+        ):
             raise FinalizedScientificAlignmentContractError(
                 "capture is not a closed searched-no-observation terminal"
             )
