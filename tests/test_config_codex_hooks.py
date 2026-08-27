@@ -262,6 +262,7 @@ def _assert_repo_locator(locator: str) -> None:
         )
 
 
+@pytest.mark.serial_ci
 def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
     subprocess.run(
         [sys.executable, str(HOOKS_DIR / "fixtures" / "assert_hook_outputs.py")],

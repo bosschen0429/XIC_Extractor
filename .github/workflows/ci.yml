@@ -31,7 +31,7 @@ jobs:
       - name: Static dependency contracts
         run: uv run lint-imports --no-cache
       - name: Architecture census
-        run: uv run python scripts/check_architecture_census.py
+        run: uv run pytest tests/test_docs_architecture_census.py -m current_repository_census -q
       - name: Test shard coverage
         run: uv run python -m tools.testing.test_shards --check
       - name: Diagnostics index in sync
@@ -79,34 +79,60 @@ jobs:
           "### Python 3.12 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $exitCode
-      - name: Test shards
+      - name: Test
         shell: pwsh
         working-directory: repo-3.12-tests
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
-          $shards = @(
-            "docs-config",
-            "gui",
-            "targeted-core",
-            "alignment-core",
-            "product-gates-activation",
-            "product-gates-evidence",
-            "diagnostics-tools"
+          $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
+          $runPackagingBuild = $true
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $baseSha = "${{ github.event.pull_request.base.sha }}"
+            $headSha = "${{ github.event.pull_request.head.sha }}"
+            $changedPaths = @(git diff --name-only $baseSha $headSha)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $packagingRelevant = @(
+              $changedPaths | Where-Object {
+                $_ -match '^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py|assets/|config/(settings|targets)\.example\.csv|gui/main\.py|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py|data/issue256_quantitative_projection_authority_v1\.json))'
+              }
+            )
+            if ($packagingRelevant.Count -eq 0) {
+              $runPackagingBuild = $false
+              $markerExpression += " and not packaging_build"
+            }
+            $productGovernanceRelevant = @(
+              $changedPaths | Where-Object {
+                $_ -match '^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py|docs/product/|docs/superpowers/(validation|schemas|productization)/|docs/superpowers/plans/2026-06-15-productization-control-plane\.md|tools/diagnostics/docs_(policy|scan)\.py|xic_extractor/alignment/(production_acceptance|quant_matrix_version)\.py)'
+              }
+            )
+            if ($productGovernanceRelevant.Count -eq 0) {
+              $markerExpression += " and not product_governance"
+            }
+          }
+          $started = Get-Date
+          & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 4 --dist loadfile -v --tb=short -x --durations=10
+          $parallelExitCode = $LASTEXITCODE
+          $parallelElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+          "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          if ($parallelExitCode -ne 0) { exit $parallelExitCode }
+
+          $serialTargets = @(
+            "tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
           )
-          $failed = @()
-          foreach ($shard in $shards) {
-            $started = Get-Date
-            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10
-            $exitCode = $LASTEXITCODE
-            $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-            "- $shard test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-            if ($exitCode -ne 0) { $failed += $shard }
+          if ($runPackagingBuild) {
+            $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_one_byte_identical_quantitative_authority"
+            $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority"
           }
-          if ($failed.Count -gt 0) {
-            Write-Error "Failed shards: $($failed -join ', ')"
-            exit 1
-          }
+          $serialStarted = Get-Date
+          & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short -x --durations=10
+          $serialExitCode = $LASTEXITCODE
+          $serialElapsed = [math]::Round(((Get-Date) - $serialStarted).TotalSeconds, 1)
+          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+          "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          exit $serialExitCode
 
   compatibility:
     name: compatibility (Python 3.11)
@@ -133,31 +159,18 @@ jobs:
           "### Python 3.11 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $exitCode
-      - name: Test shards
+      - name: Test
         shell: pwsh
         working-directory: repo-3.11-compatibility
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
-          $shards = @(
-            "docs-config",
-            "gui",
-            "targeted-core",
-            "alignment-core",
-            "product-gates-activation",
-            "product-gates-evidence",
-            "diagnostics-tools"
-          )
-          $failed = @()
-          foreach ($shard in $shards) {
-            $started = Get-Date
-            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10
-            $exitCode = $LASTEXITCODE
-            $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-            "- $shard test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-            if ($exitCode -ne 0) { $failed += $shard }
-          }
-          if ($failed.Count -gt 0) {
-            Write-Error "Failed shards: $($failed -join ', ')"
-            exit 1
-          }
+          $started = Get-Date
+          & .\.venv\Scripts\python.exe -m pytest -m "not ledger_snapshot and not current_repository_census and not serial_ci and not packaging_build and not product_governance" -n 4 --dist loadfile -v --tb=short -x --durations=10
+          $parallelExitCode = $LASTEXITCODE
+          if ($parallelExitCode -ne 0) { exit $parallelExitCode }
+          & .\.venv\Scripts\python.exe -m pytest tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest -v --tb=short -x
+          $serialExitCode = $LASTEXITCODE
+          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+          "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          exit $serialExitCode

@@ -8,20 +8,13 @@ import pytest
 from scripts.check_pr_body import main, validate_pr_body
 from tools.testing.test_shards import SHARD_PATTERNS
 
-# Shards deliberately excluded from .github/workflows/ci.yml. Every shard must
-# appear exactly once in each test job; membership here is the only way to opt
-# out, so the CI/shard contract fails closed for anything unlisted.
-#
-# Empty, and it should stay that way. Register-snapshot tests are excluded by
-# the ledger_snapshot marker instead, which splits at the granularity the
-# property has: excluding whole files also removed 175 behavioural tests from
-# CI. See SNAPSHOT_MARKER in tools/testing/test_shards.py.
-MANUAL_ONLY_SHARDS: frozenset[str] = frozenset()
-
 CORE_CI_COMMANDS = (
     "uv run ruff check xic_extractor tests",
     "uv run lint-imports --no-cache",
-    "uv run python scripts/check_architecture_census.py",
+    (
+        "uv run pytest tests/test_docs_architecture_census.py "
+        "-m current_repository_census -q"
+    ),
     "uv run python scripts/check_diagnostics_index.py",
     (
         "uv run python tools/diagnostics/docs_management_audit.py "
@@ -92,7 +85,7 @@ def test_ci_docs_lifecycle_audit_fetches_retirement_history() -> None:
     assert "fetch-depth: 0" in lint_checkout
 
 
-def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
+def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "uv run python -m tools.testing.test_shards --check" in workflow
@@ -112,20 +105,91 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
             f"uv sync --locked --extra dev --group dev --python {version}"
             in block
         )
-        assert (
-            r"& .\.venv\Scripts\python.exe "
-            "-m tools.testing.test_shards $shard -- -v --tb=short -x --durations=10"
-        ) in block
-        assert (
-            r'$env:PATH = "$venvScripts;$env:PATH"'
-            in block
-        )
+        assert r'$env:PATH = "$venvScripts;$env:PATH"' in block
         for shard in SHARD_PATTERNS:
-            expected = 0 if shard in MANUAL_ONLY_SHARDS else 1
-            assert block.count(f'"{shard}"') == expected, shard
+            assert f'"{shard}"' not in block, shard
         assert "install_seconds=" in block
         assert "test_seconds=" in block
         assert "$env:GITHUB_STEP_SUMMARY" in block
+    test_block = _job_block(workflow, "test")
+    assert '${{ github.event_name }}' in test_block
+    assert '${{ github.event.pull_request.base.sha }}' in test_block
+    assert '${{ github.event.pull_request.head.sha }}' in test_block
+    assert "git diff --name-only $baseSha $headSha" in test_block
+    assert (
+        '$markerExpression = "not ledger_snapshot and not '
+        'current_repository_census and not serial_ci"' in test_block
+    )
+    assert (
+        '$markerExpression += " and not packaging_build"' in test_block
+    )
+    for path in (
+        r"pyproject\.toml",
+        r"xic_extractor\.spec",
+        r"tests/test_pyinstaller_spec\.py",
+        "assets/",
+        r"config/(settings|targets)\.example\.csv",
+        r"gui/main\.py",
+        r"scripts/(csv_to_excel|xlsx_to_targets)\.py",
+        "xic_extractor/presets/data/",
+        "issue256_quantitative_projection_authority_v1",
+    ):
+        assert path in test_block
+    packaging_selector = re.search(
+        r"\$packagingRelevant = @\(.*?\$_ -match '([^']+)'",
+        test_block,
+        re.DOTALL,
+    )
+    assert packaging_selector is not None
+    packaging_pattern = re.compile(packaging_selector.group(1))
+    assert packaging_pattern.search("tests/test_pyinstaller_spec.py")
+    assert not packaging_pattern.search("docs/README.md")
+    assert (
+        '$markerExpression += " and not product_governance"' in test_block
+    )
+    for path in (
+        r"scripts/check_productization_state\.py",
+        r"tests/test_productization_state_index\.py",
+        "docs/product/",
+        "docs/superpowers/(validation|schemas|productization)/",
+        r"docs/superpowers/plans/2026-06-15-productization-control-plane\.md",
+        r"tools/diagnostics/docs_(policy|scan)\.py",
+        r"xic_extractor/alignment/(production_acceptance|quant_matrix_version)\.py",
+    ):
+        assert path in test_block
+    assert (
+        r"& .\.venv\Scripts\python.exe -m pytest -m $markerExpression "
+        "-n 4 --dist loadfile -v --tb=short -x --durations=10"
+    ) in test_block
+    assert (
+        "tests/test_config_codex_hooks.py::"
+        "test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
+        in test_block
+    )
+    assert (
+        "tests/test_pyinstaller_spec.py::"
+        "test_built_wheel_contains_one_byte_identical_quantitative_authority"
+        in test_block
+    )
+    assert (
+        "tests/test_pyinstaller_spec.py::"
+        "test_final_pyinstaller_output_contains_one_byte_identical_"
+        "quantitative_authority"
+        in test_block
+    )
+    assert r"& .\.venv\Scripts\python.exe -m pytest @serialTargets" in test_block
+    compatibility_block = _job_block(workflow, "compatibility")
+    assert (
+        r"& .\.venv\Scripts\python.exe -m pytest "
+        '-m "not ledger_snapshot and not current_repository_census and not '
+        'serial_ci and not packaging_build and not product_governance" '
+        "-n 4 --dist loadfile -v --tb=short -x --durations=10"
+    ) in compatibility_block
+    assert (
+        "tests/test_config_codex_hooks.py::"
+        "test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
+        in compatibility_block
+    )
     assert "if: github.event_name == 'push'" in _job_block(
         workflow, "compatibility"
     )
