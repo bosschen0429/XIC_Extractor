@@ -56,6 +56,20 @@ used to open a PR, or moved between draft and ready states.
 
 - Before push or PR creation, confirm the intended branch, staged/dirty scope,
   and exact checks already run for the current HEAD.
+- Publish a PR body in this fixed order: freeze the final commit and record its
+  full 40-character HEAD SHA; render the complete body from the single
+  repository PR template; run the local checker against that rendered body and
+  SHA with `python scripts/check_pr_body.py --body-file <file> --head-sha <40-SHA>`;
+  push the commit; then immediately update the remote PR body to the
+  rendered body. Keep the full template and its existing body/checker contract;
+  this ordering only prevents a head/body publication race.
+- The receipt workflow listens for `opened`, `reopened`, and `edited`, not
+  `synchronize`. A push therefore does not create a predictable synchronize-time
+  red result. Until the remote body update triggers `edited`, the remote receipt
+  has not established current-head validation and may appear pending or missing;
+  do not treat the PR as ready in that state. Whether a receipt check blocks
+  merge is determined by the repository's current branch-protection or ruleset
+  settings, not by this procedure.
 - Required hosted checks on the final remote SHA are the merge-readiness
   authority. Run a local same-layer check when hosted CI is unavailable or when
   the change affects CI configuration, packaging, installation, or another

@@ -673,9 +673,13 @@ def test_ci_separates_body_receipt_from_code_validation_workflow() -> None:
     receipt_block = _job_block(receipt_workflow, "validate")
     checker = 'python scripts/check_pr_body.py --github-event "$GITHUB_EVENT_PATH"'
 
-    assert 'types: ["opened", "synchronize", "reopened", "edited"]' in (
-        receipt_workflow
+    assert _event_types(receipt_workflow, "pull_request") == (
+        "opened",
+        "reopened",
+        "edited",
     )
+    assert "synchronize" not in receipt_workflow
+    assert "edited" in receipt_workflow
     assert "edited" not in code_workflow
     assert checker not in code_workflow
     assert receipt_workflow.count(checker) == 1
@@ -734,3 +738,23 @@ def _event_branches(workflow: str, event_name: str) -> tuple[str, ...]:
             return tuple(str(value) for value in parsed)
         break
     raise AssertionError(f"missing branches for {event_name}")
+
+
+def _event_types(workflow: str, event_name: str) -> tuple[str, ...]:
+    lines = workflow.splitlines()
+    event_header = f"  {event_name}:"
+    for index, line in enumerate(lines):
+        if line != event_header:
+            continue
+        for follow in lines[index + 1 :]:
+            if follow.startswith("  ") and not follow.startswith("    "):
+                break
+            stripped = follow.strip()
+            if not stripped.startswith("types:"):
+                continue
+            parsed = ast.literal_eval(stripped.split(":", 1)[1].strip())
+            if not isinstance(parsed, list):
+                raise AssertionError(f"{event_name} types must be a YAML list")
+            return tuple(str(value) for value in parsed)
+        break
+    raise AssertionError(f"missing types for {event_name}")
