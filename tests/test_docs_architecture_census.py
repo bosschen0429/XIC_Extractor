@@ -15,6 +15,11 @@ from scripts import check_architecture_census as census
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(scope="module")
+def current_architecture_census() -> census.ArchitectureCensus:
+    return census.build_architecture_census(ROOT)
+
+
 def _lint_imports_executable() -> str:
     executable = shutil.which("lint-imports")
     if executable is None:
@@ -28,8 +33,11 @@ def _lint_imports_executable() -> str:
     return executable
 
 
-def test_current_architecture_census_is_valid_and_static_only() -> None:
-    observed = census.build_architecture_census(ROOT)
+@pytest.mark.current_repository_census
+def test_current_architecture_census_is_valid_and_static_only(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = current_architecture_census
 
     assert census.validate_architecture_census(ROOT, observed) == []
     assert set(observed.serializable()) == set(census.CENSUS_OWNER_REFS)
@@ -660,8 +668,11 @@ def forge_finalization(state, supervisor):
     )
 
 
-def test_grimp_census_records_only_importable_internal_modules() -> None:
-    observed = census.build_architecture_census(ROOT)
+@pytest.mark.current_repository_census
+def test_grimp_census_records_only_importable_internal_modules(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = current_architecture_census
     importable_modules = {
         census.module_name_from_path(path)
         for path in census.repository_python_paths(ROOT)
@@ -1022,8 +1033,11 @@ unmatched_ignore_imports_alerting = error
     )
 
 
-def test_census_records_declarations_without_claiming_runtime_closure() -> None:
-    observed = census.build_architecture_census(ROOT)
+@pytest.mark.current_repository_census
+def test_census_records_declarations_without_claiming_runtime_closure(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = current_architecture_census
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     scripts = project["project"]["scripts"]
     find = project["tool"]["setuptools"]["packages"]["find"]
@@ -1097,8 +1111,12 @@ def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
     )
 
 
-def test_optional_json_census_has_content_identity_and_scope(tmp_path: Path) -> None:
-    observed = census.build_architecture_census(ROOT)
+@pytest.mark.current_repository_census
+def test_optional_json_census_has_content_identity_and_scope(
+    tmp_path: Path,
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = current_architecture_census
     output = tmp_path / "architecture_census.json"
 
     census.write_architecture_census_json(output, observed, ROOT)
@@ -1114,8 +1132,11 @@ def test_optional_json_census_has_content_identity_and_scope(tmp_path: Path) -> 
     assert set(payload["census"]) == set(census.CENSUS_OWNER_REFS)
 
 
-def test_json_census_rejects_nonignored_repo_path() -> None:
-    observed = census.build_architecture_census(ROOT)
+@pytest.mark.current_repository_census
+def test_json_census_rejects_nonignored_repo_path(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = current_architecture_census
 
     with pytest.raises(ValueError, match="outside the repo or git-ignored"):
         census.write_architecture_census_json(

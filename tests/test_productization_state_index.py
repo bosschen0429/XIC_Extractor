@@ -26,6 +26,8 @@ from scripts.check_productization_state import (
 )
 from tools.diagnostics.docs_scan import markdown_headings
 
+pytestmark = pytest.mark.product_governance
+
 
 @pytest.mark.ledger_snapshot
 def test_productization_state_index_accepts_current_artifacts() -> None:

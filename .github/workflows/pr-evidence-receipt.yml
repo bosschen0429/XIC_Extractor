@@ -3,7 +3,7 @@ name: PR Evidence Receipt
 on:
   pull_request:
     branches: ["master", "main"]
-    types: ["opened", "synchronize", "reopened", "edited"]
+    types: ["opened", "reopened", "edited"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -197,6 +197,8 @@ def test_pyinstaller_collects_quantitative_projection_authority() -> None:
     }
 
 
+@pytest.mark.packaging_build
+@pytest.mark.serial_ci
 def test_built_wheel_contains_one_byte_identical_quantitative_authority(
     issue256_packaging_source: Path,
 ) -> None:
@@ -279,6 +281,8 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
     _assert_resource_bytes_match_source(installed_resource.read_bytes())
 
 
+@pytest.mark.packaging_build
+@pytest.mark.serial_ci
 def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority(
     issue256_packaging_source: Path,
 ) -> None:
