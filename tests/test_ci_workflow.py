@@ -14,7 +14,7 @@ CORE_CI_COMMANDS = (
     (
         "uv run pytest tests/test_docs_architecture_census.py "
         "-m current_repository_census --noconftest -o addopts= "
-        "--basetemp=tmp_runtime/ci-architecture-census -q"
+        "--basetemp=${{ runner.temp }}/xic-architecture-census -q"
     ),
     "uv run python scripts/check_diagnostics_index.py",
     (

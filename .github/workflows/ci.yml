@@ -31,7 +31,7 @@ jobs:
       - name: Static dependency contracts
         run: uv run lint-imports --no-cache
       - name: Architecture census
-        run: uv run pytest tests/test_docs_architecture_census.py -m current_repository_census --noconftest -o addopts= --basetemp=tmp_runtime/ci-architecture-census -q
+        run: uv run pytest tests/test_docs_architecture_census.py -m current_repository_census --noconftest -o addopts= --basetemp=${{ runner.temp }}/xic-architecture-census -q
       - name: Test shard coverage
         run: uv run python -m tools.testing.test_shards --check
       - name: Diagnostics index in sync
