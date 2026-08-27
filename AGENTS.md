@@ -67,3 +67,8 @@ carries definitions, command details, and low-frequency exceptions.
 - **Simplify pass:** before closeout, delete machinery whose removal preserves
   the current requirement and tests. An abstraction needs two current callers,
   configuration a current second value, and compatibility a current consumer.
+
+## Codex Code Review Rules
+
+- Require every finding to name a current linked-issue or public-contract violation, or a reachable observable loss with its obligation, actor/input/path, and consumer-visible loss.
+- Bound review to changed behavior, reachable production callers, and current consumers; private/frozen-object test-only construction and hypothetical, future, or audit requirements are safe unless exposed through a real entry, while real concerns outside the issue route are non-blocking.
