@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Protocol, TypeAlias, cast
 
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupDisposition,
+    CrossSampleGroupIdentity,
+    CrossSampleGroupMemberSubject,
+)
 from xic_extractor.alignment.owner_area import owner_quantification_eligible
 
 _RUNTIME_FEATURE_ID_PREFIX = "xic.owner-backfill-runtime-feature.v1:"
@@ -115,6 +120,7 @@ class OwnerBackfillRuntimeFeatureProjection:
     consolidation_state: str
     consolidation_winner_group_hypothesis_id: str
     consolidation_source_group_hypothesis_id: str
+    input_group_identity: CrossSampleGroupIdentity | None = None
 
     def __post_init__(self) -> None:
         _validate_runtime_feature_projection(self)
@@ -139,9 +145,11 @@ def mint_owner_backfill_runtime_feature(
         )
         for owner in _full_feature_owners(feature)
     )
+    input_group_identity = _input_group_identity(feature)
     basis = _runtime_feature_basis(
         feature=feature,
         owner_eligibility=owner_eligibility,
+        input_group_identity=input_group_identity,
     )
     return OwnerBackfillRuntimeFeatureProjection(
         runtime_feature_id=_typed_id(_RUNTIME_FEATURE_ID_PREFIX, basis),
@@ -199,6 +207,7 @@ def mint_owner_backfill_runtime_feature(
             feature.consolidation_source_group_hypothesis_id,
             "consolidation_source_group_hypothesis_id",
         ),
+        input_group_identity=input_group_identity,
     )
 
 
@@ -281,11 +290,20 @@ def _validate_runtime_feature_projection(
         feature.consolidation_source_group_hypothesis_id,
         "consolidation_source_group_hypothesis_id",
     )
+    if feature.input_group_identity is not None:
+        if not isinstance(feature.input_group_identity, CrossSampleGroupIdentity):
+            raise TypeError("input_group_identity must be CrossSample-owned")
+        if (
+            feature.input_group_identity.group_hypothesis_id
+            != feature.group_hypothesis_id
+        ):
+            raise ValueError("runtime feature crossed its input group identity")
     expected = _typed_id(
         _RUNTIME_FEATURE_ID_PREFIX,
         _runtime_feature_basis(
             feature=feature,
             owner_eligibility=feature.owner_eligibility,
+            input_group_identity=feature.input_group_identity,
         ),
     )
     if feature.runtime_feature_id != expected:
@@ -300,6 +318,7 @@ def _runtime_feature_basis(
     *,
     feature: BackfillRuntimeFeature,
     owner_eligibility: Iterable[OwnerBackfillOwnerEligibility],
+    input_group_identity: CrossSampleGroupIdentity | None,
 ) -> Mapping[str, object]:
     return {
         "schema": "owner_backfill_runtime_feature_v1",
@@ -372,7 +391,51 @@ def _runtime_feature_basis(
             feature.consolidation_source_group_hypothesis_id,
             "consolidation_source_group_hypothesis_id",
         ),
+        "input_group_identity": (
+            {
+                "group_hypothesis_id": input_group_identity.group_hypothesis_id,
+                "processing_request_id": input_group_identity.processing_request_id,
+                "member_subject_ids": tuple(
+                    item.member_subject_id
+                    for item in input_group_identity.member_subjects
+                ),
+                "basis_bytes_hex": input_group_identity.basis_bytes.hex(),
+                "disposition": input_group_identity.disposition,
+            }
+            if input_group_identity is not None
+            else None
+        ),
     }
+
+
+def _input_group_identity(feature: object) -> CrossSampleGroupIdentity | None:
+    processing_request_id = getattr(feature, "processing_request_id", "")
+    member_subjects = getattr(feature, "member_subjects", ())
+    basis_bytes = getattr(feature, "identity_basis_bytes", b"")
+    identity_fields = (processing_request_id, member_subjects, basis_bytes)
+    if not any(identity_fields):
+        return None
+    if not all(identity_fields):
+        raise ValueError("runtime feature has incomplete CrossSample identity")
+    return CrossSampleGroupIdentity(
+        group_hypothesis_id=_required_text(
+            getattr(feature, "group_hypothesis_id", None),
+            "group_hypothesis_id",
+        ),
+        processing_request_id=_required_text(
+            getattr(feature, "processing_request_id", None),
+            "processing_request_id",
+        ),
+        member_subjects=cast(
+            tuple[CrossSampleGroupMemberSubject, ...],
+            member_subjects,
+        ),
+        basis_bytes=cast(bytes, basis_bytes),
+        disposition=cast(
+            CrossSampleGroupDisposition,
+            getattr(feature, "disposition", None),
+        ),
+    )
 
 
 def _full_feature_owners(feature: object) -> tuple[object, ...]:

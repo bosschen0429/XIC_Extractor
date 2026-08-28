@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -31,6 +31,18 @@ from xic_extractor.alignment.owner_group_delivery import (
 from xic_extractor.tabular_io import write_tsv
 
 BackfillScope = Literal["full-audit", "production-equivalent", "selected-families"]
+BackfillScopeExclusionReason = Literal[
+    "production_equivalent_excluded",
+    "selected_family_excluded",
+]
+BackfillRequestPlanningReason = Literal[
+    "planned",
+    "review_only",
+    "insufficient_detected_samples",
+    "raw_source_unavailable",
+    "retained_local_owner",
+    "local_owner_not_supersedable",
+]
 REQUEST_PLAN_VERSION = "p7-owner-backfill-request-plan-v1"
 
 
@@ -66,17 +78,17 @@ def select_backfill_features(
             "or selected-families"
         )
 
-    compatible_neighbor_ids = _loose_compatible_neighbor_ids(
+    exclusion_reasons = backfill_scope_exclusion_reasons(
         features,
         alignment_config=alignment_config,
+        scope=scope,
+        selected_family_ids=selected_family_ids,
     )
     selected: list[OwnerGroupDeliveryFeature] = []
     skipped: list[SkippedEvidenceRecord] = []
     for feature in features:
-        if scope == "selected-families":
-            if feature.feature_family_id in selected_family_ids:
-                selected.append(feature)
-                continue
+        exclusion_reason = exclusion_reasons.get(id(feature))
+        if exclusion_reason == "selected_family_excluded":
             skipped.extend(
                 _skipped_records(
                     feature,
@@ -89,11 +101,7 @@ def select_backfill_features(
                 )
             )
             continue
-
-        if _can_skip_for_production_equivalence(
-            feature,
-            compatible_neighbor_ids=compatible_neighbor_ids,
-        ):
+        if exclusion_reason == "production_equivalent_excluded":
             skipped.extend(
                 _skipped_records(
                     feature,
@@ -116,6 +124,44 @@ def select_backfill_features(
     )
 
 
+def backfill_scope_exclusion_reasons(
+    features: OwnerGroupDeliveryFeatures,
+    *,
+    alignment_config: AlignmentConfig,
+    scope: BackfillScope,
+    selected_family_ids: frozenset[str] = frozenset(),
+) -> Mapping[int, BackfillScopeExclusionReason]:
+    if scope == "full-audit":
+        return {}
+    if scope == "selected-families":
+        if not selected_family_ids:
+            raise ValueError(
+                "selected-families backfill scope requires selected families"
+            )
+        return {
+            id(feature): "selected_family_excluded"
+            for feature in features
+            if feature.feature_family_id not in selected_family_ids
+        }
+    if scope != "production-equivalent":
+        raise ValueError(
+            "backfill scope must be full-audit, production-equivalent, "
+            "or selected-families"
+        )
+    compatible_neighbor_ids = _loose_compatible_neighbor_ids(
+        features,
+        alignment_config=alignment_config,
+    )
+    return {
+        id(feature): "production_equivalent_excluded"
+        for feature in features
+        if _can_skip_for_production_equivalence(
+            feature,
+            compatible_neighbor_ids=compatible_neighbor_ids,
+        )
+    }
+
+
 def backfill_request_sample_stems(
     feature: BackfillRuntimeFeature,
     *,
@@ -123,8 +169,28 @@ def backfill_request_sample_stems(
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
 ) -> tuple[str, ...]:
+    return tuple(
+        sample_stem
+        for sample_stem in sample_order
+        if backfill_request_planning_reason(
+            feature,
+            sample_stem=sample_stem,
+            raw_sample_stems=raw_sample_stems,
+            alignment_config=alignment_config,
+        )
+        == "planned"
+    )
+
+
+def backfill_request_planning_reason(
+    feature: BackfillRuntimeFeature,
+    *,
+    sample_stem: str,
+    raw_sample_stems: frozenset[str],
+    alignment_config: AlignmentConfig,
+) -> BackfillRequestPlanningReason:
     if bool(getattr(feature, "review_only", False)):
-        return ()
+        return "review_only"
     owner_eligibility = backfill_runtime_owner_eligibility(feature)
     detected_samples = {
         owner.sample_stem
@@ -132,33 +198,30 @@ def backfill_request_sample_stems(
         if owner.quantification_eligible
     }
     if len(detected_samples) < alignment_config.owner_backfill_min_detected_samples:
-        return ()
+        return "insufficient_detected_samples"
+    if sample_stem not in raw_sample_stems:
+        return "raw_source_unavailable"
     owners_by_sample: dict[str, list[object]] = defaultdict(list)
     for owner in owner_eligibility:
         owners_by_sample[owner.sample_stem].append(owner)
 
-    requested: list[str] = []
     family_area = (
         median_backfill_runtime_owner_area(feature)
         if bool(getattr(feature, "confirm_local_owners_with_backfill", False))
         else None
     )
-    for sample_stem in sample_order:
-        if sample_stem not in raw_sample_stems:
-            continue
-        if (
-            sample_stem in detected_samples
-            and not feature.confirm_local_owners_with_backfill
-        ):
-            continue
-        if sample_stem in detected_samples and not any_detected_owner_can_be_superseded(
+    if (
+        sample_stem in detected_samples
+        and not feature.confirm_local_owners_with_backfill
+    ):
+        return "retained_local_owner"
+    if sample_stem in detected_samples and not any_detected_owner_can_be_superseded(
             feature,
             owners_by_sample.get(sample_stem),
             family_area=family_area,
-        ):
-            continue
-        requested.append(sample_stem)
-    return tuple(requested)
+    ):
+        return "local_owner_not_supersedable"
+    return "planned"
 
 
 def backfill_features_for_sample(

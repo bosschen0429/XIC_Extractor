@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillAttemptTerminal,
+    OwnerBackfillEvaluationCoverageBatch,
+    OwnerBackfillEvaluationPlanningEpoch,
+    build_owner_backfill_evaluation_coverage,
+)
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
@@ -47,6 +53,7 @@ class OwnerBackfillSampleResult:
     ] = ()
     prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...] = ()
     peak_fact_cost: RuntimePeakFactCostMetrics | None = None
+    evaluation_coverage_terminals: tuple[OwnerBackfillAttemptTerminal, ...] = ()
 
     def __post_init__(self) -> None:
         if self.peak_fact_observations and self.prepared_peak_facts:
@@ -66,6 +73,7 @@ class OwnerBackfillSampleDeliveryReceipt:
     request_reuse_observations: tuple[
         OwnerBackfillRequestReuseObservation, ...
     ]
+    evaluation_coverage_terminal_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +86,7 @@ class OwnerBackfillTransactionOutput:
     ]
     prepared_peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...]
     peak_fact_cost_receipts: tuple[RuntimePeakFactCostMetrics, ...]
+    evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +98,7 @@ class _PreparedSample:
     ]
     peak_facts: tuple[PreparedOwnerBackfillPeakFact, ...]
     peak_fact_cost: RuntimePeakFactCostMetrics | None
+    evaluation_coverage_terminals: tuple[OwnerBackfillAttemptTerminal, ...]
 
 
 class OwnerBackfillSampleTransaction:
@@ -101,11 +111,13 @@ class OwnerBackfillSampleTransaction:
         matrix_sample_order: tuple[str, ...],
         expected_samples: tuple[tuple[int, str], ...],
         signal_processing_profile: SignalProcessingProfile,
+        evaluation_coverage_epoch: OwnerBackfillEvaluationPlanningEpoch | None = None,
     ) -> None:
         self._features = tuple(features)
         self._matrix_sample_order = matrix_sample_order
         self._expected_samples = expected_samples
         self._profile = signal_processing_profile
+        self._evaluation_coverage_epoch = evaluation_coverage_epoch
         self._feature_rank = {
             feature.feature_family_id: index
             for index, feature in enumerate(self._features)
@@ -169,6 +181,7 @@ class OwnerBackfillSampleTransaction:
             request_reuse_observations=result.request_reuse_observations,
             peak_facts=prepared_peak_facts,
             peak_fact_cost=result.peak_fact_cost,
+            evaluation_coverage_terminals=result.evaluation_coverage_terminals,
         )
         return OwnerBackfillSampleDeliveryReceipt(
             sample_index=result.sample_index,
@@ -178,6 +191,9 @@ class OwnerBackfillSampleTransaction:
             peak_fact_count=len(prepared_peak_facts),
             timing_stats=result.timing_stats,
             request_reuse_observations=result.request_reuse_observations,
+            evaluation_coverage_terminal_count=len(
+                result.evaluation_coverage_terminals
+            ),
         )
 
     def finish(self) -> OwnerBackfillTransactionOutput:
@@ -223,6 +239,18 @@ class OwnerBackfillSampleTransaction:
                 prepared.peak_fact_cost
                 for prepared in ordered
                 if prepared.peak_fact_cost is not None
+            ),
+            evaluation_coverage=(
+                build_owner_backfill_evaluation_coverage(
+                    self._evaluation_coverage_epoch,
+                    tuple(
+                        terminal
+                        for prepared in ordered
+                        for terminal in prepared.evaluation_coverage_terminals
+                    ),
+                )
+                if self._evaluation_coverage_epoch is not None
+                else None
             ),
         )
 
@@ -270,6 +298,10 @@ class OwnerBackfillSampleTransaction:
             *(
                 observation.cell.sample_stem
                 for observation in result.peak_fact_observations
+            ),
+            *(
+                terminal.logical_request.item.sample_stem
+                for terminal in result.evaluation_coverage_terminals
             ),
             *(fact.stage.sample_stem for fact in result.prepared_peak_facts),
             *(fact.physical_row.sample_stem for fact in result.prepared_peak_facts),

@@ -12,6 +12,14 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
 )
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillEvaluationCoverageBatch,
+    OwnerBackfillEvaluationCoverageContext,
+    OwnerBackfillEvaluationPlanningEpoch,
+    OwnerBackfillPlanningPosition,
+    build_owner_backfill_evaluation_coverage,
+    build_owner_backfill_planning_epoch,
+)
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
 )
@@ -78,7 +86,10 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     prepare_owner_backfill_peak_fact,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
+    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+    OwnerBackfillRequestEquivalenceContext,
     OwnerBackfillSampleRuntimeProjection,
+    build_owner_backfill_request_plan,
     build_owner_backfill_sample_runtime_projections,
     validate_owner_backfill_sample_runtime_projection,
 )
@@ -123,7 +134,10 @@ from xic_extractor.execution_runtime_owner import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    resolve_request_acquisition_source,
+)
 
 
 @dataclass(frozen=True)
@@ -204,6 +218,7 @@ class OwnerBackfillSampleJob:
     request_payload_count: int = 0
     peak_fact_feature_order_indices: tuple[int, ...] = ()
     peak_fact_sample_order_index: int | None = None
+    evaluation_coverage_positions: tuple[OwnerBackfillPlanningPosition, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
@@ -224,6 +239,17 @@ class OwnerBackfillSampleJob:
                 raise ValueError("peak-fact feature order requires sample order")
         elif len(self.peak_fact_feature_order_indices) != len(self.features):
             raise ValueError("peak-fact feature order must cover every job feature")
+        if self.evaluation_coverage_positions:
+            if self.sample_projection.canonical_sample is None:
+                raise ValueError("coverage job requires canonical sample identity")
+            if any(
+                position.sample != self.sample_projection.canonical_sample
+                or position.planning_state != "planned"
+                for position in self.evaluation_coverage_positions
+            ):
+                raise ValueError("coverage job crossed planned sample positions")
+            if any(feature.input_group_identity is None for feature in self.features):
+                raise ValueError("coverage job feature lost input group identity")
 
     @property
     def features(self) -> OwnerBackfillRuntimeFeatures:
@@ -254,6 +280,7 @@ class OwnerBackfillProcessOutput:
         ...,
     ] = ()
     peak_fact_cost_receipts: tuple[RuntimePeakFactCostMetrics, ...] = ()
+    evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
 
 
 @dataclass(frozen=True)
@@ -627,6 +654,7 @@ def run_owner_backfill_process(
     runner: Callable[..., list[OwnerBackfillWorkerResult]] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
     matrix_sample_order: tuple[str, ...] | None = None,
+    evaluation_coverage_context: OwnerBackfillEvaluationCoverageContext | None = None,
 ) -> Any:
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be owner-resolved")
@@ -649,11 +677,67 @@ def run_owner_backfill_process(
     )
     jobs: list[OwnerBackfillSampleJob] = []
     raw_sample_stems = frozenset(raw_paths)
+    evaluation_coverage_epoch: OwnerBackfillEvaluationPlanningEpoch | None = None
+    canonical_samples_by_stem = None
+    if evaluation_coverage_context is not None:
+        if (
+            evaluation_coverage_context.sample_order != sample_order
+            or evaluation_coverage_context.raw_sample_stems != raw_sample_stems
+            or evaluation_coverage_context.alignment_config != alignment_config
+            or evaluation_coverage_context.scope != backfill_scope
+            or evaluation_coverage_context.backend != owner_backfill_xic_backend
+            or evaluation_coverage_context.window_strategy
+            != owner_backfill_window_strategy
+            or evaluation_coverage_context.superwindow_span_factor
+            != owner_backfill_superwindow_span_factor
+            or evaluation_coverage_context.validation_mode != "primary"
+            or evaluation_coverage_context.result_semantics
+            != OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
+        ):
+            raise ValueError("process Backfill crossed its evaluation coverage epoch")
+        if expected_acquisition_sources is None:
+            raise ValueError("evaluation coverage requires acquisition identities")
+        for sample in evaluation_coverage_context.samples:
+            if sample.lookup_token not in raw_sample_stems:
+                continue
+            if expected_acquisition_sources.get(sample.lookup_token) != (
+                resolve_request_acquisition_source(
+                    processing_owners=evaluation_coverage_context.processing_owners,
+                    sample=sample,
+                )
+            ):
+                raise ValueError(
+                    "process evaluation coverage crossed its acquisition source"
+                )
+        coverage_request_plan = build_owner_backfill_request_plan(
+            features,
+            sample_order=sample_order,
+            raw_sample_stems=raw_sample_stems,
+            alignment_config=alignment_config,
+            equivalence_context=OwnerBackfillRequestEquivalenceContext(
+                acquisition_sources=expected_acquisition_sources,
+                backend=owner_backfill_xic_backend,
+                window_strategy=owner_backfill_window_strategy,
+                superwindow_span_factor=owner_backfill_superwindow_span_factor,
+                validation_mode="primary",
+                result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+            ),
+        )
+        evaluation_coverage_epoch = build_owner_backfill_planning_epoch(
+            evaluation_coverage_context,
+            selected_features=features,
+            request_plan=coverage_request_plan,
+        )
+        canonical_samples_by_stem = {
+            sample.lookup_token: sample
+            for sample in evaluation_coverage_context.samples
+        }
     sample_runtime_projections = build_owner_backfill_sample_runtime_projections(
         features,
         sample_order=sample_order,
         raw_sample_stems=raw_sample_stems,
         alignment_config=alignment_config,
+        canonical_samples_by_stem=canonical_samples_by_stem,
     )
     peak_fact_feature_rank: dict[str, int] = {}
     peak_fact_sample_rank: dict[str, int] = {}
@@ -722,10 +806,31 @@ def run_owner_backfill_process(
                     if matrix_sample_order is not None
                     else None
                 ),
+                evaluation_coverage_positions=(
+                    tuple(
+                        position
+                        for position in evaluation_coverage_epoch.positions
+                        if position.planning_state == "planned"
+                        and position.sample.lookup_token == sample_stem
+                    )
+                    if evaluation_coverage_epoch is not None
+                    else ()
+                ),
             )
         )
     if not jobs and matrix_sample_order is None:
-        return OwnerBackfillProcessOutput(cells=(), timing_stats=())
+        return OwnerBackfillProcessOutput(
+            cells=(),
+            timing_stats=(),
+            evaluation_coverage=(
+                build_owner_backfill_evaluation_coverage(
+                    evaluation_coverage_epoch,
+                    (),
+                )
+                if evaluation_coverage_epoch is not None
+                else None
+            ),
+        )
     active_runner = runner or run_owner_backfill_jobs
     if matrix_sample_order is not None:
         transaction = OwnerBackfillSampleTransaction(
@@ -733,6 +838,7 @@ def run_owner_backfill_process(
             matrix_sample_order=matrix_sample_order,
             expected_samples=tuple((job.sample_index, job.sample_stem) for job in jobs),
             signal_processing_profile=signal_processing_profile,
+            evaluation_coverage_epoch=evaluation_coverage_epoch,
         )
         results = active_runner(
             jobs,
@@ -762,6 +868,7 @@ def run_owner_backfill_process(
         results,
         feature_order=tuple(feature.feature_family_id for feature in features),
         sample_order=sample_order,
+        evaluation_coverage_epoch=evaluation_coverage_epoch,
     )
 
 
@@ -770,6 +877,7 @@ def collect_owner_backfill_results(
     *,
     feature_order: tuple[str, ...],
     sample_order: tuple[str, ...],
+    evaluation_coverage_epoch: OwnerBackfillEvaluationPlanningEpoch | None = None,
 ) -> OwnerBackfillProcessOutput:
     successes: list[OwnerBackfillSampleResult] = []
     errors: list[OwnerBackfillWorkerError] = []
@@ -833,6 +941,18 @@ def collect_owner_backfill_results(
         request_reuse_observations=request_reuse_observations,
         peak_fact_observations=peak_fact_observations,
         peak_fact_cost_receipts=peak_fact_cost_receipts,
+        evaluation_coverage=(
+            build_owner_backfill_evaluation_coverage(
+                evaluation_coverage_epoch,
+                tuple(
+                    terminal
+                    for result in successes
+                    for terminal in result.evaluation_coverage_terminals
+                ),
+            )
+            if evaluation_coverage_epoch is not None
+            else None
+        ),
     )
 
 
@@ -907,16 +1027,11 @@ def extract_owner_backfill_sample_job(
                 if job.owner_backfill_xic_backend == "ms1_index_hybrid"
                 else None
             )
-            validation_kwargs = (
-                {"validation_raw_sources": validation_raw_sources}
-                if validation_raw_sources is not None
-                else {}
-            )
             backfill_result = build_owner_backfill_result(
                 job.features,
                 sample_order=(job.sample_stem,),
                 raw_sources={job.sample_stem: timed_raw},
-                **validation_kwargs,
+                validation_raw_sources=validation_raw_sources,
                 expected_acquisition_sources=(
                     {job.sample_stem: job.expected_acquisition_source}
                     if job.expected_acquisition_source is not None
@@ -939,6 +1054,7 @@ def extract_owner_backfill_sample_job(
                 region_audit_family_ids=job.region_audit_family_ids,
                 audit_evidence_mode=job.audit_evidence_mode,
                 emit_candidate_audit_rows=job.emit_candidate_audit_rows,
+                evaluation_coverage_positions=job.evaluation_coverage_positions,
             )
             peak_fact_cost = _runtime_peak_fact_cost_metrics(
                 backfill_result,
@@ -991,6 +1107,9 @@ def extract_owner_backfill_sample_job(
             peak_fact_observations=peak_fact_observations,
             prepared_peak_facts=prepared_peak_facts,
             peak_fact_cost=peak_fact_cost,
+            evaluation_coverage_terminals=(
+                backfill_result.evaluation_coverage_terminals
+            ),
             timing_stats=(
                 OwnerBackfillTimingStats(
                     sample_stem=job.sample_stem,
