@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -13,6 +11,18 @@ from typing import Protocol, TypeAlias
 import numpy as np
 from numpy.typing import NDArray
 
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillAttemptTerminal,
+    OwnerBackfillCandidatePhase,
+    OwnerBackfillEvaluationCoverageBatch,
+    OwnerBackfillEvaluationCoverageContext,
+    OwnerBackfillPlanningPosition,
+    OwnerBackfillTerminalReason,
+    build_owner_backfill_evaluation_coverage,
+    build_owner_backfill_planning_epoch,
+    mint_owner_backfill_attempt_terminal,
+    mint_owner_backfill_selection_subject_id,
+)
 from xic_extractor.alignment.backfill_scope import (
     any_detected_owner_can_be_superseded,
     backfill_seed_centers,
@@ -71,7 +81,10 @@ from xic_extractor.peak_detection.region_audit import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    resolve_request_acquisition_source,
+)
 from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
@@ -148,6 +161,14 @@ class OwnerBackfillResult:
     ] = ()
     peak_fact_observations: tuple[OwnerBackfillPeakFactObservation, ...] = ()
     peak_fact_unsealed_evaluation_keys: tuple[str, ...] = ()
+    evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
+    evaluation_coverage_terminals: tuple[OwnerBackfillAttemptTerminal, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.evaluation_coverage is not None and self.evaluation_coverage_terminals:
+            raise ValueError(
+                "Backfill result cannot carry a batch and loose coverage terminals"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,8 +313,10 @@ def _validate_owner_backfill_peak_fact_observation(
     ):
         raise TypeError("physical_evaluation must be owner-minted when available")
     if physical_evaluation is not None:
-        expected_selection_subject_id = _selection_subject_id(
-            feature=observation.logical_request.item.feature,
+        expected_selection_subject_id = mint_owner_backfill_selection_subject_id(
+            group_hypothesis_id=(
+                observation.logical_request.item.feature.group_hypothesis_id
+            ),
             sample_stem=observation.logical_request.item.sample_stem,
             request=observation.logical_request.item.request,
             candidate_index=observation.candidate_index,
@@ -414,6 +437,19 @@ class _OwnerBackfillCandidateRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class _OwnerBackfillCoverageAttempt:
+    position_id: str
+    logical_request: OwnerBackfillLogicalRequestMember
+    request_identity: OwnerBackfillRequestIdentity
+    candidate_phase: OwnerBackfillCandidatePhase
+    candidate_index: int
+    trace_evaluated: bool
+    terminal_reason: OwnerBackfillTerminalReason | None
+    physical_evaluation: PhysicalPeakEvaluation | None
+    cell: AlignedCell
+
+
+@dataclass(frozen=True, slots=True)
 class _OwnerBackfillTraceEvaluation:
     cell: AlignedCell
     peak_facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None
@@ -486,7 +522,32 @@ def build_owner_backfill_result(
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
     emit_candidate_audit_rows: bool = True,
+    evaluation_coverage_context: OwnerBackfillEvaluationCoverageContext | None = None,
+    evaluation_coverage_positions: tuple[OwnerBackfillPlanningPosition, ...] = (),
 ) -> OwnerBackfillResult:
+    if evaluation_coverage_context is not None and evaluation_coverage_positions:
+        raise ValueError("coverage context and worker positions are mutually exclusive")
+    if evaluation_coverage_context is not None:
+        if (
+            evaluation_coverage_context.sample_order != sample_order
+            or evaluation_coverage_context.raw_sample_stems != frozenset(raw_sources)
+            or evaluation_coverage_context.alignment_config != alignment_config
+        ):
+            raise ValueError("serial Backfill crossed its evaluation coverage epoch")
+        if expected_acquisition_sources is None:
+            raise ValueError("evaluation coverage requires acquisition identities")
+        for sample in evaluation_coverage_context.samples:
+            if sample.lookup_token not in evaluation_coverage_context.raw_sample_stems:
+                continue
+            if expected_acquisition_sources.get(sample.lookup_token) != (
+                resolve_request_acquisition_source(
+                    processing_owners=evaluation_coverage_context.processing_owners,
+                    sample=sample,
+                )
+            ):
+                raise ValueError(
+                    "evaluation coverage crossed its request acquisition source"
+                )
     if signal_processing_profile is not None and not isinstance(
         signal_processing_profile,
         SignalProcessingProfile,
@@ -526,6 +587,16 @@ def build_owner_backfill_result(
     primary_validation_mode: OwnerBackfillValidationMode = (
         "prefilter" if validation_raw_sources is not None else "primary"
     )
+    if evaluation_coverage_context is not None and (
+        evaluation_coverage_context.backend != owner_backfill_xic_backend
+        or evaluation_coverage_context.window_strategy != owner_backfill_window_strategy
+        or evaluation_coverage_context.superwindow_span_factor
+        != owner_backfill_superwindow_span_factor
+        or evaluation_coverage_context.validation_mode != primary_validation_mode
+        or evaluation_coverage_context.result_semantics
+        != OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
+    ):
+        raise ValueError("serial Backfill crossed its evaluation request semantics")
     effective_acquisition_sources = expected_acquisition_sources or (
         _available_acquisition_sources(raw_sources)
     )
@@ -543,6 +614,29 @@ def build_owner_backfill_result(
         alignment_config=alignment_config,
         equivalence_context=primary_equivalence_context,
     )
+    evaluation_epoch = (
+        build_owner_backfill_planning_epoch(
+            evaluation_coverage_context,
+            selected_features=features,
+            request_plan=request_plan,
+        )
+        if evaluation_coverage_context is not None
+        else None
+    )
+    active_coverage_positions = (
+        evaluation_epoch.positions
+        if evaluation_epoch is not None
+        else evaluation_coverage_positions
+    )
+    coverage_position_by_key = {
+        (
+            position.group_identity.group_hypothesis_id,
+            position.sample.lookup_token,
+        ): position
+        for position in active_coverage_positions
+        if position.planning_state == "planned"
+    }
+    coverage_attempts: list[_OwnerBackfillCoverageAttempt] = []
     candidate_index_offset_by_sample: dict[str, int] = {}
     validation_candidate_index_offset_by_sample: dict[str, int] = {}
     # Direct owner calls keep the historical append-order identity.  Process
@@ -622,7 +716,7 @@ def build_owner_backfill_result(
                     ),
                     result,
                 )
-                candidate_phase = (
+                candidate_phase: OwnerBackfillCandidatePhase = (
                     "prefilter_query"
                     if validation_raw_sources is not None
                     else "primary_query"
@@ -642,8 +736,8 @@ def build_owner_backfill_result(
                     maximum_query_delta_min=(alignment_config.preferred_rt_sec / 60.0),
                     signal_processing_profile=signal_processing_profile,
                     prepared_signal_cache=prepared_signal_cache,
-                    selection_subject_id=_selection_subject_id(
-                        feature=feature,
+                    selection_subject_id=mint_owner_backfill_selection_subject_id(
+                        group_hypothesis_id=feature.group_hypothesis_id,
                         sample_stem=requested_sample,
                         request=request,
                         candidate_index=candidate_index,
@@ -671,6 +765,18 @@ def build_owner_backfill_result(
                     trace_rt_end_min=evaluation.trace_rt_end_min,
                     logical_request=logical_request,
                     request_identity=request_identity,
+                )
+                _append_coverage_attempt(
+                    coverage_attempts,
+                    coverage_position_by_key=coverage_position_by_key,
+                    cell=cell,
+                    logical_request=logical_request,
+                    request_identity=request_identity,
+                    candidate_phase=candidate_phase,
+                    candidate_index=candidate_index,
+                    trace_evaluated=True,
+                    terminal_reason=None,
+                    physical_evaluation=evaluation.physical_evaluation,
                 )
                 if validation_raw_sources is None or cell.status != "rescued":
                     _keep_best_backfill_outcome_cell(
@@ -711,17 +817,90 @@ def build_owner_backfill_result(
                     backfill_by_feature_sample,
                     cell,
                 )
+        if coverage_position_by_key:
+            observed_primary_ids = {
+                attempt.logical_request.logical_request_id
+                for attempt in coverage_attempts
+                if attempt.candidate_phase
+                in {"primary_query", "prefilter_query", "primary_fallback"}
+            }
+            for (
+                logical_request,
+                request_identity,
+            ) in request_plan.logical_bindings_for_sample(sample_stem):
+                if logical_request.logical_request_id in observed_primary_ids:
+                    continue
+                feature, requested_sample, request, preferred_rt = logical_request.item
+                fallback_cell = _backfill_unchecked_cell(
+                    feature,
+                    requested_sample,
+                    request=request,
+                    preferred_rt=preferred_rt,
+                    trace_quality="owner_backfill_unassessable",
+                    reason="owner-centered MS1 backfill query was not assessable",
+                )
+                _append_coverage_attempt(
+                    coverage_attempts,
+                    coverage_position_by_key=coverage_position_by_key,
+                    cell=fallback_cell,
+                    logical_request=logical_request,
+                    request_identity=request_identity,
+                    candidate_phase="primary_fallback",
+                    candidate_index=(
+                        candidate_index_offset_by_sample[sample_stem]
+                        + logical_request.logical_index
+                        + 1
+                    ),
+                    trace_evaluated=False,
+                    terminal_reason="primary_unassessable",
+                    physical_evaluation=None,
+                )
     if validation_raw_sources is not None:
         for sample_stem in sample_order:
             validation_requests = validation_pending.get(sample_stem, [])
             if not validation_requests:
                 continue
+            coverage_validation_bindings: tuple[
+                tuple[
+                    OwnerBackfillLogicalRequestMember,
+                    OwnerBackfillRequestIdentity,
+                ],
+                ...,
+            ] = ()
+            if coverage_position_by_key:
+                coverage_validation_context = _request_equivalence_context(
+                    expected_acquisition_sources=expected_acquisition_sources,
+                    backend="raw",
+                    window_strategy="exact",
+                    superwindow_span_factor=(owner_backfill_superwindow_span_factor),
+                    validation_mode="validation",
+                )
+                if coverage_validation_context is None:
+                    raise ValueError(
+                        "evaluation coverage requires validation acquisition identity"
+                    )
+                coverage_validation_classes = (
+                    build_owner_backfill_request_equivalence_classes(
+                        tuple(validation_requests),
+                        context=coverage_validation_context,
+                    )
+                )
+                coverage_validation_bindings = tuple(
+                    sorted(
+                        (
+                            (member, equivalence_class.identity)
+                            for equivalence_class in coverage_validation_classes
+                            for member in equivalence_class.members
+                        ),
+                        key=lambda item: item[0].logical_index,
+                    )
+                )
             if sample_stem not in validation_raw_sources:
                 sample_candidate_index_offset = (
                     validation_candidate_index_offset_by_sample[sample_stem]
                 )
                 validation_candidate_count = 0
-                for request_item in validation_requests:
+                for request_index, request_item in enumerate(validation_requests):
                     feature, requested_sample, request, preferred_rt = request_item
                     cell = _backfill_unchecked_cell(
                         feature,
@@ -745,15 +924,35 @@ def build_owner_backfill_result(
                             else len(candidate_records) + 1
                         ),
                     )
+                    if coverage_validation_bindings:
+                        logical_request, request_identity = (
+                            coverage_validation_bindings[request_index]
+                        )
+                        _append_coverage_attempt(
+                            coverage_attempts,
+                            coverage_position_by_key=coverage_position_by_key,
+                            cell=cell,
+                            logical_request=logical_request,
+                            request_identity=request_identity,
+                            candidate_phase="validation_unavailable",
+                            candidate_index=(
+                                sample_candidate_index_offset
+                                + logical_request.logical_index
+                                + 1
+                            ),
+                            trace_evaluated=False,
+                            terminal_reason="validation_source_unavailable",
+                            physical_evaluation=None,
+                        )
                     _keep_best_backfill_outcome_cell(
                         backfill_by_feature_sample,
                         cell,
                     )
                 continue
             source = validation_raw_sources[sample_stem]
-            sample_candidate_index_offset = (
-                validation_candidate_index_offset_by_sample[sample_stem]
-            )
+            sample_candidate_index_offset = validation_candidate_index_offset_by_sample[
+                sample_stem
+            ]
             validation_candidate_count = 0
             validation_items = tuple(validation_requests)
             validation_context = _request_equivalence_context(
@@ -824,8 +1023,8 @@ def build_owner_backfill_result(
                         ),
                         signal_processing_profile=signal_processing_profile,
                         prepared_signal_cache=prepared_signal_cache,
-                        selection_subject_id=_selection_subject_id(
-                            feature=feature,
+                        selection_subject_id=mint_owner_backfill_selection_subject_id(
+                            group_hypothesis_id=feature.group_hypothesis_id,
                             sample_stem=requested_sample,
                             request=_request,
                             candidate_index=candidate_index,
@@ -854,9 +1053,65 @@ def build_owner_backfill_result(
                         logical_request=logical_request,
                         request_identity=request_identity,
                     )
+                    _append_coverage_attempt(
+                        coverage_attempts,
+                        coverage_position_by_key=coverage_position_by_key,
+                        cell=cell,
+                        logical_request=logical_request,
+                        request_identity=request_identity,
+                        candidate_phase="validation_query",
+                        candidate_index=candidate_index,
+                        trace_evaluated=True,
+                        terminal_reason=None,
+                        physical_evaluation=evaluation.physical_evaluation,
+                    )
                     _keep_best_backfill_outcome_cell(
                         backfill_by_feature_sample,
                         cell,
+                    )
+            if coverage_validation_bindings:
+                observed_validation_ids = {
+                    attempt.logical_request.logical_request_id
+                    for attempt in coverage_attempts
+                    if attempt.candidate_phase
+                    in {
+                        "validation_query",
+                        "validation_unavailable",
+                        "validation_fallback",
+                    }
+                }
+                for logical_request, request_identity in coverage_validation_bindings:
+                    if logical_request.logical_request_id in observed_validation_ids:
+                        continue
+                    feature, requested_sample, request, preferred_rt = (
+                        logical_request.item
+                    )
+                    fallback_cell = _backfill_unchecked_cell(
+                        feature,
+                        requested_sample,
+                        request=request,
+                        preferred_rt=preferred_rt,
+                        trace_quality="owner_backfill_unassessable",
+                        reason=(
+                            "owner-centered MS1 backfill validation "
+                            "query was not assessable"
+                        ),
+                    )
+                    _append_coverage_attempt(
+                        coverage_attempts,
+                        coverage_position_by_key=coverage_position_by_key,
+                        cell=fallback_cell,
+                        logical_request=logical_request,
+                        request_identity=request_identity,
+                        candidate_phase="validation_fallback",
+                        candidate_index=(
+                            validation_candidate_index_offset_by_sample[sample_stem]
+                            + logical_request.logical_index
+                            + 1
+                        ),
+                        trace_evaluated=False,
+                        terminal_reason="validation_unassessable",
+                        physical_evaluation=None,
                     )
             for request_item in validation_requests:
                 feature, requested_sample, request, preferred_rt = request_item
@@ -879,8 +1134,7 @@ def build_owner_backfill_result(
                         cell,
                         phase="validation_fallback",
                         candidate_index=(
-                            sample_candidate_index_offset
-                            + validation_candidate_count
+                            sample_candidate_index_offset + validation_candidate_count
                             if partition_candidate_identity
                             else len(candidate_records) + 1
                         ),
@@ -898,7 +1152,47 @@ def build_owner_backfill_result(
             )
             if selected_cell is not None:
                 cells.append(selected_cell)
-    selected_cell_ids = {id(cell) for cell in backfill_by_feature_sample.values()}
+    selected_cells = tuple(backfill_by_feature_sample.values())
+    selected_cell_ids = {id(cell) for cell in selected_cells}
+    selected_coverage_attempt_ids: set[int] = set()
+    for selected_cell in selected_cells:
+        exact_matches = tuple(
+            index
+            for index, attempt in enumerate(coverage_attempts)
+            if attempt.cell is selected_cell
+        )
+        if exact_matches:
+            selected_coverage_attempt_ids.add(exact_matches[0])
+            continue
+        equivalent_matches = tuple(
+            index
+            for index, attempt in enumerate(coverage_attempts)
+            if attempt.cell == selected_cell
+        )
+        if equivalent_matches:
+            selected_coverage_attempt_ids.add(equivalent_matches[0])
+    evaluation_coverage_terminals = tuple(
+        mint_owner_backfill_attempt_terminal(
+            position_id=attempt.position_id,
+            logical_request=attempt.logical_request,
+            request_identity=attempt.request_identity,
+            candidate_phase=attempt.candidate_phase,
+            candidate_index=attempt.candidate_index,
+            trace_evaluated=attempt.trace_evaluated,
+            selected_for_output=index in selected_coverage_attempt_ids,
+            terminal_reason=attempt.terminal_reason,
+            physical_evaluation=attempt.physical_evaluation,
+        )
+        for index, attempt in enumerate(coverage_attempts)
+    )
+    evaluation_coverage = (
+        build_owner_backfill_evaluation_coverage(
+            evaluation_epoch,
+            evaluation_coverage_terminals,
+        )
+        if evaluation_epoch is not None
+        else None
+    )
     peak_fact_observations = _peak_fact_observations(
         candidate_records,
         selected_cell_ids=selected_cell_ids,
@@ -913,9 +1207,7 @@ def build_owner_backfill_result(
             _candidate_audit_rows(
                 candidate_records,
                 selected_cell_ids=selected_cell_ids,
-                feature_order=tuple(
-                    feature.feature_family_id for feature in features
-                ),
+                feature_order=tuple(feature.feature_family_id for feature in features),
                 sample_order=sample_order,
             )
             if emit_candidate_audit_rows
@@ -925,6 +1217,10 @@ def build_owner_backfill_result(
         peak_fact_observations=peak_fact_observations,
         peak_fact_unsealed_evaluation_keys=(
             _peak_fact_unsealed_evaluation_keys(candidate_records)
+        ),
+        evaluation_coverage=evaluation_coverage,
+        evaluation_coverage_terminals=(
+            evaluation_coverage_terminals if evaluation_epoch is None else ()
         ),
     )
 
@@ -1088,6 +1384,49 @@ def _append_candidate_record(
             trace_rt_end_min=trace_rt_end_min,
             logical_request=logical_request,
             request_identity=request_identity,
+        )
+    )
+
+
+def _append_coverage_attempt(
+    attempts: list[_OwnerBackfillCoverageAttempt],
+    *,
+    coverage_position_by_key: Mapping[
+        tuple[str, str],
+        OwnerBackfillPlanningPosition,
+    ],
+    cell: AlignedCell,
+    logical_request: OwnerBackfillLogicalRequestMember | None,
+    request_identity: OwnerBackfillRequestIdentity | None,
+    candidate_phase: OwnerBackfillCandidatePhase,
+    candidate_index: int,
+    trace_evaluated: bool,
+    terminal_reason: OwnerBackfillTerminalReason | None,
+    physical_evaluation: PhysicalPeakEvaluation | None,
+) -> None:
+    if not coverage_position_by_key:
+        return
+    if logical_request is None or request_identity is None:
+        raise ValueError("evaluation coverage requires sealed logical identity")
+    position = coverage_position_by_key.get(
+        (
+            logical_request.group_hypothesis_id,
+            logical_request.item.sample_stem,
+        )
+    )
+    if position is None:
+        raise ValueError("evaluation attempt is outside the planning epoch")
+    attempts.append(
+        _OwnerBackfillCoverageAttempt(
+            position_id=position.position_id,
+            logical_request=logical_request,
+            request_identity=request_identity,
+            candidate_phase=candidate_phase,
+            candidate_index=candidate_index,
+            trace_evaluated=trace_evaluated,
+            terminal_reason=terminal_reason,
+            physical_evaluation=physical_evaluation,
+            cell=cell,
         )
     )
 
@@ -2224,52 +2563,6 @@ def _logical_binding_for_result(
     if isinstance(result, XICTrace):
         return None, None
     return result.logical_request, result.canonical_result.request_identity
-
-
-def _selection_subject_id(
-    *,
-    feature: BackfillRuntimeFeature,
-    sample_stem: str,
-    request: XICRequest,
-    candidate_index: int,
-    candidate_phase: str,
-    request_identity: OwnerBackfillRequestIdentity | None,
-) -> str:
-    request_key = (
-        request_identity.request_identity_id
-        if request_identity is not None
-        else "unsealed:" + _canonical_request_digest(request)
-    )
-    basis = {
-        "schema_version": "owner_backfill_selection_subject_v1",
-        "request_identity_id": request_key,
-        "group_hypothesis_id": feature.group_hypothesis_id,
-        "sample_stem": sample_stem,
-        "candidate_index": candidate_index,
-        "candidate_phase": candidate_phase,
-    }
-    canonical = json.dumps(
-        basis,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return "owner-backfill-subject.v1:" + hashlib.sha256(canonical).hexdigest()
-
-
-def _canonical_request_digest(request: XICRequest) -> str:
-    canonical = json.dumps(
-        {
-            "mz": float(request.mz).hex(),
-            "rt_min": float(request.rt_min).hex(),
-            "rt_max": float(request.rt_max).hex(),
-            "ppm_tol": float(request.ppm_tol).hex(),
-        },
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
 
 
 def _positive_elapsed(value: float) -> float | None:

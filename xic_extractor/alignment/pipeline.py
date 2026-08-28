@@ -11,6 +11,11 @@ from typing import Any, Protocol
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
 )
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillEvaluationCoverageBatch,
+    OwnerBackfillEvaluationCoverageContext,
+    validate_owner_backfill_evaluation_coverage,
+)
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
     REQUEST_PLAN_VERSION,
@@ -76,6 +81,9 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     owner_backfill_cell_projection,
     prepare_owner_backfill_peak_fact,
     selected_integration_authority_projection,
+)
+from xic_extractor.alignment.owner_backfill_request_plan import (
+    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_owner_build_route_receipt,
@@ -185,6 +193,7 @@ class RawOpener(Protocol):
         expected_acquisition_source: AcquisitionSourceIdentity | None = None,
     ) -> AbstractContextManager[AlignmentRawHandle]: ...
 
+
 _ALIGNMENT_OWNER_SELECTION_PEAK_CONFIG_FIELDS = (
     "smooth_window",
     "smooth_polyorder",
@@ -250,9 +259,7 @@ class _BoundAlignmentDriftLookup:
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or value < 1
             ):
-                raise ValueError(
-                    "drift prior injection order must be positive or None"
-                )
+                raise ValueError("drift prior injection order must be positive or None")
             orders[sample_stem] = value
         object.__setattr__(self, "sample_deltas", MappingProxyType(deltas))
         object.__setattr__(self, "injection_orders", MappingProxyType(orders))
@@ -588,8 +595,8 @@ def run_alignment(
         stage.metrics["raw_owner_build_candidate_count"] = len(
             raw_owner_build_candidates
         )
-        stage.metrics["non_raw_owner_build_candidate_count"] = (
-            len(candidates) - len(raw_owner_build_candidates)
+        stage.metrics["non_raw_owner_build_candidate_count"] = len(candidates) - len(
+            raw_owner_build_candidates
         )
     if discovery_physical_bindings_by_sample is None:
         discovery_physical_bindings = None
@@ -792,8 +799,7 @@ def run_alignment(
                 record_timed_raw_sources(timed_raw_sources_, recorder=recorder)
         edge_evidence: list[OwnerEdgeEvidence] | None = (
             []
-            if outputs.edge_evidence_tsv is not None
-            or bound_drift_lookup is not None
+            if outputs.edge_evidence_tsv is not None or bound_drift_lookup is not None
             else None
         )
         with recorder.stage("alignment.cluster_owners"):
@@ -911,6 +917,44 @@ def run_alignment(
                     **request_summary,
                 }
             )
+        evaluation_coverage_context = (
+            OwnerBackfillEvaluationCoverageContext(
+                processing_owners=cross_sample_identity_context.processing_owners,
+                input_features=owner_features,
+                samples=tuple(
+                    cross_sample_identity_context.sample_for(sample_stem)
+                    for sample_stem in batch.sample_order
+                ),
+                sample_order=batch.sample_order,
+                raw_sample_stems=frozenset(raw_paths),
+                alignment_config=alignment_config,
+                backend=owner_backfill_xic_backend,
+                window_strategy=owner_backfill_window_strategy,
+                superwindow_span_factor=owner_backfill_superwindow_span_factor,
+                validation_mode=(
+                    "prefilter"
+                    if owner_backfill_xic_backend == "ms1_index_hybrid"
+                    else "primary"
+                ),
+                result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+                scope=backfill_scope,
+                selected_family_ids=selected_family_ids,
+            )
+            if not preconsolidate_owner_families
+            and (
+                (
+                    raw_workers == 1
+                    and build_owner_backfill_cells
+                    is _DEFAULT_BUILD_OWNER_BACKFILL_CELLS
+                )
+                or (
+                    raw_workers > 1
+                    and run_owner_backfill_process
+                    is _DEFAULT_RUN_OWNER_BACKFILL_PROCESS
+                )
+            )
+            else None
+        )
         matrix_sample_order = batch.sample_order
         if injection_order is not None:
             matrix_sample_order = order_sample_columns_by_injection(
@@ -932,6 +976,9 @@ def run_alignment(
             ] = ()
             rescued_cells: tuple[AlignedCell, ...] = ()
             backfill_transaction_output: OwnerBackfillTransactionOutput | None = None
+            owner_backfill_evaluation_coverage: (
+                OwnerBackfillEvaluationCoverageBatch | None
+            ) = None
             if raw_workers > 1:
                 process_output = run_owner_backfill_process(
                     backfill_features,
@@ -962,6 +1009,7 @@ def run_alignment(
                         result,
                     ),
                     matrix_sample_order=matrix_sample_order,
+                    evaluation_coverage_context=evaluation_coverage_context,
                 )
                 if not isinstance(process_output, OwnerBackfillTransactionOutput):
                     raise TypeError("process Backfill must return a transaction output")
@@ -970,6 +1018,7 @@ def run_alignment(
                     process_output.candidate_audit_rows
                 )
                 request_reuse_observations = process_output.request_reuse_observations
+                owner_backfill_evaluation_coverage = process_output.evaluation_coverage
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(process_output.timing_stats),
                 )
@@ -1025,6 +1074,7 @@ def run_alignment(
                     emit_candidate_audit_rows=(
                         outputs.backfill_candidate_audit_tsv is not None
                     ),
+                    evaluation_coverage_context=evaluation_coverage_context,
                 )
                 rescued_cells = backfill_result.cells
                 owner_backfill_candidate_audit_rows = (
@@ -1034,6 +1084,7 @@ def run_alignment(
                 owner_backfill_peak_fact_observations = (
                     backfill_result.peak_fact_observations
                 )
+                owner_backfill_evaluation_coverage = backfill_result.evaluation_coverage
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(timing_stats),
                 )
@@ -1041,6 +1092,19 @@ def run_alignment(
             owner_backfill_stage.metrics.update(
                 _request_reuse_summary(request_reuse_observations)
             )
+            if evaluation_coverage_context is None:
+                if owner_backfill_evaluation_coverage is not None:
+                    raise ValueError(
+                        "preconsolidated Backfill cannot produce evaluation coverage"
+                    )
+            else:
+                if owner_backfill_evaluation_coverage is None:
+                    raise ValueError(
+                        "owner-closed Backfill did not return evaluation coverage"
+                    )
+                validate_owner_backfill_evaluation_coverage(
+                    owner_backfill_evaluation_coverage
+                )
         with recorder.stage("alignment.build_matrix"):
             if backfill_transaction_output is None:
                 matrix = build_owner_alignment_matrix(
@@ -1217,6 +1281,7 @@ _existing_raw_paths = existing_raw_paths
 _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
 _DEFAULT_BUILD_OWNER_BACKFILL_CELLS = build_owner_backfill_cells
+_DEFAULT_RUN_OWNER_BACKFILL_PROCESS = run_owner_backfill_process
 
 _IDENTITY_COHERENCE_ARTIFACT_NAMES = (
     "untargeted_identity_coherence_requests.tsv",
@@ -1357,9 +1422,7 @@ def _alignment_cross_sample_identity_context(
     )
     bindings = tuple(
         AcquisitionInputBinding(
-            acquisition_source_id=sources_by_sample[
-                sample_stem
-            ].acquisition_source_id,
+            acquisition_source_id=sources_by_sample[sample_stem].acquisition_source_id,
             adapter_input_key=sample_stem,
             injection_order=index,
         )
@@ -1445,9 +1508,7 @@ def _alignment_cross_sample_identity_context(
     snapshot = mint_sample_metadata_snapshot(
         tuple(
             SampleMetadata(
-                sample_name=sources_by_sample[
-                    sample_stem
-                ].acquisition_source_id,
+                sample_name=sources_by_sample[sample_stem].acquisition_source_id,
                 raw_stem=sample_stem,
                 injection_order=index,
             )
@@ -1492,6 +1553,8 @@ def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResu
         legacy_kwargs.pop("owner_backfill_xic_backend", None)
         legacy_kwargs.pop("signal_processing_profile", None)
         legacy_kwargs.pop("emit_candidate_audit_rows", None)
+        legacy_kwargs.pop("evaluation_coverage_context", None)
+        legacy_kwargs.pop("evaluation_coverage_positions", None)
         return OwnerBackfillResult(
             cells=tuple(build_owner_backfill_cells(*args, **legacy_kwargs)),
             candidate_audit_rows=(),

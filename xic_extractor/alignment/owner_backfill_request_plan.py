@@ -26,6 +26,7 @@ from xic_extractor.alignment.owner_group_delivery import (
     OwnerGroupDeliveryFeatures,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest
 
 OwnerBackfillWindowStrategy = Literal["exact", "super-window"]
@@ -87,6 +88,7 @@ class OwnerBackfillSampleRuntimeProjection:
     logical_request_count: int
     logical_request_offset: int
     validation_request_offset: int
+    canonical_sample: ResolvedCanonicalSampleIdentity | None = None
 
     def __post_init__(self) -> None:
         sample_stem = _required_text(self.sample_stem, "sample_stem")
@@ -125,6 +127,14 @@ class OwnerBackfillSampleRuntimeProjection:
             raise ValueError(
                 "runtime sample validation offset must be a non-negative integer"
             )
+        if self.canonical_sample is not None:
+            if not isinstance(
+                self.canonical_sample,
+                ResolvedCanonicalSampleIdentity,
+            ):
+                raise TypeError("canonical_sample must be owner-resolved")
+            if self.canonical_sample.lookup_token != sample_stem:
+                raise ValueError("runtime projection crossed canonical sample identity")
         expected = _typed_id(
             _RUNTIME_SAMPLE_PROJECTION_PREFIX,
             _runtime_sample_projection_basis(
@@ -133,6 +143,7 @@ class OwnerBackfillSampleRuntimeProjection:
                 logical_request_count=self.logical_request_count,
                 logical_request_offset=self.logical_request_offset,
                 validation_request_offset=self.validation_request_offset,
+                canonical_sample=self.canonical_sample,
             ),
         )
         if self.runtime_projection_id != expected:
@@ -444,6 +455,39 @@ class OwnerBackfillRequestPlan:
     def canonical_class_count_for_sample(self, sample_stem: str) -> int:
         return len(self.equivalence_classes_for_sample(sample_stem))
 
+    def logical_bindings_for_sample(
+        self,
+        sample_stem: str,
+    ) -> tuple[
+        tuple[OwnerBackfillLogicalRequestMember, OwnerBackfillRequestIdentity],
+        ...,
+    ]:
+        classes = self.equivalence_classes_for_sample(sample_stem)
+        bindings = tuple(
+            (member, equivalence_class.identity)
+            for equivalence_class in classes
+            for member in equivalence_class.members
+        )
+        return tuple(sorted(bindings, key=lambda item: item[0].logical_index))
+
+    def logical_bindings_for_position(
+        self,
+        *,
+        sample_stem: str,
+        group_hypothesis_id: str,
+    ) -> tuple[
+        tuple[OwnerBackfillLogicalRequestMember, OwnerBackfillRequestIdentity],
+        ...,
+    ]:
+        _required_text(group_hypothesis_id, "group_hypothesis_id")
+        return tuple(
+            (logical_request, request_identity)
+            for logical_request, request_identity in self.logical_bindings_for_sample(
+                sample_stem
+            )
+            if logical_request.group_hypothesis_id == group_hypothesis_id
+        )
+
 
 def build_owner_backfill_request_plan(
     features: tuple[BackfillRuntimeFeature, ...],
@@ -531,6 +575,11 @@ def build_owner_backfill_sample_runtime_projections(
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
+    canonical_samples_by_stem: Mapping[
+        str,
+        ResolvedCanonicalSampleIdentity,
+    ]
+    | None = None,
 ) -> Mapping[str, OwnerBackfillSampleRuntimeProjection]:
     """Mint compact, sample-bound worker inputs from the canonical request plan."""
 
@@ -572,6 +621,11 @@ def build_owner_backfill_sample_runtime_projections(
                 validation_request_offset=(
                     total_logical_request_count + logical_request_offset
                 ),
+                canonical_sample=(
+                    canonical_samples_by_stem.get(sample_stem)
+                    if canonical_samples_by_stem is not None
+                    else None
+                ),
             )
         )
         logical_request_offset += projection.logical_request_count
@@ -603,6 +657,7 @@ def _mint_owner_backfill_sample_runtime_projection(
     logical_request_count: int,
     logical_request_offset: int,
     validation_request_offset: int,
+    canonical_sample: ResolvedCanonicalSampleIdentity | None = None,
 ) -> OwnerBackfillSampleRuntimeProjection:
     basis = _runtime_sample_projection_basis(
         sample_stem=sample_stem,
@@ -610,6 +665,7 @@ def _mint_owner_backfill_sample_runtime_projection(
         logical_request_count=logical_request_count,
         logical_request_offset=logical_request_offset,
         validation_request_offset=validation_request_offset,
+        canonical_sample=canonical_sample,
     )
     return OwnerBackfillSampleRuntimeProjection(
         runtime_projection_id=_typed_id(_RUNTIME_SAMPLE_PROJECTION_PREFIX, basis),
@@ -618,6 +674,7 @@ def _mint_owner_backfill_sample_runtime_projection(
         logical_request_count=logical_request_count,
         logical_request_offset=logical_request_offset,
         validation_request_offset=validation_request_offset,
+        canonical_sample=canonical_sample,
     )
 
 
@@ -628,6 +685,7 @@ def _runtime_sample_projection_basis(
     logical_request_count: int,
     logical_request_offset: int,
     validation_request_offset: int,
+    canonical_sample: ResolvedCanonicalSampleIdentity | None = None,
 ) -> dict[str, object]:
     return {
         "schema": "owner_backfill_runtime_sample_v1",
@@ -639,6 +697,15 @@ def _runtime_sample_projection_basis(
         "logical_request_count": logical_request_count,
         "logical_request_offset": logical_request_offset,
         "validation_request_offset": validation_request_offset,
+        "canonical_sample": (
+            {
+                "sample_identity_id": canonical_sample.identity.sample_identity_id,
+                "snapshot_id": canonical_sample.snapshot.snapshot_id,
+                "lookup_token": canonical_sample.lookup_token,
+            }
+            if canonical_sample is not None
+            else None
+        ),
     }
 
 
