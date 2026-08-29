@@ -135,6 +135,42 @@ create another progress ledger merely to measure the workflow. Until a
 prospective issue supplies this evidence, describe rework prevention as a
 hypothesis rather than a verified benefit.
 
+### Wayfinder-To-Delivery Compilation
+
+A Wayfinder decision map owns the operator-aligned destination, decisions, and
+remaining decision fog. It is intent authority, not an implementation queue.
+When the route becomes implementable, compile one implementation delivery
+graph on the same parent issue; it does not reopen settled decisions while
+splitting tickets or create a second map. A Wayfinder child or label records
+planning work and does not authorize a production diff. Implementation
+authority starts with the issue-to-PR contract below.
+
+The parent keeps program acceptance and a compact node/edge index. Each child
+owns one bounded outcome and states its parent, real native blockers, consumed
+typed predecessor output, produced typed output and consuming contract or entry,
+successor handoff, and ticket completion contract. Each delivery edge has
+exactly one carrier issue. The carrier is the consumer child whose acceptance
+proves that handoff compatible and usable.
+Native dependencies are the schedule gate, not handoff semantics; keep the
+edge contract in its carrier child and link it from the parent index instead of
+copying it across siblings.
+
+Ticket acceptance is its scope ceiling and stop authority. It names the
+required observable or usable handoff, stable falsifier, and work explicitly
+not required for closure. When every item passes, close or hand off the ticket
+even if MAP successors remain. Main may block that finish on reviewer evidence
+only after it proves a current acceptance violation or reachable loss introduced
+by the diff; the review comment itself has no authority. Other findings follow
+the attribution rules below.
+
+Use these regression routes when reconciling a compiled child:
+
+| Incident | Required route |
+| --- | --- |
+| stale execution binding after predecessor delivery | automatic ticket-local reconciliation |
+| unproved local ambiguity without a constructible wrong output | bounded probe or fail closed |
+| constructible parent contradiction: reachable wrong output cannot close without changing a frozen parent decision | refreeze the smallest parent decision |
+
 ### Semantic Freeze And Execution Reconciliation
 
 Freeze semantic decisions; keep execution bindings movable. The single
@@ -172,18 +208,33 @@ The implementation issue freezes the work that a PR may deliver. Before an
 issue becomes `ready-for-agent`, its body or one self-contained Current Packet
 must state all of these fields:
 
-1. **Execution base** — the exact code-evidence commit used to enumerate the
-   current implementation and consumers.
-2. **Semantic owner and finite production universe** — one owner plus the named
+1. **Execution binding** — the exact code-evidence commit used to enumerate the
+   current implementation and consumers. A predecessor-blocked child stays
+   `provisional` and cannot become ready until claim-time reconciliation binds
+   the delivered predecessors and exact base.
+2. **Graph placement and handoff** — parent MAP, real native blockers,
+   predecessor outputs consumed, produced output and consuming contract or
+   entry, successor handoff, and the single carrier for each allocated delivery
+   edge. An independent issue states `independent` and has no parent, blocker,
+   or cross-ticket handoff; do not create a MAP for it.
+3. **Semantic owner and finite production universe** — one owner plus the named
    reachable production entries and current direct consumers in scope, with the
    census locator/query and exclusions. Eventual lifecycle consumers are not
    current consumers.
-3. **Owner-local asset disposition** — retained, adapted, replaced, and
+4. **Owner-local asset disposition** — retained, adapted, replaced, and
    retirement-candidate paths, including a current consumer or zero-reference
-   evidence and each adapter's removal condition.
-4. **Boundary** — observable loss, intended outcome, explicit non-goals,
-   downstream ticket handoffs, preserved invariants, acceptance evidence, and
-   the condition that stops at another owner or behavior decision.
+   evidence and each adapter's removal condition. An established-owner change
+   may state `not applicable` with its owner locator instead of inventing a
+   migration census.
+5. **Scope ceiling** — observable loss, intended outcome, explicit non-goals,
+   preserved invariants, and the condition that stops at another owner or
+   behavior decision.
+6. **Ticket completion contract** — ticket-local required observables or usable
+   handoff, current entry/consumer, stable falsifier, work not required for
+   closure, and the close-or-hand-off rule.
+7. **Local resolution and parent escalation** — the ticket-local fix,
+   fail-closed result, or bounded probe; only the constructible parent
+   contradiction route above returns the smallest parent decision to refreeze.
 
 `Sole owner`, `shared lifecycle`, `migrate consumers`, and `retire legacy`
 describe authority or eventual direction only within that finite universe.
@@ -194,11 +245,12 @@ the issue to `needs-info` instead of filling the gap during implementation.
 The PR carries a compact scope-transfer receipt: execution base, semantic
 owner, finite production universe, and either `none` plus a rationale for scope
 delta or a link to the superseding issue refreeze. Every production diff must
-fit that receipt. When implementation or review discovers a change to outcome,
-scope, ownership, product behavior, material cost, or acceptance, stop the diff
-and refreeze the issue before delivering it. A finding outside the finite
-universe routes to the issue that owns its reachable actor; passing review is
-not authority to absorb it.
+fit that receipt. When implementation evidence shows the current diff changes
+outcome, scope, ownership, product behavior, material cost, or acceptance, stop
+and refreeze the current child issue before delivery; this does not reopen the
+parent MAP. A reviewer suggestion alone is not evidence of such a change. A
+finding outside the finite universe routes to the issue that owns its reachable
+actor; passing review is not authority to absorb it.
 
 Before changing code for a review finding, attribute the failure against the
 frozen issue and current diff. Fix it in the current PR only when it violates a
