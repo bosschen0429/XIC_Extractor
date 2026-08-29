@@ -204,6 +204,19 @@ def _validate_common_result(
         validate_finalized_scientific_alignment(scientific_core)
     except FinalizedScientificAlignmentContractError as exc:
         raise ApplicationResultContractError(str(exc)) from exc
+    if scientific_core.processing_request is not scientific_core.scope.request:
+        raise ApplicationResultContractError(
+            "application result scientific core substituted its processing request"
+        )
+    if len(scientific_core.scope.samples) != len(
+        scientific_core.canonical_samples
+    ) or {id(sample) for sample in scientific_core.scope.samples} != {
+        id(sample) for sample in scientific_core.canonical_samples
+    }:
+        raise ApplicationResultContractError(
+            "application result scientific core substituted its canonical "
+            "sample universe"
+        )
 
 
 def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:

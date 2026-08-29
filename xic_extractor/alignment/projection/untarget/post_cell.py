@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import InitVar, dataclass, field
-from hashlib import sha256
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleLineageEdge,
+)
+from xic_extractor.alignment.projection._completion_receipt import (
+    retained_owner_digest,
 )
 from xic_extractor.alignment.projection.untarget.pre_cell import (
     GroupCellSubject,
@@ -292,95 +294,12 @@ def _untarget_completion_state(
 ) -> tuple[object, ...]:
     return (
         id(projection),
-        _untarget_pre_cell_completion_state(projection.pre_cell_projection),
-        id(projection.rows),
-        tuple(
-            (
-                id(row),
-                id(row.row_key),
-                _retained_owner_digest(row.row_key),
-                id(row.decisions),
-                tuple(
-                    _decision_completion_state(decision)
-                    for decision in row.decisions
-                ),
-                id(row.counts),
-                id(row.counts.by_variant),
-                tuple(
-                    (id(item), item.variant, item.count)
-                    for item in row.counts.by_variant
-                ),
-                id(row.route),
-                row.route.destination,
-                row.route.reason,
-            )
-            for row in projection.rows
+        retained_owner_digest(
+            projection.pre_cell_projection,
+            identity_only=(projection.pre_cell_projection.finalized_alignment,),
         ),
+        retained_owner_digest(projection.rows),
     )
-
-
-def _untarget_pre_cell_completion_state(
-    projection: UntargetPreCellProjection,
-) -> tuple[object, ...]:
-    return (
-        id(projection),
-        id(projection.finalized_alignment),
-        id(projection.processing_request),
-        _retained_owner_digest(projection.processing_request),
-        id(projection.canonical_samples),
-        tuple(
-            (id(sample), _retained_owner_digest(sample))
-            for sample in projection.canonical_samples
-        ),
-        id(projection.final_population),
-        tuple(
-            (id(group), _retained_owner_digest(group))
-            for group in projection.final_population
-        ),
-        id(projection.row_keys),
-        tuple(
-            (id(row_key), _retained_owner_digest(row_key))
-            for row_key in projection.row_keys
-        ),
-        id(projection.cell_subjects),
-        tuple(
-            (
-                id(subject),
-                id(subject.row_key),
-                id(subject.canonical_sample),
-                id(subject.member_subject),
-                (
-                    None
-                    if subject.member_subject is None
-                    else _retained_owner_digest(subject.member_subject)
-                ),
-            )
-            for subject in projection.cell_subjects
-        ),
-        id(projection.lineage),
-        tuple(
-            (id(edge), _retained_owner_digest(edge)) for edge in projection.lineage
-        ),
-    )
-
-
-def _decision_completion_state(
-    decision: ProductionCellDecision,
-) -> tuple[object, ...]:
-    return (
-        id(decision),
-        decision.decision_id,
-        id(decision.subject),
-        id(decision.evidence),
-        _retained_owner_digest(decision.evidence),
-        id(decision.payload),
-        _retained_owner_digest(decision.payload),
-        decision.basis_bytes,
-    )
-
-
-def _retained_owner_digest(value: object) -> bytes:
-    return sha256(repr(value).encode("utf-8")).digest()
 
 
 def _validate_pre_cell_projection(

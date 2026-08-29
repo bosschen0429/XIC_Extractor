@@ -329,6 +329,70 @@ def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> 
         )
 
 
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "target_request",
+        "target_definition",
+        "target_sample",
+        "untarget_group",
+        "untarget_sample",
+    ],
+)
+def test_result_rejects_equal_nested_owner_clones(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variant: str,
+) -> None:
+    if variant.startswith("target_"):
+        scientific_core, projection = _target_completion(tmp_path / variant)
+        if variant == "target_request":
+            object.__setattr__(
+                projection.row_binding,
+                "processing_request",
+                copy(projection.row_binding.processing_request),
+            )
+        elif variant == "target_definition":
+            object.__setattr__(
+                projection.row_binding,
+                "target",
+                copy(projection.row_binding.target),
+            )
+        else:
+            samples = scientific_core.scope.samples
+            object.__setattr__(
+                scientific_core.scope,
+                "samples",
+                (copy(samples[0]), *samples[1:]),
+            )
+        request = TargetApplicationResultRequest(
+            scientific_core=cast(Any, scientific_core),
+            completed_projection=projection,
+        )
+    else:
+        scientific_core, projection = _untarget_completion(
+            tmp_path / variant,
+            monkeypatch,
+        )
+        if variant == "untarget_group":
+            row_key = projection.pre_cell_projection.row_keys[0]
+            object.__setattr__(row_key, "group", copy(row_key.group))
+        else:
+            samples = scientific_core.scope.samples
+            object.__setattr__(
+                scientific_core.scope,
+                "samples",
+                (copy(samples[0]), *samples[1:]),
+            )
+        request = UntargetApplicationResultRequest(
+            scientific_core=cast(Any, scientific_core),
+            completed_projection=projection,
+        )
+
+    with pytest.raises(ApplicationResultContractError, match="substituted|receipt"):
+        finalize_alignment_result(request)
+
+
 def test_mixed_target_and_untarget_variants_fail_before_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
