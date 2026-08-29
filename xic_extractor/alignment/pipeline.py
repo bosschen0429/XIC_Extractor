@@ -1274,6 +1274,9 @@ def run_alignment(
         return replace(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
+            owner_backfill_evaluation_coverage=(
+                owner_backfill_evaluation_coverage
+            ),
         )
 
 

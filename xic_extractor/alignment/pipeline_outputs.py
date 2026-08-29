@@ -12,6 +12,9 @@ from xic_extractor.alignment.artifact_write_receipts import (
     _mint_alignment_artifact_fingerprint_batch,
     _mint_alignment_artifact_fingerprint_receipt,
 )
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillEvaluationCoverageBatch,
+)
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
     SkippedEvidenceRecord,
@@ -103,6 +106,9 @@ class AlignmentRunOutputs:
     early_loser_shadow_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
+    owner_backfill_evaluation_coverage: (
+        OwnerBackfillEvaluationCoverageBatch | None
+    ) = None
 
 
 def output_paths(
