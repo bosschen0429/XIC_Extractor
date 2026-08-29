@@ -247,7 +247,7 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
         lambda features, *, sample_order, **kwargs: _matrix(sample_order),
     )
 
-    pipeline_module.run_alignment(
+    outputs = pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
         dll_dir=tmp_path / "dll",
@@ -260,6 +260,7 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
 
     assert calls["preconsolidate_features"] == ("feature",)
     assert calls["backfill_features"] == ("consolidated",)
+    assert outputs.owner_backfill_evaluation_coverage is None
 
 
 def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
