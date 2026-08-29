@@ -1,8 +1,8 @@
 # XIC Extractor Agent Contract
 
-This root file is the high-frequency control plane. Global Codex rules still
-apply. Read only the route triggered by the current task; the linked owner
-carries definitions, command details, and low-frequency exceptions.
+This root file carries only high-frequency XIC deltas; Global Codex rules own
+general opportunity cost, minimal delivery, and test necessity. Read only the
+triggered route; its owner carries detail.
 
 ## Task Routes
 
@@ -25,18 +25,17 @@ carries definitions, command details, and low-frequency exceptions.
 
 - **Mutation gate:** before non-trivial edits, verify worktree, branch, and dirty
   scope. Preserve unrelated changes; stage only task files.
-- **Task shape:** name the objective, current owner/evidence, boundaries,
-  acceptance, and stop rule before implementation. Direction-changing
-  uncertainty escalates through the planning route before mutation continues.
-- **Scope budget:** implement the requested behavior and reachable regressions.
-  Adjacent cleanup, future-proofing, compatibility, and defensive branches need
-  a current acceptance requirement, consumer, or reachable trust boundary.
-- **Test value:** use the cheapest existing observation that can disprove the
-  change. Add or modify a test only for current observable behavior, a public
-  contract, or a reproducible regression with a stable oracle. Cleanup and
-  retirement remove obsolete tests with the code and close through existing
-  behavior, referrer census, artifact inspection, or diff review—not tombstone
-  tests for private helpers, deleted paths, or one-time repository state.
+- **Mission lock:** confirm intent and acceptance before mutation. Keep the
+  current objective, boundaries, and owner in view throughout execution.
+- **Technical convergence:** Main resolves in-scope technical unknowns with the
+  cheapest decisive evidence and smallest reversible step. Ask one concrete
+  operator question only when missing intent or an operator-only value/authority
+  can change the outcome; block or hold is interim, never delivery.
+- **Necessity proof:** default to the current owner, mechanism, observation, and
+  tests. New design or test must prove need. Design needs a current consumer and
+  removal loss: abstraction needs two callers, configuration a second value,
+  and compatibility a current consumer. [`testing.md`](docs/agent/testing.md)
+  owns the test-worth gate.
 - **Final-state artifacts:** code, comments, tests, and docs describe current
   behavior and non-obvious constraints. Cleanup history and rejected options
   stay in Git/PR history unless a current consumer needs the rationale.
@@ -64,11 +63,13 @@ carries definitions, command details, and low-frequency exceptions.
 - **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
   follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
   Hosted checks on the final remote SHA remain merge authority.
-- **Simplify pass:** before closeout, delete machinery whose removal preserves
-  the current requirement and tests. An abstraction needs two current callers,
-  configuration a current second value, and compatibility a current consumer.
 
 ## Codex Code Review Rules
 
-- Require every finding to name a current linked-issue or public-contract violation, or a reachable observable loss with its obligation, actor/input/path, and consumer-visible loss.
-- Bound review to changed behavior, reachable production callers, and current consumers; private/frozen-object test-only construction and hypothetical, future, or audit requirements are safe unless exposed through a real entry, while real concerns outside the issue route are non-blocking.
+- Main neutrally adjudicates reviewer findings as evidence leads. Adopt only a
+  current linked-issue/public-contract violation or reachable observable loss
+  naming its obligation, actor/input/path, and consumer-visible loss; severity
+  or a refreeze request does not replace the mission.
+- Review changed behavior, reachable production callers, and current consumers.
+  Hypothetical or test-only findings without a real entry are non-blocking;
+  route pre-existing out-of-scope losses to their owner.

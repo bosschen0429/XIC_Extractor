@@ -14,8 +14,23 @@ body:
   - type: input
     id: execution_base
     attributes:
-      label: Execution base
-      description: Enter the exact 40-character code-evidence commit used for the current census.
+      label: Execution binding
+      description: >-
+        Enter the exact 40-character code-evidence commit after blockers close;
+        otherwise enter `provisional - freeze at claim after #...`. A
+        provisional issue is not ready-for-agent, and the claiming agent
+        reconciles it automatically.
+    validations:
+      required: true
+  - type: textarea
+    id: graph_placement
+    attributes:
+      label: Delivery graph placement and handoff
+      description: >-
+        Name the parent MAP, real native blockers, typed predecessor outputs
+        consumed, produced typed output and consuming contract or entry,
+        successor handoff, and exactly one carrier issue per delivery edge; use
+        `independent` when no edge exists.
     validations:
       required: true
   - type: textarea
@@ -29,27 +44,44 @@ body:
     id: asset_disposition
     attributes:
       label: Owner-local asset disposition
-      description: Classify retained, adapted, replaced, and retirement-candidate paths; give current consumers, zero-reference evidence, and adapter removal conditions.
+      description: >-
+        For migration or replacement, classify retained, adapted, replaced, and
+        retirement-candidate paths with consumers, zero-reference evidence, and
+        adapter removal conditions; otherwise state `Not applicable -
+        established owner` and its locator.
     validations:
       required: true
   - type: textarea
     id: boundaries
     attributes:
-      label: In scope, non-goals, and downstream handoffs
-      description: Bound this ticket; name later tickets that own reachable future work instead of absorbing them here.
+      label: Scope ceiling and non-goals
+      description: >-
+        Bound this ticket by behavior and owner; name explicit non-goals and the
+        owner cutoff that prevents reachable future work from being absorbed
+        here.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance evidence
-      description: State the focused falsifier, representative production check, preserved invariants, and expected product diff or parity claim.
+      label: Ticket completion contract
+      description: >-
+        State the required ticket-local observable or usable handoff, current
+        entry or consumer, stable falsifier, preserved invariants, work not
+        required for closure, and the rule to close or hand off when every item
+        passes.
     validations:
       required: true
   - type: textarea
     id: stop_rule
     attributes:
-      label: Stop and refreeze rule
-      description: Name the ownership, behavior, public-surface, cost, or acceptance change that returns this issue to needs-info before implementation continues.
+      label: Local resolution and parent escalation
+      description: >-
+        Main adjudicates every finding. State the ticket-local fix, fail-closed
+        result, or bounded probe. Escalate only a current constructible
+        contradiction that changes a semantic owner, public contract,
+        transaction boundary, or parent acceptance and whose reachable wrong
+        output cannot close ticket-locally without that change; otherwise Main
+        routes or rejects the finding.
     validations:
       required: true
