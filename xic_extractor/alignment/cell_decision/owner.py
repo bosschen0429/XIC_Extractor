@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
@@ -11,6 +12,9 @@ from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
     validate_final_group_cell_observation_population,
+)
+from xic_extractor.alignment.cross_sample.association import (
+    CrossSampleAssociationLineageHandoff,
 )
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
@@ -154,13 +158,17 @@ def decide_production_cell(
     subject: CellSubject,
     *,
     target_projection: TargetPreCellProjection | None = None,
-    group_projection: UntargetPreCellProjection | None = None,
-    finalized_alignment: FinalizedScientificAlignment | None = None,
+    group_handoff: CrossSampleAssociationLineageHandoff | None = None,
+    group_observations: Sequence[FinalGroupCellObservation] | None = None,
 ) -> ProductionCellDecision:
     """Decide one explicit subject through its complete owner population."""
 
     if type(subject) is TargetCellSubject:
-        if target_projection is None or group_projection is not None:
+        if (
+            target_projection is None
+            or group_handoff is not None
+            or group_observations is not None
+        ):
             raise CellDecisionContractError(
                 "Target decision requires only its exact Target projection"
             )
@@ -174,26 +182,34 @@ def decide_production_cell(
             evidence=subject.terminal_subject,
         )
     elif type(subject) is GroupCellSubject:
-        if (
-            group_projection is None
-            or finalized_alignment is None
-            or target_projection is not None
-        ):
+        if target_projection is not None or group_handoff is None:
             raise CellDecisionContractError(
-                "Group decision requires only its exact projection and "
-                "finalized alignment"
+                "Group decision requires only its exact #305 handoff population"
             )
-        group_owner_subjects, observation_by_key = _validate_group_population_inputs(
-            group_projection,
-            finalized_alignment,
-        )
-        if not any(subject is item for item in group_owner_subjects):
+        if group_observations is None:
             raise CellDecisionContractError(
-                "explicit Group subject is absent from its owner population"
+                "Group decision requires the complete #305 observation population"
             )
+        try:
+            owner_observations = validate_final_group_cell_observation_population(
+                handoff=group_handoff,
+                cell_observations=group_observations,
+            )
+        except (CellObservationContractError, TypeError, ValueError) as exc:
+            raise CellDecisionContractError(str(exc)) from exc
+        observation_by_key = {
+            _group_observation_key(item): item for item in owner_observations
+        }
+        key = _group_subject_key(subject)
+        evidence = observation_by_key.get(key)
+        if evidence is None:
+            raise CellDecisionContractError(
+                "explicit Group subject is absent from the #305 owner population"
+            )
+        _validate_group_binding(subject, evidence)
         return _decide_sealed_subject(
             subject,
-            evidence=observation_by_key[_group_subject_key(subject)],
+            evidence=evidence,
         )
     else:
         raise CellDecisionContractError(
@@ -491,6 +507,18 @@ def _validate_target_projection(
             raise CellDecisionContractError(
                 "Target projection contains a crossed or substituted subject"
             )
+        terminal = subject.terminal_subject
+        matching_bindings = tuple(
+            binding
+            for binding in projection.scope.capture_bindings
+            if binding.candidate_id == terminal.candidate_id
+            and binding.sample_identity_id
+            == subject.canonical_sample.identity.sample_identity_id
+        )
+        if len(matching_bindings) != 1:
+            raise CellDecisionContractError(
+                "Target terminal candidate crossed its exact scope binding"
+            )
     return owner_subjects
 
 
@@ -626,6 +654,7 @@ def _decision_basis(
     payload: CellDecisionPayload,
 ) -> bytes:
     if type(subject) is TargetCellSubject:
+        evidence_identity: dict[str, object]
         subject_kind = "target"
         subject_identity: dict[str, object] = {
             "target_definition_id": subject.target.definition.target_definition_id,
@@ -677,6 +706,22 @@ def _decision_basis(
         }
         evidence_identity = {
             "cell_observation_id": evidence.cell_observation_id,
+            "basis_sha256": hashlib.sha256(evidence.basis_bytes).hexdigest(),
+            "evidence_states": evidence.evidence_states,
+            "position_ids": evidence.position_ids,
+            "source_cell_artifact_ids": evidence.source_cell_artifact_ids,
+            "coverage_terminal_ids": tuple(
+                item.terminal_id for item in evidence.coverage_terminals
+            ),
+            "repair_receipt_ids": tuple(
+                item.receipt_id for item in evidence.repair_receipts
+            ),
+            "repaired_observation_keys": tuple(
+                item.work_unit_key for item in evidence.repaired_observations
+            ),
+            "integrations": tuple(
+                _integration_identity(item) for item in evidence.integrations
+            ),
         }
         request_id = subject.processing_request_id
         sample_id = subject.canonical_sample.identity.sample_identity_id

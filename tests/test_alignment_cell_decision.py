@@ -6,12 +6,12 @@ import math
 from copy import copy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
-import xic_extractor.alignment.cell_decision.owner as decision_owner
 import xic_extractor.alignment.projection.untarget.pre_cell as untarget_owner
+from tests.issue161_no_raw_fixture import PRECURSOR_MZ
 from tests.test_cell_observations import (
     _owner_handoff,
     _repaired_handoff,
@@ -35,20 +35,32 @@ from xic_extractor.alignment.cell_observations import (
     FinalGroupCellObservation,
     compose_final_group_cell_observation_population,
 )
-from xic_extractor.alignment.primary_matrix_area import PrimaryMatrixAreaDecision
 from xic_extractor.alignment.projection.target import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
     GroupCellSubject,
     project_untarget_pre_cell,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
+from xic_extractor.extraction.peak_hypothesis_adapter import (
+    build_targeted_peak_hypotheses,
+)
+from xic_extractor.peak_detection.models import (
+    PeakCandidate,
+    PeakDetectionResult,
+    PeakResult,
+)
+from xic_extractor.peak_detection.observations import mint_peak_observation_ref
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "tests.test_cell_observations.issue161_peak",
+        _numeric_peak,
+    )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
         tmp_path,
         sample_stems=("sample-a", "sample-b"),
@@ -56,18 +68,6 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
         group_specs=((("sample-a", "sample-b"), "provisional"),),
     )
     projection = project_target_pre_cell(alignment)
-    real_helper = decision_owner.primary_matrix_area_from_integration
-    monkeypatch.setattr(
-        decision_owner,
-        "primary_matrix_area_from_integration",
-        lambda integration: PrimaryMatrixAreaDecision(
-            value=17.0,
-            source=MS1_MORPHOLOGY_AREA_SOURCE,
-            reason="",
-        )
-        if real_helper(integration).value is None
-        else real_helper(integration),
-    )
 
     decisions = decide_target_cell_population(projection)
     reordered = decide_target_cell_population(
@@ -148,15 +148,49 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
         "unavailable",
     }
     by_member = {
-        item.subject.member_subject is not None: item for item in decisions
+        cast(GroupCellSubject, item.subject).member_subject is not None: item
+        for item in decisions
     }
     assert by_member[True].variant == "not_quantifiable"
     assert by_member[False].variant == "unavailable"
     assert decide_production_cell(
         projection.cell_subjects[0],
-        group_projection=projection,
-        finalized_alignment=alignment,
+        group_handoff=alignment.cell_observation_handoff,
+        group_observations=alignment.cell_observations,
     ) == decisions[0]
+    evidence = cast(FinalGroupCellObservation, by_member[True].evidence)
+    integration = evidence.integrations[0]
+    original_area = integration.area_raw_counts_seconds
+    object.__setattr__(integration, "area_raw_counts_seconds", original_area + 1.0)
+    with pytest.raises(CellDecisionContractError, match="basis|substituted"):
+        validate_production_cell_decision(by_member[True])
+    object.__setattr__(integration, "area_raw_counts_seconds", original_area)
+
+
+def test_group_numeric_uses_real_primary_matrix_area(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "tests.test_untargeted_cid_nl_golden_path.issue161_peak",
+        _numeric_peak,
+    )
+    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
+        tmp_path,
+        monkeypatch,
+    )
+    projection = project_untarget_pre_cell(alignment)
+
+    decisions = decide_group_cell_population(projection, alignment)
+
+    numeric = next(
+        item
+        for item in decisions
+        if cast(GroupCellSubject, item.subject).member_subject
+    )
+    assert numeric.variant == "numeric"
+    assert numeric.value is not None and numeric.value > 0
+    assert numeric.source
 
 
 @pytest.mark.parametrize("input_name", ["subjects", "observations"])
@@ -183,10 +217,19 @@ def test_group_population_rejects_missing_duplicate_or_substituted_inputs(
         changed = source + (source[0],)
     else:
         changed = (copy(source[0]),) + source[1:]
-    kwargs = {input_name: changed}
-
     with pytest.raises(CellDecisionContractError, match="duplicate|missing|extra"):
-        decide_group_cell_population(projection, alignment, **kwargs)
+        if input_name == "subjects":
+            decide_group_cell_population(
+                projection,
+                alignment,
+                subjects=cast(Any, changed),
+            )
+        else:
+            decide_group_cell_population(
+                projection,
+                alignment,
+                observations=cast(Any, changed),
+            )
 
 
 def test_group_closed_state_table_maps_owner_observations_without_reason_parsing(
@@ -215,9 +258,10 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
             member_subject=member,
         )
         decisions.append(
-            decision_owner._decide_sealed_subject(
+            decide_production_cell(
                 subject,
-                evidence=observation,
+                group_handoff=handoff,
+                group_observations=observations,
             )
         )
 
@@ -227,34 +271,6 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
         "rejected_observation",
         "unavailable",
     }
-
-
-@pytest.mark.parametrize(
-    "state",
-    ["not_searched", "searched_no_observation"],
-)
-def test_group_negative_terminal_states_remain_distinct_after_owner_validation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    state: str,
-) -> None:
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path,
-        monkeypatch,
-    )
-    projection = project_untarget_pre_cell(alignment)
-    subject = next(
-        item for item in projection.cell_subjects if item.member_subject is None
-    )
-    # #305 owns construction and validation of this state. This unit isolates
-    # only #308's closed classification after that owner gate has succeeded.
-    observation = object.__new__(FinalGroupCellObservation)
-    object.__setattr__(observation, "evidence_states", (state,))
-
-    payload = decision_owner._decide_group(subject, observation)
-
-    assert payload == NoWriteCellDecision(state)  # type: ignore[arg-type]
-
 
 def test_target_population_revalidates_row_terminal_and_integration_axes(
     tmp_path: Path,
@@ -277,8 +293,22 @@ def test_target_population_revalidates_row_terminal_and_integration_axes(
         if item.terminal_subject.variant == "searched_no_observation"
     )
 
+    original_candidate_id = observed.terminal_subject.candidate_id
+    object.__setattr__(
+        observed.terminal_subject,
+        "candidate_id",
+        negative.terminal_subject.candidate_id,
+    )
+    with pytest.raises(CellDecisionContractError, match="scope binding"):
+        decide_target_cell_population(projection)
+    object.__setattr__(
+        observed.terminal_subject,
+        "candidate_id",
+        original_candidate_id,
+    )
+
     object.__setattr__(observed, "terminal_subject", negative.terminal_subject)
-    with pytest.raises(CellDecisionContractError, match="canonical sample"):
+    with pytest.raises(CellDecisionContractError, match="scope binding"):
         decide_target_cell_population(projection)
     object.__setattr__(observed, "terminal_subject", alignment.terminal_subjects[0])
 
@@ -355,16 +385,18 @@ def test_repaired_observation_is_numeric_only_for_its_exact_member(
     exact_subject = GroupCellSubject(row, cell.canonical_sample, member)
     nonmember_subject = GroupCellSubject(row, cell.canonical_sample, None)
 
-    decision = decision_owner._decide_sealed_subject(
+    decision = decide_production_cell(
         exact_subject,
-        evidence=cell,
+        group_handoff=handoff,
+        group_observations=cells,
     )
 
     assert decision.variant == "numeric"
     with pytest.raises(CellDecisionContractError, match="nonmember"):
-        decision_owner._decide_sealed_subject(
+        decide_production_cell(
             nonmember_subject,
-            evidence=cell,
+            group_handoff=handoff,
+            group_observations=cells,
         )
 
 
@@ -385,43 +417,6 @@ def test_direct_and_repaired_evidence_is_rejected_before_decision(
             repair_receipts=(repair,),
             repaired_observations=(observation,),
         )
-
-
-def test_area_projection_distinguishes_not_quantifiable_and_non_finite() -> None:
-    integration = IntegrationResult(
-        rt_left_min=1.0,
-        rt_apex_min=1.5,
-        rt_right_min=2.0,
-        raw_apex_rt_min=1.5,
-        rt_width_min=1.0,
-        height_raw=10.0,
-        height_smoothed=9.0,
-        area_raw_counts_seconds=20.0,
-    )
-
-    assert decision_owner._payload_from_integration(integration) == (
-        NoWriteCellDecision("not_quantifiable")
-    )
-    numeric = IntegrationResult(
-        rt_left_min=1.0,
-        rt_apex_min=1.5,
-        rt_right_min=2.0,
-        raw_apex_rt_min=1.5,
-        rt_width_min=1.0,
-        height_raw=10.0,
-        height_smoothed=9.0,
-        area_raw_counts_seconds=20.0,
-        area_ms1_morphology=11.0,
-        ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
-    )
-    assert decision_owner._payload_from_integration(numeric) == NumericCellDecision(
-        11.0,
-        MS1_MORPHOLOGY_AREA_SOURCE,
-    )
-    object.__setattr__(integration, "area_ms1_morphology", math.nan)
-    with pytest.raises(CellDecisionContractError, match="must be finite"):
-        decision_owner._payload_from_integration(integration)
-
 
 def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
     tmp_path: Path,
@@ -453,3 +448,83 @@ def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
     )
     with pytest.raises(CellDecisionContractError, match="basis"):
         validate_production_cell_decision(decision)
+
+
+def _numeric_peak(
+    fixture: Any,
+    sample_stem: str,
+    *,
+    mz: float = PRECURSOR_MZ,
+    apex_rt: float = 8.0,
+    rt_left_min: float = 7.9,
+    rt_right_min: float = 8.1,
+    height: float = 500.0,
+) -> Any:
+    sample = fixture.sample(sample_stem)
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    trace = Trace.from_arrays(
+        sample_name=sample_stem,
+        mz=mz,
+        rt=(
+            rt_left_min - 0.1,
+            rt_left_min,
+            apex_rt,
+            rt_right_min,
+            rt_right_min + 0.1,
+        ),
+        intensity=(0.0, height / 10.0, height, height / 10.0, 0.0),
+        rt_min=rt_left_min - 0.1,
+        rt_max=rt_right_min + 0.1,
+        ppm_tol=10.0,
+        source="cell_decision_no_raw_fixture",
+        acquisition_source_id=source.acquisition_source_id,
+    )
+    peak = PeakResult(
+        rt=apex_rt,
+        intensity=height,
+        intensity_smoothed=height,
+        area=height * 6.6,
+        peak_start=rt_left_min,
+        peak_end=rt_right_min,
+    )
+    candidate = PeakCandidate(
+        peak=peak,
+        selection_apex_rt=apex_rt,
+        selection_apex_intensity=height,
+        selection_apex_index=2,
+        raw_apex_rt=apex_rt,
+        raw_apex_intensity=height,
+        raw_apex_index=2,
+        prominence=height * 0.9,
+        proposal_sources=("local_minimum",),
+    )
+    result = PeakDetectionResult(
+        status="OK",
+        peak=peak,
+        n_points=trace.scan_count,
+        max_smoothed=height,
+        n_prominent_peaks=1,
+        candidates=(candidate,),
+    )
+    integration = build_targeted_peak_hypotheses(
+        sample_name=trace.sample_name,
+        target_label="cell-decision-no-raw",
+        role="",
+        istd_pair="",
+        resolver_mode="local_minimum",
+        peak_result=result,
+        rt=trace.rt,
+        intensity=trace.intensity,
+        baseline_integration_method="asls",
+    )[0].integration
+    return mint_peak_observation_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        trace=trace,
+        integration=integration,
+        resolver_mode="local_minimum",
+        proposal_sources=("local_minimum",),
+    )
