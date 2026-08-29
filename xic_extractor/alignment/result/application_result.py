@@ -315,6 +315,40 @@ def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> Non
         raise ApplicationResultContractError(
             "Untarget completed projection crossed or substituted its scientific core"
         )
+    if pre_cell.processing_request is not result.scientific_core.processing_request:
+        raise ApplicationResultContractError(
+            "Untarget completed projection substituted its processing request"
+        )
+    _validate_exact_owner_population(
+        actual=pre_cell.canonical_samples,
+        expected=result.scientific_core.canonical_samples,
+        label="canonical sample universe",
+    )
+    _validate_exact_owner_population(
+        actual=pre_cell.final_population,
+        expected=result.scientific_core.final_population,
+        label="final population",
+    )
+    _validate_exact_owner_population(
+        actual=pre_cell.lineage,
+        expected=result.scientific_core.lineage,
+        label="lineage",
+    )
+
+
+def _validate_exact_owner_population(
+    *,
+    actual: tuple[object, ...],
+    expected: tuple[object, ...],
+    label: str,
+) -> None:
+    if len(actual) != len(expected) or any(
+        actual_owner is not expected_owner
+        for actual_owner, expected_owner in zip(actual, expected, strict=True)
+    ):
+        raise ApplicationResultContractError(
+            f"Untarget completed projection substituted its {label}"
+        )
 
 
 def _require_result_mint(value: object) -> None:

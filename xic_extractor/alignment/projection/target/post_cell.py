@@ -236,8 +236,11 @@ def _target_completion_state(
             identity_only=(projection.pre_cell_projection.finalized_alignment,),
         ),
         retained_owner_digest(projection.decisions),
-        projection.counted_detection_count,
-        projection.no_write_count,
+        (
+            type(projection.counted_detection_count),
+            projection.counted_detection_count,
+        ),
+        (type(projection.no_write_count), projection.no_write_count),
         retained_owner_digest(projection.review_queue_references),
     )
 

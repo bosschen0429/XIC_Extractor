@@ -213,18 +213,17 @@ def test_untarget_result_rejects_a_partial_completed_row_population(
 
 def test_target_result_rejects_substituted_completed_counts(tmp_path: Path) -> None:
     scientific_core, projection = _target_completion(tmp_path / "target")
-    substituted_projection = copy(projection)
     object.__setattr__(
-        substituted_projection,
+        projection,
         "counted_detection_count",
-        projection.counted_detection_count + 1,
+        bool(projection.counted_detection_count),
     )
 
     with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
         finalize_alignment_result(
             TargetApplicationResultRequest(
                 scientific_core=cast(Any, scientific_core),
-                completed_projection=substituted_projection,
+                completed_projection=projection,
             )
         )
 
@@ -335,6 +334,7 @@ def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> 
         "target_request",
         "target_definition",
         "target_sample",
+        "untarget_request",
         "untarget_group",
         "untarget_sample",
     ],
@@ -374,7 +374,15 @@ def test_result_rejects_equal_nested_owner_clones(
             tmp_path / variant,
             monkeypatch,
         )
-        if variant == "untarget_group":
+        if variant == "untarget_request":
+            cloned_request = copy(scientific_core.processing_request)
+            object.__setattr__(
+                scientific_core,
+                "processing_request",
+                cloned_request,
+            )
+            object.__setattr__(scientific_core.scope, "request", cloned_request)
+        elif variant == "untarget_group":
             row_key = projection.pre_cell_projection.row_keys[0]
             object.__setattr__(row_key, "group", copy(row_key.group))
         else:
