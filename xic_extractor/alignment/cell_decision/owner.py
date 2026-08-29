@@ -73,6 +73,10 @@ _NO_WRITE_STATES = frozenset(
         "unavailable",
     }
 )
+_GROUP_VALUE_STATES = frozenset({"direct_observation", "repaired_observation"})
+_GROUP_TERMINAL_COMPANION_STATES = frozenset(
+    {"not_searched", "searched_no_observation", "unavailable"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,24 +402,31 @@ def _decide_group(
     observation: FinalGroupCellObservation,
 ) -> CellDecisionPayload:
     state = observation.evidence_state
-    if state == "mixed":
-        raise CellDecisionContractError(
-            "Group closure contains competing evidence states"
-        )
-    if state in {"direct_observation", "repaired_observation"}:
-        if subject.member_subject is None:
-            raise CellDecisionContractError(
-                "Group nonmember cannot use observation evidence"
-            )
-        integrations = observation.integrations
-        if len(integrations) != 1:
-            raise CellDecisionContractError(
-                "Group numeric decision requires exactly one integration"
-            )
-        return _payload_from_integration(integrations[0])
+    states = observation.evidence_states
+    value_state_count = sum(item in _GROUP_VALUE_STATES for item in states)
     if subject.member_subject is not None:
+        allowed_states = _GROUP_VALUE_STATES | _GROUP_TERMINAL_COMPANION_STATES
+        if value_state_count == 1 and all(item in allowed_states for item in states):
+            integrations = observation.integrations
+            if len(integrations) != 1:
+                raise CellDecisionContractError(
+                    "Group numeric decision requires exactly one integration"
+                )
+            return _payload_from_integration(integrations[0])
+        if value_state_count > 1:
+            raise CellDecisionContractError(
+                "Group closure contains competing observation evidence"
+            )
         raise CellDecisionContractError(
             "Group member requires direct or repaired observation evidence"
+        )
+    if value_state_count:
+        raise CellDecisionContractError(
+            "Group nonmember cannot use observation evidence"
+        )
+    if state == "mixed":
+        raise CellDecisionContractError(
+            "Group closure contains unsupported mixed terminal states"
         )
     if state not in _NO_WRITE_STATES - {"not_quantifiable"}:
         raise CellDecisionContractError(

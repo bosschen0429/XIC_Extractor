@@ -16,9 +16,11 @@ from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
 from tests.test_cell_observations import (
     _coverage_for_groups,
     _final_receipt,
+    _not_evaluated_assessment,
     _owner_handoff,
     _receipt_fixture,
     _repaired_handoff,
+    _source_cell,
     _support_assessment,
 )
 from tests.test_cid_nl_evidence_spine import _completed_receipt
@@ -495,6 +497,115 @@ def test_group_crossed_terminal_and_candidate_combinations_fail_before_decision(
             group_observations=cells,
         )
     object.__setattr__(target, "coverage_terminals", original_terminals)
+
+
+def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "tests.test_cell_observations.issue161_peak",
+        _numeric_peak,
+    )
+    fixture = build_package2_no_raw_fixture(
+        tmp_path,
+        sample_stems=("s1", "s2"),
+    )
+    samples = (fixture.sample("s1"), fixture.sample("s2"))
+    assessments = tuple(
+        _support_assessment(
+            fixture,
+            sample.lookup_token,
+            suffix="cell-decision-mixed-merge",
+            apex_rt=8.0 + index * 0.3,
+            scan_number=111 + index,
+        )
+        for index, sample in enumerate(samples)
+    )
+    left_spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=((samples[0], assessments[0]),),
+    )
+    right_spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=((samples[1], assessments[1]),),
+    )
+    left = validate_cross_sample_peak_group_identity(
+        left_spine.group,
+        require_canonical=True,
+    )
+    right = validate_cross_sample_peak_group_identity(
+        right_spine.group,
+        require_canonical=True,
+    )
+    merged = mint_cross_sample_group_identity(
+        processing_request_id=left.processing_request_id,
+        member_subjects=left.member_subjects + right.member_subjects,
+    )
+    coverage = _coverage_for_groups(
+        fixture,
+        (left, right),
+        samples,
+        planned=True,
+    )
+    receipt = _final_receipt(
+        _receipt_fixture(fixture, samples),
+        predecessors=(left, right),
+        successors=(merged,),
+    )
+    handoff = build_cross_sample_association_lineage_handoff(
+        coverage=coverage,
+        final_receipt=receipt,
+    )
+    not_evaluated = tuple(
+        _not_evaluated_assessment(
+            fixture,
+            sample.lookup_token,
+            suffix="cell-decision-mixed-merge-terminal",
+        )
+        for sample in samples
+    )
+    predecessor_cells = (
+        left_spine.cells[0],
+        _source_cell(fixture, samples[1], left_spine, not_evaluated[1]),
+        _source_cell(fixture, samples[0], right_spine, not_evaluated[0]),
+        right_spine.cells[0],
+    )
+    observations = compose_final_group_cell_observation_population(
+        handoff=handoff,
+        predecessor_cells=predecessor_cells,
+    )
+
+    assert all(
+        set(item.evidence_states) == {"direct_observation", "unavailable"}
+        and item.evidence_state == "mixed"
+        and len(item.integrations) == 1
+        for item in observations
+    )
+    decisions = tuple(
+        decide_production_cell(
+            GroupCellSubject(
+                untarget_owner._mint_untarget_row_key(item.group),
+                item.canonical_sample,
+                next(
+                    member
+                    for member in item.group.member_subjects
+                    if member.canonical_sample_identity_id
+                    == item.canonical_sample_identity_id
+                ),
+            ),
+            group_handoff=handoff,
+            group_observations=observations,
+        )
+        for item in observations
+    )
+
+    assert all(
+        item.variant == "numeric" and item.value is not None and item.value > 0
+        for item in decisions
+    )
 
 
 def test_group_split_nonmember_maps_exact_not_searched_closure(
