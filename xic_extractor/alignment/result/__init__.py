@@ -18,7 +18,6 @@ from xic_extractor.alignment.result.scientific_alignment import (
     SearchedNoObservationSubject,
     TerminalSearchObservation,
     finalize_scientific_alignment,
-    validate_finalized_scientific_alignment,
 )
 
 __all__ = (
@@ -37,5 +36,4 @@ __all__ = (
     "UntargetApplicationResultRequest",
     "finalize_alignment_result",
     "finalize_scientific_alignment",
-    "validate_finalized_scientific_alignment",
 )

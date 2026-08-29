@@ -214,16 +214,15 @@ def finalize_scientific_alignment(
     return result
 
 
-def validate_finalized_scientific_alignment(
+def _validate_finalized_scientific_alignment_completion_receipt(
     result: FinalizedScientificAlignment,
 ) -> None:
-    """Revalidate one retained scientific-core result without recomputation."""
+    """Validate one retained scientific-core completion receipt."""
 
     if type(result) is not FinalizedScientificAlignment:
         raise FinalizedScientificAlignmentContractError(
             "scientific-core validation requires an exact finalized alignment"
         )
-    _validate_finalized_alignment(result)
     if (
         type(result._completion_seal) is not bytes
         or result._completion_seal != retained_owner_digest(result)
@@ -498,5 +497,4 @@ __all__ = (
     "SearchedNoObservationSubject",
     "TerminalSearchObservation",
     "finalize_scientific_alignment",
-    "validate_finalized_scientific_alignment",
 )

@@ -11,7 +11,7 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     FinalizedScientificAlignmentContractError,
-    validate_finalized_scientific_alignment,
+    _validate_finalized_scientific_alignment_completion_receipt,
 )
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
@@ -201,7 +201,7 @@ def _validate_common_result(
     scientific_core: FinalizedScientificAlignment,
 ) -> None:
     try:
-        validate_finalized_scientific_alignment(scientific_core)
+        _validate_finalized_scientific_alignment_completion_receipt(scientific_core)
     except FinalizedScientificAlignmentContractError as exc:
         raise ApplicationResultContractError(str(exc)) from exc
     if scientific_core.processing_request is not scientific_core.scope.request:
