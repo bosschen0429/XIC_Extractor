@@ -17,6 +17,7 @@ from xic_extractor.alignment.projection.target import (
     project_target_post_cell,
     project_target_pre_cell,
 )
+from xic_extractor.alignment.projection.target import post_cell as target_post_cell
 from xic_extractor.alignment.projection.untarget import UntargetPostCellProjection
 from xic_extractor.alignment.projection.untarget import post_cell as untarget_post_cell
 from xic_extractor.alignment.result import (
@@ -98,6 +99,32 @@ def test_target_result_binds_exact_owner_graph_and_completion_receipts(
         result.completed_projection = projection  # type: ignore[misc]
 
 
+def test_target_result_consumes_decisions_without_reopening_their_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scientific_core, projection = _target_completion(tmp_path / "target")
+
+    def reject_revalidation(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("application result reopened the Target decision owner")
+
+    monkeypatch.setattr(
+        target_post_cell,
+        "validate_production_cell_decision",
+        reject_revalidation,
+    )
+
+    result = finalize_alignment_result(
+        TargetApplicationResultRequest(
+            scientific_core=cast(Any, scientific_core),
+            completed_projection=projection,
+        )
+    )
+
+    assert result.scientific_core is scientific_core
+    assert result.completed_projection is projection
+
+
 def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -162,6 +189,26 @@ def test_untarget_result_consumes_projection_without_recomputing_it(
 
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
+
+
+def test_untarget_result_rejects_a_partial_completed_row_population(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scientific_core, projection = _untarget_completion(
+        tmp_path / "untarget",
+        monkeypatch,
+    )
+    partial_projection = copy(projection)
+    object.__setattr__(partial_projection, "rows", ())
+
+    with pytest.raises(ApplicationResultContractError, match="missing|partial"):
+        finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=partial_projection,
+            )
+        )
 
 
 def test_mixed_target_and_untarget_variants_fail_before_finalization(
