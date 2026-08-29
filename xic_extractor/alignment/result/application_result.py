@@ -209,6 +209,10 @@ def _validate_common_result(
 def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
     from xic_extractor.alignment.projection.target.post_cell import (
         TargetPostCellProjection,
+        validate_target_post_cell_completion_receipt,
+    )
+    from xic_extractor.alignment.projection.target.pre_cell import (
+        TargetProjectionContractError,
     )
 
     _validate_common_result(
@@ -222,14 +226,13 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
         raise ApplicationResultContractError(
             "Target application result requires an exact completed Target projection"
         )
+    try:
+        validate_target_post_cell_completion_receipt(result.completed_projection)
+    except TargetProjectionContractError as exc:
+        raise ApplicationResultContractError(str(exc)) from exc
     projection = result.completed_projection
     pre_cell = projection.pre_cell_projection
     core = result.scientific_core
-    _validate_completed_decision_population(
-        decisions=projection.decisions,
-        owner_subjects=projection.cell_subjects,
-        lane="Target",
-    )
     if pre_cell.scope is not core.scope:
         raise ApplicationResultContractError(
             "Target completed projection crossed or substituted its scientific core"
@@ -267,7 +270,10 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
 def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> None:
     from xic_extractor.alignment.projection.untarget.post_cell import (
         UntargetPostCellProjection,
-        UntargetPostCellRow,
+        validate_untarget_post_cell_completion_receipt,
+    )
+    from xic_extractor.alignment.projection.untarget.pre_cell import (
+        UntargetProjectionContractError,
     )
 
     _validate_common_result(
@@ -282,56 +288,16 @@ def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> Non
             "Untarget application result requires an exact completed "
             "Untarget projection"
         )
+    try:
+        validate_untarget_post_cell_completion_receipt(result.completed_projection)
+    except UntargetProjectionContractError as exc:
+        raise ApplicationResultContractError(str(exc)) from exc
     projection = result.completed_projection
     pre_cell = projection.pre_cell_projection
     if pre_cell.finalized_alignment is not result.scientific_core:
         raise ApplicationResultContractError(
             "Untarget completed projection crossed or substituted its scientific core"
         )
-    if type(projection.rows) is not tuple or len(projection.rows) != len(
-        pre_cell.row_keys
-    ):
-        raise ApplicationResultContractError(
-            "Untarget completed projection has a missing or partial row population"
-        )
-    for row, row_key in zip(projection.rows, pre_cell.row_keys, strict=True):
-        if type(row) is not UntargetPostCellRow or row.row_key is not row_key:
-            raise ApplicationResultContractError(
-                "Untarget completed projection crossed or substituted a row owner"
-            )
-        owner_subjects = tuple(
-            subject
-            for subject in pre_cell.cell_subjects
-            if subject.row_key is row_key
-        )
-        _validate_completed_decision_population(
-            decisions=row.decisions,
-            owner_subjects=owner_subjects,
-            lane="Untarget",
-        )
-
-
-def _validate_completed_decision_population(
-    *,
-    decisions: object,
-    owner_subjects: tuple[object, ...],
-    lane: str,
-) -> None:
-    from xic_extractor.alignment.cell_decision import ProductionCellDecision
-
-    if type(decisions) is not tuple or len(decisions) != len(owner_subjects):
-        raise ApplicationResultContractError(
-            f"{lane} completed decision population is missing, extra, or partial"
-        )
-    for decision, owner_subject in zip(decisions, owner_subjects, strict=True):
-        if (
-            type(decision) is not ProductionCellDecision
-            or decision.subject is not owner_subject
-        ):
-            raise ApplicationResultContractError(
-                f"{lane} completed decision population is crossed, duplicate, "
-                "or substituted"
-            )
 
 
 def _require_result_mint(value: object) -> None:

@@ -168,6 +168,11 @@ class UntargetPostCellProjection:
 
     pre_cell_projection: UntargetPreCellProjection
     rows: tuple[UntargetPostCellRow, ...]
+    _completion_seal: tuple[object, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -176,6 +181,11 @@ class UntargetPostCellProjection:
                 "post-cell projection must be minted by its owner entry point"
             )
         _validate_post_cell_projection(self)
+        object.__setattr__(
+            self,
+            "_completion_seal",
+            _untarget_completion_state(self),
+        )
 
     @property
     def lineage(self) -> tuple[CrossSampleLineageEdge, ...]:
@@ -250,6 +260,56 @@ def validate_untarget_post_cell_projection(
         raise UntargetProjectionContractError(
             "Untarget post-cell projection was substituted"
         )
+
+
+def validate_untarget_post_cell_completion_receipt(
+    projection: UntargetPostCellProjection,
+) -> None:
+    """Verify retained completion fields without reopening projection policy."""
+
+    if type(projection) is not UntargetPostCellProjection:
+        raise UntargetProjectionContractError(
+            "completed Untarget receipt requires an exact UntargetPostCellProjection"
+        )
+    try:
+        current_state = _untarget_completion_state(projection)
+    except (AttributeError, TypeError) as exc:
+        raise UntargetProjectionContractError(
+            "completed Untarget projection receipt was substituted or partial"
+        ) from exc
+    if (
+        type(projection._completion_seal) is not tuple
+        or projection._completion_seal != current_state
+    ):
+        raise UntargetProjectionContractError(
+            "completed Untarget projection receipt was substituted or partial"
+        )
+
+
+def _untarget_completion_state(
+    projection: UntargetPostCellProjection,
+) -> tuple[object, ...]:
+    return (
+        id(projection.pre_cell_projection),
+        id(projection.rows),
+        tuple(
+            (
+                id(row),
+                id(row.row_key),
+                id(row.decisions),
+                id(row.counts),
+                id(row.counts.by_variant),
+                tuple(
+                    (id(item), item.variant, item.count)
+                    for item in row.counts.by_variant
+                ),
+                id(row.route),
+                row.route.destination,
+                row.route.reason,
+            )
+            for row in projection.rows
+        ),
+    )
 
 
 def _validate_pre_cell_projection(

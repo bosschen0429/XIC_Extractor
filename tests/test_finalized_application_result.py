@@ -211,6 +211,48 @@ def test_untarget_result_rejects_a_partial_completed_row_population(
         )
 
 
+def test_target_result_rejects_substituted_completed_counts(tmp_path: Path) -> None:
+    scientific_core, projection = _target_completion(tmp_path / "target")
+    substituted_projection = copy(projection)
+    object.__setattr__(
+        substituted_projection,
+        "counted_detection_count",
+        projection.counted_detection_count + 1,
+    )
+
+    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
+        finalize_alignment_result(
+            TargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=substituted_projection,
+            )
+        )
+
+
+def test_untarget_result_rejects_a_substituted_completed_route(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scientific_core, projection = _untarget_completion(
+        tmp_path / "untarget",
+        monkeypatch,
+    )
+    substituted_route = copy(projection.rows[0].route)
+    object.__setattr__(substituted_route, "destination", "archive")
+    substituted_row = copy(projection.rows[0])
+    object.__setattr__(substituted_row, "route", substituted_route)
+    substituted_projection = copy(projection)
+    object.__setattr__(substituted_projection, "rows", (substituted_row,))
+
+    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
+        finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=substituted_projection,
+            )
+        )
+
+
 def test_mixed_target_and_untarget_variants_fail_before_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
