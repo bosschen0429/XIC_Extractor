@@ -12,10 +12,16 @@ import pytest
 
 import xic_extractor.alignment.projection.untarget.pre_cell as untarget_owner
 from tests.issue161_no_raw_fixture import PRECURSOR_MZ
+from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
 from tests.test_cell_observations import (
+    _coverage_for_groups,
+    _final_receipt,
     _owner_handoff,
+    _receipt_fixture,
     _repaired_handoff,
+    _support_assessment,
 )
+from tests.test_cid_nl_evidence_spine import _completed_receipt
 from tests.test_target_pre_cell_projection import _finalized_case
 from tests.test_untargeted_pre_cell_projection import (
     _untarget_projection_inputs,
@@ -34,6 +40,17 @@ from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
     compose_final_group_cell_observation_population,
+    mint_cell_observation_ref,
+)
+from xic_extractor.alignment.cid_nl_evidence_spine import (
+    build_cid_nl_reference_spine,
+)
+from xic_extractor.alignment.cross_sample import (
+    build_cross_sample_association_lineage_handoff,
+)
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    mint_cross_sample_group_identity,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.target import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
@@ -42,6 +59,9 @@ from xic_extractor.alignment.projection.untarget import (
 )
 from xic_extractor.extraction.peak_hypothesis_adapter import (
     build_targeted_peak_hypotheses,
+)
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    mint_cid_nl_method_assessment_ref,
 )
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
@@ -271,6 +291,157 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
         "rejected_observation",
         "unavailable",
     }
+
+    direct = next(
+        item for item in observations if item.evidence_state == "direct_observation"
+    )
+    nonmember = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(direct.group),
+        direct.canonical_sample,
+        None,
+    )
+    with pytest.raises(CellDecisionContractError, match="nonmember"):
+        decide_production_cell(
+            nonmember,
+            group_handoff=handoff,
+            group_observations=observations,
+        )
+
+
+def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
+    tmp_path: Path,
+) -> None:
+    fixture, spine, handoff = _owner_handoff(tmp_path)
+    observed_cells = compose_final_group_cell_observation_population(
+        handoff=handoff,
+        predecessor_cells=spine.cells,
+    )
+    sample = fixture.sample("s4")
+    observed = next(
+        item for item in observed_cells if item.canonical_sample is sample
+    )
+    observed_subject = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(observed.group),
+        sample,
+        None,
+    )
+    assert decide_production_cell(
+        observed_subject,
+        group_handoff=handoff,
+        group_observations=observed_cells,
+    ).variant == "unresolved"
+
+    negative_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        target=fixture.target,
+        detector_invocation_id="gaussian15:s4:cell-decision-negative",
+        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+    )
+    source = next(
+        item
+        for item in spine.cells
+        if item.content.canonical_sample_identity_id
+        == sample.identity.sample_identity_id
+    )
+    negative_cell = mint_cell_observation_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        target=fixture.target,
+        group_context=source.group_context,
+        method_assessment=negative_assessment,
+    )
+    predecessor_cells = tuple(
+        negative_cell if item is source else item for item in spine.cells
+    )
+    negative_cells = compose_final_group_cell_observation_population(
+        handoff=handoff,
+        predecessor_cells=predecessor_cells,
+    )
+    negative = next(
+        item for item in negative_cells if item.canonical_sample is sample
+    )
+    negative_subject = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(negative.group),
+        sample,
+        None,
+    )
+    assert decide_production_cell(
+        negative_subject,
+        group_handoff=handoff,
+        group_observations=negative_cells,
+    ).variant == "searched_no_observation"
+
+
+def test_group_split_nonmember_maps_exact_not_searched_closure(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(
+        tmp_path,
+        sample_stems=("s1", "s2"),
+    )
+    samples = (fixture.sample("s1"), fixture.sample("s2"))
+    assessments = tuple(
+        _support_assessment(
+            fixture,
+            sample.lookup_token,
+            suffix="cell-decision-split",
+            apex_rt=8.0,
+            scan_number=91 + index,
+            seed_count=2,
+        )
+        for index, sample in enumerate(samples)
+    )
+    spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=tuple(zip(samples, assessments, strict=True)),
+    )
+    predecessor = validate_cross_sample_peak_group_identity(
+        spine.group,
+        require_canonical=True,
+    )
+    left = mint_cross_sample_group_identity(
+        processing_request_id=predecessor.processing_request_id,
+        member_subjects=(predecessor.member_subjects[0],),
+    )
+    right = mint_cross_sample_group_identity(
+        processing_request_id=predecessor.processing_request_id,
+        member_subjects=(predecessor.member_subjects[1],),
+    )
+    coverage = _coverage_for_groups(
+        fixture,
+        (predecessor,),
+        samples,
+        planned=True,
+    )
+    receipt = _final_receipt(
+        _receipt_fixture(fixture, samples),
+        predecessors=(predecessor,),
+        successors=(left, right),
+    )
+    handoff = build_cross_sample_association_lineage_handoff(
+        coverage=coverage,
+        final_receipt=receipt,
+    )
+    cells = compose_final_group_cell_observation_population(
+        handoff=handoff,
+        predecessor_cells=spine.cells,
+    )
+    not_searched = next(
+        item for item in cells if item.evidence_state == "not_searched"
+    )
+    subject = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(not_searched.group),
+        not_searched.canonical_sample,
+        None,
+    )
+
+    assert decide_production_cell(
+        subject,
+        group_handoff=handoff,
+        group_observations=cells,
+    ).variant == "not_searched"
 
 def test_target_population_revalidates_row_terminal_and_integration_axes(
     tmp_path: Path,
