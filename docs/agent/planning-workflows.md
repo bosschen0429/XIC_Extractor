@@ -50,13 +50,14 @@ invalidate displaced assumptions before execution resumes.
 
 An established-owner fix with a fixed oracle may express this shape in the
 request, a few sentences, and a focused test. Multi-step work keeps a short
-task shape in its issue or plan. Escalate to a **Current Packet** only when an
-unknown can change ownership, public surface, material cost, or acceptance;
-the work crosses a semantic/runtime boundary, uses expensive real-data
-validation, transforms a legacy owner, follows a load-bearing premise
-correction, has an unbounded production transaction, or repeats a refreeze or
-rework class. `needs-info` and legacy work are escalation signals, not the
-scope of the delivery loop.
+task shape in its issue or plan. Escalate to a **Current Packet** only when
+current evidence shows that an unknown can change ownership, public surface,
+material cost, or acceptance; the work crosses a semantic/runtime boundary,
+uses expensive real-data validation, transforms a legacy owner, follows a
+load-bearing premise correction, has an unbounded production transaction, or
+repeats a refreeze or rework class. A merely possible ambiguity is not current
+evidence. `needs-info` and legacy work are escalation signals, not the scope of
+the delivery loop.
 
 ### Current Packet Escalation
 
@@ -133,6 +134,58 @@ create another progress ledger merely to measure the workflow. Until a
 prospective issue supplies this evidence, describe rework prevention as a
 hypothesis rather than a verified benefit.
 
+### Dependency Reconciliation And Claim-Time Freeze
+
+Do not mark an ordinary downstream task ready, or publish its Current Packet as
+final, while a predecessor that can change the code-evidence base or owner
+closure is still unstable. Before the predecessor lands, keep the canonical
+task surface explicitly `provisional`: it may record the intended owner,
+boundaries, and questions, but it carries no final base SHA, readiness claim,
+or production write lease. At claim time, freeze the ordinary task shape, or a
+Current Packet only when the escalation gate independently requires one,
+against the delivered predecessor and exact current base.
+
+When a declared predecessor lands, the claiming agent owns the mechanical
+ticket-local reconciliation. Re-read the delivered predecessor, current base,
+dependency state, and the downstream ticket's finite owner/consumer census.
+If they remain compatible, update the ordinary canonical task surface's base,
+dependency, evidence locators, status, and labels directly. When the ticket is
+already governed by a Current Packet, instead publish a new self-contained
+Current Packet revision that lists all superseded packet IDs and updates those
+same facts. This mechanical rebind preserves the applicable authority contract,
+but it is a fact refresh rather than a parent-map refreeze and does not require
+the operator to restate or supervise the existing decision. Re-run only the
+applicable focused task or packet review; do not replay the whole map family.
+
+Treat a post-merge gap as ticket-local unless evidence proves that the ticket
+cannot absorb it. First attempt the cheapest bounded constructibility probe:
+name a currently valid input, the existing owner and entry path, the required
+and conflicting actual output, and the consumer-visible wrong output or
+reachable loss. When the alleged ambiguity is a choice among eligible inputs,
+construct the competing eligible inputs and show how the choice changes that
+output. If that counterexample cannot be constructed, retain the gap as a
+hypothesis and keep the current contract. A conservative fail-closed result is
+allowed only when the ticket already declares that result and it does not
+change public behavior or acceptance. A ticket-local delta requires a focused
+oracle and must preserve the semantic owner, public contract, transaction
+boundary, and parent acceptance. Possibility alone does not invalidate the
+parent map or transfer technical convergence to the operator.
+
+Escalate beyond the ticket only when the proposed answer would change a
+semantic owner, public contract, or transaction boundary, or when a current
+constructible counterexample proves a wrong output or reachable loss that the
+ticket cannot close without contradicting its parent contract. Escalation must
+name that contradiction and the smallest affected parent decision; it must not
+request a whole-family review merely because a dependency merged or a local
+question remains.
+
+A prompt relayed to another task carries only the target outcome, verified
+current facts and locators, granted authority, hard boundaries, acceptance,
+and any unresolved question that passes the escalation test above. Do not copy
+the source task's TaskFrame, skill sequence, review choreography, retry
+history, or hold/escalation shape as if it were target authority. The receiving
+task reconstructs its own workflow from its current routes and surfaces.
+
 ### Issue-To-PR Scope And Template Ownership
 
 The implementation issue freezes the work that a PR may deliver. Before an
@@ -157,6 +210,9 @@ describe authority or eventual direction only within that finite universe.
 They do not authorize a ticket to implement downstream callers, unrelated
 algorithms, or catch-all cleanup. A missing field is a plan gap: keep or return
 the issue to `needs-info` instead of filling the gap during implementation.
+This completeness gate applies when the ticket is claimed; an explicitly
+provisional downstream shape follows the claim-time freeze and reconciliation
+rule above rather than pretending to be implementation-ready.
 
 The PR carries a compact scope-transfer receipt: execution base, semantic
 owner, finite production universe, and either `none` plus a rationale for scope
