@@ -18,6 +18,7 @@ from xic_extractor.alignment.projection.target import (
     project_target_pre_cell,
 )
 from xic_extractor.alignment.projection.untarget import UntargetPostCellProjection
+from xic_extractor.alignment.projection.untarget import post_cell as untarget_post_cell
 from xic_extractor.alignment.result import (
     ApplicationResultContractError,
     FinalizedTargetApplicationResult,
@@ -125,6 +126,42 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
     )
     assert result.completed_projection.included_rows == projection.included_rows
     assert result.completed_projection.archive_rows == projection.archive_rows
+
+
+def test_untarget_result_consumes_projection_without_recomputing_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scientific_core, projection = _untarget_completion(
+        tmp_path / "untarget",
+        monkeypatch,
+    )
+
+    def reject_recomputation(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError(
+            "application result reopened the Untarget projection owner"
+        )
+
+    monkeypatch.setattr(
+        untarget_post_cell,
+        "project_untarget_pre_cell",
+        reject_recomputation,
+    )
+    monkeypatch.setattr(
+        untarget_post_cell,
+        "project_untarget_post_cell",
+        reject_recomputation,
+    )
+
+    result = finalize_alignment_result(
+        UntargetApplicationResultRequest(
+            scientific_core=cast(Any, scientific_core),
+            completed_projection=projection,
+        )
+    )
+
+    assert result.scientific_core is scientific_core
+    assert result.completed_projection is projection
 
 
 def test_mixed_target_and_untarget_variants_fail_before_finalization(

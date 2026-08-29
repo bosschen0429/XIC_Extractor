@@ -271,10 +271,6 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
 def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> None:
     from xic_extractor.alignment.projection.untarget.post_cell import (
         UntargetPostCellProjection,
-        validate_untarget_post_cell_projection,
-    )
-    from xic_extractor.alignment.projection.untarget.pre_cell import (
-        UntargetProjectionContractError,
     )
 
     _validate_common_result(
@@ -289,10 +285,6 @@ def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> Non
             "Untarget application result requires an exact completed "
             "Untarget projection"
         )
-    try:
-        validate_untarget_post_cell_projection(result.completed_projection)
-    except UntargetProjectionContractError as exc:
-        raise ApplicationResultContractError(str(exc)) from exc
     if (
         result.completed_projection.pre_cell_projection.finalized_alignment
         is not result.scientific_core
