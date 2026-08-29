@@ -72,6 +72,7 @@ def test_test_shards_cover_every_test_file() -> None:
 def test_test_shard_coverage_hook_routes_staged_tests_to_owner(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config(".pre-commit-config.yaml")
     hooks = {
@@ -88,12 +89,19 @@ def test_test_shard_coverage_hook_routes_staged_tests_to_owner(
     assert hook["files"] == r"^(tests/.*\.py|tools/testing/test_shards\.py)$"
     assert hook["pass_filenames"] is False
 
-    test_root = tmp_path / "tests"
+    monkeypatch.chdir(tmp_path)
+    test_root = Path("tests")
     test_root.mkdir()
+    assigned = test_root / "test_finalized_application_result.py"
+    assigned.write_text("def test_assigned(): pass\n", encoding="utf-8")
+
+    assert test_shards.main(["--check"]) == 0
+    capsys.readouterr()
+
     probe = test_root / "test_unassigned_shard_probe.py"
     probe.write_text("def test_probe(): pass\n", encoding="utf-8")
 
-    assert test_shards._check(test_root) == 1
+    assert test_shards.main(["--check"]) == 1
     assert probe.as_posix() in capsys.readouterr().err
 
 

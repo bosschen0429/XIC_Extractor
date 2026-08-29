@@ -233,6 +233,10 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
     projection = result.completed_projection
     pre_cell = projection.pre_cell_projection
     core = result.scientific_core
+    if pre_cell.finalized_alignment is not core:
+        raise ApplicationResultContractError(
+            "Target completed projection crossed or substituted its scientific core"
+        )
     if pre_cell.scope is not core.scope:
         raise ApplicationResultContractError(
             "Target completed projection crossed or substituted its scientific core"

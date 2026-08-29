@@ -228,6 +228,7 @@ def _target_completion_state(
     projection: TargetPostCellProjection,
 ) -> tuple[object, ...]:
     return (
+        id(projection),
         _target_pre_cell_completion_state(projection.pre_cell_projection),
         id(projection.decisions),
         tuple(
@@ -254,6 +255,7 @@ def _target_pre_cell_completion_state(
 ) -> tuple[object, ...]:
     return (
         id(projection),
+        id(projection.finalized_alignment),
         id(projection.scope),
         _retained_owner_digest(projection.scope),
         id(projection.row_binding),

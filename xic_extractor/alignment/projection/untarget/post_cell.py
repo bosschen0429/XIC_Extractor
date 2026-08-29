@@ -291,6 +291,7 @@ def _untarget_completion_state(
     projection: UntargetPostCellProjection,
 ) -> tuple[object, ...]:
     return (
+        id(projection),
         _untarget_pre_cell_completion_state(projection.pre_cell_projection),
         id(projection.rows),
         tuple(

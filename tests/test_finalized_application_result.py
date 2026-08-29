@@ -291,6 +291,44 @@ def test_untarget_result_rejects_a_partial_pre_cell_owner_population(
         )
 
 
+@pytest.mark.parametrize("variant", ["targeted", "untargeted"])
+def test_result_rejects_a_substituted_completed_projection_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    variant: str,
+) -> None:
+    if variant == "targeted":
+        scientific_core, projection = _target_completion(tmp_path / "target")
+        request = TargetApplicationResultRequest(
+            scientific_core=cast(Any, scientific_core),
+            completed_projection=copy(projection),
+        )
+    else:
+        scientific_core, projection = _untarget_completion(
+            tmp_path / "untarget",
+            monkeypatch,
+        )
+        request = UntargetApplicationResultRequest(
+            scientific_core=cast(Any, scientific_core),
+            completed_projection=copy(projection),
+        )
+
+    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
+        finalize_alignment_result(request)
+
+
+def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> None:
+    scientific_core, projection = _target_completion(tmp_path / "target")
+
+    with pytest.raises(ApplicationResultContractError, match="scientific core"):
+        finalize_alignment_result(
+            TargetApplicationResultRequest(
+                scientific_core=cast(Any, copy(scientific_core)),
+                completed_projection=projection,
+            )
+        )
+
+
 def test_mixed_target_and_untarget_variants_fail_before_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
