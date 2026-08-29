@@ -1,4 +1,4 @@
-"""In-process identity graph digest for completed projection receipts."""
+"""In-process identity graph digest for completed alignment receipts."""
 
 from __future__ import annotations
 

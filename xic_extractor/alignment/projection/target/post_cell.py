@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias, cast
 
+from xic_extractor.alignment._completion_receipt import (
+    retained_owner_digest,
+)
 from xic_extractor.alignment.cell_decision import (
     CellDecisionContractError,
     ProductionCellDecision,
     validate_production_cell_decision,
-)
-from xic_extractor.alignment.projection._completion_receipt import (
-    retained_owner_digest,
 )
 from xic_extractor.alignment.projection.target.pre_cell import (
     TargetCellSubject,

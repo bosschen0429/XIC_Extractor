@@ -7,12 +7,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
+from xic_extractor.alignment._completion_receipt import (
+    retained_owner_digest,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleLineageEdge,
-)
-from xic_extractor.alignment.projection._completion_receipt import (
-    retained_owner_digest,
 )
 from xic_extractor.alignment.projection.untarget.pre_cell import (
     GroupCellSubject,

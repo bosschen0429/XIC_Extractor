@@ -330,6 +330,36 @@ def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> 
 
 @pytest.mark.parametrize(
     "variant",
+    ["repair_receipt", "final_application", "repair_epoch_type"],
+)
+def test_result_rejects_substitution_inside_the_scientific_completion_receipt(
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    scientific_core, projection = _target_completion(tmp_path / variant)
+    receipt = cast(Any, scientific_core).final_cross_sample_receipt
+    if variant == "repair_receipt":
+        object.__setattr__(receipt, "repair_receipt", copy(receipt.repair_receipt))
+    elif variant == "final_application":
+        object.__setattr__(
+            receipt,
+            "final_application",
+            copy(receipt.final_application),
+        )
+    else:
+        object.__setattr__(receipt, "repair_epoch", True)
+
+    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
+        finalize_alignment_result(
+            TargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=projection,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "variant",
     [
         "target_request",
         "target_definition",
