@@ -253,6 +253,44 @@ def test_untarget_result_rejects_a_substituted_completed_route(
         )
 
 
+def test_target_result_rejects_a_substituted_nested_decision_owner(
+    tmp_path: Path,
+) -> None:
+    scientific_core, projection = _target_completion(tmp_path / "target")
+    object.__setattr__(
+        projection.decisions[0],
+        "basis_bytes",
+        b"substituted-owner-basis",
+    )
+
+    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
+        finalize_alignment_result(
+            TargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=projection,
+            )
+        )
+
+
+def test_untarget_result_rejects_a_partial_pre_cell_owner_population(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scientific_core, projection = _untarget_completion(
+        tmp_path / "untarget",
+        monkeypatch,
+    )
+    object.__setattr__(projection.pre_cell_projection, "cell_subjects", ())
+
+    with pytest.raises(ApplicationResultContractError, match="receipt|partial"):
+        finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=projection,
+            )
+        )
+
+
 def test_mixed_target_and_untarget_variants_fail_before_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
+from hashlib import sha256
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_decision import (
@@ -227,8 +228,11 @@ def _target_completion_state(
     projection: TargetPostCellProjection,
 ) -> tuple[object, ...]:
     return (
-        id(projection.pre_cell_projection),
+        _target_pre_cell_completion_state(projection.pre_cell_projection),
         id(projection.decisions),
+        tuple(
+            _decision_completion_state(decision) for decision in projection.decisions
+        ),
         projection.counted_detection_count,
         projection.no_write_count,
         id(projection.review_queue_references),
@@ -243,6 +247,50 @@ def _target_completion_state(
             for reference in projection.review_queue_references
         ),
     )
+
+
+def _target_pre_cell_completion_state(
+    projection: TargetPreCellProjection,
+) -> tuple[object, ...]:
+    return (
+        id(projection),
+        id(projection.scope),
+        _retained_owner_digest(projection.scope),
+        id(projection.row_binding),
+        _retained_owner_digest(projection.row_binding),
+        id(projection.cell_subjects),
+        tuple(
+            (
+                id(subject),
+                id(subject.target),
+                id(subject.processing_request),
+                id(subject.canonical_sample),
+                id(subject.row_binding),
+                id(subject.terminal_subject),
+                _retained_owner_digest(subject.terminal_subject),
+            )
+            for subject in projection.cell_subjects
+        ),
+    )
+
+
+def _decision_completion_state(
+    decision: ProductionCellDecision,
+) -> tuple[object, ...]:
+    return (
+        id(decision),
+        decision.decision_id,
+        id(decision.subject),
+        id(decision.evidence),
+        _retained_owner_digest(decision.evidence),
+        id(decision.payload),
+        _retained_owner_digest(decision.payload),
+        decision.basis_bytes,
+    )
+
+
+def _retained_owner_digest(value: object) -> bytes:
+    return sha256(repr(value).encode("utf-8")).digest()
 
 
 def _validate_pre_cell_identity_boundary(
