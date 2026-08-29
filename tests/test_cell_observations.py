@@ -824,6 +824,79 @@ def test_composer_retains_exact_repaired_receipt_observation_and_integration(
     assert cell.integrations == (observation.facts.integration,)  # type: ignore[union-attr]
 
 
+def test_composer_rejects_repair_not_authorized_by_final_receipt(
+    tmp_path: Path,
+) -> None:
+    fixture, spine, handoff = _owner_handoff(tmp_path)
+    group = validate_cross_sample_peak_group_identity(
+        spine.group,
+        require_canonical=True,
+    )
+    sample = fixture.sample("s1")
+    acquisition = fixture.request.acquisition_sources[0]
+    built = build_owner_backfill_result(
+        (_runtime_feature(group),),
+        sample_order=("s1",),
+        raw_sources={
+            "s1": _CanonicalOwnerBoundSource(acquisition, empty=False),
+        },
+        expected_acquisition_sources={"s1": acquisition},
+        alignment_config=AlignmentConfig(max_rt_sec=60.0),
+        peak_config=replace(_peak_config(), resolver_min_scans=3),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    observation = built.peak_fact_observations[0]
+    subject = mint_observation_repair_subject(
+        request_identity=observation.request_identity,
+        logical_request=observation.logical_request,
+        predecessor_group=group,
+        member_subject=next(
+            member
+            for member in group.member_subjects
+            if member.canonical_sample_identity_id
+            == sample.identity.sample_identity_id
+        ),
+        sample_identity=sample,
+        successor_application=handoff.final_receipt.post_mt0_application,
+    )
+    stale_repair = close_observation_repair(
+        subject,
+        OwnerBackfillSampleResult(
+            sample_index=0,
+            sample_stem="s1",
+            cells=built.cells,
+            peak_fact_observations=(observation,),
+        ),
+    )
+    replacement = _source_cell(
+        fixture,
+        sample,
+        spine,
+        _not_evaluated_assessment(
+            fixture,
+            "s1",
+            suffix="stale-repair-trigger",
+        ),
+    )
+    predecessors = tuple(
+        replacement
+        if cell.content.canonical_sample_identity_id
+        == sample.identity.sample_identity_id
+        else cell
+        for cell in spine.cells
+    )
+
+    assert handoff.final_receipt.repair_receipt.outcome == "no_repair"
+    assert stale_repair.outcome == "repaired"
+    with pytest.raises(CellObservationContractError, match="exact final repair"):
+        compose_final_group_cell_observation_population(
+            handoff=handoff,
+            predecessor_cells=predecessors,
+            repair_receipts=(stale_repair,),
+            repaired_observations=(observation,),
+        )
+
+
 def test_composer_rejects_crossed_repaired_member_hypothesis_and_integration(
     tmp_path: Path,
 ) -> None:

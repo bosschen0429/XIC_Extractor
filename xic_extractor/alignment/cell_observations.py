@@ -1716,12 +1716,16 @@ def _validate_handoff_repair_closure(
     """Require an applicable final receipt's complete repair provenance.
 
     CrossSample's final receipt carries the one repair transaction that closed
-    the handoff.  A repaired transaction must therefore arrive at this owner
-    as the exact receipt object plus its one owner-live observation; a caller
-    cannot omit it or replace it with an equal-looking receipt.
+    the handoff.  Supplied repair evidence must therefore belong to that exact
+    receipt object; a caller cannot add a stale transaction, omit an applicable
+    repaired receipt, or replace it with an equal-looking receipt.
     """
 
     final_receipt = handoff.final_receipt.repair_receipt
+    if any(receipt is not final_receipt for receipt in repair_receipts):
+        raise CellObservationContractError(
+            "repair evidence does not match the exact final repair receipt"
+        )
     subject = final_receipt.subject
     sample_identity_id = subject.sample_identity.identity.sample_identity_id
     applicable_positions = tuple(
