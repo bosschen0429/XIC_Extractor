@@ -26,6 +26,11 @@ from tests.test_target_pre_cell_projection import _finalized_case
 from tests.test_untargeted_pre_cell_projection import (
     _untarget_projection_inputs,
 )
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    build_owner_backfill_evaluation_coverage,
+    mint_owner_backfill_attempt_terminal,
+    mint_owner_backfill_selection_subject_id,
+)
 from xic_extractor.alignment.cell_decision import (
     CellDecisionContractError,
     NoWriteCellDecision,
@@ -63,12 +68,19 @@ from xic_extractor.extraction.peak_hypothesis_adapter import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
 )
+from xic_extractor.peak_detection.evidence_facts import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
     PeakResult,
 )
 from xic_extractor.peak_detection.observations import mint_peak_observation_ref
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
@@ -373,6 +385,118 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     ).variant == "searched_no_observation"
 
 
+def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
+    tmp_path: Path,
+) -> None:
+    _fixture, spine, fallback_handoff = _owner_handoff(tmp_path)
+    fallback_cells = compose_final_group_cell_observation_population(
+        handoff=fallback_handoff,
+        predecessor_cells=spine.cells,
+    )
+    fallback_reject = next(
+        item
+        for item in fallback_cells
+        if item.evidence_state == "rejected_observation"
+    )
+    fallback_subject = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(fallback_reject.group),
+        fallback_reject.canonical_sample,
+        None,
+    )
+    assert decide_production_cell(
+        fallback_subject,
+        group_handoff=fallback_handoff,
+        group_observations=fallback_cells,
+    ).variant == "rejected_observation"
+
+    evaluated_handoff = _with_evaluated_coverage_terminal(
+        fallback_handoff,
+        sample_stem=fallback_reject.canonical_sample.lookup_token,
+    )
+    evaluated_cells = compose_final_group_cell_observation_population(
+        handoff=evaluated_handoff,
+        predecessor_cells=spine.cells,
+    )
+    evaluated_reject = next(
+        item
+        for item in evaluated_cells
+        if item.canonical_sample is fallback_reject.canonical_sample
+    )
+    evaluated_subject = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(evaluated_reject.group),
+        evaluated_reject.canonical_sample,
+        None,
+    )
+    assert decide_production_cell(
+        evaluated_subject,
+        group_handoff=evaluated_handoff,
+        group_observations=evaluated_cells,
+    ).variant == "rejected_observation"
+
+
+def test_group_crossed_terminal_and_candidate_combinations_fail_before_decision(
+    tmp_path: Path,
+) -> None:
+    fixture, spine, handoff = _owner_handoff(tmp_path)
+    hold_source = next(
+        item
+        for item in spine.cells
+        if item.content.canonical_sample_identity_id
+        == fixture.sample("s4").identity.sample_identity_id
+    )
+    foreign_observation = next(
+        item.peak_observation
+        for item in spine.cells
+        if item.peak_observation is not None
+        and item.content.canonical_sample_identity_id
+        != hold_source.content.canonical_sample_identity_id
+    )
+    with pytest.raises(CellObservationContractError, match="candidate universe"):
+        mint_cell_observation_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("s4"),
+            target=fixture.target,
+            group_context=hold_source.group_context,
+            method_assessment=hold_source.method_assessment,
+            peak_observation=foreign_observation,
+        )
+
+    cells = compose_final_group_cell_observation_population(
+        handoff=handoff,
+        predecessor_cells=spine.cells,
+    )
+    target = next(item for item in cells if item.coverage_terminals)
+    foreign_terminal = next(
+        terminal
+        for item in cells
+        if item.canonical_sample is not target.canonical_sample
+        for terminal in item.coverage_terminals
+    )
+    original_terminals = target.coverage_terminals
+    object.__setattr__(target, "coverage_terminals", (foreign_terminal,))
+    member = next(
+        (
+            item
+            for item in target.group.member_subjects
+            if item.canonical_sample_identity_id
+            == target.canonical_sample_identity_id
+        ),
+        None,
+    )
+    subject = GroupCellSubject(
+        untarget_owner._mint_untarget_row_key(target.group),
+        target.canonical_sample,
+        member,
+    )
+    with pytest.raises(CellDecisionContractError, match="position|owner-composed"):
+        decide_production_cell(
+            subject,
+            group_handoff=handoff,
+            group_observations=cells,
+        )
+    object.__setattr__(target, "coverage_terminals", original_terminals)
+
+
 def test_group_split_nonmember_maps_exact_not_searched_closure(
     tmp_path: Path,
 ) -> None:
@@ -619,6 +743,66 @@ def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
     )
     with pytest.raises(CellDecisionContractError, match="basis"):
         validate_production_cell_decision(decision)
+
+
+def _with_evaluated_coverage_terminal(
+    handoff: Any,
+    *,
+    sample_stem: str,
+) -> Any:
+    original = next(
+        item
+        for item in handoff.coverage.terminals
+        if item.logical_request.item.sample_stem == sample_stem
+    )
+    selection_subject_id = mint_owner_backfill_selection_subject_id(
+        request_identity=original.request_identity,
+        group_hypothesis_id=original.logical_request.group_hypothesis_id,
+        sample_stem=sample_stem,
+        request=original.logical_request.item.request,
+        candidate_index=original.candidate_index,
+        candidate_phase="primary_query",
+    )
+    rt = tuple(7.5 + index / 30.0 for index in range(31))
+    intensity = tuple(
+        500.0 if index == 15 else 50.0 if index in {14, 16} else 0.0
+        for index in range(31)
+    )
+    prepared = prepare_physical_signal(
+        rt,
+        intensity,
+        profile=SignalProcessingProfile(window_points=3),
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=selection_subject_id,
+        query_rt_min=8.0,
+        request_context_rt_start_min=7.9,
+        request_context_rt_end_min=8.1,
+    )
+    evaluated = mint_owner_backfill_attempt_terminal(
+        position_id=original.position_id,
+        logical_request=original.logical_request,
+        request_identity=original.request_identity,
+        candidate_phase="primary_query",
+        candidate_index=original.candidate_index,
+        trace_evaluated=True,
+        selected_for_output=True,
+        terminal_reason=None,
+        physical_evaluation=evaluation,
+    )
+    terminals = tuple(
+        evaluated if item is original else item
+        for item in handoff.coverage.terminals
+    )
+    coverage = build_owner_backfill_evaluation_coverage(
+        handoff.coverage.epoch,
+        terminals,
+    )
+    return build_cross_sample_association_lineage_handoff(
+        coverage=coverage,
+        final_receipt=handoff.final_receipt,
+    )
 
 
 def _numeric_peak(
