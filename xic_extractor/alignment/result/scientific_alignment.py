@@ -9,6 +9,17 @@ from typing import Literal, TypeAlias
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairReceipt,
 )
+from xic_extractor.alignment.cell_observations import (
+    CellObservationContractError,
+    CellObservationRef,
+    FinalGroupCellObservation,
+    compose_final_group_cell_observation_population,
+    validate_final_group_cell_observation_population,
+)
+from xic_extractor.alignment.cross_sample.association import (
+    CrossSampleAssociationLineageHandoff,
+    validate_cross_sample_association_lineage_handoff,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleLineageEdge,
@@ -17,6 +28,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
     CrossSampleProposalOutcome,
+)
+from xic_extractor.alignment.owner_backfill import (
+    OwnerBackfillPeakFactObservation,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -93,6 +107,8 @@ class FinalizedScientificAlignment:
     processing_request: ProcessingRequestIdentity
     canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     terminal_subjects: tuple[TerminalSearchObservation, ...]
+    cell_observation_handoff: CrossSampleAssociationLineageHandoff
+    cell_observations: tuple[FinalGroupCellObservation, ...]
     final_cross_sample_receipt: CrossSampleFinalReceipt
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
@@ -130,6 +146,10 @@ def finalize_scientific_alignment(
     scope: SearchScope,
     captures: Sequence[SampleLocalCapture],
     final_cross_sample_receipt: CrossSampleFinalReceipt,
+    cell_observation_handoff: CrossSampleAssociationLineageHandoff,
+    predecessor_cell_observations: Sequence[CellObservationRef],
+    repair_receipts: Sequence[ObservationRepairReceipt] = (),
+    repaired_observations: Sequence[OwnerBackfillPeakFactObservation] = (),
 ) -> FinalizedScientificAlignment:
     """Validate one complete capture population and seal its shared core."""
 
@@ -163,11 +183,28 @@ def finalize_scientific_alignment(
             key=lambda sample: sample.identity.sample_identity_id,
         )
     )
+    _validate_cell_observation_handoff(
+        handoff=cell_observation_handoff,
+        final_cross_sample_receipt=final_cross_sample_receipt,
+        canonical_samples=canonical_samples,
+        processing_request_id=scope.request.processing_request_id,
+    )
+    try:
+        canonical_cells = compose_final_group_cell_observation_population(
+            handoff=cell_observation_handoff,
+            predecessor_cells=predecessor_cell_observations,
+            repair_receipts=repair_receipts,
+            repaired_observations=repaired_observations,
+        )
+    except CellObservationContractError as exc:
+        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     result = FinalizedScientificAlignment(
         scope=scope,
         processing_request=scope.request,
         canonical_samples=canonical_samples,
         terminal_subjects=terminal_subjects,
+        cell_observation_handoff=cell_observation_handoff,
+        cell_observations=canonical_cells,
         final_cross_sample_receipt=final_cross_sample_receipt,
         _mint_token=_FINALIZER_MINT_TOKEN,
     )
@@ -260,6 +297,23 @@ def _validate_finalized_alignment(result: FinalizedScientificAlignment) -> None:
             "terminal subjects are not canonical-sorted"
         )
     _validate_terminal_population(result.scope, result.terminal_subjects)
+    _validate_cell_observation_handoff(
+        handoff=result.cell_observation_handoff,
+        final_cross_sample_receipt=result.final_cross_sample_receipt,
+        canonical_samples=result.canonical_samples,
+        processing_request_id=result.processing_request_id,
+    )
+    try:
+        canonical_cells = validate_final_group_cell_observation_population(
+            handoff=result.cell_observation_handoff,
+            cell_observations=result.cell_observations,
+        )
+    except CellObservationContractError as exc:
+        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
+    if result.cell_observations != canonical_cells:
+        raise FinalizedScientificAlignmentContractError(
+            "final cell observations are not canonical-sorted"
+        )
     sample_ids = {
         sample.identity.sample_identity_id for sample in result.canonical_samples
     }
@@ -316,6 +370,41 @@ def _validate_observed_subject(subject: ObservedSearchSubject) -> None:
     ):
         raise FinalizedScientificAlignmentContractError(
             "observed terminal subject crossed its trace-group hypothesis"
+        )
+
+
+def _validate_cell_observation_handoff(
+    *,
+    handoff: CrossSampleAssociationLineageHandoff,
+    final_cross_sample_receipt: CrossSampleFinalReceipt,
+    canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    processing_request_id: str,
+) -> None:
+    try:
+        validate_cross_sample_association_lineage_handoff(handoff)
+    except (TypeError, ValueError) as exc:
+        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
+    if handoff.final_receipt is not final_cross_sample_receipt:
+        raise FinalizedScientificAlignmentContractError(
+            "cell-observation handoff substituted the final CrossSample receipt"
+        )
+    if (
+        handoff.coverage.epoch.processing_owners.request.processing_request_id
+        != processing_request_id
+    ):
+        raise FinalizedScientificAlignmentContractError(
+            "cell-observation handoff crossed the processing request"
+        )
+    handoff_samples = handoff.coverage.epoch.samples
+    handoff_sample_by_id = {
+        sample.identity.sample_identity_id: sample for sample in handoff_samples
+    }
+    if len(handoff_sample_by_id) != len(canonical_samples) or any(
+        handoff_sample_by_id.get(sample.identity.sample_identity_id) is not sample
+        for sample in canonical_samples
+    ):
+        raise FinalizedScientificAlignmentContractError(
+            "cell-observation handoff crossed the canonical sample universe"
         )
 
 
@@ -380,6 +469,7 @@ def _require_finalizer_mint(value: object) -> None:
 
 
 __all__ = (
+    "FinalGroupCellObservation",
     "FinalizedScientificAlignment",
     "FinalizedScientificAlignmentContractError",
     "ObservedSearchSubject",

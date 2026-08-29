@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import copy
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,13 +16,30 @@ from tests.package2_no_raw_fixture import (
     Package2NoRawFixture,
     build_package2_no_raw_fixture,
 )
+from tests.test_cell_observations import (
+    _coverage_for_groups,
+    _receipt_fixture,
+    _support_assessment,
+)
+from tests.test_cross_sample_association_lineage import (
+    _final_receipt as _lineage_final_receipt,
+)
 from tests.test_search_scope_capture import _capture_binding, _peak_config
 from xic_extractor.alignment.backfill import mint_observation_repair_subject
+from xic_extractor.alignment.cell_observations import (
+    compose_final_group_cell_observation_population,
+)
+from xic_extractor.alignment.cid_nl_evidence_spine import (
+    build_cid_nl_reference_spine,
+)
+from xic_extractor.alignment.cross_sample import (
+    build_cross_sample_association_lineage_handoff,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleSuccessorApplication,
-    group_member_subject_from_peak_hypothesis,
     mint_cross_sample_group_identity,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
@@ -130,12 +148,24 @@ def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
 ) -> None:
     fixture, _, result, hypotheses = _finalized_case(
         tmp_path,
-        sample_stems=("sample-a", "sample-b", "sample-c", "sample-d"),
-        observed_stems=("sample-a", "sample-b", "sample-c", "sample-d"),
+        sample_stems=(
+            "sample-a",
+            "sample-b",
+            "sample-c",
+            "sample-d",
+            "sample-e",
+        ),
+        observed_stems=(
+            "sample-a",
+            "sample-b",
+            "sample-c",
+            "sample-d",
+            "sample-e",
+        ),
         group_specs=(
             (("sample-a", "sample-b"), "established"),
             (("sample-c", "sample-d"), "unresolved"),
-            (("sample-a",), "rejected"),
+            (("sample-e",), "rejected"),
         ),
     )
     # Reusing a raw hypothesis ID is insufficient when its owner physical facts differ.
@@ -168,7 +198,7 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
         tmp_path,
         sample_stems=("sample-a", "sample-b"),
         observed_stems=("sample-a",),
-        group_specs=(( ("sample-a",), "provisional"),),
+        group_specs=(( ("sample-a", "sample-b"), "provisional"),),
         reverse_scope_samples=True,
     )
 
@@ -283,19 +313,8 @@ def test_non_owner_and_cross_request_observed_hypotheses_fail_closed(
         subject for subject in result.terminal_subjects
         if isinstance(subject, ObservedSearchSubject)
     )
-    raw = hypotheses["sample-a"]
-    raw = type(raw)(
-        hypothesis_id="raw-hypothesis",
-        trace_group_id=raw.trace_group_id,
-        target_label="",
-        role="",
-        istd_pair="",
-        analysis_mode="",
-        resolver_mode=raw.resolver_mode,
-        integration=raw.integration,
-        evidence=raw.evidence,
-        audit=raw.audit,
-    )
+    raw = copy(hypotheses["sample-a"])
+    object.__setattr__(raw, "hypothesis_id", "raw-hypothesis")
     object.__setattr__(observed, "hypothesis", raw)
     with pytest.raises(TargetProjectionContractError, match="owner group member"):
         project_target_pre_cell(result)
@@ -536,18 +555,90 @@ def _finalized_case(
         target_snapshot=fixture.target.snapshot,
         target=fixture.target,
     )
+    assessments = tuple(
+        _support_assessment(
+            fixture,
+            sample.lookup_token,
+            suffix="target-projection",
+            apex_rt=8.0,
+            scan_number=80 + index,
+            seed_count=2,
+        )
+        for index, sample in enumerate(fixture.samples)
+    )
+    spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=tuple(
+            zip(fixture.samples, assessments, strict=True)
+        ),
+    )
+    predecessor = validate_cross_sample_peak_group_identity(
+        spine.group,
+        require_canonical=True,
+    )
+    member_by_stem = {
+        sample.lookup_token: next(
+            member
+            for member in predecessor.member_subjects
+            if member.canonical_sample_identity_id
+            == sample.identity.sample_identity_id
+        )
+        for sample in fixture.samples
+    }
+    hypothesis_by_stem = {
+        stem: copy(
+            next(
+                hypothesis
+                for hypothesis in spine.support_hypotheses
+                if hypothesis.hypothesis_id == member.subject_id
+            )
+        )
+        for stem, member in member_by_stem.items()
+    }
+    for stem, hypothesis in hypothesis_by_stem.items():
+        object.__setattr__(hypothesis, "trace_group_id", f"trace-{stem}")
+    groups = []
+    for group_stems, disposition in group_specs:
+        members = [member_by_stem[stem] for stem in group_stems]
+        if not members:
+            members.extend(predecessor.member_subjects)
+        groups.append(
+            mint_cross_sample_group_identity(
+                processing_request_id=fixture.request.processing_request_id,
+                member_subjects=tuple(members),
+                disposition=disposition,
+            )
+        )
+    receipt = _lineage_final_receipt(
+        _receipt_fixture(fixture, fixture.samples),
+        predecessors=(predecessor,),
+        successors=tuple(groups),
+    )
+    coverage = _coverage_for_groups(
+        fixture,
+        (predecessor,),
+        fixture.samples,
+        planned=True,
+    )
+    handoff = build_cross_sample_association_lineage_handoff(
+        coverage=coverage,
+        final_receipt=receipt,
+    )
     observed_set = set(observed_stems)
     hypotheses: dict[str, object] = {}
     terminals = []
     for index, sample in enumerate(fixture.samples):
         candidate_id = f"candidate-{sample.lookup_token}"
         if sample.lookup_token in observed_set:
-            hypothesis = _owner_hypothesis(fixture, sample.lookup_token, index / 100)
+            hypothesis = hypothesis_by_stem[sample.lookup_token]
             hypotheses[sample.lookup_token] = hypothesis
             terminals.append(
                 ObservedSearchSubject(
                     candidate_id=candidate_id,
-                    canonical_sample_identity_id=sample.identity.sample_identity_id,
+                    canonical_sample_identity_id=(
+                        sample.identity.sample_identity_id
+                    ),
                     trace_group_id=hypothesis.trace_group_id,
                     hypothesis=hypothesis,
                     _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
@@ -557,55 +648,18 @@ def _finalized_case(
             terminals.append(
                 SearchedNoObservationSubject(
                     candidate_id=candidate_id,
-                    canonical_sample_identity_id=sample.identity.sample_identity_id,
+                    canonical_sample_identity_id=(
+                        sample.identity.sample_identity_id
+                    ),
                     trace_group_id=f"trace-{sample.lookup_token}",
                     detection_status="not_detected",
                     _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
                 )
             )
-
-    used_observed: set[str] = set()
-    groups = []
-    for group_index, (group_stems, disposition) in enumerate(group_specs):
-        members = []
-        for member_index, stem in enumerate(group_stems):
-            if stem in observed_set and stem not in used_observed:
-                hypothesis = hypotheses[stem]
-                used_observed.add(stem)
-            else:
-                hypothesis = _owner_hypothesis(
-                    fixture,
-                    stem,
-                    1.0 + group_index + member_index / 10,
-                )
-            members.append(
-                group_member_subject_from_peak_hypothesis(
-                    sample=fixture.sample(stem),
-                    hypothesis=hypothesis,
-                    processing_request_id=fixture.request.processing_request_id,
-                )
-            )
-        if not members:
-            stem = fixture.samples[0].lookup_token
-            members.append(
-                group_member_subject_from_peak_hypothesis(
-                    sample=fixture.sample(stem),
-                    hypothesis=_owner_hypothesis(
-                        fixture,
-                        stem,
-                        5.0 + group_index,
-                    ),
-                    processing_request_id=fixture.request.processing_request_id,
-                )
-            )
-        groups.append(
-            mint_cross_sample_group_identity(
-                processing_request_id=fixture.request.processing_request_id,
-                member_subjects=tuple(members),
-                disposition=disposition,
-            )
-        )
-    receipt = _final_receipt(fixture, tuple(groups))
+    cell_observations = compose_final_group_cell_observation_population(
+        handoff=handoff,
+        predecessor_cells=spine.cells,
+    )
     result = FinalizedScientificAlignment(
         scope=scope,
         processing_request=scope.request,
@@ -616,15 +670,10 @@ def _finalized_case(
             )
         ),
         terminal_subjects=tuple(
-            sorted(
-                terminals,
-                key=lambda subject: (
-                    subject.canonical_sample_identity_id,
-                    subject.candidate_id,
-                    subject.variant,
-                ),
-            )
+            sorted(terminals, key=finalizer_owner._terminal_sort_key)
         ),
+        cell_observation_handoff=handoff,
+        cell_observations=cell_observations,
         final_cross_sample_receipt=receipt,
         _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
     )

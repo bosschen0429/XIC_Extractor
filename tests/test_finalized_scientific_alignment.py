@@ -3,20 +3,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-import tests.test_alignment_owner_clustering as owner_fixture
-import tests.test_backfill_observation_repair as repair_fixture
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
-from tests.test_cross_sample_reconciliation import _scenario
+import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
+from tests.test_cell_observations import _owner_handoff
 from tests.test_search_scope_capture import _capture_binding, _peak_config
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    reconcile_observation_repair,
-)
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
     FinalizedScientificAlignmentContractError,
@@ -30,7 +25,7 @@ from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
-    UntargetedSearchScope,
+    TargetSearchScope,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -43,12 +38,16 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
 
     result = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
         final_cross_sample_receipt=receipt,
+        cell_observation_handoff=handoff,
+        predecessor_cell_observations=predecessor_cells,
     )
 
     assert isinstance(result, FinalizedScientificAlignment)
@@ -65,6 +64,15 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     assert result.final_application == receipt.final_application
     assert result.lineage == receipt.final_application.lineage
     assert result.repair_receipt is receipt.repair_receipt
+    assert result.cell_observation_handoff is handoff
+    assert len(result.cell_observations) == len(result.final_population) * len(
+        result.canonical_samples
+    )
+    assert all(
+        cell.position_associations
+        and len(cell.position_associations) == len(cell.predecessor_cells)
+        for cell in result.cell_observations
+    )
     assert {subject.variant for subject in result.terminal_subjects} == {
         "observed",
         "searched_no_observation",
@@ -83,17 +91,23 @@ def test_finalizer_is_deterministic_and_results_are_immutable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
 
     forward = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
         final_cross_sample_receipt=receipt,
+        cell_observation_handoff=handoff,
+        predecessor_cell_observations=predecessor_cells,
     )
     reversed_result = finalize_scientific_alignment(
         scope=scope,
         captures=tuple(reversed(captures)),
         final_cross_sample_receipt=receipt,
+        cell_observation_handoff=handoff,
+        predecessor_cell_observations=tuple(reversed(predecessor_cells)),
     )
 
     assert forward == reversed_result
@@ -107,7 +121,9 @@ def test_finalizer_rejects_inexact_terminal_population(
     monkeypatch: pytest.MonkeyPatch,
     case: str,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
     if case == "missing":
         invalid = captures[:-1]
     elif case == "duplicate":
@@ -121,6 +137,29 @@ def test_finalizer_rejects_inexact_terminal_population(
             scope=scope,
             captures=invalid,
             final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells,
+        )
+
+
+def test_finalizer_rejects_incomplete_cell_observation_source_population(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
+
+    with pytest.raises(
+        FinalizedScientificAlignmentContractError,
+        match="incomplete",
+    ):
+        finalize_scientific_alignment(
+            scope=scope,
+            captures=captures,
+            final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells[:-1],
         )
 
 
@@ -128,7 +167,9 @@ def test_finalizer_rejects_inconclusive_capture_as_no_observation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
     binding = scope.capture_bindings[0]
     empty_trace = Trace.from_arrays(
         sample_name=binding.sample_name,
@@ -156,6 +197,8 @@ def test_finalizer_rejects_inconclusive_capture_as_no_observation(
             scope=scope,
             captures=(incomplete, captures[1]),
             final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells,
         )
 
 
@@ -163,7 +206,9 @@ def test_finalizer_rejects_short_window_capture_as_no_observation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
     original = captures[0].trace
     rt = np.linspace(original.rt_min, original.rt_max, 4)
     short_trace = Trace.from_arrays(
@@ -194,6 +239,8 @@ def test_finalizer_rejects_short_window_capture_as_no_observation(
             scope=scope,
             captures=(incomplete, captures[1]),
             final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells,
         )
 
 
@@ -201,7 +248,9 @@ def test_finalizer_rejects_crossed_scope_and_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
     equivalent_but_crossed_scope = replace(scope)
 
     with pytest.raises(
@@ -212,6 +261,8 @@ def test_finalizer_rejects_crossed_scope_and_request(
             scope=equivalent_but_crossed_scope,
             captures=captures,
             final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells,
         )
 
     crossed_inputs = json.loads(scope.request.normalized_scientific_inputs_json)
@@ -235,6 +286,8 @@ def test_finalizer_rejects_crossed_scope_and_request(
             scope=crossed_request_scope,
             captures=(),
             final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells,
         )
 
 
@@ -242,13 +295,15 @@ def test_finalizer_rejects_search_scope_subclasses(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
 
-    class ForgedUntargetedSearchScope(UntargetedSearchScope):
+    class ForgedTargetSearchScope(TargetSearchScope):
         def __post_init__(self) -> None:
             pass
 
-    forged_scope = ForgedUntargetedSearchScope(
+    forged_scope = ForgedTargetSearchScope(
         schema_version=scope.schema_version,
         request=scope.request,
         samples=scope.samples,
@@ -256,6 +311,8 @@ def test_finalizer_rejects_search_scope_subclasses(
         evidence_providers=scope.evidence_providers,
         declared_candidate_ids=scope.declared_candidate_ids,
         capture_bindings=scope.capture_bindings,
+        target_snapshot=scope.target_snapshot,
+        target=scope.target,
     )
     forged_captures = tuple(
         capture_peak_hypotheses(
@@ -274,6 +331,8 @@ def test_finalizer_rejects_search_scope_subclasses(
             scope=forged_scope,
             captures=forged_captures,
             final_cross_sample_receipt=receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=predecessor_cells,
         )
 
 
@@ -281,11 +340,15 @@ def test_finalized_values_cannot_be_forged_by_direct_construction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scope, captures, receipt = _finalization_inputs(tmp_path, monkeypatch)
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
     result = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
         final_cross_sample_receipt=receipt,
+        cell_observation_handoff=handoff,
+        predecessor_cell_observations=predecessor_cells,
     )
     observed = next(
         subject
@@ -314,8 +377,46 @@ def test_finalized_values_cannot_be_forged_by_direct_construction(
             processing_request=result.processing_request,
             canonical_samples=result.canonical_samples,
             terminal_subjects=result.terminal_subjects,
+            cell_observation_handoff=result.cell_observation_handoff,
+            cell_observations=result.cell_observations,
             final_cross_sample_receipt=result.final_cross_sample_receipt,
             _mint_token=object(),
+        )
+
+
+def test_finalized_result_revalidates_nested_cell_population(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
+        tmp_path, monkeypatch
+    )
+    result = finalize_scientific_alignment(
+        scope=scope,
+        captures=captures,
+        final_cross_sample_receipt=receipt,
+        cell_observation_handoff=handoff,
+        predecessor_cell_observations=predecessor_cells,
+    )
+    original = result.cell_observations[0]
+    forged = object.__new__(type(original))
+    for item in fields(original):
+        object.__setattr__(forged, item.name, getattr(original, item.name))
+    object.__setattr__(forged, "basis_bytes", b"crossed-cell-basis")
+
+    with pytest.raises(
+        FinalizedScientificAlignmentContractError,
+        match="exact owner-composed content",
+    ):
+        FinalizedScientificAlignment(
+            scope=result.scope,
+            processing_request=result.processing_request,
+            canonical_samples=result.canonical_samples,
+            terminal_subjects=result.terminal_subjects,
+            cell_observation_handoff=result.cell_observation_handoff,
+            cell_observations=(forged, *result.cell_observations[1:]),
+            final_cross_sample_receipt=result.final_cross_sample_receipt,
+            _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
         )
 
 
@@ -323,39 +424,23 @@ def _finalization_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    del monkeypatch
     tmp_path.mkdir(parents=True, exist_ok=True)
-    scope_path = tmp_path / "scope"
-    scope_path.mkdir()
-    fixture = build_issue175_no_raw_fixture(
-        scope_path,
-        sample_roles={"sample-b": "qc", "sample-c": "study_sample"},
-    )
+    fixture, spine, handoff = _owner_handoff(tmp_path)
     request = fixture.owners.request
-    monkeypatch.setattr(
-        owner_fixture,
-        "_TEST_PROCESSING_REQUEST_ID",
-        request.processing_request_id,
-    )
-    monkeypatch.setattr(
-        repair_fixture,
-        "mint_sample_metadata_snapshot",
-        lambda *_args, **_kwargs: fixture.samples[0].snapshot,
-    )
-    _, context, repair = _scenario(
-        tmp_path / "reconciliation",
-        multi_member=True,
-    )
-    receipt = reconcile_observation_repair(
-        context=context,
-        repair_receipt=repair,
-    )
+    receipt = handoff.final_receipt
+    method_subject = spine.cells[0].group_context.method_subject
 
     rt = np.linspace(7.7, 8.3, 61)
-    intensities = (
-        100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2),
-        np.zeros_like(rt),
+    intensities = tuple(
+        100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
+        if index == 0
+        else np.zeros_like(rt)
+        for index, _sample in enumerate(fixture.samples)
     )
-    candidate_ids = ("candidate-b", "candidate-c")
+    candidate_ids = tuple(
+        f"candidate-{sample.lookup_token}" for sample in fixture.samples
+    )
     bindings = []
     traces = []
     for candidate_id, sample, intensity in zip(
@@ -373,8 +458,8 @@ def _finalization_inputs(
                 candidate_id=candidate_id,
                 sample=sample,
                 acquisition_source_id=source.acquisition_source_id,
-                mz=fixture.method_subject.precursor_mz,
-                ppm_tol=fixture.method_subject.precursor_tolerance_ppm,
+                mz=method_subject.precursor_mz,
+                ppm_tol=method_subject.precursor_tolerance_ppm,
                 rt_min=float(rt[0]),
                 rt_max=float(rt[-1]),
             )
@@ -382,17 +467,17 @@ def _finalization_inputs(
         traces.append(
             Trace.from_arrays(
                 sample_name=sample.metadata.sample_name,
-                mz=fixture.method_subject.precursor_mz,
+                mz=method_subject.precursor_mz,
                 rt=rt,
                 intensity=intensity,
                 rt_min=float(rt[0]),
                 rt_max=float(rt[-1]),
-                ppm_tol=fixture.method_subject.precursor_tolerance_ppm,
+                ppm_tol=method_subject.precursor_tolerance_ppm,
                 source="finalized_scientific_alignment_test",
                 acquisition_source_id=source.acquisition_source_id,
             )
         )
-    scope = UntargetedSearchScope(
+    scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         request=request,
         samples=fixture.samples,
@@ -403,11 +488,13 @@ def _finalization_inputs(
         evidence_providers=(
             EvidenceProviderBinding(
                 provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=fixture.method_subject.method_subject_id,
+                method_subject_id=method_subject.method_subject_id,
             ),
         ),
         declared_candidate_ids=candidate_ids,
         capture_bindings=tuple(bindings),
+        target_snapshot=fixture.target.snapshot,
+        target=fixture.target,
     )
     captures = tuple(
         capture_peak_hypotheses(
@@ -418,5 +505,5 @@ def _finalization_inputs(
         for candidate_id, trace in zip(candidate_ids, traces, strict=True)
     )
     assert captures[0].selected_hypothesis is not None
-    assert captures[1].selected_hypothesis is None
-    return scope, captures, receipt
+    assert all(capture.selected_hypothesis is None for capture in captures[1:])
+    return scope, captures, receipt, handoff, spine.cells
