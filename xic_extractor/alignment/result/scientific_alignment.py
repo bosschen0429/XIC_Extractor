@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
+from xic_extractor.alignment._completion_receipt import retained_owner_digest
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairReceipt,
 )
@@ -110,11 +111,13 @@ class FinalizedScientificAlignment:
     cell_observation_handoff: CrossSampleAssociationLineageHandoff
     cell_observations: tuple[FinalGroupCellObservation, ...]
     final_cross_sample_receipt: CrossSampleFinalReceipt
+    _completion_seal: bytes = field(init=False, repr=False, compare=False)
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
         _require_finalizer_mint(_mint_token)
         _validate_finalized_alignment(self)
+        object.__setattr__(self, "_completion_seal", retained_owner_digest(self))
 
     @property
     def processing_request_id(self) -> str:
@@ -209,6 +212,24 @@ def finalize_scientific_alignment(
         _mint_token=_FINALIZER_MINT_TOKEN,
     )
     return result
+
+
+def _validate_finalized_scientific_alignment_completion_receipt(
+    result: FinalizedScientificAlignment,
+) -> None:
+    """Validate one retained scientific-core completion receipt."""
+
+    if type(result) is not FinalizedScientificAlignment:
+        raise FinalizedScientificAlignmentContractError(
+            "scientific-core validation requires an exact finalized alignment"
+        )
+    if (
+        type(result._completion_seal) is not bytes
+        or result._completion_seal != retained_owner_digest(result)
+    ):
+        raise FinalizedScientificAlignmentContractError(
+            "scientific core completion receipt was substituted or partial"
+        )
 
 
 def _terminal_subject(

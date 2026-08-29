@@ -14,7 +14,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
 )
-from xic_extractor.alignment.result import (
+from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
     SearchedNoObservationSubject,
@@ -97,6 +97,7 @@ class TargetCellSubject:
 class TargetPreCellProjection:
     """Closed Target pre-cell handoff consumed by the cell-decision owner."""
 
+    finalized_alignment: FinalizedScientificAlignment
     scope: TargetSearchScope
     row_binding: TargetRowBinding
     cell_subjects: tuple[TargetCellSubject, ...]
@@ -104,9 +105,17 @@ class TargetPreCellProjection:
 
     def __post_init__(self, _mint_token: object) -> None:
         _require_projection_mint(_mint_token)
+        if type(self.finalized_alignment) is not FinalizedScientificAlignment:
+            raise TargetProjectionContractError(
+                "Target pre-cell projection requires an exact finalized alignment"
+            )
         if type(self.scope) is not TargetSearchScope:
             raise TargetProjectionContractError(
                 "Target pre-cell projection requires an exact TargetSearchScope"
+            )
+        if self.scope is not self.finalized_alignment.scope:
+            raise TargetProjectionContractError(
+                "Target pre-cell projection crossed its finalized alignment"
             )
         if type(self.row_binding) is not TargetRowBinding:
             raise TargetProjectionContractError(
@@ -199,6 +208,7 @@ def project_target_pre_cell(
         for sample in samples
     )
     return TargetPreCellProjection(
+        finalized_alignment=finalized_alignment,
         scope=scope,
         row_binding=row_binding,
         cell_subjects=subjects,

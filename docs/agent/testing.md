@@ -54,6 +54,19 @@ RED。
 
 答不出來就不新增測試。
 
+## Test Shard Admission Gate
+
+`tools.testing.test_shards` is the single owner of ordinary-CI test discovery,
+assignment, and exclusions. A commit that stages a Python test addition or
+rename, or changes the registry itself, runs its `--check` entry through the
+repository pre-commit configuration. The hook passes no caller-selected paths:
+the owner must enumerate the complete test universe and fail with every
+unassigned path before the commit succeeds.
+
+Do not copy shard globs into another hook, checklist, or agent rule. Add the
+test to the existing owner and prove the same hook rejects an unassigned probe.
+Hosted CI remains the independent backstop, not the first intended detector.
+
 ## Ledger Snapshot Lane
 
 Tests marked `ledger_snapshot` pin recorded values under

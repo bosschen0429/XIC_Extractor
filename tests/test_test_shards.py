@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pre_commit.clientlib import load_config
 
 from tools.testing import test_shards
 from tools.testing.test_shards import (
@@ -66,6 +67,42 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
 
 def test_test_shards_cover_every_test_file() -> None:
     assert check_coverage() == ()
+
+
+def test_test_shard_coverage_hook_routes_staged_tests_to_owner(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_config(".pre-commit-config.yaml")
+    hooks = {
+        hook["id"]: hook
+        for repository in config["repos"]
+        for hook in repository["hooks"]
+    }
+
+    hook = hooks["test-shard-coverage"]
+    assert hook["entry"] == (
+        "uv run --cache-dir .uv-cache python -m "
+        "tools.testing.test_shards --check"
+    )
+    assert hook["files"] == r"^(tests/.*\.py|tools/testing/test_shards\.py)$"
+    assert hook["pass_filenames"] is False
+
+    monkeypatch.chdir(tmp_path)
+    test_root = Path("tests")
+    test_root.mkdir()
+    assigned = test_root / "test_finalized_application_result.py"
+    assigned.write_text("def test_assigned(): pass\n", encoding="utf-8")
+
+    assert test_shards.main(["--check"]) == 0
+    capsys.readouterr()
+
+    probe = test_root / "test_unassigned_shard_probe.py"
+    probe.write_text("def test_probe(): pass\n", encoding="utf-8")
+
+    assert test_shards.main(["--check"]) == 1
+    assert probe.as_posix() in capsys.readouterr().err
 
 
 def test_test_shards_do_not_run_empty_primary_shards() -> None:

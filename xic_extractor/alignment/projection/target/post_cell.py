@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias, cast
 
+from xic_extractor.alignment._completion_receipt import (
+    retained_owner_digest,
+)
 from xic_extractor.alignment.cell_decision import (
     CellDecisionContractError,
     ProductionCellDecision,
@@ -60,6 +63,11 @@ class TargetPostCellProjection:
     counted_detection_count: int
     no_write_count: int
     review_queue_references: tuple[TargetReviewQueueReference, ...]
+    _completion_seal: tuple[object, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -68,6 +76,11 @@ class TargetPostCellProjection:
                 "Target post-cell projection must be minted by Target projection"
             )
         validate_target_post_cell_projection(self)
+        object.__setattr__(
+            self,
+            "_completion_seal",
+            _target_completion_state(self),
+        )
 
     @property
     def row_binding(self) -> TargetRowBinding:
@@ -187,6 +200,49 @@ def validate_target_post_cell_projection(
             raise TargetProjectionContractError(
                 "Target Review Queue reference was crossed or substituted"
             )
+
+
+def validate_target_post_cell_completion_receipt(
+    projection: TargetPostCellProjection,
+) -> None:
+    """Verify retained completion fields without reopening decision policy."""
+
+    if type(projection) is not TargetPostCellProjection:
+        raise TargetProjectionContractError(
+            "completed Target receipt requires an exact TargetPostCellProjection"
+        )
+    try:
+        current_state = _target_completion_state(projection)
+    except (AttributeError, TypeError) as exc:
+        raise TargetProjectionContractError(
+            "completed Target projection receipt was substituted or partial"
+        ) from exc
+    if (
+        type(projection._completion_seal) is not tuple
+        or projection._completion_seal != current_state
+    ):
+        raise TargetProjectionContractError(
+            "completed Target projection receipt was substituted or partial"
+        )
+
+
+def _target_completion_state(
+    projection: TargetPostCellProjection,
+) -> tuple[object, ...]:
+    return (
+        id(projection),
+        retained_owner_digest(
+            projection.pre_cell_projection,
+            identity_only=(projection.pre_cell_projection.finalized_alignment,),
+        ),
+        retained_owner_digest(projection.decisions),
+        (
+            type(projection.counted_detection_count),
+            projection.counted_detection_count,
+        ),
+        (type(projection.no_write_count), projection.no_write_count),
+        retained_owner_digest(projection.review_queue_references),
+    )
 
 
 def _validate_pre_cell_identity_boundary(
