@@ -11,7 +11,6 @@ import pytest
 
 from tests.test_target_pre_cell_projection import _finalized_case
 from tests.test_untargeted_post_cell_projection import _completed_projection
-from xic_extractor.alignment import cell_observations as cell_observations_owner
 from xic_extractor.alignment.cell_decision import decide_target_cell_population
 from xic_extractor.alignment.projection.target import (
     TargetPostCellProjection,
@@ -28,6 +27,9 @@ from xic_extractor.alignment.result import (
     TargetApplicationResultRequest,
     UntargetApplicationResultRequest,
     finalize_alignment_result,
+)
+from xic_extractor.alignment.result import (
+    scientific_alignment as scientific_alignment_owner,
 )
 
 
@@ -126,19 +128,19 @@ def test_target_result_consumes_decisions_without_reopening_their_owner(
     assert result.completed_projection is projection
 
 
-def test_result_consumes_scientific_core_without_reopening_its_population_owner(
+def test_result_consumes_scientific_core_without_reopening_its_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scientific_core, projection = _target_completion(tmp_path / "target")
 
-    def reject_recomputation(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("application result reopened the #305 population owner")
+    def reject_revalidation(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("application result reopened the #305 scientific owner")
 
     monkeypatch.setattr(
-        cell_observations_owner,
-        "compose_final_group_cell_observation_population",
-        reject_recomputation,
+        scientific_alignment_owner,
+        "_validate_finalized_alignment",
+        reject_revalidation,
     )
 
     result = finalize_alignment_result(
