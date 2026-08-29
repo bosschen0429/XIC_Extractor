@@ -211,6 +211,18 @@ def finalize_scientific_alignment(
     return result
 
 
+def validate_finalized_scientific_alignment(
+    result: FinalizedScientificAlignment,
+) -> None:
+    """Revalidate one retained scientific-core result without recomputation."""
+
+    if type(result) is not FinalizedScientificAlignment:
+        raise FinalizedScientificAlignmentContractError(
+            "scientific-core validation requires an exact finalized alignment"
+        )
+    _validate_finalized_alignment(result)
+
+
 def _terminal_subject(
     scope: SearchScope,
     capture: SampleLocalCapture,
@@ -476,4 +488,5 @@ __all__ = (
     "SearchedNoObservationSubject",
     "TerminalSearchObservation",
     "finalize_scientific_alignment",
+    "validate_finalized_scientific_alignment",
 )

@@ -14,7 +14,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
 )
-from xic_extractor.alignment.result import (
+from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
     SearchedNoObservationSubject,
