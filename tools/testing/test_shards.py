@@ -88,6 +88,7 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
         "docs-config": (
+            "tests/test_agent_planning_contract.py",
             "tests/test_agent_sandbox_doctor.py",
             "tests/test_agent_task_state.py",
             "tests/test_bootstrap_worktree.py",
