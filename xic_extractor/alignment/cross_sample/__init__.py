@@ -10,6 +10,8 @@ from xic_extractor.alignment.cross_sample.association import (
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleRepairAdmissionApplication,
+    CrossSampleRepairAdmissionEdge,
+    CrossSampleRepairedObservation,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleNonmemberRepairResult,
@@ -26,7 +28,9 @@ __all__ = [
     "CrossSampleNonmemberRepairResult",
     "CrossSamplePostRepairModeTrackInput",
     "CrossSampleRepairAdmissionApplication",
+    "CrossSampleRepairAdmissionEdge",
     "CrossSampleRepairDisposition",
+    "CrossSampleRepairedObservation",
     "build_cross_sample_association_lineage_handoff",
     "reconcile_nonmember_observation_repair",
     "validate_cross_sample_association_lineage_handoff",

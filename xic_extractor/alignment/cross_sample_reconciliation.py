@@ -3,7 +3,8 @@
 This module composes sealed CrossSample applications and the proposal-only
 ModeTrack API.  Existing-member repair facts can update one trajectory apex. A
 membership-neutral repair is instead admitted only by CrossSample's
-complete-link classification and one owner-sealed atomic group extension.
+repair-specific physical compatibility classification and one owner-sealed
+atomic group extension.
 Neither path mints a selected value.
 """
 
@@ -25,6 +26,7 @@ from xic_extractor.alignment.backfill.observation_repair import (
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleClassifiedEdge,
     CrossSampleContractError,
     CrossSampleCoupledProposalContext,
     CrossSampleGroupIdentity,
@@ -32,10 +34,13 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodBudget,
     CrossSampleNeighborhoodEdge,
     CrossSampleRepairAdmissionApplication,
+    CrossSampleRepairAdmissionEdge,
+    CrossSampleRepairedObservation,
     CrossSampleSuccessorApplication,
     _apply_repaired_nonmember_admission,
+    _mint_cross_sample_repaired_observation,
     apply_coupled_successor_proposal,
-    classify_cross_sample_initial_neighborhood_edge,
+    classify_cross_sample_repair_admission_edge,
     validate_cross_sample_group_population,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
@@ -59,10 +64,7 @@ from xic_extractor.alignment.owner_backfill import (
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     selected_integration_authority_projection,
 )
-from xic_extractor.alignment.ownership_models import (
-    IdentityEvent,
-    SampleLocalMS1Owner,
-)
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
     canonical_identity_basis_bytes,
@@ -76,7 +78,6 @@ _NONMEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-nonmember-repair.v1:"
 _POST_REPAIR_MODE_TRACK_INPUT_PREFIX = (
     "xic.cross-sample-post-repair-mode-track-input.v1:"
 )
-_REPAIRED_OWNER_PREFIX = "xic.cross-sample-repaired-owner.v1:"
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
 _TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
 _FINAL_RECEIPT_MINT_TOKEN = object()
@@ -122,7 +123,7 @@ class CrossSamplePostRepairModeTrackInput:
     input_id: str
     repair_receipt_id: str
     application: CrossSampleRepairAdmissionApplication
-    repaired_owner: SampleLocalMS1Owner
+    repaired_observation: CrossSampleRepairedObservation
     owners: tuple[SampleLocalMS1Owner, ...]
     trajectory_input: ModeTrackTrajectoryInput
     basis_bytes: bytes
@@ -141,24 +142,24 @@ class CrossSamplePostRepairModeTrackInput:
             raise CrossSampleReconciliationContractError(
                 "post-repair ModeTrack input crossed repair receipt"
             )
-        if (
-            type(self.repaired_owner) is not SampleLocalMS1Owner
-            or type(self.owners) is not tuple
+        if type(self.repaired_observation) is not CrossSampleRepairedObservation:
+            raise CrossSampleReconciliationContractError(
+                "post-repair ModeTrack input requires an exact repaired observation"
+            )
+        if type(self.owners) is not tuple or any(
+            type(owner) is not SampleLocalMS1Owner for owner in self.owners
         ):
             raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input requires exact owners"
+                "post-repair ModeTrack input requires exact identity owners"
             )
         canonical_owners = tuple(sorted(self.owners, key=_owner_sort_key))
-        if self.owners != canonical_owners or not any(
-            owner is self.repaired_owner for owner in self.owners
-        ):
+        if self.owners != canonical_owners:
             raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack owners are not canonical and exact"
+                "post-repair ModeTrack identity owners are not canonical"
             )
-        repaired_member = self.repaired_owner.cross_sample_member_subject
+        repaired_member = self.repaired_observation.member_subject
         if (
-            repaired_member is None
-            or repaired_member.member_subject_id
+            repaired_member.member_subject_id
             != self.application.admitted_member_subject_id
         ):
             raise CrossSampleReconciliationContractError(
@@ -185,7 +186,7 @@ class CrossSamplePostRepairModeTrackInput:
         basis = _post_repair_mode_track_input_basis(
             repair_receipt_id=self.repair_receipt_id,
             application=self.application,
-            repaired_owner=self.repaired_owner,
+            repaired_observation=self.repaired_observation,
             owners=self.owners,
             trajectory_input=self.trajectory_input,
         )
@@ -216,7 +217,7 @@ class CrossSampleNonmemberRepairResult:
     processing_request_id: str
     repair_terminal: ObservationRepairTerminalResult
     disposition: CrossSampleRepairDisposition
-    pairwise_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    pairwise_edges: tuple[CrossSampleRepairAdmissionEdge, ...]
     application: CrossSampleRepairAdmissionApplication | None
     final_population: tuple[CrossSampleGroupIdentity, ...]
     final_owners: tuple[SampleLocalMS1Owner, ...]
@@ -334,7 +335,7 @@ def reconcile_nonmember_observation_repair(
         repair_terminal,
         context=context,
     )
-    observation = _repair_observation_for_receipt(
+    _repair_observation_for_receipt(
         repair_result,
         candidate=candidate,
         receipt=receipt,
@@ -344,20 +345,18 @@ def reconcile_nonmember_observation_repair(
         candidate=candidate,
         evidence=evidence,
     )
-    candidate_owner = _project_repaired_candidate_owner(
+    repaired_observation = _project_repaired_observation(
         candidate=candidate,
         receipt=receipt,
         evidence=evidence,
-        observation=observation,
         candidate_member=candidate_member,
-        predecessor_owners=context.owners,
     )
     candidate_edges = tuple(
         sorted(
             (
                 _classify_candidate_edge(
                     predecessor_owner=owner,
-                    candidate_owner=candidate_owner,
+                    repaired_observation=repaired_observation,
                     config=alignment_config,
                     drift_lookup=drift_lookup,
                 )
@@ -389,12 +388,12 @@ def reconcile_nonmember_observation_repair(
             predecessor=application.predecessor,
             successor=application.successor,
         )
-        final_owners = tuple(
-            sorted((*context.owners, candidate_owner), key=_owner_sort_key)
+        final_owners = context.owners
+        combined_edges: tuple[CrossSampleClassifiedEdge, ...] = (
+            *context.classified_edges,
+            *candidate_edges,
         )
-        classified_edges = tuple(
-            sorted((*context.classified_edges, *candidate_edges), key=_edge_sort_key)
-        )
+        classified_edges = tuple(sorted(combined_edges, key=_edge_sort_key))
         injection_order = _post_repair_injection_order(
             context=context,
             candidate=candidate,
@@ -403,7 +402,7 @@ def reconcile_nonmember_observation_repair(
         try:
             trajectory_input = mint_mode_track_trajectory_input(
                 predecessors=(application.successor,),
-                owners=final_owners,
+                owners=(*final_owners, repaired_observation),
                 classified_edges=classified_edges,
                 # The new group identity invalidates old anchor bindings;
                 # repair success cannot remint method-specific anchor evidence.
@@ -419,7 +418,7 @@ def reconcile_nonmember_observation_repair(
         mode_track_input = _mint_post_repair_mode_track_input(
             repair_receipt_id=receipt.receipt_id,
             application=application,
-            repaired_owner=candidate_owner,
+            repaired_observation=repaired_observation,
             owners=final_owners,
             trajectory_input=trajectory_input,
         )
@@ -597,9 +596,10 @@ class CrossSampleFinalReceipt:
             validate_cross_sample_group_population(population)
         except (TypeError, ValueError) as exc:
             raise CrossSampleReconciliationContractError(str(exc)) from exc
-        if self.mode_track_proposal is None or type(
-            self.mode_track_proposal
-        ) is not AcceptedModeTrackRefinement:
+        if (
+            self.mode_track_proposal is None
+            or type(self.mode_track_proposal) is not AcceptedModeTrackRefinement
+        ):
             expected_successors = post_application.successors
             if (
                 final_application.predecessors != expected_successors
@@ -633,8 +633,7 @@ class CrossSampleFinalReceipt:
                 sorted(
                     tuple(
                         sorted(
-                            member.member_subject_id
-                            for member in group.member_subjects
+                            member.member_subject_id for member in group.member_subjects
                         )
                     )
                     for group in final_application.successors
@@ -779,8 +778,7 @@ def reconcile_observation_repair(
             proposal = propose_mode_track_successor_partition(
                 trajectory_input=post_trajectory,
                 successor_member_subject_ids=tuple(
-                    tuple(group)
-                    for group in mode_track_successor_member_subject_ids
+                    tuple(group) for group in mode_track_successor_member_subject_ids
                 ),
             )
         except (TypeError, ValueError, KeyError) as exc:
@@ -923,26 +921,26 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
             "post-MT0 population crossed processing request"
         )
     members = tuple(
-        member
-        for group in application.successors
-        for member in group.member_subjects
+        member for group in application.successors for member in group.member_subjects
     )
     member_ids = tuple(member.member_subject_id for member in members)
-    if type(context.owners) is not tuple or tuple(
-        sorted(
-            context.owners,
-            key=lambda owner: (_owner_member_id(owner), owner.owner_id),
+    if (
+        type(context.owners) is not tuple
+        or tuple(
+            sorted(
+                context.owners,
+                key=lambda owner: (_owner_member_id(owner), owner.owner_id),
+            )
         )
-    ) != context.owners:
+        != context.owners
+    ):
         raise CrossSampleReconciliationContractError(
             "post-MT0 owners are not canonical-sorted"
         )
     owner_members: dict[str, SampleLocalMS1Owner] = {}
     for owner in context.owners:
         if type(owner) is not SampleLocalMS1Owner:
-            raise CrossSampleReconciliationContractError(
-                "post-MT0 owner must be typed"
-            )
+            raise CrossSampleReconciliationContractError("post-MT0 owner must be typed")
         member_id = _owner_member_id(owner)
         if member_id in owner_members or member_id not in member_ids:
             raise CrossSampleReconciliationContractError(
@@ -959,15 +957,19 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
         raise CrossSampleReconciliationContractError(
             "post-MT0 owners do not close the successor population"
         )
-    if type(context.classified_edges) is not tuple or tuple(
-        sorted(context.classified_edges, key=_edge_sort_key)
-    ) != context.classified_edges:
+    if (
+        type(context.classified_edges) is not tuple
+        or tuple(sorted(context.classified_edges, key=_edge_sort_key))
+        != context.classified_edges
+    ):
         raise CrossSampleReconciliationContractError(
             "post-MT0 edge classifications are not canonical-sorted"
         )
-    if type(context.anchors) is not tuple or tuple(
-        sorted(context.anchors, key=lambda anchor: anchor.anchor_id)
-    ) != context.anchors:
+    if (
+        type(context.anchors) is not tuple
+        or tuple(sorted(context.anchors, key=lambda anchor: anchor.anchor_id))
+        != context.anchors
+    ):
         raise CrossSampleReconciliationContractError(
             "post-MT0 anchors are not canonical-sorted"
         )
@@ -1087,11 +1089,7 @@ def _reconcile_owner_projection(
             "repaired receipt is missing evidence"
         )
     target_id = evidence.member_subject_id
-    matches = [
-        owner
-        for owner in owners
-        if _owner_member_id(owner) == target_id
-    ]
+    matches = [owner for owner in owners if _owner_member_id(owner) == target_id]
     if len(matches) != 1:
         raise CrossSampleReconciliationContractError(
             "repair evidence does not identify one exact owner"
@@ -1369,107 +1367,42 @@ def _mint_repaired_candidate_member(
         raise CrossSampleReconciliationContractError(str(exc)) from exc
 
 
-def _project_repaired_candidate_owner(
+def _project_repaired_observation(
     *,
     candidate: ObservationRepairCandidate,
     receipt: ObservationRepairReceipt,
     evidence: ObservationRepairEvidence,
-    observation: OwnerBackfillPeakFactObservation,
     candidate_member: CrossSampleGroupMemberSubject,
-    predecessor_owners: tuple[SampleLocalMS1Owner, ...],
-) -> SampleLocalMS1Owner:
-    if not predecessor_owners:
-        raise CrossSampleReconciliationContractError(
-            "repair candidate has no predecessor identity owners"
-        )
-    fact_receipt = observation.facts
-    assert fact_receipt is not None
+) -> CrossSampleRepairedObservation:
     feature = candidate.logical_request.item.feature
-    support_events = tuple(owner.primary_identity_event for owner in predecessor_owners)
-    # The repair contributes physical evidence, not a new identity seed.  Use
-    # the complete-link predecessor floor so the projected owner cannot make
-    # any candidate edge stronger than the weakest retained identity support.
-    evidence_score = min(event.evidence_score for event in support_events)
-    seed_event_count = min(event.seed_event_count for event in support_events)
-    raw_source_id = evidence.acquisition_source_id
-    identity_event = IdentityEvent(
-        candidate_id=evidence.fact_content_id,
+    return _mint_cross_sample_repaired_observation(
+        repair_receipt_id=receipt.receipt_id,
+        authorization_id=candidate.authorization_id,
+        candidate_id=candidate.candidate_id,
         sample_stem=evidence.sample_stem,
-        raw_file=raw_source_id,
-        neutral_loss_tag=feature.neutral_loss_tag,
+        acquisition_source_id=evidence.acquisition_source_id,
         precursor_mz=feature.family_center_mz,
-        product_mz=feature.family_product_mz,
-        observed_neutral_loss_da=feature.family_observed_neutral_loss_da,
-        seed_rt=evidence.rt_apex_min,
-        evidence_score=evidence_score,
-        seed_event_count=seed_event_count,
-    )
-    owner_basis = canonical_identity_basis_bytes(
-        {
-            "schema_version": "cross_sample_repaired_owner_v1",
-            "repair_receipt_id": receipt.receipt_id,
-            "authorization_id": candidate.authorization_id,
-            "candidate_id": candidate.candidate_id,
-            "member_subject_id": candidate_member.member_subject_id,
-            "fact_content_id": evidence.fact_content_id,
-            "selected_integration_authority_content_id": (
-                evidence.selected_integration_authority_content_id
-            ),
-            "sample_stem": evidence.sample_stem,
-            "acquisition_source_id": raw_source_id,
-            "neutral_loss_tag": feature.neutral_loss_tag,
-            "precursor_mz": feature.family_center_mz,
-            "product_mz": feature.family_product_mz,
-            "observed_neutral_loss_da": (feature.family_observed_neutral_loss_da),
-            "rt_left_min": evidence.rt_left_min,
-            "rt_apex_min": evidence.rt_apex_min,
-            "rt_right_min": evidence.rt_right_min,
-            "height": evidence.height,
-            "area_counts_seconds": evidence.area_counts_seconds,
-            "identity_support": {
-                "evidence_score": evidence_score,
-                "seed_event_count": seed_event_count,
-            },
-        }
-    )
-    return SampleLocalMS1Owner(
-        owner_id=typed_identity_digest(_REPAIRED_OWNER_PREFIX, owner_basis),
-        sample_stem=evidence.sample_stem,
-        raw_file=raw_source_id,
-        precursor_mz=feature.family_center_mz,
-        owner_apex_rt=evidence.rt_apex_min,
-        owner_peak_start_rt=evidence.rt_left_min,
-        owner_peak_end_rt=evidence.rt_right_min,
-        owner_area=evidence.area_counts_seconds,
-        owner_height=evidence.height,
-        primary_identity_event=identity_event,
-        supporting_events=(),
-        identity_conflict=False,
-        assignment_reason="owner_backfill_repair_candidate",
-        selected_integration=fact_receipt.integration,
-        cross_sample_member_subject=candidate_member,
+        rt_left_min=evidence.rt_left_min,
+        rt_apex_min=evidence.rt_apex_min,
+        rt_right_min=evidence.rt_right_min,
+        height=evidence.height,
+        scan_support_count=evidence.scan_support_count,
+        area_counts_seconds=evidence.area_counts_seconds,
+        member_subject=candidate_member,
     )
 
 
 def _classify_candidate_edge(
     *,
     predecessor_owner: SampleLocalMS1Owner,
-    candidate_owner: SampleLocalMS1Owner,
+    repaired_observation: CrossSampleRepairedObservation,
     config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None,
-) -> CrossSampleNeighborhoodEdge:
-    predecessor_id = _owner_member_id(predecessor_owner)
-    candidate_id = _owner_member_id(candidate_owner)
-    left_owner, right_owner = (
-        (predecessor_owner, candidate_owner)
-        if predecessor_id < candidate_id
-        else (candidate_owner, predecessor_owner)
-    )
+) -> CrossSampleRepairAdmissionEdge:
     try:
-        return classify_cross_sample_initial_neighborhood_edge(
-            left_owner=left_owner,
-            right_owner=right_owner,
-            context="complete_link",
+        return classify_cross_sample_repair_admission_edge(
+            predecessor_owner=predecessor_owner,
+            repaired_observation=repaired_observation,
             config=config,
             drift_lookup=drift_lookup,
         )
@@ -1480,7 +1413,7 @@ def _classify_candidate_edge(
 
 
 def _reduce_repair_admission(
-    edges: tuple[CrossSampleNeighborhoodEdge, ...],
+    edges: tuple[CrossSampleRepairAdmissionEdge, ...],
 ) -> CrossSampleRepairDisposition:
     if not edges:
         raise CrossSampleReconciliationContractError(
@@ -1559,7 +1492,7 @@ def _post_repair_mode_track_input_basis(
     *,
     repair_receipt_id: str,
     application: CrossSampleRepairAdmissionApplication,
-    repaired_owner: SampleLocalMS1Owner,
+    repaired_observation: CrossSampleRepairedObservation,
     owners: tuple[SampleLocalMS1Owner, ...],
     trajectory_input: ModeTrackTrajectoryInput,
 ) -> bytes:
@@ -1568,7 +1501,7 @@ def _post_repair_mode_track_input_basis(
             "schema_version": "cross_sample_post_repair_mode_track_input_v1",
             "repair_receipt_id": repair_receipt_id,
             "application_id": application.application_id,
-            "repaired_owner_id": repaired_owner.owner_id,
+            "repaired_observation_id": repaired_observation.observation_id,
             "admitted_member_subject_id": (application.admitted_member_subject_id),
             "owner_ids": [owner.owner_id for owner in owners],
             "trajectory_input_id": trajectory_input.trajectory_input_id,
@@ -1580,14 +1513,14 @@ def _mint_post_repair_mode_track_input(
     *,
     repair_receipt_id: str,
     application: CrossSampleRepairAdmissionApplication,
-    repaired_owner: SampleLocalMS1Owner,
+    repaired_observation: CrossSampleRepairedObservation,
     owners: tuple[SampleLocalMS1Owner, ...],
     trajectory_input: ModeTrackTrajectoryInput,
 ) -> CrossSamplePostRepairModeTrackInput:
     basis = _post_repair_mode_track_input_basis(
         repair_receipt_id=repair_receipt_id,
         application=application,
-        repaired_owner=repaired_owner,
+        repaired_observation=repaired_observation,
         owners=owners,
         trajectory_input=trajectory_input,
     )
@@ -1598,7 +1531,7 @@ def _mint_post_repair_mode_track_input(
         ),
         repair_receipt_id=repair_receipt_id,
         application=application,
-        repaired_owner=repaired_owner,
+        repaired_observation=repaired_observation,
         owners=owners,
         trajectory_input=trajectory_input,
         basis_bytes=basis,
@@ -1606,15 +1539,18 @@ def _mint_post_repair_mode_track_input(
     )
 
 
-def _repair_edge_basis(edge: CrossSampleNeighborhoodEdge) -> dict[str, object]:
+def _repair_edge_basis(edge: CrossSampleRepairAdmissionEdge) -> dict[str, object]:
     return {
         "left_member_subject_id": edge.left_member_subject_id,
         "right_member_subject_id": edge.right_member_subject_id,
         "disposition": edge.disposition,
-        "initial_context": edge.initial_context,
-        "left_owner_id": edge.left_owner.owner_id,
-        "right_owner_id": edge.right_owner.owner_id,
-        "initial_evidence": asdict(edge.initial_evidence),
+        "predecessor_owner_id": edge.predecessor_owner.owner_id,
+        "repaired_observation_id": edge.repaired_observation.observation_id,
+        "rt_raw_delta_sec": edge.rt_raw_delta_sec,
+        "rt_drift_corrected_delta_sec": edge.rt_drift_corrected_delta_sec,
+        "drift_prior_source": edge.drift_prior_source,
+        "injection_order_gap": edge.injection_order_gap,
+        "reason": edge.reason,
         "config": asdict(edge.config),
     }
 
@@ -1624,7 +1560,7 @@ def _nonmember_repair_result_basis(
     processing_request_id: str,
     repair_terminal: ObservationRepairTerminalResult,
     disposition: CrossSampleRepairDisposition,
-    pairwise_edges: tuple[CrossSampleNeighborhoodEdge, ...],
+    pairwise_edges: tuple[CrossSampleRepairAdmissionEdge, ...],
     application: CrossSampleRepairAdmissionApplication | None,
     final_population: tuple[CrossSampleGroupIdentity, ...],
     final_owners: tuple[SampleLocalMS1Owner, ...],
@@ -1668,7 +1604,7 @@ def _mint_nonmember_repair_result(
     processing_request_id: str,
     repair_terminal: ObservationRepairTerminalResult,
     disposition: CrossSampleRepairDisposition,
-    pairwise_edges: tuple[CrossSampleNeighborhoodEdge, ...],
+    pairwise_edges: tuple[CrossSampleRepairAdmissionEdge, ...],
     application: CrossSampleRepairAdmissionApplication | None,
     final_population: tuple[CrossSampleGroupIdentity, ...],
     final_owners: tuple[SampleLocalMS1Owner, ...],
@@ -1747,6 +1683,12 @@ def _validate_nonmember_repair_result(
         candidate=candidate,
         evidence=evidence,
     )
+    expected_observation = _project_repaired_observation(
+        candidate=candidate,
+        receipt=receipt,
+        evidence=evidence,
+        candidate_member=expected_member,
+    )
     predecessor_member_ids = {
         member.member_subject_id
         for member in candidate.predecessor_group.member_subjects
@@ -1755,11 +1697,11 @@ def _validate_nonmember_repair_result(
     observed_pairs: set[tuple[str, str]] = set()
     for edge in result.pairwise_edges:
         if (
-            type(edge) is not CrossSampleNeighborhoodEdge
-            or edge.initial_context != "complete_link"
+            type(edge) is not CrossSampleRepairAdmissionEdge
+            or edge.repaired_observation != expected_observation
         ):
             raise CrossSampleReconciliationContractError(
-                "nonmember repair edge is not an exact complete-link edge"
+                "nonmember repair edge is not an exact physical-admission edge"
             )
         try:
             edge.__post_init__()
@@ -1837,6 +1779,7 @@ def _validate_nonmember_repair_result(
             )
             or mode_input.application is not application
             or mode_input.repair_receipt_id != receipt.receipt_id
+            or mode_input.repaired_observation.member_subject != expected_member
             or mode_input.trajectory_input.trajectory_input_id != post_id
         ):
             raise CrossSampleReconciliationContractError(
@@ -1846,9 +1789,7 @@ def _validate_nonmember_repair_result(
             raise CrossSampleReconciliationContractError(
                 "admitted repair result did not change trajectory identity"
             )
-        expected_owner_ids = {
-            member.member_subject_id for member in application.successor.member_subjects
-        }
+        expected_owner_ids = predecessor_member_ids
     else:
         if (
             result.application is not None
@@ -1955,9 +1896,7 @@ def _validate_repair_receipt(receipt: ObservationRepairReceipt) -> None:
             "repair receipt epoch is not exactly one"
         )
     if receipt.sample_stem != subject.request_identity.sample_stem:
-        raise CrossSampleReconciliationContractError(
-            "repair receipt crosses sample"
-        )
+        raise CrossSampleReconciliationContractError("repair receipt crosses sample")
     expected_outcome = "repaired" if receipt.evidence is not None else "no_repair"
     if receipt.outcome != expected_outcome:
         raise CrossSampleReconciliationContractError(
@@ -2007,8 +1946,7 @@ def _validate_repair_receipt(receipt: ObservationRepairReceipt) -> None:
     if receipt.evidence is not None:
         evidence = receipt.evidence
         if (
-            evidence.logical_request_id
-            != subject.logical_request.logical_request_id
+            evidence.logical_request_id != subject.logical_request.logical_request_id
             or evidence.request_identity_id
             != subject.request_identity.request_identity_id
             or evidence.group_hypothesis_id
@@ -2057,9 +1995,7 @@ def _final_population_after_application(
     successors: tuple[CrossSampleGroupIdentity, ...],
 ) -> tuple[CrossSampleGroupIdentity, ...]:
     predecessor_ids = {group.group_hypothesis_id for group in predecessors}
-    if not predecessor_ids <= {
-        group.group_hypothesis_id for group in before
-    }:
+    if not predecessor_ids <= {group.group_hypothesis_id for group in before}:
         raise CrossSampleReconciliationContractError(
             "final application predecessor is absent from CS2 population"
         )
@@ -2099,12 +2035,8 @@ def _application_reference(
     return {
         "status": application.status,
         "reason": application.reason,
-        "predecessors": [
-            _group_reference(group) for group in application.predecessors
-        ],
-        "successors": [
-            _group_reference(group) for group in application.successors
-        ],
+        "predecessors": [_group_reference(group) for group in application.predecessors],
+        "successors": [_group_reference(group) for group in application.successors],
         "lineage": [
             {
                 "lineage_edge_id": edge.lineage_edge_id,
@@ -2159,9 +2091,7 @@ def _final_receipt_basis(
             "post_trajectory_input_id": post_trajectory_input_id,
             "mode_track_proposal": _proposal_reference(mode_track_proposal),
             "final_application": _application_reference(final_application),
-            "final_population": [
-                _group_reference(group) for group in final_population
-            ],
+            "final_population": [_group_reference(group) for group in final_population],
         }
     )
 
@@ -2216,15 +2146,16 @@ def _owner_member_id(owner: SampleLocalMS1Owner) -> str:
 
 
 def _edge_sort_key(
-    edge: CrossSampleNeighborhoodEdge,
+    edge: CrossSampleClassifiedEdge,
 ) -> tuple[str, ...]:
-    if type(edge) is not CrossSampleNeighborhoodEdge:
+    if type(edge) not in {
+        CrossSampleNeighborhoodEdge,
+        CrossSampleRepairAdmissionEdge,
+    }:
         raise CrossSampleReconciliationContractError(
             "edge classification must be an exact CrossSample edge"
         )
-    return tuple(
-        sorted((edge.left_member_subject_id, edge.right_member_subject_id))
-    )
+    return tuple(sorted((edge.left_member_subject_id, edge.right_member_subject_id)))
 
 
 def _request_id(value: object) -> str:

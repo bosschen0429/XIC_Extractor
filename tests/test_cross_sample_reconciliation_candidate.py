@@ -30,6 +30,22 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
 from xic_extractor.alignment.mode_track.contracts import ModeTrackEvidenceProfile
 
 
+class _CandidateDriftLookup:
+    source = "batch_istd_trend"
+
+    def __init__(self, *, candidate_sample: str, candidate_delta_min: float) -> None:
+        self._candidate_sample = candidate_sample
+        self._candidate_delta_min = candidate_delta_min
+
+    def sample_delta_min(self, sample_stem: str) -> float:
+        if sample_stem == self._candidate_sample:
+            return self._candidate_delta_min
+        return 0.0
+
+    def injection_order(self, _sample_stem: str) -> None:
+        return None
+
+
 def test_membership_neutral_repair_enters_the_public_cross_sample_owner(
     tmp_path: Path,
 ) -> None:
@@ -55,7 +71,10 @@ def test_membership_neutral_repair_enters_the_public_cross_sample_owner(
     assert reconciled.application is not None
     assert reconciled.mode_track_input is not None
     assert reconciled.mode_track_input.trajectory_input.anchor_ids == ()
-    assert reconciled.mode_track_input.repaired_owner in reconciled.final_owners
+    repaired_observation = reconciled.mode_track_input.repaired_observation
+    assert repaired_observation.identity_evidence_authority == "none"
+    assert not hasattr(repaired_observation, "primary_identity_event")
+    assert reconciled.final_owners == context.owners
     assert reconciled.membership_authority == "cross_sample"
     assert reconciled.value_authority == "none"
     assert reconciled.matrix_authority == "none"
@@ -69,21 +88,46 @@ def test_membership_neutral_repair_enters_the_public_cross_sample_owner(
     }
 
 
-def test_review_only_candidate_mints_no_membership_or_mode_track_input(
+def test_repair_admission_does_not_require_candidate_local_identity_support(
     tmp_path: Path,
 ) -> None:
     context, terminal, repair_result, alignment_config = _scenario(tmp_path)
-    conservative_config = replace(
-        alignment_config,
-        anchor_min_evidence_score=100,
-        anchor_min_seed_events=100,
-    )
 
     reconciled = reconcile_nonmember_observation_repair(
         context=context,
         repair_terminal=terminal,
         repair_result=repair_result,
-        alignment_config=conservative_config,
+        alignment_config=replace(
+            alignment_config,
+            anchor_min_evidence_score=100,
+            anchor_min_seed_events=100,
+        ),
+    )
+
+    assert reconciled.disposition == "admitted"
+    assert reconciled.mode_track_input is not None
+    assert (
+        reconciled.mode_track_input.repaired_observation.identity_evidence_authority
+        == "none"
+    )
+
+
+def test_review_only_candidate_mints_no_membership_or_mode_track_input(
+    tmp_path: Path,
+) -> None:
+    context, terminal, repair_result, alignment_config = _scenario(tmp_path)
+    candidate = terminal.candidate
+    assert candidate is not None
+
+    reconciled = reconcile_nonmember_observation_repair(
+        context=context,
+        repair_terminal=terminal,
+        repair_result=repair_result,
+        alignment_config=alignment_config,
+        drift_lookup=_CandidateDriftLookup(
+            candidate_sample=candidate.request_identity.sample_stem,
+            candidate_delta_min=2.0,
+        ),
     )
 
     assert reconciled.disposition == "review_only"
@@ -98,32 +142,20 @@ def test_review_only_candidate_mints_no_membership_or_mode_track_input(
 
 
 def test_excluded_candidate_is_closed_without_membership_or_mode_track(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     context, terminal, repair_result, alignment_config = _scenario(tmp_path)
     candidate = terminal.candidate
     assert candidate is not None
-    classify = reconciliation_owner.classify_cross_sample_initial_neighborhood_edge
-
-    def classify_with_exact_conflict(**kwargs):
-        for side in ("left_owner", "right_owner"):
-            owner = kwargs[side]
-            if owner.sample_stem == candidate.request_identity.sample_stem:
-                kwargs[side] = replace(owner, identity_conflict=True)
-        return classify(**kwargs)
-
-    monkeypatch.setattr(
-        reconciliation_owner,
-        "classify_cross_sample_initial_neighborhood_edge",
-        classify_with_exact_conflict,
-    )
-
     reconciled = reconcile_nonmember_observation_repair(
         context=context,
         repair_terminal=terminal,
         repair_result=repair_result,
         alignment_config=alignment_config,
+        drift_lookup=_CandidateDriftLookup(
+            candidate_sample=candidate.request_identity.sample_stem,
+            candidate_delta_min=4.0,
+        ),
     )
 
     assert reconciled.disposition == "excluded"
@@ -243,7 +275,9 @@ def test_admission_application_result_and_mode_track_input_fail_closed(
         "CrossSampleNonmemberRepairResult",
         "CrossSamplePostRepairModeTrackInput",
         "CrossSampleRepairAdmissionApplication",
+        "CrossSampleRepairAdmissionEdge",
         "CrossSampleRepairDisposition",
+        "CrossSampleRepairedObservation",
         "reconcile_nonmember_observation_repair",
     }.issubset(cross_sample_api.__all__)
 
@@ -262,6 +296,14 @@ def test_admission_application_result_and_mode_track_input_fail_closed(
         match="minted by CrossSample",
     ):
         replace(mode_track_input, _mint_token=object())
+    with pytest.raises(
+        peak_group_owner.CrossSampleContractError,
+        match="minted by CrossSample",
+    ):
+        replace(
+            mode_track_input.repaired_observation,
+            _mint_token=object(),
+        )
 
     with pytest.raises(
         peak_group_owner.CrossSampleContractError,
@@ -297,8 +339,10 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
     tmp_path: Path,
 ) -> None:
     context, terminal, repair_result, alignment_config = _scenario(tmp_path)
+    candidate = terminal.candidate
+    assert candidate is not None
     calls = {"classify": 0, "apply": 0, "trajectory": 0}
-    classify = reconciliation_owner.classify_cross_sample_initial_neighborhood_edge
+    classify = reconciliation_owner.classify_cross_sample_repair_admission_edge
     apply = reconciliation_owner._apply_repaired_nonmember_admission
     mint_trajectory = reconciliation_owner.mint_mode_track_trajectory_input
 
@@ -319,7 +363,7 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
 
     monkeypatch.setattr(
         reconciliation_owner,
-        "classify_cross_sample_initial_neighborhood_edge",
+        "classify_cross_sample_repair_admission_edge",
         count_classify,
     )
     monkeypatch.setattr(
@@ -356,10 +400,10 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
         context=context,
         repair_terminal=terminal,
         repair_result=repair_result,
-        alignment_config=replace(
-            alignment_config,
-            anchor_min_evidence_score=100,
-            anchor_min_seed_events=100,
+        alignment_config=alignment_config,
+        drift_lookup=_CandidateDriftLookup(
+            candidate_sample=candidate.request_identity.sample_stem,
+            candidate_delta_min=2.0,
         ),
     )
 
