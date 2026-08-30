@@ -338,7 +338,7 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
         forbidden_proposal,
     )
 
-    reconcile_nonmember_observation_repair(
+    admitted = reconcile_nonmember_observation_repair(
         context=context,
         repair_terminal=terminal,
         repair_result=repair_result,
@@ -352,7 +352,7 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
     }
 
     calls.update(classify=0, apply=0, trajectory=0)
-    reconcile_nonmember_observation_repair(
+    review_only = reconcile_nonmember_observation_repair(
         context=context,
         repair_terminal=terminal,
         repair_result=repair_result,
@@ -368,6 +368,10 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
         "apply": 0,
         "trajectory": 1,
     }
+    assert (admitted.disposition, review_only.disposition) == (
+        "admitted",
+        "review_only",
+    )
 
 
 def _scenario(tmp_path: Path, *, hold_sample: str = "s2"):
