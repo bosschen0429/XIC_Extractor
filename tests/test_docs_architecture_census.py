@@ -55,6 +55,22 @@ def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
 
+def test_runtime_phase_exception_public_types_are_allowlisted() -> None:
+    from xic_extractor import execution_runtime_owner
+
+    owner_exports = set(execution_runtime_owner.__all__)
+    owner_allowlist = census.RUNTIME_EXTERNAL_CALLS_BY_MODULE[
+        "xic_extractor.execution_runtime_owner"
+    ]
+
+    assert {"RuntimeExecutionPhase", "RuntimeExecutionPhaseError"} <= owner_exports
+    assert {
+        "RuntimeExecutionPhase",
+        "RuntimeExecutionPhaseError",
+    } <= owner_allowlist
+    assert "RuntimeFinalizationReceipt" not in owner_allowlist
+
+
 def test_runtime_boundary_authority_rejects_projection_and_reducer_bypasses(
     tmp_path: Path,
 ) -> None:

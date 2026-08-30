@@ -74,6 +74,41 @@ _RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner:v1"
 _RUNTIME_OWNER_MINT_TOKEN = object()
 
 
+class RuntimeExecutionPhase(str, Enum):
+    """The direct provider boundary at which one runtime attempt failed."""
+
+    WORKER_BATCH_PROVIDER = "worker_batch_provider"
+    TELEMETRY_PROVIDER = "telemetry_provider"
+    PERSISTER = "persister"
+
+
+class RuntimeExecutionPhaseError(RuntimeError):
+    """An owner-classified exception raised by a runtime provider boundary."""
+
+    attempt: ProcessingAttemptIdentity
+    phase: RuntimeExecutionPhase
+
+    def __init__(
+        self,
+        attempt: ProcessingAttemptIdentity,
+        phase: RuntimeExecutionPhase,
+    ) -> None:
+        if not isinstance(attempt, ProcessingAttemptIdentity):
+            raise RuntimeFinalizationContractError(
+                "phase error attempt must be owner-issued"
+            )
+        if not isinstance(phase, RuntimeExecutionPhase):
+            raise RuntimeFinalizationContractError(
+                "phase error phase must be a RuntimeExecutionPhase"
+            )
+        self.attempt = attempt
+        self.phase = phase
+        super().__init__(
+            f"runtime attempt {attempt.processing_attempt_id} failed during "
+            f"{phase.value}"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeCancellationRequest:
     """One owner-bound request to accept cancellation for a runtime attempt."""
@@ -1178,7 +1213,13 @@ def _finalize_runtime_attempt(
         state=coordinator.state,
         acquisitions=aggregate.acquisitions,
     )
-    telemetry = telemetry_provider(coordinator)
+    try:
+        telemetry = telemetry_provider(coordinator)
+    except Exception as exc:
+        raise RuntimeExecutionPhaseError(
+            coordinator.state.runtime.manifest.attempt,
+            RuntimeExecutionPhase.TELEMETRY_PROVIDER,
+        ) from exc
     ledger = _derive_runtime_observability_ledger(
         terminal_aggregate,
         coordinator,
@@ -1192,7 +1233,13 @@ def _finalize_runtime_attempt(
         coordinator=coordinator,
         supervisor=supervisor,
     )
-    submitted = persister(proposed)
+    try:
+        submitted = persister(proposed)
+    except Exception as exc:
+        raise RuntimeExecutionPhaseError(
+            coordinator.state.runtime.manifest.attempt,
+            RuntimeExecutionPhase.PERSISTER,
+        ) from exc
     return accept_runtime_finalization_receipt(proposed, submitted)
 
 
@@ -1253,9 +1300,16 @@ def execute_runtime_attempt(
             ),
         )
     elif not aggregate.runtime.manifest_preflight_failed:
+        try:
+            worker_batch = worker_batch_provider(aggregate)
+        except Exception as exc:
+            raise RuntimeExecutionPhaseError(
+                aggregate.runtime.manifest.attempt,
+                RuntimeExecutionPhase.WORKER_BATCH_PROVIDER,
+            ) from exc
         aggregate = _apply_runtime_worker_batch(
             aggregate,
-            worker_batch_provider(aggregate),
+            worker_batch,
         )
     return _finalize_runtime_attempt(
         aggregate,
@@ -1929,6 +1983,8 @@ __all__ = [
     "RuntimeArtifactRegistrationReceipt",
     "RuntimeAttemptAggregate",
     "RuntimeCancellationRequest",
+    "RuntimeExecutionPhase",
+    "RuntimeExecutionPhaseError",
     "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
     "RuntimePeakFactCostMetrics",
