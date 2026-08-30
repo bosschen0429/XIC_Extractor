@@ -61,6 +61,48 @@ target interface.
   Missing or mismatched identity fails closed to normal RAW extraction; a same
   path string alone is never sufficient cache identity.
 
+## Population-derived Repair Authorization
+
+`authorize_observation_repair` is the Backfill owner operation for the active
+CID-NL tracer. It validates one complete owner-issued
+`CellObservationRef` population over the declared existing-group × canonical-
+sample coverage before reducing eligibility. Only a cell with
+`technical_state="evaluated"` and `method_result="HOLD"` is eligible; the
+sample may be a predecessor member or a nonmember. `selected_for_output` is a
+producer fact and never changes eligibility, candidate identity, or
+cardinality.
+
+The result is a closed authorization union: no eligible cells produce
+`not_run`, one produces `repair(candidate)`, and more than one produces a
+typed `multiple_eligible` block. Missing, duplicate, extra, crossed, stale, or
+noncanonical population facts are contract failures rather than `not_run`, and
+the blocked variant never selects a winner or calls repair. The candidate is
+bound to the exact request/attempt, existing group, canonical sample, prior
+search cell artifact, logical request, coverage position, authorization, and
+repair epoch `1`; it carries no membership or successor authority.
+
+`execute_observation_repair` is the owner-owned execution seam. It derives the
+authorization from the complete current population, invokes its injected
+bounded repair operation exactly once only for `repair`, and returns a sealed
+`ObservationRepairTerminalResult`. `not_run` and `multiple_eligible` are
+terminal blocks with no execution and no receipt. A candidate may also be
+closed through `close_observation_repair`, but that boundary requires the
+current complete coverage and population and revalidates the exact
+authorization/candidate, so an old authorization cannot be replayed after the
+population changes.
+
+The terminal receipt carries the repaired observation and its provenance for
+current consumers. A candidate-scoped no-repair receipt instead carries a
+sealed `ObservationRepairNoRepairTerminal` that binds the exact owner work unit
+and physical answer; two distinct no-repair executions therefore cannot collapse
+to the same receipt identity. Candidate receipts use the canonical v2 receipt
+namespace; existing member receipts retain their exact v1 shape and identity.
+The candidate no-repair receipt still exposes `evidence is None` to current
+consumers and carries no synthetic repaired observation. Membership, value,
+Matrix, activation, and writer authority remain `none`; the candidate remains
+membership-neutral. Existing member repair subjects and receipt consumers
+retain their current contract.
+
 ## Current Direction
 
 The successor Backfill interface is one deep module with a small typed seam:
