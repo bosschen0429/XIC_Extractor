@@ -4,22 +4,42 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .observation_repair import (
+        ObservationRepairAuthorization,
+        ObservationRepairAuthorizationState,
+        ObservationRepairCandidate,
         ObservationRepairContractError,
         ObservationRepairEvidence,
+        ObservationRepairMultipleEligibleAuthorization,
+        ObservationRepairNoRepairTerminal,
+        ObservationRepairNotRunAuthorization,
         ObservationRepairOutcome,
         ObservationRepairReceipt,
+        ObservationRepairRepairAuthorization,
         ObservationRepairSubject,
+        ObservationRepairTerminalResult,
+        authorize_observation_repair,
         close_observation_repair,
+        execute_observation_repair,
         mint_observation_repair_subject,
     )
 
 _OBSERVATION_REPAIR_EXPORTS = {
+    "ObservationRepairAuthorization",
+    "ObservationRepairAuthorizationState",
+    "ObservationRepairCandidate",
     "ObservationRepairContractError",
     "ObservationRepairEvidence",
+    "ObservationRepairMultipleEligibleAuthorization",
+    "ObservationRepairNoRepairTerminal",
+    "ObservationRepairNotRunAuthorization",
     "ObservationRepairOutcome",
+    "ObservationRepairRepairAuthorization",
     "ObservationRepairReceipt",
     "ObservationRepairSubject",
+    "ObservationRepairTerminalResult",
+    "authorize_observation_repair",
     "close_observation_repair",
+    "execute_observation_repair",
     "mint_observation_repair_subject",
 }
 
@@ -31,12 +51,23 @@ def __getattr__(name: str) -> Any:
 
     return getattr(observation_repair, name)
 
+
 __all__ = (
+    "ObservationRepairAuthorization",
+    "ObservationRepairAuthorizationState",
+    "ObservationRepairCandidate",
     "ObservationRepairContractError",
     "ObservationRepairEvidence",
+    "ObservationRepairMultipleEligibleAuthorization",
+    "ObservationRepairNoRepairTerminal",
+    "ObservationRepairNotRunAuthorization",
     "ObservationRepairOutcome",
+    "ObservationRepairRepairAuthorization",
     "ObservationRepairReceipt",
     "ObservationRepairSubject",
+    "ObservationRepairTerminalResult",
+    "authorize_observation_repair",
     "close_observation_repair",
+    "execute_observation_repair",
     "mint_observation_repair_subject",
 )
