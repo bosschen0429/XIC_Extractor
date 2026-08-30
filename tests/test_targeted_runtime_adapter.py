@@ -34,6 +34,8 @@ from xic_extractor.execution_runtime_finalization import (
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
     RuntimeCancellationRequest,
+    RuntimeExecutionPhase,
+    RuntimeExecutionPhaseError,
     start_runtime_attempt,
 )
 from xic_extractor.extraction.targeted_diagnostic_method import (
@@ -586,11 +588,18 @@ def test_targeted_runtime_adapter_closes_failed_work_and_rejects_missing_work(
     assert failure_detail is not None
     assert failure_detail.message == "worker failed"
 
-    with pytest.raises(TargetedRuntimeAdapterError, match="did not settle"):
+    with pytest.raises(RuntimeExecutionPhaseError) as raised:
         _execute_targeted_envelopes(
             _runtime(attempt, ("raw:a", "raw:b")),
             (_success(attempt, "raw:a", _result_ref(attempt, "raw:a", b"a")),),
         )
+    error = raised.value
+    assert error.attempt == attempt
+    assert error.phase is RuntimeExecutionPhase.WORKER_BATCH_PROVIDER
+    assert isinstance(error.__cause__, TargetedRuntimeAdapterError)
+    assert str(error.__cause__) == (
+        "worker result batch did not settle manifest work: ('raw:b',)"
+    )
 
 
 def test_targeted_result_ref_and_runtime_attempt_substitution_fail_closed(
@@ -615,11 +624,18 @@ def test_targeted_result_ref_and_runtime_attempt_substitution_fail_closed(
         "raw:a",
         _result_ref(other_attempt, "raw:a", b"other"),
     )
-    with pytest.raises(TargetedRuntimeAdapterError, match="different runtime"):
+    with pytest.raises(RuntimeExecutionPhaseError) as raised:
         _execute_targeted_envelopes(
             _runtime(attempt, ("raw:a",)),
             (other_envelope,),
         )
+    error = raised.value
+    assert error.attempt == attempt
+    assert error.phase is RuntimeExecutionPhase.WORKER_BATCH_PROVIDER
+    assert isinstance(error.__cause__, TargetedRuntimeAdapterError)
+    assert str(error.__cause__) == (
+        "worker result envelope references a different runtime attempt"
+    )
 
 
 def test_targeted_result_ref_binds_exact_owner_payload_without_legacy_dto(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -38,6 +39,8 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
     RuntimeCancellationRequest,
+    RuntimeExecutionPhase,
+    RuntimeExecutionPhaseError,
     RuntimeFinalizationReceipt,
     RuntimePeakFactCostMetrics,
     RuntimePeakFactIdentityStatus,
@@ -45,6 +48,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimePeakFactWorkReceipt,
     RuntimeRawOpenMetrics,
     RuntimeResourceSettlementReceipt,
+    RuntimeTelemetrySamples,
     RuntimeWorkerBatchReceipt,
     _apply_runtime_worker_batch,
     _derive_runtime_observability_ledger,
@@ -568,6 +572,282 @@ def test_owner_accepted_cancellation_closes_without_worker_dispatch(
     )
 
 
+def test_runtime_phase_error_wraps_worker_exception_without_follow_on_callbacks(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="phase-worker")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+    worker_seen: list[RuntimeAttemptAggregate] = []
+    telemetry_calls: list[str] = []
+    persister_calls: list[RuntimeFinalizationReceipt] = []
+    sentinel = RuntimeError("worker callback details stay out of owner facts")
+
+    def worker(aggregate: RuntimeAttemptAggregate) -> RuntimeWorkerBatchReceipt:
+        worker_seen.append(aggregate)
+        raise sentinel
+
+    def telemetry(_coordinator):
+        telemetry_calls.append("called")
+        return build_runtime_telemetry_samples_from_coordinator(_coordinator)
+
+    def persist(proposed: RuntimeFinalizationReceipt) -> RuntimeFinalizationReceipt:
+        persister_calls.append(proposed)
+        return proposed
+
+    with pytest.raises(RuntimeExecutionPhaseError) as raised:
+        execute_runtime_attempt(
+            runtime,
+            (_reservation(attempt),),
+            worker_batch_provider=worker,
+            telemetry_provider=telemetry,
+            persister=persist,
+        )
+
+    error = raised.value
+    assert error.attempt == attempt
+    assert error.phase is RuntimeExecutionPhase.WORKER_BATCH_PROVIDER
+    assert error.__cause__ is sentinel
+    assert str(error) == (
+        f"runtime attempt {attempt.processing_attempt_id} failed during "
+        "worker_batch_provider"
+    )
+    assert worker_seen[0].state.runtime.settlements == ()
+    assert worker_seen[0].state.resources[0].open_outcome is None
+    assert worker_seen[0].state.resources[0].cleanup_outcome is None
+    assert telemetry_calls == []
+    assert persister_calls == []
+    assert not hasattr(error, "receipt")
+
+
+def test_runtime_phase_error_wraps_telemetry_exception_after_one_worker_batch(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="phase-telemetry")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+    worker_calls: list[str] = []
+    persister_calls: list[RuntimeFinalizationReceipt] = []
+    sentinel = RuntimeError("telemetry callback details stay out of owner facts")
+
+    def worker(_aggregate: RuntimeAttemptAggregate) -> RuntimeWorkerBatchReceipt:
+        worker_calls.append("called")
+        return _failed_worker_batch(attempt)
+
+    def telemetry(_coordinator):
+        raise sentinel
+
+    def persist_after_telemetry(
+        proposed: RuntimeFinalizationReceipt,
+    ) -> RuntimeFinalizationReceipt:
+        persister_calls.append(proposed)
+        return proposed
+
+    with pytest.raises(RuntimeExecutionPhaseError) as raised:
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=worker,
+            telemetry_provider=telemetry,
+            persister=persist_after_telemetry,
+        )
+
+    error = raised.value
+    assert worker_calls == ["called"]
+    assert error.attempt == attempt
+    assert error.phase is RuntimeExecutionPhase.TELEMETRY_PROVIDER
+    assert error.__cause__ is sentinel
+    assert persister_calls == []
+    assert not hasattr(error, "observability_ledger")
+
+
+def test_runtime_phase_error_wraps_persister_exception_before_write(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="phase-persister-before-write")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+    proposed_receipts: list[RuntimeFinalizationReceipt] = []
+    sentinel = RuntimeError("persister callback details stay out of owner facts")
+
+    def persist(proposed: RuntimeFinalizationReceipt) -> RuntimeFinalizationReceipt:
+        proposed_receipts.append(proposed)
+        raise sentinel
+
+    with pytest.raises(RuntimeExecutionPhaseError) as raised:
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            persister=persist,
+        )
+
+    error = raised.value
+    assert len(proposed_receipts) == 1
+    assert error.attempt == attempt
+    assert error.phase is RuntimeExecutionPhase.PERSISTER
+    assert error.__cause__ is sentinel
+    assert not hasattr(error, "receipt")
+    assert "persister callback details" not in str(error)
+
+
+def test_runtime_phase_error_preserves_marker_durability_but_not_acceptance(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="phase-persister-after-write")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "phase-persister.runtime.json",
+        "runtime-attempt-artifacts:phase-persister",
+    )
+    marker.record_launch(runtime)
+    sentinel = RuntimeError("persister raised after durable marker write")
+
+    def persist(proposed: RuntimeFinalizationReceipt) -> RuntimeFinalizationReceipt:
+        marker(proposed)
+        raise sentinel
+
+    with pytest.raises(RuntimeExecutionPhaseError) as raised:
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            persister=persist,
+        )
+
+    error = raised.value
+    assert error.phase is RuntimeExecutionPhase.PERSISTER
+    assert error.attempt == attempt
+    assert error.__cause__ is sentinel
+    assert marker.read().state.value == "finalized"
+    assert marker.recover_after_coordinator_loss(attempt).finalization_acknowledged
+
+
+def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="phase-invalid-returns")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+
+    with pytest.raises(RuntimeFinalizationContractError):
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=lambda _aggregate: cast(
+                RuntimeWorkerBatchReceipt,
+                object(),
+            ),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            persister=lambda proposed: proposed,
+        )
+
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+    with pytest.raises(RuntimeFinalizationContractError):
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
+            telemetry_provider=lambda _coordinator: cast(
+                RuntimeTelemetrySamples,
+                object(),
+            ),
+            persister=lambda proposed: proposed,
+        )
+
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+    with pytest.raises(RuntimeFinalizationContractError):
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=lambda _aggregate: _failed_worker_batch(attempt),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            persister=lambda _proposed: cast(
+                RuntimeFinalizationReceipt,
+                object(),
+            ),
+        )
+
+
+def test_runtime_phase_error_does_not_catch_base_exception(tmp_path: Path) -> None:
+    attempt = _attempt(tmp_path, stem="phase-base-exception")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+    )
+
+    class SentinelBaseException(BaseException):
+        pass
+
+    sentinel = SentinelBaseException("base exception remains unchanged")
+    with pytest.raises(SentinelBaseException) as raised:
+        execute_runtime_attempt(
+            runtime,
+            (),
+            worker_batch_provider=lambda _aggregate: (_ for _ in ()).throw(sentinel),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            persister=lambda proposed: proposed,
+        )
+
+    assert raised.value is sentinel
+
+
+def test_runtime_phase_error_public_contract_is_closed_and_owner_bound(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="phase-public-contract")
+    assert tuple(phase.value for phase in RuntimeExecutionPhase) == (
+        "worker_batch_provider",
+        "telemetry_provider",
+        "persister",
+    )
+    error = RuntimeExecutionPhaseError(
+        attempt,
+        RuntimeExecutionPhase.WORKER_BATCH_PROVIDER,
+    )
+    assert error.attempt == attempt
+    assert error.phase is RuntimeExecutionPhase.WORKER_BATCH_PROVIDER
+    assert error.args == (
+        f"runtime attempt {attempt.processing_attempt_id} failed during "
+        "worker_batch_provider",
+    )
+    assert "RuntimeExecutionPhase" in __import__(
+        "xic_extractor.execution_runtime_owner",
+        fromlist=["__all__"],
+    ).__all__
+    assert "RuntimeExecutionPhaseError" in __import__(
+        "xic_extractor.execution_runtime_owner",
+        fromlist=["__all__"],
+    ).__all__
+
+
 def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
     tmp_path: Path,
 ) -> None:
@@ -1024,6 +1304,26 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
     )
     assert worker_metric.availability is RuntimeMetricAvailability.MEASURED
     assert worker_metric.value == 0
+
+
+def _failed_worker_batch(
+    attempt: ProcessingAttemptIdentity,
+) -> RuntimeWorkerBatchReceipt:
+    return RuntimeWorkerBatchReceipt(
+        settlements=(
+            mint_work_unit_settlement(
+                attempt=attempt,
+                work_unit_key="raw:a",
+                outcome=WorkUnitTerminalOutcome.FAILED,
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                    stage="runtime-owner-test",
+                    source_reference="no-raw:sample:a",
+                    message="synthetic worker failure",
+                ),
+            ),
+        ),
+    )
 
 
 def _reservation(

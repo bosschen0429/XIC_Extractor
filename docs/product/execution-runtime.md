@@ -592,6 +592,22 @@ The owner-path durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
 
+`execution_runtime_owner.execute_runtime_attempt(...)` also owns the exception
+boundary for its three direct callbacks. A thrown `Exception` is classified as
+one `RuntimeExecutionPhaseError` carrying the exact owner-issued
+`ProcessingAttemptIdentity` and one closed `RuntimeExecutionPhase`:
+`worker_batch_provider`, `telemetry_provider`, or `persister`. The original
+exception remains available only as Python `__cause__`; its message and type do
+not become runtime facts. A worker failure skips telemetry and persistence, a
+telemetry failure skips persistence, and a persister failure returns no
+accepted receipt even when the persister's own marker side effect is later
+readable. Invalid callback returns continue through the existing
+`RuntimeFinalizationContractError` validation path, and `BaseException` is not
+wrapped. The owner invokes each callback at most once and adds no retry or
+cleanup authority. Only an exact-equal persister return reaches
+`accept_runtime_finalization_receipt`, which is the sole runtime result that a
+future workflow consumer may treat as accepted finalization.
+
 The shared runtime composes that mechanical lifecycle with the existing
 acquisition and physical-observation owners. `peak_detection.observation_batch` performs
 one capability-aware `XICRequest` batch only after resolving the sample's
