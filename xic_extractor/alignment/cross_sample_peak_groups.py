@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from itertools import combinations
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
@@ -84,7 +84,11 @@ _BOUNDED_CONTINUITY_RT_SPAN_SEC = 300.0
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
 _CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group.v1:"
 _CROSS_SAMPLE_LINEAGE_EDGE_PREFIX = "xic.cross-sample-lineage-edge.v1:"
+_CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX = (
+    "xic.cross-sample-repair-admission-application.v1:"
+)
 _DISCOVERY_PHYSICAL_SELECTION_SUBJECT_PREFIX = "discovery-physical-work.v1:"
+_CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN = object()
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
     "established",
@@ -1073,6 +1077,99 @@ class CrossSampleSuccessorApplication:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class CrossSampleRepairAdmissionApplication:
+    """One CrossSample-owned atomic extension by an exact repaired member."""
+
+    application_id: str
+    repair_receipt_id: str
+    authorization_id: str
+    candidate_id: str
+    predecessor: CrossSampleGroupIdentity
+    successor: CrossSampleGroupIdentity
+    admitted_member_subject_id: str
+    lineage: tuple[CrossSampleLineageEdge, ...]
+    basis_bytes: bytes
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN:
+            raise CrossSampleContractError(
+                "repair admission application must be minted by CrossSample"
+            )
+        if (
+            type(self.predecessor) is not CrossSampleGroupIdentity
+            or type(self.successor) is not CrossSampleGroupIdentity
+        ):
+            raise CrossSampleContractError(
+                "repair admission application requires exact group identities"
+            )
+        predecessor = self.predecessor
+        successor = self.successor
+        validate_cross_sample_group_population((predecessor,))
+        validate_cross_sample_group_population((successor,))
+        if predecessor.processing_request_id != successor.processing_request_id:
+            raise CrossSampleContractError(
+                "repair admission application crossed processing request"
+            )
+        predecessor_by_id = {
+            member.member_subject_id: member for member in predecessor.member_subjects
+        }
+        successor_by_id = {
+            member.member_subject_id: member for member in successor.member_subjects
+        }
+        added_ids = set(successor_by_id) - set(predecessor_by_id)
+        if (
+            len(added_ids) != 1
+            or added_ids != {self.admitted_member_subject_id}
+            or any(
+                successor_by_id[member_id] != member
+                for member_id, member in predecessor_by_id.items()
+            )
+        ):
+            raise CrossSampleContractError(
+                "repair admission application is not one complete member extension"
+            )
+        admitted = successor_by_id[self.admitted_member_subject_id]
+        if any(
+            member.canonical_sample_identity_id == admitted.canonical_sample_identity_id
+            for member in predecessor.member_subjects
+        ):
+            raise CrossSampleContractError(
+                "repair admission application duplicates a canonical sample"
+            )
+        expected_lineage = _expected_cross_sample_lineage(
+            predecessors=(predecessor,),
+            successors=(successor,),
+        )
+        if self.lineage != expected_lineage:
+            raise CrossSampleContractError(
+                "repair admission lineage is not the complete atomic closure"
+            )
+        basis = _repair_admission_application_basis(
+            repair_receipt_id=self.repair_receipt_id,
+            authorization_id=self.authorization_id,
+            candidate_id=self.candidate_id,
+            predecessor=predecessor,
+            successor=successor,
+            admitted_member_subject_id=self.admitted_member_subject_id,
+            lineage=self.lineage,
+        )
+        if self.basis_bytes != basis:
+            raise CrossSampleContractError(
+                "repair admission application basis bytes are not exact"
+            )
+        try:
+            validate_typed_identity_basis(
+                self.application_id,
+                prefix=_CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX,
+                basis_bytes=basis,
+                field="repair admission application_id",
+            )
+        except ValueError as exc:
+            raise CrossSampleContractError(str(exc)) from exc
+
+
 def _mint_cross_sample_lineage_edge(
     *,
     predecessor: CrossSampleGroupIdentity,
@@ -1139,6 +1236,109 @@ def _expected_cross_sample_lineage(
             for predecessor in relevant_predecessors
         )
     return tuple(lineage_edges)
+
+
+def _repair_admission_application_basis(
+    *,
+    repair_receipt_id: str,
+    authorization_id: str,
+    candidate_id: str,
+    predecessor: CrossSampleGroupIdentity,
+    successor: CrossSampleGroupIdentity,
+    admitted_member_subject_id: str,
+    lineage: tuple[CrossSampleLineageEdge, ...],
+) -> bytes:
+    return canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_repair_admission_application_v1",
+            "repair_receipt_id": _required_text(
+                repair_receipt_id,
+                field="repair_receipt_id",
+            ),
+            "authorization_id": _required_text(
+                authorization_id,
+                field="authorization_id",
+            ),
+            "candidate_id": _required_text(candidate_id, field="candidate_id"),
+            "predecessor_group_hypothesis_id": (predecessor.group_hypothesis_id),
+            "successor_group_hypothesis_id": successor.group_hypothesis_id,
+            "admitted_member_subject_id": _required_text(
+                admitted_member_subject_id,
+                field="admitted_member_subject_id",
+            ),
+            "lineage_edge_ids": [edge.lineage_edge_id for edge in lineage],
+        }
+    )
+
+
+def _apply_repaired_nonmember_admission(
+    *,
+    predecessor: CrossSampleGroupIdentity,
+    candidate_member: CrossSampleGroupMemberSubject,
+    population: Sequence[CrossSampleGroupIdentity],
+    repair_receipt_id: str,
+    authorization_id: str,
+    candidate_id: str,
+) -> CrossSampleRepairAdmissionApplication:
+    """Atomically extend one exact current group for the reconciliation owner."""
+
+    if (
+        type(predecessor) is not CrossSampleGroupIdentity
+        or type(candidate_member) is not CrossSampleGroupMemberSubject
+    ):
+        raise CrossSampleContractError(
+            "repair admission requires exact CrossSample identities"
+        )
+    canonical_population = validate_cross_sample_group_population(population)
+    current_by_id = {group.group_hypothesis_id: group for group in canonical_population}
+    if current_by_id.get(predecessor.group_hypothesis_id) is not predecessor:
+        raise CrossSampleContractError(
+            "repair admission predecessor is not the exact current group"
+        )
+    if candidate_member.processing_request_id != predecessor.processing_request_id:
+        raise CrossSampleContractError(
+            "repair admission candidate crossed processing request"
+        )
+    if any(
+        member.canonical_sample_identity_id
+        == candidate_member.canonical_sample_identity_id
+        for member in predecessor.member_subjects
+    ):
+        raise CrossSampleContractError(
+            "repair admission candidate duplicates a canonical sample"
+        )
+    successor = mint_cross_sample_group_identity(
+        processing_request_id=predecessor.processing_request_id,
+        member_subjects=(*predecessor.member_subjects, candidate_member),
+    )
+    lineage = _expected_cross_sample_lineage(
+        predecessors=(predecessor,),
+        successors=(successor,),
+    )
+    basis = _repair_admission_application_basis(
+        repair_receipt_id=repair_receipt_id,
+        authorization_id=authorization_id,
+        candidate_id=candidate_id,
+        predecessor=predecessor,
+        successor=successor,
+        admitted_member_subject_id=candidate_member.member_subject_id,
+        lineage=lineage,
+    )
+    return CrossSampleRepairAdmissionApplication(
+        application_id=typed_identity_digest(
+            _CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX,
+            basis,
+        ),
+        repair_receipt_id=repair_receipt_id,
+        authorization_id=authorization_id,
+        candidate_id=candidate_id,
+        predecessor=predecessor,
+        successor=successor,
+        admitted_member_subject_id=candidate_member.member_subject_id,
+        lineage=lineage,
+        basis_bytes=basis,
+        _mint_token=_CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN,
+    )
 
 
 def apply_coupled_successor_proposal(
