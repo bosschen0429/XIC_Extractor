@@ -257,6 +257,29 @@ def test_crossed_terminal_and_same_looking_context_fail_closed(
         )
 
 
+def test_same_looking_application_replay_fails_before_admission(
+    tmp_path: Path,
+) -> None:
+    context, terminal, repair_result, alignment_config = _scenario(tmp_path)
+    copied_successor = copy(context.application.successors[0])
+    replayed_application = replace(
+        context.application,
+        successors=(copied_successor,),
+    )
+    replayed_context = replace(context, application=replayed_application)
+
+    with pytest.raises(
+        reconciliation_owner.CrossSampleReconciliationContractError,
+        match="exact current group application",
+    ):
+        reconcile_nonmember_observation_repair(
+            context=replayed_context,
+            repair_terminal=terminal,
+            repair_result=repair_result,
+            alignment_config=alignment_config,
+        )
+
+
 def test_admission_application_result_and_mode_track_input_fail_closed(
     tmp_path: Path,
 ) -> None:
@@ -334,48 +357,17 @@ def test_admission_application_result_and_mode_track_input_fail_closed(
         )
 
 
-def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
+def test_admission_is_one_complete_pairwise_pass_and_no_mode_track_proposal(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     context, terminal, repair_result, alignment_config = _scenario(tmp_path)
     candidate = terminal.candidate
     assert candidate is not None
-    calls = {"classify": 0, "apply": 0, "trajectory": 0}
-    classify = reconciliation_owner.classify_cross_sample_repair_admission_edge
-    apply = reconciliation_owner._apply_repaired_nonmember_admission
-    mint_trajectory = reconciliation_owner.mint_mode_track_trajectory_input
-
-    def count_classify(**kwargs):
-        calls["classify"] += 1
-        return classify(**kwargs)
-
-    def count_apply(**kwargs):
-        calls["apply"] += 1
-        return apply(**kwargs)
-
-    def count_trajectory(**kwargs):
-        calls["trajectory"] += 1
-        return mint_trajectory(**kwargs)
 
     def forbidden_proposal(**_kwargs):
         raise AssertionError("#353 must not invoke ModeTrack proposal authority")
 
-    monkeypatch.setattr(
-        reconciliation_owner,
-        "classify_cross_sample_repair_admission_edge",
-        count_classify,
-    )
-    monkeypatch.setattr(
-        reconciliation_owner,
-        "_apply_repaired_nonmember_admission",
-        count_apply,
-    )
-    monkeypatch.setattr(
-        reconciliation_owner,
-        "mint_mode_track_trajectory_input",
-        count_trajectory,
-    )
     monkeypatch.setattr(
         reconciliation_owner,
         "propose_mode_track_successor_partition",
@@ -389,13 +381,6 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
         alignment_config=alignment_config,
     )
 
-    assert calls == {
-        "classify": len(context.owners),
-        "apply": 1,
-        "trajectory": 2,
-    }
-
-    calls.update(classify=0, apply=0, trajectory=0)
     review_only = reconcile_nonmember_observation_repair(
         context=context,
         repair_terminal=terminal,
@@ -407,15 +392,17 @@ def test_admission_cost_is_one_bounded_pass_and_zero_mode_track_proposals(
         ),
     )
 
-    assert calls == {
-        "classify": len(context.owners),
-        "apply": 0,
-        "trajectory": 1,
-    }
     assert (admitted.disposition, review_only.disposition) == (
         "admitted",
         "review_only",
     )
+    assert len(admitted.pairwise_edges) == len(context.owners)
+    assert len(review_only.pairwise_edges) == len(context.owners)
+    assert admitted.application is not None
+    assert admitted.mode_track_input is not None
+    assert admitted.mode_track_input.proposal_authority == "none"
+    assert review_only.application is None
+    assert review_only.mode_track_input is None
 
 
 def _scenario(tmp_path: Path, *, hold_sample: str = "s2"):

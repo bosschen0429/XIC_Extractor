@@ -1178,8 +1178,10 @@ def _validate_candidate_terminal(
         raise CrossSampleReconciliationContractError(
             "repair candidate crossed processing owners or request"
         )
-    if context.application.successors != (candidate.predecessor_group,) or not any(
-        group is candidate.predecessor_group for group in context.population
+    if (
+        len(context.application.successors) != 1
+        or context.application.successors[0] is not candidate.predecessor_group
+        or not any(group is candidate.predecessor_group for group in context.population)
     ):
         raise CrossSampleReconciliationContractError(
             "repair candidate predecessor is not the exact current group application"
