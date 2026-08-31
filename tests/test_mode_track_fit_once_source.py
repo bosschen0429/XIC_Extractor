@@ -123,6 +123,14 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
 
     assert source.family_context is family_context
     assert source.model_set is model_set
+    assert tuple(
+        batch.canonical_sample_identity_id for batch in batches
+    ) == tuple(
+        sorted(
+            sample.identity.sample_identity_id
+            for sample, _assessment in sample_assessments
+        )
+    )
     assert source.initial_assignment_batches == tuple(
         sorted(batches, key=lambda batch: batch.assignment_batch_id)
     )

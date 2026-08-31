@@ -148,7 +148,7 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
         )
 
 
-def test_workflow_accepts_capture_binding_subset_of_declared_candidates(
+def test_workflow_rejects_capture_binding_subset_of_declared_candidates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -223,7 +223,10 @@ def test_workflow_accepts_capture_binding_subset_of_declared_candidates(
 
     monkeypatch.setattr(workflow_owner, "execute_runtime_attempt", stop_at_runtime)
 
-    with pytest.raises(RuntimeReached):
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="declared candidate order",
+    ):
         execute_alignment_workflow(request, adapter)
 
 

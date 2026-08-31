@@ -260,9 +260,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
                 trajectory_assessment=trajectory_assessment,
             )
         )
-    batches_tuple = tuple(
-        sorted(batches, key=lambda item: item.assignment_batch_id)
-    )
+    batches_tuple = tuple(batches)
     source = mint_mode_track_fit_once_source(
         processing_owners=processing_owners,
         family_context=family_context,

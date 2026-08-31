@@ -38,6 +38,8 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
 )
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.contracts import (
+    AcceptedModeTrackRefinement,
+    InsufficientModeTrackTraining,
     ModeTrackEvidenceProfile,
     ModeTrackRefinementContractError,
 )
@@ -80,7 +82,7 @@ def _captures_for_run(run):
     object.__setattr__(
         scope,
         "declared_candidate_ids",
-        (*candidate_ids, "inspection-only:candidate"),
+        candidate_ids,
     )
     object.__setattr__(
         scope,
@@ -332,7 +334,9 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
     assert scientific.repair_receipt is None
 
 
-def test_mt0_bridge_rejects_missing_capture_owner_closure(tmp_path: Path) -> None:
+def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
+    tmp_path: Path,
+) -> None:
     from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
     from tests.test_alignment_multi_hypothesis_support import (
         _assessment_with_observation_only_peak,
@@ -379,15 +383,55 @@ def test_mt0_bridge_rejects_missing_capture_owner_closure(tmp_path: Path) -> Non
         )
 
     captures = _captures_for_run(run)
-    assert apply_mode_track_refinement_run_for_workflow(
+    context = apply_mode_track_refinement_run_for_workflow(
         processing_owners=fixture.owners,
         captures=captures,
         run=run,
     )
+    assert tuple(type(transaction.proposal) for transaction in run.transactions) == (
+        AcceptedModeTrackRefinement,
+        InsufficientModeTrackTraining,
+    )
+    assert context.application.predecessors == run.predecessors
+    assert context.population == context.application.successors
+    negative_predecessors = run.transactions[1].application_context.predecessors
+    assert all(
+        any(successor is predecessor for successor in context.population)
+        for predecessor in negative_predecessors
+    )
+
+    incomplete_scope = object.__new__(UntargetedSearchScope)
+    object.__setattr__(
+        incomplete_scope,
+        "declared_candidate_ids",
+        (*captures[0].scope.declared_candidate_ids, "missing:candidate"),
+    )
+    object.__setattr__(
+        incomplete_scope,
+        "capture_bindings",
+        captures[0].scope.capture_bindings,
+    )
+    incomplete_captures = tuple(
+        replace(
+            capture,
+            scope=incomplete_scope,
+            _owner_seal=replace(capture._owner_seal, scope=incomplete_scope),
+        )
+        for capture in captures
+    )
+    with pytest.raises(
+        CrossSampleReconciliationContractError,
+        match="declared candidate order",
+    ):
+        apply_mode_track_refinement_run_for_workflow(
+            processing_owners=fixture.owners,
+            captures=incomplete_captures,
+            run=run,
+        )
 
     with pytest.raises(
         CrossSampleReconciliationContractError,
-        match="capture binding order",
+        match="declared candidate order",
     ):
         apply_mode_track_refinement_run_for_workflow(
             processing_owners=fixture.owners,
@@ -434,6 +478,26 @@ def test_mt0_bridge_rejects_missing_capture_owner_closure(tmp_path: Path) -> Non
         )
 
     assert len(run.transactions) > 1
+    incomplete_transaction_runs = (
+        run.transactions[:-1],
+        (*run.transactions, run.transactions[0]),
+    )
+    for incomplete_transactions in incomplete_transaction_runs:
+        incomplete_run = replace(
+            run,
+            transactions=incomplete_transactions,
+            _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
+        )
+        with pytest.raises(
+            CrossSampleReconciliationContractError,
+            match="canonical predecessor order",
+        ):
+            apply_mode_track_refinement_run_for_workflow(
+                processing_owners=fixture.owners,
+                captures=captures,
+                run=incomplete_run,
+            )
+
     reordered_run = replace(
         run,
         transactions=tuple(reversed(run.transactions)),
