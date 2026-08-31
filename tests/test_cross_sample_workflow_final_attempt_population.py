@@ -284,12 +284,16 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
         repair_receipt=terminal.receipt,
         post_repair=reconciled.mode_track_input,
     )
+    crossed_context = replace(
+        context,
+        fit_once_source_id=crossed_source.fit_once_source_id,
+    )
     with pytest.raises(
         CrossSampleReconciliationContractError,
         match="complete CrossSample binding",
     ):
         consume_mode_track_final_attempt(
-            context=context,
+            context=crossed_context,
             post_repair=reconciled.mode_track_input,
             terminal=terminal,
             final_attempt=crossed_attempt,

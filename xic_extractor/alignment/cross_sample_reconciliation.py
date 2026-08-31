@@ -148,6 +148,7 @@ class CrossSamplePostRepairModeTrackInput:
     processing_request_id: str
     processing_attempt_id: str
     processing_owners: ProcessingOwnerReferences
+    fit_once_source_id: str | None
     repair_receipt_id: str
     repair_epoch: Literal[1]
     repair_disposition: CrossSamplePostRepairDisposition
@@ -192,6 +193,15 @@ def _validate_post_repair_mode_track_input(
     ):
         raise CrossSampleReconciliationContractError(
             "post-repair ModeTrack input crossed request or attempt"
+        )
+    if input_value.fit_once_source_id is not None and (
+        type(input_value.fit_once_source_id) is not str
+        or not input_value.fit_once_source_id.startswith(
+            "mode-track-fit-once-source:"
+        )
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input fit-once source is not exact"
         )
     if type(input_value.repair_epoch) is not int or input_value.repair_epoch != 1:
         raise CrossSampleReconciliationContractError(
@@ -354,6 +364,7 @@ def _validate_post_repair_mode_track_input(
         processing_request_id=input_value.processing_request_id,
         processing_attempt_id=input_value.processing_attempt_id,
         processing_owners=input_value.processing_owners,
+        fit_once_source_id=input_value.fit_once_source_id,
         repair_receipt_id=input_value.repair_receipt_id,
         repair_epoch=input_value.repair_epoch,
         repair_disposition=input_value.repair_disposition,
@@ -865,6 +876,7 @@ def reconcile_nonmember_observation_repair(
         pre_trajectory_input_id = context.trajectory_input.trajectory_input_id
         mode_track_input = _mint_post_repair_mode_track_input(
             processing_owners=context.processing_owners,
+            fit_once_source_id=context.fit_once_source_id,
             repair_receipt_id=receipt.receipt_id,
             repair_epoch=receipt.repair_epoch,
             repair_disposition="nonmember_admitted",
@@ -1597,6 +1609,8 @@ def consume_mode_track_final_attempt(
     binding = final_attempt.binding
     if (
         context.fit_once_source_id is None
+        or post_repair.fit_once_source_id is None
+        or post_repair.fit_once_source_id != context.fit_once_source_id
         or binding.fit_once_source_id != context.fit_once_source_id
         or binding.processing_request_id != context.processing_request_id
         or binding.processing_attempt_id
@@ -2970,6 +2984,7 @@ def _post_repair_mode_track_input_basis(
     processing_request_id: str,
     processing_attempt_id: str,
     processing_owners: ProcessingOwnerReferences,
+    fit_once_source_id: str | None,
     repair_receipt_id: str,
     repair_epoch: int,
     repair_disposition: CrossSamplePostRepairDisposition,
@@ -2986,10 +3001,11 @@ def _post_repair_mode_track_input_basis(
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_post_repair_mode_track_input_v2",
+            "schema_version": "cross_sample_post_repair_mode_track_input_v3",
             "processing_request_id": processing_request_id,
             "processing_attempt_id": processing_attempt_id,
             "processing_owners": _processing_owners_reference(processing_owners),
+            "fit_once_source_id": fit_once_source_id,
             "repair_receipt_id": repair_receipt_id,
             "repair_epoch": repair_epoch,
             "repair_disposition": repair_disposition,
@@ -3018,6 +3034,7 @@ def _post_repair_mode_track_input_basis(
 def _mint_post_repair_mode_track_input(
     *,
     processing_owners: ProcessingOwnerReferences,
+    fit_once_source_id: str | None,
     repair_receipt_id: str,
     repair_epoch: int,
     repair_disposition: CrossSamplePostRepairDisposition,
@@ -3048,6 +3065,7 @@ def _mint_post_repair_mode_track_input(
         processing_request_id=request_id,
         processing_attempt_id=attempt_id,
         processing_owners=processing_owners,
+        fit_once_source_id=fit_once_source_id,
         repair_receipt_id=repair_receipt_id,
         repair_epoch=repair_epoch,
         repair_disposition=repair_disposition,
@@ -3070,6 +3088,7 @@ def _mint_post_repair_mode_track_input(
         processing_request_id=request_id,
         processing_attempt_id=attempt_id,
         processing_owners=processing_owners,
+        fit_once_source_id=fit_once_source_id,
         repair_receipt_id=repair_receipt_id,
         repair_epoch=repair_epoch,  # type: ignore[arg-type]
         repair_disposition=repair_disposition,
@@ -3125,6 +3144,7 @@ def _mint_existing_member_post_repair_mode_track_input(
     )
     return _mint_post_repair_mode_track_input(
         processing_owners=context.processing_owners,
+        fit_once_source_id=context.fit_once_source_id,
         repair_receipt_id=repair_receipt.receipt_id,
         repair_epoch=repair_receipt.repair_epoch,
         repair_disposition="existing_member_reconciled",

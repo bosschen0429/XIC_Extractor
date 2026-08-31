@@ -138,30 +138,6 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
         reason="unchanged_membership_no_lineage",
     )
     owners = tuple(candidate.logical_request.item.feature.owners)
-    context = build_cross_sample_post_mt0_context(
-        processing_request_id=fixture.request.processing_request_id,
-        processing_owners=fixture.owners,
-        population=(group,),
-        application=application,
-        owners=owners,
-        classified_edges=(),
-        anchors=(),
-        injection_order={
-            owner.sample_stem: index
-            for index, owner in enumerate(owners, start=1)
-        },
-        evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
-        ),
-        budget=CrossSampleNeighborhoodBudget(86, 3655),
-    )
-    post_repair = consume_observation_repair_terminal(
-        context=context,
-        terminal=terminal,
-        repair_result=captured[0],
-        alignment_config=coverage.epoch.alignment_config,
-    )
-    assert not isinstance(post_repair, CrossSampleFinalReceipt)
     assessments_by_sample = {
         assessment.content.canonical_sample_identity_id: assessment
         for assessment in spine.assessments
@@ -181,7 +157,31 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
             max_extrapolation_gap=10,
         ),
     )
-    context = replace(context, fit_once_source_id=source.fit_once_source_id)
+    context = build_cross_sample_post_mt0_context(
+        processing_request_id=fixture.request.processing_request_id,
+        processing_owners=fixture.owners,
+        population=(group,),
+        application=application,
+        owners=owners,
+        classified_edges=(),
+        anchors=(),
+        injection_order={
+            owner.sample_stem: index
+            for index, owner in enumerate(owners, start=1)
+        },
+        evidence_profile=ModeTrackEvidenceProfile(
+            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+        ),
+        budget=CrossSampleNeighborhoodBudget(86, 3655),
+        fit_once_source_id=source.fit_once_source_id,
+    )
+    post_repair = consume_observation_repair_terminal(
+        context=context,
+        terminal=terminal,
+        repair_result=captured[0],
+        alignment_config=coverage.epoch.alignment_config,
+    )
+    assert not isinstance(post_repair, CrossSampleFinalReceipt)
     assert terminal.receipt is not None
     final_attempt = run_post_repair_mode_track_final_attempt(
         source=source,
