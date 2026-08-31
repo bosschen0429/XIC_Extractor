@@ -1,0 +1,609 @@
+"""Closed Target/Untarget composition over existing alignment owners."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
+from typing import TypeAlias
+
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillEvaluationCoverageBatch,
+)
+from xic_extractor.alignment.backfill.observation_repair import (
+    ObservationRepairCandidate,
+    ObservationRepairReceipt,
+    execute_observation_repair,
+)
+from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
+from xic_extractor.alignment.cell_observations import CellObservationRef
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample.association import (
+    build_cross_sample_association_lineage_handoff,
+)
+from xic_extractor.alignment.cross_sample_reconciliation import (
+    CrossSampleFinalReceipt,
+    CrossSamplePostRepairModeTrackInput,
+    apply_mode_track_refinement_run_for_workflow,
+    consume_mode_track_final_attempt,
+    consume_observation_repair_terminal,
+)
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
+from xic_extractor.alignment.mode_track.refinement import (
+    bootstrap_mode_track_refinement_from_cid_nl_support,
+    run_post_repair_mode_track_final_attempt,
+)
+from xic_extractor.alignment.owner_backfill import (
+    OwnerBackfillPeakFactObservation,
+)
+from xic_extractor.alignment.projection.target.post_cell import (
+    project_target_post_cell,
+)
+from xic_extractor.alignment.projection.target.pre_cell import (
+    project_target_pre_cell,
+)
+from xic_extractor.alignment.projection.untarget.post_cell import (
+    project_untarget_post_cell,
+)
+from xic_extractor.alignment.projection.untarget.pre_cell import (
+    project_untarget_pre_cell,
+)
+from xic_extractor.alignment.result.application_result import (
+    FinalizedTargetApplicationResult,
+    FinalizedUntargetApplicationResult,
+    TargetApplicationResultRequest,
+    UntargetApplicationResultRequest,
+    finalize_alignment_result,
+)
+from xic_extractor.alignment.result.scientific_alignment import (
+    FinalizedScientificAlignment,
+    finalize_scientific_alignment,
+)
+from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
+from xic_extractor.execution_runtime_finalization_models import (
+    RuntimeResourceReservation,
+)
+from xic_extractor.execution_runtime_owner import (
+    RuntimeFinalizationPersister,
+    RuntimeFinalizationReceipt,
+    RuntimeTelemetryProvider,
+    RuntimeWorkerBatchProvider,
+    execute_runtime_attempt,
+)
+from xic_extractor.peak_detection.capture import capture_peak_hypotheses
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+)
+from xic_extractor.peak_detection.search_scope import (
+    TargetSearchScope,
+    UntargetedSearchScope,
+    validate_scope_owner_binding,
+)
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import (
+    ProcessingAttemptIdentity,
+    ProcessingOwnerReferences,
+    ProcessingRequestIdentity,
+)
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+
+
+class AlignmentWorkflowContractError(ValueError):
+    """Raised when the shared workflow cannot preserve exact owner truth."""
+
+
+class _WorkflowStageFailure(Exception):
+    def __init__(self, stage: WorkflowStage, error: Exception) -> None:
+        super().__init__(str(error))
+        self.stage = stage
+        self.error = error
+
+
+class WorkflowStage(str, Enum):
+    RUNTIME = "runtime"
+    CAPTURE = "capture"
+    MODE_TRACK_BOOTSTRAP = "mode_track_bootstrap"
+    CROSS_SAMPLE_MT0 = "cross_sample_mt0"
+    OBSERVATION_REPAIR = "observation_repair"
+    CROSS_SAMPLE_REPAIR = "cross_sample_repair"
+    MODE_TRACK_MT1 = "mode_track_mt1"
+    CROSS_SAMPLE_FINAL = "cross_sample_final"
+    SCIENTIFIC_FINAL = "scientific_final"
+    PRE_CELL_PROJECTION = "pre_cell_projection"
+    CELL_DECISION = "cell_decision"
+    POST_CELL_PROJECTION = "post_cell_projection"
+    APPLICATION_RESULT = "application_result"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowRuntimeInvocation:
+    runtime: AttemptRuntime
+    reservations: tuple[RuntimeResourceReservation, ...]
+    worker_batch_provider: RuntimeWorkerBatchProvider
+    telemetry_provider: RuntimeTelemetryProvider
+    persister: RuntimeFinalizationPersister
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.runtime, AttemptRuntime):
+            raise AlignmentWorkflowContractError("runtime must be an AttemptRuntime")
+        if type(self.reservations) is not tuple or any(
+            not isinstance(item, RuntimeResourceReservation)
+            for item in self.reservations
+        ):
+            raise AlignmentWorkflowContractError(
+                "runtime reservations must be an immutable owner tuple"
+            )
+        if not all(
+            callable(item)
+            for item in (
+                self.worker_batch_provider,
+                self.telemetry_provider,
+                self.persister,
+            )
+        ):
+            raise AlignmentWorkflowContractError("runtime providers must be callable")
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureWorkflowArguments:
+    candidate_id: str
+    trace: Trace
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.candidate_id, str) or not self.candidate_id.strip():
+            raise AlignmentWorkflowContractError("capture candidate_id must be text")
+        if type(self.trace) is not Trace:
+            raise AlignmentWorkflowContractError("capture trace must be exact")
+
+
+@dataclass(frozen=True, slots=True)
+class ModeTrackWorkflowArguments:
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ]
+    alignment_config: AlignmentConfig
+    trajectory_policy: ModeTrackTrajectoryPolicy
+
+    def __post_init__(self) -> None:
+        if type(self.sample_assessments) is not tuple or not self.sample_assessments:
+            raise AlignmentWorkflowContractError(
+                "ModeTrack sample assessments must be a non-empty tuple"
+            )
+        if any(
+            type(item) is not tuple
+            or len(item) != 2
+            or type(item[0]) is not ResolvedCanonicalSampleIdentity
+            or type(item[1]) is not CidNlMethodAssessmentRef
+            for item in self.sample_assessments
+        ):
+            raise AlignmentWorkflowContractError(
+                "ModeTrack assessments must be exact sample/assessment pairs"
+            )
+        if type(self.alignment_config) is not AlignmentConfig:
+            raise AlignmentWorkflowContractError("alignment_config must be exact")
+        if type(self.trajectory_policy) is not ModeTrackTrajectoryPolicy:
+            raise AlignmentWorkflowContractError("trajectory_policy must be exact")
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationRepairWorkflowArguments:
+    coverage: OwnerBackfillEvaluationCoverageBatch
+    cell_observations: tuple[CellObservationRef, ...]
+    execute: Callable[[ObservationRepairCandidate], OwnerBackfillSampleResult]
+
+    def __post_init__(self) -> None:
+        if type(self.coverage) is not OwnerBackfillEvaluationCoverageBatch:
+            raise AlignmentWorkflowContractError("repair coverage must be exact")
+        if type(self.cell_observations) is not tuple or any(
+            type(item) is not CellObservationRef for item in self.cell_observations
+        ):
+            raise AlignmentWorkflowContractError(
+                "repair cells must be exact immutable references"
+            )
+        if not callable(self.execute):
+            raise AlignmentWorkflowContractError("repair execute must be callable")
+
+
+@dataclass(frozen=True, slots=True)
+class TargetWorkflowRequest:
+    scope: TargetSearchScope
+    processing_request: ProcessingRequestIdentity
+    processing_attempt: ProcessingAttemptIdentity
+    runtime: WorkflowRuntimeInvocation
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetWorkflowRequest:
+    scope: UntargetedSearchScope
+    processing_request: ProcessingRequestIdentity
+    processing_attempt: ProcessingAttemptIdentity
+    runtime: WorkflowRuntimeInvocation
+
+
+WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowRequest
+
+
+@dataclass(frozen=True, slots=True)
+class _WorkflowAdapterFields:
+    capture_inputs: tuple[CaptureWorkflowArguments, ...]
+    mode_track: ModeTrackWorkflowArguments
+    repair: ObservationRepairWorkflowArguments
+    predecessor_cell_observations: tuple[CellObservationRef, ...]
+    drift_lookup: DriftLookupProtocol | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TargetWorkflowAdapter(_WorkflowAdapterFields):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetWorkflowAdapter(_WorkflowAdapterFields):
+    pass
+
+
+WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedTargetWorkflowResult:
+    runtime_receipt: RuntimeFinalizationReceipt
+    application_result: FinalizedTargetApplicationResult
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedUntargetWorkflowResult:
+    runtime_receipt: RuntimeFinalizationReceipt
+    application_result: FinalizedUntargetApplicationResult
+
+
+@dataclass(frozen=True, slots=True)
+class CancelledWorkflowResult:
+    runtime_receipt: RuntimeFinalizationReceipt
+
+    def __post_init__(self) -> None:
+        if self.runtime_receipt.supervisor.terminal_outcome is not (
+            AttemptTerminalOutcome.CANCELLED
+        ):
+            raise AlignmentWorkflowContractError(
+                "cancelled workflow requires cancelled runtime truth"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class FailedWorkflowResult:
+    runtime_receipt: RuntimeFinalizationReceipt
+    stage: WorkflowStage
+    failure_type: str | None
+    failure_message: str | None
+
+
+WorkflowTerminalResult: TypeAlias = (
+    CompletedTargetWorkflowResult
+    | CompletedUntargetWorkflowResult
+    | CancelledWorkflowResult
+    | FailedWorkflowResult
+)
+
+
+def execute_alignment_workflow(
+    request: WorkflowRequest,
+    adapter: WorkflowAdapter,
+) -> WorkflowTerminalResult:
+    """Forward one exact request through the frozen semantic owners."""
+
+    owners = _validate_request_adapter(request, adapter)
+    invocation = request.runtime
+    runtime_receipt = execute_runtime_attempt(
+        invocation.runtime,
+        invocation.reservations,
+        worker_batch_provider=invocation.worker_batch_provider,
+        telemetry_provider=invocation.telemetry_provider,
+        persister=invocation.persister,
+    )
+    outcome = runtime_receipt.supervisor.terminal_outcome
+    if outcome is AttemptTerminalOutcome.CANCELLED:
+        return CancelledWorkflowResult(runtime_receipt=runtime_receipt)
+    if outcome is AttemptTerminalOutcome.FAILED:
+        return FailedWorkflowResult(
+            runtime_receipt=runtime_receipt,
+            stage=WorkflowStage.RUNTIME,
+            failure_type=None,
+            failure_message=None,
+        )
+
+    stage = WorkflowStage.CAPTURE
+    try:
+        captures = tuple(
+            capture_peak_hypotheses(
+                scope=request.scope,
+                candidate_id=item.candidate_id,
+                trace=item.trace,
+            )
+            for item in adapter.capture_inputs
+        )
+        stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
+        run = bootstrap_mode_track_refinement_from_cid_nl_support(
+            processing_owners=owners,
+            sample_assessments=adapter.mode_track.sample_assessments,
+            alignment_config=adapter.mode_track.alignment_config,
+            trajectory_policy=adapter.mode_track.trajectory_policy,
+            drift_lookup=adapter.drift_lookup,
+        )
+        stage = WorkflowStage.CROSS_SAMPLE_MT0
+        context = apply_mode_track_refinement_run_for_workflow(
+            processing_owners=owners,
+            captures=captures,
+            run=run,
+        )
+        captured_results: list[OwnerBackfillSampleResult] = []
+
+        def execute_repair(
+            candidate: ObservationRepairCandidate,
+        ) -> OwnerBackfillSampleResult:
+            if captured_results:
+                raise AlignmentWorkflowContractError(
+                    "repair callback may be invoked at most once"
+                )
+            result = adapter.repair.execute(candidate)
+            if type(result) is not OwnerBackfillSampleResult:
+                raise AlignmentWorkflowContractError(
+                    "repair callback must return an exact owner result"
+                )
+            captured_results.append(result)
+            return result
+
+        stage = WorkflowStage.OBSERVATION_REPAIR
+        terminal = execute_observation_repair(
+            processing_owners=owners,
+            coverage=adapter.repair.coverage,
+            cell_observations=adapter.repair.cell_observations,
+            execute=execute_repair,
+        )
+        repair_result = captured_results[0] if captured_results else None
+        stage = WorkflowStage.CROSS_SAMPLE_REPAIR
+        post_repair = consume_observation_repair_terminal(
+            context=context,
+            terminal=terminal,
+            repair_result=repair_result,
+            alignment_config=adapter.mode_track.alignment_config,
+            drift_lookup=adapter.drift_lookup,
+        )
+        if type(post_repair) is CrossSamplePostRepairModeTrackInput:
+            receipt = terminal.receipt
+            if type(receipt) is not ObservationRepairReceipt:
+                raise AlignmentWorkflowContractError(
+                    "changed repair handoff lost its exact receipt"
+                )
+            stage = WorkflowStage.MODE_TRACK_MT1
+            final_attempt = run_post_repair_mode_track_final_attempt(
+                source=run.fit_once_source,
+                repair_receipt=receipt,
+                post_repair=post_repair,
+            )
+            stage = WorkflowStage.CROSS_SAMPLE_FINAL
+            final_receipt = consume_mode_track_final_attempt(
+                context=context,
+                post_repair=post_repair,
+                terminal=terminal,
+                final_attempt=final_attempt,
+            )
+        elif type(post_repair) is CrossSampleFinalReceipt:
+            final_receipt = post_repair
+        else:
+            raise AlignmentWorkflowContractError(
+                "CrossSample repair consumer returned an unknown variant"
+            )
+        repair_receipts = (
+            () if terminal.receipt is None else (terminal.receipt,)
+        )
+        repaired_observations = _repaired_observations(
+            terminal.receipt,
+            repair_result,
+        )
+        stage = WorkflowStage.SCIENTIFIC_FINAL
+        handoff = build_cross_sample_association_lineage_handoff(
+            coverage=adapter.repair.coverage,
+            final_receipt=final_receipt,
+        )
+        scientific = finalize_scientific_alignment(
+            scope=request.scope,
+            captures=captures,
+            final_cross_sample_receipt=final_receipt,
+            cell_observation_handoff=handoff,
+            predecessor_cell_observations=adapter.predecessor_cell_observations,
+            repair_receipts=repair_receipts,
+            repaired_observations=repaired_observations,
+        )
+        return _finish_variant(
+            request=request,
+            scientific=scientific,
+            runtime_receipt=runtime_receipt,
+        )
+    except _WorkflowStageFailure as failure:
+        exc = failure.error
+        return FailedWorkflowResult(
+            runtime_receipt=runtime_receipt,
+            stage=failure.stage,
+            failure_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
+            failure_message=str(exc),
+        )
+    except Exception as exc:
+        return FailedWorkflowResult(
+            runtime_receipt=runtime_receipt,
+            stage=stage,
+            failure_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
+            failure_message=str(exc),
+        )
+
+
+def _validate_request_adapter(
+    request: WorkflowRequest,
+    adapter: WorkflowAdapter,
+) -> ProcessingOwnerReferences:
+    variants = {
+        TargetWorkflowRequest: (TargetWorkflowAdapter, TargetSearchScope),
+        UntargetWorkflowRequest: (UntargetWorkflowAdapter, UntargetedSearchScope),
+    }
+    expected = variants.get(type(request))
+    if (
+        expected is None
+        or type(adapter) is not expected[0]
+        or type(request.scope) is not expected[1]
+    ):
+        raise AlignmentWorkflowContractError(
+            "workflow request, adapter, and scope variants must match exactly"
+        )
+    if (
+        request.processing_request is not request.scope.request
+        or request.processing_attempt.processing_request_id
+        != request.processing_request.processing_request_id
+    ):
+        raise AlignmentWorkflowContractError(
+            "workflow request crossed processing request or attempt"
+        )
+    owners = adapter.repair.coverage.epoch.context.processing_owners
+    if (
+        type(owners) is not ProcessingOwnerReferences
+        or owners.request is not request.processing_request
+        or owners.attempt is not request.processing_attempt
+    ):
+        raise AlignmentWorkflowContractError(
+            "workflow repair population crossed exact processing owners"
+        )
+    for sample in request.scope.samples:
+        validate_scope_owner_binding(
+            request.scope,
+            processing_owners=owners,
+            sample=sample,
+        )
+    candidate_ids = tuple(item.candidate_id for item in adapter.capture_inputs)
+    if candidate_ids != request.scope.declared_candidate_ids or len(
+        candidate_ids
+    ) != len(set(candidate_ids)):
+        raise AlignmentWorkflowContractError(
+            "capture inputs must exactly preserve declared candidate order"
+        )
+    if tuple(sample for sample, _ in adapter.mode_track.sample_assessments) != tuple(
+        sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)
+    ):
+        raise AlignmentWorkflowContractError(
+            "ModeTrack assessments do not close the exact scope samples"
+        )
+    if type(adapter.predecessor_cell_observations) is not tuple or any(
+        type(item) is not CellObservationRef
+        for item in adapter.predecessor_cell_observations
+    ):
+        raise AlignmentWorkflowContractError(
+            "predecessor cells must be exact immutable references"
+        )
+    return owners
+
+
+def _repaired_observations(
+    receipt: ObservationRepairReceipt | None,
+    result: OwnerBackfillSampleResult | None,
+) -> tuple[OwnerBackfillPeakFactObservation, ...]:
+    if receipt is None or receipt.evidence is None:
+        return ()
+    if result is None:
+        raise AlignmentWorkflowContractError(
+            "repaired receipt lost its exact callback result"
+        )
+    matches = tuple(
+        item
+        for item in result.peak_fact_observations
+        if item.work_unit_key == receipt.evidence.work_unit_key
+    )
+    if len(matches) != 1:
+        raise AlignmentWorkflowContractError(
+            "repaired receipt does not bind one exact live observation"
+        )
+    return matches
+
+
+def _finish_variant(
+    *,
+    request: WorkflowRequest,
+    scientific: FinalizedScientificAlignment,
+    runtime_receipt: RuntimeFinalizationReceipt,
+) -> WorkflowTerminalResult:
+    stage = WorkflowStage.PRE_CELL_PROJECTION
+    try:
+        if type(request) is TargetWorkflowRequest:
+            target_pre_cell = project_target_pre_cell(scientific)
+            stage = WorkflowStage.CELL_DECISION
+            from xic_extractor.alignment.cell_decision.owner import (
+                decide_target_cell_population,
+            )
+
+            target_decisions = decide_target_cell_population(target_pre_cell)
+            stage = WorkflowStage.POST_CELL_PROJECTION
+            target_projection = project_target_post_cell(
+                target_pre_cell,
+                target_decisions,
+            )
+            stage = WorkflowStage.APPLICATION_RESULT
+            result = finalize_alignment_result(
+                TargetApplicationResultRequest(
+                    scientific_core=scientific,
+                    completed_projection=target_projection,
+                )
+            )
+            if type(result) is not FinalizedTargetApplicationResult:
+                raise AlignmentWorkflowContractError(
+                    "application_result returned a crossed Target result"
+                )
+            return CompletedTargetWorkflowResult(runtime_receipt, result)
+        untarget_pre_cell = project_untarget_pre_cell(scientific)
+        stage = WorkflowStage.CELL_DECISION
+        from xic_extractor.alignment.cell_decision.owner import (
+            decide_group_cell_population,
+        )
+
+        untarget_decisions = decide_group_cell_population(
+            untarget_pre_cell,
+            scientific,
+        )
+        stage = WorkflowStage.POST_CELL_PROJECTION
+        untarget_projection = project_untarget_post_cell(
+            untarget_pre_cell,
+            untarget_decisions,
+        )
+        stage = WorkflowStage.APPLICATION_RESULT
+        result = finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=scientific,
+                completed_projection=untarget_projection,
+            )
+        )
+        if type(result) is not FinalizedUntargetApplicationResult:
+            raise AlignmentWorkflowContractError(
+                "application_result returned a crossed Untarget result"
+            )
+        return CompletedUntargetWorkflowResult(runtime_receipt, result)
+    except Exception as exc:
+        raise _WorkflowStageFailure(stage, exc) from exc
+
+
+__all__ = (
+    "AlignmentWorkflowContractError",
+    "CancelledWorkflowResult",
+    "CaptureWorkflowArguments",
+    "CompletedTargetWorkflowResult",
+    "CompletedUntargetWorkflowResult",
+    "FailedWorkflowResult",
+    "ModeTrackWorkflowArguments",
+    "ObservationRepairWorkflowArguments",
+    "TargetWorkflowAdapter",
+    "TargetWorkflowRequest",
+    "UntargetWorkflowAdapter",
+    "UntargetWorkflowRequest",
+    "WorkflowAdapter",
+    "WorkflowRequest",
+    "WorkflowRuntimeInvocation",
+    "WorkflowStage",
+    "WorkflowTerminalResult",
+    "execute_alignment_workflow",
+)

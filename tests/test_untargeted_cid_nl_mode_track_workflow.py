@@ -125,6 +125,8 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
         and application.lineage == ()
         for application in applications
     )
+
+
     assert _workflow_call_cost(
         discovery_raw_open_count=1,
         m7_call_cost={
@@ -217,6 +219,70 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
             evidence_profile=anchored_transaction.trajectory_input.evidence_profile,
             budget=anchored_transaction.application_context.budget,
         )
+
+
+def test_refinement_bootstrap_forwards_exact_drift_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xic_extractor.alignment.mode_track.refinement as refinement_owner
+    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.test_alignment_multi_hypothesis_support import (
+        _assessment_with_observation_only_peak,
+    )
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.mode_track import (
+        ModeTrackTrajectoryPolicy,
+        bootstrap_mode_track_refinement_from_cid_nl_support,
+    )
+
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
+    assessment = _assessment_with_observation_only_peak(
+        fixture,
+        sample_stem="early",
+        direct_apex_rt=7.80,
+        observed_apex_rt=8.40,
+        scan_number=201,
+    )
+
+    class DriftLookup:
+        source = "none"
+
+        def sample_delta_min(self, _sample_stem: str) -> None:
+            return None
+
+        def injection_order(self, _sample_stem: str) -> None:
+            return None
+
+    drift_lookup = DriftLookup()
+    seen = []
+    classify = refinement_owner.classify_cross_sample_initial_neighborhood_edge
+
+    def observe(**kwargs):
+        seen.append(kwargs["drift_lookup"])
+        return classify(**kwargs)
+
+    monkeypatch.setattr(
+        refinement_owner,
+        "classify_cross_sample_initial_neighborhood_edge",
+        observe,
+    )
+    bootstrap_mode_track_refinement_from_cid_nl_support(
+        processing_owners=fixture.owners,
+        sample_assessments=((fixture.sample("early"), assessment),),
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        trajectory_policy=ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="anchor-trajectory-v1",
+            band_policy_version="fixed-band-v1",
+            prediction_half_width_min=0.1,
+            max_interpolation_gap=10,
+            max_extrapolation_gap=10,
+        ),
+        drift_lookup=drift_lookup,
+    )
+
+    assert seen
+    assert all(item is drift_lookup for item in seen)
 
 
 def test_public_workflow_returns_cross_sample_application_receipts(

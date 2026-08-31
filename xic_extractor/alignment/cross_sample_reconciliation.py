@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, asdict, dataclass, field, replace
-from typing import Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairCandidate,
     ObservationRepairEvidence,
-    ObservationRepairOutcome,
+    ObservationRepairMultipleEligibleAuthorization,
+    ObservationRepairNotRunAuthorization,
     ObservationRepairReceipt,
     ObservationRepairRepairAuthorization,
     ObservationRepairSubject,
@@ -37,10 +38,12 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleRepairedObservation,
     CrossSampleSuccessorApplication,
     _apply_repaired_nonmember_admission,
+    _expected_cross_sample_lineage,
     _mint_cross_sample_repaired_observation,
-    apply_coupled_successor_proposal,
     classify_cross_sample_repair_admission_edge,
+    mint_cross_sample_group_identity,
     validate_cross_sample_group_population,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import ModeTrackSupportAnchor
@@ -52,6 +55,7 @@ from xic_extractor.alignment.mode_track.contracts import (
     ModeTrackTrajectoryInput,
     RejectedModeTrackRefinement,
     UnassessableModeTrackRefinement,
+    apply_accepted_mode_track_refinement,
     mint_mode_track_trajectory_input,
 )
 from xic_extractor.alignment.owner_backfill import (
@@ -62,6 +66,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     selected_integration_authority_projection,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
     ProcessingOwnerReferences,
@@ -70,6 +75,12 @@ from xic_extractor.processing_identity import (
     validate_typed_identity_basis,
     validate_typed_identity_id,
 )
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.mode_track.refinement import (
+        ModeTrackFinalAttemptResult,
+        ModeTrackRefinementRun,
+    )
 
 _FINAL_RECEIPT_PREFIX = "xic.cross-sample-final-receipt.v1:"
 _NONMEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-nonmember-repair.v1:"
@@ -491,6 +502,177 @@ def build_cross_sample_post_mt0_context(
     )
 
 
+def apply_mode_track_refinement_run_for_workflow(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    captures: Sequence[SampleLocalCapture],
+    run: ModeTrackRefinementRun,
+) -> CrossSamplePostMT0Context:
+    """Atomically apply one complete owner-produced MT0 run."""
+
+    from xic_extractor.alignment.mode_track.assignment import (
+        ModeTrackContractError,
+        validate_mode_track_fit_once_source_for_consumption,
+    )
+    from xic_extractor.alignment.mode_track.refinement import (
+        _REFINEMENT_RUN_MINT_TOKEN,
+        ModeTrackRefinementContractError,
+        ModeTrackRefinementRun,
+        ModeTrackRefinementTransaction,
+    )
+
+    if type(processing_owners) is not ProcessingOwnerReferences:
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 requires exact processing owners"
+        )
+    if type(run) is not ModeTrackRefinementRun:
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 requires an exact ModeTrack refinement run"
+        )
+    try:
+        run.__post_init__(_REFINEMENT_RUN_MINT_TOKEN)
+    except ModeTrackRefinementContractError as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
+    try:
+        validate_mode_track_fit_once_source_for_consumption(run.fit_once_source)
+    except (ModeTrackContractError, TypeError, ValueError) as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
+    if (
+        run.fit_once_source.processing_owners is not processing_owners
+        or run.fit_once_source.family_context is not run.family_context
+        or run.fit_once_source.model_set is not run.model_set
+        or run.fit_once_source.initial_assignment_batches
+        != run.assignment_batches
+    ):
+        raise CrossSampleReconciliationContractError(
+            "ModeTrack run crossed its exact fit-once source"
+        )
+    capture_tuple = tuple(captures)
+    if any(type(capture) is not SampleLocalCapture for capture in capture_tuple):
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 captures must be exact owner results"
+        )
+    candidate_ids = tuple(capture.candidate_id for capture in capture_tuple)
+    if len(candidate_ids) != len(set(candidate_ids)):
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 captures duplicate a candidate"
+        )
+    for capture in capture_tuple:
+        capture.__post_init__()
+    selected_ids = tuple(
+        sorted(
+            capture.selected_hypothesis.hypothesis_id
+            for capture in capture_tuple
+            if capture.selected_hypothesis is not None
+        )
+    )
+    owner_ids = tuple(sorted(owner.owner_id for owner in run.owners))
+    if selected_ids != owner_ids or len(owner_ids) != len(set(owner_ids)):
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 captures do not close the exact owner population"
+        )
+    try:
+        predecessors = validate_cross_sample_group_population(run.predecessors)
+    except (TypeError, ValueError) as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
+    family_predecessors = tuple(
+        validate_cross_sample_peak_group_identity(track, require_canonical=True)
+        for track in run.family_context.mode_tracks
+    )
+    if any(group is None for group in family_predecessors) or tuple(
+        sorted(
+            (group for group in family_predecessors if group is not None),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    ) != predecessors:
+        raise CrossSampleReconciliationContractError(
+            "ModeTrack run predecessor population crossed Family context"
+        )
+    transaction_tuple = run.transactions
+    if not transaction_tuple or any(
+        type(transaction) is not ModeTrackRefinementTransaction
+        for transaction in transaction_tuple
+    ):
+        raise CrossSampleReconciliationContractError(
+            "ModeTrack run requires complete typed component transactions"
+        )
+    transaction_predecessor_ids = tuple(
+        group.group_hypothesis_id
+        for transaction in transaction_tuple
+        for group in transaction.application_context.predecessors
+    )
+    if tuple(sorted(transaction_predecessor_ids)) != tuple(
+        group.group_hypothesis_id for group in predecessors
+    ) or len(transaction_predecessor_ids) != len(set(transaction_predecessor_ids)):
+        raise CrossSampleReconciliationContractError(
+            "ModeTrack transactions do not close every predecessor exactly once"
+        )
+    population = predecessors
+    for transaction in sorted(
+        transaction_tuple,
+        key=lambda item: item.trajectory_input.trajectory_input_id,
+    ):
+        proposal = transaction.proposal
+        if type(proposal) is AcceptedModeTrackRefinement:
+            try:
+                application = apply_accepted_mode_track_refinement(
+                    trajectory_input=transaction.trajectory_input,
+                    proposal=proposal,
+                    application_context=transaction.application_context,
+                    population=population,
+                )
+            except (TypeError, ValueError, KeyError) as exc:
+                raise CrossSampleReconciliationContractError(str(exc)) from exc
+            if application.status != "assessable":
+                raise CrossSampleReconciliationContractError(
+                    "accepted MT0 component became unassessable during application"
+                )
+            successors = application.successors
+        elif type(proposal) in {
+            RejectedModeTrackRefinement,
+            InsufficientModeTrackTraining,
+            UnassessableModeTrackRefinement,
+        }:
+            successors = transaction.application_context.predecessors
+        else:
+            raise CrossSampleReconciliationContractError(
+                "ModeTrack transaction proposal variant is not closed"
+            )
+        population = _final_population_after_application(
+            before=population,
+            predecessors=transaction.application_context.predecessors,
+            successors=successors,
+        )
+    lineage = _expected_cross_sample_lineage(
+        predecessors=predecessors,
+        successors=population,
+    )
+    application = CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=predecessors,
+        successors=population,
+        lineage=lineage,
+        reason=(
+            "unchanged_membership_no_lineage"
+            if {group.group_hypothesis_id for group in predecessors}
+            == {group.group_hypothesis_id for group in population}
+            else "membership_changed"
+        ),
+    )
+    return build_cross_sample_post_mt0_context(
+        processing_request_id=processing_owners.request.processing_request_id,
+        processing_owners=processing_owners,
+        population=population,
+        application=application,
+        owners=run.owners,
+        classified_edges=run.classified_edges,
+        anchors=run.anchors,
+        injection_order=run.injection_order,
+        evidence_profile=run.evidence_profile,
+        budget=run.budget,
+    )
+
+
 def reconcile_nonmember_observation_repair(
     *,
     context: CrossSamplePostMT0Context,
@@ -506,7 +688,7 @@ def reconcile_nonmember_observation_repair(
         raise CrossSampleReconciliationContractError(
             "nonmember repair admission requires an exact AlignmentConfig"
         )
-    candidate, receipt, evidence = _validate_candidate_terminal(
+    candidate, receipt, evidence, current_predecessor = _validate_candidate_terminal(
         repair_terminal,
         context=context,
     )
@@ -526,6 +708,9 @@ def reconcile_nonmember_observation_repair(
         evidence=evidence,
         candidate_member=candidate_member,
     )
+    current_member_ids = {
+        member.member_subject_id for member in current_predecessor.member_subjects
+    }
     candidate_edges = tuple(
         sorted(
             (
@@ -536,6 +721,7 @@ def reconcile_nonmember_observation_repair(
                     drift_lookup=drift_lookup,
                 )
                 for owner in context.owners
+                if _owner_member_id(owner) in current_member_ids
             ),
             key=_edge_sort_key,
         )
@@ -549,7 +735,7 @@ def reconcile_nonmember_observation_repair(
     if disposition == "admitted":
         try:
             application = _apply_repaired_nonmember_admission(
-                predecessor=candidate.predecessor_group,
+                predecessor=current_predecessor,
                 candidate_member=candidate_member,
                 population=context.population,
                 repair_receipt_id=receipt.receipt_id,
@@ -568,7 +754,27 @@ def reconcile_nonmember_observation_repair(
             *context.classified_edges,
             *candidate_edges,
         )
-        classified_edges = tuple(sorted(combined_edges, key=_edge_sort_key))
+        trajectory_member_ids = {
+            member.member_subject_id
+            for member in application.successor.member_subjects
+        }
+        classified_edges = tuple(
+            sorted(
+                (
+                    edge
+                    for edge in combined_edges
+                    if edge.left_member_subject_id in trajectory_member_ids
+                    and edge.right_member_subject_id in trajectory_member_ids
+                ),
+                key=_edge_sort_key,
+            )
+        )
+        trajectory_owners = tuple(
+            owner
+            for owner in final_owners
+            if _owner_member_id(owner) in trajectory_member_ids
+        )
+        trajectory_owner_ids = {owner.owner_id for owner in trajectory_owners}
         injection_order = _post_repair_injection_order(
             context=context,
             candidate=candidate,
@@ -577,11 +783,14 @@ def reconcile_nonmember_observation_repair(
         try:
             trajectory_input = mint_mode_track_trajectory_input(
                 predecessors=(application.successor,),
-                owners=(*final_owners, repaired_observation),
+                owners=(*trajectory_owners, repaired_observation),
                 classified_edges=classified_edges,
-                # The new group identity invalidates old anchor bindings;
-                # repair success cannot remint method-specific anchor evidence.
-                anchors=(),
+                # Repair adds no anchor; retained direct-support anchors remain exact.
+                anchors=tuple(
+                    anchor
+                    for anchor in context.anchors
+                    if anchor.peak_hypothesis_id in trajectory_owner_ids
+                ),
                 injection_order=injection_order,
                 evidence_profile=context.evidence_profile,
                 budget=context.budget,
@@ -640,12 +849,18 @@ class CrossSampleReconciledState:
 
     processing_request_id: str
     population: tuple[CrossSampleGroupIdentity, ...]
-    repair_receipt_id: str
+    repair_receipt_id: str | None
     repair_epoch: int
-    repair_outcome: ObservationRepairOutcome
+    repair_outcome: Literal[
+        "not_run",
+        "multiple_eligible",
+        "no_repair",
+        "repaired",
+    ]
     member_subject_ids: tuple[str, ...]
     trajectory_input_id: str
     trajectory_changed: bool
+    repair_authorization_id: str | None = None
 
     def __post_init__(self) -> None:
         request_id = _request_id(self.processing_request_id)
@@ -668,20 +883,49 @@ class CrossSampleReconciledState:
             raise CrossSampleReconciliationContractError(
                 "CS2 population crossed processing request"
             )
-        if (
+        if self.repair_receipt_id is not None and (
             not isinstance(self.repair_receipt_id, str)
             or not self.repair_receipt_id.strip()
         ):
             raise CrossSampleReconciliationContractError(
-                "repair_receipt_id must be non-empty text"
+                "repair_receipt_id must be absent or non-empty text"
             )
-        if type(self.repair_epoch) is not int or self.repair_epoch != 1:
+        if self.repair_authorization_id is not None and (
+            not isinstance(self.repair_authorization_id, str)
+            or not self.repair_authorization_id.strip()
+        ):
             raise CrossSampleReconciliationContractError(
-                "CS2 repair epoch must be exactly 1"
+                "repair_authorization_id must be absent or non-empty text"
             )
-        if self.repair_outcome not in {"no_repair", "repaired"}:
+        if type(self.repair_epoch) is not int or self.repair_epoch not in {0, 1}:
+            raise CrossSampleReconciliationContractError(
+                "CS2 repair epoch must be zero or one"
+            )
+        if self.repair_outcome not in {
+            "not_run",
+            "multiple_eligible",
+            "no_repair",
+            "repaired",
+        }:
             raise CrossSampleReconciliationContractError(
                 "CS2 repair outcome is not closed"
+            )
+        if self.repair_epoch == 0:
+            if (
+                self.repair_outcome not in {"not_run", "multiple_eligible"}
+                or self.repair_authorization_id is None
+                or self.repair_receipt_id is not None
+                or self.trajectory_changed
+            ):
+                raise CrossSampleReconciliationContractError(
+                    "epoch-zero CS2 state contradicts repair authorization"
+                )
+        elif (
+            self.repair_outcome not in {"no_repair", "repaired"}
+            or self.repair_receipt_id is None
+        ):
+            raise CrossSampleReconciliationContractError(
+                "epoch-one CS2 state requires an exact repair receipt"
             )
         expected_members = tuple(
             sorted(
@@ -708,7 +952,7 @@ class CrossSampleFinalReceipt:
     receipt_id: str
     processing_request_id: str
     post_mt0_application: CrossSampleSuccessorApplication
-    repair_receipt: ObservationRepairReceipt
+    repair_receipt: ObservationRepairReceipt | None
     repair_epoch: int
     cs2_state: CrossSampleReconciledState
     pre_trajectory_input_id: str
@@ -717,6 +961,16 @@ class CrossSampleFinalReceipt:
     final_application: CrossSampleSuccessorApplication
     final_population: tuple[CrossSampleGroupIdentity, ...]
     basis_bytes: bytes
+    repair_terminal: ObservationRepairTerminalResult | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
+    mode_track_final_attempt: ModeTrackFinalAttemptResult | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -733,19 +987,13 @@ class CrossSampleFinalReceipt:
             self.final_application,
             field="final application",
         )
-        _validate_repair_receipt(self.repair_receipt)
-        if (
-            type(self.repair_epoch) is not int
-            or self.repair_epoch != 1
-            or self.repair_epoch != self.repair_receipt.repair_epoch
-        ):
-            raise CrossSampleReconciliationContractError(
-                "final receipt crosses repair epoch"
-            )
-        if self.repair_receipt.subject.successor_application != post_application:
-            raise CrossSampleReconciliationContractError(
-                "final receipt crosses post-MT0 application"
-            )
+        _validate_final_repair_binding(
+            terminal=self.repair_terminal,
+            receipt=self.repair_receipt,
+            repair_epoch=self.repair_epoch,
+            state=self.cs2_state,
+            post_application=post_application,
+        )
         if any(
             group.processing_request_id != request_id
             for application in (post_application, final_application)
@@ -758,7 +1006,9 @@ class CrossSampleFinalReceipt:
             raise CrossSampleReconciliationContractError(
                 "final receipt crosses CS2 request"
             )
-        if self.cs2_state.repair_receipt_id != self.repair_receipt.receipt_id:
+        if self.cs2_state.repair_receipt_id != (
+            None if self.repair_receipt is None else self.repair_receipt.receipt_id
+        ):
             raise CrossSampleReconciliationContractError(
                 "final receipt crosses repair receipt"
             )
@@ -776,6 +1026,17 @@ class CrossSampleFinalReceipt:
         if not trajectory_changed and self.mode_track_proposal is not None:
             raise CrossSampleReconciliationContractError(
                 "unchanged trajectory cannot carry an MT1 proposal"
+            )
+        if not trajectory_changed and self.mode_track_final_attempt is not None:
+            raise CrossSampleReconciliationContractError(
+                "unchanged trajectory cannot carry an MT1 final attempt"
+            )
+        if trajectory_changed and (
+            self.mode_track_final_attempt is None
+            or self.mode_track_final_attempt.proposal is not self.mode_track_proposal
+        ):
+            raise CrossSampleReconciliationContractError(
+                "changed trajectory requires the exact MT1 final attempt"
             )
         _validate_proposal_snapshot(
             self.mode_track_proposal,
@@ -797,7 +1058,7 @@ class CrossSampleFinalReceipt:
             self.mode_track_proposal is None
             or type(self.mode_track_proposal) is not AcceptedModeTrackRefinement
         ):
-            expected_successors = post_application.successors
+            expected_successors = self.cs2_state.population
             if (
                 final_application.predecessors != expected_successors
                 or final_application.successors != expected_successors
@@ -842,26 +1103,28 @@ class CrossSampleFinalReceipt:
                 )
             expected_population = _final_population_after_application(
                 before=self.cs2_state.population,
-                predecessors=post_application.successors,
+                predecessors=final_application.predecessors,
                 successors=final_application.successors,
             )
             if population != expected_population:
                 raise CrossSampleReconciliationContractError(
                     "final population is not the complete atomic successor partition"
                 )
-        if final_application.predecessors != post_application.successors:
+        if final_application.predecessors != self.cs2_state.population:
             raise CrossSampleReconciliationContractError(
-                "final application does not bind post-MT0 successors"
+                "final application does not bind the complete CS2 population"
             )
         expected_basis = _final_receipt_basis(
             processing_request_id=self.processing_request_id,
             post_mt0_application=self.post_mt0_application,
+            repair_terminal=self.repair_terminal,
             repair_receipt=self.repair_receipt,
             repair_epoch=self.repair_epoch,
             cs2_state=self.cs2_state,
             pre_trajectory_input_id=self.pre_trajectory_input_id,
             post_trajectory_input_id=self.post_trajectory_input_id,
             mode_track_proposal=self.mode_track_proposal,
+            mode_track_final_attempt=self.mode_track_final_attempt,
             final_application=self.final_application,
             final_population=self.final_population,
         )
@@ -876,8 +1139,8 @@ class CrossSampleFinalReceipt:
             )
 
     @property
-    def repair_receipt_id(self) -> str:
-        return self.repair_receipt.receipt_id
+    def repair_receipt_id(self) -> str | None:
+        return None if self.repair_receipt is None else self.repair_receipt.receipt_id
 
     @property
     def evidence_authority(self) -> str:
@@ -972,11 +1235,14 @@ def reconcile_observation_repair(
     return _mint_final_receipt(
         processing_request_id=request_id,
         post_mt0_application=context.application,
+        repair_terminal=None,
         repair_receipt=repair_receipt,
+        repair_epoch=repair_receipt.repair_epoch,
         cs2_state=cs2_state,
         pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         post_trajectory_input_id=post_trajectory.trajectory_input_id,
         mode_track_proposal=None,
+        mode_track_final_attempt=None,
         final_application=final_application,
         final_population=context.population,
     )
@@ -986,24 +1252,28 @@ def _mint_final_receipt(
     *,
     processing_request_id: str,
     post_mt0_application: CrossSampleSuccessorApplication,
-    repair_receipt: ObservationRepairReceipt,
+    repair_terminal: ObservationRepairTerminalResult | None,
+    repair_receipt: ObservationRepairReceipt | None,
+    repair_epoch: int,
     cs2_state: CrossSampleReconciledState,
     pre_trajectory_input_id: str,
     post_trajectory_input_id: str,
     mode_track_proposal: CrossSampleProposalOutcome | None,
+    mode_track_final_attempt: ModeTrackFinalAttemptResult | None,
     final_application: CrossSampleSuccessorApplication,
     final_population: tuple[CrossSampleGroupIdentity, ...],
 ) -> CrossSampleFinalReceipt:
-    repair_epoch = repair_receipt.repair_epoch
     basis = _final_receipt_basis(
         processing_request_id=processing_request_id,
         post_mt0_application=post_mt0_application,
+        repair_terminal=repair_terminal,
         repair_receipt=repair_receipt,
         repair_epoch=repair_epoch,
         cs2_state=cs2_state,
         pre_trajectory_input_id=pre_trajectory_input_id,
         post_trajectory_input_id=post_trajectory_input_id,
         mode_track_proposal=mode_track_proposal,
+        mode_track_final_attempt=mode_track_final_attempt,
         final_application=final_application,
         final_population=final_population,
     )
@@ -1020,8 +1290,621 @@ def _mint_final_receipt(
         final_application=final_application,
         final_population=final_population,
         basis_bytes=basis,
+        repair_terminal=repair_terminal,
+        mode_track_final_attempt=mode_track_final_attempt,
         _mint_token=_FINAL_RECEIPT_MINT_TOKEN,
     )
+
+
+def consume_observation_repair_terminal(
+    *,
+    context: CrossSamplePostMT0Context,
+    terminal: ObservationRepairTerminalResult,
+    repair_result: OwnerBackfillSampleResult | None,
+    alignment_config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None = None,
+) -> CrossSamplePostRepairReconciliation:
+    """Consume one exact owner terminal without caller-selected routing."""
+
+    _validate_post_mt0_context(context)
+    if type(terminal) is not ObservationRepairTerminalResult:
+        raise CrossSampleReconciliationContractError(
+            "repair handoff requires an exact ObservationRepair terminal"
+        )
+    authorization = terminal.authorization
+    if authorization.processing_owners is not context.processing_owners:
+        raise CrossSampleReconciliationContractError(
+            "repair terminal crossed the exact processing owners"
+        )
+    if type(authorization) in {
+        ObservationRepairNotRunAuthorization,
+        ObservationRepairMultipleEligibleAuthorization,
+    }:
+        blocked_outcome: Literal["not_run", "multiple_eligible"] = (
+            "not_run"
+            if type(authorization) is ObservationRepairNotRunAuthorization
+            else "multiple_eligible"
+        )
+        if terminal.receipt is not None or repair_result is not None:
+            raise CrossSampleReconciliationContractError(
+                "blocked repair terminal cannot carry repair evidence"
+            )
+        if type(alignment_config) is not AlignmentConfig:
+            raise CrossSampleReconciliationContractError(
+                "repair terminal consumer requires an exact AlignmentConfig"
+            )
+        final_application = _mint_unchanged_successor_application(context)
+        state = CrossSampleReconciledState(
+            processing_request_id=context.processing_request_id,
+            population=context.population,
+            repair_receipt_id=None,
+            repair_epoch=0,
+            repair_outcome=blocked_outcome,
+            member_subject_ids=tuple(
+                sorted(
+                    member.member_subject_id
+                    for group in context.population
+                    for member in group.member_subjects
+                )
+            ),
+            trajectory_input_id=context.trajectory_input.trajectory_input_id,
+            trajectory_changed=False,
+            repair_authorization_id=authorization.authorization_id,
+        )
+        return _mint_final_receipt(
+            processing_request_id=context.processing_request_id,
+            post_mt0_application=context.application,
+            repair_terminal=terminal,
+            repair_receipt=None,
+            repair_epoch=0,
+            cs2_state=state,
+            pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+            post_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+            mode_track_proposal=None,
+            mode_track_final_attempt=None,
+            final_application=final_application,
+            final_population=context.population,
+        )
+    if type(authorization) is not ObservationRepairRepairAuthorization:
+        raise CrossSampleReconciliationContractError(
+            "repair terminal authorization variant is not closed"
+        )
+    if repair_result is None:
+        raise CrossSampleReconciliationContractError(
+            "repair terminal requires the exact callback result"
+        )
+    candidate = authorization.candidate
+    sample_id = candidate.sample_identity.identity.sample_identity_id
+    member_matches = tuple(
+        member
+        for group in context.population
+        for member in group.member_subjects
+        if member.canonical_sample_identity_id == sample_id
+    )
+    if len(member_matches) > 1:
+        raise CrossSampleReconciliationContractError(
+            "repair candidate has duplicate current membership"
+        )
+    if member_matches:
+        return _consume_existing_member_candidate_terminal(
+            context=context,
+            terminal=terminal,
+            repair_result=repair_result,
+        )
+    result = reconcile_nonmember_observation_repair(
+        context=context,
+        repair_terminal=terminal,
+        repair_result=repair_result,
+        alignment_config=alignment_config,
+        drift_lookup=drift_lookup,
+    )
+    if result.mode_track_input is not None:
+        return result.mode_track_input
+    return _close_nonmember_repair_without_mt1(
+        context=context,
+        terminal=terminal,
+        result=result,
+    )
+
+
+def consume_mode_track_final_attempt(
+    *,
+    context: CrossSamplePostMT0Context,
+    post_repair: CrossSamplePostRepairModeTrackInput,
+    terminal: ObservationRepairTerminalResult,
+    final_attempt: ModeTrackFinalAttemptResult,
+) -> CrossSampleFinalReceipt:
+    """Consume one exact MT1 owner result and close CrossSample truth."""
+
+    from xic_extractor.alignment.mode_track.refinement import (
+        _FINAL_ATTEMPT_MINT_TOKEN,
+        AssignedModeTrackFinalAttempt,
+        AssignmentUnavailableModeTrackFinalAttempt,
+        ModeTrackFinalAttemptContractError,
+        RejectedModeTrackFinalAttempt,
+        UnassessableModeTrackFinalAttempt,
+        UntrainedModeTrackFinalAttempt,
+    )
+
+    _validate_post_mt0_context(context)
+    _validate_post_repair_mode_track_input(post_repair)
+    if type(terminal) is not ObservationRepairTerminalResult:
+        raise CrossSampleReconciliationContractError(
+            "MT1 closure requires the exact repair terminal"
+        )
+    receipt = terminal.receipt
+    if (
+        type(terminal.authorization) is not ObservationRepairRepairAuthorization
+        or type(receipt) is not ObservationRepairReceipt
+        or receipt.receipt_id != post_repair.repair_receipt_id
+        or terminal.authorization.processing_owners is not context.processing_owners
+        or post_repair.processing_owners is not context.processing_owners
+    ):
+        raise CrossSampleReconciliationContractError(
+            "MT1 closure crossed repair terminal, receipt, or processing owners"
+        )
+    result_types = {
+        AssignedModeTrackFinalAttempt,
+        UntrainedModeTrackFinalAttempt,
+        AssignmentUnavailableModeTrackFinalAttempt,
+        RejectedModeTrackFinalAttempt,
+        UnassessableModeTrackFinalAttempt,
+    }
+    if type(final_attempt) not in result_types:
+        raise CrossSampleReconciliationContractError(
+            "MT1 closure requires an exact sealed final attempt"
+        )
+    try:
+        final_attempt.__post_init__(_FINAL_ATTEMPT_MINT_TOKEN)
+    except ModeTrackFinalAttemptContractError as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
+    binding = final_attempt.binding
+    if (
+        binding.processing_request_id != context.processing_request_id
+        or binding.processing_attempt_id
+        != context.processing_owners.attempt.processing_attempt_id
+        or binding.repair_receipt_id != receipt.receipt_id
+        or binding.cross_sample_post_repair_input_id
+        != post_repair.post_repair_input_id
+        or binding.cross_sample_repair_result_id
+        != post_repair.cross_sample_repair_result_id
+        or binding.post_repair_population_id
+        != post_repair.post_repair_population_id
+        or binding.pre_trajectory_input_id
+        != post_repair.pre_repair_trajectory_input_id
+        or binding.post_trajectory_input_id
+        != post_repair.post_repair_trajectory.trajectory_input_id
+    ):
+        raise CrossSampleReconciliationContractError(
+            "MT1 final attempt crossed its complete CrossSample binding"
+        )
+    proposal = final_attempt.proposal
+    final_application, final_population = _apply_final_attempt_population(
+        post_repair=post_repair,
+        proposal=proposal,
+    )
+    state = _repair_state(
+        context=context,
+        terminal=terminal,
+        population=post_repair.post_repair_population,
+        trajectory_input_id=post_repair.post_repair_trajectory.trajectory_input_id,
+        trajectory_changed=True,
+    )
+    return _mint_final_receipt(
+        processing_request_id=context.processing_request_id,
+        post_mt0_application=context.application,
+        repair_terminal=terminal,
+        repair_receipt=receipt,
+        repair_epoch=1,
+        cs2_state=state,
+        pre_trajectory_input_id=post_repair.pre_repair_trajectory_input_id,
+        post_trajectory_input_id=post_repair.post_repair_trajectory.trajectory_input_id,
+        mode_track_proposal=proposal,
+        mode_track_final_attempt=final_attempt,
+        final_application=final_application,
+        final_population=final_population,
+    )
+
+
+def _consume_existing_member_candidate_terminal(
+    *,
+    context: CrossSamplePostMT0Context,
+    terminal: ObservationRepairTerminalResult,
+    repair_result: OwnerBackfillSampleResult,
+) -> CrossSamplePostRepairReconciliation:
+    authorization = terminal.authorization
+    assert type(authorization) is ObservationRepairRepairAuthorization
+    candidate = authorization.candidate
+    receipt = terminal.receipt
+    if (
+        type(receipt) is not ObservationRepairReceipt
+        or receipt.subject is not candidate
+    ):
+        raise CrossSampleReconciliationContractError(
+            "existing-member terminal crossed candidate or receipt"
+        )
+    evidence = receipt.evidence
+    sample_id = candidate.sample_identity.identity.sample_identity_id
+    matches = tuple(
+        (group, member)
+        for group in context.population
+        for member in group.member_subjects
+        if member.canonical_sample_identity_id == sample_id
+    )
+    if len(matches) != 1:
+        raise CrossSampleReconciliationContractError(
+            "existing-member terminal does not resolve one current member"
+        )
+    current_group, current_member = matches[0]
+    _validate_candidate_successor_lineage(
+        context=context,
+        candidate=candidate,
+        current_group=current_group,
+        current_member=current_member,
+    )
+    if receipt.outcome == "no_repair":
+        _validate_no_repair_callback_result(
+            result=repair_result,
+            candidate=candidate,
+            receipt=receipt,
+        )
+        state = _repair_state(
+            context=context,
+            terminal=terminal,
+            population=context.population,
+            trajectory_input_id=context.trajectory_input.trajectory_input_id,
+            trajectory_changed=False,
+        )
+        return _mint_final_receipt(
+            processing_request_id=context.processing_request_id,
+            post_mt0_application=context.application,
+            repair_terminal=terminal,
+            repair_receipt=receipt,
+            repair_epoch=1,
+            cs2_state=state,
+            pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+            post_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+            mode_track_proposal=None,
+            mode_track_final_attempt=None,
+            final_application=_mint_unchanged_successor_application(context),
+            final_population=context.population,
+        )
+    if type(evidence) is not ObservationRepairEvidence:
+        raise CrossSampleReconciliationContractError(
+            "repaired existing-member terminal is missing physical evidence"
+        )
+    _repair_observation_for_receipt(
+        repair_result,
+        candidate=candidate,
+        receipt=receipt,
+        evidence=evidence,
+    )
+    owners = tuple(
+        owner
+        for owner in context.owners
+        if _owner_member_id(owner) == current_member.member_subject_id
+    )
+    if len(owners) != 1:
+        raise CrossSampleReconciliationContractError(
+            "existing-member terminal does not resolve one exact owner"
+        )
+    target = owners[0]
+    repaired_owners = tuple(
+        replace(target, owner_apex_rt=evidence.rt_apex_min)
+        if owner is target
+        else owner
+        for owner in context.owners
+    )
+    post_trajectory = _mint_context_trajectory(
+        request_id=context.processing_request_id,
+        application=context.application,
+        owners=repaired_owners,
+        classified_edges=context.classified_edges,
+        anchors=context.anchors,
+        injection_order=context.injection_order,
+        evidence_profile=context.evidence_profile,
+        budget=context.budget,
+    )
+    if (
+        post_trajectory.trajectory_input_id
+        != context.trajectory_input.trajectory_input_id
+    ):
+        return _mint_existing_member_post_repair_mode_track_input(
+            context=context,
+            repair_receipt=receipt,
+            repaired_owners=repaired_owners,
+            post_trajectory=post_trajectory,
+            repaired_member_subject_id=current_member.member_subject_id,
+        )
+    state = _repair_state(
+        context=context,
+        terminal=terminal,
+        population=context.population,
+        trajectory_input_id=post_trajectory.trajectory_input_id,
+        trajectory_changed=False,
+    )
+    return _mint_final_receipt(
+        processing_request_id=context.processing_request_id,
+        post_mt0_application=context.application,
+        repair_terminal=terminal,
+        repair_receipt=receipt,
+        repair_epoch=1,
+        cs2_state=state,
+        pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        post_trajectory_input_id=post_trajectory.trajectory_input_id,
+        mode_track_proposal=None,
+        mode_track_final_attempt=None,
+        final_application=_mint_unchanged_successor_application(context),
+        final_population=context.population,
+    )
+
+
+def _close_nonmember_repair_without_mt1(
+    *,
+    context: CrossSamplePostMT0Context,
+    terminal: ObservationRepairTerminalResult,
+    result: CrossSampleNonmemberRepairResult,
+) -> CrossSampleFinalReceipt:
+    receipt = terminal.receipt
+    assert type(receipt) is ObservationRepairReceipt
+    state = _repair_state(
+        context=context,
+        terminal=terminal,
+        population=result.final_population,
+        trajectory_input_id=result.post_trajectory_input_id,
+        trajectory_changed=False,
+    )
+    return _mint_final_receipt(
+        processing_request_id=context.processing_request_id,
+        post_mt0_application=context.application,
+        repair_terminal=terminal,
+        repair_receipt=receipt,
+        repair_epoch=1,
+        cs2_state=state,
+        pre_trajectory_input_id=result.pre_trajectory_input_id,
+        post_trajectory_input_id=result.post_trajectory_input_id,
+        mode_track_proposal=None,
+        mode_track_final_attempt=None,
+        final_application=_mint_unchanged_successor_application(context),
+        final_population=result.final_population,
+    )
+
+
+def _repair_state(
+    *,
+    context: CrossSamplePostMT0Context,
+    terminal: ObservationRepairTerminalResult,
+    population: tuple[CrossSampleGroupIdentity, ...],
+    trajectory_input_id: str,
+    trajectory_changed: bool,
+) -> CrossSampleReconciledState:
+    receipt = terminal.receipt
+    if type(receipt) is not ObservationRepairReceipt:
+        raise CrossSampleReconciliationContractError(
+            "repair state requires an exact repair receipt"
+        )
+    return CrossSampleReconciledState(
+        processing_request_id=context.processing_request_id,
+        population=population,
+        repair_receipt_id=receipt.receipt_id,
+        repair_epoch=1,
+        repair_outcome=receipt.outcome,
+        member_subject_ids=tuple(
+            sorted(
+                member.member_subject_id
+                for group in population
+                for member in group.member_subjects
+            )
+        ),
+        trajectory_input_id=trajectory_input_id,
+        trajectory_changed=trajectory_changed,
+        repair_authorization_id=terminal.authorization.authorization_id,
+    )
+
+
+def _validate_candidate_successor_lineage(
+    *,
+    context: CrossSamplePostMT0Context,
+    candidate: ObservationRepairCandidate,
+    current_group: CrossSampleGroupIdentity,
+    current_member: CrossSampleGroupMemberSubject,
+) -> None:
+    predecessor_id = candidate.predecessor_group.group_hypothesis_id
+    if current_group.group_hypothesis_id == predecessor_id:
+        return
+    matching = tuple(
+        edge
+        for edge in context.application.lineage
+        if edge.predecessor_group_hypothesis_id == predecessor_id
+        and edge.successor_group_hypothesis_id == current_group.group_hypothesis_id
+        and current_member.member_subject_id in edge.member_subject_ids
+    )
+    if len(matching) != 1:
+        raise CrossSampleReconciliationContractError(
+            "repair candidate predecessor has no unique current successor lineage"
+        )
+
+
+def _validate_no_repair_callback_result(
+    *,
+    result: OwnerBackfillSampleResult,
+    candidate: ObservationRepairCandidate,
+    receipt: ObservationRepairReceipt,
+) -> None:
+    terminal = receipt.no_repair_terminal
+    if (
+        type(result) is not OwnerBackfillSampleResult
+        or result.sample_stem != candidate.request_identity.sample_stem
+        or terminal is None
+    ):
+        raise CrossSampleReconciliationContractError(
+            "no-repair receipt crossed its exact callback result"
+        )
+    matches = tuple(
+        observation
+        for observation in result.peak_fact_observations
+        if observation.logical_request == candidate.logical_request
+        and observation.request_identity == candidate.request_identity
+        and observation.work_unit_key == terminal.work_unit_key
+    )
+    if len(matches) != 1:
+        raise CrossSampleReconciliationContractError(
+            "no-repair callback result lost its exact live observation"
+        )
+    observation = matches[0]
+    evaluation = observation.physical_evaluation
+    if (
+        evaluation is None
+        or evaluation.answer.physical_answer_id != terminal.physical_answer_id
+        or evaluation.facts is not None
+    ):
+        raise CrossSampleReconciliationContractError(
+            "no-repair callback result crossed its physical terminal"
+        )
+
+
+def _apply_final_attempt_population(
+    *,
+    post_repair: CrossSamplePostRepairModeTrackInput,
+    proposal: CrossSampleProposalOutcome,
+) -> tuple[
+    CrossSampleSuccessorApplication,
+    tuple[CrossSampleGroupIdentity, ...],
+]:
+    predecessors = post_repair.post_repair_population
+    if type(proposal) is not AcceptedModeTrackRefinement:
+        return (
+            CrossSampleSuccessorApplication(
+                status="assessable",
+                predecessors=predecessors,
+                successors=predecessors,
+                lineage=(),
+                reason="unchanged_membership_no_lineage",
+            ),
+            predecessors,
+        )
+    member_by_id = {
+        member.member_subject_id: member
+        for group in predecessors
+        for member in group.member_subjects
+    }
+    proposed_ids = tuple(
+        member_id
+        for member_ids in proposal.successor_member_subject_ids
+        for member_id in member_ids
+    )
+    if (
+        tuple(sorted(proposed_ids)) != tuple(sorted(member_by_id))
+        or len(proposed_ids) != len(set(proposed_ids))
+    ):
+        raise CrossSampleReconciliationContractError(
+            "accepted MT1 proposal is not a complete current partition"
+        )
+    exclusions = {
+        frozenset((left, right))
+        for left, right, _reason in post_repair.post_repair_trajectory.exclusions
+    }
+    if any(
+        frozenset((left, right)) in exclusions
+        for member_ids in proposal.successor_member_subject_ids
+        for index, left in enumerate(member_ids)
+        for right in member_ids[index + 1 :]
+    ):
+        raise CrossSampleReconciliationContractError(
+            "accepted MT1 proposal reopens an excluded edge"
+        )
+    successors = tuple(
+        sorted(
+            (
+                mint_cross_sample_group_identity(
+                    processing_request_id=post_repair.processing_request_id,
+                    member_subjects=tuple(
+                        member_by_id[member_id] for member_id in member_ids
+                    ),
+                )
+                for member_ids in proposal.successor_member_subject_ids
+            ),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    lineage = _expected_cross_sample_lineage(
+        predecessors=predecessors,
+        successors=successors,
+    )
+    application = CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=predecessors,
+        successors=successors,
+        lineage=lineage,
+        reason=(
+            "unchanged_membership_no_lineage"
+            if {group.group_hypothesis_id for group in predecessors}
+            == {group.group_hypothesis_id for group in successors}
+            else "membership_changed"
+        ),
+    )
+    return application, successors
+
+
+def _validate_final_repair_binding(
+    *,
+    terminal: ObservationRepairTerminalResult | None,
+    receipt: ObservationRepairReceipt | None,
+    repair_epoch: int,
+    state: CrossSampleReconciledState,
+    post_application: CrossSampleSuccessorApplication,
+) -> None:
+    if terminal is None:
+        if type(receipt) is not ObservationRepairReceipt or repair_epoch != 1:
+            raise CrossSampleReconciliationContractError(
+                "legacy final receipt requires one exact repair receipt"
+            )
+        _validate_repair_receipt(receipt)
+        if receipt.subject.successor_application != post_application:
+            raise CrossSampleReconciliationContractError(
+                "legacy final receipt crosses post-MT0 application"
+            )
+        if state.repair_authorization_id is not None:
+            raise CrossSampleReconciliationContractError(
+                "legacy final receipt cannot invent repair authorization"
+            )
+        return
+    if type(terminal) is not ObservationRepairTerminalResult:
+        raise CrossSampleReconciliationContractError(
+            "final receipt repair terminal must be exact"
+        )
+    authorization = terminal.authorization
+    if type(authorization) in {
+        ObservationRepairNotRunAuthorization,
+        ObservationRepairMultipleEligibleAuthorization,
+    }:
+        if (
+            receipt is not None
+            or terminal.receipt is not None
+            or repair_epoch != 0
+            or state.repair_authorization_id != authorization.authorization_id
+            or state.repair_receipt_id is not None
+            or state.repair_outcome != terminal.state
+        ):
+            raise CrossSampleReconciliationContractError(
+                "final receipt contradicts blocked repair terminal"
+            )
+        return
+    if type(authorization) is not ObservationRepairRepairAuthorization:
+        raise CrossSampleReconciliationContractError(
+            "final receipt has an unknown repair authorization"
+        )
+    if (
+        type(receipt) is not ObservationRepairReceipt
+        or terminal.receipt is not receipt
+        or repair_epoch != 1
+        or state.repair_authorization_id != authorization.authorization_id
+        or state.repair_receipt_id != receipt.receipt_id
+        or state.repair_outcome != receipt.outcome
+    ):
+        raise CrossSampleReconciliationContractError(
+            "final receipt crosses exact repair terminal or receipt"
+        )
 
 
 def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
@@ -1265,25 +2148,16 @@ def _mint_unchanged_successor_application(
 ) -> CrossSampleSuccessorApplication:
     """Close a prior transition before deciding whether a new one is needed."""
 
-    successors = tuple(
-        sorted(
-            context.application.successors,
-            key=lambda group: group.group_hypothesis_id,
-        )
+    population = tuple(
+        sorted(context.population, key=lambda group: group.group_hypothesis_id)
     )
-    member_sets = tuple(group.member_subjects for group in successors)
-    try:
-        return apply_coupled_successor_proposal(
-            predecessors=successors,
-            successor_member_sets=member_sets,
-            edges=context.classified_edges,
-            budget=context.budget,
-            population=context.population,
-        )
-    except (TypeError, ValueError, KeyError) as exc:
-        raise CrossSampleReconciliationContractError(
-            f"unchanged successor application could not close: {exc}"
-        ) from exc
+    return CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=population,
+        successors=population,
+        lineage=(),
+        reason="unchanged_membership_no_lineage",
+    )
 
 
 def _validate_candidate_terminal(
@@ -1294,6 +2168,7 @@ def _validate_candidate_terminal(
     ObservationRepairCandidate,
     ObservationRepairReceipt,
     ObservationRepairEvidence,
+    CrossSampleGroupIdentity,
 ]:
     if (
         type(terminal) is not ObservationRepairTerminalResult
@@ -1337,18 +2212,47 @@ def _validate_candidate_terminal(
         raise CrossSampleReconciliationContractError(
             "repair candidate crossed processing owners or request"
         )
-    if (
-        len(context.application.successors) != 1
-        or context.application.successors[0] is not candidate.predecessor_group
-        or not any(group is candidate.predecessor_group for group in context.population)
+    current_predecessors = tuple(
+        group
+        for group in context.population
+        if group.group_hypothesis_id
+        == candidate.predecessor_group.group_hypothesis_id
+    )
+    if current_predecessors:
+        if (
+            len(current_predecessors) != 1
+            or current_predecessors[0] is not candidate.predecessor_group
+        ):
+            raise CrossSampleReconciliationContractError(
+                "repair candidate is not bound to the exact current group"
+            )
+    else:
+        successor_ids = {
+            edge.successor_group_hypothesis_id
+            for edge in context.application.lineage
+            if edge.predecessor_group_hypothesis_id
+            == candidate.predecessor_group.group_hypothesis_id
+        }
+        current_predecessors = tuple(
+            group
+            for group in context.population
+            if group.group_hypothesis_id in successor_ids
+        )
+    if len(current_predecessors) != 1:
+        raise CrossSampleReconciliationContractError(
+            "repair candidate predecessor has no unique current successor"
+        )
+    current_predecessor = current_predecessors[0]
+    if not any(
+        group is current_predecessor for group in context.application.successors
     ):
         raise CrossSampleReconciliationContractError(
-            "repair candidate predecessor is not the exact current group application"
+            "repair candidate is not bound to the exact current group application"
         )
     sample_identity_id = candidate.sample_identity.identity.sample_identity_id
     if any(
         member.canonical_sample_identity_id == sample_identity_id
-        for member in candidate.predecessor_group.member_subjects
+        for member in current_predecessor.member_subjects
     ):
         raise CrossSampleReconciliationContractError(
             "repair candidate already has CrossSample membership"
@@ -1383,7 +2287,7 @@ def _validate_candidate_terminal(
         raise CrossSampleReconciliationContractError(
             "repair receipt crossed request, group, sample, or acquisition"
         )
-    return candidate, receipt, evidence
+    return candidate, receipt, evidence, current_predecessor
 
 
 def _repair_observation_for_receipt(
@@ -1875,9 +2779,15 @@ def _mint_existing_member_post_repair_mode_track_input(
     repair_receipt: ObservationRepairReceipt,
     repaired_owners: tuple[SampleLocalMS1Owner, ...],
     post_trajectory: ModeTrackTrajectoryInput,
+    repaired_member_subject_id: str | None = None,
 ) -> CrossSamplePostRepairModeTrackInput:
     evidence = repair_receipt.evidence
-    if evidence is None or evidence.member_subject_id is None:
+    member_subject_id = (
+        None if evidence is None else evidence.member_subject_id
+    )
+    if repaired_member_subject_id is not None:
+        member_subject_id = repaired_member_subject_id
+    if evidence is None or member_subject_id is None:
         raise CrossSampleReconciliationContractError(
             "changed existing-member repair is missing its exact member evidence"
         )
@@ -1891,7 +2801,7 @@ def _mint_existing_member_post_repair_mode_track_input(
         repair_receipt_id=repair_receipt.receipt_id,
         repair_epoch=repair_receipt.repair_epoch,
         cross_sample_repair_application_id=application_id,
-        repaired_member_subject_id=evidence.member_subject_id,
+        repaired_member_subject_id=member_subject_id,
         pre_repair_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         post_repair_trajectory_input_id=post_trajectory.trajectory_input_id,
         post_repair_population_id=_post_repair_population_id(population),
@@ -1904,7 +2814,7 @@ def _mint_existing_member_post_repair_mode_track_input(
         repair_disposition="existing_member_reconciled",
         cross_sample_repair_result_id=result_id,
         cross_sample_repair_application_id=application_id,
-        repaired_member_subject_id=evidence.member_subject_id,
+        repaired_member_subject_id=member_subject_id,
         repaired_observation=None,
         pre_repair_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         post_repair_population=population,
@@ -2060,10 +2970,6 @@ def _validate_nonmember_repair_result(
         evidence=evidence,
         candidate_member=expected_member,
     )
-    predecessor_member_ids = {
-        member.member_subject_id
-        for member in candidate.predecessor_group.member_subjects
-    }
     observed_predecessor_ids: set[str] = set()
     observed_pairs: set[tuple[str, str]] = set()
     for edge in result.pairwise_edges:
@@ -2094,10 +3000,22 @@ def _validate_nonmember_repair_result(
                 "nonmember repair edge crossed the candidate member"
             )
         observed_predecessor_ids.update(edge_ids - {expected_member.member_subject_id})
+    current_group_member_sets = tuple(
+        {
+            member.member_subject_id
+            for member in group.member_subjects
+            if member.member_subject_id != expected_member.member_subject_id
+        }
+        for group in result.final_population
+        if observed_predecessor_ids.issubset(
+            {member.member_subject_id for member in group.member_subjects}
+        )
+    )
     if (
-        len(result.pairwise_edges) != len(predecessor_member_ids)
+        len(current_group_member_sets) != 1
+        or len(result.pairwise_edges) != len(current_group_member_sets[0])
         or len(observed_pairs) != len(result.pairwise_edges)
-        or observed_predecessor_ids != predecessor_member_ids
+        or observed_predecessor_ids != current_group_member_sets[0]
         or (_reduce_repair_admission(result.pairwise_edges) != result.disposition)
     ):
         raise CrossSampleReconciliationContractError(
@@ -2146,7 +3064,7 @@ def _validate_nonmember_repair_result(
                 "admitted repair result crossed application or ModeTrack input"
             )
         if (
-            application.predecessor is not candidate.predecessor_group
+            application.predecessor.processing_request_id != request_id
             or application.repair_receipt_id != receipt.receipt_id
             or application.authorization_id != candidate.authorization_id
             or application.candidate_id != candidate.candidate_id
@@ -2184,21 +3102,24 @@ def _validate_nonmember_repair_result(
             raise CrossSampleReconciliationContractError(
                 "admitted repair result did not change trajectory identity"
             )
-        expected_owner_ids = predecessor_member_ids
+        expected_owner_ids = {
+            member.member_subject_id
+            for member in application.predecessor.member_subjects
+        }
     else:
         if (
             result.application is not None
             or result.mode_track_input is not None
             or pre_id != post_id
-            or not any(
-                group is candidate.predecessor_group
-                for group in result.final_population
-            )
         ):
             raise CrossSampleReconciliationContractError(
                 "non-admitted repair result changed membership or trajectory"
             )
-        expected_owner_ids = predecessor_member_ids
+        expected_owner_ids = {
+            member.member_subject_id
+            for group in result.final_population
+            for member in group.member_subjects
+        }
     owner_member_ids = {_owner_member_id(owner) for owner in result.final_owners}
     if owner_member_ids != expected_owner_ids or len(owner_member_ids) != len(
         result.final_owners
@@ -2454,21 +3375,63 @@ def _final_receipt_basis(
     *,
     processing_request_id: str,
     post_mt0_application: CrossSampleSuccessorApplication,
-    repair_receipt: ObservationRepairReceipt,
+    repair_terminal: ObservationRepairTerminalResult | None,
+    repair_receipt: ObservationRepairReceipt | None,
     repair_epoch: int,
     cs2_state: CrossSampleReconciledState,
     pre_trajectory_input_id: str,
     post_trajectory_input_id: str,
     mode_track_proposal: CrossSampleProposalOutcome | None,
+    mode_track_final_attempt: ModeTrackFinalAttemptResult | None,
     final_application: CrossSampleSuccessorApplication,
     final_population: tuple[CrossSampleGroupIdentity, ...],
 ) -> bytes:
+    if repair_terminal is None and mode_track_final_attempt is None:
+        if repair_receipt is None:
+            raise CrossSampleReconciliationContractError(
+                "legacy final basis requires its exact repair receipt"
+            )
+        return canonical_identity_basis_bytes(
+            {
+                "schema_version": "cross_sample_final_receipt_v1",
+                "processing_request_id": processing_request_id,
+                "post_mt0_application": _application_reference(
+                    post_mt0_application
+                ),
+                "repair_receipt_id": repair_receipt.receipt_id,
+                "repair_epoch": repair_epoch,
+                "cs2_state": {
+                    "processing_request_id": cs2_state.processing_request_id,
+                    "population": [
+                        _group_reference(group) for group in cs2_state.population
+                    ],
+                    "repair_receipt_id": cs2_state.repair_receipt_id,
+                    "repair_epoch": cs2_state.repair_epoch,
+                    "repair_outcome": cs2_state.repair_outcome,
+                    "member_subject_ids": list(cs2_state.member_subject_ids),
+                    "trajectory_input_id": cs2_state.trajectory_input_id,
+                    "trajectory_changed": cs2_state.trajectory_changed,
+                },
+                "pre_trajectory_input_id": pre_trajectory_input_id,
+                "post_trajectory_input_id": post_trajectory_input_id,
+                "mode_track_proposal": _proposal_reference(
+                    mode_track_proposal
+                ),
+                "final_application": _application_reference(final_application),
+                "final_population": [
+                    _group_reference(group) for group in final_population
+                ],
+            }
+        )
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_final_receipt_v1",
+            "schema_version": "cross_sample_final_receipt_v2",
             "processing_request_id": processing_request_id,
             "post_mt0_application": _application_reference(post_mt0_application),
-            "repair_receipt_id": repair_receipt.receipt_id,
+            "repair_terminal": _repair_terminal_reference(repair_terminal),
+            "repair_receipt_id": (
+                None if repair_receipt is None else repair_receipt.receipt_id
+            ),
             "repair_epoch": repair_epoch,
             "cs2_state": {
                 "processing_request_id": cs2_state.processing_request_id,
@@ -2476,6 +3439,7 @@ def _final_receipt_basis(
                     _group_reference(group) for group in cs2_state.population
                 ],
                 "repair_receipt_id": cs2_state.repair_receipt_id,
+                "repair_authorization_id": cs2_state.repair_authorization_id,
                 "repair_epoch": cs2_state.repair_epoch,
                 "repair_outcome": cs2_state.repair_outcome,
                 "member_subject_ids": list(cs2_state.member_subject_ids),
@@ -2485,10 +3449,46 @@ def _final_receipt_basis(
             "pre_trajectory_input_id": pre_trajectory_input_id,
             "post_trajectory_input_id": post_trajectory_input_id,
             "mode_track_proposal": _proposal_reference(mode_track_proposal),
+            "mode_track_final_attempt": _final_attempt_reference(
+                mode_track_final_attempt
+            ),
             "final_application": _application_reference(final_application),
             "final_population": [_group_reference(group) for group in final_population],
         }
     )
+
+
+def _repair_terminal_reference(
+    terminal: ObservationRepairTerminalResult | None,
+) -> dict[str, object] | None:
+    if terminal is None:
+        return None
+    authorization = terminal.authorization
+    return {
+        "state": terminal.state,
+        "authorization_id": authorization.authorization_id,
+        "coverage_id": authorization.coverage_id,
+        "population_cell_ids": list(authorization.population_cell_ids),
+        "eligible_cell_ids": list(authorization.eligible_cell_ids),
+        "receipt_id": None if terminal.receipt is None else terminal.receipt.receipt_id,
+    }
+
+
+def _final_attempt_reference(
+    final_attempt: ModeTrackFinalAttemptResult | None,
+) -> dict[str, object] | None:
+    if final_attempt is None:
+        return None
+    binding = final_attempt.binding
+    return {
+        "result_discriminant": binding.result_discriminant,
+        "final_result_id": binding.final_result_id,
+        "repair_receipt_id": binding.repair_receipt_id,
+        "fit_once_source_id": binding.fit_once_source_id,
+        "trajectory_input_id": binding.post_trajectory_input_id,
+        "assignment_batch_ids": list(binding.assignment_batch_ids),
+        "proposal_id": binding.proposal_id,
+    }
 
 
 def _proposal_reference(
@@ -2575,9 +3575,13 @@ def _trajectory_id(value: object) -> str:
 __all__ = (
     "CrossSampleFinalReceipt",
     "CrossSamplePostMT0Context",
+    "CrossSamplePostRepairModeTrackInput",
     "CrossSampleProposalOutcome",
     "CrossSampleReconciledState",
     "CrossSampleReconciliationContractError",
+    "apply_mode_track_refinement_run_for_workflow",
     "build_cross_sample_post_mt0_context",
+    "consume_mode_track_final_attempt",
+    "consume_observation_repair_terminal",
     "reconcile_observation_repair",
 )
