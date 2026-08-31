@@ -29,6 +29,7 @@ from xic_extractor.alignment.mode_track.producer import (
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterError,
+    acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
     recover_untargeted_cid_nl_sample_subject,
 )
@@ -86,6 +87,65 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert result.acquisition.xic_batch_count == 1
     assert result.acquisition.adapter_chromatogram_call_count == 1
     assert vendor_raw.chromatogram_request_counts == [1]
+
+
+def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
+    tmp_path: Path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.98, 8.02))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    first = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    second = replace(first, candidate_id=f"{first.candidate_id}:second")
+    candidates = tuple(sorted((first, second), key=lambda item: item.candidate_id))
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+
+    batch = acquire_untargeted_cid_nl_sample_trace_batch(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        candidates=candidates,
+        settings=settings,
+        raw=raw,
+    )
+
+    assert batch is not None
+    results = tuple(
+        adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=(candidate,),
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+            _preacquired_traces=batch,
+        )
+        for candidate in candidates
+    )
+
+    assert batch.candidate_ids == tuple(
+        candidate.candidate_id for candidate in candidates
+    )
+    assert all(result.acquisition is batch.acquisition for result in results)
+    assert [result.source_candidate_ids for result in results] == [
+        (candidate.candidate_id,) for candidate in candidates
+    ]
+    assert vendor_raw.chromatogram_request_counts == [2]
 
 
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
