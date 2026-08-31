@@ -21,14 +21,21 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.processing_identity import (
+    ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
     typed_identity_digest,
 )
 
-from .assignment import ModeTrackSupportAnchor
+from .assignment import (
+    ModeTrackAssignmentBatch,
+    ModeTrackModelSet,
+    ModeTrackSupportAnchor,
+)
 
 _TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
 _TRAJECTORY_INPUT_MINT_TOKEN = object()
+_EVIDENCE_MINT_TOKEN = object()
+_PROPOSAL_MINT_TOKEN = object()
 
 ModeTrackTrajectoryOwner: TypeAlias = (
     SampleLocalMS1Owner | CrossSampleRepairedObservation
@@ -114,12 +121,136 @@ class ModeTrackTrajectoryInput:
 
 
 @dataclass(frozen=True, slots=True)
+class UntrainedModeTrackRefinementEvidence:
+    """Closed owner-typed evidence for an unavailable assignment pass."""
+
+    variant: Literal["untrained", "assignment_unavailable"]
+    anchors: tuple[ModeTrackSupportAnchor, ...]
+    evidence_profile: ModeTrackEvidenceProfile
+    reason: Literal["untrained", "assignment_unavailable"]
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _EVIDENCE_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "untrained evidence must be minted by the ModeTrack owner"
+            )
+        if self.variant not in {"untrained", "assignment_unavailable"}:
+            raise ModeTrackRefinementContractError(
+                "untrained evidence uses a closed assignment-unavailable variant"
+            )
+        if self.reason not in {"untrained", "assignment_unavailable"}:
+            raise ModeTrackRefinementContractError(
+                "untrained evidence reason is not closed"
+            )
+        if self.reason != self.variant:
+            raise ModeTrackRefinementContractError(
+                "untrained evidence reason must match its closed variant"
+            )
+        if type(self.anchors) is not tuple or any(
+            type(anchor) is not ModeTrackSupportAnchor for anchor in self.anchors
+        ):
+            raise ModeTrackRefinementContractError(
+                "untrained evidence requires owner-typed anchors"
+            )
+        anchor_ids = tuple(anchor.anchor_id for anchor in self.anchors)
+        if anchor_ids != tuple(sorted(set(anchor_ids))):
+            raise ModeTrackRefinementContractError(
+                "untrained evidence anchors must be canonical-sorted"
+            )
+        if type(self.evidence_profile) is not ModeTrackEvidenceProfile:
+            raise ModeTrackRefinementContractError(
+                "untrained evidence requires an owner-typed evidence profile"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class AssignedModeTrackRefinementEvidence:
+    """Closed owner-minted assignment evidence consumed by ModeTrack."""
+
+    variant: Literal["assigned"]
+    processing_owners: ProcessingOwnerReferences
+    model_set: ModeTrackModelSet
+    assignment_batches: tuple[ModeTrackAssignmentBatch, ...]
+
+    @property
+    def anchors(self) -> tuple[ModeTrackSupportAnchor, ...]:
+        """Return the canonical anchor projection owned by the model set."""
+
+        return tuple(
+            sorted(
+                (
+                    anchor
+                    for track in self.model_set.tracks
+                    for anchor in track.anchors
+                ),
+                key=lambda anchor: anchor.anchor_id,
+            )
+        )
+
+    @property
+    def evidence_profile(self) -> ModeTrackEvidenceProfile:
+        """Project the model policy into the trajectory evidence profile."""
+
+        policy = self.model_set.policy
+        return ModeTrackEvidenceProfile(
+            trajectory_policy_version=policy.trajectory_policy_version,
+            band_policy_version=policy.band_policy_version,
+            prediction_half_width_min=policy.prediction_half_width_min,
+            max_interpolation_gap=policy.max_interpolation_gap,
+            max_extrapolation_gap=policy.max_extrapolation_gap,
+        )
+
+    def __post_init__(self) -> None:
+        if self.variant != "assigned":
+            raise ModeTrackRefinementContractError(
+                "assigned evidence uses the wrong closed variant"
+            )
+        if not isinstance(self.processing_owners, ProcessingOwnerReferences):
+            raise ModeTrackRefinementContractError(
+                "assigned evidence requires owner-validated processing references"
+            )
+        if type(self.model_set) is not ModeTrackModelSet:
+            raise ModeTrackRefinementContractError(
+                "assigned evidence requires an owner-minted model set"
+            )
+        if type(self.assignment_batches) is not tuple or not self.assignment_batches:
+            raise ModeTrackRefinementContractError(
+                "assigned evidence requires immutable assignment batches"
+            )
+        if any(
+            type(batch) is not ModeTrackAssignmentBatch
+            for batch in self.assignment_batches
+        ):
+            raise ModeTrackRefinementContractError(
+                "assigned evidence contains a non-owner assignment batch"
+            )
+        batch_ids = tuple(
+            batch.assignment_batch_id for batch in self.assignment_batches
+        )
+        if batch_ids != tuple(sorted(set(batch_ids))):
+            raise ModeTrackRefinementContractError(
+                "assigned evidence batches must be canonical-sorted"
+            )
+
+
+ModeTrackRefinementEvidence: TypeAlias = (
+    UntrainedModeTrackRefinementEvidence | AssignedModeTrackRefinementEvidence
+)
+
+
+@dataclass(frozen=True, slots=True)
 class AcceptedModeTrackRefinement:
     variant: Literal["accepted_refinement"]
     trajectory_input_id: str
     successor_member_subject_ids: tuple[tuple[str, ...], ...]
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _PROPOSAL_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "accepted proposal must be minted by the ModeTrack owner"
+            )
         if self.variant != "accepted_refinement":
             raise ModeTrackRefinementContractError(
                 "accepted proposal uses the wrong closed variant"
@@ -143,8 +274,13 @@ class RejectedModeTrackRefinement:
     variant: Literal["rejected_refinement"]
     trajectory_input_id: str
     reason_codes: tuple[str, ...]
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _PROPOSAL_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "rejected proposal must be minted by the ModeTrack owner"
+            )
         if self.variant != "rejected_refinement":
             raise ModeTrackRefinementContractError(
                 "rejected proposal uses the wrong closed variant"
@@ -157,8 +293,13 @@ class InsufficientModeTrackTraining:
     variant: Literal["insufficient_training"]
     trajectory_input_id: str
     reason_codes: tuple[str, ...]
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _PROPOSAL_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "insufficient proposal must be minted by the ModeTrack owner"
+            )
         if self.variant != "insufficient_training":
             raise ModeTrackRefinementContractError(
                 "insufficient-training proposal uses the wrong closed variant"
@@ -171,8 +312,13 @@ class UnassessableModeTrackRefinement:
     variant: Literal["unassessable"]
     trajectory_input_id: str
     reason: Literal["neighborhood_too_large"]
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _PROPOSAL_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "unassessable proposal must be minted by the ModeTrack owner"
+            )
         if self.variant != "unassessable" or self.reason != "neighborhood_too_large":
             raise ModeTrackRefinementContractError(
                 "unassessable proposal must be neighborhood_too_large"
@@ -318,32 +464,45 @@ def mint_mode_track_trajectory_input(
     )
 
 
-def propose_mode_track_successor_partition(
+def _mint_rejected_mode_track_refinement(
     *,
-    trajectory_input: ModeTrackTrajectoryInput,
-    successor_member_subject_ids: Sequence[Sequence[str]],
-) -> ModeTrackRefinementProposal:
-    if not isinstance(trajectory_input, ModeTrackTrajectoryInput):
-        raise ModeTrackRefinementContractError("trajectory input must be typed")
-    if trajectory_input.neighborhood_status == "unassessable":
-        return UnassessableModeTrackRefinement(
-            variant="unassessable",
-            trajectory_input_id=trajectory_input.trajectory_input_id,
-            reason="neighborhood_too_large",
-        )
-    if not trajectory_input.anchor_ids:
-        return InsufficientModeTrackTraining(
-            variant="insufficient_training",
-            trajectory_input_id=trajectory_input.trajectory_input_id,
-            reason_codes=("no_direct_support_anchor",),
-        )
-    return mint_accepted_mode_track_refinement(
-        trajectory_input=trajectory_input,
-        successor_member_subject_ids=successor_member_subject_ids,
+    trajectory_input_id: str,
+    reason_codes: Sequence[str],
+) -> RejectedModeTrackRefinement:
+    return RejectedModeTrackRefinement(
+        variant="rejected_refinement",
+        trajectory_input_id=trajectory_input_id,
+        reason_codes=tuple(sorted(set(reason_codes))),
+        _mint_token=_PROPOSAL_MINT_TOKEN,
     )
 
 
-def mint_accepted_mode_track_refinement(
+def _mint_insufficient_mode_track_training(
+    *,
+    trajectory_input_id: str,
+    reason_codes: Sequence[str],
+) -> InsufficientModeTrackTraining:
+    return InsufficientModeTrackTraining(
+        variant="insufficient_training",
+        trajectory_input_id=trajectory_input_id,
+        reason_codes=tuple(sorted(set(reason_codes))),
+        _mint_token=_PROPOSAL_MINT_TOKEN,
+    )
+
+
+def _mint_unassessable_mode_track_refinement(
+    *,
+    trajectory_input_id: str,
+) -> UnassessableModeTrackRefinement:
+    return UnassessableModeTrackRefinement(
+        variant="unassessable",
+        trajectory_input_id=trajectory_input_id,
+        reason="neighborhood_too_large",
+        _mint_token=_PROPOSAL_MINT_TOKEN,
+    )
+
+
+def _mint_accepted_mode_track_refinement(
     *,
     trajectory_input: ModeTrackTrajectoryInput,
     successor_member_subject_ids: Sequence[Sequence[str]],
@@ -358,9 +517,10 @@ def mint_accepted_mode_track_refinement(
     if tuple(sorted(proposed)) != proposed:
         proposed = tuple(sorted(proposed))
     flattened = tuple(member_id for group in proposed for member_id in group)
-    if tuple(sorted(flattened)) != trajectory_input.member_subject_ids or len(
-        flattened
-    ) != len(set(flattened)):
+    if (
+        tuple(sorted(flattened)) != trajectory_input.member_subject_ids
+        or len(flattened) != len(set(flattened))
+    ):
         raise ModeTrackRefinementContractError(
             "proposal is not a complete trajectory-input partition"
         )
@@ -368,6 +528,29 @@ def mint_accepted_mode_track_refinement(
         variant="accepted_refinement",
         trajectory_input_id=trajectory_input.trajectory_input_id,
         successor_member_subject_ids=proposed,
+        _mint_token=_PROPOSAL_MINT_TOKEN,
+    )
+
+
+def _mint_untrained_mode_track_refinement_evidence(
+    *,
+    anchors: Sequence[ModeTrackSupportAnchor],
+    evidence_profile: ModeTrackEvidenceProfile,
+    reason: Literal["untrained", "assignment_unavailable"],
+) -> UntrainedModeTrackRefinementEvidence:
+    """Mint owner-local evidence for an unavailable assignment pass."""
+
+    if any(type(anchor) is not ModeTrackSupportAnchor for anchor in anchors):
+        raise ModeTrackRefinementContractError(
+            "untrained evidence requires owner-typed anchors"
+        )
+    canonical_anchors = tuple(sorted(anchors, key=lambda item: item.anchor_id))
+    return UntrainedModeTrackRefinementEvidence(
+        variant=reason,
+        anchors=canonical_anchors,
+        evidence_profile=evidence_profile,
+        reason=reason,
+        _mint_token=_EVIDENCE_MINT_TOKEN,
     )
 
 
@@ -567,3 +750,20 @@ def _required_owner_member(
             "trajectory owner is missing its canonical member"
         )
     return member
+
+
+__all__ = (
+    "AcceptedModeTrackRefinement",
+    "AssignedModeTrackRefinementEvidence",
+    "InsufficientModeTrackTraining",
+    "ModeTrackEvidenceProfile",
+    "ModeTrackRefinementContractError",
+    "ModeTrackRefinementEvidence",
+    "ModeTrackRefinementProposal",
+    "ModeTrackTrajectoryInput",
+    "RejectedModeTrackRefinement",
+    "UnassessableModeTrackRefinement",
+    "UntrainedModeTrackRefinementEvidence",
+    "apply_accepted_mode_track_refinement",
+    "mint_mode_track_trajectory_input",
+)

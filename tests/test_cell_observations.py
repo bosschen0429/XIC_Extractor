@@ -317,7 +317,10 @@ def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
         if sample in samples
     }
     return SimpleNamespace(
-        context=SimpleNamespace(samples=samples),
+        context=SimpleNamespace(
+            samples=samples,
+            processing_owners=fixture.owners,
+        ),
         acquisitions=acquisitions,
     )
 
@@ -404,6 +407,7 @@ def _repaired_handoff(tmp_path: Path, *, sample_stem: str = "s1"):
     )
     context = build_cross_sample_post_mt0_context(
         processing_request_id=group.processing_request_id,
+        processing_owners=fixture.owners,
         population=(group,),
         application=application,
         owners=(owner,),

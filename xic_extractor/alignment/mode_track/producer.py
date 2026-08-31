@@ -17,11 +17,14 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignmentBatch,
+    ModeTrackFitOnceSource,
     ModeTrackModelSet,
     ModeTrackTrajectoryPolicy,
     assign_mode_tracks,
     fit_mode_track_model_set,
     mint_mode_track_candidate_observation,
+    mint_mode_track_fit_once_sample_source,
+    mint_mode_track_fit_once_source,
     mint_mode_track_support_anchor,
     validate_mode_track_assignment_batch_for_consumption,
 )
@@ -59,6 +62,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     FamilyContextRef,
     ModeTrackModelSet,
     tuple[ModeTrackAssignmentBatch, ...],
+    ModeTrackFitOnceSource,
 ]:
     """Run the existing M3/M8 owners for one bounded CID-NL support universe."""
 
@@ -211,6 +215,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     )
 
     batches = []
+    sample_sources = []
     for sample_id in sorted(hypotheses_by_sample):
         sample = sample_by_id[sample_id]
         assessment = assessment_by_sample[sample_id]
@@ -227,15 +232,16 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             )
             for hypothesis in hypotheses_by_sample[sample_id]
         )
+        trajectory_assessment = assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(points=()),
+            (sample.metadata.raw_stem,),
+        )
         batch = assign_mode_tracks(
             processing_owners=processing_owners,
             sample=sample,
             model_set=model_set,
             candidates=candidates,
-            trajectory_assessment=assess_local_trajectory(
-                LocalTrajectoryEvidenceLookup(points=()),
-                (sample.metadata.raw_stem,),
-            ),
+            trajectory_assessment=trajectory_assessment,
         )
         validate_mode_track_assignment_batch_for_consumption(
             processing_owners=processing_owners,
@@ -243,7 +249,23 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             assignment_batch=batch,
         )
         batches.append(batch)
-    return family_context, model_set, tuple(batches)
+        sample_sources.append(
+            mint_mode_track_fit_once_sample_source(
+                processing_owners=processing_owners,
+                sample=sample,
+                candidates=candidates,
+                trajectory_assessment=trajectory_assessment,
+            )
+        )
+    batches_tuple = tuple(batches)
+    source = mint_mode_track_fit_once_source(
+        processing_owners=processing_owners,
+        family_context=family_context,
+        model_set=model_set,
+        sample_sources=tuple(sample_sources),
+        initial_assignment_batches=batches_tuple,
+    )
+    return family_context, model_set, batches_tuple, source
 
 
 __all__ = [
