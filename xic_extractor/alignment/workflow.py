@@ -331,7 +331,7 @@ class UntargetWorkflowBundle:
 
 
 UntargetWorkflowBatchProvider: TypeAlias = Callable[
-    [RuntimeFinalizationReceipt], tuple[UntargetWorkflowBundle, ...]
+    [], tuple[UntargetWorkflowBundle, ...]
 ]
 
 
@@ -501,7 +501,7 @@ def execute_untarget_batch_workflow(
             raise AlignmentWorkflowContractError(
                 "Untarget batch provider must be callable"
             )
-        bundles = provider(runtime_receipt)
+        bundles = provider()
         _validate_untarget_batch_bundles(request, bundles)
         children: list[FinalizedUntargetApplicationResult] = []
         for bundle in bundles:

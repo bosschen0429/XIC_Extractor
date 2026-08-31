@@ -245,8 +245,8 @@ def test_batch_never_requests_child_provider_after_non_success_runtime(
         lambda *_args, **_kwargs: receipt,
     )
 
-    def provider(runtime_receipt):
-        provider_calls.append(runtime_receipt)
+    def provider():
+        provider_calls.append(object())
         return ()
 
     result = execute_untarget_batch_workflow(request, provider)
@@ -359,7 +359,7 @@ def test_batch_composes_children_after_one_runtime_without_recursive_runtime(
 
     result = execute_untarget_batch_workflow(
         request,
-        lambda runtime_receipt: calls.append("provider") or (bundle,),
+        lambda: calls.append("provider") or (bundle,),
     )
 
     assert type(result) is CompletedUntargetBatchWorkflowResult
@@ -422,7 +422,7 @@ def test_batch_child_failure_is_atomic_and_does_not_finalize_partial_results(
 
     result = execute_untarget_batch_workflow(
         request,
-        lambda _receipt: (bundle,),
+        lambda: (bundle,),
     )
 
     assert type(result) is FailedWorkflowResult
