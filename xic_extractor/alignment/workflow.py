@@ -125,10 +125,16 @@ class WorkflowRuntimeInvocation:
     persister: RuntimeFinalizationPersister
 
     def __post_init__(self) -> None:
-        if not isinstance(self.runtime, AttemptRuntime):
-            raise AlignmentWorkflowContractError("runtime must be an AttemptRuntime")
+        runtime_type = type(self.runtime)
+        if (
+            runtime_type.__module__ != "xic_extractor.execution_runtime"
+            or runtime_type.__qualname__ != "AttemptRuntime"
+        ):
+            raise AlignmentWorkflowContractError("runtime must be an exact attempt")
         if type(self.reservations) is not tuple or any(
-            not isinstance(item, RuntimeResourceReservation)
+            type(item).__module__
+            != "xic_extractor.execution_runtime_finalization_models"
+            or type(item).__qualname__ != "RuntimeResourceReservation"
             for item in self.reservations
         ):
             raise AlignmentWorkflowContractError(
@@ -212,6 +218,11 @@ class TargetWorkflowRequest:
     processing_attempt: ProcessingAttemptIdentity
     runtime: WorkflowRuntimeInvocation
 
+    def __post_init__(self) -> None:
+        if type(self.scope) is not TargetSearchScope:
+            raise AlignmentWorkflowContractError("Target request scope must be exact")
+        _validate_request_fields(self)
+
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowRequest:
@@ -219,6 +230,23 @@ class UntargetWorkflowRequest:
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
     runtime: WorkflowRuntimeInvocation
+
+    def __post_init__(self) -> None:
+        if type(self.scope) is not UntargetedSearchScope:
+            raise AlignmentWorkflowContractError("Untarget request scope must be exact")
+        _validate_request_fields(self)
+
+
+def _validate_request_fields(
+    request: TargetWorkflowRequest | UntargetWorkflowRequest,
+) -> None:
+    if type(request.processing_request) is not ProcessingRequestIdentity:
+        raise AlignmentWorkflowContractError("processing request must be exact")
+    if type(request.processing_attempt) is not ProcessingAttemptIdentity:
+        raise AlignmentWorkflowContractError("processing attempt must be exact")
+    if type(request.runtime) is not WorkflowRuntimeInvocation:
+        raise AlignmentWorkflowContractError("runtime invocation must be exact")
+    request.runtime.__post_init__()
 
 
 WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowRequest
@@ -231,6 +259,34 @@ class _WorkflowAdapterFields:
     repair: ObservationRepairWorkflowArguments
     predecessor_cell_observations: tuple[CellObservationRef, ...]
     drift_lookup: DriftLookupProtocol | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.capture_inputs) is not tuple or any(
+            type(item) is not CaptureWorkflowArguments
+            for item in self.capture_inputs
+        ):
+            raise AlignmentWorkflowContractError(
+                "adapter capture inputs must be an immutable typed tuple"
+            )
+        for item in self.capture_inputs:
+            item.__post_init__()
+        if type(self.mode_track) is not ModeTrackWorkflowArguments:
+            raise AlignmentWorkflowContractError(
+                "adapter requires exact ModeTrack arguments"
+            )
+        self.mode_track.__post_init__()
+        if type(self.repair) is not ObservationRepairWorkflowArguments:
+            raise AlignmentWorkflowContractError(
+                "adapter requires exact ObservationRepair arguments"
+            )
+        self.repair.__post_init__()
+        if type(self.predecessor_cell_observations) is not tuple or any(
+            type(item) is not CellObservationRef
+            for item in self.predecessor_cell_observations
+        ):
+            raise AlignmentWorkflowContractError(
+                "predecessor cells must be exact immutable references"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,11 +307,25 @@ class CompletedTargetWorkflowResult:
     runtime_receipt: RuntimeFinalizationReceipt
     application_result: FinalizedTargetApplicationResult
 
+    def __post_init__(self) -> None:
+        _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.SUCCEEDED)
+        if type(self.application_result) is not FinalizedTargetApplicationResult:
+            raise AlignmentWorkflowContractError(
+                "completed Target workflow requires an exact application result"
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class CompletedUntargetWorkflowResult:
     runtime_receipt: RuntimeFinalizationReceipt
     application_result: FinalizedUntargetApplicationResult
+
+    def __post_init__(self) -> None:
+        _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.SUCCEEDED)
+        if type(self.application_result) is not FinalizedUntargetApplicationResult:
+            raise AlignmentWorkflowContractError(
+                "completed Untarget workflow requires an exact application result"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,12 +333,7 @@ class CancelledWorkflowResult:
     runtime_receipt: RuntimeFinalizationReceipt
 
     def __post_init__(self) -> None:
-        if self.runtime_receipt.supervisor.terminal_outcome is not (
-            AttemptTerminalOutcome.CANCELLED
-        ):
-            raise AlignmentWorkflowContractError(
-                "cancelled workflow requires cancelled runtime truth"
-            )
+        _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.CANCELLED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +342,51 @@ class FailedWorkflowResult:
     stage: WorkflowStage
     failure_type: str | None
     failure_message: str | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.runtime_receipt, RuntimeFinalizationReceipt):
+            raise AlignmentWorkflowContractError(
+                "failed workflow requires an owner-minted runtime receipt"
+            )
+        if type(self.stage) is not WorkflowStage:
+            raise AlignmentWorkflowContractError("failed workflow stage must be closed")
+        outcome = self.runtime_receipt.supervisor.terminal_outcome
+        if outcome is AttemptTerminalOutcome.FAILED:
+            if (
+                self.stage is not WorkflowStage.RUNTIME
+                or self.failure_type is not None
+                or self.failure_message is not None
+            ):
+                raise AlignmentWorkflowContractError(
+                    "runtime failure cannot carry a composition failure"
+                )
+            return
+        if outcome is not AttemptTerminalOutcome.SUCCEEDED:
+            raise AlignmentWorkflowContractError(
+                "cancelled runtime belongs to the cancelled terminal variant"
+            )
+        if (
+            self.stage is WorkflowStage.RUNTIME
+            or type(self.failure_type) is not str
+            or type(self.failure_message) is not str
+        ):
+            raise AlignmentWorkflowContractError(
+                "post-runtime composition failure requires exact details"
+            )
+
+
+def _require_runtime_outcome(
+    receipt: RuntimeFinalizationReceipt,
+    expected: AttemptTerminalOutcome,
+) -> None:
+    if not isinstance(receipt, RuntimeFinalizationReceipt):
+        raise AlignmentWorkflowContractError(
+            "workflow terminal result requires an owner-minted runtime receipt"
+        )
+    if receipt.supervisor.terminal_outcome is not expected:
+        raise AlignmentWorkflowContractError(
+            f"workflow terminal result requires runtime outcome {expected.value}"
+        )
 
 
 WorkflowTerminalResult: TypeAlias = (
@@ -455,6 +565,8 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "workflow request, adapter, and scope variants must match exactly"
         )
+    request.__post_init__()
+    adapter.__post_init__()
     if (
         request.processing_request is not request.scope.request
         or request.processing_attempt.processing_request_id
@@ -551,7 +663,11 @@ def _finish_variant(
                     completed_projection=target_projection,
                 )
             )
-            if type(result) is not FinalizedTargetApplicationResult:
+            if (
+                type(result) is not FinalizedTargetApplicationResult
+                or result.scientific_core is not scientific
+                or result.completed_projection is not target_projection
+            ):
                 raise AlignmentWorkflowContractError(
                     "application_result returned a crossed Target result"
                 )
@@ -578,7 +694,11 @@ def _finish_variant(
                 completed_projection=untarget_projection,
             )
         )
-        if type(result) is not FinalizedUntargetApplicationResult:
+        if (
+            type(result) is not FinalizedUntargetApplicationResult
+            or result.scientific_core is not scientific
+            or result.completed_projection is not untarget_projection
+        ):
             raise AlignmentWorkflowContractError(
                 "application_result returned a crossed Untarget result"
             )

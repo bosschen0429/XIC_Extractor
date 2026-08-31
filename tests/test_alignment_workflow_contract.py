@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import fields
 from inspect import signature
 
+import pytest
+
+import xic_extractor.alignment.workflow as workflow_owner
 from xic_extractor.alignment.workflow import (
     CancelledWorkflowResult,
     CaptureWorkflowArguments,
@@ -93,3 +96,35 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         CancelledWorkflowResult,
         FailedWorkflowResult,
     }
+
+
+def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="Target request scope must be exact",
+    ):
+        TargetWorkflowRequest(object(), object(), object(), object())
+
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="capture inputs must be an immutable typed tuple",
+    ):
+        TargetWorkflowAdapter([], object(), object(), (), None)
+
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="owner-minted runtime receipt",
+    ):
+        CancelledWorkflowResult(object())
+
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="runtime must be an exact attempt",
+    ):
+        WorkflowRuntimeInvocation(
+            runtime=object(),
+            reservations=(),
+            worker_batch_provider=lambda _value: None,
+            telemetry_provider=lambda _value: None,
+            persister=lambda value: value,
+        )

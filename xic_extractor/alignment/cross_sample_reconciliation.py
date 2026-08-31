@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, asdict, dataclass, field, replace
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairCandidate,
@@ -67,6 +67,10 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.capture import SampleLocalCapture
+from xic_extractor.peak_detection.search_scope import (
+    TargetSearchScope,
+    UntargetedSearchScope,
+)
 from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
     ProcessingOwnerReferences,
@@ -548,14 +552,26 @@ def apply_mode_track_refinement_run_for_workflow(
             "ModeTrack run crossed its exact fit-once source"
         )
     capture_tuple = tuple(captures)
-    if any(type(capture) is not SampleLocalCapture for capture in capture_tuple):
+    if not capture_tuple or any(
+        type(capture) is not SampleLocalCapture for capture in capture_tuple
+    ):
         raise CrossSampleReconciliationContractError(
-            "workflow MT0 captures must be exact owner results"
+            "workflow MT0 captures do not close exact owner results"
+        )
+    capture_scope = capture_tuple[0].scope
+    if type(capture_scope) not in {TargetSearchScope, UntargetedSearchScope} or any(
+        capture.scope is not capture_scope for capture in capture_tuple
+    ):
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 captures crossed their exact SearchScope"
         )
     candidate_ids = tuple(capture.candidate_id for capture in capture_tuple)
-    if len(candidate_ids) != len(set(candidate_ids)):
+    if (
+        candidate_ids != capture_scope.declared_candidate_ids
+        or len(candidate_ids) != len(set(candidate_ids))
+    ):
         raise CrossSampleReconciliationContractError(
-            "workflow MT0 captures duplicate a candidate"
+            "workflow MT0 captures do not preserve the complete candidate order"
         )
     for capture in capture_tuple:
         capture.__post_init__()
@@ -570,6 +586,26 @@ def apply_mode_track_refinement_run_for_workflow(
     if selected_ids != owner_ids or len(owner_ids) != len(set(owner_ids)):
         raise CrossSampleReconciliationContractError(
             "workflow MT0 captures do not close the exact owner population"
+        )
+    selected_by_id = {
+        capture.selected_hypothesis.hypothesis_id: capture.selected_hypothesis
+        for capture in capture_tuple
+        if capture.selected_hypothesis is not None
+    }
+    if any(
+        owner.selected_integration is not selected_by_id[owner.owner_id].integration
+        or owner.owner_apex_rt != selected_by_id[owner.owner_id].integration.rt_apex_min
+        or owner.owner_peak_start_rt
+        != selected_by_id[owner.owner_id].integration.rt_left_min
+        or owner.owner_peak_end_rt
+        != selected_by_id[owner.owner_id].integration.rt_right_min
+        or owner.owner_area
+        != selected_by_id[owner.owner_id].integration.area_raw_counts_seconds
+        or owner.owner_height != selected_by_id[owner.owner_id].integration.height_raw
+        for owner in run.owners
+    ):
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 captures crossed exact owner physical integration"
         )
     try:
         predecessors = validate_cross_sample_group_population(run.predecessors)
@@ -601,18 +637,40 @@ def apply_mode_track_refinement_run_for_workflow(
         for transaction in transaction_tuple
         for group in transaction.application_context.predecessors
     )
-    if tuple(sorted(transaction_predecessor_ids)) != tuple(
+    if transaction_predecessor_ids != tuple(
         group.group_hypothesis_id for group in predecessors
     ) or len(transaction_predecessor_ids) != len(set(transaction_predecessor_ids)):
         raise CrossSampleReconciliationContractError(
-            "ModeTrack transactions do not close every predecessor exactly once"
+            "ModeTrack transactions do not close canonical predecessor order"
         )
     population = predecessors
-    for transaction in sorted(
-        transaction_tuple,
-        key=lambda item: item.trajectory_input.trajectory_input_id,
-    ):
+    for transaction in transaction_tuple:
         proposal = transaction.proposal
+        component_member_ids = tuple(
+            sorted(
+                member.member_subject_id
+                for predecessor in transaction.application_context.predecessors
+                for member in predecessor.member_subjects
+            )
+        )
+        expected_component_edges = tuple(
+            edge
+            for edge in run.classified_edges
+            if edge.left_member_subject_id in component_member_ids
+            and edge.right_member_subject_id in component_member_ids
+        )
+        if (
+            proposal.trajectory_input_id
+            != transaction.trajectory_input.trajectory_input_id
+            or transaction.trajectory_input.member_subject_ids
+            != component_member_ids
+            or transaction.application_context.classified_edges
+            != expected_component_edges
+            or transaction.application_context.budget != run.budget
+        ):
+            raise CrossSampleReconciliationContractError(
+                "ModeTrack transaction crossed its exact component context"
+            )
         if type(proposal) is AcceptedModeTrackRefinement:
             try:
                 application = apply_accepted_mode_track_refinement(
@@ -953,7 +1011,7 @@ class CrossSampleFinalReceipt:
     processing_request_id: str
     post_mt0_application: CrossSampleSuccessorApplication
     repair_receipt: ObservationRepairReceipt | None
-    repair_epoch: int
+    repair_epoch: Literal[0, 1]
     cs2_state: CrossSampleReconciledState
     pre_trajectory_input_id: str
     post_trajectory_input_id: str
@@ -1215,11 +1273,16 @@ def reconcile_observation_repair(
             repaired_owners=repaired_owners,
             post_trajectory=post_trajectory,
         )
+    if repair_receipt.repair_epoch != 1:
+        raise CrossSampleReconciliationContractError(
+            "existing-member repair receipt must close epoch one"
+        )
+    repair_epoch = cast(Literal[1], repair_receipt.repair_epoch)
     cs2_state = CrossSampleReconciledState(
         processing_request_id=request_id,
         population=context.population,
         repair_receipt_id=repair_receipt.receipt_id,
-        repair_epoch=repair_receipt.repair_epoch,
+        repair_epoch=repair_epoch,
         repair_outcome=repair_receipt.outcome,
         member_subject_ids=tuple(
             sorted(
@@ -1237,7 +1300,7 @@ def reconcile_observation_repair(
         post_mt0_application=context.application,
         repair_terminal=None,
         repair_receipt=repair_receipt,
-        repair_epoch=repair_receipt.repair_epoch,
+        repair_epoch=repair_epoch,
         cs2_state=cs2_state,
         pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         post_trajectory_input_id=post_trajectory.trajectory_input_id,
@@ -1254,7 +1317,7 @@ def _mint_final_receipt(
     post_mt0_application: CrossSampleSuccessorApplication,
     repair_terminal: ObservationRepairTerminalResult | None,
     repair_receipt: ObservationRepairReceipt | None,
-    repair_epoch: int,
+    repair_epoch: Literal[0, 1],
     cs2_state: CrossSampleReconciledState,
     pre_trajectory_input_id: str,
     post_trajectory_input_id: str,

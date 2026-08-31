@@ -18,16 +18,25 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
 from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,
 )
+from xic_extractor.alignment.projection.untarget.post_cell import (
+    UntargetPostCellProjection,
+)
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
+    FinalizedUntargetApplicationResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
 )
 from xic_extractor.alignment.workflow import (
     CompletedTargetWorkflowResult,
+    CompletedUntargetWorkflowResult,
+    FailedWorkflowResult,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
+    UntargetWorkflowAdapter,
+    UntargetWorkflowRequest,
+    WorkflowStage,
     execute_alignment_workflow,
 )
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
@@ -40,8 +49,14 @@ def _exact_uninitialized(value_type, **fields):
     return value
 
 
-def test_target_workflow_forwards_exact_owner_objects_once(
+@pytest.mark.parametrize("variant", ["target", "untarget"])
+@pytest.mark.parametrize("crossed_result", [False, True])
+@pytest.mark.parametrize("changed_trajectory", [False, True])
+def test_workflow_forwards_exact_owner_objects_once(
     monkeypatch: pytest.MonkeyPatch,
+    variant: str,
+    crossed_result: bool,
+    changed_trajectory: bool,
 ) -> None:
     import xic_extractor.alignment.cell_decision.owner as decision_owner
 
@@ -50,10 +65,10 @@ def test_target_workflow_forwards_exact_owner_objects_once(
     runtime_receipt = SimpleNamespace(
         supervisor=SimpleNamespace(
             terminal_outcome=AttemptTerminalOutcome.SUCCEEDED,
-        )
+        ),
     )
     request = _exact_uninitialized(
-        TargetWorkflowRequest,
+        TargetWorkflowRequest if variant == "target" else UntargetWorkflowRequest,
         scope=object(),
         runtime=SimpleNamespace(
             runtime=object(),
@@ -71,7 +86,9 @@ def test_target_workflow_forwards_exact_owner_objects_once(
         ObservationRepairReceipt,
         evidence=None,
     )
-    terminal = SimpleNamespace(receipt=repair_receipt)
+    terminal = SimpleNamespace(
+        receipt=repair_receipt if changed_trajectory else None,
+    )
     repair_arguments = SimpleNamespace(
         coverage=object(),
         cell_observations=(),
@@ -79,7 +96,7 @@ def test_target_workflow_forwards_exact_owner_objects_once(
         or callback_result,
     )
     adapter = _exact_uninitialized(
-        TargetWorkflowAdapter,
+        TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
         capture_inputs=(SimpleNamespace(candidate_id="candidate:a", trace=object()),),
         mode_track=SimpleNamespace(
             sample_assessments=(),
@@ -99,8 +116,22 @@ def test_target_workflow_forwards_exact_owner_objects_once(
     scientific = _exact_uninitialized(FinalizedScientificAlignment)
     pre_cell = object()
     decisions = object()
-    projection = _exact_uninitialized(TargetPostCellProjection)
-    application_result = _exact_uninitialized(FinalizedTargetApplicationResult)
+    projection = _exact_uninitialized(
+        TargetPostCellProjection
+        if variant == "target"
+        else UntargetPostCellProjection
+    )
+    application_result = _exact_uninitialized(
+        FinalizedTargetApplicationResult
+        if variant == "target"
+        else FinalizedUntargetApplicationResult,
+        scientific_core=(
+            _exact_uninitialized(FinalizedScientificAlignment)
+            if crossed_result
+            else scientific
+        ),
+        completed_projection=projection,
+    )
 
     monkeypatch.setattr(
         workflow_owner,
@@ -108,6 +139,11 @@ def test_target_workflow_forwards_exact_owner_objects_once(
         lambda supplied_request, supplied_adapter: (
             calls.append(("validate", supplied_request, supplied_adapter)) or owners
         ),
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "RuntimeFinalizationReceipt",
+        SimpleNamespace,
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -131,9 +167,10 @@ def test_target_workflow_forwards_exact_owner_objects_once(
     )
 
     def repair_owner(**kwargs):
-        candidate = object()
-        result = kwargs["execute"](candidate)
-        assert result is callback_result
+        if changed_trajectory:
+            candidate = object()
+            result = kwargs["execute"](candidate)
+            assert result is callback_result
         calls.append(("repair", kwargs))
         return terminal
 
@@ -141,7 +178,8 @@ def test_target_workflow_forwards_exact_owner_objects_once(
     monkeypatch.setattr(
         workflow_owner,
         "consume_observation_repair_terminal",
-        lambda **kwargs: calls.append(("cross_repair", kwargs)) or post_repair,
+        lambda **kwargs: calls.append(("cross_repair", kwargs))
+        or (post_repair if changed_trajectory else final_receipt),
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -169,13 +207,28 @@ def test_target_workflow_forwards_exact_owner_objects_once(
         lambda value: pre_cell,
     )
     monkeypatch.setattr(
+        workflow_owner,
+        "project_untarget_pre_cell",
+        lambda value: pre_cell,
+    )
+    monkeypatch.setattr(
         decision_owner,
         "decide_target_cell_population",
         lambda value: decisions,
     )
     monkeypatch.setattr(
+        decision_owner,
+        "decide_group_cell_population",
+        lambda before, scientific_core: decisions,
+    )
+    monkeypatch.setattr(
         workflow_owner,
         "project_target_post_cell",
+        lambda before, after: projection,
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "project_untarget_post_cell",
         lambda before, after: projection,
     )
     monkeypatch.setattr(
@@ -186,27 +239,50 @@ def test_target_workflow_forwards_exact_owner_objects_once(
 
     result = execute_alignment_workflow(request, adapter)
 
-    assert type(result) is CompletedTargetWorkflowResult
+    if crossed_result:
+        assert type(result) is FailedWorkflowResult
+        assert result.stage is WorkflowStage.APPLICATION_RESULT
+        assert result.failure_type == (
+            "xic_extractor.alignment.workflow.AlignmentWorkflowContractError"
+        )
+    else:
+        assert type(result) is (
+            CompletedTargetWorkflowResult
+            if variant == "target"
+            else CompletedUntargetWorkflowResult
+        )
+        assert result.application_result is application_result
     assert result.runtime_receipt is runtime_receipt
-    assert result.application_result is application_result
-    assert [item[0] for item in calls] == [
+    expected_calls = [
         "validate",
         "runtime",
         "capture",
         "mt0",
         "cross_mt0",
-        "repair_callback",
         "repair",
         "cross_repair",
-        "mt1",
-        "cross_final",
         "association",
         "scientific",
     ]
+    if changed_trajectory:
+        expected_calls[5:5] = ["repair_callback"]
+        expected_calls[8:8] = ["mt1", "cross_final"]
+    assert [item[0] for item in calls] == expected_calls
     cross_repair_kwargs = next(item[1] for item in calls if item[0] == "cross_repair")
     assert cross_repair_kwargs["terminal"] is terminal
-    assert cross_repair_kwargs["repair_result"] is callback_result
-    cross_final_kwargs = next(item[1] for item in calls if item[0] == "cross_final")
-    assert cross_final_kwargs["terminal"] is terminal
-    assert cross_final_kwargs["post_repair"] is post_repair
-    assert cross_final_kwargs["final_attempt"] is final_attempt
+    assert cross_repair_kwargs["repair_result"] is (
+        callback_result if changed_trajectory else None
+    )
+    if changed_trajectory:
+        cross_final_kwargs = next(
+            item[1] for item in calls if item[0] == "cross_final"
+        )
+        assert cross_final_kwargs["terminal"] is terminal
+        assert cross_final_kwargs["post_repair"] is post_repair
+        assert cross_final_kwargs["final_attempt"] is final_attempt
+    else:
+        scientific_kwargs = next(
+            item[1] for item in calls if item[0] == "scientific"
+        )
+        assert scientific_kwargs["repair_receipts"] == ()
+        assert scientific_kwargs["repaired_observations"] == ()

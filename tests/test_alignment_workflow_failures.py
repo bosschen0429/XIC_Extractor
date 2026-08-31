@@ -56,6 +56,11 @@ def test_runtime_terminal_maps_one_to_one_without_entering_science(
     )
     monkeypatch.setattr(
         workflow_owner,
+        "RuntimeFinalizationReceipt",
+        SimpleNamespace,
+    )
+    monkeypatch.setattr(
+        workflow_owner,
         "execute_runtime_attempt",
         lambda *_args, **_kwargs: receipt,
     )
@@ -86,6 +91,11 @@ def test_runtime_owner_exception_propagates_without_workflow_terminal(
         "_validate_request_adapter",
         lambda *_: object(),
     )
+    monkeypatch.setattr(
+        workflow_owner,
+        "RuntimeFinalizationReceipt",
+        SimpleNamespace,
+    )
 
     class RuntimeOwnerError(RuntimeError):
         pass
@@ -114,6 +124,11 @@ def test_post_runtime_failure_projects_exact_stage_type_and_message(
         workflow_owner,
         "_validate_request_adapter",
         lambda *_: object(),
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "RuntimeFinalizationReceipt",
+        SimpleNamespace,
     )
     monkeypatch.setattr(
         workflow_owner,
