@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from inspect import signature
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -76,7 +77,16 @@ def _captures_for_run(run):
         f"workflow-candidate:{index}"
         for index, _owner in enumerate(run.owners, start=1)
     )
-    object.__setattr__(scope, "declared_candidate_ids", candidate_ids)
+    object.__setattr__(
+        scope,
+        "declared_candidate_ids",
+        (*candidate_ids, "inspection-only:candidate"),
+    )
+    object.__setattr__(
+        scope,
+        "capture_bindings",
+        tuple(SimpleNamespace(candidate_id=item) for item in candidate_ids),
+    )
     captures = []
     for candidate_id, owner in zip(candidate_ids, run.owners, strict=True):
         hypothesis = object.__new__(PeakHypothesis)
@@ -377,7 +387,7 @@ def test_mt0_bridge_rejects_missing_capture_owner_closure(tmp_path: Path) -> Non
 
     with pytest.raises(
         CrossSampleReconciliationContractError,
-        match="complete candidate order",
+        match="capture binding order",
     ):
         apply_mode_track_refinement_run_for_workflow(
             processing_owners=fixture.owners,

@@ -148,6 +148,70 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
         )
 
 
+def test_workflow_accepts_capture_binding_subset_of_declared_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    sample = fixture.samples[0]
+    scope = object.__new__(workflow_owner.TargetSearchScope)
+    object.__setattr__(scope, "request", fixture.request)
+    object.__setattr__(scope, "samples", fixture.samples)
+    object.__setattr__(
+        scope,
+        "declared_candidate_ids",
+        ("capture:candidate", "inspection-only:candidate"),
+    )
+    object.__setattr__(
+        scope,
+        "capture_bindings",
+        (SimpleNamespace(candidate_id="capture:candidate"),),
+    )
+    request = object.__new__(TargetWorkflowRequest)
+    object.__setattr__(request, "scope", scope)
+    object.__setattr__(request, "processing_request", fixture.request)
+    object.__setattr__(request, "processing_attempt", fixture.attempt)
+    object.__setattr__(request, "runtime", object())
+    adapter = object.__new__(TargetWorkflowAdapter)
+    object.__setattr__(
+        adapter,
+        "capture_inputs",
+        (SimpleNamespace(candidate_id="capture:candidate"),),
+    )
+    object.__setattr__(
+        adapter,
+        "mode_track",
+        SimpleNamespace(sample_assessments=((sample, object()),)),
+    )
+    object.__setattr__(
+        adapter,
+        "repair",
+        SimpleNamespace(
+            coverage=SimpleNamespace(
+                epoch=SimpleNamespace(
+                    context=SimpleNamespace(processing_owners=fixture.owners)
+                )
+            )
+        ),
+    )
+    object.__setattr__(adapter, "predecessor_cell_observations", ())
+
+    monkeypatch.setattr(TargetWorkflowRequest, "__post_init__", lambda self: None)
+    monkeypatch.setattr(TargetWorkflowAdapter, "__post_init__", lambda self: None)
+    monkeypatch.setattr(
+        workflow_owner,
+        "_validate_runtime_attempt_binding",
+        lambda invocation, attempt: None,
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "validate_scope_owner_binding",
+        lambda supplied_scope, *, processing_owners, sample: None,
+    )
+
+    assert workflow_owner._validate_request_adapter(request, adapter) is fixture.owners
+
+
 def test_workflow_runtime_rejects_a_crossed_processing_attempt(
     tmp_path: Path,
 ) -> None:

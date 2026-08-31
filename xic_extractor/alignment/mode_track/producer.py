@@ -10,6 +10,7 @@ from xic_extractor.alignment.drift_evidence import (
     LocalTrajectoryEvidenceLookup,
     assess_local_trajectory,
 )
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
@@ -58,6 +59,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     ],
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
+    drift_lookup: DriftLookupProtocol | None = None,
 ) -> tuple[
     FamilyContextRef,
     ModeTrackModelSet,
@@ -129,6 +131,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
+        drift_lookup=drift_lookup,
     )
     if not provisional_groups or any(track.review_only for track in provisional_groups):
         raise ModeTrackProducerError(
@@ -257,7 +260,9 @@ def bootstrap_mode_tracks_from_cid_nl_support(
                 trajectory_assessment=trajectory_assessment,
             )
         )
-    batches_tuple = tuple(batches)
+    batches_tuple = tuple(
+        sorted(batches, key=lambda item: item.assignment_batch_id)
+    )
     source = mint_mode_track_fit_once_source(
         processing_owners=processing_owners,
         family_context=family_context,

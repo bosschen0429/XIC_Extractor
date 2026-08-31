@@ -594,11 +594,14 @@ def _validate_request_adapter(
             sample=sample,
         )
     candidate_ids = tuple(item.candidate_id for item in adapter.capture_inputs)
-    if candidate_ids != request.scope.declared_candidate_ids or len(
+    capture_binding_ids = tuple(
+        binding.candidate_id for binding in request.scope.capture_bindings
+    )
+    if candidate_ids != capture_binding_ids or len(
         candidate_ids
     ) != len(set(candidate_ids)):
         raise AlignmentWorkflowContractError(
-            "capture inputs must exactly preserve declared candidate order"
+            "capture inputs must exactly preserve capture binding order"
         )
     if tuple(sample for sample, _ in adapter.mode_track.sample_assessments) != tuple(
         sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)

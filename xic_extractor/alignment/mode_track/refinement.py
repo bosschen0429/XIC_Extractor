@@ -824,6 +824,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             sample_assessments=sample_assessments,
             alignment_config=alignment_config,
             trajectory_policy=trajectory_policy,
+            drift_lookup=drift_lookup,
         )
     )
     groups = family_context.mode_tracks

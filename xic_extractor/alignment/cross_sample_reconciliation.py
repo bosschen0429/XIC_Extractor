@@ -580,12 +580,15 @@ def apply_mode_track_refinement_run_for_workflow(
             "workflow MT0 captures crossed their exact SearchScope"
         )
     candidate_ids = tuple(capture.candidate_id for capture in capture_tuple)
+    capture_binding_ids = tuple(
+        binding.candidate_id for binding in capture_scope.capture_bindings
+    )
     if (
-        candidate_ids != capture_scope.declared_candidate_ids
+        candidate_ids != capture_binding_ids
         or len(candidate_ids) != len(set(candidate_ids))
     ):
         raise CrossSampleReconciliationContractError(
-            "workflow MT0 captures do not preserve the complete candidate order"
+            "workflow MT0 captures do not preserve the capture binding order"
         )
     for capture in capture_tuple:
         capture.__post_init__()

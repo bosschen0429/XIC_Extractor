@@ -285,6 +285,75 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
     assert all(item is drift_lookup for item in seen)
 
 
+def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
+    tmp_path: Path,
+) -> None:
+    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.test_alignment_multi_hypothesis_support import (
+        _assessment_with_observation_only_peak,
+    )
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.mode_track import (
+        ModeTrackTrajectoryPolicy,
+        bootstrap_mode_track_refinement_from_cid_nl_support,
+    )
+
+    fixture = build_package2_no_raw_fixture(
+        tmp_path,
+        sample_stems=("early", "late"),
+    )
+    assessments = tuple(
+        (
+            fixture.sample(sample_stem),
+            _assessment_with_observation_only_peak(
+                fixture,
+                sample_stem=sample_stem,
+                direct_apex_rt=7.80,
+                observed_apex_rt=8.40,
+                scan_number=scan_number,
+            ),
+        )
+        for sample_stem, scan_number in (("early", 201), ("late", 202))
+    )
+
+    class DriftLookup:
+        source = "targeted_istd_trend"
+
+        def sample_delta_min(self, sample_stem: str) -> float:
+            return {"early": 0.0, "late": 1.0}[sample_stem]
+
+        def injection_order(self, sample_stem: str) -> int:
+            return {"early": 1, "late": 2}[sample_stem]
+
+    run = bootstrap_mode_track_refinement_from_cid_nl_support(
+        processing_owners=fixture.owners,
+        sample_assessments=assessments,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        trajectory_policy=ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="anchor-trajectory-v1",
+            band_policy_version="fixed-band-v1",
+            prediction_half_width_min=0.1,
+            max_interpolation_gap=10,
+            max_extrapolation_gap=10,
+        ),
+        drift_lookup=DriftLookup(),
+    )
+
+    direct_member_ids = {
+        owner.cross_sample_member_subject.member_subject_id
+        for owner in run.owners
+        if owner.owner_apex_rt == 7.80
+        and owner.cross_sample_member_subject is not None
+    }
+    assert len(direct_member_ids) == 2
+    assert not any(
+        direct_member_ids.issubset(
+            {member.member_subject_id for member in predecessor.member_subjects}
+        )
+        for predecessor in run.predecessors
+    )
+
+
 def test_public_workflow_returns_cross_sample_application_receipts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
