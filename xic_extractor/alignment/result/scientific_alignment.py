@@ -136,7 +136,7 @@ class FinalizedScientificAlignment:
         return self.final_application.lineage
 
     @property
-    def repair_receipt(self) -> ObservationRepairReceipt:
+    def repair_receipt(self) -> ObservationRepairReceipt | None:
         return self.final_cross_sample_receipt.repair_receipt
 
     @property

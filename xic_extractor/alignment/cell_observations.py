@@ -1722,6 +1722,12 @@ def _validate_handoff_repair_closure(
     """
 
     final_receipt = handoff.final_receipt.repair_receipt
+    if final_receipt is None:
+        if repair_receipts or repaired_observations:
+            raise CellObservationContractError(
+                "receipt-free terminal cannot carry repair evidence"
+            )
+        return
     if any(receipt is not final_receipt for receipt in repair_receipts):
         raise CellObservationContractError(
             "repair evidence does not match the exact final repair receipt"

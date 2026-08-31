@@ -12,12 +12,14 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
+    CrossSampleNeighborhoodEdge,
     CrossSampleRepairedObservation,
     build_bounded_connected_neighborhood,
     classify_cross_sample_initial_neighborhood_edge,
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignment,
     ModeTrackAssignmentBatch,
@@ -25,6 +27,7 @@ from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackFitOnceSource,
     ModeTrackModelSet,
     ModeTrackRepairAssignmentObservation,
+    ModeTrackSupportAnchor,
     ModeTrackTrajectoryPolicy,
     _mint_mode_track_repair_assignment_observation,
     _ModeTrackAssignmentUnavailableError,
@@ -76,6 +79,7 @@ if TYPE_CHECKING:
     )
 
 _FINAL_ATTEMPT_MINT_TOKEN = object()
+_REFINEMENT_RUN_MINT_TOKEN = object()
 ModeTrackRefinementOwner: TypeAlias = (
     SampleLocalMS1Owner | CrossSampleRepairedObservation
 )
@@ -788,6 +792,20 @@ class ModeTrackRefinementRun:
     assignment_batches: tuple[ModeTrackAssignmentBatch, ...]
     fit_once_source: ModeTrackFitOnceSource
     transactions: tuple[ModeTrackRefinementTransaction, ...]
+    predecessors: tuple[CrossSampleGroupIdentity, ...]
+    owners: tuple[SampleLocalMS1Owner, ...]
+    classified_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    anchors: tuple[ModeTrackSupportAnchor, ...]
+    injection_order: tuple[tuple[str, int], ...]
+    evidence_profile: ModeTrackEvidenceProfile
+    budget: CrossSampleNeighborhoodBudget
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _REFINEMENT_RUN_MINT_TOKEN:
+            raise ModeTrackRefinementContractError(
+                "ModeTrack refinement run must be minted by ModeTrack"
+            )
 
 
 def bootstrap_mode_track_refinement_from_cid_nl_support(
@@ -798,6 +816,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
     ],
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
+    drift_lookup: DriftLookupProtocol | None = None,
 ) -> ModeTrackRefinementRun:
     family_context, model_set, assignment_batches, fit_once_source = (
         bootstrap_mode_tracks_from_cid_nl_support(
@@ -805,6 +824,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             sample_assessments=sample_assessments,
             alignment_config=alignment_config,
             trajectory_policy=trajectory_policy,
+            drift_lookup=drift_lookup,
         )
     )
     groups = family_context.mode_tracks
@@ -824,6 +844,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             right_owner=owners[right_index],
             context="complete_link",
             config=alignment_config,
+            drift_lookup=drift_lookup,
         )
         for left_index in range(len(owners))
         for right_index in range(left_index + 1, len(owners))
@@ -937,6 +958,16 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         assignment_batches=assignment_batches,
         fit_once_source=fit_once_source,
         transactions=tuple(transactions),
+        predecessors=predecessors,
+        owners=owners,
+        classified_edges=classified_edges,
+        anchors=tuple(
+            sorted(anchor_by_owner_id.values(), key=lambda item: item.anchor_id)
+        ),
+        injection_order=tuple(sorted(injection_order.items())),
+        evidence_profile=evidence_profile,
+        budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+        _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
     )
 
 
