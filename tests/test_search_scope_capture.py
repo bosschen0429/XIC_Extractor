@@ -11,7 +11,10 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
+    REQUEST_INPUT_KEY,
     cid_nl_method_subject_from_target,
+    mint_untargeted_cid_nl_method_subject,
+    mint_untargeted_cid_nl_method_subject_batch,
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -26,7 +29,10 @@ from xic_extractor.peak_detection.search_scope import (
     scope_allows_evidence_inspection,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
+from xic_extractor.processing_identity import (
+    build_processing_request_identity,
+    resolve_request_acquisition_source,
+)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
@@ -59,6 +65,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
     targeted_binding = _capture_binding(
         candidate_id="candidate-a",
+        method_subject_id=targeted_subject.method_subject_id,
         sample=targeted_sample,
         acquisition_source_id=targeted_source.acquisition_source_id,
         mz=targeted_subject.precursor_mz,
@@ -68,6 +75,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     )
     untargeted_binding = _capture_binding(
         candidate_id="candidate-a",
+        method_subject_id=untargeted_fixture.method_subject.method_subject_id,
         sample=untargeted_sample,
         acquisition_source_id=untargeted_source.acquisition_source_id,
         mz=untargeted_fixture.method_subject.precursor_mz,
@@ -243,6 +251,7 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
     )
     targeted_binding = _capture_binding(
         candidate_id="candidate-a",
+        method_subject_id=targeted_subject.method_subject_id,
         sample=targeted_sample,
         acquisition_source_id=targeted_source.acquisition_source_id,
         mz=targeted_subject.precursor_mz,
@@ -252,6 +261,7 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
     )
     untargeted_binding = _capture_binding(
         candidate_id="candidate-a",
+        method_subject_id=untargeted_fixture.method_subject.method_subject_id,
         sample=untargeted_sample,
         acquisition_source_id=untargeted_source.acquisition_source_id,
         mz=half_tolerance_mz,
@@ -402,6 +412,7 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
     )
     untargeted_binding = _capture_binding(
         candidate_id="candidate-b",
+        method_subject_id=untargeted_fixture.method_subject.method_subject_id,
         sample=untargeted_sample,
         acquisition_source_id=untargeted_source.acquisition_source_id,
         mz=untargeted_fixture.method_subject.precursor_mz,
@@ -454,6 +465,104 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
     assert require_capture_binding(untargeted, "candidate-b").candidate_id == (
         "candidate-b"
     )
+
+
+def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
+    tmp_path: Path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "qc"},
+    )
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=243.098,
+                    precursor_tolerance_ppm=10.0,
+                    neutral_loss_da=fixture.method_subject.neutral_loss_da,
+                ),
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=243.099,
+                    precursor_tolerance_ppm=10.0,
+                    neutral_loss_da=fixture.method_subject.neutral_loss_da,
+                ),
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    subject_by_mz = {subject.precursor_mz: subject for subject in subjects}
+    memberships = (
+        ("candidate-a", subject_by_mz[243.098].method_subject_id),
+        ("candidate-b", subject_by_mz[243.099].method_subject_id),
+    )
+    batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=subjects,
+        candidate_memberships=memberships,
+    )
+    base_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=base_request.acquisition_sources,
+        acquisition_bindings=base_request.acquisition_bindings,
+        scientific_input_schema_version="untargeted-cid-nl-batch-test-v1",
+        processing_algorithm_version=base_request.processing_algorithm_version,
+        processing_contract_version=base_request.processing_contract_version,
+        scientific_inputs={REQUEST_INPUT_KEY: batch.request_payload()},
+    )
+    sample = fixture.sample("S1")
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    bindings = tuple(
+        _capture_binding(
+            candidate_id=candidate_id,
+            method_subject_id=method_subject_id,
+            sample=sample,
+            acquisition_source_id=source.acquisition_source_id,
+            mz=batch.subject_for_candidate(candidate_id).precursor_mz,
+            ppm_tol=batch.subject_for_candidate(
+                candidate_id
+            ).precursor_tolerance_ppm,
+            rt_min=7.7,
+            rt_max=8.3,
+        )
+        for candidate_id, method_subject_id in memberships
+    )
+    scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=request,
+        samples=fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=_peak_config(tmp_path),
+        ),
+        evidence_providers=tuple(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=subject.method_subject_id,
+            )
+            for subject in subjects
+        ),
+        declared_candidate_ids=("candidate-a", "candidate-b"),
+        capture_bindings=bindings,
+    )
+    assert scope.capture_bindings == bindings
+    with pytest.raises(
+        SearchScopeContractError,
+        match="candidate subject membership",
+    ):
+        replace(
+            scope,
+            capture_bindings=(
+                replace(
+                    bindings[0],
+                    method_subject_id=memberships[1][1],
+                    query_mz=subject_by_mz[243.099].precursor_mz,
+                ),
+                bindings[1],
+            ),
+        )
 
 
 def test_scope_rejects_provider_not_bound_to_variant_definition(
@@ -527,6 +636,7 @@ def test_observation_seam_does_not_accept_caller_hypothesis_override() -> None:
 def _capture_binding(
     *,
     candidate_id: str,
+    method_subject_id: str,
     sample: ResolvedCanonicalSampleIdentity,
     acquisition_source_id: str,
     mz: float,
@@ -536,6 +646,7 @@ def _capture_binding(
 ) -> CaptureCandidateBinding:
     return CaptureCandidateBinding(
         candidate_id=candidate_id,
+        method_subject_id=method_subject_id,
         sample_identity_id=sample.identity.sample_identity_id,
         sample_name=sample.metadata.sample_name,
         acquisition_source_id=acquisition_source_id,

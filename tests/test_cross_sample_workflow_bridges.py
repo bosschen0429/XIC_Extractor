@@ -140,6 +140,7 @@ def _target_scope_and_captures(fixture, spine, tmp_path: Path):
         bindings.append(
             _capture_binding(
                 candidate_id=candidate_id,
+                method_subject_id=method_subject.method_subject_id,
                 sample=sample,
                 acquisition_source_id=source.acquisition_source_id,
                 mz=method_subject.precursor_mz,
