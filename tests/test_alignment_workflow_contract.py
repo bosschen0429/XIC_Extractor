@@ -16,6 +16,7 @@ from xic_extractor.alignment.workflow import (
     CancelledWorkflowResult,
     CaptureWorkflowArguments,
     CompletedTargetWorkflowResult,
+    CompletedUntargetBatchWorkflowResult,
     CompletedUntargetWorkflowResult,
     FailedWorkflowResult,
     ModeTrackWorkflowArguments,
@@ -99,6 +100,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
     assert set(get_args(WorkflowTerminalResult)) == {
         CompletedTargetWorkflowResult,
         CompletedUntargetWorkflowResult,
+        CompletedUntargetBatchWorkflowResult,
         CancelledWorkflowResult,
         FailedWorkflowResult,
     }
