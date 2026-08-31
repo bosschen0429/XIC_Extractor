@@ -120,7 +120,8 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
         assert owner.owner_id == hypothesis.hypothesis_id
 
-    family_context, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    family_context, model_set, batches, _source = (
+        bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=fixture.owners,
         sample_assessments=((sample, assessment),),
         alignment_config=AlignmentConfig(),
@@ -131,6 +132,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
         ),
+        )
     )
 
     assert len(family_context.mode_tracks) == 2
@@ -167,7 +169,8 @@ def test_m3_owner_membership_is_observed_geometry_not_reclassified_by_group_cent
         )
     )
 
-    family_context, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    family_context, model_set, batches, _source = (
+        bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=fixture.owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -178,6 +181,7 @@ def test_m3_owner_membership_is_observed_geometry_not_reclassified_by_group_cent
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
         ),
+        )
     )
 
     assert len(family_context.mode_tracks) == 2

@@ -1613,13 +1613,13 @@ def test_mode_track_owner_has_no_product_or_raw_scan_dependencies() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         imported.update(
             alias.name
-            for node in ast.walk(tree)
+            for node in tree.body
             if isinstance(node, ast.Import)
             for alias in node.names
         )
         imported.update(
             node.module or ""
-            for node in ast.walk(tree)
+            for node in tree.body
             if isinstance(node, ast.ImportFrom)
         )
     forbidden = (

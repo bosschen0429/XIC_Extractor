@@ -70,7 +70,35 @@ def test_membership_neutral_repair_enters_the_public_cross_sample_owner(
     assert reconciled.disposition == "admitted"
     assert reconciled.application is not None
     assert reconciled.mode_track_input is not None
-    assert reconciled.mode_track_input.trajectory_input.anchor_ids == ()
+    assert reconciled.mode_track_input.post_repair_trajectory.anchor_ids == ()
+    assert (
+        reconciled.mode_track_input.processing_request_id
+        == context.processing_request_id
+    )
+    assert (
+        reconciled.mode_track_input.processing_attempt_id
+        == context.processing_owners.attempt.processing_attempt_id
+    )
+    assert reconciled.mode_track_input.processing_owners is context.processing_owners
+    assert reconciled.mode_track_input.repair_epoch == 1
+    assert reconciled.mode_track_input.repair_disposition == "nonmember_admitted"
+    assert (
+        reconciled.mode_track_input.cross_sample_repair_result_id
+        == reconciled.result_id
+    )
+    assert (
+        reconciled.mode_track_input.cross_sample_repair_application_id
+        == reconciled.application.application_id
+    )
+    assert (
+        reconciled.mode_track_input.post_repair_population
+        == reconciled.final_population
+    )
+    assert (
+        reconciled.mode_track_input.post_repair_owners
+        == reconciled.final_owners
+    )
+    assert reconciled.mode_track_input.trajectory_changed is True
     repaired_observation = reconciled.mode_track_input.repaired_observation
     assert repaired_observation.identity_evidence_authority == "none"
     assert not hasattr(repaired_observation, "primary_identity_event")
@@ -80,7 +108,6 @@ def test_membership_neutral_repair_enters_the_public_cross_sample_owner(
     assert reconciled.matrix_authority == "none"
     assert reconciled.activation_authority == "none"
     assert reconciled.writer_authority == "none"
-    assert reconciled.mode_track_input.proposal_authority == "none"
     assert reconciled.application.admitted_member_subject_id in {
         member.member_subject_id
         for group in reconciled.final_population
@@ -348,30 +375,25 @@ def test_admission_application_result_and_mode_track_input_fail_closed(
         )
     with pytest.raises(
         reconciliation_owner.CrossSampleReconciliationContractError,
-        match="trajectory crossed",
+        match="crossed trajectory",
     ):
         replace(
             mode_track_input,
-            trajectory_input=context.trajectory_input,
+            post_repair_trajectory=context.trajectory_input,
             _mint_token=(reconciliation_owner._POST_REPAIR_MODE_TRACK_INPUT_MINT_TOKEN),
         )
 
 
 def test_admission_is_one_complete_pairwise_pass_and_no_mode_track_proposal(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     context, terminal, repair_result, alignment_config = _scenario(tmp_path)
     candidate = terminal.candidate
     assert candidate is not None
 
-    def forbidden_proposal(**_kwargs):
-        raise AssertionError("#353 must not invoke ModeTrack proposal authority")
-
-    monkeypatch.setattr(
+    assert not hasattr(
         reconciliation_owner,
         "propose_mode_track_successor_partition",
-        forbidden_proposal,
     )
 
     admitted = reconcile_nonmember_observation_repair(
@@ -400,7 +422,6 @@ def test_admission_is_one_complete_pairwise_pass_and_no_mode_track_proposal(
     assert len(review_only.pairwise_edges) == len(context.owners)
     assert admitted.application is not None
     assert admitted.mode_track_input is not None
-    assert admitted.mode_track_input.proposal_authority == "none"
     assert review_only.application is None
     assert review_only.mode_track_input is None
 
@@ -439,6 +460,7 @@ def _scenario(tmp_path: Path, *, hold_sample: str = "s2"):
     )
     context = build_cross_sample_post_mt0_context(
         processing_request_id=group.processing_request_id,
+        processing_owners=fixture.owners,
         population=(group,),
         application=application,
         owners=owners,

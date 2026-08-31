@@ -644,6 +644,7 @@ def _final_receipt(
     )
     context = build_cross_sample_post_mt0_context(
         processing_request_id=canonical_successors[0].processing_request_id,
+        processing_owners=fixture.context.processing_owners,
         population=canonical_successors,
         application=application,
         owners=owners,

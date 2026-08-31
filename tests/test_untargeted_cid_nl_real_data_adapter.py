@@ -314,7 +314,8 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
         "dda_cid_nl",
         "ms1_physical_observation",
     }
-    family_context, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    family_context, model_set, batches, _source = (
+        bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=fixture.owners,
         sample_assessments=((fixture.sample("S1"), assessment),),
         alignment_config=AlignmentConfig(),
@@ -325,6 +326,7 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
             max_interpolation_gap=0,
             max_extrapolation_gap=0,
         ),
+        )
     )
     assert len(family_context.mode_tracks) == 2
     assert sum(len(track.anchors) for track in model_set.tracks) == 1

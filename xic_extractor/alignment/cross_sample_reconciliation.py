@@ -28,7 +28,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleClassifiedEdge,
     CrossSampleContractError,
-    CrossSampleCoupledProposalContext,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
@@ -53,9 +52,7 @@ from xic_extractor.alignment.mode_track.contracts import (
     ModeTrackTrajectoryInput,
     RejectedModeTrackRefinement,
     UnassessableModeTrackRefinement,
-    apply_accepted_mode_track_refinement,
     mint_mode_track_trajectory_input,
-    propose_mode_track_successor_partition,
 )
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillPeakFactObservation,
@@ -67,6 +64,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
+    ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
     typed_identity_digest,
     validate_typed_identity_basis,
@@ -77,6 +75,11 @@ _FINAL_RECEIPT_PREFIX = "xic.cross-sample-final-receipt.v1:"
 _NONMEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-nonmember-repair.v1:"
 _POST_REPAIR_MODE_TRACK_INPUT_PREFIX = (
     "xic.cross-sample-post-repair-mode-track-input.v1:"
+)
+_POST_REPAIR_POPULATION_PREFIX = "xic.cross-sample-post-repair-population.v1:"
+_POST_REPAIR_APPLICATION_PREFIX = "xic.cross-sample-post-repair-application.v1:"
+_EXISTING_MEMBER_REPAIR_RESULT_PREFIX = (
+    "xic.cross-sample-existing-member-repair.v1:"
 )
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
 _TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
@@ -90,6 +93,10 @@ CrossSampleRepairDisposition: TypeAlias = Literal[
     "review_only",
     "excluded",
 ]
+CrossSamplePostRepairDisposition: TypeAlias = Literal[
+    "existing_member_reconciled",
+    "nonmember_admitted",
+]
 InjectionOrderInput: TypeAlias = Mapping[str, int] | Sequence[tuple[str, int]]
 
 
@@ -102,6 +109,7 @@ class CrossSamplePostMT0Context:
     """Exact post-MT0 CrossSample state needed for one repair reconciliation."""
 
     processing_request_id: str
+    processing_owners: ProcessingOwnerReferences
     population: tuple[CrossSampleGroupIdentity, ...]
     application: CrossSampleSuccessorApplication
     owners: tuple[SampleLocalMS1Owner, ...]
@@ -120,12 +128,23 @@ class CrossSamplePostMT0Context:
 class CrossSamplePostRepairModeTrackInput:
     """Replay-bound CrossSample carrier for the separate ModeTrack owner."""
 
-    input_id: str
+    post_repair_input_id: str
+    processing_request_id: str
+    processing_attempt_id: str
+    processing_owners: ProcessingOwnerReferences
     repair_receipt_id: str
-    application: CrossSampleRepairAdmissionApplication
-    repaired_observation: CrossSampleRepairedObservation
-    owners: tuple[SampleLocalMS1Owner, ...]
-    trajectory_input: ModeTrackTrajectoryInput
+    repair_epoch: Literal[1]
+    repair_disposition: CrossSamplePostRepairDisposition
+    cross_sample_repair_result_id: str
+    cross_sample_repair_application_id: str
+    repaired_member_subject_id: str
+    repaired_observation: CrossSampleRepairedObservation | None
+    pre_repair_trajectory_input_id: str
+    post_repair_population_id: str
+    post_repair_population: tuple[CrossSampleGroupIdentity, ...]
+    post_repair_owners: tuple[SampleLocalMS1Owner, ...]
+    post_repair_trajectory: ModeTrackTrajectoryInput
+    trajectory_changed: bool
     basis_bytes: bytes
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
@@ -134,79 +153,222 @@ class CrossSamplePostRepairModeTrackInput:
             raise CrossSampleReconciliationContractError(
                 "post-repair ModeTrack input must be minted by CrossSample"
             )
-        if type(self.application) is not CrossSampleRepairAdmissionApplication:
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input requires an exact application"
-            )
-        if self.repair_receipt_id != self.application.repair_receipt_id:
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input crossed repair receipt"
-            )
-        if type(self.repaired_observation) is not CrossSampleRepairedObservation:
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input requires an exact repaired observation"
-            )
-        if type(self.owners) is not tuple or any(
-            type(owner) is not SampleLocalMS1Owner for owner in self.owners
-        ):
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input requires exact identity owners"
-            )
-        canonical_owners = tuple(sorted(self.owners, key=_owner_sort_key))
-        if self.owners != canonical_owners:
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack identity owners are not canonical"
-            )
-        repaired_member = self.repaired_observation.member_subject
-        if (
-            repaired_member.member_subject_id
-            != self.application.admitted_member_subject_id
-        ):
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input crossed the admitted member"
-            )
-        if type(self.trajectory_input) is not ModeTrackTrajectoryInput:
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack trajectory must be owner-minted"
-            )
-        successor_member_ids = tuple(
-            member.member_subject_id
-            for member in self.application.successor.member_subjects
-        )
-        if (
-            tuple(sorted(successor_member_ids))
-            != self.trajectory_input.member_subject_ids
-            or self.trajectory_input.processing_request_id
-            != self.application.successor.processing_request_id
-            or self.trajectory_input.anchor_ids
-        ):
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack trajectory crossed its successor or anchors"
-            )
-        basis = _post_repair_mode_track_input_basis(
-            repair_receipt_id=self.repair_receipt_id,
-            application=self.application,
-            repaired_observation=self.repaired_observation,
-            owners=self.owners,
-            trajectory_input=self.trajectory_input,
-        )
-        if self.basis_bytes != basis:
-            raise CrossSampleReconciliationContractError(
-                "post-repair ModeTrack input basis bytes are not exact"
-            )
-        try:
-            validate_typed_identity_basis(
-                self.input_id,
-                prefix=_POST_REPAIR_MODE_TRACK_INPUT_PREFIX,
-                basis_bytes=basis,
-                field="post-repair ModeTrack input_id",
-            )
-        except ValueError as exc:
-            raise CrossSampleReconciliationContractError(str(exc)) from exc
+        _validate_post_repair_mode_track_input(self)
 
-    @property
-    def proposal_authority(self) -> Literal["none"]:
-        return "none"
+def _validate_post_repair_mode_track_input(
+    input_value: CrossSamplePostRepairModeTrackInput,
+) -> None:
+    if type(input_value.processing_owners) is not ProcessingOwnerReferences:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input requires exact processing owners"
+        )
+    try:
+        request_id = _request_id(input_value.processing_request_id)
+        attempt_id = input_value.processing_owners.attempt.processing_attempt_id
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input processing owners are invalid"
+        ) from exc
+    if (
+        input_value.processing_owners.request.processing_request_id != request_id
+        or input_value.processing_owners.attempt.processing_request_id != request_id
+        or input_value.processing_attempt_id != attempt_id
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input crossed request or attempt"
+        )
+    if type(input_value.repair_epoch) is not int or input_value.repair_epoch != 1:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input repair epoch must be exactly one"
+        )
+    if (
+        not isinstance(input_value.repair_disposition, str)
+        or input_value.repair_disposition
+        not in {
+        "existing_member_reconciled",
+        "nonmember_admitted",
+        }
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input disposition is not closed"
+        )
+    for field_name in (
+        "repair_receipt_id",
+        "cross_sample_repair_result_id",
+        "cross_sample_repair_application_id",
+        "repaired_member_subject_id",
+    ):
+        if not isinstance(getattr(input_value, field_name), str) or not getattr(
+            input_value, field_name
+        ).strip():
+            raise CrossSampleReconciliationContractError(
+                f"post-repair ModeTrack input {field_name} is required"
+            )
+    if type(input_value.post_repair_population) is not tuple:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input population must be immutable"
+        )
+    population = tuple(
+        sorted(
+            input_value.post_repair_population,
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    if population != input_value.post_repair_population:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input population is not canonical"
+        )
+    try:
+        validate_cross_sample_group_population(population)
+    except (TypeError, ValueError) as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
+    if any(group.processing_request_id != request_id for group in population):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input population crossed request"
+        )
+    try:
+        population_id = _post_repair_population_id(population)
+    except (TypeError, ValueError) as exc:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input population identity is invalid"
+        ) from exc
+    if input_value.post_repair_population_id != population_id:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input crossed population identity"
+        )
+    if type(input_value.post_repair_owners) is not tuple:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input owners must be immutable"
+        )
+    owners = tuple(
+        sorted(input_value.post_repair_owners, key=_owner_sort_key)
+    )
+    if owners != input_value.post_repair_owners or any(
+        type(owner) is not SampleLocalMS1Owner for owner in owners
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input owners are not canonical"
+        )
+    population_member_ids = {
+        member.member_subject_id
+        for group in population
+        for member in group.member_subjects
+    }
+    owner_member_ids = {_owner_member_id(owner) for owner in owners}
+    if input_value.repair_disposition == "existing_member_reconciled":
+        if input_value.repaired_observation is not None:
+            raise CrossSampleReconciliationContractError(
+                "existing-member handoff cannot carry a nonmember observation"
+            )
+    elif input_value.repaired_observation is None:
+        raise CrossSampleReconciliationContractError(
+            "admitted nonmember handoff requires its repaired observation"
+        )
+    if input_value.repaired_observation is not None:
+        if type(input_value.repaired_observation) is not CrossSampleRepairedObservation:
+            raise CrossSampleReconciliationContractError(
+                "post-repair ModeTrack input repaired observation is not exact"
+            )
+        if (
+            input_value.repaired_observation.member_subject.member_subject_id
+            != input_value.repaired_member_subject_id
+            or input_value.repaired_observation.repair_receipt_id
+            != input_value.repair_receipt_id
+        ):
+            raise CrossSampleReconciliationContractError(
+                "post-repair ModeTrack input crossed repaired observation"
+            )
+        owner_member_ids.add(input_value.repaired_member_subject_id)
+    if input_value.repaired_member_subject_id not in population_member_ids:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input repaired member is absent from population"
+        )
+    if not isinstance(input_value.trajectory_changed, bool):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input trajectory_changed must be boolean"
+        )
+    trajectory = input_value.post_repair_trajectory
+    if type(trajectory) is not ModeTrackTrajectoryInput:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack trajectory must be owner-minted"
+        )
+    trajectory_member_ids = set(trajectory.member_subject_ids)
+    if not trajectory_member_ids.issubset(population_member_ids):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack trajectory escaped the complete population"
+        )
+    if owner_member_ids != trajectory_member_ids:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input crossed trajectory neighborhood owners"
+        )
+    if (
+        trajectory.processing_request_id != request_id
+        or input_value.trajectory_changed
+        != (
+            input_value.pre_repair_trajectory_input_id
+            != trajectory.trajectory_input_id
+        )
+        or not input_value.trajectory_changed
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input crossed trajectory state"
+        )
+    _trajectory_id(input_value.pre_repair_trajectory_input_id)
+    if input_value.repair_disposition == "existing_member_reconciled":
+        expected_result_id = _existing_member_repair_result_id(
+            processing_owners=input_value.processing_owners,
+            repair_receipt_id=input_value.repair_receipt_id,
+            repair_epoch=input_value.repair_epoch,
+            cross_sample_repair_application_id=(
+                input_value.cross_sample_repair_application_id
+            ),
+            repaired_member_subject_id=input_value.repaired_member_subject_id,
+            pre_repair_trajectory_input_id=(
+                input_value.pre_repair_trajectory_input_id
+            ),
+            post_repair_trajectory_input_id=trajectory.trajectory_input_id,
+            post_repair_population_id=input_value.post_repair_population_id,
+            post_repair_owner_ids=tuple(owner.owner_id for owner in owners),
+        )
+        if input_value.cross_sample_repair_result_id != expected_result_id:
+            raise CrossSampleReconciliationContractError(
+                "existing-member handoff result identity is not deterministic"
+            )
+    expected_basis = _post_repair_mode_track_input_basis(
+        processing_request_id=input_value.processing_request_id,
+        processing_attempt_id=input_value.processing_attempt_id,
+        processing_owners=input_value.processing_owners,
+        repair_receipt_id=input_value.repair_receipt_id,
+        repair_epoch=input_value.repair_epoch,
+        repair_disposition=input_value.repair_disposition,
+        cross_sample_repair_result_id=input_value.cross_sample_repair_result_id,
+        cross_sample_repair_application_id=(
+            input_value.cross_sample_repair_application_id
+        ),
+        repaired_member_subject_id=input_value.repaired_member_subject_id,
+        repaired_observation=input_value.repaired_observation,
+        pre_repair_trajectory_input_id=(
+            input_value.pre_repair_trajectory_input_id
+        ),
+        post_repair_population_id=input_value.post_repair_population_id,
+        post_repair_population=input_value.post_repair_population,
+        post_repair_owners=input_value.post_repair_owners,
+        post_repair_trajectory=input_value.post_repair_trajectory,
+        trajectory_changed=input_value.trajectory_changed,
+    )
+    if input_value.basis_bytes != expected_basis:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input basis bytes are not exact"
+        )
+    try:
+        validate_typed_identity_basis(
+            input_value.post_repair_input_id,
+            prefix=_POST_REPAIR_MODE_TRACK_INPUT_PREFIX,
+            basis_bytes=expected_basis,
+            field="post-repair ModeTrack input_id",
+        )
+    except ValueError as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +426,7 @@ class CrossSampleNonmemberRepairResult:
 def build_cross_sample_post_mt0_context(
     *,
     processing_request_id: str,
+    processing_owners: ProcessingOwnerReferences,
     population: Sequence[CrossSampleGroupIdentity],
     application: CrossSampleSuccessorApplication,
     owners: Sequence[SampleLocalMS1Owner],
@@ -276,6 +439,17 @@ def build_cross_sample_post_mt0_context(
     """Build and seal the trajectory snapshot for a post-MT0 state."""
 
     request_id = _request_id(processing_request_id)
+    if type(processing_owners) is not ProcessingOwnerReferences:
+        raise CrossSampleReconciliationContractError(
+            "post-MT0 context requires exact processing owners"
+        )
+    if (
+        processing_owners.request.processing_request_id != request_id
+        or processing_owners.attempt.processing_request_id != request_id
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-MT0 context crossed processing request or attempt"
+        )
     application = _exact_application(application, field="post-MT0 application")
     population_tuple = tuple(
         sorted(population, key=lambda group: group.group_hypothesis_id)
@@ -304,6 +478,7 @@ def build_cross_sample_post_mt0_context(
     )
     return CrossSamplePostMT0Context(
         processing_request_id=request_id,
+        processing_owners=processing_owners,
         population=population_tuple,
         application=application,
         owners=owners_tuple,
@@ -415,12 +590,34 @@ def reconcile_nonmember_observation_repair(
             raise CrossSampleReconciliationContractError(
                 f"post-repair trajectory could not close: {exc}"
             ) from exc
+        pre_trajectory_input_id = context.trajectory_input.trajectory_input_id
         mode_track_input = _mint_post_repair_mode_track_input(
+            processing_owners=context.processing_owners,
             repair_receipt_id=receipt.receipt_id,
-            application=application,
+            repair_epoch=receipt.repair_epoch,
+            repair_disposition="nonmember_admitted",
+            cross_sample_repair_result_id=typed_identity_digest(
+                _NONMEMBER_REPAIR_RESULT_PREFIX,
+                _nonmember_repair_result_basis(
+                    processing_request_id=context.processing_request_id,
+                    repair_terminal=repair_terminal,
+                    disposition=disposition,
+                    pairwise_edges=candidate_edges,
+                    application=application,
+                    final_population=final_population,
+                    final_owners=final_owners,
+                    pre_trajectory_input_id=pre_trajectory_input_id,
+                    post_trajectory_input_id=trajectory_input.trajectory_input_id,
+                    mode_track_input=None,
+                ),
+            ),
+            cross_sample_repair_application_id=application.application_id,
+            repaired_member_subject_id=application.admitted_member_subject_id,
             repaired_observation=repaired_observation,
-            owners=final_owners,
-            trajectory_input=trajectory_input,
+            pre_repair_trajectory_input_id=pre_trajectory_input_id,
+            post_repair_population=final_population,
+            post_repair_owners=final_owners,
+            post_repair_trajectory=trajectory_input,
         )
         post_trajectory_input_id = trajectory_input.trajectory_input_id
     return _mint_nonmember_repair_result(
@@ -707,19 +904,17 @@ class CrossSampleFinalReceipt:
         return "none"
 
 
+CrossSamplePostRepairReconciliation: TypeAlias = (
+    CrossSampleFinalReceipt | CrossSamplePostRepairModeTrackInput
+)
+
+
 def reconcile_observation_repair(
     *,
     context: CrossSamplePostMT0Context,
     repair_receipt: ObservationRepairReceipt,
-    mode_track_successor_member_subject_ids: Sequence[Sequence[str]] = (),
-) -> CrossSampleFinalReceipt:
-    """Close one repair handoff through optional, exact-bound MT1.
-
-    ``mode_track_successor_member_subject_ids`` is only consumed when repair
-    changes the trajectory identity.  The existing ModeTrack proposal API is
-    therefore called zero or one time per closure, while CrossSample remains
-    the only application and identity owner.
-    """
+) -> CrossSamplePostRepairReconciliation:
+    """Close one repair handoff and stage changed trajectories for ModeTrack."""
 
     _validate_post_mt0_context(context)
     _validate_repair_receipt(repair_receipt)
@@ -750,9 +945,12 @@ def reconcile_observation_repair(
         post_trajectory.trajectory_input_id
         != context.trajectory_input.trajectory_input_id
     )
-    if not trajectory_changed and mode_track_successor_member_subject_ids:
-        raise CrossSampleReconciliationContractError(
-            "unchanged trajectory cannot accept an MT1 partition"
+    if trajectory_changed:
+        return _mint_existing_member_post_repair_mode_track_input(
+            context=context,
+            repair_receipt=repair_receipt,
+            repaired_owners=repaired_owners,
+            post_trajectory=post_trajectory,
         )
     cs2_state = CrossSampleReconciledState(
         processing_request_id=request_id,
@@ -770,57 +968,7 @@ def reconcile_observation_repair(
         trajectory_input_id=post_trajectory.trajectory_input_id,
         trajectory_changed=trajectory_changed,
     )
-    proposal: CrossSampleProposalOutcome | None = None
-    final_application = context.application
-    final_population = context.population
-    if trajectory_changed:
-        try:
-            proposal = propose_mode_track_successor_partition(
-                trajectory_input=post_trajectory,
-                successor_member_subject_ids=tuple(
-                    tuple(group) for group in mode_track_successor_member_subject_ids
-                ),
-            )
-        except (TypeError, ValueError, KeyError) as exc:
-            raise CrossSampleReconciliationContractError(
-                f"MT1 proposal could not close: {exc}"
-            ) from exc
-        _validate_proposal_snapshot(
-            proposal,
-            trajectory_input_id=post_trajectory.trajectory_input_id,
-            required=True,
-        )
-        if type(proposal) is AcceptedModeTrackRefinement:
-            application_context = CrossSampleCoupledProposalContext(
-                predecessors=tuple(
-                    sorted(
-                        context.application.successors,
-                        key=lambda group: group.group_hypothesis_id,
-                    )
-                ),
-                classified_edges=context.classified_edges,
-                budget=context.budget,
-            )
-            try:
-                final_application = apply_accepted_mode_track_refinement(
-                    trajectory_input=post_trajectory,
-                    proposal=proposal,
-                    application_context=application_context,
-                    population=context.population,
-                )
-            except (TypeError, ValueError, KeyError) as exc:
-                raise CrossSampleReconciliationContractError(
-                    f"MT1 application rejected atomically: {exc}"
-                ) from exc
-            final_population = _final_population_after_application(
-                before=context.population,
-                predecessors=context.application.successors,
-                successors=final_application.successors,
-            )
-        else:
-            final_application = _mint_unchanged_successor_application(context)
-    else:
-        final_application = _mint_unchanged_successor_application(context)
+    final_application = _mint_unchanged_successor_application(context)
     return _mint_final_receipt(
         processing_request_id=request_id,
         post_mt0_application=context.application,
@@ -828,9 +976,9 @@ def reconcile_observation_repair(
         cs2_state=cs2_state,
         pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         post_trajectory_input_id=post_trajectory.trajectory_input_id,
-        mode_track_proposal=proposal,
+        mode_track_proposal=None,
         final_application=final_application,
-        final_population=final_population,
+        final_population=context.population,
     )
 
 
@@ -882,6 +1030,17 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
             "post-MT0 context must be an exact typed CrossSample context"
         )
     request_id = _request_id(context.processing_request_id)
+    if type(context.processing_owners) is not ProcessingOwnerReferences:
+        raise CrossSampleReconciliationContractError(
+            "post-MT0 context requires exact processing owners"
+        )
+    if (
+        context.processing_owners.request.processing_request_id != request_id
+        or context.processing_owners.attempt.processing_request_id != request_id
+    ):
+        raise CrossSampleReconciliationContractError(
+            "post-MT0 context crossed processing request or attempt"
+        )
     application = _exact_application(
         context.application,
         field="post-MT0 application",
@@ -1490,54 +1649,267 @@ def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[str, str]:
     return (_owner_member_id(owner), owner.owner_id)
 
 
+def _processing_owners_reference(
+    processing_owners: ProcessingOwnerReferences,
+) -> dict[str, object]:
+    if type(processing_owners) is not ProcessingOwnerReferences:
+        raise CrossSampleReconciliationContractError(
+            "processing owners must be an exact owner reference"
+        )
+    return {
+        "request": {
+            "processing_request_id": processing_owners.request.processing_request_id,
+            "acquisition_bindings": [
+                {
+                    "acquisition_source_id": binding.acquisition_source_id,
+                    "adapter_input_key": binding.adapter_input_key,
+                    "injection_order": binding.injection_order,
+                }
+                for binding in processing_owners.request.acquisition_bindings
+            ],
+        },
+        "attempt": {
+            "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
+            "retry_of_attempt_id": (
+                None
+                if processing_owners.attempt.retry_of is None
+                else processing_owners.attempt.retry_of.processing_attempt_id
+            ),
+        },
+        "sample_snapshot_id": processing_owners.sample_snapshot.snapshot_id,
+        "sample_resolutions": [
+            {
+                "lookup_token": resolution.lookup_token,
+                "sample_identity_id": resolution.identity.sample_identity_id,
+                "raw_stem": resolution.metadata.raw_stem,
+                "injection_order": resolution.metadata.injection_order,
+            }
+            for resolution in processing_owners.sample_resolutions
+        ],
+    }
+
+
+def _post_repair_population_id(
+    population: tuple[CrossSampleGroupIdentity, ...],
+) -> str:
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_post_repair_population_v1",
+            "groups": [_group_reference(group) for group in population],
+        }
+    )
+    return typed_identity_digest(_POST_REPAIR_POPULATION_PREFIX, basis)
+
+
+def _post_repair_application_id(
+    application: CrossSampleSuccessorApplication,
+) -> str:
+    application = _exact_application(
+        application,
+        field="post-repair CrossSample application",
+    )
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_post_repair_application_v1",
+            "application": _application_reference(application),
+        }
+    )
+    return typed_identity_digest(_POST_REPAIR_APPLICATION_PREFIX, basis)
+
+
+def _existing_member_repair_result_id(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    repair_receipt_id: str,
+    repair_epoch: int,
+    cross_sample_repair_application_id: str,
+    repaired_member_subject_id: str,
+    pre_repair_trajectory_input_id: str,
+    post_repair_trajectory_input_id: str,
+    post_repair_population_id: str,
+    post_repair_owner_ids: tuple[str, ...],
+) -> str:
+    basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_existing_member_repair_v1",
+            "processing_owners": _processing_owners_reference(processing_owners),
+            "repair_receipt_id": repair_receipt_id,
+            "repair_epoch": repair_epoch,
+            "cross_sample_repair_application_id": cross_sample_repair_application_id,
+            "repaired_member_subject_id": repaired_member_subject_id,
+            "pre_repair_trajectory_input_id": pre_repair_trajectory_input_id,
+            "post_repair_trajectory_input_id": post_repair_trajectory_input_id,
+            "post_repair_population_id": post_repair_population_id,
+            "post_repair_owner_ids": list(post_repair_owner_ids),
+        }
+    )
+    return typed_identity_digest(_EXISTING_MEMBER_REPAIR_RESULT_PREFIX, basis)
+
+
 def _post_repair_mode_track_input_basis(
     *,
+    processing_request_id: str,
+    processing_attempt_id: str,
+    processing_owners: ProcessingOwnerReferences,
     repair_receipt_id: str,
-    application: CrossSampleRepairAdmissionApplication,
-    repaired_observation: CrossSampleRepairedObservation,
-    owners: tuple[SampleLocalMS1Owner, ...],
-    trajectory_input: ModeTrackTrajectoryInput,
+    repair_epoch: int,
+    repair_disposition: CrossSamplePostRepairDisposition,
+    cross_sample_repair_result_id: str,
+    cross_sample_repair_application_id: str,
+    repaired_member_subject_id: str,
+    repaired_observation: CrossSampleRepairedObservation | None,
+    pre_repair_trajectory_input_id: str,
+    post_repair_population_id: str,
+    post_repair_population: tuple[CrossSampleGroupIdentity, ...],
+    post_repair_owners: tuple[SampleLocalMS1Owner, ...],
+    post_repair_trajectory: ModeTrackTrajectoryInput,
+    trajectory_changed: bool,
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_post_repair_mode_track_input_v1",
+            "schema_version": "cross_sample_post_repair_mode_track_input_v2",
+            "processing_request_id": processing_request_id,
+            "processing_attempt_id": processing_attempt_id,
+            "processing_owners": _processing_owners_reference(processing_owners),
             "repair_receipt_id": repair_receipt_id,
-            "application_id": application.application_id,
-            "repaired_observation_id": repaired_observation.observation_id,
-            "admitted_member_subject_id": (application.admitted_member_subject_id),
-            "owner_ids": [owner.owner_id for owner in owners],
-            "trajectory_input_id": trajectory_input.trajectory_input_id,
+            "repair_epoch": repair_epoch,
+            "repair_disposition": repair_disposition,
+            "cross_sample_repair_result_id": cross_sample_repair_result_id,
+            "cross_sample_repair_application_id": cross_sample_repair_application_id,
+            "repaired_member_subject_id": repaired_member_subject_id,
+            "repaired_observation_id": (
+                None
+                if repaired_observation is None
+                else repaired_observation.observation_id
+            ),
+            "pre_repair_trajectory_input_id": pre_repair_trajectory_input_id,
+            "post_repair_population_id": post_repair_population_id,
+            "post_repair_population": [
+                _group_reference(group) for group in post_repair_population
+            ],
+            "post_repair_owner_ids": [
+                owner.owner_id for owner in post_repair_owners
+            ],
+            "post_repair_trajectory_id": post_repair_trajectory.trajectory_input_id,
+            "trajectory_changed": trajectory_changed,
         }
     )
 
 
 def _mint_post_repair_mode_track_input(
     *,
+    processing_owners: ProcessingOwnerReferences,
     repair_receipt_id: str,
-    application: CrossSampleRepairAdmissionApplication,
-    repaired_observation: CrossSampleRepairedObservation,
-    owners: tuple[SampleLocalMS1Owner, ...],
-    trajectory_input: ModeTrackTrajectoryInput,
+    repair_epoch: int,
+    repair_disposition: CrossSamplePostRepairDisposition,
+    cross_sample_repair_result_id: str,
+    cross_sample_repair_application_id: str,
+    repaired_member_subject_id: str,
+    repaired_observation: CrossSampleRepairedObservation | None,
+    pre_repair_trajectory_input_id: str,
+    post_repair_population: tuple[CrossSampleGroupIdentity, ...],
+    post_repair_owners: tuple[SampleLocalMS1Owner, ...],
+    post_repair_trajectory: ModeTrackTrajectoryInput,
 ) -> CrossSamplePostRepairModeTrackInput:
+    if type(processing_owners) is not ProcessingOwnerReferences:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input requires exact processing owners"
+        )
+    request_id = _request_id(processing_owners.request.processing_request_id)
+    attempt_id = processing_owners.attempt.processing_attempt_id
+    population = tuple(
+        sorted(post_repair_population, key=lambda group: group.group_hypothesis_id)
+    )
+    owners = tuple(sorted(post_repair_owners, key=_owner_sort_key))
+    population_id = _post_repair_population_id(population)
+    trajectory_changed = pre_repair_trajectory_input_id != (
+        post_repair_trajectory.trajectory_input_id
+    )
     basis = _post_repair_mode_track_input_basis(
+        processing_request_id=request_id,
+        processing_attempt_id=attempt_id,
+        processing_owners=processing_owners,
         repair_receipt_id=repair_receipt_id,
-        application=application,
+        repair_epoch=repair_epoch,
+        repair_disposition=repair_disposition,
+        cross_sample_repair_result_id=cross_sample_repair_result_id,
+        cross_sample_repair_application_id=cross_sample_repair_application_id,
+        repaired_member_subject_id=repaired_member_subject_id,
         repaired_observation=repaired_observation,
-        owners=owners,
-        trajectory_input=trajectory_input,
+        pre_repair_trajectory_input_id=pre_repair_trajectory_input_id,
+        post_repair_population_id=population_id,
+        post_repair_population=population,
+        post_repair_owners=owners,
+        post_repair_trajectory=post_repair_trajectory,
+        trajectory_changed=trajectory_changed,
     )
     return CrossSamplePostRepairModeTrackInput(
-        input_id=typed_identity_digest(
+        post_repair_input_id=typed_identity_digest(
             _POST_REPAIR_MODE_TRACK_INPUT_PREFIX,
             basis,
         ),
+        processing_request_id=request_id,
+        processing_attempt_id=attempt_id,
+        processing_owners=processing_owners,
         repair_receipt_id=repair_receipt_id,
-        application=application,
+        repair_epoch=repair_epoch,  # type: ignore[arg-type]
+        repair_disposition=repair_disposition,
+        cross_sample_repair_result_id=cross_sample_repair_result_id,
+        cross_sample_repair_application_id=cross_sample_repair_application_id,
+        repaired_member_subject_id=repaired_member_subject_id,
         repaired_observation=repaired_observation,
-        owners=owners,
-        trajectory_input=trajectory_input,
+        pre_repair_trajectory_input_id=pre_repair_trajectory_input_id,
+        post_repair_population_id=population_id,
+        post_repair_population=population,
+        post_repair_owners=owners,
+        post_repair_trajectory=post_repair_trajectory,
+        trajectory_changed=trajectory_changed,
         basis_bytes=basis,
         _mint_token=_POST_REPAIR_MODE_TRACK_INPUT_MINT_TOKEN,
+    )
+
+
+def _mint_existing_member_post_repair_mode_track_input(
+    *,
+    context: CrossSamplePostMT0Context,
+    repair_receipt: ObservationRepairReceipt,
+    repaired_owners: tuple[SampleLocalMS1Owner, ...],
+    post_trajectory: ModeTrackTrajectoryInput,
+) -> CrossSamplePostRepairModeTrackInput:
+    evidence = repair_receipt.evidence
+    if evidence is None or evidence.member_subject_id is None:
+        raise CrossSampleReconciliationContractError(
+            "changed existing-member repair is missing its exact member evidence"
+        )
+    application_id = _post_repair_application_id(context.application)
+    population = tuple(
+        sorted(context.population, key=lambda group: group.group_hypothesis_id)
+    )
+    owner_ids = tuple(owner.owner_id for owner in repaired_owners)
+    result_id = _existing_member_repair_result_id(
+        processing_owners=context.processing_owners,
+        repair_receipt_id=repair_receipt.receipt_id,
+        repair_epoch=repair_receipt.repair_epoch,
+        cross_sample_repair_application_id=application_id,
+        repaired_member_subject_id=evidence.member_subject_id,
+        pre_repair_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        post_repair_trajectory_input_id=post_trajectory.trajectory_input_id,
+        post_repair_population_id=_post_repair_population_id(population),
+        post_repair_owner_ids=owner_ids,
+    )
+    return _mint_post_repair_mode_track_input(
+        processing_owners=context.processing_owners,
+        repair_receipt_id=repair_receipt.receipt_id,
+        repair_epoch=repair_receipt.repair_epoch,
+        repair_disposition="existing_member_reconciled",
+        cross_sample_repair_result_id=result_id,
+        cross_sample_repair_application_id=application_id,
+        repaired_member_subject_id=evidence.member_subject_id,
+        repaired_observation=None,
+        pre_repair_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        post_repair_population=population,
+        post_repair_owners=repaired_owners,
+        post_repair_trajectory=post_trajectory,
     )
 
 
@@ -1594,9 +1966,6 @@ def _nonmember_repair_result_basis(
             "final_owner_ids": [owner.owner_id for owner in final_owners],
             "pre_trajectory_input_id": pre_trajectory_input_id,
             "post_trajectory_input_id": post_trajectory_input_id,
-            "mode_track_input_id": (
-                None if mode_track_input is None else mode_track_input.input_id
-            ),
         }
     )
 
@@ -1767,7 +2136,17 @@ def _validate_nonmember_repair_result(
         if (
             type(application) is not CrossSampleRepairAdmissionApplication
             or type(mode_input) is not CrossSamplePostRepairModeTrackInput
-            or application.predecessor is not candidate.predecessor_group
+        ):
+            raise CrossSampleReconciliationContractError(
+                "admitted repair result crossed application or ModeTrack input"
+            )
+        repaired_observation = mode_input.repaired_observation
+        if type(repaired_observation) is not CrossSampleRepairedObservation:
+            raise CrossSampleReconciliationContractError(
+                "admitted repair result crossed application or ModeTrack input"
+            )
+        if (
+            application.predecessor is not candidate.predecessor_group
             or application.repair_receipt_id != receipt.receipt_id
             or application.authorization_id != candidate.authorization_id
             or application.candidate_id != candidate.candidate_id
@@ -1779,10 +2158,24 @@ def _validate_nonmember_repair_result(
             or any(
                 group is application.predecessor for group in result.final_population
             )
-            or mode_input.application is not application
+            or mode_input.processing_owners is not candidate.processing_owners
+            or mode_input.processing_request_id != request_id
+            or mode_input.processing_attempt_id
+            != candidate.processing_owners.attempt.processing_attempt_id
             or mode_input.repair_receipt_id != receipt.receipt_id
-            or mode_input.repaired_observation.member_subject != expected_member
-            or mode_input.trajectory_input.trajectory_input_id != post_id
+            or mode_input.repair_epoch != receipt.repair_epoch
+            or mode_input.repair_disposition != "nonmember_admitted"
+            or mode_input.cross_sample_repair_result_id != result.result_id
+            or mode_input.cross_sample_repair_application_id
+            != application.application_id
+            or mode_input.repaired_member_subject_id
+            != expected_member.member_subject_id
+            or repaired_observation.member_subject != expected_member
+            or mode_input.pre_repair_trajectory_input_id != pre_id
+            or mode_input.post_repair_population != result.final_population
+            or mode_input.post_repair_owners != result.final_owners
+            or mode_input.post_repair_trajectory.trajectory_input_id != post_id
+            or not mode_input.trajectory_changed
         ):
             raise CrossSampleReconciliationContractError(
                 "admitted repair result crossed application or ModeTrack input"

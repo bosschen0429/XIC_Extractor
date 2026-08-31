@@ -1272,7 +1272,7 @@ def _mixed_mode_track_fixture(
         )
         for sample_stem, supported, scan_number in support_pattern
     )
-    _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    _, model_set, batches, _ = bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=fixture.owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),

@@ -132,8 +132,10 @@ def test_accepted_proposal_bound_to_another_snapshot_fails_closed() -> None:
         ModeTrackEvidenceProfile,
         ModeTrackRefinementContractError,
         apply_accepted_mode_track_refinement,
-        mint_accepted_mode_track_refinement,
         mint_mode_track_trajectory_input,
+    )
+    from xic_extractor.alignment.mode_track.contracts import (
+        _mint_accepted_mode_track_refinement,
     )
 
     owners = (_owner("sample-a", "000001"), _owner("sample-b", "000001"))
@@ -174,7 +176,7 @@ def test_accepted_proposal_bound_to_another_snapshot_fails_closed() -> None:
         ),
         **common,
     )
-    proposal = mint_accepted_mode_track_refinement(
+    proposal = _mint_accepted_mode_track_refinement(
         trajectory_input=original,
         successor_member_subject_ids=(
             tuple(member.member_subject_id for member in members),
@@ -197,26 +199,27 @@ def test_accepted_proposal_bound_to_another_snapshot_fails_closed() -> None:
 def test_proposal_variants_are_closed_and_immutable() -> None:
     from dataclasses import FrozenInstanceError
 
-    from xic_extractor.alignment.mode_track import (
+    from xic_extractor.alignment.mode_track.contracts import (
+        AcceptedModeTrackRefinement,
         InsufficientModeTrackTraining,
+        ModeTrackRefinementContractError,
         RejectedModeTrackRefinement,
         UnassessableModeTrackRefinement,
+        _mint_insufficient_mode_track_training,
+        _mint_rejected_mode_track_refinement,
+        _mint_unassessable_mode_track_refinement,
     )
 
-    rejected = RejectedModeTrackRefinement(
-        variant="rejected_refinement",
+    rejected = _mint_rejected_mode_track_refinement(
         trajectory_input_id="trajectory:test",
         reason_codes=("ambiguous_assignment",),
     )
-    insufficient = InsufficientModeTrackTraining(
-        variant="insufficient_training",
+    insufficient = _mint_insufficient_mode_track_training(
         trajectory_input_id="trajectory:test",
         reason_codes=("no_direct_support_anchor",),
     )
-    unassessable = UnassessableModeTrackRefinement(
-        variant="unassessable",
+    unassessable = _mint_unassessable_mode_track_refinement(
         trajectory_input_id="trajectory:test",
-        reason="neighborhood_too_large",
     )
 
     assert {rejected.variant, insufficient.variant, unassessable.variant} == {
@@ -226,6 +229,43 @@ def test_proposal_variants_are_closed_and_immutable() -> None:
     }
     with pytest.raises(FrozenInstanceError):
         rejected.trajectory_input_id = "trajectory:mutated"
+    forged_variants = (
+        (
+            AcceptedModeTrackRefinement,
+            {
+                "variant": "accepted_refinement",
+                "trajectory_input_id": "trajectory:forged",
+                "successor_member_subject_ids": (("member:forged",),),
+            },
+        ),
+        (
+            RejectedModeTrackRefinement,
+            {
+                "variant": "rejected_refinement",
+                "trajectory_input_id": "trajectory:forged",
+                "reason_codes": ("forged",),
+            },
+        ),
+        (
+            InsufficientModeTrackTraining,
+            {
+                "variant": "insufficient_training",
+                "trajectory_input_id": "trajectory:forged",
+                "reason_codes": ("forged",),
+            },
+        ),
+        (
+            UnassessableModeTrackRefinement,
+            {
+                "variant": "unassessable",
+                "trajectory_input_id": "trajectory:forged",
+                "reason": "neighborhood_too_large",
+            },
+        ),
+    )
+    for proposal_type, kwargs in forged_variants:
+        with pytest.raises((TypeError, ModeTrackRefinementContractError)):
+            proposal_type(**kwargs)
     with pytest.raises(TypeError):
         RejectedModeTrackRefinement(
             variant="rejected_refinement",
@@ -248,7 +288,9 @@ def test_oversized_neighborhood_is_unassessable_without_subset_processing() -> N
         ModeTrackRefinementContractError,
         UnassessableModeTrackRefinement,
         mint_mode_track_trajectory_input,
-        propose_mode_track_successor_partition,
+    )
+    from xic_extractor.alignment.mode_track.contracts import (
+        _mint_unassessable_mode_track_refinement,
     )
 
     owners = tuple(_owner(f"sample-{index}", "000001") for index in range(3))
@@ -285,11 +327,8 @@ def test_oversized_neighborhood_is_unassessable_without_subset_processing() -> N
         ),
     )
 
-    proposal = propose_mode_track_successor_partition(
-        trajectory_input=trajectory_input,
-        successor_member_subject_ids=(
-            tuple(member.member_subject_id for member in members[:2]),
-        ),
+    proposal = _mint_unassessable_mode_track_refinement(
+        trajectory_input_id=trajectory_input.trajectory_input_id,
     )
 
     assert type(proposal) is UnassessableModeTrackRefinement
@@ -317,8 +356,10 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
         ModeTrackEvidenceProfile,
         ModeTrackRefinementContractError,
         apply_accepted_mode_track_refinement,
-        mint_accepted_mode_track_refinement,
         mint_mode_track_trajectory_input,
+    )
+    from xic_extractor.alignment.mode_track.contracts import (
+        _mint_accepted_mode_track_refinement,
     )
 
     owners = (_owner("sample-a", "000001"), _owner("sample-b", "000001"))
@@ -350,11 +391,11 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
     )
     member_ids = tuple(member.member_subject_id for member in members)
 
-    forward = mint_accepted_mode_track_refinement(
+    forward = _mint_accepted_mode_track_refinement(
         trajectory_input=trajectory_input,
         successor_member_subject_ids=(member_ids,),
     )
-    reversed_proposal = mint_accepted_mode_track_refinement(
+    reversed_proposal = _mint_accepted_mode_track_refinement(
         trajectory_input=trajectory_input,
         successor_member_subject_ids=(tuple(reversed(member_ids)),),
     )
@@ -378,7 +419,7 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
         population=tuple(reversed(predecessors)),
     )
     with pytest.raises(ModeTrackRefinementContractError, match="complete"):
-        mint_accepted_mode_track_refinement(
+        _mint_accepted_mode_track_refinement(
             trajectory_input=trajectory_input,
             successor_member_subject_ids=((member_ids[0],),),
         )
@@ -396,8 +437,10 @@ def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
     from xic_extractor.alignment.mode_track import (
         ModeTrackEvidenceProfile,
         apply_accepted_mode_track_refinement,
-        mint_accepted_mode_track_refinement,
         mint_mode_track_trajectory_input,
+    )
+    from xic_extractor.alignment.mode_track.contracts import (
+        _mint_accepted_mode_track_refinement,
     )
 
     owners = (
@@ -444,7 +487,7 @@ def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
         budget=CrossSampleNeighborhoodBudget(86, 3655),
     )
     member_ids = tuple(member.member_subject_id for member in members)
-    proposal = mint_accepted_mode_track_refinement(
+    proposal = _mint_accepted_mode_track_refinement(
         trajectory_input=trajectory_input,
         successor_member_subject_ids=((member_ids[0], member_ids[2]), (member_ids[1],)),
     )
