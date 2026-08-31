@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
+import xic_extractor.alignment.cross_sample_peak_groups as cross_sample_owner
 import xic_extractor.alignment.cross_sample_reconciliation as reconciliation_owner
+from tests.test_alignment_owner_clustering import _owner
 from tests.test_backfill_observation_repair_authorization import (
     _authorization_population,
 )
@@ -16,8 +18,11 @@ from tests.test_backfill_observation_repair_execution import _repair_result
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.backfill import execute_observation_repair
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
     CrossSampleSuccessorApplication,
+    classify_cross_sample_initial_neighborhood_edge,
+    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
@@ -33,6 +38,10 @@ from xic_extractor.alignment.mode_track.producer import (
 )
 from xic_extractor.alignment.mode_track.refinement import (
     run_post_repair_mode_track_final_attempt,
+)
+from xic_extractor.processing_identity import (
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
 )
 
 
@@ -229,3 +238,183 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
             mode_track_final_attempt=None,
             _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
         )
+
+
+def test_unchanged_existing_member_closes_full_multicomponent_trajectory(
+    tmp_path: Path,
+) -> None:
+    fixture, _spine, coverage, cells = _authorization_population(
+        tmp_path,
+        hold_samples=("s2",),
+    )
+    captured = []
+
+    def execute(candidate):
+        _built, result = _repair_result(fixture, coverage, candidate)
+        captured.append(result)
+        return result
+
+    terminal = execute_observation_repair(
+        processing_owners=fixture.owners,
+        coverage=coverage,
+        cell_observations=cells,
+        execute=execute,
+    )
+    candidate = terminal.candidate
+    receipt = terminal.receipt
+    assert candidate is not None
+    assert receipt is not None
+    assert receipt.evidence is not None
+    repaired_group = candidate.predecessor_group
+    repaired_sample_id = candidate.sample_identity.identity.sample_identity_id
+    repaired_physical_id = typed_identity_digest(
+        "xic.peak-observation-content.v1:",
+        canonical_identity_basis_bytes({"sample_stem": "repaired"}),
+    )
+    repaired_member_basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": repaired_group.processing_request_id,
+            "canonical_sample_identity_id": repaired_sample_id,
+            "subject": {"kind": "physical_observation", "id": repaired_physical_id},
+            "physical_observation_ids": [repaired_physical_id],
+        }
+    )
+    repaired_member = CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(
+            "xic.group-member-subject.v1:",
+            repaired_member_basis,
+        ),
+        processing_request_id=repaired_group.processing_request_id,
+        canonical_sample_identity_id=repaired_sample_id,
+        subject_kind="physical_observation",
+        subject_id=repaired_physical_id,
+        physical_observation_ids=(repaired_physical_id,),
+        basis_bytes=repaired_member_basis,
+    )
+    repaired_member_group = mint_cross_sample_group_identity(
+        processing_request_id=repaired_group.processing_request_id,
+        member_subjects=(repaired_member,),
+    )
+    current_group = mint_cross_sample_group_identity(
+        processing_request_id=repaired_group.processing_request_id,
+        member_subjects=(*repaired_group.member_subjects, repaired_member),
+    )
+    repaired_owner = replace(
+        _owner(
+            "repaired",
+            "repaired",
+            apex_rt=receipt.evidence.rt_apex_min,
+        ),
+        cross_sample_member_subject=repaired_member,
+    )
+    physical_id = typed_identity_digest(
+        "xic.peak-observation-content.v1:",
+        canonical_identity_basis_bytes({"sample_stem": "unaffected"}),
+    )
+    member_basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject_v1",
+            "processing_request_id": repaired_group.processing_request_id,
+            "canonical_sample_identity_id": "test-sample:unaffected",
+            "subject": {"kind": "physical_observation", "id": physical_id},
+            "physical_observation_ids": [physical_id],
+        }
+    )
+    unaffected_member = CrossSampleGroupMemberSubject(
+        member_subject_id=typed_identity_digest(
+            "xic.group-member-subject.v1:",
+            member_basis,
+        ),
+        processing_request_id=repaired_group.processing_request_id,
+        canonical_sample_identity_id="test-sample:unaffected",
+        subject_kind="physical_observation",
+        subject_id=physical_id,
+        physical_observation_ids=(physical_id,),
+        basis_bytes=member_basis,
+    )
+    unaffected_owner = replace(
+        _owner("unaffected", "unaffected", apex_rt=18.0),
+        cross_sample_member_subject=unaffected_member,
+    )
+    unaffected_group = mint_cross_sample_group_identity(
+        processing_request_id=repaired_group.processing_request_id,
+        member_subjects=(unaffected_member,),
+    )
+    population = tuple(
+        sorted(
+            (current_group, unaffected_group),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    owners = tuple(
+        sorted(
+            (
+                *candidate.logical_request.item.feature.owners,
+                repaired_owner,
+                unaffected_owner,
+            ),
+            key=lambda owner: (
+                owner.cross_sample_member_subject.member_subject_id,
+                owner.owner_id,
+            ),
+        )
+    )
+    predecessors = tuple(
+        sorted(
+            (repaired_group, repaired_member_group, unaffected_group),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    application = CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=predecessors,
+        successors=population,
+        lineage=cross_sample_owner._expected_cross_sample_lineage(
+            predecessors=predecessors,
+            successors=population,
+        ),
+        reason="membership_changed",
+    )
+    classified_edges = tuple(
+        classify_cross_sample_initial_neighborhood_edge(
+            left_owner=owners[left_index],
+            right_owner=owners[right_index],
+            context="complete_link",
+            config=AlignmentConfig(),
+        )
+        for left_index in range(len(owners))
+        for right_index in range(left_index + 1, len(owners))
+    )
+    context = build_cross_sample_post_mt0_context(
+        processing_request_id=fixture.request.processing_request_id,
+        processing_owners=fixture.owners,
+        population=population,
+        application=application,
+        owners=owners,
+        classified_edges=classified_edges,
+        anchors=(),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners, start=1)
+        },
+        evidence_profile=ModeTrackEvidenceProfile(
+            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+        ),
+        budget=CrossSampleNeighborhoodBudget(86, 3655),
+    )
+
+    final = consume_observation_repair_terminal(
+        context=context,
+        terminal=terminal,
+        repair_result=captured[0],
+        alignment_config=coverage.epoch.alignment_config,
+    )
+
+    assert isinstance(final, CrossSampleFinalReceipt)
+    assert final.cs2_state.trajectory_changed is False
+    assert final.pre_trajectory_input_id == context.trajectory_input.trajectory_input_id
+    assert (
+        final.post_trajectory_input_id
+        == context.trajectory_input.trajectory_input_id
+    )
+    assert final.mode_track_final_attempt is None

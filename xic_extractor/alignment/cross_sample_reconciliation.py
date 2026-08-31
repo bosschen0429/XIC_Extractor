@@ -1790,7 +1790,7 @@ def _consume_existing_member_candidate_terminal(
         repair_epoch=1,
         cs2_state=state,
         pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
-        post_trajectory_input_id=post_trajectory.trajectory_input_id,
+        post_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         mode_track_proposal=None,
         mode_track_final_attempt=None,
         final_application=_mint_unchanged_successor_application(context),
