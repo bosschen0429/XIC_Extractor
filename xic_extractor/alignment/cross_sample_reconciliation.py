@@ -134,6 +134,7 @@ class CrossSamplePostMT0Context:
     evidence_profile: ModeTrackEvidenceProfile
     budget: CrossSampleNeighborhoodBudget
     trajectory_input: ModeTrackTrajectoryInput
+    fit_once_source_id: str | None = None
 
     def __post_init__(self) -> None:
         _validate_post_mt0_context(self)
@@ -450,6 +451,7 @@ def build_cross_sample_post_mt0_context(
     injection_order: InjectionOrderInput,
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
+    fit_once_source_id: str | None = None,
 ) -> CrossSamplePostMT0Context:
     """Build and seal the trajectory snapshot for a post-MT0 state."""
 
@@ -503,6 +505,7 @@ def build_cross_sample_post_mt0_context(
         evidence_profile=evidence_profile,
         budget=budget,
         trajectory_input=trajectory_input,
+        fit_once_source_id=fit_once_source_id,
     )
 
 
@@ -728,6 +731,7 @@ def apply_mode_track_refinement_run_for_workflow(
         injection_order=run.injection_order,
         evidence_profile=run.evidence_profile,
         budget=run.budget,
+        fit_once_source_id=run.fit_once_source.fit_once_source_id,
     )
 
 
@@ -837,6 +841,7 @@ def reconcile_nonmember_observation_repair(
             context=context,
             candidate=candidate,
             evidence=evidence,
+            trajectory_owners=trajectory_owners,
         )
         try:
             trajectory_input = mint_mode_track_trajectory_input(
@@ -883,7 +888,7 @@ def reconcile_nonmember_observation_repair(
             repaired_observation=repaired_observation,
             pre_repair_trajectory_input_id=pre_trajectory_input_id,
             post_repair_population=final_population,
-            post_repair_owners=final_owners,
+            post_repair_owners=trajectory_owners,
             post_repair_trajectory=trajectory_input,
         )
         post_trajectory_input_id = trajectory_input.trajectory_input_id
@@ -1582,7 +1587,9 @@ def consume_mode_track_final_attempt(
         raise CrossSampleReconciliationContractError(str(exc)) from exc
     binding = final_attempt.binding
     if (
-        binding.processing_request_id != context.processing_request_id
+        context.fit_once_source_id is None
+        or binding.fit_once_source_id != context.fit_once_source_id
+        or binding.processing_request_id != context.processing_request_id
         or binding.processing_attempt_id
         != context.processing_owners.attempt.processing_attempt_id
         or binding.repair_receipt_id != receipt.receipt_id
@@ -2149,13 +2156,16 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
         validate_cross_sample_group_population(population)
     except (TypeError, ValueError) as exc:
         raise CrossSampleReconciliationContractError(str(exc)) from exc
-    population_ids = {group.group_hypothesis_id for group in population}
-    if any(
-        group.group_hypothesis_id not in population_ids
-        for group in application.successors
+    if application.successors != population:
+        raise CrossSampleReconciliationContractError(
+            "post-MT0 population must exactly equal the application successors"
+        )
+    if context.fit_once_source_id is not None and (
+        type(context.fit_once_source_id) is not str
+        or not context.fit_once_source_id.startswith("mode-track-fit-once-source:")
     ):
         raise CrossSampleReconciliationContractError(
-            "post-MT0 application successor is absent from the population"
+            "post-MT0 fit-once source identity is not exact"
         )
     if any(group.processing_request_id != request_id for group in population):
         raise CrossSampleReconciliationContractError(
@@ -2749,8 +2759,14 @@ def _post_repair_injection_order(
     context: CrossSamplePostMT0Context,
     candidate: ObservationRepairCandidate,
     evidence: ObservationRepairEvidence,
+    trajectory_owners: tuple[SampleLocalMS1Owner, ...],
 ) -> dict[str, int]:
-    injection_order = dict(context.injection_order)
+    trajectory_sample_stems = {owner.sample_stem for owner in trajectory_owners}
+    injection_order = {
+        sample_stem: injection_order
+        for sample_stem, injection_order in context.injection_order
+        if sample_stem in trajectory_sample_stems
+    }
     bindings = tuple(
         binding
         for binding in candidate.processing_owners.request.acquisition_bindings
@@ -3283,6 +3299,14 @@ def _validate_nonmember_repair_result(
             raise CrossSampleReconciliationContractError(
                 "admitted repair result crossed application or ModeTrack input"
             )
+        trajectory_member_ids = {
+            member.member_subject_id for member in application.successor.member_subjects
+        }
+        expected_mode_track_owners = tuple(
+            owner
+            for owner in result.final_owners
+            if _owner_member_id(owner) in trajectory_member_ids
+        )
         if (
             application.predecessor.processing_request_id != request_id
             or application.repair_receipt_id != receipt.receipt_id
@@ -3311,7 +3335,7 @@ def _validate_nonmember_repair_result(
             or repaired_observation.member_subject != expected_member
             or mode_input.pre_repair_trajectory_input_id != pre_id
             or mode_input.post_repair_population != result.final_population
-            or mode_input.post_repair_owners != result.final_owners
+            or mode_input.post_repair_owners != expected_mode_track_owners
             or mode_input.post_repair_trajectory.trajectory_input_id != post_id
             or not mode_input.trajectory_changed
         ):
@@ -3324,7 +3348,9 @@ def _validate_nonmember_repair_result(
             )
         expected_owner_ids = {
             member.member_subject_id
-            for member in application.predecessor.member_subjects
+            for group in result.final_population
+            for member in group.member_subjects
+            if member.member_subject_id != expected_member.member_subject_id
         }
     else:
         if (
