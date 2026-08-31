@@ -270,12 +270,17 @@ defines the successor owner rather than claiming current implementation status.
 
 ### Compatibility and promotion
 
-Current TSV/CSV/workbook schemas, selected values, counted detections, public
-identifiers, configuration, and default behavior remain unchanged during the
-structural migration. Legacy facades may delegate and project for a finite list
-of named current consumers; they may not retain a fallback algorithm. Target
-local fill, ModeTrack sensitivity changes, Untarget row-key cutover, typed
-Parquet v2, and analytical-handoff activation are separate behavior-promotion
+Current TSV/CSV/workbook schemas, command/configuration shape, default artifact
+selection, and interaction mechanics remain unchanged during a structural-only
+migration. Selected values, counted detections, and public scientific identity
+remain unchanged only until an explicit behavior-promotion packet binds the
+new semantic owner, expected diff, focused output contracts, method-appropriate
+evidence, structured writer authority, and rollback. Legacy facades may
+delegate and project for a finite list of named current consumers; they may not
+retain a same-capability failure fallback. Capability-scoped activation may
+keep a separately named method authority outside the activated universe.
+Target local fill, ModeTrack sensitivity changes, Untarget row-key cutover,
+typed Parquet v2, and analytical-handoff activation are separate behavior-promotion
 lanes with expected diffs, method-appropriate evidence, rollback, and explicit
 consumer proof.
 
