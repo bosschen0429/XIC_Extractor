@@ -8,11 +8,12 @@ from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleClassifiedEdge,
     CrossSampleCoupledProposalContext,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
-    CrossSampleNeighborhoodEdge,
+    CrossSampleRepairedObservation,
     CrossSampleSuccessorApplication,
     apply_coupled_successor_proposal,
     build_bounded_connected_neighborhood,
@@ -28,6 +29,10 @@ from .assignment import ModeTrackSupportAnchor
 
 _TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
 _TRAJECTORY_INPUT_MINT_TOKEN = object()
+
+ModeTrackTrajectoryOwner: TypeAlias = (
+    SampleLocalMS1Owner | CrossSampleRepairedObservation
+)
 
 
 class ModeTrackRefinementContractError(ValueError):
@@ -105,9 +110,7 @@ class ModeTrackTrajectoryInput:
             ),
         )
         if self.trajectory_input_id != expected:
-            raise ModeTrackRefinementContractError(
-                "trajectory input identity mismatch"
-            )
+            raise ModeTrackRefinementContractError("trajectory input identity mismatch")
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,8 +191,8 @@ ModeTrackRefinementProposal: TypeAlias = (
 def mint_mode_track_trajectory_input(
     *,
     predecessors: Sequence[CrossSampleGroupIdentity],
-    owners: Sequence[SampleLocalMS1Owner],
-    classified_edges: Sequence[CrossSampleNeighborhoodEdge],
+    owners: Sequence[ModeTrackTrajectoryOwner],
+    classified_edges: Sequence[CrossSampleClassifiedEdge],
     anchors: Sequence[ModeTrackSupportAnchor],
     injection_order: Mapping[str, int],
     evidence_profile: ModeTrackEvidenceProfile,
@@ -211,10 +214,13 @@ def mint_mode_track_trajectory_input(
         for predecessor in predecessor_groups
         for member in predecessor.member_subjects
     }
-    owner_by_id: dict[str, SampleLocalMS1Owner] = {}
-    owner_by_member: dict[str, SampleLocalMS1Owner] = {}
+    owner_by_id: dict[str, ModeTrackTrajectoryOwner] = {}
+    owner_by_member: dict[str, ModeTrackTrajectoryOwner] = {}
     for owner in owners:
-        if not isinstance(owner, SampleLocalMS1Owner):
+        if type(owner) not in {
+            SampleLocalMS1Owner,
+            CrossSampleRepairedObservation,
+        }:
             raise ModeTrackRefinementContractError("trajectory owner must be typed")
         member = owner.cross_sample_member_subject
         if member is None or member.member_subject_id not in member_by_id:
@@ -238,12 +244,13 @@ def mint_mode_track_trajectory_input(
     if any(type(anchor) is not ModeTrackSupportAnchor for anchor in typed_anchors):
         raise ModeTrackRefinementContractError(
             "trajectory anchors must be exact owner-validated anchors"
-    )
+        )
     for anchor in typed_anchors:
         anchor_owner = owner_by_id.get(anchor.peak_hypothesis_id)
         if (
             anchor.processing_request_id != processing_request_id
             or anchor_owner is None
+            or type(anchor_owner) is not SampleLocalMS1Owner
             or anchor.canonical_sample_identity_id
             != _required_owner_member(anchor_owner).canonical_sample_identity_id
             or anchor.group_hypothesis_id
@@ -351,10 +358,9 @@ def mint_accepted_mode_track_refinement(
     if tuple(sorted(proposed)) != proposed:
         proposed = tuple(sorted(proposed))
     flattened = tuple(member_id for group in proposed for member_id in group)
-    if (
-        tuple(sorted(flattened)) != trajectory_input.member_subject_ids
-        or len(flattened) != len(set(flattened))
-    ):
+    if tuple(sorted(flattened)) != trajectory_input.member_subject_ids or len(
+        flattened
+    ) != len(set(flattened)):
         raise ModeTrackRefinementContractError(
             "proposal is not a complete trajectory-input partition"
         )
@@ -372,9 +378,10 @@ def apply_accepted_mode_track_refinement(
     application_context: CrossSampleCoupledProposalContext,
     population: Sequence[CrossSampleGroupIdentity],
 ) -> CrossSampleSuccessorApplication:
-    if not isinstance(trajectory_input, ModeTrackTrajectoryInput) or type(
-        proposal
-    ) is not AcceptedModeTrackRefinement:
+    if (
+        not isinstance(trajectory_input, ModeTrackTrajectoryInput)
+        or type(proposal) is not AcceptedModeTrackRefinement
+    ):
         raise ModeTrackRefinementContractError(
             "ModeTrack application requires exact typed input and proposal"
         )
@@ -435,7 +442,7 @@ def apply_accepted_mode_track_refinement(
 
 def _canonical_injection_order(
     *,
-    owners: tuple[SampleLocalMS1Owner, ...],
+    owners: tuple[ModeTrackTrajectoryOwner, ...],
     injection_order: Mapping[str, int],
 ) -> tuple[tuple[str, int], ...]:
     sample_stems = {owner.sample_stem for owner in owners}
@@ -476,13 +483,9 @@ def _trajectory_input_payload(
             [sample_stem, order] for sample_stem, order in injection_order
         ],
         "evidence_profile": {
-            "trajectory_policy_version": (
-                evidence_profile.trajectory_policy_version
-            ),
+            "trajectory_policy_version": (evidence_profile.trajectory_policy_version),
             "band_policy_version": evidence_profile.band_policy_version,
-            "prediction_half_width_min": (
-                evidence_profile.prediction_half_width_min
-            ),
+            "prediction_half_width_min": (evidence_profile.prediction_half_width_min),
             "max_interpolation_gap": evidence_profile.max_interpolation_gap,
             "max_extrapolation_gap": evidence_profile.max_extrapolation_gap,
         },
@@ -493,7 +496,7 @@ def _trajectory_input_payload(
 def _validate_complete_classification(
     *,
     member_subject_ids: tuple[str, ...],
-    edges: tuple[CrossSampleNeighborhoodEdge, ...],
+    edges: tuple[CrossSampleClassifiedEdge, ...],
 ) -> None:
     expected_pairs = {
         (left_id, right_id)
@@ -501,11 +504,7 @@ def _validate_complete_classification(
         for right_id in member_subject_ids[left_index + 1 :]
     }
     observed_pairs = {
-        tuple(
-            sorted(
-                (edge.left_member_subject_id, edge.right_member_subject_id)
-            )
-        )
+        tuple(sorted((edge.left_member_subject_id, edge.right_member_subject_id)))
         for edge in edges
     }
     if len(observed_pairs) != len(edges) or observed_pairs != expected_pairs:
@@ -515,7 +514,7 @@ def _validate_complete_classification(
 
 
 def _canonical_exclusions(
-    edges: tuple[CrossSampleNeighborhoodEdge, ...],
+    edges: tuple[CrossSampleClassifiedEdge, ...],
 ) -> tuple[tuple[str, str, str], ...]:
     return tuple(
         sorted(
@@ -560,7 +559,7 @@ def _finite_float(value: object) -> float:
 
 
 def _required_owner_member(
-    owner: SampleLocalMS1Owner,
+    owner: ModeTrackTrajectoryOwner,
 ) -> CrossSampleGroupMemberSubject:
     member = owner.cross_sample_member_subject
     if member is None:
