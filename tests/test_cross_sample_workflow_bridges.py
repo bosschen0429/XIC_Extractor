@@ -6,6 +6,7 @@ from dataclasses import replace
 from inspect import signature
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import xic_extractor.alignment.cross_sample_reconciliation as reconciliation_owner
@@ -13,6 +14,7 @@ from tests.test_backfill_observation_repair_authorization import (
     _authorization_population,
 )
 from tests.test_backfill_observation_repair_execution import _repair_result
+from tests.test_search_scope_capture import _capture_binding, _peak_config
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.backfill import execute_observation_repair
 from xic_extractor.alignment.cell_observations import (
@@ -46,12 +48,31 @@ from xic_extractor.alignment.mode_track.refinement import (
     _REFINEMENT_RUN_MINT_TOKEN,
     run_post_repair_mode_track_final_attempt,
 )
+from xic_extractor.alignment.projection.target import (
+    project_target_post_cell,
+    project_target_pre_cell,
+)
+from xic_extractor.alignment.result import (
+    TargetApplicationResultRequest,
+    finalize_alignment_result,
+    finalize_scientific_alignment,
+)
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     _CaptureOwnerSeal,
+    capture_peak_hypotheses,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
+from xic_extractor.peak_detection.search_scope import (
+    SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureMethodConstraints,
+    EvidenceProviderBinding,
+    TargetSearchScope,
+    UntargetedSearchScope,
+)
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def _captures_for_run(run):
@@ -96,6 +117,73 @@ def _captures_for_run(run):
     return tuple(captures)
 
 
+def _target_scope_and_captures(fixture, spine, tmp_path: Path):
+    method_subject = spine.cells[0].group_context.method_subject
+    rt = np.linspace(7.7, 8.3, 61)
+    candidate_ids = tuple(
+        f"workflow-final:{sample.lookup_token}" for sample in fixture.samples
+    )
+    bindings = []
+    traces = []
+    for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True):
+        source = resolve_request_acquisition_source(
+            processing_owners=fixture.owners,
+            sample=sample,
+        )
+        bindings.append(
+            _capture_binding(
+                candidate_id=candidate_id,
+                sample=sample,
+                acquisition_source_id=source.acquisition_source_id,
+                mz=method_subject.precursor_mz,
+                ppm_tol=method_subject.precursor_tolerance_ppm,
+                rt_min=float(rt[0]),
+                rt_max=float(rt[-1]),
+            )
+        )
+        intensity = np.zeros_like(rt)
+        traces.append(
+            Trace.from_arrays(
+                sample_name=sample.metadata.sample_name,
+                mz=method_subject.precursor_mz,
+                rt=rt,
+                intensity=intensity,
+                rt_min=float(rt[0]),
+                rt_max=float(rt[-1]),
+                ppm_tol=method_subject.precursor_tolerance_ppm,
+                source="alignment_workflow_contract_test",
+                acquisition_source_id=source.acquisition_source_id,
+            )
+        )
+    scope = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=fixture.request,
+        samples=fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=_peak_config(tmp_path),
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=method_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=candidate_ids,
+        capture_bindings=tuple(bindings),
+        target_snapshot=fixture.target.snapshot,
+        target=fixture.target,
+    )
+    return scope, tuple(
+        capture_peak_hypotheses(
+            scope=scope,
+            candidate_id=candidate_id,
+            trace=trace,
+        )
+        for candidate_id, trace in zip(candidate_ids, traces, strict=True)
+    )
+
+
 def test_workflow_repair_bridges_accept_no_caller_route_or_proposal() -> None:
     assert tuple(
         signature(apply_mode_track_refinement_run_for_workflow).parameters
@@ -120,6 +208,10 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
     tmp_path: Path,
     hold_samples: tuple[str, ...],
 ) -> None:
+    from xic_extractor.alignment.cell_decision.owner import (
+        decide_target_cell_population,
+    )
+
     fixture, spine, coverage, cells = _authorization_population(
         tmp_path,
         hold_samples=hold_samples,
@@ -189,6 +281,15 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
             repair_terminal=None,
             _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
         )
+    with pytest.raises(
+        CrossSampleReconciliationContractError,
+        match="repair epoch must be an exact integer",
+    ):
+        replace(
+            result,
+            repair_epoch=False,
+            _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
+        )
     handoff = build_cross_sample_association_lineage_handoff(
         coverage=coverage,
         final_receipt=result,
@@ -201,6 +302,29 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
     )
     assert final_cells
     assert all(cell.repair_receipts == () for cell in final_cells)
+    scope, captures = _target_scope_and_captures(fixture, spine, tmp_path)
+    scientific = finalize_scientific_alignment(
+        scope=scope,
+        captures=captures,
+        final_cross_sample_receipt=result,
+        cell_observation_handoff=handoff,
+        predecessor_cell_observations=cells,
+    )
+    pre_cell = project_target_pre_cell(scientific)
+    projection = project_target_post_cell(
+        pre_cell,
+        decide_target_cell_population(pre_cell),
+    )
+    application_result = finalize_alignment_result(
+        TargetApplicationResultRequest(
+            scientific_core=scientific,
+            completed_projection=projection,
+        )
+    )
+    assert application_result.scientific_core is scientific
+    assert application_result.completed_projection is projection
+    assert scientific.final_cross_sample_receipt is result
+    assert scientific.repair_receipt is None
 
 
 def test_existing_member_terminal_and_exact_final_attempt_close_once(
@@ -295,6 +419,15 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
     assert final.repair_receipt is terminal.receipt
     assert final.mode_track_final_attempt is final_attempt
     assert final.mode_track_proposal is final_attempt.proposal
+    with pytest.raises(
+        CrossSampleReconciliationContractError,
+        match="repair epoch must be an exact integer",
+    ):
+        replace(
+            final,
+            repair_epoch=True,
+            _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
+        )
     with pytest.raises(
         CrossSampleReconciliationContractError,
         match="exact MT1 final attempt",

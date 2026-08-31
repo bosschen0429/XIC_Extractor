@@ -29,8 +29,10 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
+    CrossSampleFinalReceipt,
     CrossSamplePostRepairModeTrackInput,
     build_cross_sample_post_mt0_context,
+    consume_mode_track_final_attempt,
     reconcile_observation_repair,
 )
 from xic_extractor.alignment.mode_track import (
@@ -54,11 +56,13 @@ from xic_extractor.alignment.mode_track.contracts import (
     ModeTrackEvidenceProfile,
     ModeTrackRefinementContractError,
     UntrainedModeTrackRefinementEvidence,
+    _mint_accepted_mode_track_refinement,
     _mint_untrained_mode_track_refinement_evidence,
 )
 from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
+from xic_extractor.alignment.mode_track.refinement import _mint_final_attempt_result
 
 
 def test_final_attempt_public_operation_has_no_caller_authority_inputs() -> None:
@@ -316,6 +320,38 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
     assert len(repaired_assignments) == 1
     assert repaired_assignments[0].candidate_observation_class == "non_training"
     assert repaired_assignments[0].direct_support_assessment is None
+    component_ids = (
+        reconciled.mode_track_input.post_repair_trajectory.member_subject_ids
+    )
+    accepted = _mint_accepted_mode_track_refinement(
+        trajectory_input=reconciled.mode_track_input.post_repair_trajectory,
+        successor_member_subject_ids=(component_ids,),
+    )
+    accepted_result = _mint_final_attempt_result(
+        source=source,
+        repair_receipt=terminal.receipt,
+        post_repair=reconciled.mode_track_input,
+        assignment_batches=result.assignment_batches,
+        proposal=accepted,
+        discriminant="assigned",
+    )
+    final = consume_mode_track_final_attempt(
+        context=context,
+        post_repair=reconciled.mode_track_input,
+        terminal=terminal,
+        final_attempt=accepted_result,
+    )
+    assert type(final) is CrossSampleFinalReceipt
+    assert unaffected_group in final.final_population
+    assert {
+        member.member_subject_id
+        for group_identity in final.final_population
+        for member in group_identity.member_subjects
+    } == {
+        member.member_subject_id
+        for group_identity in reconciled.mode_track_input.post_repair_population
+        for member in group_identity.member_subjects
+    }
 
 
 def test_no_anchor_attempt_returns_unassessable_for_over_budget_neighborhood(

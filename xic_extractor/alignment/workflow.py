@@ -575,6 +575,7 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "workflow request crossed processing request or attempt"
         )
+    _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
     owners = adapter.repair.coverage.epoch.context.processing_owners
     if (
         type(owners) is not ProcessingOwnerReferences
@@ -611,6 +612,24 @@ def _validate_request_adapter(
             "predecessor cells must be exact immutable references"
         )
     return owners
+
+
+def _validate_runtime_attempt_binding(
+    invocation: WorkflowRuntimeInvocation,
+    attempt: ProcessingAttemptIdentity,
+) -> None:
+    runtime = invocation.runtime
+    if (
+        runtime.manifest.attempt is not attempt
+        or runtime.history.attempt is not attempt
+        or any(
+            reservation.attempt is not attempt
+            for reservation in invocation.reservations
+        )
+    ):
+        raise AlignmentWorkflowContractError(
+            "workflow runtime crossed the exact processing attempt"
+        )
 
 
 def _repaired_observations(

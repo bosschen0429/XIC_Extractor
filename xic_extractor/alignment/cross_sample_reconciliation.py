@@ -1145,6 +1145,41 @@ class CrossSampleFinalReceipt:
                     "accepted MT1 proposal is not canonical"
                 )
             proposed_partition = canonical_proposal
+            proposed_member_ids = {
+                member_id for group in proposed_partition for member_id in group
+            }
+            unaffected_predecessors = tuple(
+                group
+                for group in self.cs2_state.population
+                if not {
+                    member.member_subject_id for member in group.member_subjects
+                }
+                & proposed_member_ids
+            )
+            if any(
+                {
+                    member.member_subject_id for member in group.member_subjects
+                }
+                & proposed_member_ids
+                and not {
+                    member.member_subject_id for member in group.member_subjects
+                }
+                <= proposed_member_ids
+                for group in self.cs2_state.population
+            ):
+                raise CrossSampleReconciliationContractError(
+                    "accepted MT1 proposal only partially covers a current component"
+                )
+            if any(
+                not any(
+                    successor is predecessor
+                    for successor in final_application.successors
+                )
+                for predecessor in unaffected_predecessors
+            ):
+                raise CrossSampleReconciliationContractError(
+                    "accepted MT1 application changed an unaffected component"
+                )
             applied_partition = tuple(
                 sorted(
                     tuple(
@@ -1153,8 +1188,26 @@ class CrossSampleFinalReceipt:
                         )
                     )
                     for group in final_application.successors
+                    if any(
+                        member.member_subject_id in proposed_member_ids
+                        for member in group.member_subjects
+                    )
                 )
             )
+            if any(
+                any(
+                    member.member_subject_id in proposed_member_ids
+                    for member in group.member_subjects
+                )
+                and any(
+                    member.member_subject_id not in proposed_member_ids
+                    for member in group.member_subjects
+                )
+                for group in final_application.successors
+            ):
+                raise CrossSampleReconciliationContractError(
+                    "accepted MT1 application mixed affected and unaffected components"
+                )
             if applied_partition != proposed_partition:
                 raise CrossSampleReconciliationContractError(
                     "final application does not bind accepted MT1 proposal"
@@ -1454,6 +1507,12 @@ def consume_observation_repair_terminal(
             terminal=terminal,
             repair_result=repair_result,
         )
+    if terminal.receipt is not None and terminal.receipt.outcome == "no_repair":
+        return _consume_nonmember_no_repair_candidate_terminal(
+            context=context,
+            terminal=terminal,
+            repair_result=repair_result,
+        )
     result = reconcile_nonmember_observation_repair(
         context=context,
         repair_terminal=terminal,
@@ -1702,6 +1761,48 @@ def _consume_existing_member_candidate_terminal(
     )
 
 
+def _consume_nonmember_no_repair_candidate_terminal(
+    *,
+    context: CrossSamplePostMT0Context,
+    terminal: ObservationRepairTerminalResult,
+    repair_result: OwnerBackfillSampleResult,
+) -> CrossSampleFinalReceipt:
+    candidate, receipt, _current_predecessor = _validate_nonmember_terminal_binding(
+        terminal,
+        context=context,
+    )
+    if receipt.outcome != "no_repair" or receipt.evidence is not None:
+        raise CrossSampleReconciliationContractError(
+            "nonmember no-repair closure requires the exact owner negative"
+        )
+    _validate_no_repair_callback_result(
+        result=repair_result,
+        candidate=candidate,
+        receipt=receipt,
+    )
+    state = _repair_state(
+        context=context,
+        terminal=terminal,
+        population=context.population,
+        trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        trajectory_changed=False,
+    )
+    return _mint_final_receipt(
+        processing_request_id=context.processing_request_id,
+        post_mt0_application=context.application,
+        repair_terminal=terminal,
+        repair_receipt=receipt,
+        repair_epoch=1,
+        cs2_state=state,
+        pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        post_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        mode_track_proposal=None,
+        mode_track_final_attempt=None,
+        final_application=_mint_unchanged_successor_application(context),
+        final_population=context.population,
+    )
+
+
 def _close_nonmember_repair_without_mt1(
     *,
     context: CrossSamplePostMT0Context,
@@ -1819,7 +1920,6 @@ def _validate_no_repair_callback_result(
     if (
         evaluation is None
         or evaluation.answer.physical_answer_id != terminal.physical_answer_id
-        or evaluation.facts is not None
     ):
         raise CrossSampleReconciliationContractError(
             "no-repair callback result crossed its physical terminal"
@@ -1846,9 +1946,30 @@ def _apply_final_attempt_population(
             ),
             predecessors,
         )
+    component_member_ids = set(
+        post_repair.post_repair_trajectory.member_subject_ids
+    )
+    component_predecessors = tuple(
+        group
+        for group in predecessors
+        if {
+            member.member_subject_id for member in group.member_subjects
+        }
+        & component_member_ids
+    )
+    if any(
+        not {
+            member.member_subject_id for member in group.member_subjects
+        }
+        <= component_member_ids
+        for group in component_predecessors
+    ):
+        raise CrossSampleReconciliationContractError(
+            "MT1 trajectory only partially covers a current component"
+        )
     member_by_id = {
         member.member_subject_id: member
-        for group in predecessors
+        for group in component_predecessors
         for member in group.member_subjects
     }
     proposed_ids = tuple(
@@ -1876,7 +1997,7 @@ def _apply_final_attempt_population(
         raise CrossSampleReconciliationContractError(
             "accepted MT1 proposal reopens an excluded edge"
         )
-    successors = tuple(
+    component_successors = tuple(
         sorted(
             (
                 mint_cross_sample_group_identity(
@@ -1887,6 +2008,17 @@ def _apply_final_attempt_population(
                 )
                 for member_ids in proposal.successor_member_subject_ids
             ),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    successors = tuple(
+        sorted(
+            tuple(
+                group
+                for group in predecessors
+                if not any(group is component for component in component_predecessors)
+            )
+            + component_successors,
             key=lambda group: group.group_hypothesis_id,
         )
     )
@@ -1917,6 +2049,10 @@ def _validate_final_repair_binding(
     state: CrossSampleReconciledState,
     post_application: CrossSampleSuccessorApplication,
 ) -> None:
+    if type(repair_epoch) is not int or repair_epoch not in {0, 1}:
+        raise CrossSampleReconciliationContractError(
+            "final receipt repair epoch must be an exact integer"
+        )
     if terminal is None:
         if type(receipt) is not ObservationRepairReceipt or repair_epoch != 1:
             raise CrossSampleReconciliationContractError(
@@ -2223,14 +2359,13 @@ def _mint_unchanged_successor_application(
     )
 
 
-def _validate_candidate_terminal(
+def _validate_nonmember_terminal_binding(
     terminal: ObservationRepairTerminalResult,
     *,
     context: CrossSamplePostMT0Context,
 ) -> tuple[
     ObservationRepairCandidate,
     ObservationRepairReceipt,
-    ObservationRepairEvidence,
     CrossSampleGroupIdentity,
 ]:
     if (
@@ -2252,18 +2387,14 @@ def _validate_candidate_terminal(
         raise CrossSampleReconciliationContractError(
             "repair terminal crossed its exact candidate or receipt"
         )
-    evidence = receipt.evidence
     if (
-        receipt.outcome != "repaired"
-        or type(evidence) is not ObservationRepairEvidence
-        or evidence.member_subject_id is not None
-        or receipt.authorization_id != authorization.authorization_id
+        receipt.authorization_id != authorization.authorization_id
         or receipt.candidate_id != candidate.candidate_id
         or receipt.repair_epoch != candidate.repair_epoch
         or receipt.repair_epoch != 1
     ):
         raise CrossSampleReconciliationContractError(
-            "nonmember admission requires one successful membership-neutral receipt"
+            "nonmember terminal crossed authorization, candidate, or epoch"
         )
     if (
         candidate.processing_owners is not authorization.processing_owners
@@ -2331,6 +2462,32 @@ def _validate_candidate_terminal(
     ):
         raise CrossSampleReconciliationContractError(
             "repair candidate crossed sample, cell, request, or predecessor"
+        )
+    return candidate, receipt, current_predecessor
+
+
+def _validate_candidate_terminal(
+    terminal: ObservationRepairTerminalResult,
+    *,
+    context: CrossSamplePostMT0Context,
+) -> tuple[
+    ObservationRepairCandidate,
+    ObservationRepairReceipt,
+    ObservationRepairEvidence,
+    CrossSampleGroupIdentity,
+]:
+    candidate, receipt, current_predecessor = _validate_nonmember_terminal_binding(
+        terminal,
+        context=context,
+    )
+    evidence = receipt.evidence
+    if (
+        receipt.outcome != "repaired"
+        or type(evidence) is not ObservationRepairEvidence
+        or evidence.member_subject_id is not None
+    ):
+        raise CrossSampleReconciliationContractError(
+            "nonmember admission requires one successful membership-neutral receipt"
         )
     exact_evidence = (
         evidence.logical_request_id,

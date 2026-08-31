@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import fields
 from inspect import signature
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import xic_extractor.alignment.workflow as workflow_owner
+from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
 from xic_extractor.alignment.workflow import (
     CancelledWorkflowResult,
     CaptureWorkflowArguments,
@@ -24,6 +27,7 @@ from xic_extractor.alignment.workflow import (
     WorkflowStage,
     execute_alignment_workflow,
 )
+from xic_extractor.processing_identity import issue_processing_attempt
 
 
 def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
@@ -127,4 +131,41 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
             worker_batch_provider=lambda _value: None,
             telemetry_provider=lambda _value: None,
             persister=lambda value: value,
+        )
+
+
+def test_workflow_runtime_rejects_a_crossed_processing_attempt(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    crossed_attempt = issue_processing_attempt(
+        fixture.request,
+        retry_of=fixture.attempt,
+    )
+    crossed_runtime = object.__new__(workflow_owner.AttemptRuntime)
+    object.__setattr__(
+        crossed_runtime,
+        "manifest",
+        SimpleNamespace(attempt=crossed_attempt),
+    )
+    object.__setattr__(
+        crossed_runtime,
+        "history",
+        SimpleNamespace(attempt=crossed_attempt),
+    )
+    invocation = WorkflowRuntimeInvocation(
+        runtime=crossed_runtime,
+        reservations=(),
+        worker_batch_provider=lambda _aggregate: (),
+        telemetry_provider=lambda _aggregate: (),
+        persister=lambda value: value,
+    )
+
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="runtime crossed the exact processing attempt",
+    ):
+        workflow_owner._validate_runtime_attempt_binding(
+            invocation,
+            fixture.attempt,
         )

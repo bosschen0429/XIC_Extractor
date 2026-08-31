@@ -25,7 +25,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleSuccessorApplication,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
+    CrossSampleFinalReceipt,
     build_cross_sample_post_mt0_context,
+    consume_observation_repair_terminal,
 )
 from xic_extractor.alignment.mode_track.contracts import ModeTrackEvidenceProfile
 
@@ -113,6 +115,77 @@ def test_membership_neutral_repair_enters_the_public_cross_sample_owner(
         for group in reconciled.final_population
         for member in group.member_subjects
     }
+
+
+def test_nonmember_no_repair_preserves_owner_negative_without_mt1(
+    tmp_path: Path,
+) -> None:
+    fixture, _spine, coverage, cells = _authorization_population(
+        tmp_path,
+        hold_samples=("s2",),
+    )
+    executed = []
+
+    def execute(candidate):
+        built, result = _repair_result(fixture, coverage, candidate)
+        unselected = copy(built.peak_fact_observations[0])
+        object.__setattr__(unselected, "selected_for_output", False)
+        no_repair_result = replace(result, peak_fact_observations=(unselected,))
+        executed.append(no_repair_result)
+        return no_repair_result
+
+    terminal = execute_observation_repair(
+        processing_owners=fixture.owners,
+        coverage=coverage,
+        cell_observations=cells,
+        execute=execute,
+    )
+    candidate = terminal.candidate
+    assert candidate is not None
+    assert terminal.receipt is not None
+    assert terminal.receipt.outcome == "no_repair"
+    group = candidate.predecessor_group
+    context = build_cross_sample_post_mt0_context(
+        processing_request_id=group.processing_request_id,
+        processing_owners=fixture.owners,
+        population=(group,),
+        application=CrossSampleSuccessorApplication(
+            status="assessable",
+            predecessors=(group,),
+            successors=(group,),
+            lineage=(),
+            reason="unchanged_membership_no_lineage",
+        ),
+        owners=tuple(candidate.logical_request.item.feature.owners),
+        classified_edges=(),
+        anchors=(),
+        injection_order={
+            owner.sample_stem: index
+            for index, owner in enumerate(
+                candidate.logical_request.item.feature.owners,
+                start=1,
+            )
+        },
+        evidence_profile=ModeTrackEvidenceProfile(
+            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+        ),
+        budget=CrossSampleNeighborhoodBudget(86, 3655),
+    )
+
+    final = consume_observation_repair_terminal(
+        context=context,
+        terminal=terminal,
+        repair_result=executed[0],
+        alignment_config=coverage.epoch.alignment_config,
+    )
+
+    assert type(final) is CrossSampleFinalReceipt
+    assert final.repair_terminal is terminal
+    assert final.repair_receipt is terminal.receipt
+    assert final.repair_epoch == 1
+    assert final.cs2_state.repair_outcome == "no_repair"
+    assert final.final_population == context.population
+    assert final.mode_track_final_attempt is None
 
 
 def test_repair_admission_does_not_require_candidate_local_identity_support(
