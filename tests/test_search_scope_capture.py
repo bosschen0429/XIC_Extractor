@@ -548,6 +548,47 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         capture_bindings=bindings,
     )
     assert scope.capture_bindings == bindings
+    subject_view = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=request,
+        samples=fixture.samples,
+        method_constraints=scope.method_constraints,
+        evidence_providers=(scope.evidence_providers[0],),
+        declared_candidate_ids=(
+            next(
+                candidate_id
+                for candidate_id, method_subject_id in memberships
+                if method_subject_id
+                == scope.evidence_providers[0].method_subject_id
+            ),
+        ),
+        capture_bindings=tuple(
+            binding
+            for binding in bindings
+            if binding.method_subject_id
+            == scope.evidence_providers[0].method_subject_id
+        ),
+    )
+    assert len(subject_view.capture_bindings) == 1
+    view_binding = subject_view.capture_bindings[0]
+    rt = np.linspace(7.7, 8.3, 61)
+    trace = Trace.from_arrays(
+        sample_name=sample.metadata.sample_name,
+        mz=view_binding.query_mz,
+        rt=rt,
+        intensity=100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2),
+        rt_min=view_binding.query_rt_min,
+        rt_max=view_binding.query_rt_max,
+        ppm_tol=view_binding.query_ppm_tol,
+        source="synthetic_batch_subject_view",
+        acquisition_source_id=source.acquisition_source_id,
+    )
+    capture = capture_owner.capture_peak_hypotheses(
+        scope=subject_view,
+        candidate_id=view_binding.candidate_id,
+        trace=trace,
+    )
+    assert capture.trace_group.context_id.startswith("untargeted:")
     with pytest.raises(
         SearchScopeContractError,
         match="candidate subject membership",

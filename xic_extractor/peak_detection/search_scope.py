@@ -194,6 +194,7 @@ class UntargetedSearchScope:
             self.capture_bindings,
             request=self.request,
             declared_candidate_ids=self.declared_candidate_ids,
+            evidence_providers=self.evidence_providers,
         )
 
     @property
@@ -436,6 +437,7 @@ def _validate_untargeted_capture_bindings(
     *,
     request: ProcessingRequestIdentity,
     declared_candidate_ids: tuple[str, ...],
+    evidence_providers: tuple[EvidenceProviderBinding, ...],
 ) -> None:
     request_inputs = _request_inputs(request)
     payload = request_inputs.get(CID_NL_REQUEST_INPUT_KEY)
@@ -447,7 +449,25 @@ def _validate_untargeted_capture_bindings(
             batch = cid_nl_method_subject_batch_from_request(request)
         except CidNlMethodSubjectContractError as exc:
             raise SearchScopeContractError(str(exc)) from exc
-        expected_memberships = batch.candidate_memberships
+        provider_subject_ids = tuple(
+            provider.method_subject_id for provider in evidence_providers
+        )
+        all_subject_ids = tuple(
+            subject.method_subject_id for subject in batch.subjects
+        )
+        if provider_subject_ids == all_subject_ids:
+            expected_memberships = batch.candidate_memberships
+        elif len(provider_subject_ids) == 1:
+            expected_memberships = tuple(
+                membership
+                for membership in batch.candidate_memberships
+                if membership[1] == provider_subject_ids[0]
+            )
+        else:
+            raise SearchScopeContractError(
+                "Untargeted batch SearchScope must be the complete universe or "
+                "one exact subject view"
+            )
         if declared_candidate_ids != tuple(
             candidate_id for candidate_id, _ in expected_memberships
         ):
@@ -551,10 +571,12 @@ def _validate_untargeted_evidence_provider(
             )
             for subject in batch.subjects
         )
-        if providers != expected:
+        if providers != expected and not (
+            len(providers) == 1 and providers[0] in expected
+        ):
             raise SearchScopeContractError(
-                "Untargeted SearchScope evidence providers do not match the "
-                "request subject batch"
+                "Untargeted SearchScope evidence providers must match the request "
+                "subject batch or one exact subject view"
             )
         return
     try:

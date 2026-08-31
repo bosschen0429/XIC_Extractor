@@ -8,6 +8,8 @@ from xic_extractor.peak_detection.capture_boundary_policy import (
     promote_targeted_boundary_hypothesis,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubjectContractError,
+    cid_nl_method_subject_batch_from_request,
     cid_nl_method_subject_from_request,
 )
 from xic_extractor.peak_detection.facade import find_peak_and_area
@@ -116,6 +118,7 @@ def capture_peak_hypotheses(
     label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
         scope,
         query_mz=binding.query_mz,
+        method_subject_id=binding.method_subject_id,
     )
     trace_group = TraceGroup(
         trace_group_id="|".join(
@@ -247,6 +250,7 @@ def _hypothesis_context(
     scope: SearchScope,
     *,
     query_mz: float,
+    method_subject_id: str,
 ) -> tuple[str, str, str, str]:
     if isinstance(scope, TargetSearchScope):
         target = scope.target.definition.target
@@ -256,7 +260,15 @@ def _hypothesis_context(
             target.istd_pair,
             target.label,
         )
-    method_subject = cid_nl_method_subject_from_request(scope.request)
+    try:
+        method_subject = cid_nl_method_subject_from_request(scope.request)
+    except CidNlMethodSubjectContractError:
+        batch = cid_nl_method_subject_batch_from_request(scope.request)
+        method_subject = next(
+            subject
+            for subject in batch.subjects
+            if subject.method_subject_id == method_subject_id
+        )
     label = (
         f"untargeted:{query_mz:.8g}:"
         f"NL{method_subject.neutral_loss_da:.8g}"
