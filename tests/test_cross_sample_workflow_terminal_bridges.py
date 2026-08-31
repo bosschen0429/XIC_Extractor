@@ -182,6 +182,7 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
         alignment_config=coverage.epoch.alignment_config,
     )
     assert not isinstance(post_repair, CrossSampleFinalReceipt)
+    assert post_repair.repair_terminal is terminal
     assert terminal.receipt is not None
     final_attempt = run_post_repair_mode_track_final_attempt(
         source=source,
@@ -200,6 +201,16 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
     assert final.repair_receipt is terminal.receipt
     assert final.mode_track_final_attempt is final_attempt
     assert final.mode_track_proposal is final_attempt.proposal
+    with pytest.raises(
+        CrossSampleReconciliationContractError,
+        match="exact repair terminal object",
+    ):
+        consume_mode_track_final_attempt(
+            context=context,
+            post_repair=post_repair,
+            terminal=copy(terminal),
+            final_attempt=final_attempt,
+        )
     with pytest.raises(
         CrossSampleReconciliationContractError,
         match="repair epoch must be an exact integer",

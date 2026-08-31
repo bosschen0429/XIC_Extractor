@@ -578,7 +578,7 @@ def _validate_request_adapter(
             "workflow request crossed processing request or attempt"
         )
     _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
-    owners = adapter.repair.coverage.epoch.context.processing_owners
+    owners = adapter.repair.coverage.epoch.processing_owners
     if (
         type(owners) is not ProcessingOwnerReferences
         or owners.request is not request.processing_request

@@ -148,6 +148,10 @@ class CrossSamplePostRepairModeTrackInput:
     processing_request_id: str
     processing_attempt_id: str
     processing_owners: ProcessingOwnerReferences
+    repair_terminal: ObservationRepairTerminalResult | None = field(
+        compare=False,
+        repr=False,
+    )
     fit_once_source_id: str | None
     repair_receipt_id: str
     repair_epoch: Literal[1]
@@ -179,6 +183,19 @@ def _validate_post_repair_mode_track_input(
         raise CrossSampleReconciliationContractError(
             "post-repair ModeTrack input requires exact processing owners"
         )
+    if input_value.repair_terminal is not None:
+        terminal = input_value.repair_terminal
+        if (
+            type(terminal) is not ObservationRepairTerminalResult
+            or type(terminal.authorization) is not ObservationRepairRepairAuthorization
+            or type(terminal.receipt) is not ObservationRepairReceipt
+            or terminal.receipt.receipt_id != input_value.repair_receipt_id
+            or terminal.authorization.processing_owners
+            is not input_value.processing_owners
+        ):
+            raise CrossSampleReconciliationContractError(
+                "post-repair ModeTrack input crossed its exact repair terminal"
+            )
     try:
         request_id = _request_id(input_value.processing_request_id)
         attempt_id = input_value.processing_owners.attempt.processing_attempt_id
@@ -879,6 +896,7 @@ def reconcile_nonmember_observation_repair(
         pre_trajectory_input_id = context.trajectory_input.trajectory_input_id
         mode_track_input = _mint_post_repair_mode_track_input(
             processing_owners=context.processing_owners,
+            repair_terminal=repair_terminal,
             fit_once_source_id=context.fit_once_source_id,
             repair_receipt_id=receipt.receipt_id,
             repair_epoch=receipt.repair_epoch,
@@ -1350,6 +1368,7 @@ def reconcile_observation_repair(
     if trajectory_changed:
         return _mint_existing_member_post_repair_mode_track_input(
             context=context,
+            repair_terminal=None,
             repair_receipt=repair_receipt,
             repaired_owners=repaired_owners,
             pre_trajectory_input_id=pre_trajectory.trajectory_input_id,
@@ -1587,12 +1606,13 @@ def consume_mode_track_final_attempt(
     if (
         type(terminal.authorization) is not ObservationRepairRepairAuthorization
         or type(receipt) is not ObservationRepairReceipt
+        or post_repair.repair_terminal is not terminal
         or receipt.receipt_id != post_repair.repair_receipt_id
         or terminal.authorization.processing_owners is not context.processing_owners
         or post_repair.processing_owners is not context.processing_owners
     ):
         raise CrossSampleReconciliationContractError(
-            "MT1 closure crossed repair terminal, receipt, or processing owners"
+            "MT1 closure requires the exact repair terminal object, receipt, and owners"
         )
     result_types = {
         AssignedModeTrackFinalAttempt,
@@ -1748,6 +1768,7 @@ def _consume_existing_member_candidate_terminal(
     ):
         return _mint_existing_member_post_repair_mode_track_input(
             context=context,
+            repair_terminal=terminal,
             repair_receipt=receipt,
             repaired_owners=repaired_owners,
             pre_trajectory_input_id=pre_trajectory.trajectory_input_id,
@@ -3037,6 +3058,7 @@ def _post_repair_mode_track_input_basis(
 def _mint_post_repair_mode_track_input(
     *,
     processing_owners: ProcessingOwnerReferences,
+    repair_terminal: ObservationRepairTerminalResult | None,
     fit_once_source_id: str | None,
     repair_receipt_id: str,
     repair_epoch: int,
@@ -3091,6 +3113,7 @@ def _mint_post_repair_mode_track_input(
         processing_request_id=request_id,
         processing_attempt_id=attempt_id,
         processing_owners=processing_owners,
+        repair_terminal=repair_terminal,
         fit_once_source_id=fit_once_source_id,
         repair_receipt_id=repair_receipt_id,
         repair_epoch=repair_epoch,  # type: ignore[arg-type]
@@ -3113,6 +3136,7 @@ def _mint_post_repair_mode_track_input(
 def _mint_existing_member_post_repair_mode_track_input(
     *,
     context: CrossSamplePostMT0Context,
+    repair_terminal: ObservationRepairTerminalResult | None,
     repair_receipt: ObservationRepairReceipt,
     repaired_owners: tuple[SampleLocalMS1Owner, ...],
     pre_trajectory_input_id: str,
@@ -3147,6 +3171,7 @@ def _mint_existing_member_post_repair_mode_track_input(
     )
     return _mint_post_repair_mode_track_input(
         processing_owners=context.processing_owners,
+        repair_terminal=repair_terminal,
         fit_once_source_id=context.fit_once_source_id,
         repair_receipt_id=repair_receipt.receipt_id,
         repair_epoch=repair_receipt.repair_epoch,

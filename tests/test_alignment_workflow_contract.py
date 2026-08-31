@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
@@ -152,64 +152,79 @@ def test_workflow_accepts_capture_binding_subset_of_declared_candidates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
-    sample = fixture.samples[0]
-    scope = object.__new__(workflow_owner.TargetSearchScope)
-    object.__setattr__(scope, "request", fixture.request)
-    object.__setattr__(scope, "samples", fixture.samples)
-    object.__setattr__(
+    from tests.test_backfill_observation_repair_authorization import (
+        _authorization_population,
+    )
+    from tests.test_cross_sample_workflow_bridges import _target_scope_and_captures
+
+    fixture, spine, coverage, cells = _authorization_population(
+        tmp_path,
+        hold_samples=(),
+    )
+    scope, captures = _target_scope_and_captures(fixture, spine, tmp_path)
+    scope = replace(
         scope,
-        "declared_candidate_ids",
-        ("capture:candidate", "inspection-only:candidate"),
-    )
-    object.__setattr__(
-        scope,
-        "capture_bindings",
-        (SimpleNamespace(candidate_id="capture:candidate"),),
-    )
-    request = object.__new__(TargetWorkflowRequest)
-    object.__setattr__(request, "scope", scope)
-    object.__setattr__(request, "processing_request", fixture.request)
-    object.__setattr__(request, "processing_attempt", fixture.attempt)
-    object.__setattr__(request, "runtime", object())
-    adapter = object.__new__(TargetWorkflowAdapter)
-    object.__setattr__(
-        adapter,
-        "capture_inputs",
-        (SimpleNamespace(candidate_id="capture:candidate"),),
-    )
-    object.__setattr__(
-        adapter,
-        "mode_track",
-        SimpleNamespace(sample_assessments=((sample, object()),)),
-    )
-    object.__setattr__(
-        adapter,
-        "repair",
-        SimpleNamespace(
-            coverage=SimpleNamespace(
-                epoch=SimpleNamespace(
-                    context=SimpleNamespace(processing_owners=fixture.owners)
-                )
-            )
+        declared_candidate_ids=(
+            *scope.declared_candidate_ids,
+            "inspection-only:candidate",
         ),
     )
-    object.__setattr__(adapter, "predecessor_cell_observations", ())
-
-    monkeypatch.setattr(TargetWorkflowRequest, "__post_init__", lambda self: None)
-    monkeypatch.setattr(TargetWorkflowAdapter, "__post_init__", lambda self: None)
-    monkeypatch.setattr(
-        workflow_owner,
-        "_validate_runtime_attempt_binding",
-        lambda invocation, attempt: None,
+    runtime = object.__new__(workflow_owner.AttemptRuntime)
+    object.__setattr__(runtime, "manifest", SimpleNamespace(attempt=fixture.attempt))
+    object.__setattr__(runtime, "history", SimpleNamespace(attempt=fixture.attempt))
+    request = TargetWorkflowRequest(
+        scope=scope,
+        processing_request=fixture.request,
+        processing_attempt=fixture.attempt,
+        runtime=WorkflowRuntimeInvocation(
+            runtime=runtime,
+            reservations=(),
+            worker_batch_provider=lambda _value: None,
+            telemetry_provider=lambda _value: None,
+            persister=lambda value: value,
+        ),
     )
-    monkeypatch.setattr(
-        workflow_owner,
-        "validate_scope_owner_binding",
-        lambda supplied_scope, *, processing_owners, sample: None,
+    assessments = tuple(
+        sorted(
+            zip(fixture.samples, spine.assessments, strict=True),
+            key=lambda item: item[0].identity.sample_identity_id,
+        )
+    )
+    adapter = TargetWorkflowAdapter(
+        capture_inputs=tuple(
+            CaptureWorkflowArguments(capture.candidate_id, capture.trace)
+            for capture in captures
+        ),
+        mode_track=ModeTrackWorkflowArguments(
+            sample_assessments=assessments,
+            alignment_config=coverage.epoch.alignment_config,
+            trajectory_policy=workflow_owner.ModeTrackTrajectoryPolicy(
+                trajectory_policy_version="anchor-trajectory-v1",
+                band_policy_version="fixed-band-v1",
+                prediction_half_width_min=0.1,
+                max_interpolation_gap=10,
+                max_extrapolation_gap=10,
+            ),
+        ),
+        repair=ObservationRepairWorkflowArguments(
+            coverage=coverage,
+            cell_observations=cells,
+            execute=lambda _candidate: object(),
+        ),
+        predecessor_cell_observations=spine.cells,
+        drift_lookup=None,
     )
 
-    assert workflow_owner._validate_request_adapter(request, adapter) is fixture.owners
+    class RuntimeReached(Exception):
+        pass
+
+    def stop_at_runtime(*_args, **_kwargs):
+        raise RuntimeReached
+
+    monkeypatch.setattr(workflow_owner, "execute_runtime_attempt", stop_at_runtime)
+
+    with pytest.raises(RuntimeReached):
+        execute_alignment_workflow(request, adapter)
 
 
 def test_workflow_runtime_rejects_a_crossed_processing_attempt(
