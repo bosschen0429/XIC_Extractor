@@ -157,8 +157,10 @@ class CaptureWorkflowArguments:
     trace: Trace
 
     def __post_init__(self) -> None:
-        if not isinstance(self.candidate_id, str) or not self.candidate_id.strip():
-            raise AlignmentWorkflowContractError("capture candidate_id must be text")
+        if type(self.candidate_id) is not str or not self.candidate_id.strip():
+            raise AlignmentWorkflowContractError(
+                "capture candidate_id must be exact text"
+            )
         if type(self.trace) is not Trace:
             raise AlignmentWorkflowContractError("capture trace must be exact")
 

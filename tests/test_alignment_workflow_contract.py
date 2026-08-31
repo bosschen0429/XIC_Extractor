@@ -6,6 +6,7 @@ from dataclasses import fields
 from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
+from typing import get_args
 
 import pytest
 
@@ -25,6 +26,7 @@ from xic_extractor.alignment.workflow import (
     UntargetWorkflowRequest,
     WorkflowRuntimeInvocation,
     WorkflowStage,
+    WorkflowTerminalResult,
     execute_alignment_workflow,
 )
 from xic_extractor.processing_identity import issue_processing_attempt
@@ -94,7 +96,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "processing_attempt",
         "runtime",
     )
-    assert {
+    assert set(get_args(WorkflowTerminalResult)) == {
         CompletedTargetWorkflowResult,
         CompletedUntargetWorkflowResult,
         CancelledWorkflowResult,
@@ -103,6 +105,18 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
 
 
 def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
+    class CandidateId(str):
+        pass
+
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="capture candidate_id must be exact text",
+    ):
+        CaptureWorkflowArguments(
+            CandidateId("candidate"),
+            object.__new__(workflow_owner.Trace),
+        )
+
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
         match="Target request scope must be exact",

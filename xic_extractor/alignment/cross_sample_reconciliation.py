@@ -1306,29 +1306,38 @@ def reconcile_observation_repair(
         raise CrossSampleReconciliationContractError(
             "repair receipt crossed processing request"
         )
-    repaired_owners = _reconcile_owner_projection(
-        owners=context.owners,
-        receipt=repair_receipt,
+    member_id = repair_receipt.subject.member_subject.member_subject_id
+    current_groups = tuple(
+        group
+        for group in context.population
+        if any(
+            member.member_subject_id == member_id
+            for member in group.member_subjects
+        )
     )
-    post_trajectory = _mint_context_trajectory(
-        request_id=request_id,
-        application=context.application,
-        owners=repaired_owners,
-        classified_edges=context.classified_edges,
-        anchors=context.anchors,
-        injection_order=context.injection_order,
-        evidence_profile=context.evidence_profile,
-        budget=context.budget,
+    if len(current_groups) != 1:
+        raise CrossSampleReconciliationContractError(
+            "existing-member repair does not resolve one current component"
+        )
+    evidence = repair_receipt.evidence
+    pre_trajectory, post_trajectory, repaired_owners = (
+        _existing_member_component_trajectory_projection(
+            context=context,
+            current_group=current_groups[0],
+            current_member_id=member_id,
+            repaired_apex_rt=(None if evidence is None else evidence.rt_apex_min),
+        )
     )
     trajectory_changed = (
         post_trajectory.trajectory_input_id
-        != context.trajectory_input.trajectory_input_id
+        != pre_trajectory.trajectory_input_id
     )
     if trajectory_changed:
         return _mint_existing_member_post_repair_mode_track_input(
             context=context,
             repair_receipt=repair_receipt,
             repaired_owners=repaired_owners,
+            pre_trajectory_input_id=pre_trajectory.trajectory_input_id,
             post_trajectory=post_trajectory,
         )
     if repair_receipt.repair_epoch != 1:
@@ -1349,7 +1358,7 @@ def reconcile_observation_repair(
                 for member in group.member_subjects
             )
         ),
-        trajectory_input_id=post_trajectory.trajectory_input_id,
+        trajectory_input_id=context.trajectory_input.trajectory_input_id,
         trajectory_changed=trajectory_changed,
     )
     final_application = _mint_unchanged_successor_application(context)
@@ -1361,7 +1370,7 @@ def reconcile_observation_repair(
         repair_epoch=repair_epoch,
         cs2_state=cs2_state,
         pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
-        post_trajectory_input_id=post_trajectory.trajectory_input_id,
+        post_trajectory_input_id=context.trajectory_input.trajectory_input_id,
         mode_track_proposal=None,
         mode_track_final_attempt=None,
         final_application=final_application,
@@ -1708,40 +1717,23 @@ def _consume_existing_member_candidate_terminal(
         receipt=receipt,
         evidence=evidence,
     )
-    owners = tuple(
-        owner
-        for owner in context.owners
-        if _owner_member_id(owner) == current_member.member_subject_id
-    )
-    if len(owners) != 1:
-        raise CrossSampleReconciliationContractError(
-            "existing-member terminal does not resolve one exact owner"
+    pre_trajectory, post_trajectory, repaired_owners = (
+        _existing_member_component_trajectory_projection(
+            context=context,
+            current_group=current_group,
+            current_member_id=current_member.member_subject_id,
+            repaired_apex_rt=evidence.rt_apex_min,
         )
-    target = owners[0]
-    repaired_owners = tuple(
-        replace(target, owner_apex_rt=evidence.rt_apex_min)
-        if owner is target
-        else owner
-        for owner in context.owners
-    )
-    post_trajectory = _mint_context_trajectory(
-        request_id=context.processing_request_id,
-        application=context.application,
-        owners=repaired_owners,
-        classified_edges=context.classified_edges,
-        anchors=context.anchors,
-        injection_order=context.injection_order,
-        evidence_profile=context.evidence_profile,
-        budget=context.budget,
     )
     if (
         post_trajectory.trajectory_input_id
-        != context.trajectory_input.trajectory_input_id
+        != pre_trajectory.trajectory_input_id
     ):
         return _mint_existing_member_post_repair_mode_track_input(
             context=context,
             repair_receipt=receipt,
             repaired_owners=repaired_owners,
+            pre_trajectory_input_id=pre_trajectory.trajectory_input_id,
             post_trajectory=post_trajectory,
             repaired_member_subject_id=current_member.member_subject_id,
         )
@@ -1749,7 +1741,7 @@ def _consume_existing_member_candidate_terminal(
         context=context,
         terminal=terminal,
         population=context.population,
-        trajectory_input_id=post_trajectory.trajectory_input_id,
+        trajectory_input_id=context.trajectory_input.trajectory_input_id,
         trajectory_changed=False,
     )
     return _mint_final_receipt(
@@ -2785,6 +2777,93 @@ def _post_repair_injection_order(
     return injection_order
 
 
+def _existing_member_component_trajectory_projection(
+    *,
+    context: CrossSamplePostMT0Context,
+    current_group: CrossSampleGroupIdentity,
+    current_member_id: str,
+    repaired_apex_rt: float | None,
+) -> tuple[
+    ModeTrackTrajectoryInput,
+    ModeTrackTrajectoryInput,
+    tuple[SampleLocalMS1Owner, ...],
+]:
+    component_member_ids = {
+        member.member_subject_id for member in current_group.member_subjects
+    }
+    component_owners = tuple(
+        owner
+        for owner in context.owners
+        if _owner_member_id(owner) in component_member_ids
+    )
+    if len(component_owners) != len(component_member_ids):
+        raise CrossSampleReconciliationContractError(
+            "existing-member component does not close its exact owners"
+        )
+    targets = tuple(
+        owner
+        for owner in component_owners
+        if _owner_member_id(owner) == current_member_id
+    )
+    if len(targets) != 1:
+        raise CrossSampleReconciliationContractError(
+            "existing-member component does not resolve one exact owner"
+        )
+    target = targets[0]
+    repaired_owners = tuple(
+        replace(target, owner_apex_rt=repaired_apex_rt)
+        if owner is target and repaired_apex_rt is not None
+        else owner
+        for owner in component_owners
+    )
+    component_edges = tuple(
+        edge
+        for edge in context.classified_edges
+        if edge.left_member_subject_id in component_member_ids
+        and edge.right_member_subject_id in component_member_ids
+    )
+    component_owner_ids = {owner.owner_id for owner in component_owners}
+    component_anchors = tuple(
+        anchor
+        for anchor in context.anchors
+        if anchor.peak_hypothesis_id in component_owner_ids
+    )
+    component_sample_stems = {owner.sample_stem for owner in component_owners}
+    component_injection_order = tuple(
+        (sample_stem, injection_order)
+        for sample_stem, injection_order in context.injection_order
+        if sample_stem in component_sample_stems
+    )
+    component_application = CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=(current_group,),
+        successors=(current_group,),
+        lineage=(),
+        reason="unchanged_membership_no_lineage",
+    )
+    pre_trajectory = _mint_context_trajectory(
+        request_id=context.processing_request_id,
+        application=component_application,
+        owners=component_owners,
+        classified_edges=component_edges,
+        anchors=component_anchors,
+        injection_order=component_injection_order,
+        evidence_profile=context.evidence_profile,
+        budget=context.budget,
+    )
+    post_trajectory = _mint_context_trajectory(
+        request_id=context.processing_request_id,
+        application=component_application,
+        owners=repaired_owners,
+        classified_edges=component_edges,
+        anchors=component_anchors,
+        injection_order=component_injection_order,
+        evidence_profile=context.evidence_profile,
+        budget=context.budget,
+    )
+    return pre_trajectory, post_trajectory, repaired_owners
+
+
 def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[str, str]:
     return (_owner_member_id(owner), owner.owner_id)
 
@@ -3014,6 +3093,7 @@ def _mint_existing_member_post_repair_mode_track_input(
     context: CrossSamplePostMT0Context,
     repair_receipt: ObservationRepairReceipt,
     repaired_owners: tuple[SampleLocalMS1Owner, ...],
+    pre_trajectory_input_id: str,
     post_trajectory: ModeTrackTrajectoryInput,
     repaired_member_subject_id: str | None = None,
 ) -> CrossSamplePostRepairModeTrackInput:
@@ -3038,7 +3118,7 @@ def _mint_existing_member_post_repair_mode_track_input(
         repair_epoch=repair_receipt.repair_epoch,
         cross_sample_repair_application_id=application_id,
         repaired_member_subject_id=member_subject_id,
-        pre_repair_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        pre_repair_trajectory_input_id=pre_trajectory_input_id,
         post_repair_trajectory_input_id=post_trajectory.trajectory_input_id,
         post_repair_population_id=_post_repair_population_id(population),
         post_repair_owner_ids=owner_ids,
@@ -3052,7 +3132,7 @@ def _mint_existing_member_post_repair_mode_track_input(
         cross_sample_repair_application_id=application_id,
         repaired_member_subject_id=member_subject_id,
         repaired_observation=None,
-        pre_repair_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        pre_repair_trajectory_input_id=pre_trajectory_input_id,
         post_repair_population=population,
         post_repair_owners=repaired_owners,
         post_repair_trajectory=post_trajectory,
