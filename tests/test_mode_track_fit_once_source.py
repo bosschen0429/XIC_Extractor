@@ -21,6 +21,7 @@ from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackTrajectoryPolicy,
     _mint_mode_track_repair_assignment_observation,
     assign_mode_tracks,
+    mint_mode_track_fit_once_source,
     reinforce_mode_track_model_set,
 )
 from xic_extractor.alignment.mode_track.producer import (
@@ -179,4 +180,63 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
             sample_sources=source.sample_sources,
             initial_assignment_batches=source.initial_assignment_batches,
             _mint_token=object(),
+        )
+
+
+def test_fit_once_source_rejects_batch_from_another_candidate_snapshot(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(
+        tmp_path,
+        sample_stems=("s1", "s2", "s3"),
+    )
+    sample_assessments = tuple(
+        (
+            fixture.sample(sample_stem),
+            _two_peak_assessment(
+                fixture,
+                sample_stem=sample_stem,
+                supported=("early", "late"),
+                scan_number=scan_number,
+            ),
+        )
+        for sample_stem, scan_number in (("s1", 101), ("s2", 201), ("s3", 301))
+    )
+    family_context, model_set, batches, source = (
+        bootstrap_mode_tracks_from_cid_nl_support(
+            processing_owners=fixture.owners,
+            sample_assessments=sample_assessments,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            trajectory_policy=ModeTrackTrajectoryPolicy(
+                trajectory_policy_version="anchor-trajectory-v1",
+                band_policy_version="fixed-band-v1",
+                prediction_half_width_min=0.1,
+                max_interpolation_gap=10,
+                max_extrapolation_gap=10,
+            ),
+        )
+    )
+    sample_source = source.sample_sources[0]
+    unrelated_batch = assign_mode_tracks(
+        processing_owners=fixture.owners,
+        sample=sample_source.sample,
+        model_set=model_set,
+        candidates=(),
+        trajectory_assessment=sample_source.trajectory_assessment,
+    )
+    crossed_batches = tuple(
+        unrelated_batch
+        if batch.canonical_sample_identity_id
+        == sample_source.canonical_sample_identity_id
+        else batch
+        for batch in batches
+    )
+
+    with pytest.raises(ModeTrackContractError, match="candidate snapshot"):
+        mint_mode_track_fit_once_source(
+            processing_owners=fixture.owners,
+            family_context=family_context,
+            model_set=model_set,
+            sample_sources=source.sample_sources,
+            initial_assignment_batches=crossed_batches,
         )

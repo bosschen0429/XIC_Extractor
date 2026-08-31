@@ -512,13 +512,18 @@ def run_post_repair_mode_track_final_attempt(
             owners=trajectory_owners,
             evidence=evidence,
         )
+        untrained_discriminant: Literal["untrained", "unassessable"] = (
+            "unassessable"
+            if type(proposal) is UnassessableModeTrackRefinement
+            else "untrained"
+        )
         return _mint_final_attempt_result(
             source=source,
             repair_receipt=repair_receipt,
             post_repair=post_repair,
             assignment_batches=(),
             proposal=proposal,
-            discriminant="untrained",
+            discriminant=untrained_discriminant,
         )
 
     required_sample_ids = {

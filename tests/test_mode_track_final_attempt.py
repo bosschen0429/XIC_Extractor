@@ -10,6 +10,7 @@ import pytest
 
 import xic_extractor.alignment.mode_track as mode_track_api
 import xic_extractor.alignment.mode_track.refinement as refinement_owner
+from tests.issue161_no_raw_fixture import issue161_peak
 from tests.test_alignment_owner_clustering import _owner
 from tests.test_backfill_observation_repair_authorization import (
     _authorization_population,
@@ -24,6 +25,8 @@ from xic_extractor.alignment.cross_sample import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodBudget,
     CrossSampleSuccessorApplication,
+    group_member_subject_from_peak_observation,
+    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSamplePostRepairModeTrackInput,
@@ -43,6 +46,9 @@ from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackRepairAssignmentObservation,
     ModeTrackTrajectoryPolicy,
     _ModeTrackAssignmentUnavailableError,
+    assign_mode_tracks,
+    fit_mode_track_model_set,
+    mint_mode_track_fit_once_source,
 )
 from xic_extractor.alignment.mode_track.contracts import (
     ModeTrackEvidenceProfile,
@@ -182,7 +188,7 @@ def test_existing_member_repair_replaces_stale_candidate_without_training(
     assert unavailable.proposal.reason_codes == ("assignment_unavailable",)
 
 
-def test_admitted_repair_runs_one_non_training_final_assignment_pass(
+def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -226,10 +232,25 @@ def test_admitted_repair_runs_one_non_training_final_assignment_pass(
     assert candidate is not None
     owners = tuple(candidate.logical_request.item.feature.owners)
     group = candidate.predecessor_group
+    unaffected_member = group_member_subject_from_peak_observation(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s3"),
+        observation=issue161_peak(fixture, "s3"),
+    )
+    unaffected_group = mint_cross_sample_group_identity(
+        processing_request_id=group.processing_request_id,
+        member_subjects=(unaffected_member,),
+    )
+    population = tuple(
+        sorted(
+            (group, unaffected_group),
+            key=lambda item: item.group_hypothesis_id,
+        )
+    )
     context = build_cross_sample_post_mt0_context(
         processing_request_id=group.processing_request_id,
         processing_owners=fixture.owners,
-        population=(group,),
+        population=population,
         application=CrossSampleSuccessorApplication(
             status="assessable",
             predecessors=(group,),
@@ -295,6 +316,117 @@ def test_admitted_repair_runs_one_non_training_final_assignment_pass(
     assert len(repaired_assignments) == 1
     assert repaired_assignments[0].candidate_observation_class == "non_training"
     assert repaired_assignments[0].direct_support_assessment is None
+
+
+def test_no_anchor_attempt_returns_unassessable_for_over_budget_neighborhood(
+    tmp_path: Path,
+) -> None:
+    fixture, spine, coverage, cells = _authorization_population(
+        tmp_path,
+        hold_samples=("s2",),
+    )
+    assessments_by_sample = {
+        assessment.content.canonical_sample_identity_id: assessment
+        for assessment in spine.assessments
+    }
+    family_context, _, _, trained_source = bootstrap_mode_tracks_from_cid_nl_support(
+        processing_owners=fixture.owners,
+        sample_assessments=tuple(
+            (sample, assessments_by_sample[sample.identity.sample_identity_id])
+            for sample in fixture.samples
+        ),
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        trajectory_policy=ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="anchor-trajectory-v1",
+            band_policy_version="fixed-band-v1",
+            prediction_half_width_min=0.1,
+            max_interpolation_gap=10,
+            max_extrapolation_gap=10,
+        ),
+    )
+    untrained_model = fit_mode_track_model_set(
+        processing_owners=fixture.owners,
+        family_context=family_context,
+        direct_support_anchors=(),
+        policy=trained_source.model_set.policy,
+    )
+    untrained_batches = tuple(
+        assign_mode_tracks(
+            processing_owners=fixture.owners,
+            sample=sample_source.sample,
+            model_set=untrained_model,
+            candidates=sample_source.candidates,
+            trajectory_assessment=sample_source.trajectory_assessment,
+        )
+        for sample_source in trained_source.sample_sources
+    )
+    source = mint_mode_track_fit_once_source(
+        processing_owners=fixture.owners,
+        family_context=family_context,
+        model_set=untrained_model,
+        sample_sources=trained_source.sample_sources,
+        initial_assignment_batches=untrained_batches,
+    )
+    executed = []
+
+    def execute(candidate):
+        _built, result = _repair_result(fixture, coverage, candidate)
+        executed.append(result)
+        return result
+
+    terminal = execute_observation_repair(
+        processing_owners=fixture.owners,
+        coverage=coverage,
+        cell_observations=cells,
+        execute=execute,
+    )
+    candidate = terminal.candidate
+    assert candidate is not None
+    owners = tuple(candidate.logical_request.item.feature.owners)
+    group = candidate.predecessor_group
+    context = build_cross_sample_post_mt0_context(
+        processing_request_id=group.processing_request_id,
+        processing_owners=fixture.owners,
+        population=(group,),
+        application=CrossSampleSuccessorApplication(
+            status="assessable",
+            predecessors=(group,),
+            successors=(group,),
+            lineage=(),
+            reason="unchanged_membership_no_lineage",
+        ),
+        owners=owners,
+        classified_edges=(),
+        anchors=(),
+        injection_order={
+            owner.sample_stem: index
+            for index, owner in enumerate(owners, start=1)
+        },
+        evidence_profile=ModeTrackEvidenceProfile(
+            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+        ),
+        budget=CrossSampleNeighborhoodBudget(1, 3655),
+    )
+    reconciled = reconcile_nonmember_observation_repair(
+        context=context,
+        repair_terminal=terminal,
+        repair_result=executed[0],
+        alignment_config=coverage.epoch.alignment_config,
+    )
+    assert reconciled.mode_track_input is not None
+    assert (
+        reconciled.mode_track_input.post_repair_trajectory.neighborhood_status
+        == "unassessable"
+    )
+
+    result = run_post_repair_mode_track_final_attempt(
+        source=source,
+        repair_receipt=terminal.receipt,
+        post_repair=reconciled.mode_track_input,
+    )
+
+    assert isinstance(result, UnassessableModeTrackFinalAttempt)
+    assert result.assignment_batches == ()
 
 
 def test_untrained_evidence_is_owner_minted_and_immutable() -> None:

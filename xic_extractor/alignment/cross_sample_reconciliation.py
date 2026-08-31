@@ -279,9 +279,9 @@ def _validate_post_repair_mode_track_input(
                 "post-repair ModeTrack input crossed repaired observation"
             )
         owner_member_ids.add(input_value.repaired_member_subject_id)
-    if owner_member_ids != population_member_ids:
+    if input_value.repaired_member_subject_id not in population_member_ids:
         raise CrossSampleReconciliationContractError(
-            "post-repair ModeTrack input owners do not close population"
+            "post-repair ModeTrack input repaired member is absent from population"
         )
     if not isinstance(input_value.trajectory_changed, bool):
         raise CrossSampleReconciliationContractError(
@@ -292,10 +292,17 @@ def _validate_post_repair_mode_track_input(
         raise CrossSampleReconciliationContractError(
             "post-repair ModeTrack trajectory must be owner-minted"
         )
+    trajectory_member_ids = set(trajectory.member_subject_ids)
+    if not trajectory_member_ids.issubset(population_member_ids):
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack trajectory escaped the complete population"
+        )
+    if owner_member_ids != trajectory_member_ids:
+        raise CrossSampleReconciliationContractError(
+            "post-repair ModeTrack input crossed trajectory neighborhood owners"
+        )
     if (
         trajectory.processing_request_id != request_id
-        or tuple(sorted(trajectory.member_subject_ids))
-        != tuple(sorted(population_member_ids))
         or input_value.trajectory_changed
         != (
             input_value.pre_repair_trajectory_input_id

@@ -1107,6 +1107,17 @@ class ModeTrackFitOnceSource(_RuntimeFinal):
                 raise ModeTrackContractError(
                     "initial assignment batch has no matching sample source"
                 )
+            batch_candidate_ids = tuple(
+                sorted(
+                    assignment.candidate_observation_id
+                    for assignment in batch.assignments
+                    if assignment.candidate_observation_id is not None
+                )
+            )
+            if batch_candidate_ids != source.candidate_observation_ids:
+                raise ModeTrackContractError(
+                    "initial assignment batch crossed its candidate snapshot"
+                )
             if batch.canonical_sample_identity_id in seen_batch_samples:
                 raise ModeTrackContractError(
                     "fit-once source contains duplicate sample batches"
