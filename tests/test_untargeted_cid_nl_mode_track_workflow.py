@@ -135,9 +135,15 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
             "trace_point_count": 3,
         },
     )["total_raw_open_count"] == 2
-    assert any(
-        type(transaction.proposal) is InsufficientModeTrackTraining
+    insufficient = tuple(
+        transaction.proposal
         for transaction in result.transactions
+        if type(transaction.proposal) is InsufficientModeTrackTraining
+    )
+    assert insufficient
+    assert all(
+        proposal.reason_codes == ("no_direct_support_anchor",)
+        for proposal in insufficient
     )
     assert {
         anchor_id

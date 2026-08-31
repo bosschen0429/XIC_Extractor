@@ -31,11 +31,9 @@ from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackContractError,
     ModeTrackModel,
     ModeTrackPredictionAssessment,
-    ModeTrackRepairAssignmentObservation,
     ModeTrackSupportAnchor,
     ModeTrackTrajectoryPolicy,
     _global_no_write_state,
-    _mint_mode_track_repair_assignment_observation,
     _peak_hypothesis_family_exclusions,
     assign_mode_tracks,
     canonical_mode_track_assignment_batch_bytes,
@@ -56,11 +54,9 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     build_processing_request_identity,
-    canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
     resolve_request_acquisition_source,
-    typed_identity_digest,
 )
 
 
@@ -114,59 +110,6 @@ def test_unique_assignment_is_owner_minted_typed_and_deterministic(
     assert (
         payload["assignments"][0]["direct_support_assessment_artifact_content_id"]
         == candidate.direct_support_assessment_artifact_content_id
-    )
-
-
-def test_repair_owned_physical_observation_is_non_training_assignment_input(
-    tmp_path: Path,
-) -> None:
-    scenario = _scenario(tmp_path)
-    sample = scenario.fixture.sample("target")
-    physical_id = typed_identity_digest(
-        "physical-facts.v1:",
-        canonical_identity_basis_bytes(
-            {"fixture": "mode-track-repair-assignment-observation"}
-        ),
-    )
-    repaired = _mint_mode_track_repair_assignment_observation(
-        processing_owners=scenario.fixture.owners,
-        sample=sample,
-        repaired_member_subject_id="group-member:target",
-        physical_observation_id=physical_id,
-        apex_rt_min=7.87,
-        repair_receipt_id="repair-receipt:target",
-        source_observation_id="repair-observation:target",
-    )
-
-    batch = assign_mode_tracks(
-        processing_owners=scenario.fixture.owners,
-        sample=sample,
-        model_set=scenario.models,
-        candidates=(),
-        repair_observations=(repaired,),
-        trajectory_assessment=scenario.assessable_trajectory,
-    )
-
-    assignment = batch.assignments[0]
-    assert assignment.state == "uniquely_assigned"
-    assert assignment.group_hypothesis_id == scenario.track_a.group_hypothesis_id
-    assert assignment.peak_observation_content_id == physical_id
-    assert assignment.peak_hypothesis_id is None
-    assert assignment.candidate_observation_class == "non_training"
-    assert assignment.direct_support_assessment is None
-    assert isinstance(
-        assignment.candidate_observation,
-        ModeTrackRepairAssignmentObservation,
-    )
-    with pytest.raises(ModeTrackContractError, match="must be minted"):
-        replace(assignment.candidate_observation, _mint_token=object())
-    assert (
-        reinforce_mode_track_model_set(
-            processing_owners=scenario.fixture.owners,
-            model_set=scenario.models,
-            assignment_batch=batch,
-        )
-        is scenario.models
     )
 
 

@@ -191,7 +191,7 @@ ModeTrackFinalAttemptResult: TypeAlias = (
 )
 
 
-def propose_mode_track_refinement(
+def _propose_mode_track_refinement(
     *,
     trajectory_input: ModeTrackTrajectoryInput,
     owners: Sequence[ModeTrackRefinementOwner],
@@ -507,7 +507,7 @@ def run_post_repair_mode_track_final_attempt(
             trajectory_input=post_repair.post_repair_trajectory,
             reason="untrained",
         )
-        proposal = propose_mode_track_refinement(
+        proposal = _propose_mode_track_refinement(
             trajectory_input=post_repair.post_repair_trajectory,
             owners=trajectory_owners,
             evidence=evidence,
@@ -519,6 +519,24 @@ def run_post_repair_mode_track_final_attempt(
             assignment_batches=(),
             proposal=proposal,
             discriminant="untrained",
+        )
+
+    required_sample_ids = {
+        member.canonical_sample_identity_id
+        for group in post_repair.post_repair_population
+        for member in group.member_subjects
+    }
+    assignment_sources = tuple(
+        sample_source
+        for sample_source in source.sample_sources
+        if sample_source.canonical_sample_identity_id in required_sample_ids
+    )
+    if {
+        sample_source.canonical_sample_identity_id
+        for sample_source in assignment_sources
+    } != required_sample_ids:
+        raise ModeTrackFinalAttemptContractError(
+            "fit-once source does not close the post-repair population samples"
         )
 
     try:
@@ -545,7 +563,7 @@ def run_post_repair_mode_track_final_attempt(
                         ),
                         trajectory_assessment=sample_source.trajectory_assessment,
                     )
-                    for sample_source in source.sample_sources
+                    for sample_source in assignment_sources
                 ),
                 key=lambda batch: batch.assignment_batch_id,
             )
@@ -555,7 +573,7 @@ def run_post_repair_mode_track_final_attempt(
             trajectory_input=post_repair.post_repair_trajectory,
             reason="assignment_unavailable",
         )
-        proposal = propose_mode_track_refinement(
+        proposal = _propose_mode_track_refinement(
             trajectory_input=post_repair.post_repair_trajectory,
             owners=trajectory_owners,
             evidence=evidence,
@@ -579,7 +597,7 @@ def run_post_repair_mode_track_final_attempt(
         assignment_batches=assignment_batches,
     )
     try:
-        proposal = propose_mode_track_refinement(
+        proposal = _propose_mode_track_refinement(
             trajectory_input=post_repair.post_repair_trajectory,
             owners=trajectory_owners,
             evidence=assigned_evidence,
@@ -839,6 +857,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         model_set=model_set,
         assignment_batches=assignment_batches,
     )
+    proposal: ModeTrackRefinementProposal
     for component in full_neighborhood.connected_components:
         component_ids = frozenset(component)
         component_predecessors = tuple(
@@ -881,34 +900,21 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             evidence_profile=evidence_profile,
             budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
         )
-        component_group_ids = {
-            group.group_hypothesis_id for group in component_predecessors
-        }
-        component_anchors = tuple(
-            sorted(
-                (
-                    anchor
-                    for track in model_set.tracks
-                    if track.group_hypothesis_id in component_group_ids
-                    for anchor in track.anchors
-                ),
-                key=lambda anchor: anchor.anchor_id,
+        if trajectory_input.neighborhood_status == "unassessable":
+            proposal = _mint_unassessable_mode_track_refinement(
+                trajectory_input_id=trajectory_input.trajectory_input_id,
             )
-        )
-        component_evidence: ModeTrackRefinementEvidence
-        if component_anchors:
-            component_evidence = assigned_evidence
+        elif not trajectory_input.anchor_ids:
+            proposal = _mint_insufficient_mode_track_training(
+                trajectory_input_id=trajectory_input.trajectory_input_id,
+                reason_codes=("no_direct_support_anchor",),
+            )
         else:
-            component_evidence = _mint_untrained_mode_track_refinement_evidence(
-                anchors=(),
-                evidence_profile=evidence_profile,
-                reason="untrained",
+            proposal = _propose_mode_track_refinement(
+                trajectory_input=trajectory_input,
+                owners=component_owners,
+                evidence=assigned_evidence,
             )
-        proposal = propose_mode_track_refinement(
-            trajectory_input=trajectory_input,
-            owners=component_owners,
-            evidence=component_evidence,
-        )
         transactions.append(
             ModeTrackRefinementTransaction(
                 trajectory_input=trajectory_input,

@@ -520,7 +520,7 @@ def _run_mode_track_batch(
             context.samples, runtime_result.sample_results, strict=True
         )
     )
-    _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
+    _, model_set, batches, _source = bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=context.processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
