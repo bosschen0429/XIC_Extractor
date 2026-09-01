@@ -79,6 +79,7 @@ def test_only_revalidated_default_scope_has_writer_authority() -> None:
 
     assert {row["lane_id"] for row in authority_rows} == {
         "backfill_current_write_ready_scope",
+        "cid_nl_default_product_activation_v1",
     }
     authority_by_lane = {row["lane_id"]: row for row in authority_rows}
 
@@ -102,21 +103,23 @@ def test_only_revalidated_default_scope_has_writer_authority() -> None:
         row for row in rows if row["lane_id"] == "cid_nl_default_product_activation_v1"
     )
     assert cid_nl["current_artifact"] == (
-        "docs/superpowers/validation/cid_nl_default_product_activation_v1/"
-        "cid_nl_default_product_activation_summary.json"
+        "docs/superpowers/validation/issue329_untargeted_adoption_r6/"
+        "expected_diff.json"
     )
-    assert cid_nl["readiness_status"] == "blocked"
-    assert cid_nl["write_authority"] == "FALSE"
-    assert cid_nl["product_authority_scope"] == ""
-    assert cid_nl["row_count"] == "95"
-    assert cid_nl["may_touch_matrix"] == "FALSE"
-    assert cid_nl["may_change_quant_output"] == "FALSE"
-    assert cid_nl["may_change_workbook"] == "FALSE"
-    assert cid_nl["may_change_selected_peak"] == "FALSE"
-    assert cid_nl["may_change_selected_area"] == "FALSE"
-    assert cid_nl["may_change_counted_detection"] == "FALSE"
-    assert cid_nl["product_effect"] == "none"
-    assert cid_nl["public_surface"] == "cid_nl_default_product_activation_v1"
+    assert cid_nl["readiness_status"] == "production_ready"
+    assert cid_nl["write_authority"] == "TRUE"
+    assert cid_nl["product_authority_scope"] == "cid_nl_finalized_decisions_v1"
+    assert cid_nl["row_count"] == ""
+    assert cid_nl["may_touch_matrix"] == "TRUE"
+    assert cid_nl["may_change_quant_output"] == "TRUE"
+    assert cid_nl["may_change_workbook"] == "TRUE"
+    assert cid_nl["may_change_selected_peak"] == "TRUE"
+    assert cid_nl["may_change_selected_area"] == "TRUE"
+    assert cid_nl["may_change_counted_detection"] == "TRUE"
+    assert cid_nl["product_effect"] == "pure_cid_nl_finalized_matrix"
+    assert cid_nl["public_surface"] == (
+        "run_alignment_cli_gui_provisional_matrix"
+    )
 
 
 def test_checker_rejects_stale_backfill_writer_row_count(tmp_path: Path) -> None:

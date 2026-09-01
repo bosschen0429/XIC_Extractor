@@ -321,6 +321,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "selected_family_ids": selected_family_ids,
             "selected_family_source": selected_family_source,
             "require_discovery_owner_closure": True,
+            "discovery_settings": (
+                recipe.discovery_settings if recipe is not None else None
+            ),
             **timing_kwargs,
         }
         profiler = cProfile.Profile() if args.profile == "cprofile" else None

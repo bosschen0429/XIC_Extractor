@@ -23,8 +23,8 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     raw_dir.mkdir()
     dll_dir.mkdir()
     raw_files = (raw_dir / "sample-a.raw", raw_dir / "sample-b.raw")
-    for path in raw_files:
-        path.write_bytes(b"raw")
+    for index, path in enumerate(raw_files):
+        path.write_bytes(f"raw-{index}".encode())
     (dll_dir / "reader.dll").write_bytes(b"dll")
     discovery_index = tmp_path / "discovery_batch_index.csv"
     discovery_index.write_text("sample_stem\n", encoding="utf-8")
@@ -33,7 +33,12 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     def fake_discovery(*args, **kwargs):
         captured["discovery_raw_files"] = args[0]
         captured["discovery"] = kwargs
-        return SimpleNamespace(batch_index_csv=discovery_index)
+        return SimpleNamespace(
+            batch_index_csv=discovery_index,
+            per_sample=tuple(
+                SimpleNamespace(physical_bindings=()) for _path in raw_files
+            ),
+        )
 
     provisional_matrix = tmp_path / "provisional_alignment_matrix.tsv"
     physical_provenance = tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
@@ -76,6 +81,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert isinstance(discovery, dict)
     assert discovery["timing_recorder"] is timing_recorder
     assert discovery["max_workers"] == 3
+    assert discovery["run_spec"] is not None
     alignment = captured["alignment"]
     assert isinstance(alignment, dict)
     assert alignment["discovery_batch_index"] == discovery_index
@@ -83,6 +89,11 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert alignment["selected_family_ids"] == frozenset()
     assert alignment["emit_provisional_matrix"] is True
     assert alignment["require_discovery_owner_closure"] is True
+    assert alignment["discovery_processing_run_spec"] is discovery["run_spec"]
+    assert alignment["discovery_physical_bindings_by_sample"] == {
+        "sample-a": (),
+        "sample-b": (),
+    }
     assert alignment["raw_workers"] == 3
     assert alignment["raw_xic_batch_size"] == 16
     assert alignment["capture_artifact_fingerprints"] is True

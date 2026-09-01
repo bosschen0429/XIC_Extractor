@@ -55,7 +55,8 @@
   "authority_rules": {
     "unregistered_scope_policy": "fail_closed",
     "allowed_product_writer_scopes": [
-      "backfill_policy_write_ready_rows"
+      "backfill_policy_write_ready_rows",
+      "cid_nl_finalized_decisions_v1"
     ],
     "matrix_write_requires": [
       "registered_product_authority_scope",

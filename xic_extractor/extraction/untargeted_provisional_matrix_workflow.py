@@ -18,6 +18,9 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec_from_config,
+)
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
@@ -70,6 +73,11 @@ def run_untargeted_provisional_matrix_workflow(
         output_dir=discovery_dir,
         settings=discovery_settings,
     )
+    run_spec = compile_discovery_processing_run_spec_from_config(
+        raw_files,
+        discovery_settings,
+        peak_config,
+    )
     discovery = run_discovery_batch(
         raw_files,
         output_dir=discovery_dir,
@@ -84,6 +92,7 @@ def run_untargeted_provisional_matrix_workflow(
             total=total,
             sample_stem=sample_stem,
         ),
+        run_spec=run_spec,
     )
     _progress(progress_callback, "discovery_complete")
 
@@ -111,6 +120,16 @@ def run_untargeted_provisional_matrix_workflow(
         selected_family_ids=frozenset(),
         selected_family_source="",
         require_discovery_owner_closure=True,
+        discovery_processing_run_spec=run_spec,
+        discovery_physical_bindings_by_sample={
+            raw_path.stem: sample_outputs.physical_bindings
+            for raw_path, sample_outputs in zip(
+                raw_files,
+                discovery.per_sample,
+                strict=True,
+            )
+        },
+        discovery_settings=discovery_settings,
         emit_provisional_matrix=True,
     )
     if (

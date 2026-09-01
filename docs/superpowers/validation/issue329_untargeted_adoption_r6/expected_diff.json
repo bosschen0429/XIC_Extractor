@@ -1,0 +1,59 @@
+{
+  "schema_version": "issue329_untargeted_expected_diff_v1",
+  "issue": 329,
+  "packet_id": "map301-untargeted-adoption-r6",
+  "method_route": "pure_single_provider_cid_nl",
+  "authority_scope": "cid_nl_finalized_decisions_v1",
+  "baseline": {
+    "science_owner": "legacy_alignment_grouping_and_value_selection",
+    "entry_count_on_finalized_workflow": 0,
+    "writer_input": "legacy_alignment_matrix"
+  },
+  "candidate": {
+    "science_owner": "completed_untarget_batch_workflow_result",
+    "entry_count_on_finalized_workflow": 4,
+    "writer_input": "finalized_untarget_projection",
+    "matrix_presentation_formula": "cross_sample_owner_arithmetic_mean_v1"
+  },
+  "accepted_differences": [
+    "row_identity",
+    "row_inclusion_or_archive_route",
+    "numeric_cell_value",
+    "typed_no_write_state"
+  ],
+  "invariants": [
+    "default_artifact_name_and_public_Mz_RT_sample_columns",
+    "exact_candidate_membership_once",
+    "Delta_Mass_and_intersection_remain_on_legacy_method_authority",
+    "numeric_or_explicit_typed_no_write_for_every_finalized_cell",
+    "owner_evidence_decision_and_lineage_survive_writer_handoff",
+    "RAW_XIC_work_is_bounded_by_sample_phase_not_subject_count"
+  ],
+  "engineering_oracles": [
+    "tests/test_untargeted_cid_nl_production_batch.py",
+    "tests/test_alignment_pipeline.py",
+    "tests/test_untargeted_provisional_matrix_workflow.py",
+    "tests/test_discovery_worker.py",
+    "tests/test_run_alignment.py"
+  ],
+  "method_evidence": {
+    "artifact": "docs/superpowers/validation/cid_nl_default_product_activation_v1/cid_nl_default_product_activation_summary.json",
+    "use": "retained_method_evidence_only",
+    "limitation": "The retained 95-cell snapshot is not a current writer-membership oracle; finalized owner decisions are the issue-authorized production authority."
+  },
+  "rollback": {
+    "owner": "issue_329_activation_PR_maintainer",
+    "action": "revert_the_final_activation_writer_commit_or_final_stacked_PR",
+    "restores": [
+      "cid_nl_default_product_activation_v1_write_authority_FALSE",
+      "no_registered_CID_NL_writer_scope",
+      "legacy_pure_CID_NL_writer_routing"
+    ],
+    "verification": [
+      "tests/test_productization_state_index.py",
+      "tests/test_productization_authority_manifest.py",
+      "focused_public_output_tests",
+      "one_click_pure_CID_NL_smoke"
+    ]
+  }
+}

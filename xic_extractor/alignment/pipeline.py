@@ -148,9 +148,15 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
     validate_discovery_candidate_physical_bindings,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
+)
+from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+    run_untargeted_cid_nl_alignment,
+)
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
 )
 from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
@@ -387,6 +393,7 @@ def run_alignment(
     discovery_physical_bindings_by_sample: (
         Mapping[str, Sequence[DiscoveryCandidatePhysicalBinding]] | None
     ) = None,
+    discovery_settings: DiscoverySettings | None = None,
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
@@ -617,6 +624,29 @@ def run_alignment(
             configured_backend=owner_build_xic_backend,
             processing_run_spec_id=discovery_processing_run_spec.run_spec_id,
             processing_run_spec_hash=discovery_processing_run_spec.run_spec_hash,
+        )
+    if discovery_settings is not None and is_pure_single_provider_cid_nl(
+        discovery_settings
+    ):
+        return _run_untargeted_cid_nl_alignment(
+            discovery_batch=batch,
+            candidates_by_sample=candidates_by_sample,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            output_dir=output_dir,
+            settings=discovery_settings,
+            peak_config=peak_config,
+            alignment_config=alignment_config,
+            output_level=output_level,
+            emit_provisional_matrix=emit_provisional_matrix,
+            emit_alignment_cells=emit_alignment_cells,
+            emit_alignment_status_matrix=emit_alignment_status_matrix,
+            emit_alignment_integration_audit=emit_alignment_integration_audit,
+            emit_alignment_backfill_seed_audit=emit_alignment_backfill_seed_audit,
+            emit_alignment_backfill_candidate_audit=(
+                emit_alignment_backfill_candidate_audit
+            ),
+            capture_artifact_fingerprints=capture_artifact_fingerprints,
         )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
@@ -1283,6 +1313,7 @@ def run_alignment(
 _existing_raw_paths = existing_raw_paths
 _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
+_run_untargeted_cid_nl_alignment = run_untargeted_cid_nl_alignment
 _DEFAULT_BUILD_OWNER_BACKFILL_CELLS = build_owner_backfill_cells
 _DEFAULT_RUN_OWNER_BACKFILL_PROCESS = run_owner_backfill_process
 

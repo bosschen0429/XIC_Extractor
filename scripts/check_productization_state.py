@@ -176,6 +176,10 @@ WRITER_LANE_AUTHORITY = {
         "authority_key": "backfill",
         "scope": "backfill_policy_write_ready_rows",
     },
+    "cid_nl_default_product_activation_v1": {
+        "authority_key": "cid_nl",
+        "scope": "cid_nl_finalized_decisions_v1",
+    },
 }
 CURRENT_BACKFILL_ACCEPTANCE_REL = (
     "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/"

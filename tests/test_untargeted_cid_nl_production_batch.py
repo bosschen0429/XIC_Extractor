@@ -17,9 +17,17 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raw,
     _install_runtime_raws,
 )
+from xic_extractor.alignment import pipeline as alignment_pipeline
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    project_completed_untarget_batch_matrix,
+)
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+    write_completed_untargeted_cid_nl_outputs,
+)
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     build_untargeted_cid_nl_production_batch,
     compose_untargeted_cid_nl_production_result,
@@ -204,6 +212,74 @@ def test_production_batch_executes_one_atomic_sample_phase(
         if method_subject_id == subject.method_subject_id
     )
 
+    matrix = project_completed_untarget_batch_matrix(completed)
+
+    assert matrix.sample_stems == ("S1",)
+    assert len(matrix.rows) == 2
+    assert tuple(row.mz for row in matrix.rows) == tuple(
+        subject.precursor_mz for subject in batch.subject_batch.subjects
+    )
+    assert all(row.rt_min > 0.0 for row in matrix.rows)
+    assert all(
+        row.presentation_formula_version
+        == "cross_sample_owner_arithmetic_mean_v1"
+        for row in matrix.rows
+    )
+    assert all(row.physical_observation_ids for row in matrix.rows)
+    assert all(row.cells[0].variant == "numeric" for row in matrix.rows)
+    assert all(row.cells[0].value is not None for row in matrix.rows)
+
+    outputs = write_completed_untargeted_cid_nl_outputs(
+        matrix,
+        output_dir=tmp_path / "alignment",
+        output_level="validation-minimal",
+        emit_provisional_matrix=True,
+    )
+
+    assert outputs.matrix_tsv is not None
+    assert outputs.matrix_tsv.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
+    assert outputs.provisional_matrix_tsv is not None
+    provisional_lines = outputs.provisional_matrix_tsv.read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert len(provisional_lines) == 3
+    assert outputs.provisional_identity_tsv is not None
+    assert outputs.provisional_cell_provenance_tsv is not None
+    assert outputs.provisional_summary_json is not None
+
+    receipt = _discovery_receipts(tmp_path, (raw_path,), {"S1": candidates})["S1"]
+    monkeypatch.setattr(
+        alignment_pipeline,
+        "read_discovery_batch_index",
+        lambda *_args, **_kwargs: DiscoveryBatchInput(
+            sample_order=("S1",),
+            candidate_csvs={"S1": tmp_path / "candidates.csv"},
+            raw_files={"S1": raw_path},
+            review_csvs={"S1": None},
+            candidate_receipts={"S1": receipt},
+        ),
+    )
+    monkeypatch.setattr(
+        alignment_pipeline,
+        "read_discovery_candidates_csv",
+        lambda _path: candidates,
+    )
+    routed = alignment_pipeline.run_alignment(
+        discovery_batch_index=tmp_path / "batch.csv",
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "routed-alignment",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        peak_config=peak_config,
+        output_level="validation-minimal",
+        audit_evidence_mode="none",
+        discovery_settings=settings,
+    )
+
+    assert routed.matrix_tsv is not None
+    assert routed.matrix_tsv.is_file()
+    assert routed.owner_build_route_receipt is not None
+    assert vendor_raw.chromatogram_request_counts == [2, 2]
 
 def test_production_composition_closes_observation_only_hold_without_membership(
     tmp_path: Path,

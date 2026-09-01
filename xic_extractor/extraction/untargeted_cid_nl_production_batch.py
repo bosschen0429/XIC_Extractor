@@ -159,14 +159,13 @@ def build_untargeted_cid_nl_production_batch(
     membership_keys: list[tuple[str, tuple[float, float]]] = []
     for candidate in candidates:
         precursor_mz = float(candidate.precursor_mz)
-        neutral_loss_da = float(candidate.configured_neutral_loss_da)
+        neutral_loss_da = settings.neutral_loss_profiles[0].neutral_loss_da
         if (
             not math.isfinite(precursor_mz)
             or precursor_mz <= 0.0
-            or not math.isfinite(neutral_loss_da)
-            or neutral_loss_da <= 0.0
+            or candidate.neutral_loss_tag != settings.selected_tag_names[0]
         ):
-            raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
+            raise ValueError("Discovery candidate lacks exact CID-NL owner facts")
         key = (precursor_mz, neutral_loss_da)
         subject_by_key.setdefault(
             key,
@@ -258,7 +257,17 @@ def execute_untargeted_cid_nl_production_batch(
         progress_callback=progress_callback,
     )
     if not result.succeeded or len(result.sample_results) != len(batch.jobs):
-        raise RuntimeError("Untargeted CID-NL production did not complete atomically")
+        failures = tuple(
+            settlement.failure_detail
+            for settlement in result.finalization.coordinator.state.runtime.settlements
+            if settlement.failure_detail is not None
+        )
+        detail = (
+            f": {failures[0].stage}: {failures[0].message}" if failures else ""
+        )
+        raise RuntimeError(
+            "Untargeted CID-NL production did not complete atomically" + detail
+        )
     call_cost = untargeted_cid_nl_runtime_call_cost(result.finalization)
     sample_count = len(batch.context.samples)
     if (

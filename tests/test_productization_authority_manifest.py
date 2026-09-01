@@ -16,6 +16,7 @@ DEPENDENT_MANIFEST_PATH = (
 )
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
+CID_NL_APPROVED_SCOPE = "cid_nl_finalized_decisions_v1"
 PARKED_SCOPE = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
@@ -34,7 +35,10 @@ def test_manifest_freezes_current_backfill_authority() -> None:
     backfill = manifest["current_authority"]["backfill"]
 
     assert policy["unregistered_scope_policy"] == "fail_closed"
-    assert policy["product_writer_allowed_scopes"] == [APPROVED_SCOPE]
+    assert policy["product_writer_allowed_scopes"] == [
+        APPROVED_SCOPE,
+        CID_NL_APPROVED_SCOPE,
+    ]
     assert "quality_blockers" in policy["forbidden_authority_sources"]
     assert "broad_backfill_candidate_universe" in (
         policy["forbidden_authority_sources"]
@@ -48,7 +52,12 @@ def test_manifest_freezes_current_backfill_authority() -> None:
     }.isdisjoint(backfill)
     assert backfill["authority_scope"] == APPROVED_SCOPE
 
-    assert tuple(manifest["current_authority"]) == ("backfill",)
+    cid_nl = manifest["current_authority"]["cid_nl"]
+    assert cid_nl["authority_scope"] == CID_NL_APPROVED_SCOPE
+    assert cid_nl["authority_source"] == (
+        "completed_untarget_batch_workflow_result"
+    )
+    assert tuple(manifest["current_authority"]) == ("backfill", "cid_nl")
 
     broad_backfill = manifest["parked_lanes"][PARKED_SCOPE]
     assert broad_backfill["status"] == "parked"
@@ -80,15 +89,15 @@ def test_manifest_freezes_current_backfill_authority() -> None:
 def test_dependent_hold_does_not_change_writer_authority() -> None:
     writer_manifest = _read_json(MANIFEST_PATH)
     dependent_manifest = _read_json(DEPENDENT_MANIFEST_PATH)
-    approved_scope_order = (APPROVED_SCOPE,)
+    approved_scope_order = (APPROVED_SCOPE, CID_NL_APPROVED_SCOPE)
 
     assert tuple(
         writer_manifest["authority_policy"]["product_writer_allowed_scopes"]
     ) == approved_scope_order
-    assert tuple(writer_manifest["current_authority"]) == ("backfill",)
+    assert tuple(writer_manifest["current_authority"]) == ("backfill", "cid_nl")
     assert dependent_manifest["status"] == "HOLD_PENDING_VALIDATION"
     assert tuple(dependent_manifest["allowed_registered_writer_scope_ids"]) == (
-        approved_scope_order
+        APPROVED_SCOPE,
     )
     assert dependent_manifest["current_effect_cell_count"] == 0
     assert dependent_manifest["activation_summary_artifact"] == ""
@@ -99,6 +108,7 @@ def test_manifest_compact_artifact_hashes_match() -> None:
     manifest = _read_json(MANIFEST_PATH)
     compact_artifacts = (
         manifest["current_authority"]["backfill"],
+        manifest["current_authority"]["cid_nl"],
         manifest["explanation_only_sources"][0],
     )
     for source in compact_artifacts:

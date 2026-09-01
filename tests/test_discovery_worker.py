@@ -341,6 +341,9 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
     assert captured_alignment["audit_evidence_mode"] == "none"
     assert captured_alignment["require_discovery_owner_closure"] is (mode == "full")
+    assert captured_alignment["discovery_settings"] == worker._alignment_runtime(
+        request
+    ).discovery_settings
     assert summary["gallery_html"] is None
     assert summary["gallery_error"] == (
         "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"

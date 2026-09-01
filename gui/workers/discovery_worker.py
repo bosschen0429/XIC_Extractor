@@ -267,6 +267,7 @@ class DiscoveryWorker(QThread):
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             discovery_processing_run_spec=processing_run_spec,
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
+            discovery_settings=recipe.discovery_settings,
             require_discovery_owner_closure=(
                 processing_run_spec is not None
                 or physical_bindings_by_sample is not None

@@ -18,6 +18,7 @@ from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.alignment_pipeline_helpers import (
     write_owner_closed_partial_batch as _write_owner_closed_partial_batch,
 )
+from tests.test_targeted_real_data_adapter import _settings
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.matrix import AlignmentMatrix
@@ -50,6 +51,83 @@ class _FamilyId(str):
 
 class _FamilyIds(frozenset):
     pass
+
+
+def test_pure_single_provider_cid_nl_dispatches_before_legacy_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    expected = pipeline_module.AlignmentRunOutputs(
+        matrix_tsv=tmp_path / "out" / "alignment_matrix.tsv"
+    )
+    calls: list[dict[str, object]] = []
+
+    def run_cid_nl(**kwargs: object):
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "load_quantitative_projection_authority_for_diagnostic",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        run_cid_nl,
+    )
+
+    result = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=tmp_path / "raw",
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        discovery_settings=_settings(),
+        raw_opener=lambda *_args, **_kwargs: pytest.fail("legacy RAW route ran"),
+    )
+
+    assert result is expected
+    assert len(calls) == 1
+    assert calls[0]["settings"] == _settings()
+
+
+def test_intersection_settings_remain_on_legacy_alignment_route(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    settings = _settings()
+    intersection = replace(settings, tag_combine_mode="intersection")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "load_quantitative_projection_authority_for_diagnostic",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        lambda **_kwargs: pytest.fail("intersection crossed into CID-NL route"),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_output_paths",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(_RouteReachedBatch()),
+    )
+
+    with pytest.raises(_RouteReachedBatch):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=intersection,
+        )
 
 
 def _allow_product_quantitative_projection_authority(
