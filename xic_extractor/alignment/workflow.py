@@ -661,7 +661,11 @@ def _execute_composition_after_runtime(
             trajectory_policy=adapter.mode_track.trajectory_policy,
             drift_lookup=adapter.drift_lookup,
             retain_observation_only_candidates=(
-                adapter.mode_track.retain_observation_only_candidates
+                getattr(
+                    adapter.mode_track,
+                    "retain_observation_only_candidates",
+                    False,
+                )
             ),
         )
         stage = WorkflowStage.CROSS_SAMPLE_MT0
