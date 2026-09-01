@@ -628,6 +628,11 @@ def run_alignment(
     if discovery_settings is not None and is_pure_single_provider_cid_nl(
         discovery_settings
     ):
+        if raw_opener is not None or raw_workers != 1 or raw_xic_batch_size != 1:
+            raise ValueError(
+                "finalized CID-NL uses one owner-batched RAW phase; custom raw_opener, "
+                "raw_workers, and raw_xic_batch_size are unsupported"
+            )
         return _run_untargeted_cid_nl_alignment(
             discovery_batch=batch,
             candidates_by_sample=candidates_by_sample,
@@ -647,6 +652,10 @@ def run_alignment(
                 emit_alignment_backfill_candidate_audit
             ),
             capture_artifact_fingerprints=capture_artifact_fingerprints,
+            owner_build_route_receipt=owner_build_route_receipt,
+            raw_workers=raw_workers,
+            raw_xic_batch_size=raw_xic_batch_size,
+            timing_recorder=recorder,
         )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
@@ -1304,9 +1313,7 @@ def run_alignment(
         return replace(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
-            owner_backfill_evaluation_coverage=(
-                owner_backfill_evaluation_coverage
-            ),
+            owner_backfill_evaluation_coverage=(owner_backfill_evaluation_coverage),
         )
 
 

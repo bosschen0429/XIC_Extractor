@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -49,6 +50,11 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     render_owner_backfill_peak_fact_provenance_tsv,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.untargeted_cid_nl_artifact_delivery import (
+        UntargetedCidNlDeliveryReceipt,
+    )
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.provisional_matrix import (
@@ -85,6 +91,7 @@ class AlignmentRunOutputs:
     review_html: Path | None = None
     review_tsv: Path | None = None
     matrix_tsv: Path | None = None
+    finalized_cell_provenance_tsv: Path | None = None
     matrix_identity_tsv: Path | None = None
     owner_backfill_peak_fact_provenance_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
@@ -106,9 +113,10 @@ class AlignmentRunOutputs:
     early_loser_shadow_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
-    owner_backfill_evaluation_coverage: (
-        OwnerBackfillEvaluationCoverageBatch | None
-    ) = None
+    finalized_delivery_receipt: UntargetedCidNlDeliveryReceipt | None = None
+    owner_backfill_evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = (
+        None
+    )
 
 
 def output_paths(
@@ -350,9 +358,7 @@ def alignment_metadata(
     }
     if has_targeted_istd_anchor:
         metadata["targeted_istd_anchor_identity"] = targeted_istd_anchor_identity
-        metadata["targeted_istd_target_snapshot_id"] = (
-            targeted_istd_target_snapshot_id
-        )
+        metadata["targeted_istd_target_snapshot_id"] = targeted_istd_target_snapshot_id
     return metadata
 
 

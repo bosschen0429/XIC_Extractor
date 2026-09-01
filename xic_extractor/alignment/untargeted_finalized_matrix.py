@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 class FinalizedUntargetMatrixCell:
     sample_stem: str
     decision: ProductionCellDecision
+    reason: str
 
     @property
     def value(self) -> float | None:
@@ -30,6 +31,7 @@ class FinalizedUntargetMatrixCell:
 @dataclass(frozen=True, slots=True)
 class FinalizedUntargetMatrixRow:
     row_id: str
+    group_hypothesis_id: str
     destination: str
     mz: float
     rt_min: float
@@ -71,6 +73,11 @@ def project_completed_untarget_batch_matrix(
                 FinalizedUntargetMatrixCell(
                     sample_stem=decision.subject.canonical_sample.metadata.raw_stem,
                     decision=decision,
+                    reason=(
+                        decision.source
+                        if decision.value is not None
+                        else decision.variant
+                    ),
                 )
                 for decision in projected.decisions
             )
@@ -79,6 +86,7 @@ def project_completed_untarget_batch_matrix(
             rows.append(
                 FinalizedUntargetMatrixRow(
                     row_id=projected.row_key.untarget_row_key_id,
+                    group_hypothesis_id=projected.row_key.group_hypothesis_id,
                     destination=projected.route.destination,
                     mz=sum(mz_values) / len(mz_values),
                     rt_min=sum(rt_values) / len(rt_values),
@@ -100,9 +108,9 @@ def project_completed_untarget_batch_matrix(
     return FinalizedUntargetMatrix(sample_stems=sample_stems, rows=tuple(rows))
 
 
-def _presentation_facts(observation: FinalGroupCellObservation) -> tuple[
-    tuple[float, ...], tuple[float, ...], tuple[str, ...]
-]:
+def _presentation_facts(
+    observation: FinalGroupCellObservation,
+) -> tuple[tuple[float, ...], tuple[float, ...], tuple[str, ...]]:
     direct = observation.direct_observations
     mz_values = [item.content.mz for item in direct]
     rt_values = [item.content.integration.rt_apex_min for item in direct]

@@ -86,12 +86,40 @@ def test_pure_single_provider_cid_nl_dispatches_before_legacy_raw(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         discovery_settings=_settings(),
-        raw_opener=lambda *_args, **_kwargs: pytest.fail("legacy RAW route ran"),
     )
 
     assert result is expected
     assert len(calls) == 1
     assert calls[0]["settings"] == _settings()
+    assert calls[0]["owner_build_route_receipt"].as_dict() == {
+        "configured_owner_build_xic_backend": "raw",
+        "effective_owner_build_route": "configured_backend",
+        "effective_owner_build_xic_backend": "raw",
+        "effective_route_validation": "owner_validated",
+        "processing_run_spec_id": None,
+        "processing_run_spec_hash": None,
+    }
+    assert calls[0]["raw_workers"] == 1
+    assert calls[0]["raw_xic_batch_size"] == 1
+    assert calls[0]["timing_recorder"] is not None
+
+
+def test_pure_cid_nl_rejects_legacy_raw_knobs_before_runtime(
+    tmp_path: Path,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+
+    with pytest.raises(ValueError, match="custom raw_opener"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            raw_workers=2,
+        )
 
 
 def test_intersection_settings_remain_on_legacy_alignment_route(
@@ -1241,9 +1269,7 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            feature,
-        ),
+        lambda owners, **kwargs: (feature,),
     )
     monkeypatch.setattr(
         pipeline_module,

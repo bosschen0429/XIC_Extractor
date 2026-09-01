@@ -20,11 +20,18 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.alignment import pipeline as alignment_pipeline
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.owner_build_route_receipt import (
+    _mint_owner_build_route_receipt,
+)
+from xic_extractor.alignment.untargeted_cid_nl_artifact_delivery import (
+    compile_untargeted_cid_nl_artifact_plan,
+)
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_matrix,
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.extraction import untargeted_cid_nl_alignment as alignment_writer
 from xic_extractor.extraction.untargeted_cid_nl_alignment import (
     write_completed_untargeted_cid_nl_outputs,
 )
@@ -34,6 +41,53 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     execute_untargeted_cid_nl_production_batch,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def test_completed_writer_rolls_back_the_whole_bundle_on_replace_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = tmp_path / "first.tsv"
+    second = tmp_path / "second.tsv"
+    first.write_bytes(b"old-first")
+    second.write_bytes(b"old-second")
+    original_replace = Path.replace
+    temp_replace_count = 0
+
+    def fail_second_temp_replace(source: Path, target: Path) -> Path:
+        nonlocal temp_replace_count
+        if source.name.endswith(".tmp"):
+            temp_replace_count += 1
+            if temp_replace_count == 2:
+                raise OSError("replace failed")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_second_temp_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        alignment_writer._write_payloads_atomic(
+            {first: b"new-first", second: b"new-second"}
+        )
+
+    assert first.read_bytes() == b"old-first"
+    assert second.read_bytes() == b"old-second"
+    assert not tuple(tmp_path.glob(".*.tmp"))
+    assert not tuple(tmp_path.glob(".*.bak"))
+
+
+def test_artifact_plan_rejects_unsupported_ledger_before_write(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="alignment status matrix"):
+        compile_untargeted_cid_nl_artifact_plan(
+            output_dir=tmp_path,
+            output_level="machine",
+            emit_provisional_matrix=False,
+            emit_alignment_cells=False,
+            emit_alignment_status_matrix=True,
+            emit_alignment_integration_audit=False,
+            emit_alignment_backfill_seed_audit=False,
+            emit_alignment_backfill_candidate_audit=False,
+            capture_artifact_fingerprints=False,
+        )
 
 
 def test_production_batch_preserves_exact_nearby_subject_membership(
@@ -98,8 +152,7 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         batch.subject_batch.subjects
     )
     assert all(
-        job.candidates is batch.context.candidates_by_sample["S1"]
-        for job in batch.jobs
+        job.candidates is batch.context.candidates_by_sample["S1"] for job in batch.jobs
     )
 
 
@@ -221,8 +274,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     )
     assert all(row.rt_min > 0.0 for row in matrix.rows)
     assert all(
-        row.presentation_formula_version
-        == "cross_sample_owner_arithmetic_mean_v1"
+        row.presentation_formula_version == "cross_sample_owner_arithmetic_mean_v1"
         for row in matrix.rows
     )
     assert all(row.physical_observation_ids for row in matrix.rows)
@@ -230,14 +282,36 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert all(row.cells[0].value is not None for row in matrix.rows)
 
     outputs = write_completed_untargeted_cid_nl_outputs(
-        matrix,
-        output_dir=tmp_path / "alignment",
-        output_level="validation-minimal",
-        emit_provisional_matrix=True,
+        completed,
+        artifact_plan=compile_untargeted_cid_nl_artifact_plan(
+            output_dir=tmp_path / "alignment",
+            output_level="validation-minimal",
+            emit_provisional_matrix=True,
+            emit_alignment_cells=False,
+            emit_alignment_status_matrix=False,
+            emit_alignment_integration_audit=False,
+            emit_alignment_backfill_seed_audit=False,
+            emit_alignment_backfill_candidate_audit=False,
+            capture_artifact_fingerprints=False,
+        ),
+        owner_build_route_receipt=_mint_owner_build_route_receipt(
+            configured_backend="raw"
+        ),
     )
 
     assert outputs.matrix_tsv is not None
     assert outputs.matrix_tsv.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
+    assert outputs.finalized_cell_provenance_tsv is not None
+    assert outputs.finalized_cell_provenance_tsv.is_file()
+    assert outputs.matrix_identity_tsv is not None
+    identity_header = outputs.matrix_identity_tsv.read_text(
+        encoding="utf-8"
+    ).splitlines()[0]
+    assert identity_header.split("\t")[:3] == [
+        "identity_schema_version",
+        "untarget_row_key_id",
+        "group_hypothesis_id",
+    ]
     assert outputs.provisional_matrix_tsv is not None
     provisional_lines = outputs.provisional_matrix_tsv.read_text(
         encoding="utf-8"
@@ -245,7 +319,18 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert len(provisional_lines) == 3
     assert outputs.provisional_identity_tsv is not None
     assert outputs.provisional_cell_provenance_tsv is not None
+    provenance_header = outputs.provisional_cell_provenance_tsv.read_text(
+        encoding="utf-8"
+    ).splitlines()[0]
+    assert provenance_header.split("\t")[:5] == [
+        "row_id",
+        "row_route",
+        "sample_stem",
+        "variant",
+        "reason",
+    ]
     assert outputs.provisional_summary_json is not None
+    assert outputs.finalized_delivery_receipt is not None
 
     receipt = _discovery_receipts(tmp_path, (raw_path,), {"S1": candidates})["S1"]
     monkeypatch.setattr(
