@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from openpyxl import Workbook
 
@@ -55,10 +56,9 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
-    CoordinatorTerminalRecord,
     RuntimeArtifactIoSample,
-    RuntimeMetricAvailability,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerPeakRssSample,
@@ -174,7 +174,7 @@ def run_untargeted_cid_nl_alignment(
 
 
 def _coarse_runtime_telemetry(
-    coordinator: CoordinatorTerminalRecord,
+    coordinator: Any,
 ) -> RuntimeTelemetrySamples:
     event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
