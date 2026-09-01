@@ -387,7 +387,13 @@ def _validate_observed_subject(subject: ObservedSearchSubject) -> None:
     )
     if (
         type(subject.hypothesis) is not PeakHypothesis
-        or subject.hypothesis.trace_group_id != subject.trace_group_id
+        or (
+            subject.hypothesis.trace_group_id != subject.trace_group_id
+            and not (
+                subject.hypothesis.is_owner_backed
+                and subject.hypothesis.trace_group_id == ""
+            )
+        )
     ):
         raise FinalizedScientificAlignmentContractError(
             "observed terminal subject crossed its trace-group hypothesis"

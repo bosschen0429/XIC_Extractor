@@ -11,9 +11,12 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raw,
 )
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     build_untargeted_cid_nl_production_batch,
+    compose_untargeted_cid_nl_production_result,
     execute_untargeted_cid_nl_production_batch,
 )
 from xic_extractor.sample_metadata import SampleMetadata
@@ -178,3 +181,19 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert result.succeeded
     assert len(result.sample_results) == len(batch.jobs) == 2
     assert vendor_raw.chromatogram_request_counts == [2]
+
+    completed = compose_untargeted_cid_nl_production_result(
+        batch,
+        result,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+
+    assert type(completed) is CompletedUntargetBatchWorkflowResult
+    assert completed.application_result.candidate_ids == tuple(
+        candidate_id
+        for subject in batch.subject_batch.subjects
+        for candidate_id, method_subject_id in (
+            batch.subject_batch.candidate_memberships
+        )
+        if method_subject_id == subject.method_subject_id
+    )

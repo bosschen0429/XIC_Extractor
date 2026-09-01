@@ -63,6 +63,8 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
     assert tuple(field.name for field in fields(CaptureWorkflowArguments)) == (
         "candidate_id",
         "trace",
+        "owner_observation",
+        "owner_hypothesis",
     )
     assert tuple(field.name for field in fields(ModeTrackWorkflowArguments)) == (
         "sample_assessments",

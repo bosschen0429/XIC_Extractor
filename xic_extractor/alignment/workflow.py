@@ -73,7 +73,11 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeWorkerBatchProvider,
     execute_runtime_attempt,
 )
-from xic_extractor.peak_detection.capture import capture_peak_hypotheses
+from xic_extractor.peak_detection.capture import (
+    SampleLocalCapture,
+    bind_owner_backed_capture_hypothesis,
+    capture_peak_hypotheses,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -81,6 +85,8 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
     cid_nl_method_subject_batch_from_request,
 )
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
@@ -161,6 +167,8 @@ class WorkflowRuntimeInvocation:
 class CaptureWorkflowArguments:
     candidate_id: str
     trace: Trace
+    owner_observation: PeakObservationRef | None = None
+    owner_hypothesis: PeakHypothesis | None = None
 
     def __post_init__(self) -> None:
         if type(self.candidate_id) is not str or not self.candidate_id.strip():
@@ -169,6 +177,17 @@ class CaptureWorkflowArguments:
             )
         if type(self.trace) is not Trace:
             raise AlignmentWorkflowContractError("capture trace must be exact")
+        if (self.owner_observation is None) != (self.owner_hypothesis is None):
+            raise AlignmentWorkflowContractError(
+                "capture owner observation and hypothesis must propagate together"
+            )
+        if self.owner_observation is not None and (
+            type(self.owner_observation) is not PeakObservationRef
+            or type(self.owner_hypothesis) is not PeakHypothesis
+        ):
+            raise AlignmentWorkflowContractError(
+                "capture owner binding must use exact immutable values"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,6 +504,25 @@ def execute_untarget_batch_workflow(
 
     _validate_untarget_batch_request(request)
     runtime_receipt = _execute_runtime(request.runtime)
+    return compose_untarget_batch_after_runtime(request, provider, runtime_receipt)
+
+
+def compose_untarget_batch_after_runtime(
+    request: UntargetWorkflowRequest,
+    provider: UntargetWorkflowBatchProvider,
+    runtime_receipt: RuntimeFinalizationReceipt,
+) -> WorkflowTerminalResult:
+    """Compose one batch from its exact already-completed owner runtime."""
+
+    _validate_untarget_batch_request(request)
+    if not isinstance(runtime_receipt, RuntimeFinalizationReceipt):
+        raise AlignmentWorkflowContractError(
+            "Untarget batch composition requires an owner runtime receipt"
+        )
+    if runtime_receipt.supervisor.attempt is not request.processing_attempt:
+        raise AlignmentWorkflowContractError(
+            "Untarget batch composition crossed its processing attempt"
+        )
     outcome = runtime_receipt.supervisor.terminal_outcome
     if outcome is AttemptTerminalOutcome.CANCELLED:
         return CancelledWorkflowResult(runtime_receipt=runtime_receipt)
@@ -572,11 +610,7 @@ def _execute_composition_after_runtime(
     stage = WorkflowStage.CAPTURE
     try:
         captures = tuple(
-            capture_peak_hypotheses(
-                scope=request.scope,
-                candidate_id=item.candidate_id,
-                trace=item.trace,
-            )
+            _capture_workflow_input(request.scope, item)
             for item in adapter.capture_inputs
         )
         stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
@@ -692,6 +726,27 @@ def _execute_composition_after_runtime(
             failure_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
             failure_message=str(exc),
         )
+
+
+def _capture_workflow_input(
+    scope: TargetSearchScope | UntargetedSearchScope,
+    item: CaptureWorkflowArguments,
+) -> SampleLocalCapture:
+    capture = capture_peak_hypotheses(
+        scope=scope,
+        candidate_id=item.candidate_id,
+        trace=item.trace,
+    )
+    owner_observation = getattr(item, "owner_observation", None)
+    owner_hypothesis = getattr(item, "owner_hypothesis", None)
+    if owner_observation is None:
+        return capture
+    assert owner_hypothesis is not None
+    return bind_owner_backed_capture_hypothesis(
+        capture,
+        observation=owner_observation,
+        hypothesis=owner_hypothesis,
+    )
 
 
 def _validate_untarget_batch_request(request: UntargetWorkflowRequest) -> None:
@@ -1066,6 +1121,7 @@ __all__ = (
     "WorkflowRuntimeInvocation",
     "WorkflowStage",
     "WorkflowTerminalResult",
+    "compose_untarget_batch_after_runtime",
     "execute_untarget_batch_workflow",
     "execute_alignment_workflow",
 )

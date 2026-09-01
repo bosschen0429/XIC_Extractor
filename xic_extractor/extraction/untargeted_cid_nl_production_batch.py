@@ -6,7 +6,46 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    OwnerBackfillPlanningPosition,
+    build_owner_backfill_evaluation_coverage,
+    mint_owner_backfill_planning_epoch,
+    mint_owner_backfill_position_id,
+)
+from xic_extractor.alignment.backfill.observation_repair import (
+    ObservationRepairCandidate,
+)
+from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
+from xic_extractor.alignment.cid_nl_evidence_spine import (
+    build_cid_nl_reference_spine,
+)
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_reconciliation import (
+    apply_mode_track_refinement_run_for_workflow,
+)
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_cid_nl_peak_hypotheses_from_assessment,
+)
+from xic_extractor.alignment.mode_track import (
+    ModeTrackTrajectoryPolicy,
+    bootstrap_mode_track_refinement_from_cid_nl_support,
+)
+from xic_extractor.alignment.owner_backfill_request_plan import (
+    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+)
+from xic_extractor.alignment.workflow import (
+    CaptureWorkflowArguments,
+    CompletedUntargetBatchWorkflowResult,
+    ModeTrackWorkflowArguments,
+    ObservationRepairWorkflowArguments,
+    UntargetWorkflowAdapter,
+    UntargetWorkflowBundle,
+    UntargetWorkflowRequest,
+    WorkflowRuntimeInvocation,
+    compose_untarget_batch_after_runtime,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
@@ -15,7 +54,11 @@ from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
+    RuntimeWorkerBatchProvider,
     start_runtime_attempt,
+)
+from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
@@ -27,12 +70,26 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     execute_untargeted_cid_nl_real_data_runtime,
     untargeted_cid_nl_runtime_call_cost,
 )
+from xic_extractor.peak_detection.capture import (
+    bind_owner_backed_capture_hypothesis,
+    capture_peak_hypotheses,
+    mint_captured_peak_observation,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CID_NL_PROVIDER_ID,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
 )
+from xic_extractor.peak_detection.search_scope import (
+    SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
+    CaptureMethodConstraints,
+    EvidenceProviderBinding,
+    UntargetedSearchScope,
+)
+from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -207,9 +264,350 @@ def execute_untargeted_cid_nl_production_batch(
     return result
 
 
+def compose_untargeted_cid_nl_production_result(
+    batch: UntargetedCidNlProductionBatch,
+    runtime_result: UntargetedCidNlRealDataRuntimeApplicationResult,
+    *,
+    alignment_config: AlignmentConfig,
+) -> CompletedUntargetBatchWorkflowResult:
+    """Close exact subject-local workflows from the one completed runtime."""
+
+    if not runtime_result.succeeded:
+        raise RuntimeError("CID-NL production cannot compose a partial runtime")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise TypeError("alignment_config must be an AlignmentConfig")
+    result_by_key = {
+        (
+            result.job.sample.metadata.raw_stem,
+            result.job.method_subject.method_subject_id,
+        ): result
+        for result in runtime_result.sample_results
+    }
+    if len(result_by_key) != len(batch.jobs):
+        raise RuntimeError("CID-NL production runtime lost sample/subject results")
+
+    trace_by_candidate = _runtime_candidate_traces(batch, runtime_result)
+    candidate_by_id = {
+        candidate.candidate_id: candidate
+        for candidates in batch.context.candidates_by_sample.values()
+        for candidate in candidates
+    }
+    bindings = tuple(
+        _capture_binding(
+            batch=batch,
+            candidate=candidate_by_id[candidate_id],
+            method_subject_id=method_subject_id,
+        )
+        for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
+    )
+    scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=batch.context.processing_owners.request,
+        samples=batch.context.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=batch.context.peak_config,
+        ),
+        evidence_providers=tuple(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=subject.method_subject_id,
+            )
+            for subject in batch.subject_batch.subjects
+        ),
+        declared_candidate_ids=tuple(
+            candidate_id
+            for candidate_id, _method_subject_id in (
+                batch.subject_batch.candidate_memberships
+            )
+        ),
+        capture_bindings=bindings,
+    )
+    owner_runtime = runtime_result.finalization.coordinator.state.runtime
+    invocation = WorkflowRuntimeInvocation(
+        runtime=owner_runtime,
+        reservations=(),
+        worker_batch_provider=cast(
+            RuntimeWorkerBatchProvider,
+            lambda _coordinator: None,
+        ),
+        telemetry_provider=cast(
+            RuntimeTelemetryProvider,
+            lambda _coordinator: None,
+        ),
+        persister=lambda receipt: receipt,
+    )
+    parent_request = UntargetWorkflowRequest(
+        scope=scope,
+        processing_request=batch.context.processing_owners.request,
+        processing_attempt=batch.context.processing_owners.attempt,
+        runtime=invocation,
+    )
+
+    bundles = []
+    for subject in batch.subject_batch.subjects:
+        child_bindings = tuple(
+            binding
+            for binding in bindings
+            if binding.method_subject_id == subject.method_subject_id
+        )
+        child_scope = UntargetedSearchScope(
+            schema_version=scope.schema_version,
+            request=scope.request,
+            samples=scope.samples,
+            method_constraints=scope.method_constraints,
+            evidence_providers=(
+                EvidenceProviderBinding(
+                    provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=subject.method_subject_id,
+                ),
+            ),
+            declared_candidate_ids=tuple(
+                binding.candidate_id for binding in child_bindings
+            ),
+            capture_bindings=child_bindings,
+        )
+        assessments = tuple(
+            (
+                sample,
+                result_by_key[
+                    (sample.metadata.raw_stem, subject.method_subject_id)
+                ].adapter_result.assessment_input.assessment,
+            )
+            for sample in sorted(
+                batch.context.samples,
+                key=lambda item: item.identity.sample_identity_id,
+            )
+        )
+        trajectory_policy = ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="anchor-trajectory-v1",
+            band_policy_version="fixed-band-v1",
+            prediction_half_width_min=2 / 60,
+            max_interpolation_gap=10,
+            max_extrapolation_gap=10,
+        )
+        spine = build_cid_nl_reference_spine(
+            processing_owners=batch.context.processing_owners,
+            method_subject=subject,
+            sample_assessments=assessments,
+            config=alignment_config,
+        )
+        capture_inputs_list = []
+        captures_list = []
+        assessment_by_sample_id = {
+            sample.identity.sample_identity_id: assessment
+            for sample, assessment in assessments
+        }
+        sample_by_id = {
+            sample.identity.sample_identity_id: sample
+            for sample in batch.context.samples
+        }
+        for binding in child_bindings:
+            sample = sample_by_id[binding.sample_identity_id]
+            trace = trace_by_candidate[binding.candidate_id]
+            captured = capture_peak_hypotheses(
+                scope=child_scope,
+                candidate_id=binding.candidate_id,
+                trace=trace,
+            )
+            observation = mint_captured_peak_observation(
+                captured,
+                processing_owners=batch.context.processing_owners,
+                sample=sample,
+            )
+            hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
+                processing_owners=batch.context.processing_owners,
+                sample=sample,
+                assessment=assessment_by_sample_id[binding.sample_identity_id],
+            )
+            matches = tuple(
+                hypothesis
+                for hypothesis in hypotheses
+                if observation in hypothesis.peak_observation_refs
+            )
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "CID-NL runtime assessment lost its exact captured observation"
+                )
+            owner_capture = bind_owner_backed_capture_hypothesis(
+                captured,
+                observation=observation,
+                hypothesis=matches[0],
+            )
+            captures_list.append(owner_capture)
+            capture_inputs_list.append(
+                CaptureWorkflowArguments(
+                    candidate_id=binding.candidate_id,
+                    trace=trace,
+                    owner_observation=observation,
+                    owner_hypothesis=matches[0],
+                )
+            )
+        captures = tuple(captures_list)
+        capture_inputs = tuple(capture_inputs_list)
+        refinement = bootstrap_mode_track_refinement_from_cid_nl_support(
+            processing_owners=batch.context.processing_owners,
+            sample_assessments=assessments,
+            alignment_config=alignment_config,
+            trajectory_policy=trajectory_policy,
+        )
+        selected_ids = tuple(
+            sorted(
+                capture.selected_hypothesis.hypothesis_id
+                for capture in captures
+                if capture.selected_hypothesis is not None
+            )
+        )
+        owner_ids = tuple(sorted(owner.owner_id for owner in refinement.owners))
+        if selected_ids != owner_ids:
+            raise RuntimeError(
+                "CID-NL capture/assessment owner mismatch: "
+                f"captures={selected_ids!r}; assessments={owner_ids!r}"
+            )
+        cross_sample = apply_mode_track_refinement_run_for_workflow(
+            processing_owners=batch.context.processing_owners,
+            captures=captures,
+            run=refinement,
+        )
+        positions = tuple(
+            OwnerBackfillPlanningPosition(
+                position_id=mint_owner_backfill_position_id(
+                    processing_request_id=group.processing_request_id,
+                    group_hypothesis_id=group.group_hypothesis_id,
+                    sample_identity_id=sample.identity.sample_identity_id,
+                ),
+                group_identity=group,
+                sample=sample,
+                planning_state="not_planned",
+                planning_reason="retained_local_owner",
+                primary_logical_requests=(),
+            )
+            for group in cross_sample.population
+            for sample in batch.context.samples
+        )
+        epoch = mint_owner_backfill_planning_epoch(
+            processing_owners=batch.context.processing_owners,
+            group_identities=cross_sample.population,
+            samples=batch.context.samples,
+            raw_sample_stems=frozenset(batch.context.raw_paths_by_sample),
+            alignment_config=alignment_config,
+            backend="raw",
+            window_strategy="exact",
+            superwindow_span_factor=2,
+            validation_mode="primary",
+            result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+            scope="full-audit",
+            selected_family_ids=frozenset(),
+            positions=positions,
+        )
+        coverage = build_owner_backfill_evaluation_coverage(epoch, ())
+        bundles.append(
+            UntargetWorkflowBundle(
+                request=UntargetWorkflowRequest(
+                    scope=child_scope,
+                    processing_request=parent_request.processing_request,
+                    processing_attempt=parent_request.processing_attempt,
+                    runtime=invocation,
+                ),
+                adapter=UntargetWorkflowAdapter(
+                    capture_inputs=capture_inputs,
+                    mode_track=ModeTrackWorkflowArguments(
+                        sample_assessments=assessments,
+                        alignment_config=alignment_config,
+                        trajectory_policy=trajectory_policy,
+                    ),
+                    repair=ObservationRepairWorkflowArguments(
+                        coverage=coverage,
+                        cell_observations=spine.cells,
+                        execute=_unexpected_repair,
+                    ),
+                    predecessor_cell_observations=spine.cells,
+                ),
+            )
+        )
+    terminal = compose_untarget_batch_after_runtime(
+        parent_request,
+        lambda: tuple(bundles),
+        runtime_result.finalization,
+    )
+    if type(terminal) is not CompletedUntargetBatchWorkflowResult:
+        raise RuntimeError(
+            "CID-NL workflow failed atomically: "
+            f"stage={getattr(terminal, 'stage', None)}; "
+            f"reason={getattr(terminal, 'failure_message', None)}"
+        )
+    return terminal
+
+
+def _runtime_candidate_traces(
+    batch: UntargetedCidNlProductionBatch,
+    runtime_result: UntargetedCidNlRealDataRuntimeApplicationResult,
+) -> dict[str, Trace]:
+    traces: dict[str, Trace] = {}
+    for sample in batch.context.samples:
+        candidates = tuple(
+            sorted(
+                batch.context.candidates_by_sample[sample.metadata.raw_stem],
+                key=lambda candidate: candidate.candidate_id,
+            )
+        )
+        result = next(
+            result
+            for result in runtime_result.sample_results
+            if result.job.sample is sample
+            and result.adapter_result.acquisition is not None
+        )
+        acquisition = result.adapter_result.acquisition
+        assert acquisition is not None
+        if len(acquisition.traces) != len(candidates):
+            raise RuntimeError("sample acquisition does not close candidate universe")
+        for candidate, acquired in zip(candidates, acquisition.traces, strict=True):
+            traces[candidate.candidate_id] = trace_from_xic_request(
+                sample_name=sample.metadata.sample_name,
+                request=acquired.coordinate.request,
+                xic_trace=acquired.trace,
+                source=UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
+                acquisition_source_id=(
+                    acquired.coordinate.acquisition_source_id
+                ),
+            )
+    return traces
+
+
+def _capture_binding(
+    *,
+    batch: UntargetedCidNlProductionBatch,
+    candidate: DiscoveryCandidate,
+    method_subject_id: str,
+) -> CaptureCandidateBinding:
+    sample = batch.context.sample(candidate.sample_stem)
+    source = batch.context.discovery_receipts_by_sample[
+        candidate.sample_stem
+    ].acquisition_source
+    return CaptureCandidateBinding(
+        candidate_id=candidate.candidate_id,
+        method_subject_id=method_subject_id,
+        sample_identity_id=sample.identity.sample_identity_id,
+        sample_name=sample.metadata.sample_name,
+        acquisition_source_id=source.acquisition_source_id,
+        query_mz=candidate.precursor_mz,
+        query_rt_min=candidate.ms1_search_rt_min,
+        query_rt_max=candidate.ms1_search_rt_max,
+        query_ppm_tol=batch.context.settings.precursor_mz_tolerance_ppm,
+        preferred_rt=candidate.best_seed_rt,
+    )
+
+
+def _unexpected_repair(
+    _candidate: ObservationRepairCandidate,
+) -> OwnerBackfillSampleResult:
+    raise RuntimeError("direct CID-NL production cannot request legacy Backfill")
+
+
 __all__ = [
     "UntargetedCidNlProductionBatch",
     "build_untargeted_cid_nl_production_batch",
+    "compose_untargeted_cid_nl_production_result",
     "execute_untargeted_cid_nl_production_batch",
     "is_pure_single_provider_cid_nl",
 ]

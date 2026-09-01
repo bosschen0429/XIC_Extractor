@@ -99,6 +99,9 @@ from xic_extractor.xic_models import XICRequest
 
 VALIDATION_STATUS = "diagnostic_only"
 _ADAPTER_NAMESPACE = "xic_extractor.untargeted_cid_nl_real_data_adapter"
+UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = (
+    f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}"
+)
 _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 
@@ -949,7 +952,7 @@ def _reacquire_peak_observations(
             sample_name=sample.metadata.sample_name,
             request=acquired.coordinate.request,
             xic_trace=acquired.trace,
-            source=f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}",
+            source=UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
             acquisition_source_id=source.acquisition_source_id,
         )
         capture = capture_owner.capture_peak_hypotheses(
@@ -1319,6 +1322,7 @@ def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
 
 
 __all__ = [
+    "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
     "UntargetedCidNlSampleTraceBatch",
     "UntargetedCidNlRecoveryTraceBatch",
     "UntargetedCidNlRealDataAdapterError",

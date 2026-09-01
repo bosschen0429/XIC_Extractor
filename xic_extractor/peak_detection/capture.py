@@ -246,6 +246,58 @@ def mint_captured_peak_observation(
     )
 
 
+def bind_owner_backed_capture_hypothesis(
+    capture: SampleLocalCapture,
+    *,
+    observation: PeakObservationRef,
+    hypothesis: PeakHypothesis,
+) -> SampleLocalCapture:
+    """Bind the exact runtime-owned hypothesis to its already captured signal."""
+
+    if not isinstance(capture, SampleLocalCapture):
+        raise SampleLocalCaptureError("owner binding requires SampleLocalCapture")
+    if (
+        not isinstance(observation, PeakObservationRef)
+        or type(hypothesis) is not PeakHypothesis
+    ):
+        raise SampleLocalCaptureError(
+            "owner binding requires exact observation and hypothesis values"
+        )
+    selected = capture.selected_hypothesis
+    if (
+        selected is None
+        or observation not in hypothesis.peak_observation_refs
+        or hypothesis.integration != observation.content.integration
+        or observation.content.integration.rt_apex_min
+        != selected.integration.rt_apex_min
+    ):
+        raise SampleLocalCaptureError(
+            "owner hypothesis does not bind the captured physical selection"
+        )
+    hypotheses = (hypothesis,)
+    seal = _CaptureOwnerSeal(
+        scope=capture.scope,
+        candidate_id=capture.candidate_id,
+        trace=capture.trace,
+        trace_group=capture.trace_group,
+        detection=capture.detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=capture.receipt_hypothesis,
+        selected_hypothesis=hypothesis,
+    )
+    return SampleLocalCapture(
+        _owner_seal=seal,
+        scope=capture.scope,
+        candidate_id=capture.candidate_id,
+        trace=capture.trace,
+        trace_group=capture.trace_group,
+        detection=capture.detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=capture.receipt_hypothesis,
+        selected_hypothesis=hypothesis,
+    )
+
+
 def _hypothesis_context(
     scope: SearchScope,
     *,
@@ -279,6 +331,7 @@ def _hypothesis_context(
 __all__ = (
     "SampleLocalCapture",
     "SampleLocalCaptureError",
+    "bind_owner_backed_capture_hypothesis",
     "capture_peak_hypotheses",
     "mint_captured_peak_observation",
 )

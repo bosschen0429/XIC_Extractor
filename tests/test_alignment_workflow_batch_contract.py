@@ -27,6 +27,7 @@ from xic_extractor.alignment.workflow import (
     UntargetWorkflowRequest,
     WorkflowRuntimeInvocation,
     WorkflowStage,
+    compose_untarget_batch_after_runtime,
     execute_untarget_batch_workflow,
 )
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
@@ -372,6 +373,55 @@ def test_batch_composes_children_after_one_runtime_without_recursive_runtime(
         "composition",
         "batch_finalize",
     ]
+
+
+def test_batch_can_compose_an_owner_completed_runtime_without_reexecution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, receipt = _request_for_lifecycle(AttemptTerminalOutcome.SUCCEEDED)
+    bundle = _uninitialized(UntargetWorkflowBundle, request=object(), adapter=object())
+    child = _uninitialized(
+        workflow_owner.CompletedUntargetWorkflowResult,
+        runtime_receipt=receipt,
+        application_result=object(),
+    )
+    batch = _uninitialized(
+        FinalizedUntargetBatchApplicationResult,
+        processing_attempt=request.processing_attempt,
+    )
+    monkeypatch.setattr(workflow_owner, "RuntimeFinalizationReceipt", SimpleNamespace)
+    monkeypatch.setattr(
+        workflow_owner,
+        "execute_runtime_attempt",
+        lambda *_args, **_kwargs: pytest.fail("completed runtime must not reexecute"),
+    )
+    monkeypatch.setattr(
+        workflow_owner, "_validate_untarget_batch_request", lambda _r: None
+    )
+    monkeypatch.setattr(
+        workflow_owner, "_validate_untarget_batch_bundles", lambda *_a: None
+    )
+    monkeypatch.setattr(
+        workflow_owner, "_validate_request_adapter", lambda *_a: object()
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "_execute_composition_after_runtime",
+        lambda *_a, **_k: child,
+    )
+    monkeypatch.setattr(
+        workflow_owner, "UntargetBatchApplicationResultRequest", lambda **v: v
+    )
+    monkeypatch.setattr(workflow_owner, "finalize_alignment_result", lambda _v: batch)
+
+    result = compose_untarget_batch_after_runtime(
+        request,
+        lambda: (bundle,),
+        receipt,
+    )
+
+    assert type(result) is CompletedUntargetBatchWorkflowResult
+    assert result.runtime_receipt is receipt
 
 
 def test_batch_child_failure_is_atomic_and_does_not_finalize_partial_results(
