@@ -134,6 +134,48 @@ class UntargetedCidNlRecoveryAttemptResult:
     validation_status: str = VALIDATION_STATUS
 
 
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlSampleTraceBatch:
+    """One sample-local XIC batch keyed by exact Discovery candidate identity."""
+
+    sample_identity_id: str
+    acquisition_source_id: str
+    candidate_ids: tuple[str, ...]
+    acquisition: TraceAcquisitionBatch
+
+    def __post_init__(self) -> None:
+        if (
+            not self.sample_identity_id.strip()
+            or not self.acquisition_source_id.strip()
+        ):
+            raise UntargetedCidNlRealDataAdapterError(
+                "sample trace batch requires owner identities"
+            )
+        if type(self.candidate_ids) is not tuple or not self.candidate_ids:
+            raise UntargetedCidNlRealDataAdapterError(
+                "sample trace batch requires exact candidate identities"
+            )
+        if self.candidate_ids != tuple(sorted(set(self.candidate_ids))):
+            raise UntargetedCidNlRealDataAdapterError(
+                "sample trace batch candidate identities must be canonical and unique"
+            )
+        if not isinstance(self.acquisition, TraceAcquisitionBatch) or len(
+            self.acquisition.traces
+        ) != len(self.candidate_ids):
+            raise UntargetedCidNlRealDataAdapterError(
+                "sample trace batch acquisition does not close its candidates"
+            )
+
+    def acquired_trace(self, candidate_id: str) -> AcquiredTrace:
+        try:
+            index = self.candidate_ids.index(candidate_id)
+        except ValueError as exc:
+            raise UntargetedCidNlRealDataAdapterError(
+                f"sample trace batch has no candidate {candidate_id!r}"
+            ) from exc
+        return self.acquisition.traces[index]
+
+
 class _UntargetedRealDataWorkObserver:
     """Retain already-minted facts so runtime failure can quarantine them."""
 
@@ -182,6 +224,91 @@ class _UntargetedRealDataWorkObserver:
         )
 
 
+def acquire_untargeted_cid_nl_sample_trace_batch(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    candidates: tuple[DiscoveryCandidate, ...],
+    settings: DiscoverySettings,
+    raw: UntargetedCidNlRealDataRaw,
+) -> UntargetedCidNlSampleTraceBatch | None:
+    """Acquire all eligible candidate XICs for one sample in one adapter call."""
+
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise UntargetedCidNlRealDataAdapterError(
+            "processing_owners has the wrong owner type"
+        )
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise UntargetedCidNlRealDataAdapterError("sample has the wrong owner type")
+    if not isinstance(settings, DiscoverySettings):
+        raise UntargetedCidNlRealDataAdapterError(
+            "settings has the wrong owner type"
+        )
+    if type(candidates) is not tuple or any(
+        not isinstance(candidate, DiscoveryCandidate) for candidate in candidates
+    ):
+        raise UntargetedCidNlRealDataAdapterError(
+            "candidates must be current DiscoveryCandidate receipts"
+        )
+    candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+    if candidate_ids != tuple(sorted(set(candidate_ids))):
+        raise UntargetedCidNlRealDataAdapterError(
+            "sample trace batch candidates must be canonical and unique"
+        )
+    raw_stem = sample.metadata.raw_stem
+    if any(
+        candidate.sample_stem != raw_stem or candidate.raw_file.stem != raw_stem
+        for candidate in candidates
+    ):
+        raise UntargetedCidNlRealDataAdapterError(
+            "sample trace batch candidates crossed the resolved sample"
+        )
+    capture_candidates = tuple(
+        candidate
+        for candidate in candidates
+        if candidate.ms1_peak_found
+        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+    )
+    if not capture_candidates:
+        return None
+    _validate_raw_adapter(raw)
+    source = resolve_request_acquisition_source(
+        processing_owners=processing_owners,
+        sample=sample,
+    )
+    try:
+        bound_raw = require_owner_bound_raw_handle(raw, source)
+    except RawReaderError as exc:
+        raise UntargetedCidNlRealDataAdapterError(
+            "raw handle is not owner-bound to the resolved acquisition source"
+        ) from exc
+    capability = mint_trace_acquisition_capability(
+        source,
+        adapter_namespace=f"{_ADAPTER_NAMESPACE}.sample_batch",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    requests = tuple(
+        XICRequest(
+            mz=candidate.precursor_mz,
+            rt_min=candidate.ms1_search_rt_min,
+            rt_max=candidate.ms1_search_rt_max,
+            ppm_tol=settings.precursor_mz_tolerance_ppm,
+        )
+        for candidate in capture_candidates
+    )
+    acquisition = _freeze_acquisition(
+        acquire_trace_batch(capability, requests, bound_raw)
+    )
+    return UntargetedCidNlSampleTraceBatch(
+        sample_identity_id=sample.identity.sample_identity_id,
+        acquisition_source_id=source.acquisition_source_id,
+        candidate_ids=tuple(
+            candidate.candidate_id for candidate in capture_candidates
+        ),
+        acquisition=acquisition,
+    )
+
+
 def adapt_current_discovery_sample_subject(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -192,6 +319,7 @@ def adapt_current_discovery_sample_subject(
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw | None,
     _observer: _UntargetedRealDataWorkObserver | None = None,
+    _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> UntargetedCidNlRealDataAdapterResult:
     """Reacquire one sample's bounded subject and mint its complete M1 input."""
 
@@ -304,6 +432,7 @@ def adapt_current_discovery_sample_subject(
         source=source,
         search_scope=search_scope,
         _observer=_observer,
+        _preacquired_traces=_preacquired_traces,
     )
     if _observer is not None:
         for observation in observations:
@@ -601,28 +730,48 @@ def _reacquire_peak_observations(
     source,
     search_scope: UntargetedSearchScope,
     _observer: _UntargetedRealDataWorkObserver | None = None,
+    _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[TraceAcquisitionBatch | None, tuple[PeakObservationRef, ...]]:
     if not candidates:
         return None, ()
-    capability = mint_trace_acquisition_capability(
-        source,
-        adapter_namespace=_ADAPTER_NAMESPACE,
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
-    )
-    requests = tuple(
-        XICRequest(
-            mz=candidate.precursor_mz,
-            rt_min=candidate.ms1_search_rt_min,
-            rt_max=candidate.ms1_search_rt_max,
-            ppm_tol=settings.precursor_mz_tolerance_ppm,
+    if _preacquired_traces is None:
+        capability = mint_trace_acquisition_capability(
+            source,
+            adapter_namespace=_ADAPTER_NAMESPACE,
+            coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
-        for candidate in candidates
-    )
-    acquisition = _freeze_acquisition(acquire_trace_batch(capability, requests, raw))
+        requests = tuple(
+            XICRequest(
+                mz=candidate.precursor_mz,
+                rt_min=candidate.ms1_search_rt_min,
+                rt_max=candidate.ms1_search_rt_max,
+                ppm_tol=settings.precursor_mz_tolerance_ppm,
+            )
+            for candidate in candidates
+        )
+        acquisition = _freeze_acquisition(
+            acquire_trace_batch(capability, requests, raw)
+        )
+        acquired_traces = acquisition.traces
+    else:
+        if (
+            _preacquired_traces.sample_identity_id
+            != sample.identity.sample_identity_id
+            or _preacquired_traces.acquisition_source_id
+            != source.acquisition_source_id
+        ):
+            raise UntargetedCidNlRealDataAdapterError(
+                "preacquired traces crossed their sample or acquisition source"
+            )
+        acquired_traces = tuple(
+            _preacquired_traces.acquired_trace(candidate.candidate_id)
+            for candidate in candidates
+        )
+        acquisition = _preacquired_traces.acquisition
     if _observer is not None:
         _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
-    for candidate, acquired in zip(candidates, acquisition.traces, strict=True):
+    for candidate, acquired in zip(candidates, acquired_traces, strict=True):
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
             request=acquired.coordinate.request,
@@ -997,6 +1146,8 @@ def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
 
 
 __all__ = [
+    "UntargetedCidNlSampleTraceBatch",
     "UntargetedCidNlRealDataAdapterError",
     "UntargetedCidNlRealDataAdapterResult",
+    "acquire_untargeted_cid_nl_sample_trace_batch",
 ]
