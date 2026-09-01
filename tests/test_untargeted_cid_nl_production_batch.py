@@ -11,8 +11,11 @@ from tests.runtime_telemetry_fixtures import (
 from tests.test_targeted_real_data_adapter import _peak_config, _settings
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
+    _current_candidates,
     _discovery_receipts,
+    _FakeRaw,
     _install_runtime_raw,
+    _install_runtime_raws,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
@@ -200,6 +203,173 @@ def test_production_batch_executes_one_atomic_sample_phase(
         )
         if method_subject_id == subject.method_subject_id
     )
+
+
+def test_production_composition_closes_observation_only_hold_without_membership(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("Support", "Hold"))
+    for raw_path in raw_paths:
+        raw_path.write_bytes(f"issue329-production-hold:{raw_path.stem}".encode())
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
+    support = _current_candidates(
+        source_raws[raw_paths[0]],
+        raw_file=raw_paths[0],
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    direct_hold = _current_candidates(
+        source_raws[raw_paths[1]],
+        raw_file=raw_paths[1],
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    inferred_hold = replace(
+        direct_hold,
+        precursor_mz_basis="product_plus_neutral_loss",
+    )
+    candidates_by_sample = {
+        "Support": (support,),
+        "Hold": (inferred_hold,),
+    }
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=raw_paths,
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="Support",
+                raw_stem="Support",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+            SampleMetadata(
+                sample_name="Hold",
+                raw_stem="Hold",
+                injection_order=2,
+                sample_role="study_sample",
+            ),
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            candidates_by_sample,
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:issue329-production-hold",
+    )
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+
+    runtime_result = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "hold.runtime.json",
+            "issue329-production-hold",
+        ),
+    )
+    hold_observation_ids = tuple(
+        peak.content.peak_observation_content_id
+        for result in runtime_result.sample_results
+        for peak in result.effective_assessment.candidate_peaks
+        if result.effective_assessment.content.method_result == "HOLD"
+    )
+    assert len(hold_observation_ids) == 1
+
+    completed = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime_result,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+
+    assert hold_observation_ids[0] not in (
+        completed.application_result.physical_observation_ids
+    )
+
+
+def test_production_composition_closes_recovered_observation_without_candidate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    sample_stems = ("Support1", "Support2", "Support3", "Hold")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
+    for raw_path in raw_paths:
+        raw_path.write_bytes(f"issue329-production-recovery:{raw_path.stem}".encode())
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
+    candidates_by_sample = {
+        raw_path.stem: (
+            _current_candidates(
+                source_raws[raw_path],
+                raw_file=raw_path,
+                settings=settings,
+                peak_config=peak_config,
+            )[0],
+        )
+        for raw_path in raw_paths[:-1]
+    }
+    candidates_by_sample["Hold"] = ()
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=raw_paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(sample_stems, start=1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            candidates_by_sample,
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:issue329-production-recovery",
+    )
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+
+    runtime_result = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "recovery.runtime.json",
+            "issue329-production-recovery",
+        ),
+    )
+    recovered = tuple(
+        result
+        for result in runtime_result.sample_results
+        if result.job.sample.metadata.raw_stem == "Hold"
+    )
+    assert len(recovered) == 1
+    assert recovered[0].recovery_attempt is not None
+    assert len(recovered[0].effective_assessment.candidate_peaks) == 1
+
+    completed = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime_result,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+
+    assert completed.application_result.children
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))

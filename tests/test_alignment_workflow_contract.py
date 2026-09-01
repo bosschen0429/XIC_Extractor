@@ -70,6 +70,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "sample_assessments",
         "alignment_config",
         "trajectory_policy",
+        "retain_observation_only_candidates",
     )
     assert tuple(
         field.name for field in fields(ObservationRepairWorkflowArguments)

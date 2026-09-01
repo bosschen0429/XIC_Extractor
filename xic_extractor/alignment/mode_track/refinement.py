@@ -817,6 +817,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
+    retain_observation_only_candidates: bool = False,
 ) -> ModeTrackRefinementRun:
     family_context, model_set, assignment_batches, fit_once_source = (
         bootstrap_mode_tracks_from_cid_nl_support(
@@ -825,6 +826,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
             alignment_config=alignment_config,
             trajectory_policy=trajectory_policy,
             drift_lookup=drift_lookup,
+            retain_observation_only_candidates=retain_observation_only_candidates,
         )
     )
     groups = family_context.mode_tracks
@@ -863,6 +865,9 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         for member in predecessor.member_subjects
     }
     injection_order = _injection_order(assignment_batches)
+    owner_injection_order = {
+        owner.sample_stem: injection_order[owner.sample_stem] for owner in owners
+    }
     anchor_by_owner_id = {
         anchor.peak_hypothesis_id: anchor
         for track in model_set.tracks
@@ -964,7 +969,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         anchors=tuple(
             sorted(anchor_by_owner_id.values(), key=lambda item: item.anchor_id)
         ),
-        injection_order=tuple(sorted(injection_order.items())),
+        injection_order=tuple(sorted(owner_injection_order.items())),
         evidence_profile=evidence_profile,
         budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
         _mint_token=_REFINEMENT_RUN_MINT_TOKEN,

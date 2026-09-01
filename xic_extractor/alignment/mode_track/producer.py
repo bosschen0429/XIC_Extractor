@@ -60,6 +60,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
+    retain_observation_only_candidates: bool = False,
 ) -> tuple[
     FamilyContextRef,
     ModeTrackModelSet,
@@ -76,6 +77,10 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         raise ModeTrackProducerError("alignment_config must be explicit and typed")
     if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
+    if not isinstance(retain_observation_only_candidates, bool):
+        raise ModeTrackProducerError(
+            "retain_observation_only_candidates must be boolean"
+        )
 
     sample_ids = tuple(
         sample.identity.sample_identity_id for sample, _ in sample_assessments
@@ -114,7 +119,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
                         hypothesis=hypothesis,
                     )
                 )
-            else:
+            elif not retain_observation_only_candidates:
                 owners.append(
                     owner_from_cid_nl_assessment_observation(
                         processing_owners=processing_owners,
@@ -123,10 +128,9 @@ def bootstrap_mode_tracks_from_cid_nl_support(
                         hypothesis=hypothesis,
                     )
                 )
-
     if not owners:
         raise ModeTrackProducerError(
-            "bootstrap assessments must retain at least one physical hypothesis"
+            "bootstrap assessments must retain at least one direct support hypothesis"
         )
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
@@ -142,14 +146,18 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         for track in provisional_groups
         for owner_id in track.owner_ids
     }
-    hypothesis_ids = {
+    expected_owner_ids = {
         hypothesis.hypothesis_id
         for hypotheses in hypotheses_by_sample.values()
         for hypothesis in hypotheses
+        if (
+            not retain_observation_only_candidates
+            or hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        )
     }
-    if set(provisional_group_ids) != hypothesis_ids:
+    if set(provisional_group_ids) != expected_owner_ids:
         raise ModeTrackProducerError(
-            "every physical PeakHypothesis must own exactly one provisional group"
+            "every provisional owner hypothesis must own exactly one group"
         )
 
     direct_group_ids = {

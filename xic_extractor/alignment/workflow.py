@@ -198,6 +198,7 @@ class ModeTrackWorkflowArguments:
     ]
     alignment_config: AlignmentConfig
     trajectory_policy: ModeTrackTrajectoryPolicy
+    retain_observation_only_candidates: bool = False
 
     def __post_init__(self) -> None:
         if type(self.sample_assessments) is not tuple or not self.sample_assessments:
@@ -218,6 +219,10 @@ class ModeTrackWorkflowArguments:
             raise AlignmentWorkflowContractError("alignment_config must be exact")
         if type(self.trajectory_policy) is not ModeTrackTrajectoryPolicy:
             raise AlignmentWorkflowContractError("trajectory_policy must be exact")
+        if not isinstance(self.retain_observation_only_candidates, bool):
+            raise AlignmentWorkflowContractError(
+                "retain_observation_only_candidates must be boolean"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -655,6 +660,9 @@ def _execute_composition_after_runtime(
             alignment_config=adapter.mode_track.alignment_config,
             trajectory_policy=adapter.mode_track.trajectory_policy,
             drift_lookup=adapter.drift_lookup,
+            retain_observation_only_candidates=(
+                adapter.mode_track.retain_observation_only_candidates
+            ),
         )
         stage = WorkflowStage.CROSS_SAMPLE_MT0
         context = apply_mode_track_refinement_run_for_workflow(

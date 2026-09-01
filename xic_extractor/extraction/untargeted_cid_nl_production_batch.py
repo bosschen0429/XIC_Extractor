@@ -21,11 +21,14 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    validate_cross_sample_peak_group_identity,
+)
 from xic_extractor.alignment.cross_sample_reconciliation import (
     apply_mode_track_refinement_run_for_workflow,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
-    compose_cid_nl_peak_hypotheses_from_assessment,
+    compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.alignment.mode_track import (
     ModeTrackTrajectoryPolicy,
@@ -426,7 +429,7 @@ def compose_untargeted_cid_nl_production_result(
                 processing_owners=batch.context.processing_owners,
                 sample=sample,
             )
-            hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
+            hypotheses = compose_peak_hypotheses_from_assessment_universe(
                 processing_owners=batch.context.processing_owners,
                 sample=sample,
                 assessment=assessment_by_sample_id[binding.sample_identity_id],
@@ -461,6 +464,7 @@ def compose_untargeted_cid_nl_production_result(
             sample_assessments=assessments,
             alignment_config=alignment_config,
             trajectory_policy=trajectory_policy,
+            retain_observation_only_candidates=True,
         )
         selected_ids = tuple(
             sorted(
@@ -469,17 +473,32 @@ def compose_untargeted_cid_nl_production_result(
                 if capture.selected_hypothesis is not None
             )
         )
-        owner_ids = tuple(sorted(owner.owner_id for owner in refinement.owners))
-        if selected_ids != owner_ids:
+        retained_ids = tuple(
+            sorted(
+                candidate.peak_hypothesis_id
+                for sample_source in refinement.fit_once_source.sample_sources
+                for candidate in sample_source.candidates
+            )
+        )
+        if not set(selected_ids).issubset(retained_ids):
             raise RuntimeError(
                 "CID-NL capture/assessment owner mismatch: "
-                f"captures={selected_ids!r}; assessments={owner_ids!r}"
+                f"captures={selected_ids!r}; assessments={retained_ids!r}"
             )
-        cross_sample = apply_mode_track_refinement_run_for_workflow(
+        apply_mode_track_refinement_run_for_workflow(
             processing_owners=batch.context.processing_owners,
             captures=captures,
             run=refinement,
         )
+        repair_group = (
+            None
+            if spine.group is None
+            else validate_cross_sample_peak_group_identity(
+                spine.group,
+                require_canonical=True,
+            )
+        )
+        repair_groups = () if repair_group is None else (repair_group,)
         positions = tuple(
             OwnerBackfillPlanningPosition(
                 position_id=mint_owner_backfill_position_id(
@@ -493,12 +512,12 @@ def compose_untargeted_cid_nl_production_result(
                 planning_reason="retained_local_owner",
                 primary_logical_requests=(),
             )
-            for group in cross_sample.population
+            for group in repair_groups
             for sample in batch.context.samples
         )
         epoch = mint_owner_backfill_planning_epoch(
             processing_owners=batch.context.processing_owners,
-            group_identities=cross_sample.population,
+            group_identities=repair_groups,
             samples=batch.context.samples,
             raw_sample_stems=frozenset(batch.context.raw_paths_by_sample),
             alignment_config=alignment_config,
@@ -525,6 +544,7 @@ def compose_untargeted_cid_nl_production_result(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,
                         trajectory_policy=trajectory_policy,
+                        retain_observation_only_candidates=True,
                     ),
                     repair=ObservationRepairWorkflowArguments(
                         coverage=coverage,
