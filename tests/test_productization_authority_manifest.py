@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from scripts.check_productization_authority import check_productization_authority
 from scripts.check_productization_state import artifact_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +116,36 @@ def test_manifest_compact_artifact_hashes_match() -> None:
     )
     for source in compact_artifacts:
         assert artifact_sha256(ROOT / source["artifact"]) == source["artifact_sha256"]
+
+
+def test_authority_checker_accepts_registered_cid_nl_writer() -> None:
+    assert check_productization_authority() == []
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_problem"),
+    (
+        ("scope", "manifest cid_nl authority_scope must be"),
+        ("artifact_hash", "cid_nl artifact hash does not match manifest"),
+    ),
+)
+def test_authority_checker_rejects_cid_nl_authority_drift(
+    tmp_path: Path,
+    mutation: str,
+    expected_problem: str,
+) -> None:
+    manifest = _read_json(MANIFEST_PATH)
+    cid_nl = manifest["current_authority"]["cid_nl"]
+    if mutation == "scope":
+        cid_nl["authority_scope"] = APPROVED_SCOPE
+    else:
+        cid_nl["artifact_sha256"] = "0" * 64
+    mutated = tmp_path / "productization-authority.json"
+    mutated.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    problems = check_productization_authority(manifest_path=mutated)
+
+    assert any(expected_problem in problem for problem in problems)
 
 
 def _read_json(path: Path) -> dict[str, Any]:

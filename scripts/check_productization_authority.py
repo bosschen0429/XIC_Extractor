@@ -45,8 +45,10 @@ DEFAULT_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
 DEFAULT_DEPENDENT_MANIFEST = ROOT / QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
-APPROVED_SCOPE_ORDER = (APPROVED_SCOPE,)
+CID_NL_APPROVED_SCOPE = "cid_nl_finalized_decisions_v1"
+APPROVED_SCOPE_ORDER = (APPROVED_SCOPE, CID_NL_APPROVED_SCOPE)
 APPROVED_SCOPES = frozenset(APPROVED_SCOPE_ORDER)
+DEPENDENT_ALLOWED_SCOPE_ORDER = (APPROVED_SCOPE,)
 DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
 DEPENDENT_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
 DEPENDENT_HOLD_STATUS = "HOLD_PENDING_VALIDATION"
@@ -74,6 +76,17 @@ WRITER_AUTHORITY_POLICY_FIELDS = (
 )
 WRITER_CURRENT_AUTHORITY_FIELDS = (
     "backfill",
+    "cid_nl",
+)
+CID_NL_AUTHORITY_FIELDS = (
+    "authority_scope",
+    "authority_source",
+    "artifact",
+    "artifact_sha256",
+    "acceptance_artifact",
+    "acceptance_artifact_sha256",
+    "method_evidence_artifact",
+    "method_evidence_artifact_sha256",
 )
 PARKED_BROAD_BACKFILL = "broad_backfill"
 RETIRED_SCOPE_IDS = {
@@ -115,6 +128,7 @@ def check_productization_authority(
     _check_manifest(manifest, problems)
     _check_dependent_manifest(dependent_manifest, dependent_manifest_raw, problems)
     _check_backfill_authority_sources(manifest, repo_root, problems)
+    _check_cid_nl_authority_sources(manifest, repo_root, problems)
     try:
         checked_acceptance = load_checked_production_acceptance_manifest(
             manifest_path=repo_root / CURRENT_BACKFILL_ACCEPTANCE_REL,
@@ -187,7 +201,10 @@ def _check_dependent_manifest(
         problems.append("owner replay returned an unexpected package artifact")
     if owner_manifest.package_authority_sha256 != (DEPENDENT_PACKAGE_AUTHORITY_SHA256):
         problems.append("owner replay returned an unexpected package hash")
-    if owner_manifest.allowed_registered_writer_scope_ids != APPROVED_SCOPE_ORDER:
+    if (
+        owner_manifest.allowed_registered_writer_scope_ids
+        != DEPENDENT_ALLOWED_SCOPE_ORDER
+    ):
         problems.append(
             "dependent authority manifest writer scopes must equal the existing "
             "registered writer scopes in order"
@@ -260,6 +277,25 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         problems.append(
             f"manifest backfill authority_scope must be {APPROVED_SCOPE!r}"
         )
+
+    cid_nl = _mapping_path(manifest, "current_authority", "cid_nl")
+    if cid_nl is None:
+        problems.append("manifest missing current_authority.cid_nl")
+    else:
+        if tuple(cid_nl) != CID_NL_AUTHORITY_FIELDS:
+            problems.append(
+                "manifest cid_nl authority fields/order changed from the frozen "
+                "contract"
+            )
+        if cid_nl.get("authority_scope") != CID_NL_APPROVED_SCOPE:
+            problems.append(
+                "manifest cid_nl authority_scope must be "
+                f"{CID_NL_APPROVED_SCOPE!r}"
+            )
+        if cid_nl.get("authority_source") != (
+            "completed_untarget_batch_workflow_result"
+        ):
+            problems.append("manifest cid_nl authority_source is crossed")
 
     parked = _mapping_path(manifest, "parked_lanes", PARKED_BROAD_BACKFILL)
     if parked is None:
@@ -335,6 +371,37 @@ def _check_backfill_authority_sources(
         repo_root,
         problems,
     )
+
+
+def _check_cid_nl_authority_sources(
+    manifest: Mapping[str, Any],
+    repo_root: Path,
+    problems: list[str],
+) -> None:
+    cid_nl = _mapping_path(manifest, "current_authority", "cid_nl")
+    if cid_nl is None:
+        return
+
+    artifact_bindings = (
+        ("artifact", "artifact_sha256"),
+        ("acceptance_artifact", "acceptance_artifact_sha256"),
+        ("method_evidence_artifact", "method_evidence_artifact_sha256"),
+    )
+    for path_field, hash_field in artifact_bindings:
+        relative = cid_nl.get(path_field)
+        expected_hash = cid_nl.get(hash_field)
+        if not isinstance(relative, str) or not relative:
+            problems.append(f"cid_nl {path_field} path is missing")
+            continue
+        if not isinstance(expected_hash, str) or not expected_hash:
+            problems.append(f"cid_nl {hash_field} is missing")
+            continue
+        path = repo_root / relative
+        if not path.is_file():
+            problems.append(f"cid_nl {path_field} is missing: {relative}")
+            continue
+        if artifact_sha256(path) != expected_hash:
+            problems.append(f"cid_nl {path_field} hash does not match manifest")
 
 
 def _check_backfill_compact_summary(
