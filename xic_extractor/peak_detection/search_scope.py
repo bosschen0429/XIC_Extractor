@@ -12,8 +12,10 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    BATCH_SCHEMA_VERSION,
     CID_NL_PROVIDER_ID,
     CidNlMethodSubjectContractError,
+    cid_nl_method_subject_batch_from_request,
     cid_nl_method_subject_from_request,
     cid_nl_method_subject_from_target,
 )
@@ -63,6 +65,7 @@ class CaptureCandidateBinding:
     """Bind one authorized candidate to its exact sample-local capture query."""
 
     candidate_id: str
+    method_subject_id: str
     sample_identity_id: str
     sample_name: str
     acquisition_source_id: str
@@ -74,6 +77,7 @@ class CaptureCandidateBinding:
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
+        _normalized_text(self.method_subject_id, field="method_subject_id")
         _normalized_text(self.sample_identity_id, field="sample_identity_id")
         _normalized_text(self.sample_name, field="sample_name")
         _normalized_text(self.acquisition_source_id, field="acquisition_source_id")
@@ -189,6 +193,8 @@ class UntargetedSearchScope:
         _validate_untargeted_capture_bindings(
             self.capture_bindings,
             request=self.request,
+            declared_candidate_ids=self.declared_candidate_ids,
+            evidence_providers=self.evidence_providers,
         )
 
     @property
@@ -356,8 +362,11 @@ def _validate_common_scope(
         raise SearchScopeContractError(
             "evidence_providers must be a non-empty typed tuple"
         )
-    provider_ids = tuple(provider.provider_id for provider in evidence_providers)
-    if len(provider_ids) != len(set(provider_ids)):
+    provider_keys = tuple(
+        (provider.provider_id, provider.method_subject_id)
+        for provider in evidence_providers
+    )
+    if len(provider_keys) != len(set(provider_keys)):
         raise SearchScopeContractError("SearchScope has duplicate evidence providers")
     declared = _candidate_ids(
         declared_candidate_ids,
@@ -404,10 +413,18 @@ def _validate_targeted_capture_bindings(
     target: ResolvedTargetDefinition,
 ) -> None:
     value = target.definition.target
+    try:
+        expected_subject = cid_nl_method_subject_from_target(target)
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(str(exc)) from exc
     for binding in bindings:
-        if binding.query_mz != value.mz or binding.query_ppm_tol != value.ppm_tol:
+        if (
+            binding.method_subject_id != expected_subject.method_subject_id
+            or binding.query_mz != value.mz
+            or binding.query_ppm_tol != value.ppm_tol
+        ):
             raise SearchScopeContractError(
-                "Target capture binding mismatches exact Target m/z/ppm"
+                "Target capture binding mismatches exact Target subject/m/z/ppm"
             )
         if not value.rt_min <= binding.preferred_rt <= value.rt_max:
             raise SearchScopeContractError(
@@ -419,7 +436,72 @@ def _validate_untargeted_capture_bindings(
     bindings: tuple[CaptureCandidateBinding, ...],
     *,
     request: ProcessingRequestIdentity,
+    declared_candidate_ids: tuple[str, ...],
+    evidence_providers: tuple[EvidenceProviderBinding, ...],
 ) -> None:
+    request_inputs = _request_inputs(request)
+    payload = request_inputs.get(CID_NL_REQUEST_INPUT_KEY)
+    if (
+        isinstance(payload, dict)
+        and payload.get("schema_version") == BATCH_SCHEMA_VERSION
+    ):
+        try:
+            batch = cid_nl_method_subject_batch_from_request(request)
+        except CidNlMethodSubjectContractError as exc:
+            raise SearchScopeContractError(str(exc)) from exc
+        provider_subject_ids = tuple(
+            provider.method_subject_id for provider in evidence_providers
+        )
+        all_subject_ids = tuple(
+            subject.method_subject_id for subject in batch.subjects
+        )
+        if provider_subject_ids == all_subject_ids:
+            expected_memberships = batch.candidate_memberships
+        elif len(provider_subject_ids) == 1:
+            expected_memberships = tuple(
+                membership
+                for membership in batch.candidate_memberships
+                if membership[1] == provider_subject_ids[0]
+            )
+        else:
+            raise SearchScopeContractError(
+                "Untargeted batch SearchScope must be the complete universe or "
+                "one exact subject view"
+            )
+        if declared_candidate_ids != tuple(
+            candidate_id for candidate_id, _ in expected_memberships
+        ):
+            raise SearchScopeContractError(
+                "Untargeted SearchScope candidates do not match request subject "
+                "memberships"
+            )
+        binding_ids = tuple(binding.candidate_id for binding in bindings)
+        if binding_ids != declared_candidate_ids:
+            raise SearchScopeContractError(
+                "Untargeted SearchScope requires exactly one capture binding per "
+                "declared candidate"
+            )
+        subjects_by_id = {
+            subject.method_subject_id: subject for subject in batch.subjects
+        }
+        memberships_by_candidate = dict(expected_memberships)
+        for binding in bindings:
+            subject_id = memberships_by_candidate[binding.candidate_id]
+            subject = subjects_by_id.get(subject_id)
+            if subject is None or binding.method_subject_id != subject_id:
+                raise SearchScopeContractError(
+                    "Untargeted capture binding does not match its candidate "
+                    "subject membership"
+                )
+            if (
+                binding.query_mz != subject.precursor_mz
+                or binding.query_ppm_tol != subject.precursor_tolerance_ppm
+            ):
+                raise SearchScopeContractError(
+                    "Untargeted capture binding query does not match its bound subject"
+                )
+        return
+
     try:
         subject = cid_nl_method_subject_from_request(request)
     except CidNlMethodSubjectContractError as exc:
@@ -431,7 +513,8 @@ def _validate_untargeted_capture_bindings(
             * 1_000_000.0
         )
         if (
-            mz_error_ppm > subject.precursor_tolerance_ppm
+            binding.method_subject_id != subject.method_subject_id
+            or mz_error_ppm > subject.precursor_tolerance_ppm
             or binding.query_ppm_tol != subject.precursor_tolerance_ppm
         ):
             raise SearchScopeContractError(
@@ -469,6 +552,33 @@ def _validate_untargeted_evidence_provider(
     *,
     request: ProcessingRequestIdentity,
 ) -> None:
+    request_inputs = _request_inputs(request)
+    payload = request_inputs.get(CID_NL_REQUEST_INPUT_KEY)
+    if (
+        isinstance(payload, dict)
+        and payload.get("schema_version") == BATCH_SCHEMA_VERSION
+    ):
+        try:
+            batch = cid_nl_method_subject_batch_from_request(request)
+        except CidNlMethodSubjectContractError as exc:
+            raise SearchScopeContractError(
+                f"Untargeted SearchScope evidence provider is not request-bound: {exc}"
+            ) from exc
+        expected = tuple(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=subject.method_subject_id,
+            )
+            for subject in batch.subjects
+        )
+        if providers != expected and not (
+            len(providers) == 1 and providers[0] in expected
+        ):
+            raise SearchScopeContractError(
+                "Untargeted SearchScope evidence providers must match the request "
+                "subject batch or one exact subject view"
+            )
+        return
     try:
         expected_subject = cid_nl_method_subject_from_request(request)
     except CidNlMethodSubjectContractError as exc:

@@ -524,6 +524,7 @@ def _finalized_case(
     bindings = tuple(
         _capture_binding(
             candidate_id=f"candidate-{sample.lookup_token}",
+            method_subject_id=method_subject.method_subject_id,
             sample=sample,
             acquisition_source_id=resolve_request_acquisition_source(
                 processing_owners=fixture.owners,

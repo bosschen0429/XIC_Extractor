@@ -841,6 +841,7 @@ def _untargeted_search_scope(
             capture_bindings=tuple(
                 CaptureCandidateBinding(
                     candidate_id=item.candidate_id,
+                    method_subject_id=method_subject.method_subject_id,
                     sample_identity_id=sample.identity.sample_identity_id,
                     sample_name=sample.metadata.sample_name,
                     acquisition_source_id=acquisition_source_id,

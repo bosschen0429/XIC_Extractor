@@ -319,6 +319,7 @@ def _revalidate_scope(scope: TargetSearchScope) -> None:
         for binding in scope.capture_bindings:
             CaptureCandidateBinding(
                 candidate_id=binding.candidate_id,
+                method_subject_id=binding.method_subject_id,
                 sample_identity_id=binding.sample_identity_id,
                 sample_name=binding.sample_name,
                 acquisition_source_id=binding.acquisition_source_id,

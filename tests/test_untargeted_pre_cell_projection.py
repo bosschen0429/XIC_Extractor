@@ -248,6 +248,7 @@ def _untarget_projection_inputs(
         bindings.append(
             _capture_binding(
                 candidate_id=candidate_id,
+                method_subject_id=fixture.method_subject.method_subject_id,
                 sample=sample,
                 acquisition_source_id=source.acquisition_source_id,
                 mz=fixture.method_subject.precursor_mz,
