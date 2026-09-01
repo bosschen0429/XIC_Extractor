@@ -438,6 +438,77 @@ def mint_peak_observation_ref(
             "integration must be an IntegrationResult value"
         )
 
+    content, generation_provenance = _peak_observation_values(
+        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        trace=trace,
+        integration=integration,
+        selection_intensity=selection_intensity,
+        resolver_mode=resolver_mode,
+        proposal_sources=proposal_sources,
+    )
+    artifact = _mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=canonical_peak_observation_ref_bytes(
+            content,
+            generation_provenance,
+        ),
+    )
+    return PeakObservationRef(
+        content=content,
+        generation_provenance=generation_provenance,
+        artifact=artifact,
+    )
+
+
+def validate_peak_observation_trace_binding(
+    reference: PeakObservationRef,
+    *,
+    canonical_sample_identity_id: str,
+    trace: Trace,
+    integration: IntegrationResult,
+    resolver_mode: str,
+    proposal_sources: tuple[str, ...],
+) -> None:
+    """Reject an observation reconstructed from any other capture trace."""
+
+    if not isinstance(reference, PeakObservationRef):
+        raise PeakObservationContractError(
+            "reference must be an owner-minted PeakObservationRef"
+        )
+    expected_content, expected_provenance = _peak_observation_values(
+        canonical_sample_identity_id=canonical_sample_identity_id,
+        trace=trace,
+        integration=integration,
+        selection_intensity=None,
+        resolver_mode=resolver_mode,
+        proposal_sources=proposal_sources,
+    )
+    if (
+        reference.content != expected_content
+        or reference.generation_provenance != expected_provenance
+    ):
+        raise PeakObservationContractError(
+            "peak observation does not bind the exact captured trace"
+        )
+
+
+def _peak_observation_values(
+    *,
+    canonical_sample_identity_id: str,
+    trace: Trace,
+    integration: IntegrationResult,
+    selection_intensity: object | None,
+    resolver_mode: str,
+    proposal_sources: tuple[str, ...],
+) -> tuple[PeakObservationContent, PeakObservationGenerationProvenance]:
+    if not isinstance(trace, Trace):
+        raise PeakObservationContractError("trace must be an owner-produced Trace")
+    if not isinstance(integration, IntegrationResult):
+        raise PeakObservationContractError(
+            "integration must be an IntegrationResult value"
+        )
     selection_values = _selection_trace_values(trace, selection_intensity)
     selected_indices = _validate_selected_indices(integration.raw_scan_indices)
     if selected_indices[-1] >= trace.scan_count:
@@ -464,57 +535,47 @@ def mint_peak_observation_ref(
         raw_scan_indices=tuple(range(len(selected_indices))),
     )
     content_basis = _physical_content_basis(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        canonical_sample_identity_id=canonical_sample_identity_id,
         mz=float(trace.mz),
         rt=selected_rt,
         intensity=selected_intensity,
         integration=normalized_integration,
     )
-    content = PeakObservationContent(
-        peak_observation_content_id=_typed_digest(
-            _CONTENT_ID_PREFIX,
-            content_basis,
+    return (
+        PeakObservationContent(
+            peak_observation_content_id=_typed_digest(
+                _CONTENT_ID_PREFIX,
+                content_basis,
+            ),
+            canonical_sample_identity_id=canonical_sample_identity_id,
+            mz=float(trace.mz),
+            rt=selected_rt,
+            intensity=selected_intensity,
+            integration=normalized_integration,
         ),
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
-        mz=float(trace.mz),
-        rt=selected_rt,
-        intensity=selected_intensity,
-        integration=normalized_integration,
-    )
-    generation_provenance = PeakObservationGenerationProvenance(
-        full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
-        selection_trace_sha256=hashlib.sha256(
-            _canonical_selection_trace_bytes(trace, selection_values)
-        ).hexdigest(),
-        acquisition_source_id=acquisition_source.acquisition_source_id,
-        query_rt_min=float(trace.rt_min),
-        query_rt_max=float(trace.rt_max),
-        query_ppm_tol=float(trace.ppm_tol),
-        trace_source=trace.source,
-        selected_trace_indices=selected_indices,
-        resolver_mode=_required_text(resolver_mode, field="resolver_mode"),
-        proposal_sources=tuple(
-            sorted(
-                {
-                    _required_text(value, field="proposal_source")
-                    for value in proposal_sources
-                }
-            )
+        PeakObservationGenerationProvenance(
+            full_trace_sha256=hashlib.sha256(
+                _canonical_trace_bytes(trace)
+            ).hexdigest(),
+            selection_trace_sha256=hashlib.sha256(
+                _canonical_selection_trace_bytes(trace, selection_values)
+            ).hexdigest(),
+            acquisition_source_id=trace.acquisition_source_id,
+            query_rt_min=float(trace.rt_min),
+            query_rt_max=float(trace.rt_max),
+            query_ppm_tol=float(trace.ppm_tol),
+            trace_source=trace.source,
+            selected_trace_indices=selected_indices,
+            resolver_mode=_required_text(resolver_mode, field="resolver_mode"),
+            proposal_sources=tuple(
+                sorted(
+                    {
+                        _required_text(value, field="proposal_source")
+                        for value in proposal_sources
+                    }
+                )
+            ),
         ),
-    )
-    artifact = _mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_peak_observation_ref_bytes(
-            content,
-            generation_provenance,
-        ),
-    )
-    return PeakObservationRef(
-        content=content,
-        generation_provenance=generation_provenance,
-        artifact=artifact,
     )
 
 
@@ -1155,5 +1216,6 @@ __all__ = [
     "canonical_peak_observation_ref_bytes",
     "mint_peak_observation_ref",
     "validate_peak_observation_binding",
+    "validate_peak_observation_trace_binding",
     "verify_persisted_peak_observation_claims",
 ]

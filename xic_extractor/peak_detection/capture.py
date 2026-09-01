@@ -22,8 +22,10 @@ from xic_extractor.peak_detection.ms1_trace_detection import (
     detect_ms1_trace_peak,
 )
 from xic_extractor.peak_detection.observations import (
+    PeakObservationContractError,
     PeakObservationRef,
     mint_peak_observation_ref,
+    validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.search_scope import (
     SearchScope,
@@ -246,6 +248,70 @@ def mint_captured_peak_observation(
     )
 
 
+def bind_owner_backed_capture_hypothesis(
+    capture: SampleLocalCapture,
+    *,
+    observation: PeakObservationRef,
+    hypothesis: PeakHypothesis,
+) -> SampleLocalCapture:
+    """Bind the exact runtime-owned hypothesis to its already captured signal."""
+
+    if not isinstance(capture, SampleLocalCapture):
+        raise SampleLocalCaptureError("owner binding requires SampleLocalCapture")
+    if (
+        not isinstance(observation, PeakObservationRef)
+        or type(hypothesis) is not PeakHypothesis
+    ):
+        raise SampleLocalCaptureError(
+            "owner binding requires exact observation and hypothesis values"
+        )
+    selected = capture.selected_hypothesis
+    if (
+        selected is None
+        or observation not in hypothesis.peak_observation_refs
+        or hypothesis.integration != observation.content.integration
+    ):
+        raise SampleLocalCaptureError(
+            "owner hypothesis does not bind the captured physical selection"
+        )
+    try:
+        binding = require_capture_binding(capture.scope, capture.candidate_id)
+        validate_peak_observation_trace_binding(
+            observation,
+            canonical_sample_identity_id=binding.sample_identity_id,
+            trace=capture.trace,
+            integration=selected.integration,
+            resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
+            proposal_sources=selected.audit.proposal_sources,
+        )
+    except (PeakObservationContractError, SearchScopeContractError) as exc:
+        raise SampleLocalCaptureError(
+            "owner hypothesis does not bind the captured physical selection"
+        ) from exc
+    hypotheses = (hypothesis,)
+    seal = _CaptureOwnerSeal(
+        scope=capture.scope,
+        candidate_id=capture.candidate_id,
+        trace=capture.trace,
+        trace_group=capture.trace_group,
+        detection=capture.detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=capture.receipt_hypothesis,
+        selected_hypothesis=hypothesis,
+    )
+    return SampleLocalCapture(
+        _owner_seal=seal,
+        scope=capture.scope,
+        candidate_id=capture.candidate_id,
+        trace=capture.trace,
+        trace_group=capture.trace_group,
+        detection=capture.detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=capture.receipt_hypothesis,
+        selected_hypothesis=hypothesis,
+    )
+
+
 def _hypothesis_context(
     scope: SearchScope,
     *,
@@ -279,6 +345,7 @@ def _hypothesis_context(
 __all__ = (
     "SampleLocalCapture",
     "SampleLocalCaptureError",
+    "bind_owner_backed_capture_hypothesis",
     "capture_peak_hypotheses",
     "mint_captured_peak_observation",
 )

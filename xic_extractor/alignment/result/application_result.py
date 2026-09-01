@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
@@ -13,6 +14,15 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignmentContractError,
     _validate_finalized_scientific_alignment_completion_receipt,
 )
+from xic_extractor.discovery.models import (
+    DISCOVERY_CANDIDATE_STATE_VALUES,
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidateState,
+)
+from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    CANDIDATE_UNIVERSE_INPUT_KEY,
+    validate_candidate_universe_payload,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
     cid_nl_method_subject_batch_from_request,
@@ -22,6 +32,7 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.processing_identity import (
+    IdentityContractError,
     ProcessingAttemptIdentity,
     ProcessingRequestIdentity,
 )
@@ -41,6 +52,42 @@ class ApplicationResultContractError(ValueError):
 
 
 _APPLICATION_RESULT_MINT_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCandidateExclusion:
+    """One declared Discovery candidate intentionally excluded from owner-build."""
+
+    candidate_id: str
+    method_subject_id: str
+    canonical_sample_identity_id: str
+    discovery_candidate_state: DiscoveryCandidateState
+    reason_code: Literal["discovery_candidate_not_search_eligible"] = (
+        "discovery_candidate_not_search_eligible"
+    )
+
+    def __post_init__(self) -> None:
+        for field_name, value in (
+            ("candidate_id", self.candidate_id),
+            ("method_subject_id", self.method_subject_id),
+            ("canonical_sample_identity_id", self.canonical_sample_identity_id),
+        ):
+            if type(value) is not str or not value or value != value.strip():
+                raise ApplicationResultContractError(
+                    f"Untargeted candidate exclusion {field_name} is invalid"
+                )
+        if (
+            self.discovery_candidate_state not in DISCOVERY_CANDIDATE_STATE_VALUES
+            or self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        ):
+            raise ApplicationResultContractError(
+                "Untargeted candidate exclusion requires a non-feature-backed "
+                "Discovery state"
+            )
+        if self.reason_code != "discovery_candidate_not_search_eligible":
+            raise ApplicationResultContractError(
+                "Untargeted candidate exclusion reason is unsupported"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +124,7 @@ class UntargetBatchApplicationResultRequest:
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
     children: tuple[FinalizedUntargetApplicationResult, ...]
+    excluded_candidates: tuple[UntargetedCandidateExclusion, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_untarget_batch_request(self)
@@ -174,6 +222,7 @@ class FinalizedUntargetBatchApplicationResult:
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
     children: tuple[FinalizedUntargetApplicationResult, ...]
+    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
     _mint_token: InitVar[object]
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -194,22 +243,26 @@ class FinalizedUntargetBatchApplicationResult:
     def canonical_samples(
         self,
     ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-        return self.children[0].canonical_samples
+        if self.children:
+            return self.children[0].canonical_samples
+        return tuple(sorted(self.scope.samples, key=_sample_sort_key))
 
     @property
     def candidate_ids(self) -> tuple[str, ...]:
+        subject_batch = cid_nl_method_subject_batch_from_request(
+            self.processing_request
+        )
         return tuple(
             candidate_id
-            for child in self.children
-            for candidate_id in child.scientific_core.scope.declared_candidate_ids
+            for provider in self.scope.evidence_providers
+            for candidate_id, method_subject_id in subject_batch.candidate_memberships
+            if method_subject_id == provider.method_subject_id
         )
 
     @property
     def subject_ids(self) -> tuple[str, ...]:
         return tuple(
-            provider.method_subject_id
-            for child in self.children
-            for provider in child.scientific_core.scope.evidence_providers
+            provider.method_subject_id for provider in self.scope.evidence_providers
         )
 
     @property
@@ -298,6 +351,7 @@ def finalize_alignment_result(
             processing_request=request.processing_request,
             processing_attempt=request.processing_attempt,
             children=request.children,
+            excluded_candidates=request.excluded_candidates,
             _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
         )
     raise ApplicationResultContractError(
@@ -503,14 +557,27 @@ def _validate_untarget_batch_request(
             "Untarget batch result attempt crossed its processing request"
         )
     children = request.children
-    if type(children) is not tuple or not children:
+    if type(children) is not tuple:
         raise ApplicationResultContractError(
-            "Untarget batch result requires a non-empty child population"
+            "Untarget batch result requires an immutable child population"
         )
     if any(type(child) is not FinalizedUntargetApplicationResult for child in children):
         raise ApplicationResultContractError(
             "Untarget batch result requires exact finalized Untarget children"
         )
+    exclusions = request.excluded_candidates
+    if type(exclusions) is not tuple or any(
+        type(item) is not UntargetedCandidateExclusion for item in exclusions
+    ):
+        raise ApplicationResultContractError(
+            "Untarget batch exclusions must be an immutable typed tuple"
+        )
+    excluded_ids = tuple(item.candidate_id for item in exclusions)
+    if len(excluded_ids) != len(set(excluded_ids)):
+        raise ApplicationResultContractError(
+            "Untarget batch exclusions contain duplicate candidates"
+        )
+    excluded_id_set = set(excluded_ids)
 
     parent_candidates = tuple(request.scope.declared_candidate_ids)
     if not parent_candidates or len(parent_candidates) != len(set(parent_candidates)):
@@ -519,10 +586,13 @@ def _validate_untarget_batch_request(
         )
     parent_samples = tuple(request.scope.samples)
     parent_sample_ids = _sample_ids(parent_samples)
-    parent_memberships = _scope_memberships(request.scope)
-    if set(parent_memberships) != set(parent_candidates):
+    candidate_sample_ids = _candidate_sample_ids_from_request(
+        request.processing_request,
+        samples=parent_samples,
+    )
+    if candidate_sample_ids and set(candidate_sample_ids) != set(parent_candidates):
         raise ApplicationResultContractError(
-            "Untarget batch result parent subject membership is incomplete"
+            "Untarget batch candidate/sample universe is incomplete"
         )
     parent_subject_ids = tuple(
         provider.method_subject_id for provider in request.scope.evidence_providers
@@ -541,6 +611,7 @@ def _validate_untarget_batch_request(
         raise ApplicationResultContractError(
             "Untarget batch result is not pinned to a CID-NL subject batch"
         ) from exc
+    parent_memberships = dict(subject_batch.candidate_memberships)
     if parent_candidates != tuple(
         candidate_id
         for candidate_id, _method_subject_id in subject_batch.candidate_memberships
@@ -550,6 +621,30 @@ def _validate_untarget_batch_request(
         raise ApplicationResultContractError(
             "Untarget batch result parent scope is not the complete request universe"
         )
+    if excluded_ids != tuple(
+        candidate_id
+        for candidate_id in parent_candidates
+        if candidate_id in excluded_id_set
+    ):
+        raise ApplicationResultContractError(
+            "Untarget batch exclusions are not in canonical candidate order"
+        )
+
+    parent_sample_ids_set = set(parent_sample_ids)
+    for exclusion in exclusions:
+        expected_sample_id = candidate_sample_ids.get(exclusion.candidate_id)
+        if (
+            parent_memberships.get(exclusion.candidate_id)
+            != exclusion.method_subject_id
+            or exclusion.canonical_sample_identity_id not in parent_sample_ids_set
+            or (
+                expected_sample_id is not None
+                and exclusion.canonical_sample_identity_id != expected_sample_id
+            )
+        ):
+            raise ApplicationResultContractError(
+                "Untarget batch exclusion crossed candidate, subject, or sample"
+            )
 
     child_candidates: list[str] = []
     child_subject_ids: list[str] = []
@@ -658,11 +753,19 @@ def _validate_untarget_batch_request(
                     )
                 physical_ids.update(member_physical_ids)
 
-    if sorted(child_candidates) != sorted(parent_candidates):
+    if sorted((*child_candidates, *excluded_ids)) != sorted(parent_candidates):
         raise ApplicationResultContractError(
-            "Untarget batch child candidate union is not exactly once"
+            "Untarget batch child/exclusion candidate union is not exactly once"
         )
-    if tuple(child_subject_ids) != parent_subject_ids:
+    expected_child_subject_ids = tuple(
+        subject_id
+        for subject_id in parent_subject_ids
+        if any(
+            method_subject_id == subject_id and candidate_id not in excluded_id_set
+            for candidate_id, method_subject_id in parent_memberships.items()
+        )
+    )
+    if tuple(child_subject_ids) != expected_child_subject_ids:
         raise ApplicationResultContractError(
             "Untarget batch child subjects are not in canonical order"
         )
@@ -675,6 +778,44 @@ def _sample_ids(
         sample.identity.sample_identity_id
         for sample in sorted(samples, key=_sample_sort_key)
     )
+
+
+def _candidate_sample_ids_from_request(
+    request: ProcessingRequestIdentity,
+    *,
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+) -> dict[str, str]:
+    request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    try:
+        entries = validate_candidate_universe_payload(
+            request_inputs[CANDIDATE_UNIVERSE_INPUT_KEY],
+            expected_sample_stems=tuple(
+                sample.metadata.raw_stem for sample in samples
+            ),
+        )
+    except (IdentityContractError, KeyError) as exc:
+        raise ApplicationResultContractError(
+            "Untarget batch requires its owner-validated candidate/sample universe"
+        ) from exc
+    sample_id_by_stem = {
+        sample.metadata.raw_stem: sample.identity.sample_identity_id
+        for sample in samples
+    }
+    candidate_sample_ids: dict[str, str] = {}
+    for entry in entries:
+        sample_stem = entry["sample_stem"]
+        candidate_ids = entry["candidate_ids"]
+        assert isinstance(sample_stem, str)
+        assert isinstance(candidate_ids, list)
+        sample_id = sample_id_by_stem[sample_stem]
+        for candidate_id in candidate_ids:
+            assert isinstance(candidate_id, str)
+            if candidate_id in candidate_sample_ids:
+                raise ApplicationResultContractError(
+                    "Untarget batch candidate/sample universe is not unique"
+                )
+            candidate_sample_ids[candidate_id] = sample_id
+    return candidate_sample_ids
 
 
 def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
@@ -730,5 +871,6 @@ __all__ = (
     "TargetApplicationResultRequest",
     "UntargetApplicationResultRequest",
     "UntargetBatchApplicationResultRequest",
+    "UntargetedCandidateExclusion",
     "finalize_alignment_result",
 )

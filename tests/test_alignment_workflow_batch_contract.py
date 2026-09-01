@@ -16,6 +16,7 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
     UntargetBatchApplicationResultRequest,
+    UntargetedCandidateExclusion,
     finalize_alignment_result,
 )
 from xic_extractor.alignment.workflow import (
@@ -24,12 +25,18 @@ from xic_extractor.alignment.workflow import (
     FailedWorkflowResult,
     UntargetWorkflowBatchProvider,
     UntargetWorkflowBundle,
+    UntargetWorkflowCompositionRequest,
     UntargetWorkflowRequest,
     WorkflowRuntimeInvocation,
     WorkflowStage,
+    compose_untarget_batch_after_runtime,
     execute_untarget_batch_workflow,
 )
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
+from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    CANDIDATE_UNIVERSE_INPUT_KEY,
+    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
@@ -91,6 +98,7 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
         "processing_request",
         "processing_attempt",
         "children",
+        "excluded_candidates",
     )
     assert tuple(
         field.name for field in fields(FinalizedUntargetBatchApplicationResult)
@@ -99,8 +107,17 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
         "processing_request",
         "processing_attempt",
         "children",
+        "excluded_candidates",
     )
     assert UntargetWorkflowBatchProvider is not object
+    assert tuple(
+        field.name for field in fields(UntargetWorkflowCompositionRequest)
+    ) == (
+        "scope",
+        "processing_request",
+        "processing_attempt",
+        "excluded_candidates",
+    )
 
 
 def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
@@ -374,6 +391,63 @@ def test_batch_composes_children_after_one_runtime_without_recursive_runtime(
     ]
 
 
+def test_batch_can_compose_an_owner_completed_runtime_without_reexecution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, receipt = _request_for_lifecycle(AttemptTerminalOutcome.SUCCEEDED)
+    composition_request = _uninitialized(
+        UntargetWorkflowCompositionRequest,
+        scope=request.scope,
+        processing_request=request.processing_request,
+        processing_attempt=request.processing_attempt,
+    )
+    bundle = _uninitialized(UntargetWorkflowBundle, request=object(), adapter=object())
+    child = _uninitialized(
+        workflow_owner.CompletedUntargetWorkflowResult,
+        runtime_receipt=receipt,
+        application_result=object(),
+    )
+    batch = _uninitialized(
+        FinalizedUntargetBatchApplicationResult,
+        processing_attempt=request.processing_attempt,
+    )
+    monkeypatch.setattr(workflow_owner, "RuntimeFinalizationReceipt", SimpleNamespace)
+    monkeypatch.setattr(
+        workflow_owner,
+        "execute_runtime_attempt",
+        lambda *_args, **_kwargs: pytest.fail("completed runtime must not reexecute"),
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "_validate_untarget_batch_composition_request",
+        lambda _r: None,
+    )
+    monkeypatch.setattr(
+        workflow_owner, "_validate_untarget_batch_bundles", lambda *_a: None
+    )
+    monkeypatch.setattr(
+        workflow_owner, "_validate_request_adapter", lambda *_a: object()
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "_execute_composition_after_runtime",
+        lambda *_a, **_k: child,
+    )
+    monkeypatch.setattr(
+        workflow_owner, "UntargetBatchApplicationResultRequest", lambda **v: v
+    )
+    monkeypatch.setattr(workflow_owner, "finalize_alignment_result", lambda _v: batch)
+
+    result = compose_untarget_batch_after_runtime(
+        composition_request,
+        lambda: (bundle,),
+        receipt,
+    )
+
+    assert type(result) is CompletedUntargetBatchWorkflowResult
+    assert result.runtime_receipt is receipt
+
+
 def test_batch_child_failure_is_atomic_and_does_not_finalize_partial_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -460,6 +534,43 @@ def _fake_scope(
     )
 
 
+def _candidate_universe_payload(
+    *,
+    processing_owners,
+    samples,
+    candidate_ids_by_stem: dict[str, tuple[str, ...]],
+) -> dict[str, object]:
+    return {
+        "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+        "samples": [
+            {
+                "sample_stem": sample.metadata.raw_stem,
+                "candidate_count": len(
+                    candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
+                ),
+                "candidate_ids": list(
+                    candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
+                ),
+                "candidate_payload_sha256": "0" * 64,
+                "discovery_receipt_id": (
+                    "xic.discovery-candidate-universe.v1:test"
+                ),
+                "candidate_artifact_schema_version": "discovery_candidates_csv_v1",
+                "candidate_artifact_sha256": "0" * 64,
+                "candidate_artifact_byte_size": 0,
+                "acquisition_source_id": resolve_request_acquisition_source(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                ).acquisition_source_id,
+            }
+            for sample in sorted(
+                samples,
+                key=lambda item: item.metadata.raw_stem,
+            )
+        ],
+    }
+
+
 def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
     member = SimpleNamespace(physical_observation_ids=(physical_id,))
     group = SimpleNamespace(
@@ -518,7 +629,14 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
         scientific_input_schema_version="untargeted-batch-workflow-test-v1",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
+        scientific_inputs={
+            REQUEST_INPUT_KEY: subject_batch.request_payload(),
+            CANDIDATE_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
+                processing_owners=fixture.owners,
+                samples=fixture.samples,
+                candidate_ids_by_stem={"sample-a": ("candidate:a",)},
+            ),
+        },
     )
     attempt = issue_processing_attempt(request)
     subject_id = fixture.method_subject.method_subject_id
@@ -576,6 +694,119 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
         )
 
 
+def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
+    tmp_path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"sample-a": "qc", "sample-b": "qc"},
+    )
+    candidate_id = "candidate:a"
+    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=(fixture.method_subject,),
+        candidate_memberships=(
+            (candidate_id, fixture.method_subject.method_subject_id),
+        ),
+    )
+    base_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=base_request.acquisition_sources,
+        acquisition_bindings=base_request.acquisition_bindings,
+        scientific_input_schema_version="untargeted-batch-sample-binding-test-v1",
+        processing_algorithm_version=base_request.processing_algorithm_version,
+        processing_contract_version=base_request.processing_contract_version,
+        scientific_inputs={
+            REQUEST_INPUT_KEY: subject_batch.request_payload(),
+            CANDIDATE_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
+                processing_owners=fixture.owners,
+                samples=fixture.samples,
+                candidate_ids_by_stem={"sample-a": (candidate_id,)},
+            ),
+        },
+    )
+    attempt = issue_processing_attempt(request)
+    parent_scope = _fake_scope(
+        request=request,
+        samples=fixture.samples,
+        candidate_ids=(candidate_id,),
+        subject_ids=(fixture.method_subject.method_subject_id,),
+    )
+    sample_b = fixture.sample("sample-b")
+
+    with pytest.raises(
+        ApplicationResultContractError,
+        match="crossed candidate, subject, or sample",
+    ):
+        finalize_alignment_result(
+            UntargetBatchApplicationResultRequest(
+                scope=parent_scope,
+                processing_request=request,
+                processing_attempt=attempt,
+                children=(),
+                excluded_candidates=(
+                    UntargetedCandidateExclusion(
+                        candidate_id=candidate_id,
+                        method_subject_id=fixture.method_subject.method_subject_id,
+                        canonical_sample_identity_id=(
+                            sample_b.identity.sample_identity_id
+                        ),
+                        discovery_candidate_state="review_only_orphan_nl",
+                    ),
+                ),
+            )
+        )
+
+
+def test_batch_application_result_requires_owner_candidate_universe(
+    tmp_path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"sample-a": "qc"},
+    )
+    candidate_id = "candidate:a"
+    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=(fixture.method_subject,),
+        candidate_memberships=(
+            (candidate_id, fixture.method_subject.method_subject_id),
+        ),
+    )
+    base_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=base_request.acquisition_sources,
+        acquisition_bindings=base_request.acquisition_bindings,
+        scientific_input_schema_version="untargeted-batch-missing-universe-test-v1",
+        processing_algorithm_version=base_request.processing_algorithm_version,
+        processing_contract_version=base_request.processing_contract_version,
+        scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
+    )
+    sample = fixture.sample("sample-a")
+
+    with pytest.raises(
+        ApplicationResultContractError,
+        match="owner-validated candidate/sample universe",
+    ):
+        UntargetBatchApplicationResultRequest(
+            scope=_fake_scope(
+                request=request,
+                samples=fixture.samples,
+                candidate_ids=(candidate_id,),
+                subject_ids=(fixture.method_subject.method_subject_id,),
+            ),
+            processing_request=request,
+            processing_attempt=issue_processing_attempt(request),
+            children=(),
+            excluded_candidates=(
+                UntargetedCandidateExclusion(
+                    candidate_id=candidate_id,
+                    method_subject_id=fixture.method_subject.method_subject_id,
+                    canonical_sample_identity_id=sample.identity.sample_identity_id,
+                    discovery_candidate_state="review_only_orphan_nl",
+                ),
+            ),
+        )
+
+
 def test_batch_application_result_rejects_reversed_subject_order(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -616,7 +847,18 @@ def test_batch_application_result_rejects_reversed_subject_order(
         scientific_input_schema_version="untargeted-batch-order-test-v1",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
+        scientific_inputs={
+            REQUEST_INPUT_KEY: subject_batch.request_payload(),
+            CANDIDATE_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
+                processing_owners=fixture.owners,
+                samples=fixture.samples,
+                candidate_ids_by_stem={
+                    "sample-a": tuple(
+                        candidate_id for candidate_id, _ in memberships
+                    )
+                },
+            ),
+        },
     )
     attempt = issue_processing_attempt(request)
     parent_scope = _fake_scope(

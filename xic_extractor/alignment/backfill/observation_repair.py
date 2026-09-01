@@ -650,6 +650,10 @@ def authorize_observation_repair(
         if (
             cell.content.technical_state == "evaluated"
             and cell.content.method_result == "HOLD"
+            and not (
+                cell.peak_observation is not None
+                and position.planning_reason == "retained_local_owner"
+            )
         ):
             logical_request, request_identity = _logical_binding_for_cell(
                 cell,

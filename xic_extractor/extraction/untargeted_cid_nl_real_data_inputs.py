@@ -19,6 +19,7 @@ from xic_extractor.extraction.targeted_inputs import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY,
     CidNlMethodSubject,
+    UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -63,7 +64,7 @@ class UntargetedCidNlRealDataContext:
 
     processing_owners: ProcessingOwnerReferences
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
-    method_subject: CidNlMethodSubject
+    method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch
     settings: DiscoverySettings
     peak_config: ExtractionConfig
     raw_paths_by_sample: Mapping[str, Path]
@@ -88,7 +89,7 @@ def build_untargeted_cid_nl_real_data_context(
     *,
     raw_paths: Sequence[Path],
     sample_metadata: Sequence[SampleMetadata],
-    method_subject: CidNlMethodSubject,
+    method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
@@ -100,9 +101,17 @@ def build_untargeted_cid_nl_real_data_context(
 ) -> UntargetedCidNlRealDataContext:
     """Mint one replayable request before any M7 RAW handle is opened."""
 
-    if not isinstance(method_subject, CidNlMethodSubject):
+    if not isinstance(
+        method_subject,
+        (CidNlMethodSubject, UntargetedCidNlMethodSubjectBatch),
+    ):
         raise IdentityContractError("method_subject must be owner-normalized")
-    if method_subject.subject_kind != "untargeted_precursor":
+    subjects = (
+        method_subject.subjects
+        if isinstance(method_subject, UntargetedCidNlMethodSubjectBatch)
+        else (method_subject,)
+    )
+    if any(subject.subject_kind != "untargeted_precursor" for subject in subjects):
         raise IdentityContractError("M7 requires an Untargeted CID-NL subject")
     if not isinstance(settings, DiscoverySettings):
         raise IdentityContractError("settings must be DiscoverySettings")
@@ -118,6 +127,24 @@ def build_untargeted_cid_nl_real_data_context(
         candidates_by_sample,
         expected_sample_stems=tuple(paths_by_stem),
     )
+    if isinstance(method_subject, UntargetedCidNlMethodSubjectBatch):
+        candidate_ids = tuple(
+            sorted(
+                candidate.candidate_id
+                for candidates in candidate_map.values()
+                for candidate in candidates
+            )
+        )
+        membership_ids = tuple(
+            candidate_id
+            for candidate_id, _method_subject_id in (
+                method_subject.candidate_memberships
+            )
+        )
+        if membership_ids != candidate_ids:
+            raise IdentityContractError(
+                "CID-NL subject batch must cover the exact Discovery candidate universe"
+            )
     sources_by_stem = {
         stem: build_acquisition_source_identity(
             path,

@@ -39,7 +39,6 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.contracts import (
     AcceptedModeTrackRefinement,
-    InsufficientModeTrackTraining,
     ModeTrackEvidenceProfile,
     ModeTrackRefinementContractError,
 )
@@ -73,11 +72,26 @@ from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
-def _captures_for_run(run):
+def _captures_for_run(run, *, include_retained_candidates: bool = False):
+    hypotheses = (
+        tuple(
+            candidate.peak_hypothesis
+            for sample_source in run.fit_once_source.sample_sources
+            for candidate in sample_source.candidates
+        )
+        if include_retained_candidates
+        else tuple(
+            SimpleNamespace(
+                hypothesis_id=owner.owner_id,
+                integration=owner.selected_integration,
+            )
+            for owner in run.owners
+        )
+    )
     scope = object.__new__(UntargetedSearchScope)
     candidate_ids = tuple(
         f"workflow-candidate:{index}"
-        for index, _owner in enumerate(run.owners, start=1)
+        for index, _hypothesis in enumerate(hypotheses, start=1)
     )
     object.__setattr__(
         scope,
@@ -90,10 +104,22 @@ def _captures_for_run(run):
         tuple(SimpleNamespace(candidate_id=item) for item in candidate_ids),
     )
     captures = []
-    for candidate_id, owner in zip(candidate_ids, run.owners, strict=True):
+    for candidate_id, source_hypothesis in zip(
+        candidate_ids,
+        hypotheses,
+        strict=True,
+    ):
         hypothesis = object.__new__(PeakHypothesis)
-        object.__setattr__(hypothesis, "hypothesis_id", owner.owner_id)
-        object.__setattr__(hypothesis, "integration", owner.selected_integration)
+        object.__setattr__(
+            hypothesis,
+            "hypothesis_id",
+            source_hypothesis.hypothesis_id,
+        )
+        object.__setattr__(
+            hypothesis,
+            "integration",
+            source_hypothesis.integration,
+        )
         trace = object()
         trace_group = object()
         detection = object()
@@ -365,6 +391,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
         ),
+        retain_observation_only_candidates=True,
     )
 
     with pytest.raises(
@@ -389,17 +416,18 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         captures=captures,
         run=run,
     )
+    retained_captures = _captures_for_run(run, include_retained_candidates=True)
+    source_closed_context = apply_mode_track_refinement_run_for_workflow(
+        processing_owners=fixture.owners,
+        captures=retained_captures,
+        run=run,
+    )
+    assert source_closed_context == context
     assert tuple(type(transaction.proposal) for transaction in run.transactions) == (
         AcceptedModeTrackRefinement,
-        InsufficientModeTrackTraining,
     )
     assert context.application.predecessors == run.predecessors
     assert context.population == context.application.successors
-    negative_predecessors = run.transactions[1].application_context.predecessors
-    assert all(
-        any(successor is predecessor for successor in context.population)
-        for predecessor in negative_predecessors
-    )
 
     incomplete_scope = object.__new__(UntargetedSearchScope)
     object.__setattr__(
@@ -436,7 +464,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
     ):
         apply_mode_track_refinement_run_for_workflow(
             processing_owners=fixture.owners,
-            captures=tuple(reversed(captures)),
+            captures=tuple(reversed(retained_captures)),
             run=run,
         )
 
@@ -444,12 +472,15 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
     object.__setattr__(
         crossed_scope,
         "declared_candidate_ids",
-        captures[0].scope.declared_candidate_ids,
+        retained_captures[0].scope.declared_candidate_ids,
     )
     crossed = replace(
-        captures[0],
+        retained_captures[0],
         scope=crossed_scope,
-        _owner_seal=replace(captures[0]._owner_seal, scope=crossed_scope),
+        _owner_seal=replace(
+            retained_captures[0]._owner_seal,
+            scope=crossed_scope,
+        ),
     )
     with pytest.raises(
         CrossSampleReconciliationContractError,
@@ -457,7 +488,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
     ):
         apply_mode_track_refinement_run_for_workflow(
             processing_owners=fixture.owners,
-            captures=(crossed, *captures[1:]),
+            captures=(crossed, *retained_captures[1:]),
             run=run,
         )
 
@@ -478,9 +509,9 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
             run=stale_run,
         )
 
-    assert len(run.transactions) > 1
+    assert len(run.transactions) == 1
     incomplete_transaction_runs = (
-        run.transactions[:-1],
+        (),
         (*run.transactions, run.transactions[0]),
     )
     for incomplete_transactions in incomplete_transaction_runs:
@@ -491,42 +522,10 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         )
         with pytest.raises(
             CrossSampleReconciliationContractError,
-            match="canonical predecessor order",
+            match="complete typed component transactions|canonical predecessor order",
         ):
             apply_mode_track_refinement_run_for_workflow(
                 processing_owners=fixture.owners,
                 captures=captures,
                 run=incomplete_run,
             )
-
-    reordered_run = replace(
-        run,
-        transactions=tuple(reversed(run.transactions)),
-        _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
-    )
-    with pytest.raises(
-        CrossSampleReconciliationContractError,
-        match="canonical predecessor order",
-    ):
-        apply_mode_track_refinement_run_for_workflow(
-            processing_owners=fixture.owners,
-            captures=captures,
-            run=reordered_run,
-        )
-
-    first, second, *rest = run.transactions
-    crossed_transaction = replace(first, proposal=second.proposal)
-    crossed_run = replace(
-        run,
-        transactions=(crossed_transaction, second, *rest),
-        _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
-    )
-    with pytest.raises(
-        CrossSampleReconciliationContractError,
-        match="exact component context",
-    ):
-        apply_mode_track_refinement_run_for_workflow(
-            processing_owners=fixture.owners,
-            captures=captures,
-            run=crossed_run,
-        )

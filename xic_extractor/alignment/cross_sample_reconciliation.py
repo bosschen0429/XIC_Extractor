@@ -615,29 +615,45 @@ def apply_mode_track_refinement_run_for_workflow(
         )
     )
     owner_ids = tuple(sorted(owner.owner_id for owner in run.owners))
-    if selected_ids != owner_ids or len(owner_ids) != len(set(owner_ids)):
+    source_by_id = {
+        candidate.peak_hypothesis_id: candidate.peak_hypothesis
+        for sample_source in run.fit_once_source.sample_sources
+        for candidate in sample_source.candidates
+    }
+    if (
+        len(selected_ids) != len(set(selected_ids))
+        or not set(selected_ids).issubset(source_by_id)
+        or len(owner_ids) != len(set(owner_ids))
+    ):
         raise CrossSampleReconciliationContractError(
-            "workflow MT0 captures do not close the exact owner population"
+            "workflow MT0 captures cross the exact retained candidate population"
         )
-    selected_by_id = {
+    captured_by_id = {
         capture.selected_hypothesis.hypothesis_id: capture.selected_hypothesis
         for capture in capture_tuple
         if capture.selected_hypothesis is not None
     }
     if any(
-        owner.selected_integration is not selected_by_id[owner.owner_id].integration
-        or owner.owner_apex_rt != selected_by_id[owner.owner_id].integration.rt_apex_min
+        captured.integration is not source_by_id[hypothesis_id].integration
+        for hypothesis_id, captured in captured_by_id.items()
+    ):
+        raise CrossSampleReconciliationContractError(
+            "workflow MT0 captures crossed exact retained physical integration"
+        )
+    if not set(owner_ids).issubset(source_by_id) or any(
+        owner.selected_integration is not source_by_id[owner.owner_id].integration
+        or owner.owner_apex_rt != source_by_id[owner.owner_id].integration.rt_apex_min
         or owner.owner_peak_start_rt
-        != selected_by_id[owner.owner_id].integration.rt_left_min
+        != source_by_id[owner.owner_id].integration.rt_left_min
         or owner.owner_peak_end_rt
-        != selected_by_id[owner.owner_id].integration.rt_right_min
+        != source_by_id[owner.owner_id].integration.rt_right_min
         or owner.owner_area
-        != selected_by_id[owner.owner_id].integration.area_raw_counts_seconds
-        or owner.owner_height != selected_by_id[owner.owner_id].integration.height_raw
+        != source_by_id[owner.owner_id].integration.area_raw_counts_seconds
+        or owner.owner_height != source_by_id[owner.owner_id].integration.height_raw
         for owner in run.owners
     ):
         raise CrossSampleReconciliationContractError(
-            "workflow MT0 captures crossed exact owner physical integration"
+            "workflow MT0 source crossed exact owner physical integration"
         )
     try:
         predecessors = validate_cross_sample_group_population(run.predecessors)

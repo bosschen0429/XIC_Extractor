@@ -66,11 +66,14 @@ target interface.
 `authorize_observation_repair` is the Backfill owner operation for the active
 CID-NL tracer. It validates one complete owner-issued
 `CellObservationRef` population over the declared existing-group × canonical-
-sample coverage before reducing eligibility. Only a cell with
-`technical_state="evaluated"` and `method_result="HOLD"` is eligible; the
-sample may be a predecessor member or a nonmember. `selected_for_output` is a
-producer fact and never changes eligibility, candidate identity, or
-cardinality.
+sample coverage before reducing eligibility. A cell with
+`technical_state="evaluated"` and `method_result="HOLD"` is eligible unless its
+coverage position explicitly records `retained_local_owner` and the cell
+already carries a physical peak observation; the sample may be a predecessor
+member or a nonmember. That owner-closed exception keeps an observation-only
+HOLD in the ModeTrack candidate population without reopening Backfill.
+`selected_for_output` is a producer fact and never changes eligibility,
+candidate identity, or cardinality.
 
 The result is a closed authorization union: no eligible cells produce
 `not_run`, one produces `repair(candidate)`, and more than one produces a

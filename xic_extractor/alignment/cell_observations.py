@@ -1905,7 +1905,14 @@ def _derive_lane_evidence_state(
             raise CellObservationContractError(
                 "no-repair lane contains contradictory live observation facts"
             )
-    if association.position.planning_state == "not_planned":
+    retained_local_owner = (
+        association.position.planning_state == "not_planned"
+        and association.position.planning_reason == "retained_local_owner"
+    )
+    if (
+        association.position.planning_state == "not_planned"
+        and not retained_local_owner
+    ):
         if source_cell.peak_observation is not None or source_cell.peak_hypothesis:
             raise CellObservationContractError(
                 "not-planned lane cannot carry direct observation evidence"
@@ -1917,7 +1924,7 @@ def _derive_lane_evidence_state(
                 "not-planned coverage position crossed an evaluated source cell"
             )
         return "not_searched"
-    if not coverage_terminals:
+    if not retained_local_owner and not coverage_terminals:
         raise CellObservationContractError(
             "planned coverage position has no exact retained terminal"
         )
