@@ -34,6 +34,9 @@ from xic_extractor.alignment.mode_track import (
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
+from xic_extractor.alignment.result.application_result import (
+    UntargetedCandidateExclusion,
+)
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedUntargetBatchWorkflowResult,
@@ -48,7 +51,11 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import (
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidate,
+    DiscoverySettings,
+)
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
@@ -296,6 +303,25 @@ def compose_untargeted_cid_nl_production_result(
             method_subject_id=method_subject_id,
         )
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
+        if candidate_by_id[candidate_id].discovery_candidate_state
+        in MS1_FEATURE_BACKED_STATES
+    )
+    exclusions = tuple(
+        UntargetedCandidateExclusion(
+            candidate_id=candidate_id,
+            method_subject_id=method_subject_id,
+            canonical_sample_identity_id=batch.context.sample(
+                candidate_by_id[candidate_id].sample_stem
+            ).identity.sample_identity_id,
+            discovery_candidate_state=(
+                candidate_by_id[candidate_id].discovery_candidate_state
+            ),
+        )
+        for candidate_id, method_subject_id in (
+            batch.subject_batch.candidate_memberships
+        )
+        if candidate_by_id[candidate_id].discovery_candidate_state
+        not in MS1_FEATURE_BACKED_STATES
     )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -324,6 +350,7 @@ def compose_untargeted_cid_nl_production_result(
         scope=scope,
         processing_request=batch.context.processing_owners.request,
         processing_attempt=batch.context.processing_owners.attempt,
+        excluded_candidates=exclusions,
     )
 
     bundles = []
@@ -333,6 +360,8 @@ def compose_untargeted_cid_nl_production_result(
             for binding in bindings
             if binding.method_subject_id == subject.method_subject_id
         )
+        if not child_bindings:
+            continue
         child_scope = UntargetedSearchScope(
             schema_version=scope.schema_version,
             request=scope.request,
@@ -354,7 +383,7 @@ def compose_untargeted_cid_nl_production_result(
                 sample,
                 result_by_key[
                     (sample.metadata.raw_stem, subject.method_subject_id)
-                ].adapter_result.assessment_input.assessment,
+                ].effective_assessment,
             )
             for sample in sorted(
                 batch.context.samples,
@@ -525,25 +554,32 @@ def _runtime_candidate_traces(
     runtime_result: UntargetedCidNlRealDataRuntimeApplicationResult,
 ) -> dict[str, Trace]:
     traces: dict[str, Trace] = {}
-    for sample in batch.context.samples:
-        candidates = tuple(
-            sorted(
-                batch.context.candidates_by_sample[sample.metadata.raw_stem],
-                key=lambda candidate: candidate.candidate_id,
-            )
-        )
-        result = next(
-            result
-            for result in runtime_result.sample_results
-            if result.job.sample is sample
-            and result.adapter_result.acquisition is not None
-        )
+    seen_acquisitions: set[int] = set()
+    sample_by_stem = {
+        sample.metadata.raw_stem: sample for sample in batch.context.samples
+    }
+    for result in runtime_result.sample_results:
         acquisition = result.adapter_result.acquisition
-        assert acquisition is not None
-        if len(acquisition.traces) != len(candidates):
-            raise RuntimeError("sample acquisition does not close candidate universe")
-        for candidate, acquired in zip(candidates, acquisition.traces, strict=True):
-            traces[candidate.candidate_id] = trace_from_xic_request(
+        acquired_candidate_ids = result.adapter_result.acquired_candidate_ids
+        if acquisition is None:
+            if acquired_candidate_ids:
+                raise RuntimeError("runtime acquisition lost its candidate mapping")
+            continue
+        acquisition_identity = id(acquisition)
+        if acquisition_identity in seen_acquisitions:
+            continue
+        seen_acquisitions.add(acquisition_identity)
+        if len(acquisition.traces) != len(acquired_candidate_ids):
+            raise RuntimeError("runtime acquisition/candidate mapping is partial")
+        sample = sample_by_stem[result.job.sample.metadata.raw_stem]
+        for candidate_id, acquired in zip(
+            acquired_candidate_ids,
+            acquisition.traces,
+            strict=True,
+        ):
+            if candidate_id in traces:
+                raise RuntimeError("runtime acquisition duplicated a candidate trace")
+            traces[candidate_id] = trace_from_xic_request(
                 sample_name=sample.metadata.sample_name,
                 request=acquired.coordinate.request,
                 xic_trace=acquired.trace,
@@ -552,6 +588,16 @@ def _runtime_candidate_traces(
                     acquired.coordinate.acquisition_source_id
                 ),
             )
+    expected = {
+        candidate.candidate_id
+        for candidates in batch.context.candidates_by_sample.values()
+        for candidate in candidates
+        if candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+    }
+    if set(traces) != expected:
+        raise RuntimeError(
+            "runtime acquisition does not close capture-eligible candidates"
+        )
     return traces
 
 

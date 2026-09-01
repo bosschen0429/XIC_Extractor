@@ -122,6 +122,7 @@ class UntargetedCidNlRealDataRaw(BatchXICAdapter, Protocol):
 class UntargetedCidNlRealDataAdapterResult:
     assessment_input: UntargetedCidNlAssessmentInput
     acquisition: TraceAcquisitionBatch | None
+    acquired_candidate_ids: tuple[str, ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
@@ -520,6 +521,7 @@ def adapt_current_discovery_sample_subject(
                 assessment=assessment,
             ),
             acquisition=None,
+            acquired_candidate_ids=(),
             source_candidate_ids=(),
             strict_scan_count=0,
             lineage_artifacts=lineage,
@@ -685,6 +687,11 @@ def adapt_current_discovery_sample_subject(
             discovery_projections=tuple(projections),
         ),
         acquisition=acquisition,
+        acquired_candidate_ids=(
+            _preacquired_traces.candidate_ids
+            if acquisition is not None and _preacquired_traces is not None
+            else tuple(item.candidate_id for item in peak_candidates)
+        ),
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
         strict_scan_count=len(strict_scan_seeds),
         lineage_artifacts=lineage,

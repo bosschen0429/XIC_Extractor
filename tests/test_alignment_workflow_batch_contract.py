@@ -93,6 +93,7 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
         "processing_request",
         "processing_attempt",
         "children",
+        "excluded_candidates",
     )
     assert tuple(
         field.name for field in fields(FinalizedUntargetBatchApplicationResult)
@@ -101,6 +102,7 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
         "processing_request",
         "processing_attempt",
         "children",
+        "excluded_candidates",
     )
     assert UntargetWorkflowBatchProvider is not object
     assert tuple(
@@ -109,6 +111,7 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
         "scope",
         "processing_request",
         "processing_attempt",
+        "excluded_candidates",
     )
 
 

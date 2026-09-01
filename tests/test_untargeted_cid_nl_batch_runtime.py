@@ -259,6 +259,11 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     )
     assert len(missing_results) == 2
     assert all(item.recovery_attempt is not None for item in missing_results)
+    assert all(
+        item.effective_assessment is item.recovery_attempt.assessment
+        for item in missing_results
+        if item.recovery_attempt is not None
+    )
     assert {
         path: [vendor.chromatogram_request_counts for vendor in vendors]
         for path, vendors in opened.items()

@@ -56,6 +56,7 @@ from xic_extractor.alignment.result.application_result import (
     TargetApplicationResultRequest,
     UntargetApplicationResultRequest,
     UntargetBatchApplicationResultRequest,
+    UntargetedCandidateExclusion,
     finalize_alignment_result,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
@@ -271,6 +272,7 @@ class UntargetWorkflowCompositionRequest:
     scope: UntargetedSearchScope
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
+    excluded_candidates: tuple[UntargetedCandidateExclusion, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.scope) is not UntargetedSearchScope:
@@ -587,12 +589,18 @@ def compose_untarget_batch_after_runtime(
                     "Untarget batch child returned an unexpected terminal variant"
                 )
             children.append(child.application_result)
+        excluded_candidates = (
+            getattr(request, "excluded_candidates", ())
+            if type(request) is UntargetWorkflowCompositionRequest
+            else ()
+        )
         application_result = finalize_alignment_result(
             UntargetBatchApplicationResultRequest(
                 scope=request.scope,
                 processing_request=request.processing_request,
                 processing_attempt=request.processing_attempt,
                 children=tuple(children),
+                excluded_candidates=excluded_candidates,
             )
         )
         if type(application_result) is not FinalizedUntargetBatchApplicationResult:
@@ -816,21 +824,12 @@ def _validate_untarget_batch_fields(
         raise AlignmentWorkflowContractError(
             "Untarget batch request requires one complete candidate universe"
         )
-    memberships = _untarget_scope_memberships(request.scope)
-    if set(memberships) != set(candidate_ids):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request has incomplete subject membership"
-        )
     subject_ids = tuple(
         provider.method_subject_id for provider in request.scope.evidence_providers
     )
     if not subject_ids or len(subject_ids) != len(set(subject_ids)):
         raise AlignmentWorkflowContractError(
             "Untarget batch request requires unique method subjects"
-        )
-    if set(memberships.values()) != set(subject_ids):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request subject membership is not complete"
         )
     try:
         subject_batch = cid_nl_method_subject_batch_from_request(
@@ -849,18 +848,42 @@ def _validate_untarget_batch_fields(
         raise AlignmentWorkflowContractError(
             "Untarget batch request scope is not the complete request universe"
         )
+    if type(request) is UntargetWorkflowCompositionRequest:
+        exclusions = request.excluded_candidates
+        if type(exclusions) is not tuple or any(
+            type(item) is not UntargetedCandidateExclusion for item in exclusions
+        ):
+            raise AlignmentWorkflowContractError(
+                "Untarget batch exclusions must be an immutable typed tuple"
+            )
+        excluded_ids = tuple(item.candidate_id for item in exclusions)
+        capture_ids = tuple(request.scope.capture_bindings)
+        capture_candidate_ids = tuple(item.candidate_id for item in capture_ids)
+        if sorted((*capture_candidate_ids, *excluded_ids)) != sorted(candidate_ids):
+            raise AlignmentWorkflowContractError(
+                "Untarget batch capture/exclusion universe is incomplete"
+            )
+    elif tuple(
+        binding.candidate_id for binding in request.scope.capture_bindings
+    ) != candidate_ids:
+        raise AlignmentWorkflowContractError(
+            "Untarget batch runtime scope must capture the complete candidate universe"
+        )
 
 
 def _validate_untarget_batch_bundles(
     request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest,
     bundles: object,
 ) -> None:
-    if type(bundles) is not tuple or not bundles:
+    if type(bundles) is not tuple:
         raise AlignmentWorkflowContractError(
-            "Untarget batch provider must return a non-empty typed tuple"
+            "Untarget batch provider must return an immutable typed tuple"
         )
     parent_candidates = tuple(request.scope.declared_candidate_ids)
-    parent_memberships = _untarget_scope_memberships(request.scope)
+    subject_batch = cid_nl_method_subject_batch_from_request(
+        request.processing_request
+    )
+    parent_memberships = dict(subject_batch.candidate_memberships)
     parent_samples = tuple(request.scope.samples)
     parent_sample_ids = tuple(
         sample.identity.sample_identity_id for sample in parent_samples
@@ -948,16 +971,28 @@ def _validate_untarget_batch_bundles(
         child_subject_ids.append(subject_id)
         _validate_request_adapter(child_request, bundle.adapter)
 
+    excluded_ids = (
+        tuple(item.candidate_id for item in request.excluded_candidates)
+        if type(request) is UntargetWorkflowCompositionRequest
+        else ()
+    )
     if len(child_candidates) != len(set(child_candidates)) or sorted(
-        child_candidates
+        (*child_candidates, *excluded_ids)
     ) != sorted(parent_candidates):
         raise AlignmentWorkflowContractError(
-            "Untarget batch child candidate union is not exactly once"
+            "Untarget batch child/exclusion candidate union is not exactly once"
         )
-    if tuple(child_subject_ids) != tuple(
+    excluded_id_set = set(excluded_ids)
+    expected_child_subject_ids = tuple(
         provider.method_subject_id
         for provider in request.scope.evidence_providers
-    ):
+        if any(
+            method_subject_id == provider.method_subject_id
+            and candidate_id not in excluded_id_set
+            for candidate_id, method_subject_id in parent_memberships.items()
+        )
+    )
+    if tuple(child_subject_ids) != expected_child_subject_ids:
         raise AlignmentWorkflowContractError(
             "Untarget batch children are not in canonical subject order"
         )
@@ -1181,6 +1216,7 @@ __all__ = (
     "UntargetWorkflowBundle",
     "UntargetWorkflowCompositionRequest",
     "UntargetWorkflowRequest",
+    "UntargetedCandidateExclusion",
     "WorkflowAdapter",
     "WorkflowRequest",
     "WorkflowRuntimeInvocation",

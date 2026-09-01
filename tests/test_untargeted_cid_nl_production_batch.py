@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
@@ -197,3 +200,109 @@ def test_production_batch_executes_one_atomic_sample_phase(
         )
         if method_subject_id == subject.method_subject_id
     )
+
+
+@pytest.mark.parametrize("exclude_all", (False, True))
+def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
+    tmp_path: Path,
+    monkeypatch,
+    exclude_all: bool,
+) -> None:
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"issue329-production-orphan:S1")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raw, initial_candidates = _nearby_subject_candidates(
+        raw_path,
+        settings=settings,
+        peak_config=peak_config,
+    )
+    excluded_source_ids = {
+        candidate.candidate_id
+        for candidate in (
+            initial_candidates if exclude_all else initial_candidates[1:]
+        )
+    }
+    candidates = tuple(
+        replace(
+            candidate,
+            ms1_peak_found=False,
+            ms1_apex_rt=None,
+            ms1_area=None,
+            ms1_peak_rt_start=None,
+            ms1_peak_rt_end=None,
+            ms1_height=None,
+            ms1_trace_quality="not_found",
+            ms1_scan_support_score=None,
+            discovery_candidate_state="review_only_orphan_nl",
+            ms1_feature_row_id="",
+        )
+        if candidate.candidate_id in excluded_source_ids
+        else candidate
+        for candidate in initial_candidates
+    )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=(raw_path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            (raw_path,),
+            {"S1": candidates},
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:issue329-production-orphan",
+    )
+    _install_runtime_raw(
+        monkeypatch,
+        source_raw=source_raw,
+        raw_path=raw_path,
+        tmp_path=tmp_path,
+    )
+
+    runtime_result = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json",
+            "issue329-production-orphan",
+        ),
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime_result,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+
+    assert completed.application_result.candidate_ids == tuple(
+        candidate_id
+        for subject in batch.subject_batch.subjects
+        for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
+        if method_subject_id == subject.method_subject_id
+    )
+    exclusions = completed.application_result.excluded_candidates
+    assert {item.candidate_id for item in exclusions} == excluded_source_ids
+    assert all(
+        item.method_subject_id
+        == dict(batch.subject_batch.candidate_memberships)[item.candidate_id]
+        and item.discovery_candidate_state == "review_only_orphan_nl"
+        and item.reason_code == "discovery_candidate_not_search_eligible"
+        for item in exclusions
+    )
+    if exclude_all:
+        assert completed.application_result.children == ()
+        assert completed.application_result.canonical_samples == tuple(
+            sorted(
+                batch.context.samples,
+                key=lambda sample: sample.identity.sample_identity_id,
+            )
+        )

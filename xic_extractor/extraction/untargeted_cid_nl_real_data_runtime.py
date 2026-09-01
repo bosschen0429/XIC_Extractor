@@ -95,6 +95,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     discovery_settings_payload,
     validate_candidate_universe_payload,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     BATCH_SCHEMA_VERSION,
     REQUEST_INPUT_KEY,
@@ -212,6 +215,14 @@ class UntargetedCidNlRuntimeSampleResult:
     result_ref: UntargetedCidNlSampleResultRef
     recovery_input: UntargetedCidNlRecoveryInput | None = None
     recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None = None
+
+    @property
+    def effective_assessment(self) -> CidNlMethodAssessmentRef:
+        """Return the terminal assessment after any authorized recovery."""
+
+        if self.recovery_attempt is not None:
+            return self.recovery_attempt.assessment
+        return self.adapter_result.assessment_input.assessment
 
 
 @dataclass(slots=True)

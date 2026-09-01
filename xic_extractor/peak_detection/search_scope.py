@@ -489,18 +489,41 @@ def _validate_untargeted_capture_bindings(
                 for membership in expected_memberships
                 if membership[0] in sample_candidate_ids
             )
-        if declared_candidate_ids != tuple(
+        expected_candidate_ids = tuple(
             candidate_id for candidate_id, _ in expected_memberships
+        )
+        expected_positions = {
+            candidate_id: index
+            for index, candidate_id in enumerate(expected_candidate_ids)
+        }
+        if (
+            not set(declared_candidate_ids).issubset(expected_positions)
+            or tuple(
+                expected_positions[candidate_id]
+                for candidate_id in declared_candidate_ids
+            )
+            != tuple(
+                sorted(
+                    expected_positions[candidate_id]
+                    for candidate_id in declared_candidate_ids
+                )
+            )
         ):
             raise SearchScopeContractError(
                 "Untargeted SearchScope candidates do not match request subject "
                 "memberships"
             )
         binding_ids = tuple(binding.candidate_id for binding in bindings)
-        if binding_ids != declared_candidate_ids:
+        declared_positions = {
+            candidate_id: index
+            for index, candidate_id in enumerate(declared_candidate_ids)
+        }
+        binding_positions = tuple(
+            declared_positions[candidate_id] for candidate_id in binding_ids
+        )
+        if binding_positions != tuple(sorted(binding_positions)):
             raise SearchScopeContractError(
-                "Untargeted SearchScope requires exactly one capture binding per "
-                "declared candidate"
+                "Untargeted capture bindings do not preserve declared candidate order"
             )
         subjects_by_id = {
             subject.method_subject_id: subject for subject in batch.subjects
