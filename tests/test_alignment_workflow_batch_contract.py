@@ -24,6 +24,7 @@ from xic_extractor.alignment.workflow import (
     FailedWorkflowResult,
     UntargetWorkflowBatchProvider,
     UntargetWorkflowBundle,
+    UntargetWorkflowCompositionRequest,
     UntargetWorkflowRequest,
     WorkflowRuntimeInvocation,
     WorkflowStage,
@@ -102,6 +103,13 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
         "children",
     )
     assert UntargetWorkflowBatchProvider is not object
+    assert tuple(
+        field.name for field in fields(UntargetWorkflowCompositionRequest)
+    ) == (
+        "scope",
+        "processing_request",
+        "processing_attempt",
+    )
 
 
 def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
@@ -379,6 +387,12 @@ def test_batch_can_compose_an_owner_completed_runtime_without_reexecution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request, receipt = _request_for_lifecycle(AttemptTerminalOutcome.SUCCEEDED)
+    composition_request = _uninitialized(
+        UntargetWorkflowCompositionRequest,
+        scope=request.scope,
+        processing_request=request.processing_request,
+        processing_attempt=request.processing_attempt,
+    )
     bundle = _uninitialized(UntargetWorkflowBundle, request=object(), adapter=object())
     child = _uninitialized(
         workflow_owner.CompletedUntargetWorkflowResult,
@@ -396,7 +410,9 @@ def test_batch_can_compose_an_owner_completed_runtime_without_reexecution(
         lambda *_args, **_kwargs: pytest.fail("completed runtime must not reexecute"),
     )
     monkeypatch.setattr(
-        workflow_owner, "_validate_untarget_batch_request", lambda _r: None
+        workflow_owner,
+        "_validate_untarget_batch_composition_request",
+        lambda _r: None,
     )
     monkeypatch.setattr(
         workflow_owner, "_validate_untarget_batch_bundles", lambda *_a: None
@@ -415,7 +431,7 @@ def test_batch_can_compose_an_owner_completed_runtime_without_reexecution(
     monkeypatch.setattr(workflow_owner, "finalize_alignment_result", lambda _v: batch)
 
     result = compose_untarget_batch_after_runtime(
-        request,
+        composition_request,
         lambda: (bundle,),
         receipt,
     )

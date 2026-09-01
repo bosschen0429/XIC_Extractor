@@ -54,6 +54,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.sample_metadata import SampleMetadata
@@ -240,6 +241,9 @@ def _mode_track_runtime_jobs(
     context: UntargetedCidNlRealDataContext,
     dll_dir: Path,
 ) -> tuple[UntargetedCidNlRealDataRuntimeJob, ...]:
+    method_subject = context.method_subject
+    if type(method_subject) is not CidNlMethodSubject:
+        raise ValueError("ModeTrack CID-NL workflow requires one method subject")
     jobs = []
     for sample in context.samples:
         sample_stem = sample.metadata.raw_stem
@@ -247,7 +251,7 @@ def _mode_track_runtime_jobs(
             UntargetedCidNlRealDataRuntimeJob(
                 processing_owners=context.processing_owners,
                 sample=sample,
-                method_subject=context.method_subject,
+                method_subject=method_subject,
                 candidates=context.candidates_by_sample[sample_stem],
                 discovery_receipt=context.discovery_receipts_by_sample[sample_stem],
                 settings=context.settings,

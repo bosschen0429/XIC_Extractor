@@ -264,16 +264,40 @@ class UntargetWorkflowRequest:
         _validate_request_fields(self)
 
 
+@dataclass(frozen=True, slots=True)
+class UntargetWorkflowCompositionRequest:
+    """One Untarget request whose owner runtime has already finalized."""
+
+    scope: UntargetedSearchScope
+    processing_request: ProcessingRequestIdentity
+    processing_attempt: ProcessingAttemptIdentity
+
+    def __post_init__(self) -> None:
+        if type(self.scope) is not UntargetedSearchScope:
+            raise AlignmentWorkflowContractError("Untarget request scope must be exact")
+        _validate_processing_fields(self)
+
+
 def _validate_request_fields(
     request: TargetWorkflowRequest | UntargetWorkflowRequest,
+) -> None:
+    _validate_processing_fields(request)
+    if type(request.runtime) is not WorkflowRuntimeInvocation:
+        raise AlignmentWorkflowContractError("runtime invocation must be exact")
+    request.runtime.__post_init__()
+
+
+def _validate_processing_fields(
+    request: (
+        TargetWorkflowRequest
+        | UntargetWorkflowRequest
+        | UntargetWorkflowCompositionRequest
+    ),
 ) -> None:
     if type(request.processing_request) is not ProcessingRequestIdentity:
         raise AlignmentWorkflowContractError("processing request must be exact")
     if type(request.processing_attempt) is not ProcessingAttemptIdentity:
         raise AlignmentWorkflowContractError("processing attempt must be exact")
-    if type(request.runtime) is not WorkflowRuntimeInvocation:
-        raise AlignmentWorkflowContractError("runtime invocation must be exact")
-    request.runtime.__post_init__()
 
 
 WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowRequest
@@ -333,11 +357,14 @@ WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
 class UntargetWorkflowBundle:
     """One subject-local request/adapter pair minted after runtime success."""
 
-    request: UntargetWorkflowRequest
+    request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest
     adapter: UntargetWorkflowAdapter
 
     def __post_init__(self) -> None:
-        if type(self.request) is not UntargetWorkflowRequest:
+        if type(self.request) not in (
+            UntargetWorkflowRequest,
+            UntargetWorkflowCompositionRequest,
+        ):
             raise AlignmentWorkflowContractError(
                 "Untarget workflow bundle requires an exact request"
             )
@@ -508,13 +535,13 @@ def execute_untarget_batch_workflow(
 
 
 def compose_untarget_batch_after_runtime(
-    request: UntargetWorkflowRequest,
+    request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest,
     provider: UntargetWorkflowBatchProvider,
     runtime_receipt: RuntimeFinalizationReceipt,
 ) -> WorkflowTerminalResult:
     """Compose one batch from its exact already-completed owner runtime."""
 
-    _validate_untarget_batch_request(request)
+    _validate_untarget_batch_composition_request(request)
     if not isinstance(runtime_receipt, RuntimeFinalizationReceipt):
         raise AlignmentWorkflowContractError(
             "Untarget batch composition requires an owner runtime receipt"
@@ -599,7 +626,7 @@ def _execute_runtime(
 
 
 def _execute_composition_after_runtime(
-    request: WorkflowRequest,
+    request: WorkflowRequest | UntargetWorkflowCompositionRequest,
     adapter: WorkflowAdapter,
     runtime_receipt: RuntimeFinalizationReceipt,
     *,
@@ -760,6 +787,30 @@ def _validate_untarget_batch_request(request: UntargetWorkflowRequest) -> None:
             "Untarget batch request crossed its processing request"
         )
     _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
+    _validate_untarget_batch_fields(request)
+
+
+def _validate_untarget_batch_composition_request(
+    request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest,
+) -> None:
+    if type(request) is UntargetWorkflowRequest:
+        _validate_untarget_batch_request(request)
+        return
+    if type(request) is not UntargetWorkflowCompositionRequest:
+        raise AlignmentWorkflowContractError(
+            "Untarget batch composition requires an exact completed request"
+        )
+    request.__post_init__()
+    if request.processing_request is not request.scope.request:
+        raise AlignmentWorkflowContractError(
+            "Untarget batch request crossed its processing request"
+        )
+    _validate_untarget_batch_fields(request)
+
+
+def _validate_untarget_batch_fields(
+    request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest,
+) -> None:
     candidate_ids = tuple(request.scope.declared_candidate_ids)
     if not candidate_ids or len(candidate_ids) != len(set(candidate_ids)):
         raise AlignmentWorkflowContractError(
@@ -801,7 +852,7 @@ def _validate_untarget_batch_request(request: UntargetWorkflowRequest) -> None:
 
 
 def _validate_untarget_batch_bundles(
-    request: UntargetWorkflowRequest,
+    request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest,
     bundles: object,
 ) -> None:
     if type(bundles) is not tuple or not bundles:
@@ -833,9 +884,17 @@ def _validate_untarget_batch_bundles(
         child_request = bundle.request
         child_scope = child_request.scope
         if (
-            child_request.processing_request is not request.processing_request
+            type(child_request) is not type(request)
+            or child_request.processing_request is not request.processing_request
             or child_request.processing_attempt is not request.processing_attempt
-            or child_request.runtime is not request.runtime
+        ):
+            raise AlignmentWorkflowContractError(
+                "Untarget batch child crossed request, attempt, or runtime"
+            )
+        if (
+            type(request) is UntargetWorkflowRequest
+            and type(child_request) is UntargetWorkflowRequest
+            and child_request.runtime is not request.runtime
         ):
             raise AlignmentWorkflowContractError(
                 "Untarget batch child crossed request, attempt, or runtime"
@@ -922,12 +981,16 @@ def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
 
 
 def _validate_request_adapter(
-    request: WorkflowRequest,
+    request: WorkflowRequest | UntargetWorkflowCompositionRequest,
     adapter: WorkflowAdapter,
 ) -> ProcessingOwnerReferences:
     variants = {
         TargetWorkflowRequest: (TargetWorkflowAdapter, TargetSearchScope),
         UntargetWorkflowRequest: (UntargetWorkflowAdapter, UntargetedSearchScope),
+        UntargetWorkflowCompositionRequest: (
+            UntargetWorkflowAdapter,
+            UntargetedSearchScope,
+        ),
     }
     expected = variants.get(type(request))
     if (
@@ -948,7 +1011,8 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "workflow request crossed processing request or attempt"
         )
-    _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
+    if type(request) is not UntargetWorkflowCompositionRequest:
+        _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
     owners = adapter.repair.coverage.epoch.processing_owners
     if (
         type(owners) is not ProcessingOwnerReferences
@@ -1030,7 +1094,7 @@ def _repaired_observations(
 
 def _finish_variant(
     *,
-    request: WorkflowRequest,
+    request: WorkflowRequest | UntargetWorkflowCompositionRequest,
     scientific: FinalizedScientificAlignment,
     runtime_receipt: RuntimeFinalizationReceipt,
 ) -> WorkflowTerminalResult:
@@ -1115,6 +1179,7 @@ __all__ = (
     "UntargetWorkflowAdapter",
     "UntargetWorkflowBatchProvider",
     "UntargetWorkflowBundle",
+    "UntargetWorkflowCompositionRequest",
     "UntargetWorkflowRequest",
     "WorkflowAdapter",
     "WorkflowRequest",

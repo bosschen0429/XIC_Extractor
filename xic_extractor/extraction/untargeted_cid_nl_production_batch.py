@@ -6,7 +6,6 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillPlanningPosition,
@@ -42,8 +41,7 @@ from xic_extractor.alignment.workflow import (
     ObservationRepairWorkflowArguments,
     UntargetWorkflowAdapter,
     UntargetWorkflowBundle,
-    UntargetWorkflowRequest,
-    WorkflowRuntimeInvocation,
+    UntargetWorkflowCompositionRequest,
     compose_untarget_batch_after_runtime,
 )
 from xic_extractor.config import ExtractionConfig
@@ -54,7 +52,6 @@ from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
-    RuntimeWorkerBatchProvider,
     start_runtime_attempt,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
@@ -323,25 +320,10 @@ def compose_untargeted_cid_nl_production_result(
         ),
         capture_bindings=bindings,
     )
-    owner_runtime = runtime_result.finalization.coordinator.state.runtime
-    invocation = WorkflowRuntimeInvocation(
-        runtime=owner_runtime,
-        reservations=(),
-        worker_batch_provider=cast(
-            RuntimeWorkerBatchProvider,
-            lambda _coordinator: None,
-        ),
-        telemetry_provider=cast(
-            RuntimeTelemetryProvider,
-            lambda _coordinator: None,
-        ),
-        persister=lambda receipt: receipt,
-    )
-    parent_request = UntargetWorkflowRequest(
+    parent_request = UntargetWorkflowCompositionRequest(
         scope=scope,
         processing_request=batch.context.processing_owners.request,
         processing_attempt=batch.context.processing_owners.attempt,
-        runtime=invocation,
     )
 
     bundles = []
@@ -503,11 +485,10 @@ def compose_untargeted_cid_nl_production_result(
         coverage = build_owner_backfill_evaluation_coverage(epoch, ())
         bundles.append(
             UntargetWorkflowBundle(
-                request=UntargetWorkflowRequest(
+                request=UntargetWorkflowCompositionRequest(
                     scope=child_scope,
                     processing_request=parent_request.processing_request,
                     processing_attempt=parent_request.processing_attempt,
-                    runtime=invocation,
                 ),
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
