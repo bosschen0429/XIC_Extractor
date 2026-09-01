@@ -242,6 +242,45 @@ They do not authorize a ticket to implement downstream callers, unrelated
 algorithms, or catch-all cleanup. A missing field is a plan gap: keep or return
 the issue to `needs-info` instead of filling the gap during implementation.
 
+This section is the sole semantic owner of the **Atomic delivery contract**.
+MAP compilation, implementation readiness, and PR scope-transfer review route
+here; templates project these rules and validators check conformance without
+becoming another authority. The five delivery rules are:
+
+1. One implementation ticket is delivered by one Atomic PR by default.
+2. Every ticket and every proposed PR unit names one bounded outcome, a current
+   consumer, an independently decisive oracle, rollback, and the disposition
+   of any replaced surface: retire it or retain it with an explicit obligation.
+3. A multi-PR proposal is valid only when every PR remains independently
+   useful, reviewable, testable, mergeable, and reversible if no later sibling
+   lands.
+4. LOC, file/module/test counts, context-window size, review-time estimates,
+   and construction or implementation phases may trigger a review map,
+   ordered commits, or ticket refreeze, but never authorize a merge boundary.
+5. Foundation, intermediate, build-only, contract-only-for-a-later-feature,
+   and later-wiring or later-activation PRs are invalid unless that PR already
+   has an independent current consumer and durable owner value.
+
+Goal and Acceptance are separate fields. Goal explains direction and value;
+it is never closure authority. Executable Acceptance declares the actor,
+input, real entry path, consumer-visible or persisted observable, exact
+expected result, stable oracle and falsifying counterexample, applicable
+failure/cancellation/partial-write semantics, preserved invariants, explicit
+non-goals, rollback, and close rule. Each proposed PR unit separately declares
+its current consumer and decisive oracle, confirms that no later sibling is
+required, and supplies its own rollback and replaced-surface disposition.
+
+The repository validator accepts only the exact headings and declared fields
+projected by the implementation Issue and PR templates. Missing or duplicate
+required headings and fields fail closed. Extra prose is allowed for humans,
+but unknown fields and Markdown synonyms are non-authoritative and cannot
+supply or override a required value. Validation binds live issue evidence to
+repository plus issue number plus current body, and live PR evidence to
+repository plus PR number plus reviewed head SHA plus current body. A body,
+linkage, label, or head change invalidates an earlier result. The validator
+checks conformance only; it cannot mint product, scientific, delivery, or merge
+authority.
+
 The PR carries a compact scope-transfer receipt: execution base, semantic
 owner, finite production universe, and either `none` plus a rationale for scope
 delta or a link to the superseding issue refreeze. Every production diff must

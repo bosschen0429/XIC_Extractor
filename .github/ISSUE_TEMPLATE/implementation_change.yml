@@ -5,10 +5,13 @@ labels:
   - needs-triage
 body:
   - type: textarea
-    id: outcome
+    id: goal
     attributes:
-      label: Outcome and observable loss
-      description: State what should work and the current user, product, scientific, or engineering cost.
+      label: Goal
+      description: >-
+        Explain the direction and value separately from the executable
+        acceptance contract below. State what should work and the current
+        user, product, scientific, or engineering cost.
     validations:
       required: true
   - type: input
@@ -64,12 +67,54 @@ body:
   - type: textarea
     id: acceptance
     attributes:
-      label: Ticket completion contract
+      label: Executable acceptance contract
       description: >-
-        State the required ticket-local observable or usable handoff, current
-        entry or consumer, stable falsifier, preserved invariants, work not
-        required for closure, and the rule to close or hand off when every item
-        passes.
+        Complete every exact declared field. Use `Not applicable - <reason>`
+        only when failure, cancellation, or partial-write semantics genuinely
+        do not apply. Extra prose cannot replace a field.
+      value: |-
+        - Actor:
+        - Input:
+        - Real entry path:
+        - Observable:
+        - Expected result:
+        - Stable oracle:
+        - Falsifying counterexample:
+        - Failure semantics:
+        - Cancellation semantics:
+        - Partial-write semantics:
+        - Preserved invariants:
+        - Non-goals:
+        - Rollback:
+        - Close rule:
+    validations:
+      required: true
+  - type: textarea
+    id: atomic_delivery
+    attributes:
+      label: Atomic delivery boundary
+      description: >-
+        Default to one ticket and one Atomic PR. For a multi-PR plan, change
+        Delivery plan to `independently-atomic-multi-pr` and repeat the exact
+        Proposed PR unit block for every unit. Every unit must remain useful,
+        reviewable, testable, mergeable, and reversible with no later sibling.
+      value: |-
+        - Delivery plan: one-ticket-one-atomic-pr
+
+        #### Proposed PR unit: whole-ticket
+
+        - Bounded outcome:
+        - Current consumer:
+        - Independently decisive oracle:
+        - Independently useful: yes
+        - Independently reviewable: yes
+        - Independently testable: yes
+        - Independently mergeable: yes
+        - Independently reversible: yes
+        - Later sibling required: no
+        - Split rationale: not applicable - this one Atomic PR closes the ticket
+        - Replaced surface disposition:
+        - Rollback:
     validations:
       required: true
   - type: textarea
