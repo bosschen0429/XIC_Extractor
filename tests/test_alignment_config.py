@@ -47,7 +47,7 @@ def test_alignment_public_type_hints_resolve_without_raw_reader_import():
     assert "xic_extractor.raw_reader" not in set(sys.modules) - before
 
 
-def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
+def test_alignment_modules_only_use_registered_pipeline_adapter_boundary():
     alignment_dir = Path(__file__).parents[1] / "xic_extractor" / "alignment"
     banned_roots = (
         "gui",
@@ -59,8 +59,29 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
         "xic_extractor.extractor",
         "xic_extractor.output",
     )
+    allowed_extraction_imports = {
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_alignment."
+            "run_untargeted_cid_nl_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_production_batch",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_production_batch."
+            "is_pure_single_provider_cid_nl",
+        ),
+    }
 
     violations = []
+    observed_extraction_imports = set()
     for path in alignment_dir.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
@@ -75,9 +96,14 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
                 ):
                     violations.append((path.name, imported_name))
                 elif imported_name.startswith(banned_roots):
-                    violations.append((path.name, imported_name))
+                    candidate = (path.name, imported_name)
+                    if candidate in allowed_extraction_imports:
+                        observed_extraction_imports.add(candidate)
+                    else:
+                        violations.append(candidate)
 
     assert violations == []
+    assert observed_extraction_imports == allowed_extraction_imports
 
 
 def test_import_boundary_detects_package_attribute_imports():

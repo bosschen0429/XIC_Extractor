@@ -35,6 +35,10 @@ same change crosses it.
   re-scan RAW files.
 - Shared dataclasses and protocols belong in small model/contract modules when
   they prevent circular imports or schema drift.
+- `alignment.pipeline.run_alignment` is the single registered orchestration
+  exception allowed to call the pure CID-NL production adapter and route
+  predicate in `extraction/`; every other Alignment-to-Extraction import stays
+  forbidden, and the exact symbol census is executable.
 - Move behavior before changing behavior. Add characterization tests before
   moving uncovered behavior.
 - Separate real-data validation from normal unit tests.
