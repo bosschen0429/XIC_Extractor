@@ -10,9 +10,9 @@ import pytest
 
 import scripts.check_productization_authority as authority_checker
 from scripts.check_productization_authority import (
-    APPROVED_SCOPE_ORDER,
     DEFAULT_DEPENDENT_MANIFEST,
     DEFAULT_MANIFEST,
+    DEPENDENT_ALLOWED_SCOPE_ORDER,
     DEPENDENT_HOLD_STATUS,
     DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
     DEPENDENT_PACKAGE_AUTHORITY_SHA256,
@@ -50,7 +50,7 @@ def test_productization_authority_checker_replays_exact_dependent_hold() -> None
     )
     assert payload["package_authority_sha256"] == (DEPENDENT_PACKAGE_AUTHORITY_SHA256)
     assert tuple(payload["allowed_registered_writer_scope_ids"]) == (
-        APPROVED_SCOPE_ORDER
+        DEPENDENT_ALLOWED_SCOPE_ORDER
     )
     assert payload["activation_summary_artifact"] == ""
     assert payload["activation_summary_sha256"] == ""
