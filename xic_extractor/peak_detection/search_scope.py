@@ -181,6 +181,7 @@ class UntargetedSearchScope:
             evidence_providers=self.evidence_providers,
             declared_candidate_ids=self.declared_candidate_ids,
             capture_bindings=self.capture_bindings,
+            allow_sample_subset=True,
         )
         if "target_list_snapshot" in _request_inputs(self.request):
             raise SearchScopeContractError(
@@ -193,6 +194,7 @@ class UntargetedSearchScope:
         _validate_untargeted_capture_bindings(
             self.capture_bindings,
             request=self.request,
+            samples=self.samples,
             declared_candidate_ids=self.declared_candidate_ids,
             evidence_providers=self.evidence_providers,
         )
@@ -317,6 +319,7 @@ def _validate_common_scope(
     evidence_providers: object,
     declared_candidate_ids: object,
     capture_bindings: object,
+    allow_sample_subset: bool = False,
 ) -> None:
     if schema_version != SEARCH_SCOPE_SCHEMA_VERSION:
         raise SearchScopeContractError(
@@ -334,9 +337,16 @@ def _validate_common_scope(
         sorted(binding.adapter_input_key for binding in request.acquisition_bindings)
     )
     actual_tokens = tuple(sorted(sample.lookup_token for sample in samples))
-    if actual_tokens != expected_tokens:
+    samples_are_valid = (
+        bool(actual_tokens)
+        and len(actual_tokens) == len(set(actual_tokens))
+        and set(actual_tokens).issubset(expected_tokens)
+        if allow_sample_subset
+        else actual_tokens == expected_tokens
+    )
+    if not samples_are_valid:
         raise SearchScopeContractError(
-            "SearchScope sample universe must cover the processing request exactly"
+            "SearchScope sample universe is not authorized by the processing request"
         )
     sample_ids = tuple(sample.identity.sample_identity_id for sample in samples)
     if len(sample_ids) != len(set(sample_ids)):
@@ -436,6 +446,7 @@ def _validate_untargeted_capture_bindings(
     bindings: tuple[CaptureCandidateBinding, ...],
     *,
     request: ProcessingRequestIdentity,
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
     declared_candidate_ids: tuple[str, ...],
     evidence_providers: tuple[EvidenceProviderBinding, ...],
 ) -> None:
@@ -467,6 +478,16 @@ def _validate_untargeted_capture_bindings(
             raise SearchScopeContractError(
                 "Untargeted batch SearchScope must be the complete universe or "
                 "one exact subject view"
+            )
+        sample_candidate_ids = _request_sample_candidate_ids(
+            request_inputs,
+            samples=samples,
+        )
+        if sample_candidate_ids is not None:
+            expected_memberships = tuple(
+                membership
+                for membership in expected_memberships
+                if membership[0] in sample_candidate_ids
             )
         if declared_candidate_ids != tuple(
             candidate_id for candidate_id, _ in expected_memberships
@@ -520,6 +541,48 @@ def _validate_untargeted_capture_bindings(
             raise SearchScopeContractError(
                 "Untargeted capture binding mismatches request-bound method subject"
             )
+
+
+def _request_sample_candidate_ids(
+    request_inputs: dict[str, object],
+    *,
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+) -> frozenset[str] | None:
+    universe = request_inputs.get("current_discovery_candidate_universe")
+    if universe is None:
+        return None
+    if not isinstance(universe, dict) or not isinstance(universe.get("samples"), list):
+        raise SearchScopeContractError(
+            "Untargeted batch request candidate universe is malformed"
+        )
+    expected_stems = {sample.metadata.raw_stem for sample in samples}
+    matched_stems: set[str] = set()
+    candidate_ids: set[str] = set()
+    for entry in universe["samples"]:
+        if (
+            not isinstance(entry, dict)
+            or entry.get("sample_stem") not in expected_stems
+        ):
+            continue
+        stem = entry["sample_stem"]
+        ids = entry.get("candidate_ids")
+        if not isinstance(stem, str) or not isinstance(ids, list) or any(
+            not isinstance(candidate_id, str) for candidate_id in ids
+        ):
+            raise SearchScopeContractError(
+                "Untargeted batch candidate universe is malformed"
+            )
+        if stem in matched_stems:
+            raise SearchScopeContractError(
+                "Untargeted batch candidate universe duplicated a sample"
+            )
+        matched_stems.add(stem)
+        candidate_ids.update(ids)
+    if matched_stems != expected_stems:
+        raise SearchScopeContractError(
+            "Untargeted batch candidate universe omitted a scope sample"
+        )
+    return frozenset(candidate_ids)
 
 
 def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:
