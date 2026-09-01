@@ -470,6 +470,9 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
     )
     if exclude_all:
         assert completed.application_result.children == ()
+        assert completed.application_result.subject_ids == tuple(
+            subject.method_subject_id for subject in batch.subject_batch.subjects
+        )
         assert completed.application_result.canonical_samples == tuple(
             sorted(
                 batch.context.samples,

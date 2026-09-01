@@ -5,10 +5,22 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.issue161_no_raw_fixture import (
+    issue161_evidence,
+    issue161_support_policy,
+    issue161_unique_support,
+)
 from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_cid_nl_peak_hypotheses_from_assessment,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection import capture as capture_owner
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlEvaluationReceipt,
+    mint_cid_nl_method_assessment_ref,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
@@ -631,6 +643,124 @@ def test_scope_rejects_provider_not_bound_to_variant_definition(
             capture_bindings=(),
             target_snapshot=fixture.target.snapshot,
             target=fixture.target,
+        )
+
+
+def test_owner_binding_rejects_observation_from_other_capture_trace(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    sample = fixture.sample("S1")
+    method_subject = cid_nl_method_subject_from_target(fixture.target)
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    rt = np.linspace(7.7, 8.3, 61)
+    intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
+    binding = _capture_binding(
+        candidate_id="candidate-a",
+        method_subject_id=method_subject.method_subject_id,
+        sample=sample,
+        acquisition_source_id=source.acquisition_source_id,
+        mz=method_subject.precursor_mz,
+        ppm_tol=method_subject.precursor_tolerance_ppm,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+    )
+    scope = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=fixture.request,
+        samples=fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=_peak_config(tmp_path),
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=method_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=(binding.candidate_id,),
+        capture_bindings=(binding,),
+        target_snapshot=fixture.target.snapshot,
+        target=fixture.target,
+    )
+
+    def captured(source_name: str):
+        return capture_owner.capture_peak_hypotheses(
+            scope=scope,
+            candidate_id=binding.candidate_id,
+            trace=Trace.from_arrays(
+                sample_name=sample.metadata.sample_name,
+                mz=binding.query_mz,
+                rt=rt,
+                intensity=intensity,
+                rt_min=binding.query_rt_min,
+                rt_max=binding.query_rt_max,
+                ppm_tol=binding.query_ppm_tol,
+                source=source_name,
+                acquisition_source_id=source.acquisition_source_id,
+            ),
+        )
+
+    source_capture = captured("source-capture")
+    rebound_capture = captured("rebound-capture")
+    observation = capture_owner.mint_captured_peak_observation(
+        source_capture,
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    evidence = issue161_evidence(
+        fixture,
+        "S1",
+        scan_number=101,
+        scan_rt_min=observation.content.integration.rt_apex_min,
+    )
+    support = issue161_unique_support(
+        fixture,
+        "S1",
+        peak=observation,
+        evidence=evidence,
+    )
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        target=fixture.target,
+        detector_invocation_id="gaussian15:S1:trace-binding-v1",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.5,
+            support_policy=issue161_support_policy(),
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=1,
+            reason_code=None,
+        ),
+        candidate_peaks=(observation,),
+        evidence_refs=(evidence,),
+        individual_support_refs=(support,),
+    )
+    hypothesis = compose_cid_nl_peak_hypotheses_from_assessment(
+        processing_owners=fixture.owners,
+        sample=sample,
+        assessment=assessment,
+    )[0]
+    assert rebound_capture.selected_hypothesis is not None
+    assert (
+        rebound_capture.selected_hypothesis.integration
+        == source_capture.selected_hypothesis.integration
+    )
+
+    with pytest.raises(
+        capture_owner.SampleLocalCaptureError,
+        match="captured physical selection",
+    ):
+        capture_owner.bind_owner_backed_capture_hypothesis(
+            rebound_capture,
+            observation=observation,
+            hypothesis=hypothesis,
         )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
@@ -18,6 +19,10 @@ from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidateState,
 )
+from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    CANDIDATE_UNIVERSE_INPUT_KEY,
+    validate_candidate_universe_payload,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
     cid_nl_method_subject_batch_from_request,
@@ -27,6 +32,7 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.processing_identity import (
+    IdentityContractError,
     ProcessingAttemptIdentity,
     ProcessingRequestIdentity,
 )
@@ -256,9 +262,7 @@ class FinalizedUntargetBatchApplicationResult:
     @property
     def subject_ids(self) -> tuple[str, ...]:
         return tuple(
-            provider.method_subject_id
-            for child in self.children
-            for provider in child.scientific_core.scope.evidence_providers
+            provider.method_subject_id for provider in self.scope.evidence_providers
         )
 
     @property
@@ -582,6 +586,14 @@ def _validate_untarget_batch_request(
         )
     parent_samples = tuple(request.scope.samples)
     parent_sample_ids = _sample_ids(parent_samples)
+    candidate_sample_ids = _candidate_sample_ids_from_request(
+        request.processing_request,
+        samples=parent_samples,
+    )
+    if candidate_sample_ids and set(candidate_sample_ids) != set(parent_candidates):
+        raise ApplicationResultContractError(
+            "Untarget batch candidate/sample universe is incomplete"
+        )
     parent_subject_ids = tuple(
         provider.method_subject_id for provider in request.scope.evidence_providers
     )
@@ -620,10 +632,15 @@ def _validate_untarget_batch_request(
 
     parent_sample_ids_set = set(parent_sample_ids)
     for exclusion in exclusions:
+        expected_sample_id = candidate_sample_ids.get(exclusion.candidate_id)
         if (
             parent_memberships.get(exclusion.candidate_id)
             != exclusion.method_subject_id
             or exclusion.canonical_sample_identity_id not in parent_sample_ids_set
+            or (
+                expected_sample_id is not None
+                and exclusion.canonical_sample_identity_id != expected_sample_id
+            )
         ):
             raise ApplicationResultContractError(
                 "Untarget batch exclusion crossed candidate, subject, or sample"
@@ -761,6 +778,44 @@ def _sample_ids(
         sample.identity.sample_identity_id
         for sample in sorted(samples, key=_sample_sort_key)
     )
+
+
+def _candidate_sample_ids_from_request(
+    request: ProcessingRequestIdentity,
+    *,
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+) -> dict[str, str]:
+    request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    try:
+        entries = validate_candidate_universe_payload(
+            request_inputs[CANDIDATE_UNIVERSE_INPUT_KEY],
+            expected_sample_stems=tuple(
+                sample.metadata.raw_stem for sample in samples
+            ),
+        )
+    except (IdentityContractError, KeyError) as exc:
+        raise ApplicationResultContractError(
+            "Untarget batch requires its owner-validated candidate/sample universe"
+        ) from exc
+    sample_id_by_stem = {
+        sample.metadata.raw_stem: sample.identity.sample_identity_id
+        for sample in samples
+    }
+    candidate_sample_ids: dict[str, str] = {}
+    for entry in entries:
+        sample_stem = entry["sample_stem"]
+        candidate_ids = entry["candidate_ids"]
+        assert isinstance(sample_stem, str)
+        assert isinstance(candidate_ids, list)
+        sample_id = sample_id_by_stem[sample_stem]
+        for candidate_id in candidate_ids:
+            assert isinstance(candidate_id, str)
+            if candidate_id in candidate_sample_ids:
+                raise ApplicationResultContractError(
+                    "Untarget batch candidate/sample universe is not unique"
+                )
+            candidate_sample_ids[candidate_id] = sample_id
+    return candidate_sample_ids
 
 
 def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
