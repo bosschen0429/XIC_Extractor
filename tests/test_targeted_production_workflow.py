@@ -85,6 +85,54 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     assert finalized[0].completed_projection.no_write_count == 0
 
 
+def test_missing_selected_peak_finalizes_as_searched_no_observation(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    original = output.file_results[0].results[target.label]
+    rt = np.linspace(1.0, 2.0, 101)
+    flat_intensity = np.full_like(rt, 10.0)
+    trace = Trace.from_arrays(
+        sample_name="SampleA",
+        mz=target.mz,
+        rt=rt,
+        intensity=flat_intensity,
+        rt_min=target.rt_min,
+        rt_max=target.rt_max,
+        ppm_tol=target.ppm_tol,
+    )
+    output.file_results[0].results[target.label] = replace(
+        original,
+        peak_result=find_peak_and_area(
+            rt,
+            flat_intensity,
+            config,
+            preferred_rt=1.5,
+        ),
+        selected_hypothesis=None,
+        acquisition_trace=trace,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    projection = finalized[0].completed_projection
+    assert tuple(
+        subject.terminal_subject.variant for subject in projection.cell_subjects
+    ) == ("searched_no_observation", "observed")
+    assert projection.counted_detection_count == 1
+    assert projection.no_write_count == 1
+
+
 def test_neutral_loss_disabled_target_uses_ms1_backfill_result(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     target = replace(

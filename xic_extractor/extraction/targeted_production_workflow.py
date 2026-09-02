@@ -228,12 +228,13 @@ def _execute_target(
     candidates = []
     for sample, file_result in context.results_by_sample:
         extraction = file_result.results[target.definition.target.label]
-        if extraction.selected_hypothesis is not None:
-            if extraction.acquisition_trace is None:
+        if extraction.acquisition_trace is None:
+            if extraction.selected_hypothesis is not None:
                 raise RuntimeError(
                     "selected Targeted result lost its acquisition trace"
                 )
-            candidates.append((sample, extraction, _candidate_id(target, sample)))
+            continue
+        candidates.append((sample, extraction, _candidate_id(target, sample)))
     bindings = tuple(
         _capture_binding(context.owners, target, sample, result, candidate_id)
         for sample, result, candidate_id in candidates
@@ -280,12 +281,13 @@ def _execute_target(
                 candidate_id=candidate_id,
                 trace=trace,
             )
-            observation = mint_captured_peak_observation(
-                captured,
-                processing_owners=context.owners,
-                sample=sample,
-            )
-            observations = (observation,)
+            if captured.selected_hypothesis is not None:
+                observation = mint_captured_peak_observation(
+                    captured,
+                    processing_owners=context.owners,
+                    sample=sample,
+                )
+                observations = (observation,)
             candidate_ms2_evidence = result.candidate_ms2_evidence
             product = (
                 None
@@ -307,7 +309,8 @@ def _execute_target(
                 )
                 evidence_refs = (evidence,)
                 if (
-                    candidate_ms2_evidence is not None
+                    observations
+                    and candidate_ms2_evidence is not None
                     and candidate_ms2_evidence.nl_match
                 ):
                     support = resolve_dda_cid_nl_peak_support_ref(
@@ -338,6 +341,15 @@ def _execute_target(
         )
         assessments.append((sample, assessment))
         if captured is not None:
+            if not observations:
+                owner_captures.append(captured)
+                capture_inputs.append(
+                    CaptureWorkflowArguments(
+                        candidate_id=captured.candidate_id,
+                        trace=captured.trace,
+                    )
+                )
+                continue
             hypotheses = compose_peak_hypotheses_from_assessment_universe(
                 processing_owners=context.owners,
                 sample=sample,
