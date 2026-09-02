@@ -13,6 +13,7 @@ from xic_extractor.extraction.targeted_service import (
     FinalizedTargetMs1BackfillResult,
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
+    TargetedPublication,
 )
 from xic_extractor.extractor import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
@@ -100,17 +101,21 @@ class _FinalizedFileRenderView:
 @dataclass(frozen=True, slots=True)
 class _FinalizedRunRenderView:
     file_results: tuple[_FinalizedFileRenderView, ...]
-    diagnostics: tuple[Any, ...]
+    diagnostics: list[Any]
 
 
 def publish_targeted_outputs(
     request: TargetedApplicationRequest,
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
-) -> tuple[Path, ...]:
+) -> TargetedPublication:
     """Stage and commit one complete render set after typed finalization."""
 
-    render_view = _build_render_view(finalized_results, acquisition_evidence)
+    render_view = (
+        _build_acquisition_baseline_view(acquisition_evidence)
+        if request.output_projection == "acquisition_baseline"
+        else _build_render_view(finalized_results, acquisition_evidence)
+    )
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
@@ -155,10 +160,11 @@ def publish_targeted_outputs(
         staged_to_final[stage_manifest] = final_manifest
         if not request.replace_existing_outputs:
             _reject_collisions(staged_to_final.values())
-        return _commit_staged_outputs(
+        paths = _commit_staged_outputs(
             staged_to_final,
             replace_existing=request.replace_existing_outputs,
         )
+        return TargetedPublication(paths=paths, output=render_view)
     except TargetedOutputBoundaryError:
         raise
     except Exception as exc:
@@ -230,7 +236,16 @@ def _build_render_view(
         )
     return _FinalizedRunRenderView(
         file_results=tuple(files),
-        diagnostics=tuple(acquisition_evidence.diagnostics),
+        diagnostics=list(acquisition_evidence.diagnostics),
+    )
+
+
+def _build_acquisition_baseline_view(
+    acquisition_evidence: RunOutput,
+) -> RunOutput:
+    return RunOutput(
+        file_results=list(acquisition_evidence.file_results),
+        diagnostics=list(acquisition_evidence.diagnostics),
     )
 
 

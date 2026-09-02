@@ -393,6 +393,7 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
                 settings_overrides=baseline_settings_overrides,
                 output_mode="csv_only",
             ),
+            output_projection="acquisition_baseline",
         )
     ).active_output
     support_tsv = support_dir / "targeted_ms1_shape_identity_v0.tsv"

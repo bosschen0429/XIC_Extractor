@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import inspect
 from dataclasses import replace
 from pathlib import Path
@@ -36,14 +37,14 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
 
     published = publish_targeted_outputs(request, finalized, output)
 
-    assert set(published) == {
+    assert set(published.paths) == {
         config.output_csv,
         config.output_csv.with_name("xic_results_long.csv"),
         config.diagnostics_csv,
         config.output_csv.with_name("method_manifest.json"),
         excel_path,
     }
-    assert all(path.is_file() for path in published)
+    assert all(path.is_file() for path in published.paths)
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
@@ -67,8 +68,121 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     finalized = execute_targeted_production_workflow(request, output)
     published = publish_targeted_outputs(request, finalized, output)
 
-    assert config.output_csv in published
+    assert config.output_csv in published.paths
     assert config.output_csv.is_file()
+
+
+def test_render_diagnostics_remain_appendable_until_writers_finish(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.target_pair_rt_calibration import (
+        write_target_pair_rt_calibration_tsv,
+    )
+
+    config, target, output = production_case(tmp_path)
+    calibration_path = tmp_path / "calibration.tsv"
+    write_target_pair_rt_calibration_tsv(calibration_path, [])
+    config = replace(
+        config,
+        keep_intermediate_csv=True,
+        target_pair_rt_calibration_path=calibration_path,
+        emit_peak_candidates=False,
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    publication = publish_targeted_outputs(request, finalized, output)
+
+    assert any(
+        item.issue == "TARGET_PAIR_RT_AUTO_RESELECTION_SKIPPED"
+        for item in publication.output.diagnostics
+    )
+    assert config.diagnostics_csv in publication.paths
+
+
+def test_acquisition_baseline_projection_preserves_not_counted_cells(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    extraction = output.file_results[0].results[target.label]
+    projection = extraction.targeted_product_projection
+    assert projection is not None
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        targeted_product_projection=replace(
+            projection,
+            product_state="not_counted",
+            counted_detection=False,
+            projection_reason="baseline_nl_fail",
+        ),
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        output_projection="acquisition_baseline",
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    publication = publish_targeted_outputs(request, finalized, output)
+
+    with config.output_csv.with_name("xic_results_long.csv").open(
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        row = next(csv.DictReader(handle))
+    assert row["Product State"] == "not_counted"
+    assert row["Counted Detection"] == "FALSE"
+    assert row["RT"] == "ND"
+    assert row["Area"] == "ND"
+    assert publication.output is not output
+
+
+def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> None:
+    from gui.workers.pipeline_worker import build_summary
+
+    config, target, output = production_case(tmp_path)
+    extraction = output.file_results[0].results[target.label]
+    projection = extraction.targeted_product_projection
+    assert projection is not None
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        targeted_product_projection=replace(
+            projection,
+            product_state="not_counted",
+            counted_detection=False,
+            projection_reason="acquisition_nl_fail",
+        ),
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    service = TargetedApplicationService(
+        lambda *_args, **_kwargs: output,
+        finalized_workflow_runner=execute_targeted_production_workflow,
+        output_publisher=publish_targeted_outputs,
+    )
+
+    final_output = service.execute(request)
+    summary = build_summary(
+        config,
+        [target],
+        final_output,
+        config.output_csv.with_name("xic_results.xlsx"),
+    )
+
+    assert final_output is not output
+    assert summary["targets"][0]["detected"] == 1
+    assert summary["targets"][0]["median_area"] == final_output.file_results[0].results[
+        target.label
+    ].reported_peak_area
 
 
 def test_collision_leaves_existing_output_and_publishes_nothing_else(
@@ -163,11 +277,11 @@ def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_paths = publish_targeted_outputs(request, finalized, output)
+    original_paths = publish_targeted_outputs(request, finalized, output).paths
     original_paths[0].write_bytes(b"stale replay output")
 
     replay_request = replace(request, replace_existing_outputs=True)
-    replay_paths = publish_targeted_outputs(replay_request, finalized, output)
+    replay_paths = publish_targeted_outputs(replay_request, finalized, output).paths
 
     assert replay_paths == original_paths
     assert all(path.is_file() for path in replay_paths)
@@ -186,7 +300,7 @@ def test_replay_commit_failure_restores_previous_output_set(
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_paths = publish_targeted_outputs(request, finalized, output)
+    original_paths = publish_targeted_outputs(request, finalized, output).paths
     original_bytes = {path: path.read_bytes() for path in original_paths}
     original_replace = Path.replace
     commit_count = 0

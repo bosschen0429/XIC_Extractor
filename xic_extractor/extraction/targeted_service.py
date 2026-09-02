@@ -121,7 +121,7 @@ class TargetedOutputPublisher(Protocol):
         request: TargetedApplicationRequest,
         finalized_results: tuple[FinalizedTargetProductionResult, ...],
         acquisition_evidence: RunOutput,
-    ) -> tuple[Any, ...]: ...
+    ) -> TargetedPublication: ...
 
 
 class TargetedRuntimeFinalizationPersister(Protocol):
@@ -164,6 +164,7 @@ class TargetedApplicationRequest:
     method_manifest_context: Any = None
     excel_output_path: Any = None
     replace_existing_outputs: bool = False
+    output_projection: Literal["finalized", "acquisition_baseline"] = "finalized"
 
 
 @dataclass(frozen=True)
@@ -185,6 +186,14 @@ class TargetedApplicationExecution:
     published_paths: tuple[Any, ...] = ()
     diagnostic_method_result: TargetedDiagnosticMethodResult | None = None
     diagnostic_outcome: TargetedDiagnosticApplicationOutcome | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedPublication:
+    """The committed paths and exact output view consumed by their writers."""
+
+    paths: tuple[Any, ...]
+    output: Any
 
 
 @dataclass(frozen=True)
@@ -246,15 +255,15 @@ class TargetedApplicationService:
                     active_output=active_output,
                     finalized_results=finalized_results,
                 )
-            published_paths = publisher(
+            publication = publisher(
                 resolved_request,
                 finalized_results,
                 active_output,
             )
             return TargetedApplicationExecution(
-                active_output=active_output,
+                active_output=publication.output,
                 finalized_results=finalized_results,
-                published_paths=published_paths,
+                published_paths=publication.paths,
             )
         diagnostic_runner = self.diagnostic_method_runner
         diagnostic_factory = self.diagnostic_method_request_factory
@@ -412,6 +421,7 @@ def build_targeted_application_request(
     method_manifest_context: Any = None,
     excel_output_path: Any = None,
     replace_existing_outputs: bool = False,
+    output_projection: Literal["finalized", "acquisition_baseline"] = "finalized",
 ) -> TargetedApplicationRequest:
     return TargetedApplicationRequest(
         config=config,
@@ -426,6 +436,7 @@ def build_targeted_application_request(
         method_manifest_context=method_manifest_context,
         excel_output_path=excel_output_path,
         replace_existing_outputs=replace_existing_outputs,
+        output_projection=output_projection,
     )
 
 
@@ -434,6 +445,10 @@ def _resolve_application_request(
 ) -> TargetedApplicationRequest:
     if not isinstance(request, TargetedApplicationRequest):
         raise TypeError("request must be a TargetedApplicationRequest")
+    if request.output_projection not in {"finalized", "acquisition_baseline"}:
+        raise TargetedRuntimeAdapterError(
+            "output_projection must be finalized or acquisition_baseline"
+        )
     resolved_approvals = resolve_model_selection_expected_diff_approvals(
         request.config,
         request.model_selection_expected_diff_approvals,

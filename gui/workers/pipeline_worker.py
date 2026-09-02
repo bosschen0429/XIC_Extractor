@@ -149,8 +149,8 @@ def _target_summary(
                 nl_no_ms2 += 1
         if _is_detected(config, target, result):
             detected += 1
-            if result.peak_result.peak is not None:
-                detected_areas.append(result.peak_result.peak.area)
+            if result.reported_peak_area is not None:
+                detected_areas.append(result.reported_peak_area)
 
     median_area = statistics.median(detected_areas) if detected_areas else None
     return {
@@ -170,6 +170,9 @@ def _is_detected(
     target: Target,
     result: ExtractionResult,
 ) -> bool:
+    projection = result.targeted_product_projection
+    if projection is not None:
+        return projection.counted_detection
     if result.peak_result.status != "OK" or result.peak_result.peak is None:
         return False
     if target.neutral_loss_da is None:
