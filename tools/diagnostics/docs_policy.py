@@ -307,7 +307,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/superpowers/validation/",
     "docs/superpowers/fixtures/",
     "docs/superpowers/productization/",
-    "docs/validation/",
     "tests/fixtures/",
 ]
 DOC_CANONICAL_OWNER_FILES = {

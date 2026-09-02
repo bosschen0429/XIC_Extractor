@@ -20,3 +20,15 @@ They do not replace product-topic source-of-truth documents under
 | [`targeted-output-reference.md`](targeted-output-reference.md) | Column reference for every sheet in the Targeted Excel workbook |
 | [`untargeted-output-reference.md`](untargeted-output-reference.md) | Column reference for discovery CSVs and alignment TSVs |
 | [`untargeted-preset-guide.md`](untargeted-preset-guide.md) | Preset TOML structure, available presets, discovery/alignment defaults |
+
+## Operator Validation
+
+Targeted workbook validation is an operator CLI rather than a separate docs
+lane. Run:
+
+    .venv\Scripts\python.exe scripts\validation_harness.py --help
+
+The command owns suite selection, dry-run, baseline comparison, outputs, and
+the opt-in 85RAW stop rule. Untargeted Alignment validation uses
+`scripts.run_alignment` and the route in
+[`docs/agent/parameter-settings.md`](../agent/parameter-settings.md).

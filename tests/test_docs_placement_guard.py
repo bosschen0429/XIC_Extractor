@@ -1020,7 +1020,7 @@ def test_repo_support_doc_without_owner_fails(tmp_path: Path) -> None:
 
 
 def test_repo_subcontract_doc_requires_owner_and_passes(tmp_path: Path) -> None:
-    path = "docs/validation/example-subcontract.md"
+    path = "docs/product/example-subcontract.md"
     _write(
         tmp_path,
         path,
@@ -1045,7 +1045,7 @@ def test_repo_subcontract_doc_requires_owner_and_passes(tmp_path: Path) -> None:
 
 
 def test_repo_subcontract_doc_without_owner_fails(tmp_path: Path) -> None:
-    path = "docs/validation/example-subcontract.md"
+    path = "docs/product/example-subcontract.md"
     _write(
         tmp_path,
         path,

@@ -1103,7 +1103,7 @@ def check_entry(
                 reason=(
                     "docs root only allows cross-cutting authority docs; "
                     "move this file under docs/agent, docs/product, "
-                    "docs/architecture, docs/validation, docs/user, or "
+                    "docs/architecture, docs/user, or "
                     "docs/superpowers"
                 ),
                 required_marker=(
