@@ -50,22 +50,23 @@ Use this when you want to find features across samples without a predefined
 target list.
 
 ```
-.raw files + method preset ──→ feature discovery ──→ cross-sample alignment ──→ matrix + gallery
+.raw files + method preset ──→ feature discovery ──→ cross-sample alignment ──→ matrix
 ```
 
 You select a built-in method preset (resolver, alignment, and post-alignment
 settings bundled as a TOML file). The pipeline discovers candidate features
-per sample using seed evidence (MS2 neutral loss, MS1 traces), aligns them
-across samples into a cross-sample matrix, and generates HTML gallery pages
-for visual review.
+per sample using seed evidence (MS2 neutral loss, MS1 traces) and aligns them
+across samples into a cross-sample matrix. The default Alignment run writes
+only `alignment_matrix.tsv`; review, gallery, and other diagnostic artifacts
+remain available through explicit output options.
 
 | Output | Content |
 | --- | --- |
 | `discovery_candidates.csv` | Per-sample candidate features with evidence detail |
 | `discovery_batch_index.csv` | Handoff index linking discovery to alignment |
 | `alignment_matrix.tsv` | Cross-sample aligned feature matrix |
-| `alignment_review.tsv` | Review context for aligned features |
-| Gallery HTML | Visual inspection of candidates and backfill context |
+| `alignment_review.tsv` (explicit) | Review context for aligned features |
+| Gallery HTML (explicit) | Visual inspection of candidates and backfill context |
 
 ## System Requirements
 
