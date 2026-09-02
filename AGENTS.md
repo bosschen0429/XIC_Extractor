@@ -17,7 +17,7 @@ triggered route; its owner carries detail.
 | Review communication, PR receipt, handoff, or Obsidian placement | Read [`communication-review.md`](docs/agent/communication-review.md) and [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
 | Script/diagnostic creation, reuse, rerun, exposure, or retirement | Read [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md), search [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and check [`diagnostic-ledger.md`](docs/diagnostic-ledger.md). |
 | Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
-| Hook, rule, agent config, skill, Git command policy, or long-task state | Choose one branch in [`codex-operating-system.md#read-routes`](docs/agent/codex-operating-system.md#read-routes). |
+| Hook, rule, agent config, skill, Git command policy, or long-task state | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md). |
 | GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
 | File placement or repository layout | Read [`project-layout.md`](docs/project-layout.md). |
 
