@@ -1,8 +1,6 @@
 import ast
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -104,7 +102,10 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
         assert f"working-directory: {checkout_path}" in block
         assert "enable-cache: true" not in block
         assert "cache-suffix:" not in block
-        assert f"uv sync --locked --extra dev --group dev --python {version}" in block
+        assert (
+            f"uv sync --locked --extra dev --group dev --python {version}"
+            in block
+        )
         assert r'$env:PATH = "$venvScripts;$env:PATH"' in block
         for shard in SHARD_PATTERNS:
             assert f'"{shard}"' not in block, shard
@@ -112,15 +113,17 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
         assert "test_seconds=" in block
         assert "$env:GITHUB_STEP_SUMMARY" in block
     test_block = _job_block(workflow, "test")
-    assert "${{ github.event_name }}" in test_block
-    assert "${{ github.event.pull_request.base.sha }}" in test_block
-    assert "${{ github.event.pull_request.head.sha }}" in test_block
+    assert '${{ github.event_name }}' in test_block
+    assert '${{ github.event.pull_request.base.sha }}' in test_block
+    assert '${{ github.event.pull_request.head.sha }}' in test_block
     assert "git diff --name-only $baseSha $headSha" in test_block
     assert (
         '$markerExpression = "not ledger_snapshot and not '
         'current_repository_census and not serial_ci"' in test_block
     )
-    assert '$markerExpression += " and not packaging_build"' in test_block
+    assert (
+        '$markerExpression += " and not packaging_build"' in test_block
+    )
     for path in (
         r"pyproject\.toml",
         r"xic_extractor\.spec",
@@ -142,7 +145,9 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
     packaging_pattern = re.compile(packaging_selector.group(1))
     assert packaging_pattern.search("tests/test_pyinstaller_spec.py")
     assert not packaging_pattern.search("docs/README.md")
-    assert '$markerExpression += " and not product_governance"' in test_block
+    assert (
+        '$markerExpression += " and not product_governance"' in test_block
+    )
     for path in (
         r"scripts/check_productization_state\.py",
         r"tests/test_productization_state_index\.py",
@@ -159,7 +164,8 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
     ) in test_block
     assert (
         "tests/test_config_codex_hooks.py::"
-        "test_existing_hook_behavior_fixture_runs_in_ordinary_pytest" in test_block
+        "test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
+        in test_block
     )
     assert (
         "tests/test_pyinstaller_spec.py::"
@@ -169,7 +175,8 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
     assert (
         "tests/test_pyinstaller_spec.py::"
         "test_final_pyinstaller_output_contains_one_byte_identical_"
-        "quantitative_authority" in test_block
+        "quantitative_authority"
+        in test_block
     )
     assert r"& .\.venv\Scripts\python.exe -m pytest @serialTargets" in test_block
     compatibility_block = _job_block(workflow, "compatibility")
@@ -184,7 +191,9 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
         "test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
         in compatibility_block
     )
-    assert "if: github.event_name == 'push'" in _job_block(workflow, "compatibility")
+    assert "if: github.event_name == 'push'" in _job_block(
+        workflow, "compatibility"
+    )
     assert "${{ matrix." not in workflow
     assert "uv run pytest -v --tb=short -x" not in workflow
     assert "uv pip install" not in workflow
@@ -193,7 +202,9 @@ def test_ci_workflow_runs_one_parallel_test_session_per_python_version() -> None
 
 def test_pr_gate_points_to_ci_as_single_command_owner() -> None:
     root_agent_contract = Path("AGENTS.md").read_text(encoding="utf-8")
-    execution_gate = Path("docs/agent/execution-gates.md").read_text(encoding="utf-8")
+    execution_gate = Path("docs/agent/execution-gates.md").read_text(
+        encoding="utf-8"
+    )
     normalized_execution_gate = " ".join(execution_gate.split())
     shard_commands = tuple(
         f"uv run python -m tools.testing.test_shards {shard} -- -v --tb=short -x"
@@ -233,23 +244,6 @@ The PR template and checker now require one traceable receipt per claim.
 - Semantic owner: scripts/check_pr_body.py
 - Finite production universe: PR bodies validated by scripts/check_pr_body.py in CI.
 - Scope delta from issue: None; scope matches the issue.
-
-## Ticket-to-PR closure receipt
-
-- Issue identity: Chao-hu-Lab/XIC_Extractor#321
-- Ticket delivery: independent-atomic-unit
-- Bounded outcome: enforce one SHA-bound PR receipt with a workflow consumer
-- Current consumer: the PR receipt workflow validates this current body
-- Independently decisive oracle: checker and edited-event tests pass
-- Independently useful: yes
-- Independently reviewable: yes
-- Independently testable: yes
-- Independently mergeable: yes
-- Independently reversible: yes
-- Later sibling required: no
-- Split rationale: a workflow gate with an existing PR-body consumer
-- Replaced surface disposition: Retire: unvalidated evidence prose after this checker
-- Rollback: revert the checker and workflow step together
 
 ## Review guide
 
@@ -325,10 +319,12 @@ def test_repo_surfaces_expose_one_issue_to_pr_scope_firewall() -> None:
     workflow_owner = Path("docs/agent/planning-workflows.md").read_text(
         encoding="utf-8"
     )
-    issue_template = Path(".github/ISSUE_TEMPLATE/implementation_change.yml").read_text(
+    issue_template = Path(
+        ".github/ISSUE_TEMPLATE/implementation_change.yml"
+    ).read_text(encoding="utf-8")
+    pr_template = Path(".github/pull_request_template.md").read_text(
         encoding="utf-8"
     )
-    pr_template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
 
     assert "Issue-to-PR scope firewall" in root_contract
     assert "Issue-To-PR Scope And Template Ownership" in workflow_owner
@@ -337,11 +333,6 @@ def test_repo_surfaces_expose_one_issue_to_pr_scope_firewall() -> None:
     assert "- Semantic owner:" in pr_template
     assert "- Finite production universe:" in pr_template
     assert "- Scope delta from issue:" in pr_template
-    assert "## Ticket-to-PR closure receipt" in pr_template
-    assert "- Issue identity:" in pr_template
-    assert "- Ticket delivery:" in pr_template
-    assert "- Current consumer:" in pr_template
-    assert "- Later sibling required:" in pr_template
 
 
 def test_unedited_template_and_placeholder_are_rejected() -> None:
@@ -384,7 +375,9 @@ def test_missing_or_empty_receipt_is_rejected(
 ) -> None:
     body = _valid_pr_body().replace(RECEIPT_HEADER + RECEIPT_ROW, receipt)
 
-    assert any(expected_error in error for error in validate_pr_body(body, HEAD_SHA))
+    assert any(
+        expected_error in error for error in validate_pr_body(body, HEAD_SHA)
+    )
 
 
 def test_bad_receipt_basis_is_rejected() -> None:
@@ -418,7 +411,8 @@ def test_receipt_semantic_cells_reject_punctuation_only(
     body = _valid_pr_body().replace(original, punctuation)
 
     assert any(
-        "empty or placeholder" in error for error in validate_pr_body(body, HEAD_SHA)
+        "empty or placeholder" in error
+        for error in validate_pr_body(body, HEAD_SHA)
     )
 
 
@@ -451,7 +445,8 @@ def test_repo_evidence_requires_matching_head_and_locator(binding: str) -> None:
     )
 
     assert any(
-        "bind repo evidence" in error for error in validate_pr_body(body, HEAD_SHA)
+        "bind repo evidence" in error
+        for error in validate_pr_body(body, HEAD_SHA)
     )
 
 
@@ -468,8 +463,6 @@ def test_reviewed_head_must_match_expected_sha() -> None:
 )
 def test_issue_linkage_accepts_owner_vocabulary(linkage: str) -> None:
     body = _replace_pr_field(_valid_pr_body(), "Issue linkage", linkage)
-    if not linkage.casefold().startswith("refs "):
-        body = _replace_pr_field(body, "Ticket delivery", "closes-entire-ticket")
 
     assert validate_pr_body(body, HEAD_SHA) == ()
 
@@ -519,7 +512,8 @@ def test_authority_check_cannot_contain_unchecked_box() -> None:
     body = _valid_pr_body().replace("- [x] This PR", "- [ ] This PR")
 
     assert any(
-        "unchecked checkbox" in error for error in validate_pr_body(body, HEAD_SHA)
+        "unchecked checkbox" in error
+        for error in validate_pr_body(body, HEAD_SHA)
     )
 
 
@@ -611,12 +605,11 @@ def test_github_event_path_reads_body_and_head(
     event_path.write_text(
         json.dumps(
             {
-                "repository": {"full_name": "Chao-hu-Lab/XIC_Extractor"},
                 "pull_request": {
                     "body": _valid_pr_body(),
                     "head": {"sha": HEAD_SHA},
                     "user": {"login": "contributor"},
-                },
+                }
             }
         ),
         encoding="utf-8",
@@ -624,45 +617,6 @@ def test_github_event_path_reads_body_and_head(
 
     assert main(["--github-event", str(event_path)]) == 0
     assert HEAD_SHA in capsys.readouterr().out
-
-
-def test_github_event_rejects_another_repository_identity(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    event_path = tmp_path / "event.json"
-    event_path.write_text(
-        json.dumps(
-            {
-                "repository": {"full_name": "Chao-hu-Lab/XIC_Extractor"},
-                "pull_request": {
-                    "body": _valid_pr_body().replace(
-                        "Chao-hu-Lab/XIC_Extractor#321",
-                        "other/repository#321",
-                    ),
-                    "head": {"sha": HEAD_SHA},
-                    "user": {"login": "contributor"},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert main(["--github-event", str(event_path)]) == 1
-    assert "repository must match" in capsys.readouterr().err
-
-
-def test_direct_script_entrypoint_imports_without_installed_package() -> None:
-    result = subprocess.run(
-        [sys.executable, "-S", "scripts/check_pr_body.py", "--help"],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "Validate the proportional PR Evidence Receipt contract." in result.stdout
 
 
 def test_local_body_file_mode_reads_utf8(
@@ -713,9 +667,9 @@ def test_non_pr_event_is_clearly_skipped(
 
 def test_ci_separates_body_receipt_from_code_validation_workflow() -> None:
     code_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    receipt_workflow = Path(".github/workflows/pr-evidence-receipt.yml").read_text(
-        encoding="utf-8"
-    )
+    receipt_workflow = Path(
+        ".github/workflows/pr-evidence-receipt.yml"
+    ).read_text(encoding="utf-8")
     receipt_block = _job_block(receipt_workflow, "validate")
     checker = 'python scripts/check_pr_body.py --github-event "$GITHUB_EVENT_PATH"'
 

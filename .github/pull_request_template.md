@@ -27,37 +27,6 @@
 - Scope delta from issue:
 <!-- Enter None plus a rationale, or link the self-contained issue refreeze that authorizes the delta. -->
 
-## Ticket-to-PR closure receipt
-
-- Issue identity:
-<!-- Enter the repository-qualified identity as owner/repo#N. -->
-- Ticket delivery:
-<!-- Choose exactly one: closes-entire-ticket, independent-atomic-unit. -->
-- Bounded outcome:
-<!-- Name the one outcome delivered by this head. -->
-- Current consumer:
-<!-- Name the consumer that can use this outcome now, without a later sibling. -->
-- Independently decisive oracle:
-<!-- Name the stable pass/fail oracle for this unit. -->
-- Independently useful:
-<!-- Enter yes only when the unit has durable owner value by itself. -->
-- Independently reviewable:
-<!-- Enter yes only when the unit can be reviewed without reconstructing a later PR. -->
-- Independently testable:
-<!-- Enter yes only when this head has a decisive test or real-interface oracle. -->
-- Independently mergeable:
-<!-- Enter yes only when no later sibling is required for safe merge. -->
-- Independently reversible:
-<!-- Enter yes only when this unit has its own rollback. -->
-- Later sibling required:
-<!-- Enter no. If yes, this is not an Atomic delivery unit. -->
-- Split rationale:
-<!-- For an independent unit, name its semantic owner/failure-domain seam; size, context, review time, or construction stage is invalid. Otherwise explain that this PR closes the ticket. -->
-- Replaced surface disposition:
-<!-- Enter Retire: <surface>; Retain: <surface>; Obligation: <current reason/consumer>; or Not applicable: <reason>. Activation/replacement cannot use Not applicable. -->
-- Rollback:
-<!-- State this unit's independent rollback. -->
-
 ## Review guide
 
 <!-- Give an ordered path through the load-bearing diff and the questions a reviewer should answer. -->
@@ -81,6 +50,11 @@
 <!-- State the rollback or stop condition. If none, explain why no rollback applies. -->
 
 ## Issue and delivery linkage
+
+<!-- Explain in free-form prose whether this PR completes the ticket or delivers
+one standalone Atomic outcome that a current consumer can use now. If the ticket
+needs multiple PRs, name the outcome or failure-domain seam; line count, file
+count, context budget, review time, and construction stage are not seams. -->
 
 - Issue linkage:
 <!-- Use a supported closing keyword plus #N for a completing PR, Refs #N for intermediate delivery, or No issue plus a rationale. -->

@@ -88,7 +88,6 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
         "docs-config": (
-            "tests/test_agent_delivery_contract.py",
             "tests/test_agent_planning_contract.py",
             "tests/test_agent_sandbox_doctor.py",
             "tests/test_agent_task_state.py",
@@ -311,7 +310,9 @@ def discover_snapshot_tests(
             references = tuple(
                 reference
                 for decorator in node.decorator_list
-                if (reference := _direct_snapshot_marker_reference(decorator))
+                if (
+                    reference := _direct_snapshot_marker_reference(decorator)
+                )
                 is not None
             )
             if references:
@@ -443,7 +444,9 @@ def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
         print("Invalid pytest marker selection", file=sys.stderr)
         return 2
     print(f"Running shard {shard}: {len(target_args)} test files", flush=True)
-    return subprocess.call([*_pytest_command(), *owned_pytest_args, *target_args])
+    return subprocess.call(
+        [*_pytest_command(), *owned_pytest_args, *target_args]
+    )
 
 
 def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:

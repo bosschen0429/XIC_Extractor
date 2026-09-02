@@ -9,11 +9,6 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-if __package__:
-    from scripts.check_agent_delivery_contract import validate_pr_contract
-else:
-    from check_agent_delivery_contract import validate_pr_contract
-
 REQUIRED_SECTIONS = (
     ("outcome", "Outcome"),
     ("problem and observable loss", "Problem and observable loss"),
@@ -74,12 +69,7 @@ REQUIRED_AUTHORITY_ACKS = (
 )
 
 
-def validate_pr_body(
-    body: str,
-    expected_head_sha: str,
-    *,
-    expected_repository: str | None = None,
-) -> tuple[str, ...]:
+def validate_pr_body(body: str, expected_head_sha: str) -> tuple[str, ...]:
     """Return deterministic contract violations for a PR body."""
 
     errors: list[str] = []
@@ -143,7 +133,9 @@ def validate_pr_body(
         execution_base is not None
         and SHA_RE.fullmatch(normalized_execution_base) is None
     ):
-        errors.append("Execution base must be exactly 40 hexadecimal characters")
+        errors.append(
+            "Execution base must be exactly 40 hexadecimal characters"
+        )
     if scope_delta is not None and not _valid_scope_delta(scope_delta):
         errors.append(
             "Scope delta from issue must use None with a rationale or an "
@@ -165,7 +157,9 @@ def validate_pr_body(
     normalized_reviewed_head = _normalize_value(reviewed_head)
     if reviewed_head is not None:
         if SHA_RE.fullmatch(normalized_reviewed_head) is None:
-            errors.append("Reviewed head must be exactly 40 hexadecimal characters")
+            errors.append(
+                "Reviewed head must be exactly 40 hexadecimal characters"
+            )
         elif normalized_reviewed_head != normalized_expected_sha:
             errors.append("Reviewed head does not match the pull request head SHA")
 
@@ -220,14 +214,6 @@ def validate_pr_body(
                 "Authority Check is missing required checked assertion: "
                 f"{acknowledgement}"
             )
-
-    errors.extend(
-        validate_pr_contract(
-            body,
-            expected_head_sha,
-            expected_repository=expected_repository,
-        )
-    )
 
     return tuple(errors)
 
@@ -369,10 +355,8 @@ def _receipt_rows(section: str) -> tuple[list[list[str]], list[str]]:
         if index + 1 >= len(lines):
             return [], ["Evidence Receipt table is missing its separator row"]
         separator = _split_markdown_row(lines[index + 1])
-        if (
-            separator is None
-            or len(separator) != len(RECEIPT_COLUMNS)
-            or not all(_is_table_separator(cell) for cell in separator)
+        if separator is None or len(separator) != len(RECEIPT_COLUMNS) or not all(
+            _is_table_separator(cell) for cell in separator
         ):
             return [], ["Evidence Receipt table has an invalid separator row"]
 
@@ -504,20 +488,14 @@ def _binding_fields(value: str) -> dict[str, str]:
 
 def _is_placeholder(value: str) -> bool:
     normalized = _normalize_value(value)
-    return (
-        not normalized
-        or re.search(r"\w", normalized) is None
-        or normalized
-        in {
-            "-",
-            "—",
-            "n/a",
-            "na",
-            "none",
-            "placeholder",
-        }
-        or PLACEHOLDER_TOKEN_RE.search(normalized) is not None
-    )
+    return not normalized or re.search(r"\w", normalized) is None or normalized in {
+        "-",
+        "—",
+        "n/a",
+        "na",
+        "none",
+        "placeholder",
+    } or PLACEHOLDER_TOKEN_RE.search(normalized) is not None
 
 
 def _require_none_rationale(
@@ -566,13 +544,10 @@ def _valid_scope_delta(value: str) -> bool:
     )
     if none_with_rationale is not None:
         return not _is_placeholder(none_with_rationale.group(1))
-    return (
-        re.fullmatch(
-            r"(?i)Refreeze\s*:\s*(?:#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)",
-            normalized,
-        )
-        is not None
-    )
+    return re.fullmatch(
+        r"(?i)Refreeze\s*:\s*(?:#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)",
+        normalized,
+    ) is not None
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -591,7 +566,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    expected_repository: str | None = None
     try:
         if args.github_event is not None:
             event = json.loads(args.github_event.read_text(encoding="utf-8"))
@@ -624,12 +598,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             head_sha = head.get("sha") if isinstance(head, dict) else None
             if not isinstance(head_sha, str):
                 raise ValueError("pull_request.head.sha is missing")
-            repository = event.get("repository")
-            expected_repository = (
-                repository.get("full_name") if isinstance(repository, dict) else None
-            )
-            if not isinstance(expected_repository, str) or not expected_repository:
-                raise ValueError("repository.full_name is missing")
         else:
             body = args.body_file.read_text(encoding="utf-8")
             head_sha = args.head_sha
@@ -637,11 +605,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"PR Evidence Receipt input error: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate_pr_body(
-        body,
-        head_sha,
-        expected_repository=expected_repository,
-    )
+    errors = validate_pr_body(body, head_sha)
     if errors:
         print("PR Evidence Receipt validation failed:", file=sys.stderr)
         for error in errors:
