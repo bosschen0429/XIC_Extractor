@@ -2,6 +2,8 @@ import ast
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extraction.targeted_service import (
@@ -85,6 +87,36 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
     )
 
     assert calls["model_selection_expected_diff_approvals"] is resolved_approvals
+
+
+def test_typed_workflow_failure_never_reaches_publication() -> None:
+    calls: list[str] = []
+    acquisition = RunOutput(file_results=[], diagnostics=[])
+
+    def acquire(*_args, **_kwargs):
+        calls.append("acquire")
+        return acquisition
+
+    def fail_workflow(_request, observed):
+        assert observed is acquisition
+        calls.append("workflow")
+        raise RuntimeError("typed workflow failed")
+
+    def publish(*_args, **_kwargs):
+        calls.append("publish")
+
+    service = TargetedApplicationService(
+        acquire,
+        finalized_workflow_runner=fail_workflow,
+        output_publisher=publish,
+    )
+
+    with pytest.raises(RuntimeError, match="typed workflow failed"):
+        service.execute_application(
+            build_targeted_application_request(_config(), [_target()])
+        )
+
+    assert calls == ["acquire", "workflow"]
 
 
 def test_pipeline_input_resolution_keeps_approvals_explicit(

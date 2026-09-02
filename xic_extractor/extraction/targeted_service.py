@@ -4,6 +4,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from xic_extractor.alignment.result.application_result import (
+    FinalizedTargetApplicationResult,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import AttemptRuntime
 from xic_extractor.execution_runtime_finalization import (
@@ -62,6 +65,23 @@ class TargetedRuntimeLifecycleRunner(Protocol):
     ) -> TargetedRuntimeWorkerBatch: ...
 
 
+class TargetedFinalizedWorkflowRunner(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        acquisition_evidence: RunOutput,
+    ) -> tuple[FinalizedTargetApplicationResult, ...]: ...
+
+
+class TargetedOutputPublisher(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        finalized_results: tuple[FinalizedTargetApplicationResult, ...],
+        acquisition_evidence: RunOutput,
+    ) -> None: ...
+
+
 class TargetedRuntimeFinalizationPersister(Protocol):
     def __call__(
         self,
@@ -116,6 +136,7 @@ class TargetedApplicationExecution:
     """One adapter-neutral run; legacy remains active during diagnostic migration."""
 
     active_output: RunOutput
+    finalized_results: tuple[FinalizedTargetApplicationResult, ...] = ()
     diagnostic_method_result: TargetedDiagnosticMethodResult | None = None
     diagnostic_outcome: TargetedDiagnosticApplicationOutcome | None = None
 
@@ -123,6 +144,8 @@ class TargetedApplicationExecution:
 @dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
+    finalized_workflow_runner: TargetedFinalizedWorkflowRunner | None = None
+    output_publisher: TargetedOutputPublisher | None = None
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
     runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
@@ -154,6 +177,21 @@ class TargetedApplicationService:
                 resolved_request.model_selection_expected_diff_approvals
             ),
         )
+        finalized_runner = self.finalized_workflow_runner
+        publisher = self.output_publisher
+        if finalized_runner is not None or publisher is not None:
+            if finalized_runner is None or publisher is None:
+                raise TargetedRuntimeAdapterError(
+                    "finalized workflow runner and output publisher must be "
+                    "configured together"
+                )
+            finalized_results = finalized_runner(resolved_request, active_output)
+            _validate_finalized_result_population(resolved_request, finalized_results)
+            publisher(resolved_request, finalized_results, active_output)
+            return TargetedApplicationExecution(
+                active_output=active_output,
+                finalized_results=finalized_results,
+            )
         diagnostic_runner = self.diagnostic_method_runner
         diagnostic_factory = self.diagnostic_method_request_factory
         if diagnostic_runner is None and diagnostic_factory is None:
@@ -255,6 +293,41 @@ class TargetedApplicationService:
                 )
             return observed.method_result
         return observed
+
+
+def _validate_finalized_result_population(
+    request: TargetedApplicationRequest,
+    results: tuple[FinalizedTargetApplicationResult, ...],
+) -> None:
+    if type(results) is not tuple or any(
+        type(result) is not FinalizedTargetApplicationResult for result in results
+    ):
+        raise TargetedRuntimeAdapterError(
+            "finalized workflow must return an exact immutable Target result tuple"
+        )
+    if len(results) != len(request.targets):
+        raise TargetedRuntimeAdapterError(
+            "finalized workflow did not cover every declared Target"
+        )
+    request_ids = {
+        result.processing_request.processing_request_id for result in results
+    }
+    sample_populations = {
+        tuple(sample.identity.sample_identity_id for sample in result.canonical_samples)
+        for result in results
+    }
+    if len(request_ids) != 1 or len(sample_populations) != 1:
+        raise TargetedRuntimeAdapterError(
+            "finalized Target results crossed request or sample populations"
+        )
+    for target, result in zip(request.targets, results, strict=True):
+        finalized_target = (
+            result.completed_projection.row_binding.target.definition.target
+        )
+        if finalized_target != target:
+            raise TargetedRuntimeAdapterError(
+                "finalized Target result order differs from the declared Target list"
+            )
 
 
 def build_targeted_application_request(
