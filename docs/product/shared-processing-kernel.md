@@ -6,11 +6,11 @@ below as implementation evidence; it no longer defines the full architectural
 seam. The shared kernel is a collaboration of deep existing modules, not
 permission to create a new `core/` package.
 
-Architecture status: the scientific lifecycle is `frozen`, and the existing
-Backfill Parquet modules are the accepted first canonical archive implementation
-owner under ADR-0003; runtime adoption is incomplete. This document changes no
-selected value, counted detection, Matrix, workbook, activation, writer, or
-export authority.
+Architecture status: the scientific lifecycle is `frozen`. The existing
+Backfill Parquet modules remain owner-local helpers for an opt-in diagnostic
+shadow; they are not a production archive/query owner or a required successor
+stage. This document changes no selected value, counted detection, Matrix,
+workbook, activation, writer, or export authority.
 
 ## Problem And Success
 
@@ -35,7 +35,7 @@ This contract succeeds when:
 2. they differ only at typed search scope and workflow-owned row/output
    projection;
 3. one immutable finalized result closes all scientific owner receipts before
-   delivery; and
+   the current workflow output owner consumes it; and
 4. structural migration preserves current Targeted hard-exact/expected-diff
    output and Untargeted Matrix behavior until separately promoted.
 
@@ -43,7 +43,7 @@ This contract succeeds when:
 
 XIC has one scientific lifecycle:
 
-`SearchScope -> shared Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> archive/explanation/delivery`
+`SearchScope -> shared Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 - Untargeted is the general method and the primary architectural path.
 - Targeted narrows the accepted target/row universe with known target, m/z, RT,

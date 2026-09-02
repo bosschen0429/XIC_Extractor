@@ -388,25 +388,23 @@ adapter, method contract, or fidelity is unavailable.
 - Same-run owner handoff uses immutable typed batches. Arrow IPC is considered
   only after a measured same-run transport bottleneck; it is not the default
   architecture.
-- Canonical Parquet v2, when implemented, writes native typed/null owner records
-  directly. It must not round-trip through a string TSV projection. The current
-  optional Parquet shadow remains diagnostic compatibility evidence until that
-  versioned cutover is separately accepted.
-- The internal evidence archive and the downstream analytical handoff are
-  different bundles, interfaces, and authorities. The archive optimizes
-  provenance/query/review; the handoff contains typed samples, features, final
-  dense group-by-sample cells, and lineage needed by a real downstream consumer.
-- Ordinary successful execution retains the essential set plus a compact final-
-  decision archive. Heavy candidate/trace/debug populations are opt-in,
-  validation-, review-, or failure-scoped.
+- The current optional Backfill Parquet shadow is diagnostic compatibility
+  evidence. It does not establish a production archive/query consumer, replace
+  the existing TSV projections, or require a future Parquet cutover.
+- Owner-local machine evidence and downstream analytical output keep their
+  existing owners and contracts. No generic evidence archive or archive-to-
+  delivery handoff is required without a current consumer.
+- Heavy candidate/trace/debug populations remain opt-in, validation-, review-,
+  or failure-scoped; this contract does not add an ordinary-run archive.
 - One execution publishes one immutable atomic bundle. A cross-run catalog is a
   derived disposable index, not a second source of authority.
 - New writers emit only the new schema. Finite readers/adapters may convert old
   content into a new successor bundle with explicit lineage; they are deleted
   after named consumer count reaches zero.
-- `ArtifactPlan` is compiled from the workflow projection contract, delivery
-  intent, authority-manifest snapshot, and named compatibility consumers. Loose
-  `emit_*` booleans cannot grant artifact or scientific authority.
+- No new delivery-plan type is required. Current output transactions and
+  writers retain their existing inputs, schemas, authority, and publication
+  mechanics; loose `emit_*` booleans still cannot grant artifact or scientific
+  authority.
 
 ## Two-Phase Delivery Seal
 

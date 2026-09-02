@@ -5,76 +5,66 @@ status: accepted
 Doc placement: repo_support_doc
 Repo owner: docs/architecture-contract.md
 
-# Separate Evidence Archive, Explanation, and Delivery
+# Keep Evidence, Explanation, And Delivery Consumer-Driven
 
-Machine-facing scientific evidence, human explanation, and product delivery
-need separate authority boundaries. Evidence persistence translates finalized
-owner facts, Explanation renders typed decisions and navigates stable
-references, and Delivery compiles `ArtifactPlan` and publishes atomically.
-The existing Backfill Parquet modules are the implementation owner for the
-first canonical typed archive. They are deepened in place instead of being
-wrapped by a new workflow-neutral storage package.
+Owner-local machine evidence, human explanation, and product delivery are
+separate authority concepts when a current consumer needs them. That separation
+does not require an implementation chain. The current repository has no
+production archive/query consumer, approved human-explanation delivery surface,
+or product-delivery plan type. Existing Backfill Parquet support remains an
+optional diagnostic/shadow capability rather than the first stage of a required
+archive programme.
 
 ## Decision
 
-- Deepen `xic_extractor.alignment.backfill_evidence_parquet` into the native
-  typed persistence and bounded-query owner for finalized Backfill and skipped
-  evidence records.
-- Deepen `xic_extractor.alignment.backfill_evidence_parquet_bundle` into the
-  staging, verification, bundle/reference-identity, and atomic archive
-  publication owner. Its publication is internal archive publication, not final
-  product delivery.
-- Replace the TSV-mediated strings-only shadow path. TSV remains only as a
-  finite compatibility adapter for named consumers, with explicit removal
-  conditions.
-- Do not introduce `evidence_archive/`, a generic evidence store, or a shared
-  database framework in this migration.
+- Keep `xic_extractor.alignment.backfill_evidence_parquet` and
+  `xic_extractor.alignment.backfill_evidence_parquet_bundle` as owner-local
+  helpers for the existing opt-in diagnostic Parquet shadow and its strict
+  readback, verification, and bundle identity.
+- Keep the existing Backfill/skipped TSV projections and their writers
+  unchanged. The diagnostic Parquet projection does not replace or activate a
+  production artifact.
+- Do not introduce a generic evidence archive, a human-explanation subsystem,
+  a product-delivery framework, or parallel writer authority without a newly
+  proved current consumer and separately approved contract.
+- Do not treat a diagnostic bundle, report, or manifest as evidence of product
+  delivery authority.
 
-The archive implementation owner does not become a scientific owner. Record
-content, validity, disposition, and query-claim semantics remain with the
-existing scientific owners; persistence cannot select values, include rows,
-change disposition, or grant writer authority.
+The helpers do not become scientific or product owners. Record content,
+validity, disposition, and query-claim semantics remain with the existing
+scientific owners; persistence cannot select values, include rows, change
+disposition, or grant writer authority.
 
 ## Extraction gate
 
-A workflow-neutral archive seam may be reconsidered only after a second current
-scientific owner needs the same persistence interface and shares the same
-lifecycle, retention, reference, and atomic-publication invariants. Any later
-extraction must move the proven implementation and retire the superseded path;
-it must not layer a parallel generic owner over the Backfill modules.
+A workflow-neutral archive seam may be reconsidered only after a current
+production consumer needs it and a second scientific owner proves the same
+persistence, lifecycle, retention, reference, and publication invariants. A
+human-explanation or product-delivery surface likewise requires its own current
+consumer, authority boundary, and observable acceptance oracle. If those edges
+are later introduced, keep evidence, explanation, and delivery authority
+separate; do not infer that implementation work from this ADR alone.
 
 ## Rejected alternatives
 
-- Introduce a new `evidence_archive/` owner now and retain the Backfill modules
-  as adapters. Rejected because the current repository has no second production
-  record family proving that generic seam, while the existing modules already
-  own the relevant persistence mechanics.
-- Keep TSV authoritative and convert it after the run. Rejected because it pays
-  duplicate serialization, I/O, conversion, and storage costs and loses native
-  types before canonical persistence.
+- Introduce a new generic archive owner now. Rejected because no current
+  production archive/query consumer exists.
+- Introduce human-explanation or product-delivery scaffolding to preserve the
+  separation mechanically. Rejected because boundary separation is not a
+  consumer or an implementation mandate.
+- Remove the Backfill Parquet helpers with the unused programme. Rejected
+  because the opt-in diagnostic/shadow CLI remains a current consumer; focused
+  tests verify that retained surface but are not consumer evidence.
 
-GitHub #313 carries the executable migration packet. Its implementation remains
-blocked by #312 even though this owner decision is now closed.
+## Consequences
 
-## Consequences already fixed
-
-- Same-run typed transport and durable persistence are separate seams. Parquet
-  is not a worker message bus or a scientific owner.
-- Persisted records are lazy, bounded projections of a finalized owner result.
-  Writers must not materialize a complete row-list projection or persist
-  provisional science.
-- Required artifact failure is fail-closed. Resource pressure cannot silently
-  drop rows, reduce evidence, change format, or fall back to TSV.
-- Archive activation requires semantic parity and a total representation-cost
-  oracle covering producer time, peak memory, temporary disk, total bytes,
-  consumer queries, lifecycle failure, and packaging—not file size alone.
-- Query results distinguish scientific absence from `not_produced`,
-  `not_retained`, incomplete execution, unsupported schema, corrupt content,
-  and foreign binding. Present-but-invalid content fails closed.
-- Explanation never parses prose into authority. Delivery never recomputes
-  scientific decisions and exposes no partial or mixed-revision bundle.
-
-Current contracts: `docs/architecture-contract.md`,
-`docs/agent/architecture-public-contracts.md`, and
-`docs/product/shared-processing-kernel.md`. Delivery tickets: GitHub #313,
-#315, and #314.
+- Current scientific receipts, machine-evidence artifacts, Backfill diagnostic
+  helpers, output transactions, and writers remain unchanged.
+- Parquet remains neither a worker message bus nor a scientific/product owner.
+  Existing strict readers continue to distinguish valid content from missing,
+  incomplete, unsupported, corrupt, or foreign-bound content.
+- Human prose cannot mint scientific or writer authority. Product writers must
+  continue to consume owner-issued decisions through their current contracts.
+- Earlier sequencing across these concepts is historical, not an active
+  handoff or blocker. Active construction belongs in the current GitHub
+  Issue/MAP surface only after a real consumer is proved.
