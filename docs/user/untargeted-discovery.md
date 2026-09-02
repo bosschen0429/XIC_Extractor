@@ -36,11 +36,16 @@ the GUI, use `full` when starting from a RAW directory.
 | --- | --- |
 | RAW directory or RAW file | Thermo data to discover or align |
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
-| Output directory | Where candidate, matrix, review, and gallery artifacts are written |
+| Output directory | Where candidate and Alignment artifacts are written |
 | Preset | Built-in method bundle for the current evidence family |
 | Advanced overrides | Optional per-run method changes layered on the preset |
 
 ## Outputs
+
+The default Alignment run writes only `alignment_matrix.tsv`. Other Alignment
+TSV, HTML, and XLSX artifacts remain available through explicit machine,
+debug, validation, or artifact options when a review or diagnostic workflow
+needs them.
 
 Start with the file that matches your review question:
 
@@ -49,11 +54,12 @@ Start with the file that matches your review question:
 | `discovery_candidates.csv` | Per-sample candidate features with m/z, RT, area, seed evidence | Detailed candidate inspection per sample |
 | `discovery_review.csv` | Compact subset of candidate fields with confidence | Quick review triage |
 | `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
-| `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Cross-sample quantitative comparison |
-| `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Reviewing which cells are detected vs. backfilled |
-| Review / gallery HTML | Visual plots of candidate peaks and backfill context | Human inspection before accepting results |
+| `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
+| `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Explicit review/diagnostic output |
+| Review / gallery HTML | Visual plots of candidate peaks and backfill context | Explicit human inspection output |
 
-The GUI can open output folders, matrix files, and gallery files after a run.
+The GUI surfaces the matrix by default. Explicit review or diagnostic runs may
+also produce the corresponding output files.
 
 ## Further Reading
 

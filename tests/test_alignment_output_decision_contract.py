@@ -66,6 +66,35 @@ def test_output_transaction_requires_owner_minted_decisions_before_writes(
     )
 
 
+def test_matrix_only_output_plan_omits_unselected_provenance(
+    tmp_path: Path,
+) -> None:
+    outputs = output_paths(
+        tmp_path / "out",
+        output_level="production",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
+
+    pipeline_outputs_module.write_outputs_atomic(
+        outputs,
+        matrix,
+        metadata={},
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
+    )
+
+    assert outputs.matrix_tsv is not None
+    assert outputs.matrix_tsv.exists()
+    assert outputs.owner_backfill_peak_fact_provenance_tsv is None
+    assert sorted(path.name for path in (tmp_path / "out").iterdir()) == [
+        "alignment_matrix.tsv"
+    ]
+
+
 @pytest.mark.parametrize(
     ("renderer_name", "relative_path"),
     (
@@ -219,7 +248,11 @@ def test_run_alignment_mints_one_decision_set_for_activated_outputs(
         counted_build_production_decisions,
     )
 
-    outputs = _run_minimal_alignment(tmp_path, monkeypatch)
+    outputs = _run_minimal_alignment(
+        tmp_path,
+        monkeypatch,
+        output_level="machine",
+    )
 
     assert outputs.workbook is not None
     assert outputs.review_html is not None
@@ -260,12 +293,17 @@ def _divergent_owner_decisions(
 def _run_minimal_alignment(
     tmp_path: Path,
     monkeypatch,
+    *,
+    output_level: str | None = None,
 ) -> pipeline_module.AlignmentRunOutputs:
     batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     _patch_owner_pipeline_to_matrix(monkeypatch)
+    kwargs = {}
+    if output_level is not None:
+        kwargs["output_level"] = output_level
     return pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
@@ -274,4 +312,5 @@ def _run_minimal_alignment(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         raw_opener=FakeRawOpener(),
+        **kwargs,
     )

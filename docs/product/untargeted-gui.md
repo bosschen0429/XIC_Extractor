@@ -52,8 +52,10 @@ User-visible outputs surfaced by the GUI:
 - `discovery_review.csv`
 - `discovery_batch_index.csv`
 - `alignment_matrix.tsv`
-- `alignment_review.tsv`
-- review HTML
+
+The default GUI Alignment route surfaces only `alignment_matrix.tsv`. Alignment
+review TSV, HTML, XLSX, and other sidecars remain explicit non-default outputs
+for machine, validation, or diagnostic workflows.
 
 ## Boundaries
 

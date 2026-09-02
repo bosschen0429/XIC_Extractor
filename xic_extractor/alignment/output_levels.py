@@ -12,11 +12,7 @@ AlignmentOutputLevel = Literal[
 
 _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
     "production": (
-        "alignment_results.xlsx",
         "alignment_matrix.tsv",
-        "alignment_matrix_identity.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
-        "review_report.html",
     ),
     "machine": (
         "alignment_results.xlsx",

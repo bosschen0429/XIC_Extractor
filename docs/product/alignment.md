@@ -525,6 +525,11 @@ Alignment owner.
 
 ## Surfaces
 
+The default `production` Alignment output is only `alignment_matrix.tsv`.
+Identity, review, provenance, backfill evidence, HTML, and workbook artifacts
+remain explicit machine, validation, diagnostic, or compatibility outputs;
+their schemas and writers are unchanged.
+
 | Output | Role |
 | --- | --- |
 | `alignment_matrix.tsv` | Cross-sample aligned values |

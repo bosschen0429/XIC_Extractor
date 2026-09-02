@@ -35,13 +35,12 @@ from xic_extractor.settings_schema import (
 
 DiscoveryMode = Literal["full", "discovery_only", "align_only"]
 
-# Preserve the GUI's existing primary Alignment artifact contract while the
-# automatic gallery / overlay route is parked. Changing these flags belongs to
-# a separate Output-contract decision, not this route-retirement child.
+# Keep the default GUI Alignment route on the primary Matrix artifact. Other
+# renderers remain available through explicit Alignment output levels/flags.
 _GUI_ALIGNMENT_KWARGS: dict[str, Any] = {
-    "output_level": "machine",
-    "emit_alignment_cells": True,
-    "emit_alignment_backfill_seed_audit": True,
+    "output_level": "production",
+    "emit_alignment_cells": False,
+    "emit_alignment_backfill_seed_audit": False,
     "audit_evidence_mode": "none",
 }
 

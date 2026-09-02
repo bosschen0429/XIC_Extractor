@@ -428,7 +428,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=Path("output") / "alignment",
-        help="Output directory for alignment_review.tsv and alignment_matrix.tsv.",
+        help=(
+            "Output directory for selected Alignment artifacts. The default "
+            "writes only alignment_matrix.tsv."
+        ),
     )
     parser.add_argument(
         "--preset",
@@ -734,10 +737,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "validation",
             "validation-minimal",
         ),
-        default="machine",
+        default="production",
         help=(
-            "Alignment artifact level. Default remains machine until "
-            "owner-based validation acceptance."
+            "Alignment artifact level. Default production writes only "
+            "alignment_matrix.tsv; use machine/debug/validation or explicit "
+            "emit flags for additional artifacts."
         ),
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
