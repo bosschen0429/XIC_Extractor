@@ -286,10 +286,11 @@ def _execute_target(
                 sample=sample,
             )
             observations = (observation,)
+            candidate_ms2_evidence = result.candidate_ms2_evidence
             product = (
                 None
-                if result.candidate_ms2_evidence is None
-                else result.candidate_ms2_evidence.best_product_evidence
+                if candidate_ms2_evidence is None
+                else candidate_ms2_evidence.best_product_evidence
             )
             if product is not None and product.scan_number is not None:
                 evidence = mint_cid_nl_evidence_ref(
@@ -304,15 +305,19 @@ def _execute_target(
                     scan_rt_min=product.scan_rt,
                     product_intensity=product.product_intensity,
                 )
-                support = resolve_dda_cid_nl_peak_support_ref(
-                    processing_owners=context.owners,
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=observations,
-                    policy=_support_policy(target.definition.target),
-                )
                 evidence_refs = (evidence,)
-                support_refs = (support,)
+                if (
+                    candidate_ms2_evidence is not None
+                    and candidate_ms2_evidence.nl_match
+                ):
+                    support = resolve_dda_cid_nl_peak_support_ref(
+                        processing_owners=context.owners,
+                        sample=sample,
+                        canonical_evidence=evidence,
+                        candidate_peaks=observations,
+                        policy=_support_policy(target.definition.target),
+                    )
+                    support_refs = (support,)
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=context.owners,
             sample=sample,

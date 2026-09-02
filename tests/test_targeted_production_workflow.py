@@ -41,6 +41,50 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     assert len(finalized[0].canonical_samples) == 1
 
 
+def test_diagnostic_nl_evidence_finalizes_without_strict_support(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    original = output.file_results[0].results[target.label]
+    candidate_evidence = original.candidate_ms2_evidence
+    assert candidate_evidence is not None
+    product_evidence = candidate_evidence.best_product_evidence
+    assert product_evidence is not None
+    observed_loss_da = 116.0058
+    output.file_results[0].results[target.label] = replace(
+        original,
+        candidate_ms2_evidence=replace(
+            candidate_evidence,
+            nl_match=False,
+            nl_status="NL_FAIL",
+            strict_nl_scan_count=0,
+            best_loss_ppm=50.0,
+            best_product_evidence=replace(
+                product_evidence,
+                product_mz=product_evidence.precursor_mz - observed_loss_da,
+                observed_loss_da=observed_loss_da,
+                observed_loss_error_ppm=50.0,
+            ),
+        ),
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    assert finalized[0].completed_projection.counted_detection_count == 2
+    assert finalized[0].completed_projection.no_write_count == 0
+
+
 def test_neutral_loss_disabled_target_uses_ms1_backfill_result(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     target = replace(
@@ -102,45 +146,49 @@ def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
     assert result.decisions[0].no_write_reason == "ms1_backfill_no_peak"
 
 
-def production_case(tmp_path: Path) -> tuple[ExtractionConfig, Target, RunOutput]:
+def production_case(
+    tmp_path: Path,
+    *,
+    sample_names: tuple[str, ...] = ("SampleA",),
+) -> tuple[ExtractionConfig, Target, RunOutput]:
     config = _config(tmp_path)
     target = _target()
-    raw_path = config.data_dir / "SampleA.raw"
-    raw_path.parent.mkdir()
-    raw_path.write_bytes(b"fixture")
-    rt = np.linspace(1.0, 2.0, 101)
-    intensity = 10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)
-    trace = Trace.from_arrays(
-        sample_name="SampleA",
-        mz=target.mz,
-        rt=rt,
-        intensity=intensity,
-        rt_min=target.rt_min,
-        rt_max=target.rt_max,
-        ppm_tol=target.ppm_tol,
-    )
-    peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.5)
-    hypotheses = build_peak_hypotheses(
-        analysis_mode="targeted",
-        common_evidence_source_id="test-retained-trace",
-        sample_name="SampleA",
-        target_label=target.label,
-        role="Analyte",
-        istd_pair="",
-        resolver_mode=config.resolver_mode,
-        peak_result=peak_result,
-        trace_group=targeted_trace_group(
-            trace,
+    config.data_dir.mkdir()
+    file_results = []
+    for sample_name in sample_names:
+        (config.data_dir / f"{sample_name}.raw").write_bytes(sample_name.encode())
+        rt = np.linspace(1.0, 2.0, 101)
+        intensity = 10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)
+        trace = Trace.from_arrays(
+            sample_name=sample_name,
+            mz=target.mz,
+            rt=rt,
+            intensity=intensity,
+            rt_min=target.rt_min,
+            rt_max=target.rt_max,
+            ppm_tol=target.ppm_tol,
+        )
+        peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.5)
+        hypotheses = build_peak_hypotheses(
+            analysis_mode="targeted",
+            common_evidence_source_id="test-retained-trace",
+            sample_name=sample_name,
             target_label=target.label,
+            role="Analyte",
+            istd_pair="",
             resolver_mode=config.resolver_mode,
-        ),
-        count_no_ms2_as_detected=True,
-    )
-    selected = next(item for item in hypotheses if item.audit.selected)
-    output = RunOutput(
-        file_results=[
+            peak_result=peak_result,
+            trace_group=targeted_trace_group(
+                trace,
+                target_label=target.label,
+                resolver_mode=config.resolver_mode,
+            ),
+            count_no_ms2_as_detected=True,
+        )
+        selected = next(item for item in hypotheses if item.audit.selected)
+        file_results.append(
             FileResult(
-                sample_name="SampleA",
+                sample_name=sample_name,
                 results={
                     target.label: ExtractionResult(
                         peak_result=peak_result,
@@ -181,7 +229,9 @@ def production_case(tmp_path: Path) -> tuple[ExtractionConfig, Target, RunOutput
                     )
                 },
             )
-        ],
+        )
+    output = RunOutput(
+        file_results=file_results,
         diagnostics=[],
     )
 
