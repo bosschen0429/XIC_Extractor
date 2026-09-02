@@ -206,15 +206,11 @@ def run(
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
 ) -> RunOutput:
-    from xic_extractor.extraction.targeted_diagnostic_application import (
-        build_canonical_targeted_application_service,
-    )
-    from xic_extractor.extraction.targeted_service import (
-        build_targeted_application_request,
-    )
+    from xic_extractor.extraction import targeted_diagnostic_application as application
+    from xic_extractor.extraction import targeted_service
 
-    return build_canonical_targeted_application_service(acquire).execute(
-        build_targeted_application_request(
+    return application.build_canonical_targeted_application_service(acquire).execute(
+        targeted_service.build_targeted_application_request(
             config,
             targets,
             progress_callback=progress_callback,
@@ -239,10 +235,9 @@ def acquire(
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
 ) -> RunOutput:
-    """Acquire and project Targeted evidence without publishing final artifacts."""
-
     from xic_extractor.extraction.pipeline import run_pipeline
 
+    expected_diffs = model_selection_expected_diff_approvals
     return run_pipeline(
         config,
         targets,
@@ -250,8 +245,6 @@ def acquire(
         should_stop=should_stop,
         injection_order=injection_order,
         rt_prior_library=rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
+        model_selection_expected_diff_approvals=expected_diffs,
         publish_outputs=False,
     )
