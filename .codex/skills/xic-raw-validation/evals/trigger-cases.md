@@ -25,7 +25,7 @@ or narrow the skill trigger.
 
 - "Run alignment validation using synthetic fixtures; do not read RAW." The
   hook fixture deliberately keeps synthetic/no-RAW work outside this gate; use
-  focused tests and `xic-architecture-preflight` only if behavior changes.
+  focused tests; bind any behavior change to the owning Issue before editing.
 - "Validate the benchmark schema using tracked TSV fixtures." The hook fixture
   routes this to ordinary schema/tests work because it neither launches nor
   accepts RAW-backed validation.
@@ -33,7 +33,7 @@ or narrow the skill trigger.
   heartbeat unit work to the ordinary implementation/test workflow; use this
   skill only when a real RAW launch or artifact acceptance is in scope.
 - "Decide the Matrix extraction code change, but do not run or accept RAW
-  evidence yet." Use `xic-architecture-preflight` for the behavior change; RAW
+  evidence yet." Bind the behavior change to the owning Issue; RAW
   validation starts only when launch, rerun, or RAW-artifact acceptance enters
   scope.
 
@@ -42,7 +42,7 @@ or narrow the skill trigger.
 - "改 85RAW 的 Matrix 抽取邏輯。" Decision: the dataset name alone does not make
   this a RAW-validation task. The hook fixture remains silent for this bare
   label; the root contract and skill descriptions model-route the behavior edit
-  to `xic-architecture-preflight` while keeping `xic-raw-validation` absent. If
+  to the owning Issue while keeping `xic-raw-validation` absent. If
   the request also says to launch, rerun, or accept 85RAW evidence, the two skill
   descriptions own separate behavior-edit and RAW-evidence gates.
 

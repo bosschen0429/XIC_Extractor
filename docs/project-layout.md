@@ -47,7 +47,6 @@ self-ownership，因此不需要 generic lifecycle metadata：
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
 | `docs/superpowers/productization/` | Current productization compatibility/evidence surfaces |
-| `docs/validation/` | Durable validation guidance |
 | `assets/` | Icons and screenshots |
 | `config/` | Runtime public config/examples；private values 不追蹤 |
 | `.github/` | GitHub workflows |

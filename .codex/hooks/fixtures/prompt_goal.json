@@ -1,7 +1,0 @@
-{
-  "hook_event_name": "UserPromptSubmit",
-  "turn_id": "fixture",
-  "cwd": ".",
-  "permission_mode": "default",
-  "prompt": "設定一個goal，把後續文件整理完整收完"
-}

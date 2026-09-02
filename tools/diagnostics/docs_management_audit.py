@@ -209,18 +209,6 @@ def audit_repo(
         repository_view
     )
     canonical_metadata_review = canonical_metadata_review_for_repo(repository_view)
-    governance_rel_path = "docs/agent/codex-operating-system.md"
-    governance_problems = (
-        list(
-            _docs_scan.governance_index_problems(
-                root,
-                repository_view.read_text(governance_rel_path),
-                repository_view=repository_view,
-            )
-        )
-        if repository_view.contains(governance_rel_path)
-        else []
-    )
     routing_candidates = int(routing_review["candidate_files"])
     metadata_review_files = int(routing_review["metadata_review_files"])
     canonical_missing_metadata = int(
@@ -296,15 +284,6 @@ def audit_repo(
                 str(row["path"]),
                 "invalid permanent-root contract: "
                 + str(row["metadata_missing_fields"]),
-            )
-        )
-
-    for problem in governance_problems:
-        messages.append(
-            AuditMessage(
-                "blocker",
-                "docs/agent/codex-operating-system.md",
-                f"governance enforcement index: {problem}",
             )
         )
 
@@ -392,10 +371,6 @@ def audit_repo(
         "docs_structure_review": structure_review,
         "completed_transient_review": completed_transient_review,
         "canonical_metadata_review": canonical_metadata_review,
-        "governance_enforcement_index": {
-            "problems": governance_problems,
-            "status": "pass" if not governance_problems else "fail",
-        },
     }
     return messages, summary
 

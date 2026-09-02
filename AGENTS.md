@@ -17,7 +17,7 @@ triggered route; its owner carries detail.
 | Review communication, PR receipt, handoff, or Obsidian placement | Read [`communication-review.md`](docs/agent/communication-review.md) and [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
 | Script/diagnostic creation, reuse, rerun, exposure, or retirement | Read [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md), search [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and check [`diagnostic-ledger.md`](docs/diagnostic-ledger.md). |
 | Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
-| Hook, rule, agent config, skill, Git command policy, or long-task state | Choose one branch in [`codex-operating-system.md#read-routes`](docs/agent/codex-operating-system.md#read-routes). |
+| Hook, rule, agent config, skill, Git command policy, or long-task state | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md). |
 | GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
 | File placement or repository layout | Read [`project-layout.md`](docs/project-layout.md). |
 
@@ -25,12 +25,17 @@ triggered route; its owner carries detail.
 
 - **Mutation gate:** before non-trivial edits, verify worktree, branch, and dirty
   scope. Preserve unrelated changes; stage only task files.
-- **Mission lock:** confirm intent and acceptance before mutation. Keep the
-  current objective, boundaries, and owner in view throughout execution.
+- **Mission lock:** the current Issue/Current Packet is the durable task
+  authority when one exists. TaskFrame keeps only its locator, volatile
+  decisions/progress, and evidence receipts; do not copy the packet's scope or
+  acceptance into another contract.
 - **Technical convergence:** Main resolves in-scope technical unknowns with the
   cheapest decisive evidence and smallest reversible step. Ask one concrete
   operator question only when missing intent or an operator-only value/authority
   can change the outcome; block or hold is interim, never delivery.
+- **Structural observation:** use Codebase Memory (CBM) first for callers,
+  dependencies, impact, and reachability; check index coverage once, then use
+  targeted source reads only for exact text, reported gaps, or negative claims.
 - **Necessity proof:** default to the current owner, mechanism, observation, and
   tests. New design or test must prove need. Design needs a current consumer and
   removal loss: abstraction needs two callers, configuration a second value,
@@ -46,14 +51,9 @@ triggered route; its owner carries detail.
   independent reads inside one orchestrator call and return bounded summaries,
   anomalies, counts, and locators. Routine sync uses
   `git pull --ff-only --no-stat` after inspecting only the current branch.
-- **Long-task spine:** long-running or cross-session work uses ignored
-  `output/agent-state/<task-id>/state.json` via
-  `python -m tools.agent_task_state`. Validate the task base on resume, advance
-  only at semantic phase transitions, and render handoffs from that state.
-- **Boundary preflight:** use `xic-architecture-preflight` for a new/replaced
-  semantic owner, writer authority, runtime/public contract, or scientific
-  evidence launch. Performance work first uses `xic-performance-diagnosis`;
-  RAW launch or artifact acceptance uses `xic-raw-validation`.
+- **Specialized gates:** performance work first uses
+  `xic-performance-diagnosis`; RAW launch or artifact acceptance uses
+  `xic-raw-validation`.
 - **Evidence claim:** report the canonical Evidence label and the actual method-
   appropriate oracle. Passing tests proves engineering regression coverage,
   not scientific or production readiness.
@@ -61,7 +61,7 @@ triggered route; its owner carries detail.
   subagent definitions run the smoke, focused tests, diff check, and secret/
   local-path scan in the operating-system change protocol.
 - **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
-  follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
+  follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification).
   Hosted checks on the final remote SHA remain merge authority.
 
 ## Codex Code Review Rules

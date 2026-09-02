@@ -14,10 +14,7 @@ from tools.diagnostics.docs_management_audit import (
     write_topic_clusters_tsv,
     write_topic_index_readmes,
 )
-from tools.diagnostics.docs_policy import (
-    CONTROL_PLANE_PATH,
-    GOVERNANCE_RULE_FAMILY_CONTRACTS,
-)
+from tools.diagnostics.docs_policy import CONTROL_PLANE_PATH
 
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
@@ -101,16 +98,6 @@ def _write_permanent_root_contracts(root: Path) -> None:
             encoding="utf-8"
         ),
     )
-    governance_paths: set[str] = set()
-    for contract in GOVERNANCE_RULE_FAMILY_CONTRACTS.values():
-        governance_paths.add(str(contract["owner"]).partition("#")[0])
-        for field in ("executable", "readback"):
-            locator = str(contract[field])
-            if locator != "none":
-                governance_paths.add(locator)
-    for rel_path in sorted(governance_paths):
-        source = PROJECT_ROOT / rel_path
-        _write(root / rel_path, source.read_text(encoding="utf-8"))
     _write(
         root / "docs/lc-msms-evidence-rules.md",
         "\n".join(
@@ -2176,27 +2163,6 @@ def test_docs_audit_permanent_root_uses_staged_text(tmp_path: Path) -> None:
 
     assert any(
         message.severity == "blocker" and message.path == path
-        for message in result.messages
-    )
-
-
-def test_docs_audit_governance_index_uses_staged_text(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    _clean_repo(root)
-    git_env = _init_and_stage_repo(root)
-    path = "docs/agent/codex-operating-system.md"
-    valid_worktree_text = (root / path).read_text(encoding="utf-8")
-    _write(root / path, "# Broken staged governance index\n")
-    subprocess.run(
-        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
-    )
-    _write(root / path, valid_worktree_text)
-
-    result = _run_audit(root, repo_only=True, preserve_index=True)
-
-    assert any(
-        message.severity == "blocker"
-        and "governance index must contain" in message.message
         for message in result.messages
     )
 

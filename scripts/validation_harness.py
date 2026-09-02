@@ -86,7 +86,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run fixed real-data validation tiers and workbook comparisons."
+        description=(
+            "Run targeted real-data validation tiers and workbook comparisons. "
+            "This harness does not validate untargeted Alignment."
+        ),
+        epilog=(
+            "Suites:\n"
+            "  manual-2raw   manual-truth area/RT comparison\n"
+            "  tissue-8raw  targeted workbook smoke or A/B comparison\n"
+            "  tissue-85raw opt-in full targeted workbook gate; requires "
+            "--confirm-full-run\n\n"
+            "Workflow:\n"
+            "  inspect  use --dry-run before RAW-backed work\n"
+            "  output   <output-root>/<run-id>/validation_summary.csv\n"
+            "  compare  reuse the run ID and pass --baseline-root\n"
+            "  stop     fix an inconclusive 8RAW gate; do not escalate it to "
+            "85RAW\n"
+            "  safety   docs/agent/parameter-settings.md and "
+            "xic-raw-validation"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--suite",

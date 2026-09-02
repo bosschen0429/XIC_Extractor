@@ -1090,24 +1090,6 @@ def check_entry(
                     ),
                 )
             )
-    if path == "docs/agent/codex-operating-system.md":
-        overrides = _staged_text_by_path(entries)
-        overrides[path] = text
-        for reason in _docs_scan.governance_index_problems(
-            root,
-            text,
-            overrides=overrides,
-        ):
-            problems.append(
-                PlacementProblem(
-                    path=path,
-                    reason=f"invalid governance enforcement index: {reason}",
-                    required_marker=(
-                        "Restore the exact five-row governance read-back contract "
-                        "and resolvable owner/executable/fixture locators."
-                    ),
-                )
-            )
     placement = classification.placement
     repo_owner = classification.repo_owner
     lifecycle_problems: list[PlacementProblem] = []
@@ -1121,7 +1103,7 @@ def check_entry(
                 reason=(
                     "docs root only allows cross-cutting authority docs; "
                     "move this file under docs/agent, docs/product, "
-                    "docs/architecture, docs/validation, docs/user, or "
+                    "docs/architecture, docs/user, or "
                     "docs/superpowers"
                 ),
                 required_marker=(

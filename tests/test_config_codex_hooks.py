@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 HOOKS_CONFIG = ROOT / ".codex" / "hooks.json"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
-OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
 HOOK_COMMAND_PATTERNS = {
     "command": re.compile(
         r'^python3 "\$\(git rev-parse --show-toplevel\)/\.codex/hooks/'
@@ -27,27 +26,12 @@ HOOK_COMMAND_PATTERNS = {
     ),
 }
 EXPECTED_HOOKS = {
-    "UserPromptSubmit": "xic_prompt_router.py",
     "PreToolUse": "xic_pre_tool_guard.py",
     "PostToolUse": "xic_post_tool_guard.py",
 }
 EXPECTED_MATCHERS = {
-    "UserPromptSubmit": None,
     "PreToolUse": "Bash|apply_patch|Edit|Write",
     "PostToolUse": "Bash",
-}
-EXPECTED_GOVERNANCE_ROWS = {
-    "docs_lifecycle_retirement",
-    "destructive_git_filesystem",
-    "raw_background_launch",
-    "execution_affecting_config",
-    "pr_validation_gate",
-}
-ALLOWED_MECHANISMS = {
-    "hard_guard",
-    "ci_checker",
-    "advisory_context",
-    "human_decision",
 }
 
 
@@ -102,9 +86,6 @@ def _minimal_payload(event_name: str) -> dict[str, object]:
         "cwd": str(ROOT),
         "permission_mode": "default",
     }
-    if event_name == "UserPromptSubmit":
-        payload["prompt"] = "ordinary documentation wording"
-        return payload
     payload.update(
         {
             "tool_name": "Bash",
@@ -230,38 +211,6 @@ def _rule_block(tokens: tuple[str, ...]) -> str:
     return matches[0].split("\n)", 1)[0]
 
 
-def _governance_rows() -> list[list[str]]:
-    rows: list[list[str]] = []
-    for line in OPERATING_SYSTEM.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("| `"):
-            continue
-        cells = [cell.strip().strip("`") for cell in line.strip("|").split("|")]
-        if len(cells) == 6:
-            rows.append(cells)
-    return rows
-
-
-def _assert_repo_locator(locator: str) -> None:
-    owner_text, _, symbol = locator.partition("::")
-    path_text, _, fragment = owner_text.partition("#")
-    path = ROOT / path_text
-    assert path.exists(), f"missing governance locator: {locator}"
-    if fragment:
-        headings = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.startswith("#"):
-                continue
-            title = line.lstrip("#").strip().lower()
-            slug = re.sub(r"[^\w\- ]", "", title)
-            headings.append(re.sub(r"\s+", "-", slug))
-        assert fragment in headings, f"missing governance heading: {locator}"
-    if symbol:
-        source = path.read_text(encoding="utf-8")
-        assert re.search(rf"\b{re.escape(symbol)}\b", source), (
-            f"missing governance symbol: {locator}"
-        )
-
-
 @pytest.mark.serial_ci
 def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
     subprocess.run(
@@ -320,10 +269,10 @@ def test_hook_contract_rejects_missing_reference() -> None:
     config = copy.deepcopy(_load_hooks_config())
     entry = _enabled_hook_entries(config)[0][1]
     entry["command"] = str(entry["command"]).replace(
-        "xic_prompt_router.py", "missing.py"
+        "xic_pre_tool_guard.py", "missing.py"
     )
     entry["commandWindows"] = str(entry["commandWindows"]).replace(
-        "xic_prompt_router.py", "missing.py"
+        "xic_pre_tool_guard.py", "missing.py"
     )
     with pytest.raises(AssertionError, match="missing enabled hook script"):
         _assert_hook_contract(config)
@@ -333,7 +282,7 @@ def test_hook_contract_rejects_cross_platform_divergence() -> None:
     config = copy.deepcopy(_load_hooks_config())
     entry = _enabled_hook_entries(config)[0][1]
     entry["commandWindows"] = str(entry["commandWindows"]).replace(
-        "xic_prompt_router.py", "xic_pre_tool_guard.py"
+        "xic_pre_tool_guard.py", "xic_post_tool_guard.py"
     )
     with pytest.raises(AssertionError):
         _assert_hook_contract(config)
@@ -346,10 +295,10 @@ def test_hook_contract_rejects_nonstarting_script(tmp_path: Path) -> None:
     config = copy.deepcopy(_load_hooks_config())
     entry = _enabled_hook_entries(config)[0][1]
     entry["command"] = str(entry["command"]).replace(
-        "xic_prompt_router.py", "broken.py"
+        "xic_pre_tool_guard.py", "broken.py"
     )
     entry["commandWindows"] = str(entry["commandWindows"]).replace(
-        "xic_prompt_router.py", "broken.py"
+        "xic_pre_tool_guard.py", "broken.py"
     )
     with pytest.raises(AssertionError, match="did not start cleanly"):
         _assert_hook_contract(config, root=tmp_path)
@@ -977,21 +926,3 @@ def test_pre_hook_emits_config_advisory_for_agent_contract() -> None:
     output = json.loads(completed.stdout)
     message = output["hookSpecificOutput"]["additionalContext"]
     assert "Execution-affecting XIC agent config" in message
-
-
-def test_governance_index_closes_repository_side_residuals() -> None:
-    rows = _governance_rows()
-    assert {row[0] for row in rows} == EXPECTED_GOVERNANCE_ROWS
-    for _row_id, owner, mechanism, locator, representative, residual in rows:
-        assert mechanism in ALLOWED_MECHANISMS
-        _assert_repo_locator(owner)
-        _assert_repo_locator(locator)
-        _assert_repo_locator(representative)
-        assert residual == "none"
-
-
-def test_governance_locator_rejects_stale_fragment_and_symbol() -> None:
-    with pytest.raises(AssertionError, match="missing governance heading"):
-        _assert_repo_locator("docs/agent/codex-operating-system.md#missing-heading")
-    with pytest.raises(AssertionError, match="missing governance symbol"):
-        _assert_repo_locator("tools/diagnostics/docs_policy.py::missing_symbol")

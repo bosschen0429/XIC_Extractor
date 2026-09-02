@@ -128,12 +128,11 @@ passing alone never establishes production readiness.
   matrix-writing authority without an explicit activation/export contract.
 - Diagnostic TSVs, shadow reports, wrappers, and sidecars prove observability,
   not product usability.
-- When validation work meets the architecture boundary in
-  `docs/architecture-contract.md`, use `xic-architecture-preflight` before
-  edits. Established-owner diagnostics and RAW validation bind reuse, call
-  cost, validation gate, and stop in their current task/validation owner; use
-  `xic-raw-validation` for RAW launch or artifact acceptance. A diagnostic,
-  method, or RAW label alone does not create an architecture gate.
+- When validation work meets the boundary in `docs/architecture-contract.md`,
+  the Issue binds the owner, consumer, expected delta, oracle, and stop rule;
+  verify current structure with CBM and source. Use `xic-raw-validation` for RAW
+  launch or artifact acceptance. A diagnostic, method, or RAW label alone does
+  not create another gate.
 - Prefer establishing the future spine or dual-write contract before polishing
   legacy DTOs, resolver names, or scoring split points likely to move during
   handoff migration.

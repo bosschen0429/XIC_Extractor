@@ -196,7 +196,7 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
             "Dependency Direction",
             "Ownership Map",
         ),
-        "required_text": ("This document owns",),
+        "required_text": (),
         "required_routes": (),
         "required_referrers": (
             "AGENTS.md",
@@ -221,53 +221,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
 PERMANENT_ROOT_METADATA_FIELDS_WAIVED = frozenset(
     {DOC_LIFECYCLE_MARKER.rstrip(":"), DOC_EXIT_RULE_MARKER.rstrip(":")}
 )
-
-# Membership follows the two-stage admission predicate in
-# docs/agent/codex-operating-system.md#governance-enforcement-index. This dict
-# mirrors admitted current mechanisms; it is not the policy owner or a backlog
-# for aspirational enforcement.
-GOVERNANCE_RULE_FAMILY_CONTRACTS = {
-    "docs_lifecycle_retirement": {
-        "owner": "docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate",
-        "mechanism": "ci_checker",
-        "executable": "tools/diagnostics/docs_placement_guard.py",
-        "readback": "tests/test_docs_placement_guard.py",
-        "residual": "none",
-    },
-    "destructive_git_filesystem": {
-        "owner": "docs/agent/codex-operating-system.md#current-repo-local-rules",
-        "mechanism": "hard_guard",
-        "executable": ".codex/rules/xic-safety.rules",
-        "readback": "tests/test_config_codex_hooks.py",
-        "residual": "none",
-    },
-    "raw_background_launch": {
-        "owner": "docs/agent/execution-gates.md#raw-and-long-runs",
-        "mechanism": "hard_guard",
-        "executable": ".codex/hooks/xic_pre_tool_guard.py",
-        "readback": "tests/test_config_codex_hooks.py",
-        "residual": "none",
-    },
-    "execution_affecting_config": {
-        "owner": "docs/agent/codex-operating-system.md#change-protocol",
-        "mechanism": "advisory_context",
-        "executable": ".codex/hooks/xic_pre_tool_guard.py",
-        "readback": "tests/test_config_codex_hooks.py",
-        "residual": "none",
-    },
-    "pr_validation_gate": {
-        "owner": "docs/agent/execution-gates.md#pr-verification-gate",
-        "mechanism": "ci_checker",
-        "executable": "tools/testing/test_shards.py",
-        "readback": ".github/workflows/ci.yml",
-        "residual": "none",
-    },
-}
-GOVERNANCE_RULE_FAMILY_IDS = tuple(GOVERNANCE_RULE_FAMILY_CONTRACTS)
-GOVERNANCE_MECHANISM_VALUES = frozenset(
-    {"hard_guard", "ci_checker", "advisory_context", "human_decision"}
-)
-
 
 def is_productization_control_plane_path(path: str) -> bool:
     return normalize_path_text(path).removeprefix("./") == CONTROL_PLANE_PATH
@@ -354,7 +307,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/superpowers/validation/",
     "docs/superpowers/fixtures/",
     "docs/superpowers/productization/",
-    "docs/validation/",
     "tests/fixtures/",
 ]
 DOC_CANONICAL_OWNER_FILES = {

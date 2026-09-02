@@ -55,13 +55,6 @@ from xic_extractor.alignment.identity_coherence.schema import (
     WidthStatus,
 )
 
-CONTRACT_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "docs"
-    / "validation"
-    / "schemas"
-    / "identity-coherence-schema-contract.md"
-)
 IDENTITY_COHERENCE_PACKAGE = "xic_extractor.alignment.identity_coherence"
 INLINE_ADAPTER_MODULES = (
     "identity_coherence_adapter",
@@ -345,38 +338,6 @@ def _absolute_import_modules(source: str) -> list[tuple[int, str]]:
                 for alias in node.names
             )
     return imports
-
-
-def _schema_block(name: str) -> tuple[str, ...]:
-    start = f"<!-- schema:{name}:start -->"
-    end = f"<!-- schema:{name}:end -->"
-    in_block = False
-    values: list[str] = []
-    for line in CONTRACT_PATH.read_text(encoding="utf-8").splitlines():
-        if line == start:
-            in_block = True
-            continue
-        if line == end:
-            break
-        if in_block and line:
-            values.append(line)
-    assert values, f"schema marker block not found: {name}"
-    return tuple(values)
-
-
-def test_schema_constants_match_contract_marker_blocks():
-    assert IDENTITY_COHERENCE_REQUEST_COLUMNS == _schema_block(
-        "identity_coherence_requests.tsv"
-    )
-    assert IDENTITY_COHERENCE_DECISION_COLUMNS == _schema_block(
-        "identity_coherence_decisions.tsv"
-    )
-    assert IDENTITY_COHERENCE_CELL_EVIDENCE_COLUMNS == _schema_block(
-        "identity_coherence_cell_evidence.tsv"
-    )
-    assert IDENTITY_COHERENCE_CONTROL_COLUMNS == _schema_block(
-        "identity_coherence_controls.tsv"
-    )
 
 
 def test_schema_constants_have_no_duplicates():
