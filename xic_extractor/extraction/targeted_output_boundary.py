@@ -152,8 +152,12 @@ def publish_targeted_outputs(
             },
         )
         staged_to_final[stage_manifest] = final_manifest
-        _reject_collisions(staged_to_final.values())
-        return _commit_staged_outputs(staged_to_final)
+        if not request.replace_existing_outputs:
+            _reject_collisions(staged_to_final.values())
+        return _commit_staged_outputs(
+            staged_to_final,
+            replace_existing=request.replace_existing_outputs,
+        )
     except TargetedOutputBoundaryError:
         raise
     except Exception as exc:
@@ -250,10 +254,23 @@ def _reject_collisions(paths: Any) -> None:
         )
 
 
-def _commit_staged_outputs(mapping: dict[Path, Path]) -> tuple[Path, ...]:
+def _commit_staged_outputs(
+    mapping: dict[Path, Path],
+    *,
+    replace_existing: bool = False,
+) -> tuple[Path, ...]:
     moved: list[tuple[Path, Path]] = []
+    backups: list[tuple[Path, Path]] = []
     ordered = sorted(mapping.items(), key=lambda item: item[1].name)
     try:
+        if replace_existing:
+            backup_dir = next(iter(mapping)).parent / ".existing"
+            backup_dir.mkdir()
+            for index, (_, final) in enumerate(ordered):
+                if final.exists():
+                    backup = backup_dir / f"{index}-{final.name}"
+                    final.replace(backup)
+                    backups.append((backup, final))
         for staged, final in ordered:
             final.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(final)
@@ -263,6 +280,11 @@ def _commit_staged_outputs(mapping: dict[Path, Path]) -> tuple[Path, ...]:
         for staged, final in reversed(moved):
             try:
                 final.replace(staged)
+            except OSError:
+                rollback_failures.append(final)
+        for backup, final in reversed(backups):
+            try:
+                backup.replace(final)
             except OSError:
                 rollback_failures.append(final)
         detail = (

@@ -121,6 +121,7 @@ class TargetedApplicationRequest:
     ) = None
     method_manifest_context: Any = None
     excel_output_path: Any = None
+    replace_existing_outputs: bool = False
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,11 @@ class TargetedApplicationService:
                 resolved_request.model_selection_expected_diff_approvals
             ),
         )
+        if (
+            resolved_request.should_stop is not None
+            and resolved_request.should_stop()
+        ):
+            return TargetedApplicationExecution(active_output=active_output)
         finalized_runner = self.finalized_workflow_runner
         publisher = self.output_publisher
         if finalized_runner is not None or publisher is not None:
@@ -194,8 +200,9 @@ class TargetedApplicationService:
                 resolved_request.should_stop is not None
                 and resolved_request.should_stop()
             ):
-                raise TargetedRuntimeAdapterError(
-                    "Targeted publication cancelled after workflow completion"
+                return TargetedApplicationExecution(
+                    active_output=active_output,
+                    finalized_results=finalized_results,
                 )
             published_paths = publisher(
                 resolved_request,
@@ -358,6 +365,7 @@ def build_targeted_application_request(
     ) = None,
     method_manifest_context: Any = None,
     excel_output_path: Any = None,
+    replace_existing_outputs: bool = False,
 ) -> TargetedApplicationRequest:
     return TargetedApplicationRequest(
         config=config,
@@ -371,6 +379,7 @@ def build_targeted_application_request(
         ),
         method_manifest_context=method_manifest_context,
         excel_output_path=excel_output_path,
+        replace_existing_outputs=replace_existing_outputs,
     )
 
 

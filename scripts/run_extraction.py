@@ -151,6 +151,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             output_mode=output_mode,
                         ),
                         excel_output_path=excel_output_path,
+                        replace_existing_outputs=replay_request is not None,
                     )
                 )
                 .active_output

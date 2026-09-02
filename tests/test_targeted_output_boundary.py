@@ -14,9 +14,6 @@ from xic_extractor.extraction.targeted_output_boundary import (
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    TargetedRuntimeAdapterError,
-)
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
@@ -133,15 +130,73 @@ def test_commit_failure_rolls_back_all_final_paths(
     assert not any(config.output_csv.parent.iterdir())
 
 
-def test_cancellation_after_typed_completion_never_invokes_publisher(
-    tmp_path: Path,
-) -> None:
+def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
         injection_order={"SampleA": 1},
-        should_stop=lambda: True,
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    original_paths = publish_targeted_outputs(request, finalized, output)
+    original_paths[0].write_bytes(b"stale replay output")
+
+    replay_request = replace(request, replace_existing_outputs=True)
+    replay_paths = publish_targeted_outputs(replay_request, finalized, output)
+
+    assert replay_paths == original_paths
+    assert all(path.is_file() for path in replay_paths)
+    assert all(path.read_bytes() != b"stale replay output" for path in replay_paths)
+
+
+def test_replay_commit_failure_restores_previous_output_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    original_paths = publish_targeted_outputs(request, finalized, output)
+    original_bytes = {path: path.read_bytes() for path in original_paths}
+    original_replace = Path.replace
+    commit_count = 0
+
+    def fail_second_new_output(source: Path, target_path: Path) -> Path:
+        nonlocal commit_count
+        if source.parent.name.startswith(".xic-targeted-publish-"):
+            commit_count += 1
+            if commit_count == 2:
+                raise OSError("replacement failed")
+        return original_replace(source, target_path)
+
+    monkeypatch.setattr(Path, "replace", fail_second_new_output)
+
+    with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
+        publish_targeted_outputs(
+            replace(request, replace_existing_outputs=True),
+            finalized,
+            output,
+        )
+
+    assert {path: path.read_bytes() for path in original_paths} == original_bytes
+
+
+def test_cancellation_after_typed_completion_never_invokes_publisher(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    stop_results = iter((False, True))
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        should_stop=lambda: next(stop_results),
     )
 
     service = TargetedApplicationService(
@@ -150,8 +205,34 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
         output_publisher=lambda *_args: pytest.fail("cancelled run published output"),
     )
 
-    with pytest.raises(TargetedRuntimeAdapterError, match="cancelled"):
-        service.execute_application(request)
+    execution = service.execute_application(request)
+
+    assert execution.active_output is output
+    assert execution.finalized_results
+    assert execution.published_paths == ()
+
+
+def test_cancellation_after_acquisition_skips_finalization(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        should_stop=lambda: True,
+    )
+    service = TargetedApplicationService(
+        lambda *_args, **_kwargs: output,
+        finalized_workflow_runner=lambda *_args: pytest.fail(
+            "cancelled run invoked finalization"
+        ),
+        output_publisher=lambda *_args: pytest.fail("cancelled run published output"),
+    )
+
+    execution = service.execute_application(request)
+
+    assert execution.active_output is output
+    assert execution.finalized_results == ()
+    assert execution.published_paths == ()
 
 
 def test_cli_and_gui_route_through_acquisition_service_boundary() -> None:
