@@ -173,38 +173,25 @@ def build_method_manifest(
             "parallel_workers": config.parallel_workers,
         },
         "output_artifacts": {
-            "output_csv": _artifact(
+            "output_csv": _output_artifact(
                 config.output_csv,
-                "output",
                 output_dir,
-                source_path=_artifact_source(config.output_csv, artifact_sources),
+                artifact_sources,
             ),
-            "long_csv": _artifact(
+            "long_csv": _output_artifact(
                 config.output_csv.with_name("xic_results_long.csv"),
-                "output",
                 output_dir,
-                source_path=_artifact_source(
-                    config.output_csv.with_name("xic_results_long.csv"),
-                    artifact_sources,
-                ),
+                artifact_sources,
             ),
-            "diagnostics_csv": _artifact(
+            "diagnostics_csv": _output_artifact(
                 config.diagnostics_csv,
-                "output",
                 output_dir,
-                source_path=_artifact_source(
-                    config.diagnostics_csv,
-                    artifact_sources,
-                ),
+                artifact_sources,
             ),
-            "score_breakdown_csv": _artifact(
+            "score_breakdown_csv": _output_artifact(
                 config.output_csv.with_name("xic_score_breakdown.csv"),
-                "output",
                 output_dir,
-                source_path=_artifact_source(
-                    config.output_csv.with_name("xic_score_breakdown.csv"),
-                    artifact_sources,
-                ),
+                artifact_sources,
             ),
             "method_manifest_json": _artifact(
                 manifest_path,
@@ -528,6 +515,7 @@ def _artifact(
     force_exists: bool | None = None,
     include_sha256: bool = True,
     source_path: Path | None = None,
+    fallback_to_path: bool = True,
 ) -> dict[str, object]:
     if path is None:
         return {
@@ -536,15 +524,39 @@ def _artifact(
             "sha256": None,
             "scope": scope,
         }
-    evidence_path = source_path or path
-    exists = evidence_path.exists() if force_exists is None else force_exists
-    sha256 = artifact_sha256(evidence_path) if include_sha256 else None
+    evidence_path = source_path
+    if evidence_path is None and fallback_to_path:
+        evidence_path = path
+    exists = (
+        evidence_path is not None and evidence_path.exists()
+        if force_exists is None
+        else force_exists
+    )
+    sha256 = (
+        artifact_sha256(evidence_path)
+        if include_sha256 and evidence_path is not None
+        else None
+    )
     return {
         "path": _artifact_path_text(path, output_dir),
         "exists": exists,
         "sha256": sha256,
         "scope": scope,
     }
+
+
+def _output_artifact(
+    path: Path,
+    output_dir: Path,
+    sources: Mapping[Path, Path] | None,
+) -> dict[str, object]:
+    return _artifact(
+        path,
+        "output",
+        output_dir,
+        source_path=_artifact_source(path, sources),
+        fallback_to_path=sources is None,
+    )
 
 
 def _artifact_source(

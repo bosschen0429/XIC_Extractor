@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import inspect
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -46,6 +47,47 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     }
     assert all(path.is_file() for path in published.paths)
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
+
+
+def test_manifest_does_not_claim_any_unstaged_stale_output(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(
+        config,
+        keep_intermediate_csv=False,
+        emit_score_breakdown=False,
+    )
+    stale_outputs = {
+        "output_csv": config.output_csv,
+        "long_csv": config.output_csv.with_name("xic_results_long.csv"),
+        "diagnostics_csv": config.diagnostics_csv,
+        "score_breakdown_csv": config.output_csv.with_name(
+            "xic_score_breakdown.csv"
+        ),
+    }
+    config.output_csv.parent.mkdir(parents=True)
+    for artifact_id, path in stale_outputs.items():
+        path.write_bytes(f"stale {artifact_id}".encode())
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    publish_targeted_outputs(request, finalized, output)
+
+    manifest = json.loads(
+        config.output_csv.with_name("method_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for artifact_id, path in stale_outputs.items():
+        artifact = manifest["output_artifacts"][artifact_id]
+        assert artifact["exists"] is False
+        assert artifact["sha256"] is None
+        assert path.read_bytes() == f"stale {artifact_id}".encode()
 
 
 def test_neutral_loss_disabled_target_publishes_ms1_backfill(

@@ -21,6 +21,9 @@ from xic_extractor.extraction.targeted_diagnostic_application import (
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
+from xic_extractor.extraction.targeted_output_boundary import (
+    TargetedOutputBoundaryError,
+)
 from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
@@ -156,7 +159,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 .active_output
             )
-    except (ConfigError, MethodManifestError, RawReaderError) as exc:
+    except (
+        ConfigError,
+        MethodManifestError,
+        RawReaderError,
+        TargetedOutputBoundaryError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 

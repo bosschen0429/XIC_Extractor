@@ -143,7 +143,7 @@ def _run_extraction_once(
         if run_config.model_selection_expected_diff_approval_registry is not None
         else None
     )
-    output = extractor.run(
+    output = extractor.acquire(
         run_config,
         targets,
         model_selection_expected_diff_approvals=expected_diff_approvals,

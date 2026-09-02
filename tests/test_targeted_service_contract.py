@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor import extractor
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extraction.targeted_service import (
@@ -29,6 +30,45 @@ def test_cli_and_gui_use_same_targeted_application_service() -> None:
             and node.func.value.id == "extractor"
         ]
         assert calls == [], f"{path} bypasses TargetedApplicationService"
+
+
+def test_public_python_run_uses_canonical_targeted_application_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    targets = [_target()]
+    output = RunOutput(file_results=[], diagnostics=[])
+    captured: dict[str, object] = {}
+
+    class _Service:
+        def execute(self, request):
+            captured["request"] = request
+            return output
+
+    def build_service(runner):
+        captured["runner"] = runner
+        return _Service()
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_diagnostic_application."
+        "build_canonical_targeted_application_service",
+        build_service,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.pipeline.run_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("public run bypassed finalization")
+        ),
+    )
+
+    actual = extractor.run(config, targets, injection_order={"SampleA": 1})
+
+    assert actual is output
+    assert captured["runner"] is extractor.acquire
+    request = captured["request"]
+    assert request.config is config
+    assert request.targets == tuple(targets)
+    assert request.injection_order == {"SampleA": 1}
 
 
 def test_headless_service_preserves_inputs_and_callbacks() -> None:

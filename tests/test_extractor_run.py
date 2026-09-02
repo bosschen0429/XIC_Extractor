@@ -27,7 +27,7 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_run_uses_serial_backend_by_default(
+def test_acquire_uses_serial_backend_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -71,7 +71,7 @@ def test_run_uses_serial_backend_by_default(
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
 
-    output = extractor.run(
+    output = extractor.acquire(
         config,
         targets,
         progress_callback=_progress,
@@ -87,7 +87,7 @@ def test_run_uses_serial_backend_by_default(
     assert calls == [(config, targets, ["A.raw", "B.raw"])]
 
 
-def test_run_applies_targeted_ms1_shape_identity_support_tsv(
+def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -152,7 +152,7 @@ def test_run_applies_targeted_ms1_shape_identity_support_tsv(
         _fake_write_outputs,
     )
 
-    output = extractor.run(config, targets)
+    output = extractor.acquire(config, targets)
 
     assert output is returned
     assert calls["support_path"] == support_path
@@ -160,10 +160,10 @@ def test_run_applies_targeted_ms1_shape_identity_support_tsv(
     assert calls["projection_input"] is returned
     assert calls["projection_targets"] == targets
     assert calls["projection_supports"] == supports
-    assert calls["written_output"] is returned
+    assert "written_output" not in calls
 
 
-def test_run_limited_shape_identity_policy_without_support_tsv_keeps_output(
+def test_acquire_limited_shape_identity_policy_without_support_tsv_keeps_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,10 +219,10 @@ def test_run_limited_shape_identity_policy_without_support_tsv_keeps_output(
         _fake_write_outputs,
     )
 
-    output = extractor.run(config, targets)
+    output = extractor.acquire(config, targets)
 
     assert output is returned
-    assert calls["written_output"] is returned
+    assert "written_output" not in calls
 
 
 def test_acquire_returns_projected_output_without_publishing(
@@ -252,7 +252,7 @@ def test_acquire_returns_projected_output_without_publishing(
     assert extractor.acquire(config, targets) is returned
 
 
-def test_run_reports_invalid_targeted_ms1_shape_identity_support_as_config_error(
+def test_acquire_reports_invalid_targeted_ms1_shape_identity_support_as_config_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -292,10 +292,10 @@ def test_run_reports_invalid_targeted_ms1_shape_identity_support_as_config_error
     )
 
     with pytest.raises(ConfigError, match="missing required columns"):
-        extractor.run(config, targets)
+        extractor.acquire(config, targets)
 
 
-def test_run_resolves_scoring_inputs_before_backend(
+def test_acquire_resolves_scoring_inputs_before_backend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -358,12 +358,12 @@ def test_run_resolves_scoring_inputs_before_backend(
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
 
-    output = extractor.run(config, targets)
+    output = extractor.acquire(config, targets)
 
     assert output.file_results == []
 
 
-def test_run_resolves_sample_metadata_source_as_injection_order(
+def test_acquire_resolves_sample_metadata_source_as_injection_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -423,7 +423,7 @@ def test_run_resolves_sample_metadata_source_as_injection_order(
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
 
-    output = extractor.run(config, targets)
+    output = extractor.acquire(config, targets)
 
     assert output.file_results == []
 
@@ -488,7 +488,7 @@ def test_target_pair_rt_calibration_fences_legacy_rt_prior_library(
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
 
-    extractor.run(config, targets, rt_prior_library=injected_library)
+    extractor.acquire(config, targets, rt_prior_library=injected_library)
 
 
 def test_resolve_injection_order_returns_empty_dict_without_raw_files(
@@ -505,7 +505,7 @@ def test_serial_backend_keeps_sorted_raw_output_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.extractor import run
+    from xic_extractor.extractor import acquire
 
     config = _config(tmp_path, keep_intermediate_csv=False)
     (config.data_dir / "B.raw").write_text("", encoding="utf-8")
@@ -517,7 +517,7 @@ def test_serial_backend_keeps_sorted_raw_output_order(
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0), _ok_peak(8.6, 1100.0, 2100.0)]),
     )
 
-    output = run(config, targets)
+    output = acquire(config, targets)
 
     assert [file_result.sample_name for file_result in output.file_results] == [
         "A",

@@ -206,18 +206,25 @@ def run(
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
 ) -> RunOutput:
-    from xic_extractor.extraction.pipeline import run_pipeline
+    from xic_extractor.extraction.targeted_diagnostic_application import (
+        build_canonical_targeted_application_service,
+    )
+    from xic_extractor.extraction.targeted_service import (
+        build_targeted_application_request,
+    )
 
-    return run_pipeline(
-        config,
-        targets,
-        progress_callback=progress_callback,
-        should_stop=should_stop,
-        injection_order=injection_order,
-        rt_prior_library=rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
+    return build_canonical_targeted_application_service(acquire).execute(
+        build_targeted_application_request(
+            config,
+            targets,
+            progress_callback=progress_callback,
+            should_stop=should_stop,
+            injection_order=injection_order,
+            rt_prior_library=rt_prior_library,
+            model_selection_expected_diff_approvals=(
+                model_selection_expected_diff_approvals
+            ),
+        )
     )
 
 

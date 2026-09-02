@@ -9,6 +9,9 @@ from types import SimpleNamespace
 import pytest
 
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.targeted_output_boundary import (
+    TargetedOutputBoundaryError,
+)
 from xic_extractor.extractor import DiagnosticRecord, RunOutput
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
@@ -1156,6 +1159,32 @@ def test_cli_reports_config_errors_without_traceback(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "settings.csv missing" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_reports_publication_rejections_without_traceback(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    module = _module()
+    config = _config(tmp_path)
+    targets = [_target("Analyte")]
+    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
+
+    class _RejectingService:
+        def execute_application(self, _request):
+            raise TargetedOutputBoundaryError("output already exists")
+
+    monkeypatch.setattr(
+        module,
+        "build_canonical_targeted_application_service",
+        lambda _runner: _RejectingService(),
+    )
+
+    exit_code = module.main(["--base-dir", str(tmp_path), "--skip-excel"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "output already exists" in captured.err
     assert "Traceback" not in captured.err
 
 

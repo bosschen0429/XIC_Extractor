@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 
 from xic_extractor.config import Target, load_config
 from xic_extractor.extractor import RunOutput
-from xic_extractor.extractor import run as run_extractor
+from xic_extractor.extractor import acquire as acquire_extractor
 from xic_extractor.tabular_io import write_delimited_rows
 
 RT_MEDIAN_LIMIT = 0.003
@@ -292,7 +292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     old_csv = _run_old_pipeline(old_worktree)
     old_rows = read_old_results(old_csv)
     config, targets = load_config(new_worktree / "config")
-    new_output = run_extractor(config, targets)
+    new_output = acquire_extractor(config, targets)
     new_rows = collect_new_validation_rows(new_output, targets)
     rows = merge_old_new_rows(old_rows, new_rows)
     report = compare_validation_rows(rows)

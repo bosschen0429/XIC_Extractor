@@ -209,8 +209,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     legacy_config = replace(config, resolver_mode="legacy_savgol")
     local_config = replace(config, resolver_mode="local_minimum")
 
-    legacy_output = extractor.run(legacy_config, targets)
-    local_output = extractor.run(local_config, targets)
+    legacy_output = extractor.acquire(legacy_config, targets)
+    local_output = extractor.acquire(local_config, targets)
 
     report = compare_rows(
         legacy_output,

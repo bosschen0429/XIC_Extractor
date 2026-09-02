@@ -165,7 +165,7 @@ def test_run_extraction_once_applies_data_dir_override_before_validation(
         captured["approvals"] = model_selection_expected_diff_approvals
         return object()
 
-    monkeypatch.setattr("scripts.benchmark_parallel.extractor.run", fake_run)
+    monkeypatch.setattr("scripts.benchmark_parallel.extractor.acquire", fake_run)
     monkeypatch.setattr(
         "scripts.benchmark_parallel.write_excel_from_run_output",
         lambda _config, _targets, _output, *, output_path: output_path,
@@ -207,7 +207,7 @@ def test_run_extraction_once_applies_additional_settings_overrides(
         captured["approvals"] = model_selection_expected_diff_approvals
         return object()
 
-    monkeypatch.setattr("scripts.benchmark_parallel.extractor.run", fake_run)
+    monkeypatch.setattr("scripts.benchmark_parallel.extractor.acquire", fake_run)
     monkeypatch.setattr(
         "scripts.benchmark_parallel.write_excel_from_run_output",
         lambda _config, _targets, _output, *, output_path: output_path,
@@ -262,7 +262,7 @@ def test_run_extraction_once_loads_expected_diff_approval_registry(
         "scripts.benchmark_parallel.load_expected_diff_approval_registry",
         fake_load_registry,
     )
-    monkeypatch.setattr("scripts.benchmark_parallel.extractor.run", fake_run)
+    monkeypatch.setattr("scripts.benchmark_parallel.extractor.acquire", fake_run)
     monkeypatch.setattr(
         "scripts.benchmark_parallel.write_excel_from_run_output",
         lambda _config, _targets, _output, *, output_path: output_path,

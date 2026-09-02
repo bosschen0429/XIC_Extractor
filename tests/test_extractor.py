@@ -1831,9 +1831,12 @@ def test_paired_analyte_fallback_blanks_not_counted_peak_from_matrix(
 
 
 def _run(config: ExtractionConfig, targets: list[Target], **kwargs):
-    from xic_extractor.extractor import run
+    from xic_extractor.extraction.output_dispatch import write_outputs
+    from xic_extractor.extractor import acquire
 
-    return run(config, targets, **kwargs)
+    output = acquire(config, targets, **kwargs)
+    write_outputs(config, targets, output)
+    return output
 
 
 def _config(tmp_path: Path, *, keep_intermediate_csv: bool = True) -> ExtractionConfig:
