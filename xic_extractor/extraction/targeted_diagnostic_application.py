@@ -1,9 +1,8 @@
-"""Internal composition for the bounded no-RAW Targeted diagnostic method.
+"""Targeted production composition plus retained diagnostic utilities.
 
-The product adapters always use this builder.  Legacy remains authoritative;
-the successor runs only while an internal owner-backed request provider is
-installed for a bounded diagnostic execution.  No public CLI/config switch is
-introduced.
+Product adapters use the builder's acquire → typed workflow → publish route.
+The scoped provider functions remain only for explicit diagnostic callers and
+are not part of production adoption.
 """
 
 from __future__ import annotations

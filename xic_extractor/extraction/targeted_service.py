@@ -135,7 +135,7 @@ class TargetedDiagnosticApplicationOutcome:
 
 @dataclass(frozen=True)
 class TargetedApplicationExecution:
-    """One adapter-neutral run; legacy remains active during diagnostic migration."""
+    """One adapter-neutral acquisition with optional finalized publication."""
 
     active_output: RunOutput
     finalized_results: tuple[FinalizedTargetApplicationResult, ...] = ()
@@ -166,7 +166,7 @@ class TargetedApplicationService:
         self,
         request: TargetedApplicationRequest,
     ) -> TargetedApplicationExecution:
-        """Run legacy authority and an optional bounded diagnostic successor once."""
+        """Acquire once and publish only a complete finalized Target population."""
 
         resolved_request = _resolve_application_request(request)
         active_output = self.runner(
