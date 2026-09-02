@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any, cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillPlanningPosition,
@@ -55,9 +56,6 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
 )
 from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
-from xic_extractor.execution_runtime_finalization_models import (
-    CoordinatorTerminalRecord,
-)
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactIoSample,
@@ -528,10 +526,11 @@ def _target_snapshot(owners: ProcessingOwnerReferences) -> TargetListSnapshot:
 
 
 def _runtime_telemetry(
-    coordinator: CoordinatorTerminalRecord,
+    coordinator: object,
 ) -> RuntimeTelemetrySamples:
-    event_count = runtime_observation_event_count(coordinator)
-    worker_keys = runtime_started_worker_keys(coordinator)
+    terminal = cast(Any, coordinator)
+    event_count = runtime_observation_event_count(terminal)
+    worker_keys = runtime_started_worker_keys(terminal)
     return RuntimeTelemetrySamples(
         event_monotonic_offsets_ns=tuple(range(event_count)),
         artifact_io=RuntimeArtifactIoSample(0, 0, 0, 0),
