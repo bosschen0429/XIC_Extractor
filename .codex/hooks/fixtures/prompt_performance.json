@@ -1,7 +1,0 @@
-{
-  "hook_event_name": "UserPromptSubmit",
-  "turn_id": "fixture",
-  "cwd": ".",
-  "permission_mode": "default",
-  "prompt": "下一步針對 overlay RAW access 的 locality/reuse/batched extraction 繼續優化"
-}

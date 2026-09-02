@@ -2244,10 +2244,9 @@ evidence than an unactionable line-by-line pass over mechanical writer churn.
   create a new group if none fit. Always populate Purpose / Topic group /
   Originating spec — these are the minimum for an entry to be useful at
   session start.
-- **Adding a new evidence-provider diagnostic**: First use
-  `.codex/skills/xic-architecture-preflight/SKILL.md` to name the package owner,
-  reusable helper, evidence role, RAW/TSV call-cost model, public contract risk,
-  validation tier, and stop rule. HCD-PI, Delta Mass, CID-NL, RT/iRT, MS1
+- **Adding a new evidence-provider diagnostic**: The owning Issue names the
+  package owner, reusable helper, evidence role, RAW/TSV call-cost model, public
+  contract risk, validation tier, and stop rule. HCD-PI, Delta Mass, CID-NL, RT/iRT, MS1
   pattern, shape, standards, library, and future model evidence should enter as
   evidence providers rather than direct matrix writers.
 - **Removing an entry-point** (RETIRED per spec): Remove the entry from the

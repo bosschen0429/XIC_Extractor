@@ -6,8 +6,8 @@ description: Diagnose XIC performance from timing and parity artifacts before op
 # XIC Performance Diagnosis
 
 Treat each optimization as an artifact-driven, falsifiable claim. Produce one
-diagnosis packet before handing code edits to `xic-architecture-preflight` or
-RAW execution/acceptance to `xic-raw-validation`.
+diagnosis packet before issue-bounded code edits. Route RAW execution or
+artifact acceptance to `xic-raw-validation`.
 
 ## 1. Bind The Decision And Evidence Branch
 
@@ -176,9 +176,9 @@ Residual risk:
 Performance evidence alone leaves product validation status unchanged; use the
 canonical repo vocabulary for that separate field.
 
-Only `optimization_ready` opens the code-edit handoff to
-`xic-architecture-preflight`. Route actual RAW launch or artifact acceptance to
-`xic-raw-validation`. Consult the productization status index, authority
+Only `optimization_ready` opens issue-bounded code edits. Route actual RAW
+launch or artifact acceptance to `xic-raw-validation`. Consult the
+productization status index, authority
 manifest, and promotion contract only when the evidence could change a maturity
 tier, active lane, ProductWriter authority, or product gate state.
 

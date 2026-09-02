@@ -114,26 +114,11 @@ Current Packet passes this gate, remove `needs-info` and apply the repository's
 `docs/agent/triage-labels.md`.
 
 Review incident thresholds and corrective handling remain owned by the root
-review-class rule and the existing root-class closure workflow. Treat one
-consolidated review plus one root-class corrective as a convergence target and
-measure, not a duplicate safety gate. The final mutation still requires a fresh
-whole-diff review. When the existing owner trips, stop instance patches, reopen
-the transaction census, and bound, shrink, delete, or replace the mechanism, or
-return the issue to `needs-info` with the exact missing oracle or surface.
-
-Current Packet escalation is complete only after a fresh read-only review
-challenges the load-bearing premise and inspects the evidence for at least one
-representative highest-entry transaction with its real consumers intact. The
-reviewer must be able to identify the packet ID/base SHA, normative premises,
-asset disposition, bounded production transaction, census commands and
-exclusions, falsifying case, acceptance evidence, and stop rule without
-reconstructing them from the comment history. Closeout reports clarification
-rounds, review rounds, delivered heads,
-same-class recurrence, diff churn, packet-shaping cost, and any missed surface
-when the work crossed this gate. Use PR metadata and existing receipts; do not
-create another progress ledger merely to measure the workflow. Until a
-prospective issue supplies this evidence, describe rework prevention as a
-hypothesis rather than a verified benefit.
+review-class rule and root-class closure workflow. A Current Packet is ready
+when the Issue exposes the binding, bounded production transaction, falsifier,
+acceptance, and stop rule without reconstructing them from comment history.
+Review the diff when it changes; do not require a separate review merely to
+certify the packet or collect workflow metrics.
 
 ### Wayfinder-To-Delivery Compilation
 
@@ -282,8 +267,9 @@ The implementation Issue template and PR template are projections of this
 section. Blank or programmatically created issues remain supported for maps,
 research, and exceptional shapes, but implementation issues must still carry
 the same fields. Template changes that weaken, rename, or add issue-to-PR scope
-fields update this owner, both projections where applicable, the PR-body
-validator, and focused tests in one coherent change.
+fields update this owner and both projections where applicable in one coherent
+change. Add machine validation only for a current machine consumer and named
+removal loss.
 
 ### Issue, PR, And Repository Authority
 

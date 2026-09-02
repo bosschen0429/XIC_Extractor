@@ -1,18 +1,5 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/xic_prompt_router.py\"",
-            "commandWindows": "python \"$(git rev-parse --show-toplevel)\\.codex\\hooks\\xic_prompt_router.py\"",
-            "timeout": 5,
-            "statusMessage": "Checking XIC prompt context"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash|apply_patch|Edit|Write",

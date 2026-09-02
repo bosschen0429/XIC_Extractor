@@ -42,6 +42,11 @@ def assert_contains(value: object, expected: str) -> None:
         raise AssertionError(f"expected {expected!r} in {text}")
 
 
+def assert_absent(text: str, unexpected: str) -> None:
+    if unexpected in text:
+        raise AssertionError(f"did not expect {unexpected!r} in {text}")
+
+
 def assert_hook_silent(script: str, event: dict[str, object]) -> None:
     result = subprocess.run(
         [sys.executable, str(HOOKS / script)],
@@ -60,151 +65,6 @@ def assert_hook_silent(script: str, event: dict[str, object]) -> None:
 
 
 def main() -> int:
-    prompt_payload = {
-        "hook_event_name": "UserPromptSubmit",
-        "turn_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "prompt": "這個功能是不是已經正式產品化？我要確認 promotion tier。",
-    }
-    assert_contains(
-        run_hook("xic_prompt_router.py", prompt_payload),
-        "productization-control-plane.md",
-    )
-
-    handoff_prompt_payload = {
-        "hook_event_name": "UserPromptSubmit",
-        "turn_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "prompt": (
-            "準備收尾，請更新交接文件，避免下一個 session "
-            "因 context compaction 丟資訊。"
-        ),
-    }
-    assert_hook_silent("xic_prompt_router.py", handoff_prompt_payload)
-
-    def router_output(prompt: str) -> str:
-        payload = {
-            "hook_event_name": "UserPromptSubmit",
-            "turn_id": "fixture",
-            "cwd": ".",
-            "permission_mode": "default",
-            "prompt": prompt,
-        }
-        return json.dumps(run_hook("xic_prompt_router.py", payload), ensure_ascii=False)
-
-    def assert_router_silent(prompt: str) -> None:
-        payload = {
-            "hook_event_name": "UserPromptSubmit",
-            "turn_id": "fixture",
-            "cwd": ".",
-            "permission_mode": "default",
-            "prompt": prompt,
-        }
-        assert_hook_silent("xic_prompt_router.py", payload)
-
-    def assert_absent(text: str, unexpected: str) -> None:
-        if unexpected in text:
-            raise AssertionError(f"did not expect {unexpected!r} in {text}")
-
-    # Performance work routes to xic-performance-diagnosis, which owns the
-    # architecture handoff for code edits.
-    perf_out = router_output(
-        "這個 preset 的 performance bottleneck 在哪？先看 timing.json"
-    )
-    assert_contains(perf_out, "xic-performance-diagnosis")
-
-    # RAW-run/validation intent routes to xic-raw-validation.
-    raw_out = router_output("準備跑 85RAW alignment 驗證，先確認 runner 跟 DLL 路徑")
-    assert_contains(raw_out, "xic-raw-validation")
-    assert_absent(raw_out, "xic-architecture-preflight")
-
-    # The keyword hook supplies the RAW gate without claiming semantic
-    # architecture scope; the model-invoked skill owns that decision.
-    mixed_raw_edit_out = router_output(
-        "Change matrix extraction behavior, then run 85RAW validation."
-    )
-    assert_contains(mixed_raw_edit_out, "xic-raw-validation")
-    assert_absent(mixed_raw_edit_out, "xic-architecture-preflight")
-
-    mixed_perf_raw_edit_out = router_output(
-        "Optimize matrix extraction performance, then run 85RAW validation."
-    )
-    assert_contains(mixed_perf_raw_edit_out, "xic-performance-diagnosis")
-    assert_contains(mixed_perf_raw_edit_out, "xic-raw-validation")
-    assert_contains(mixed_perf_raw_edit_out, "xic-architecture-preflight")
-
-    reversed_perf_edit_out = router_output(
-        "下一步針對 overlay RAW access 的 locality/reuse/batched extraction 繼續優化"
-    )
-    assert_contains(reversed_perf_edit_out, "xic-performance-diagnosis")
-    assert_contains(reversed_perf_edit_out, "xic-architecture-preflight")
-
-    # Existing RAW-backed artifact acceptance is explicit RAW validation intent.
-    raw_accept_out = router_output(
-        "Accept the existing RAW-backed validation artifacts for this gate."
-    )
-    assert_contains(raw_accept_out, "xic-raw-validation")
-    raw_accept_without_rerun_out = router_output(
-        "Accept the existing RAW-backed validation artifacts without reading "
-        "or rerunning RAW."
-    )
-    assert_contains(raw_accept_without_rerun_out, "xic-raw-validation")
-    reordered_raw_accept_out = router_output(
-        "Accept RAW-backed artifacts that already exist; do not rerun RAW."
-    )
-    assert_contains(reordered_raw_accept_out, "xic-raw-validation")
-
-    # A bare RAW/matrix code label is insufficient for hook-level routing.
-    assert_router_silent("改 85RAW 的 matrix 抽取邏輯")
-
-    # Synthetic/no-RAW validation and generic heartbeat/schema work must not be
-    # turned into RAW/DLL launch preflight.
-    assert_router_silent(
-        "Run alignment validation using synthetic fixtures; do not read RAW."
-    )
-    assert_router_silent("Validate alignment with fixtures without reading RAW.")
-
-    for ordinary_prompt in (
-        "幫我 review 這個大 PR",
-        "設定一個 goal 整理 focused tests",
-    ):
-        assert_router_silent(ordinary_prompt)
-
-    assert_router_silent("Validate the benchmark schema using tracked TSV fixtures.")
-    assert_router_silent("Fix the heartbeat renderer unit test.")
-
-    # Stacked/superseded PR trouble keeps its narrow repo-specific route.
-    stack_out = router_output(
-        "這個 stacked PR series 一直 red CI，先 map stale base 再修"
-    )
-    assert_contains(stack_out, "xic-pr-stack-repair")
-
-    # An ordinary "optimize skills" prompt must not trigger any routing context.
-    skills_result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_prompt_router.py")],
-        input=json.dumps(
-            {
-                "hook_event_name": "UserPromptSubmit",
-                "turn_id": "fixture",
-                "cwd": ".",
-                "permission_mode": "default",
-                "prompt": "幫我優化 repo local skills",
-            }
-        ),
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if "performance" in skills_result.stdout or "xic-" in skills_result.stdout:
-        raise AssertionError(
-            "ordinary optimize-skills prompt emitted routing context: "
-            f"{skills_result.stdout!r}"
-        )
-
     raw_background_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",

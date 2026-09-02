@@ -357,14 +357,11 @@ Naming rule:
   and compatibility/migration code together unless the public-contract rule
   above identifies a current consumer. Git history is the recovery path.
 
-Architecture preflight applies when work creates or replaces a semantic owner,
-crosses an evidence/runtime boundary, or changes Matrix, activation, a public
-contract, or scientific authority. A technology, method, diagnostic, or RAW
-label alone is not a trigger; focused work inside an established owner stays on
-that owner's ordinary verification path. When the boundary applies, use
-`.codex/skills/xic-architecture-preflight/SKILL.md` to bind the existing owner,
-reuse target, call-cost model, public contract risk, validation gate, and stop
-rule.
+An Issue that changes a semantic owner, evidence/runtime boundary, Matrix,
+activation, public contract, or scientific authority names the owner, affected
+consumer, observable delta, oracle, and stop rule. At claim time, verify those
+facts with CBM plus exact-source fallback. A contradiction returns to the Issue
+owner; it does not create a second preflight contract.
 
 ### Shared Decision Semantics Positioning
 

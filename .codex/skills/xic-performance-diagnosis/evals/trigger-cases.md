@@ -37,7 +37,7 @@ request.
   actually needed.
 - If the request is implementation after a performance diagnosis already exists,
   use this skill only to restate the artifact-backed gate, then use
-  `xic-architecture-preflight` before edits.
+  the owning Issue before edits.
 - If timing artifacts are missing but the task is XIC preset/runtime work, this
   skill should still trigger and usually return `baseline_needed`.
 - If the user only wants to run a generic command benchmark with no XIC

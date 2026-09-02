@@ -1,7 +1,0 @@
-{
-  "hook_event_name": "UserPromptSubmit",
-  "turn_id": "fixture",
-  "cwd": ".",
-  "permission_mode": "default",
-  "prompt": "這個功能是不是已經正式產品化？我要確認 promotion tier。"
-}
