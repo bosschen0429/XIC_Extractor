@@ -20,7 +20,7 @@ XIC has one core method lifecycle. Untargeted extraction is its general form;
 Targeted extraction is a constrained specialization of that method, not a
 second peer core:
 
-`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer -> archive/explanation/delivery`
+`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,

@@ -4,9 +4,10 @@ Targeted selection is the Targeted workflow projection for known targets. It
 constrains the shared scientific lifecycle with an exact target-list snapshot,
 binds finalized groups to fixed target rows, applies Targeted inclusion/counting
 and typed reason/routing policy, and closes references to the existing Review
-Queue plus delivery-shape decisions. Explanation renders the human-facing
-reasons from those typed decisions. Targeted selection does not require a second
-capture, CrossSample, ModeTrack, Backfill, or selected-value implementation.
+Queue plus delivery-shape decisions. Existing CSV/workbook/review surfaces
+render human-facing reasons from those typed decisions. Targeted selection does
+not require a second capture, CrossSample, ModeTrack, Backfill, or selected-
+value implementation.
 
 ## Contract
 
@@ -68,7 +69,7 @@ capture, CrossSample, ModeTrack, Backfill, or selected-value implementation.
 | --- | --- |
 | Targeted CSV/workbook fields | Public output for target decisions |
 | `Product State` / `Counted Detection` | User-facing product projection |
-| Confidence and reason fields | Explanation-rendered review surface from typed projection decisions |
+| Confidence and reason fields | Existing review surface rendered from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and model-selection evidence |
 | Target-pair RT calibration artifacts | Activation-gated selection support |
 | Expected-diff packets | Required gate for output-changing behavior |

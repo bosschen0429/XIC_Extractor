@@ -96,9 +96,6 @@ gates are separately delivered.
 | explicit workflow cell subject -> cell decision | `TargetCellSubject` or `GroupCellSubject` plus closed observation/search receipts | Target evidence cannot authorize Group/Untarget cells; human reason strings are not input |
 | cell decisions -> same workflow projection completion operation | exact row/cell identity plus typed write/no-write decisions -> inclusion, counts/reasons, Review Queue/archive routing | Projection cannot recompute observations or selected values |
 | owner decisions -> alignment result finalizer | exact request, group/refinement/repair closure, typed row/cell/inclusion decisions | Finalizer cannot reopen RAW, regroup, refit, repair, reintegrate, select, or accept optional-mode field soup |
-| typed archive owner batches -> internal typed-Parquet staged bundle/reference | native types/nulls, canonical identity/order, schema/version, retention class, exact bundle lineage | TSV strings are not the canonical intermediate; a storage adapter cannot decide science or activate the separate public Parquet-v2 surface |
-| typed decisions + archive references -> Explanation | human reasons, review sections, and navigation links | Prose and references cannot mint/reseal decisions; activation and method-evidence authority stay with their owners |
-| finalized workflow result + stabilized render/query surfaces -> Delivery | one immutable result variant plus owner-compiled `ArtifactPlan`, staged archive/explanation refs, and destination mechanics | Loose Matrix/metadata maps, caller-authored ledgers, emit booleans, and renderer recomputation are forbidden |
 
 CrossSample enforces at most one identity-bearing member per canonical sample
 and mints a successor identity on membership/split/merge change. ModeTrack is
@@ -120,17 +117,14 @@ or processed greedily. A repair-derived observation may become anchor-eligible
 in a later execution only through fresh method-specific independent-evidence
 classification; repair acceptance itself is never that classification.
 
-Evidence persistence, Explanation, and Delivery are separate authorities.
-Persisted evidence is a bounded lazy projection of a finalized owner result,
-not provisional science or a complete in-memory row list. Required artifact
-failure is fail-closed and cannot silently reduce evidence or switch formats;
-archive activation requires semantic parity plus total representation-cost
-evidence. Query results distinguish scientific absence from lifecycle
-unavailability and present-but-invalid content. ADR-0003 accepts the existing
-`backfill_evidence_parquet` and `backfill_evidence_parquet_bundle` modules as the
-first canonical archive implementation owner, with a second-current-owner gate
-before any workflow-neutral extraction. That owner decision is closed; #313
-remains blocked by #312 and requires no additional archive-owner refreeze.
+Owner-local machine evidence, human explanation, and product delivery remain
+separate authority concepts, but they are not a required implementation chain.
+The existing `backfill_evidence_parquet` and
+`backfill_evidence_parquet_bundle` modules support the opt-in diagnostic Parquet
+shadow and its strict readback; they do not establish production archive/query
+authority or require a workflow-neutral archive. Any future archive,
+human-explanation, or product-delivery boundary needs a current consumer,
+explicit authority, and its own acceptance oracle before implementation.
 
 The complete search receipt is required to assert
 `searched_no_observation`; missing, partial, corrupt, or unbound evidence is
@@ -181,8 +175,8 @@ generic vocabulary so outer renderers can consume typed claims without gaining
 a transitive RAW-reader dependency. Backfill claim-census semantics remain with
 `backfill_evidence_owner`; only the strict `backfill_evidence_tsv` and
 `backfill_evidence_parquet` readers may mint `EvidenceQueryResult`. A caller-made
-record/claim tuple is not a reader result and cannot cross an explanation or
-other semantic boundary. The focused adapters own strict rehydration for the
+record/claim tuple is not a reader result and cannot cross a review or other
+semantic boundary. The focused adapters own strict rehydration for the
 existing `alignment_backfill_cell_evidence.tsv` and
 `skipped_evidence_ledger.tsv` projections. This contract does not change either
 writer schema, path, output level, or publication default.
@@ -257,14 +251,12 @@ For a transaction that crosses persisted human review into a current owner run:
   existing writer owner, expected-diff oracle, rollback oracle, and terminal
   receipt all succeed.
 
-For the frozen Alignment successor, the writer-adjacent input is one immutable
-Targeted or Untargeted finalized result plus an owner-compiled `ArtifactPlan`
-and output-location mechanics. The plan derives from the projection contract,
-delivery intent, authority-manifest snapshot, and named compatibility consumers.
-The delivery finalizer returns one typed receipt and publishes required claim-
-closure groups atomically. It cannot accept a pre-final Matrix, loose
-`AlignedCell` population, caller-authored selected values/reasons/counts, or
-independent `emit_*` flags.
+This contract does not introduce a new delivery-plan type or delivery finalizer.
+Current Targeted and Untargeted output transactions retain their existing
+writer owners, inputs, schemas, and publication mechanics. A future consumer
+that needs a new writer-adjacent plan or atomic bundle must first define the
+current input, output, authority, compatibility consumers, and rollback oracle;
+it cannot infer that programme from the Alignment successor shape.
 
 Executable closure requires a writer-signature oracle plus re-seal attacks over
 every persisted writer-like field. A consistently re-hashed audit mutation must

@@ -64,8 +64,7 @@ graph TB
 and CrossSample application → optional ObservationRepair → CrossSample
 reconciliation → optional one final ModeTrack proposal/application →
 FinalizedScientificAlignment → projection binding/subjects →
-ProductionCellDecision → projection completion → result finalizer → archive,
-explanation, and delivery
+ProductionCellDecision → projection completion → result finalizer
 
 ```mermaid
 flowchart LR
@@ -88,15 +87,6 @@ flowchart LR
     GD --> UPC["Untarget projection completion<br/>inclusion / archive routing"]
     TPC --> TR["Finalized Targeted result"]
     UPC --> UR["Finalized Untargeted result"]
-    TR --> EA["Evidence archive<br/>typed staged bundle"]
-    UR --> EA
-    TR --> EX["Explanation<br/>render + navigation"]
-    UR --> EX
-    EA --> EX
-    TR --> DL["Delivery<br/>ArtifactPlan + atomic publish"]
-    UR --> DL
-    EA --> DL
-    EX --> DL
 ```
 
 Each projection appears twice because one owner has two ordered operations:
@@ -139,11 +129,13 @@ delivery-seal lineage is owned separately by
 scheduling, cancellation, retry/resume, worker/resource cleanup, cache
 lifecycle, and runtime observability are owned by
 [`docs/product/execution-runtime.md`](product/execution-runtime.md). Processing
-lineage owns logical retention classes and the archive/handoff bundle contract;
-the future evidence-archive owner owns its native typed storage projection.
-Physical activation, location, catalog, and migration remain separate delivery
-decisions. The runtime may only execute owner-supplied lifecycle actions for
-registered temporary resources and caches while respecting lineage pins.
+lineage owns logical retention classes and current delivery lineage. It does
+not preassign a storage owner or require an archive/handoff bundle without a
+current consumer. Any new native typed storage projection requires a separately
+approved owner and contract. Physical activation, location, catalog,
+and migration remain separate delivery decisions. The runtime may only execute
+owner-supplied lifecycle actions for registered temporary resources and caches
+while respecting lineage pins.
 
 ## Dependency Direction
 
@@ -180,7 +172,7 @@ defines the successor owner rather than claiming current implementation status.
 | Target module | Owns | Must not own |
 | --- | --- | --- |
 | `peak_detection/search_scope.py` | Closed `TargetSearchScope | UntargetedSearchScope` boundary schema and common request/sample/provider binding validation; Target-list and Discovery/provider owners mint their own variant content | Reminting Target identity, choosing provider policy, capture science, rows, groups, values, or artifacts |
-| `alignment/workflow.py` | Typed composition of stage order, resource/cancellation handling, transaction scope, runtime receipts, finalization, and delivery | Grouping, trajectory fitting, Backfill science, selected-value rules, mutable Matrix transport, renderer flags, or fallback algorithms |
+| `alignment/workflow.py` | Typed composition of stage order, resource/cancellation handling, transaction scope, runtime receipts, finalization, and current output orchestration | Grouping, trajectory fitting, Backfill science, selected-value rules, mutable Matrix transport, renderer flags, or fallback algorithms |
 | `alignment/cross_sample/` | Initial grouping, canonical member set, `group_hypothesis_id`, `GroupDispositionDecision`, split/merge lineage, and application of accepted refinement proposals | Trace integration, ModeTrack fitting, ObservationRepair, cell values, row inclusion, or rendering |
 | `alignment/mode_track/` | Immutable trajectory-input snapshots, simplest validated trajectory model, assignment/refinement proposals, and their audit; absorbs reusable `identity_coherence` capability | Group minting, membership mutation, Backfill, value selection, Matrix writes, or a second control plane |
 | `alignment/backfill/` | Bounded work planning, exact request reuse, one `ObservationRepair` epoch, owner-backed repaired observations, and transaction closure | First-hit Discovery, group identity, implicit membership, recursive support, final selected value, or writer authority |
@@ -188,9 +180,7 @@ defines the successor owner rather than claiming current implementation status.
 | `alignment/result/` | Shared-core closure into `FinalizedScientificAlignment`, then final closure of immutable Targeted/Untargeted result variants after projection completion | Re-running RAW, ModeTrack, Backfill, selection, or projection policy |
 | `alignment/projection/target/` | Consumes owner-issued `TargetSearchScope`; pre-cell zero/one/many `TargetRowBinding`, fixed `TargetKey` rows, and Target subjects; post-cell inclusion/count/reason policy and references to the existing Review Queue | Reminting SearchScope/Target identity, a second capture/repair/cell-decision implementation, or arbitrary winner selection |
 | `alignment/projection/untarget/` | Pre-cell `UntargetRowKey` and Group subjects; post-cell established-group row inclusion, archive routing, Untarget delivery-cell identity, and analytical-handoff projection | Target policy, provisional-row promotion by implication, or m/z/RT/display labels as identity |
-| `alignment/backfill_evidence_parquet.py` + `alignment/backfill_evidence_parquet_bundle.py` (accepted archive implementation locality; see `docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md`) | Native typed-Parquet persistence and bounded query of finalized Backfill/skipped owner records; retention-class projection; staged bundle/reference identity; verification and atomic internal archive publication | Scientific record semantics, product row/value decisions, delivery schema, TSV-mediated canonical typing, final product bundle publication, public Parquet-v2 activation, a generic evidence/database framework, or persistence for hypothetical future owners |
-| `explanation/` | Human reason rendering and stable archive/reference navigation from typed decisions | Parsing reason strings back into core decisions or minting scientific authority |
-| `delivery/` | Final `ArtifactPlan` compilation after render/query consumers stabilize, render-only writers, atomic bundle publication, required claim-group closure, and typed delivery receipts | Scientific recomputation, caller-authored emit booleans, or evidence-archive query policy |
+| `alignment/backfill_evidence_parquet.py` + `alignment/backfill_evidence_parquet_bundle.py` (optional diagnostic/shadow support; see `docs/adr/0003-separate-evidence-archive-explanation-and-delivery.md`) | Typed-Parquet projection and bounded readback of existing Backfill/skipped owner records; staged diagnostic bundle/reference identity and verification | Scientific record semantics, product row/value decisions, production archive/query authority, delivery schema, TSV replacement, public Parquet activation, a generic evidence/database framework, or persistence for hypothetical future owners |
 
 ### Identity, refinement, and finalization invariants
 
