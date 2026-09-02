@@ -47,6 +47,30 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
+def test_neutral_loss_disabled_target_publishes_ms1_backfill(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    target = replace(
+        target,
+        neutral_loss_da=None,
+        nl_ppm_warn=None,
+        nl_ppm_max=None,
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+
+    finalized = execute_targeted_production_workflow(request, output)
+    published = publish_targeted_outputs(request, finalized, output)
+
+    assert config.output_csv in published
+    assert config.output_csv.is_file()
+
+
 def test_collision_leaves_existing_output_and_publishes_nothing_else(
     tmp_path: Path,
 ) -> None:

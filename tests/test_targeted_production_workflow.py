@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,7 @@ from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
 from xic_extractor.extraction.targeted_service import (
+    FinalizedTargetMs1BackfillResult,
     build_targeted_application_request,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
@@ -37,6 +39,67 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
         finalized[0].completed_projection.row_binding.target.definition.target == target
     )
     assert len(finalized[0].canonical_samples) == 1
+
+
+def test_neutral_loss_disabled_target_uses_ms1_backfill_result(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    target = replace(
+        target,
+        neutral_loss_da=None,
+        nl_ppm_warn=None,
+        nl_ppm_max=None,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    result = finalized[0]
+    assert isinstance(result, FinalizedTargetMs1BackfillResult)
+    assert result.target == target
+    assert len(result.decisions) == 1
+    assert result.decisions[0].variant == "numeric"
+    assert result.decisions[0].value == output.file_results[0].results[
+        target.label
+    ].reported_peak_area
+
+
+def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    target = replace(
+        target,
+        neutral_loss_da=None,
+        nl_ppm_warn=None,
+        nl_ppm_max=None,
+    )
+    original = output.file_results[0].results[target.label]
+    output.file_results[0].results[target.label] = replace(
+        original,
+        selected_hypothesis=None,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    result = finalized[0]
+    assert isinstance(result, FinalizedTargetMs1BackfillResult)
+    assert result.decisions[0].variant == "no_write"
+    assert result.decisions[0].value is None
+    assert result.decisions[0].no_write_reason == "ms1_backfill_no_peak"
 
 
 def production_case(tmp_path: Path) -> tuple[ExtractionConfig, Target, RunOutput]:

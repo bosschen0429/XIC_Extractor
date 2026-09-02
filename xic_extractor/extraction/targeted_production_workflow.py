@@ -35,9 +35,6 @@ from xic_extractor.alignment.mode_track import (
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
-from xic_extractor.alignment.result.application_result import (
-    FinalizedTargetApplicationResult,
-)
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedTargetWorkflowResult,
@@ -74,7 +71,12 @@ from xic_extractor.extraction.targeted_inputs import (
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
 )
-from xic_extractor.extraction.targeted_service import TargetedApplicationRequest
+from xic_extractor.extraction.targeted_service import (
+    FinalizedTargetMs1BackfillDecision,
+    FinalizedTargetMs1BackfillResult,
+    FinalizedTargetProductionResult,
+    TargetedApplicationRequest,
+)
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.peak_detection.capture import (
     bind_owner_backed_capture_hypothesis,
@@ -137,7 +139,7 @@ class _ProductionContext:
 def execute_targeted_production_workflow(
     request: TargetedApplicationRequest,
     acquisition_evidence: RunOutput,
-) -> tuple[FinalizedTargetApplicationResult, ...]:
+) -> tuple[FinalizedTargetProductionResult, ...]:
     """Produce one finalized #312 result per declared Target, in row order."""
 
     context = _build_context(request, acquisition_evidence)
@@ -219,7 +221,9 @@ def _execute_target(
     context: _ProductionContext,
     request: TargetedApplicationRequest,
     target: ResolvedTargetDefinition,
-) -> FinalizedTargetApplicationResult:
+) -> FinalizedTargetProductionResult:
+    if target.definition.target.neutral_loss_da is None:
+        return _finalize_ms1_backfill(context, target)
     method_subject = cid_nl_method_subject_from_target(target)
     candidates = []
     for sample, file_result in context.results_by_sample:
@@ -440,6 +444,33 @@ def _execute_target(
             f"reason={getattr(terminal, 'failure_message', None)}"
         )
     return terminal.application_result
+
+
+def _finalize_ms1_backfill(
+    context: _ProductionContext,
+    target: ResolvedTargetDefinition,
+) -> FinalizedTargetMs1BackfillResult:
+    decisions = []
+    for sample, file_result in context.results_by_sample:
+        extraction = file_result.results[target.definition.target.label]
+        has_selected_ms1 = (
+            extraction.selected_hypothesis is not None
+            and extraction.reported_peak_area is not None
+        )
+        decisions.append(
+            FinalizedTargetMs1BackfillDecision(
+                sample=sample,
+                variant="numeric" if has_selected_ms1 else "no_write",
+                value=(extraction.reported_peak_area if has_selected_ms1 else None),
+                no_write_reason="" if has_selected_ms1 else "ms1_backfill_no_peak",
+            )
+        )
+    return FinalizedTargetMs1BackfillResult(
+        target=target.definition.target,
+        processing_request=context.owners.request,
+        canonical_samples=context.samples,
+        decisions=tuple(decisions),
+    )
 
 
 def _capture_binding(

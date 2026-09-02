@@ -8,11 +8,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
-from xic_extractor.alignment.result.application_result import (
-    FinalizedTargetApplicationResult,
-)
 from xic_extractor.extraction.output_dispatch import write_outputs
-from xic_extractor.extraction.targeted_service import TargetedApplicationRequest
+from xic_extractor.extraction.targeted_service import (
+    FinalizedTargetMs1BackfillResult,
+    FinalizedTargetProductionResult,
+    TargetedApplicationRequest,
+)
 from xic_extractor.extractor import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
@@ -104,7 +105,7 @@ class _FinalizedRunRenderView:
 
 def publish_targeted_outputs(
     request: TargetedApplicationRequest,
-    finalized_results: tuple[FinalizedTargetApplicationResult, ...],
+    finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
 ) -> tuple[Path, ...]:
     """Stage and commit one complete render set after typed finalization."""
@@ -169,11 +170,23 @@ def publish_targeted_outputs(
 
 
 def _build_render_view(
-    finalized_results: tuple[FinalizedTargetApplicationResult, ...],
+    finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
 ) -> _FinalizedRunRenderView:
     decisions: dict[tuple[str, str], Any] = {}
     for result in finalized_results:
+        if isinstance(result, FinalizedTargetMs1BackfillResult):
+            for backfill_decision in result.decisions:
+                key = (
+                    backfill_decision.sample.metadata.sample_name,
+                    result.target.label,
+                )
+                if key in decisions:
+                    raise TargetedOutputBoundaryError(
+                        "finalized Targeted decision population contains duplicates"
+                    )
+                decisions[key] = backfill_decision
+            continue
         target_label = (
             result.completed_projection.row_binding.target.definition.target.label
         )
