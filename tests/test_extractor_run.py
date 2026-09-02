@@ -225,6 +225,33 @@ def test_run_limited_shape_identity_policy_without_support_tsv_keeps_output(
     assert calls["written_output"] is returned
 
 
+def test_acquire_returns_projected_output_without_publishing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor import extractor
+    from xic_extractor.extraction import serial_backend
+
+    config = _config(tmp_path, keep_intermediate_csv=False)
+    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
+    targets = [_target("Analyte")]
+    returned = RunOutput(file_results=[], diagnostics=[])
+
+    monkeypatch.setattr(
+        serial_backend,
+        "run_serial",
+        lambda *_args, **_kwargs: returned,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.pipeline.write_outputs",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("acquisition must not publish final artifacts")
+        ),
+    )
+
+    assert extractor.acquire(config, targets) is returned
+
+
 def test_run_reports_invalid_targeted_ms1_shape_identity_support_as_config_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

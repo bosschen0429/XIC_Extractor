@@ -31,6 +31,7 @@ def run_pipeline(
     injection_order: dict[str, int] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    publish_outputs: bool = True,
 ) -> RunOutput:
     reader_errors = preflight_raw_reader(config.dll_dir)
     if reader_errors:
@@ -96,5 +97,6 @@ def run_pipeline(
             targets=targets,
             supports=targeted_ms1_shape_identity_supports,
         )
-    write_outputs(config, targets, output)
+    if publish_outputs:
+        write_outputs(config, targets, output)
     return output

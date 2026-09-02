@@ -43,6 +43,7 @@ __all__ = [
     "ExtractionResult",
     "FileResult",
     "RunOutput",
+    "acquire",
     "run",
 ]
 
@@ -215,4 +216,33 @@ def run(
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
+    )
+
+
+def acquire(
+    config: ExtractionConfig,
+    targets: list[Target],
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    injection_order: dict[str, int] | None = None,
+    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
+    model_selection_expected_diff_approvals: (
+        Mapping[str, ExpectedDiffApprovalRecord] | None
+    ) = None,
+) -> RunOutput:
+    """Acquire and project Targeted evidence without publishing final artifacts."""
+
+    from xic_extractor.extraction.pipeline import run_pipeline
+
+    return run_pipeline(
+        config,
+        targets,
+        progress_callback=progress_callback,
+        should_stop=should_stop,
+        injection_order=injection_order,
+        rt_prior_library=rt_prior_library,
+        model_selection_expected_diff_approvals=(
+            model_selection_expected_diff_approvals
+        ),
+        publish_outputs=False,
     )
