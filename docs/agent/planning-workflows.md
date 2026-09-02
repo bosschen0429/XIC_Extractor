@@ -305,10 +305,11 @@ Keep task intent, delivery evidence, and durable current truth distinct:
 Issue decomposition and PR decomposition are separate decisions. Prefer one
 cohesive issue-to-PR delivery when a reviewer can judge the outcome end to end.
 Split an issue when its children are independently schedulable problem slices
-with their own bounded outcome, acceptance, and owner. Split a PR when the
-delivery needs a smaller owner or failure-domain seam so each diff is
-independently reviewable, verifiable, and cleanly mergeable on its declared
-base. Multiple PRs do not by themselves require child issues, and one child
+with their own bounded outcome, acceptance, and owner. Split a PR only on an
+outcome or failure-domain seam, and only when each diff serves a current
+consumer and is independently reviewable, verifiable, cleanly mergeable, and
+reversible on its declared base. Multiple PRs do not by themselves require
+child issues, and one child
 issue may still need more than one PR. Do not split one coherent behavior
 mechanically into model, serializer, tests, and docs PRs. A parent issue retains
 the overall outcome, global constraints, and final acceptance; each child issue
@@ -316,6 +317,26 @@ owns one bounded slice and names its parent and real blockers. Wayfinding
 map/child mechanics remain owned by `docs/agent/issue-tracker.md`; stacked
 delivery uses `xic-pr-stack-repair`, and final issue closure is owned by
 `docs/agent/communication-review.md#issue-closure-ownership`.
+
+### Atomic Ticket-To-PR Principle
+
+Atomic describes a useful delivery boundary, not a required document shape.
+Default to one implementation ticket and one Atomic PR. A PR may instead carry
+one independently useful outcome from a larger ticket only when a current
+consumer can use that outcome now, its result has a decisive oracle, and the
+unit can be reviewed, merged, and rolled back without a future sibling.
+
+Split on an outcome or failure-domain seam, not on line count, file count,
+context budget, review time, or construction stages such as model, serializer,
+tests, and docs. A foundation whose first consumer arrives later is not an
+Atomic delivery. Activation or replacement also accounts for the old surface:
+retire it, or name the current consumer and obligation that require retention.
+
+Use these principles as review questions and explain the answers in prose
+appropriate to the ticket and PR. Templates may prompt the questions and show
+examples, but do not turn them into mandatory headings, a fixed field list, or
+a repository validator unless the shape itself becomes a public contract with
+a current machine consumer and a named loss when that validation is removed.
 
 At merge closeout, ask whether the change creates or changes a durable claim,
 or reveals that the canonical owner does not yet express it, for product

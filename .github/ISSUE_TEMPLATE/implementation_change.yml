@@ -69,7 +69,12 @@ body:
         State the required ticket-local observable or usable handoff, current
         entry or consumer, stable falsifier, preserved invariants, work not
         required for closure, and the rule to close or hand off when every item
-        passes.
+        passes. Explain what makes the delivery Atomic: a current consumer can
+        use the outcome now, the evidence is independently decisive, and the
+        change can be reviewed and rolled back without a future sibling. If
+        multiple PRs are proposed, name the outcome or failure-domain seam
+        rather than size or construction stage. Answer in prose appropriate to
+        this issue; no extra fixed subfields are required.
     validations:
       required: true
   - type: textarea

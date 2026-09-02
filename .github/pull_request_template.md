@@ -51,6 +51,11 @@
 
 ## Issue and delivery linkage
 
+<!-- Explain in free-form prose whether this PR completes the ticket or delivers
+one standalone Atomic outcome that a current consumer can use now. If the ticket
+needs multiple PRs, name the outcome or failure-domain seam; line count, file
+count, context budget, review time, and construction stage are not seams. -->
+
 - Issue linkage:
 <!-- Use a supported closing keyword plus #N for a completing PR, Refs #N for intermediate delivery, or No issue plus a rationale. -->
 - Acceptance closed:
