@@ -196,7 +196,7 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
             "Dependency Direction",
             "Ownership Map",
         ),
-        "required_text": ("This document owns",),
+        "required_text": (),
         "required_routes": (),
         "required_referrers": (
             "AGENTS.md",

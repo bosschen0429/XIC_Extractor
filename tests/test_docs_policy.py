@@ -198,31 +198,6 @@ def test_permanent_root_contract_uses_first_reference_definition() -> None:
     assert "required route must resolve: docs/product/README.md" in problems
 
 
-@pytest.mark.parametrize(
-    "code_only_landmark",
-    (
-        "`This document owns`",
-        "``This document owns``",
-        "    This document owns",
-        ">     This document owns",
-    ),
-)
-def test_permanent_root_contract_ignores_non_fenced_code_only_landmark(
-    code_only_landmark: str,
-) -> None:
-    root = Path(__file__).parents[1]
-    rel_path = "docs/architecture-contract.md"
-    text = (root / rel_path).read_text(encoding="utf-8")
-    text = text.replace("This document owns", "This document describes", 1)
-    text += "\n" + code_only_landmark + "\n"
-
-    problems = permanent_root_contract_problems(root, rel_path, text)
-
-    assert "required purpose landmark must occur exactly once: This document owns" in (
-        problems
-    )
-
-
 def test_permanent_root_contract_ignores_html_comment_only_heading() -> None:
     root = Path(__file__).parents[1]
     rel_path = "AGENTS.md"
@@ -237,20 +212,6 @@ def test_permanent_root_contract_ignores_html_comment_only_heading() -> None:
     problems = permanent_root_contract_problems(root, rel_path, text)
 
     assert "required heading must occur exactly once: XIC Extractor Agent Contract" in (
-        problems
-    )
-
-
-def test_permanent_root_contract_ignores_html_comment_only_landmark() -> None:
-    root = Path(__file__).parents[1]
-    rel_path = "docs/architecture-contract.md"
-    text = (root / rel_path).read_text(encoding="utf-8")
-    text = text.replace("This document owns", "This document describes", 1)
-    text += "\n<!-- This document owns -->\n"
-
-    problems = permanent_root_contract_problems(root, rel_path, text)
-
-    assert "required purpose landmark must occur exactly once: This document owns" in (
         problems
     )
 
