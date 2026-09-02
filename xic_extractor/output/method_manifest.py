@@ -74,10 +74,17 @@ def write_method_manifest(
     targets: Sequence[Target],
     *,
     context: MethodManifestContext | None = None,
+    destination: Path | None = None,
+    artifact_sources: Mapping[Path, Path] | None = None,
 ) -> Path:
-    path = method_manifest_path(config)
+    path = destination or method_manifest_path(config)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = build_method_manifest(config, targets, context=context)
+    payload = build_method_manifest(
+        config,
+        targets,
+        context=context,
+        artifact_sources=artifact_sources,
+    )
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -90,6 +97,7 @@ def build_method_manifest(
     targets: Sequence[Target],
     *,
     context: MethodManifestContext | None = None,
+    artifact_sources: Mapping[Path, Path] | None = None,
 ) -> dict[str, Any]:
     context = context or MethodManifestContext()
     output_dir = config.output_csv.parent
@@ -165,21 +173,38 @@ def build_method_manifest(
             "parallel_workers": config.parallel_workers,
         },
         "output_artifacts": {
-            "output_csv": _artifact(config.output_csv, "output", output_dir),
+            "output_csv": _artifact(
+                config.output_csv,
+                "output",
+                output_dir,
+                source_path=_artifact_source(config.output_csv, artifact_sources),
+            ),
             "long_csv": _artifact(
                 config.output_csv.with_name("xic_results_long.csv"),
                 "output",
                 output_dir,
+                source_path=_artifact_source(
+                    config.output_csv.with_name("xic_results_long.csv"),
+                    artifact_sources,
+                ),
             ),
             "diagnostics_csv": _artifact(
                 config.diagnostics_csv,
                 "output",
                 output_dir,
+                source_path=_artifact_source(
+                    config.diagnostics_csv,
+                    artifact_sources,
+                ),
             ),
             "score_breakdown_csv": _artifact(
                 config.output_csv.with_name("xic_score_breakdown.csv"),
                 "output",
                 output_dir,
+                source_path=_artifact_source(
+                    config.output_csv.with_name("xic_score_breakdown.csv"),
+                    artifact_sources,
+                ),
             ),
             "method_manifest_json": _artifact(
                 manifest_path,
@@ -502,6 +527,7 @@ def _artifact(
     *,
     force_exists: bool | None = None,
     include_sha256: bool = True,
+    source_path: Path | None = None,
 ) -> dict[str, object]:
     if path is None:
         return {
@@ -510,14 +536,28 @@ def _artifact(
             "sha256": None,
             "scope": scope,
         }
-    exists = path.exists() if force_exists is None else force_exists
-    sha256 = artifact_sha256(path) if include_sha256 else None
+    evidence_path = source_path or path
+    exists = evidence_path.exists() if force_exists is None else force_exists
+    sha256 = artifact_sha256(evidence_path) if include_sha256 else None
     return {
         "path": _artifact_path_text(path, output_dir),
         "exists": exists,
         "sha256": sha256,
         "scope": scope,
     }
+
+
+def _artifact_source(
+    path: Path,
+    sources: Mapping[Path, Path] | None,
+) -> Path | None:
+    if sources is None:
+        return None
+    resolved = path.resolve()
+    for final_path, source_path in sources.items():
+        if final_path.resolve() == resolved:
+            return source_path
+    return None
 
 
 def _artifact_path_text(path: Path, output_dir: Path) -> str:

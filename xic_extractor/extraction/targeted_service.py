@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -79,7 +79,7 @@ class TargetedOutputPublisher(Protocol):
         request: TargetedApplicationRequest,
         finalized_results: tuple[FinalizedTargetApplicationResult, ...],
         acquisition_evidence: RunOutput,
-    ) -> None: ...
+    ) -> tuple[Any, ...]: ...
 
 
 class TargetedRuntimeFinalizationPersister(Protocol):
@@ -119,6 +119,8 @@ class TargetedApplicationRequest:
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
+    method_manifest_context: Any = None
+    excel_output_path: Any = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +139,7 @@ class TargetedApplicationExecution:
 
     active_output: RunOutput
     finalized_results: tuple[FinalizedTargetApplicationResult, ...] = ()
+    published_paths: tuple[Any, ...] = ()
     diagnostic_method_result: TargetedDiagnosticMethodResult | None = None
     diagnostic_outcome: TargetedDiagnosticApplicationOutcome | None = None
 
@@ -187,10 +190,22 @@ class TargetedApplicationService:
                 )
             finalized_results = finalized_runner(resolved_request, active_output)
             _validate_finalized_result_population(resolved_request, finalized_results)
-            publisher(resolved_request, finalized_results, active_output)
+            if (
+                resolved_request.should_stop is not None
+                and resolved_request.should_stop()
+            ):
+                raise TargetedRuntimeAdapterError(
+                    "Targeted publication cancelled after workflow completion"
+                )
+            published_paths = publisher(
+                resolved_request,
+                finalized_results,
+                active_output,
+            )
             return TargetedApplicationExecution(
                 active_output=active_output,
                 finalized_results=finalized_results,
+                published_paths=published_paths,
             )
         diagnostic_runner = self.diagnostic_method_runner
         diagnostic_factory = self.diagnostic_method_request_factory
@@ -341,6 +356,8 @@ def build_targeted_application_request(
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
+    method_manifest_context: Any = None,
+    excel_output_path: Any = None,
 ) -> TargetedApplicationRequest:
     return TargetedApplicationRequest(
         config=config,
@@ -352,6 +369,8 @@ def build_targeted_application_request(
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
+        method_manifest_context=method_manifest_context,
+        excel_output_path=excel_output_path,
     )
 
 

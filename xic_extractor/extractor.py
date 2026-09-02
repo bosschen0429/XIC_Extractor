@@ -25,6 +25,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
+from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.rt_prior_library import LibraryEntry
 
 open_raw = raw_reader.open_raw
@@ -67,6 +68,7 @@ class ExtractionResult:
     selected_hypothesis: PeakHypothesis | None = None
     selection_decision: PeakHypothesisSelectionDecision | None = None
     model_selection_result: PeakModelSelectionResult | None = None
+    acquisition_trace: Trace | None = None
     targeted_product_projection: TargetedProductProjection | None = None
 
     def __post_init__(self) -> None:

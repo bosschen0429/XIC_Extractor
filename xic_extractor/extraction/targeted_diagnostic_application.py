@@ -45,6 +45,12 @@ from xic_extractor.extraction.targeted_method_runtime import (
     execute_targeted_method_alignment_runtime,
     execute_targeted_method_completion_runtime,
 )
+from xic_extractor.extraction.targeted_output_boundary import (
+    publish_targeted_outputs,
+)
+from xic_extractor.extraction.targeted_production_workflow import (
+    execute_targeted_production_workflow,
+)
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationRequest,
     TargetedApplicationService,
@@ -104,15 +110,15 @@ def targeted_diagnostic_request_provider(
         _REQUEST_PROVIDER.reset(request_token)
 
 
-def capture_targeted_diagnostic_request_provider(
-) -> TargetedDiagnosticRequestProvider | None:
+def capture_targeted_diagnostic_request_provider() -> (
+    TargetedDiagnosticRequestProvider | None
+):
     """Capture the scoped provider for explicit propagation into a GUI thread."""
 
     return _REQUEST_PROVIDER.get()
 
 
-def capture_targeted_diagnostic_telemetry_provider(
-) -> RuntimeTelemetryProvider | None:
+def capture_targeted_diagnostic_telemetry_provider() -> RuntimeTelemetryProvider | None:
     """Capture scoped telemetry for explicit propagation into a GUI thread."""
 
     return _TELEMETRY_PROVIDER.get()
@@ -125,8 +131,8 @@ def build_canonical_targeted_application_service(
 
     return TargetedApplicationService(
         runner,
-        diagnostic_method_runner=_execute_scoped_targeted_diagnostic_method,
-        diagnostic_method_request_factory=_resolve_scoped_diagnostic_request,
+        finalized_workflow_runner=execute_targeted_production_workflow,
+        output_publisher=publish_targeted_outputs,
     )
 
 

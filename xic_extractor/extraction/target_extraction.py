@@ -205,9 +205,7 @@ def process_file(
         reason = f"Failed to open .raw: {type(exc).__name__}: {exc}"
         return (
             extractor.FileResult(sample_name=sample_name, results={}, error=reason),
-            [
-                DiagnosticRecord(sample_name, "", "FILE_ERROR", reason)
-            ],
+            [DiagnosticRecord(sample_name, "", "FILE_ERROR", reason)],
         )
 
 
@@ -416,6 +414,11 @@ def extract_one_target(
         selected_hypothesis=handoff_peak.selected_hypothesis,
         selection_decision=handoff_peak.selection_decision,
         model_selection_result=handoff_peak.model_selection_result,
+        acquisition_trace=(
+            None
+            if handoff_peak.trace_group is None
+            else handoff_peak.trace_group.primary_trace
+        ),
         sample_name=sample_name,
     )
     results[target.label] = result
@@ -523,12 +526,9 @@ def _selected_envelope_guarded_decision(
     if evaluation.row_boundary_decision == "accept_candidate":
         return decision
     guard = f"selected_envelope_{evaluation.boundary_change_class}"
-    not_counted = (
-        f"selected_envelope_boundary_{evaluation.row_boundary_decision}"
-    )
+    not_counted = f"selected_envelope_boundary_{evaluation.row_boundary_decision}"
     projected_reason = (
-        f"decision: not_counted; not_counted: {not_counted}; "
-        f"review: {guard}"
+        f"decision: not_counted; not_counted: {not_counted}; review: {guard}"
     )
     return replace(
         decision,

@@ -18,6 +18,62 @@ from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRec
 from xic_extractor.raw_reader import RawReaderError
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cli_shell_from_production_workflow(monkeypatch):
+    """Keep CLI option tests focused; production composition has dedicated tests."""
+
+    module = _module()
+
+    class _Service:
+        def execute_application(self, request):
+            approvals = module.resolve_model_selection_expected_diff_approvals(
+                request.config,
+                request.model_selection_expected_diff_approvals,
+            )
+            output = module.extractor.run(
+                request.config,
+                list(request.targets),
+                progress_callback=request.progress_callback,
+                should_stop=request.should_stop,
+                injection_order=request.injection_order,
+                rt_prior_library=request.rt_prior_library,
+                model_selection_expected_diff_approvals=approvals,
+            )
+            module.write_method_manifest(
+                request.config,
+                list(request.targets),
+                context=request.method_manifest_context,
+            )
+            if request.excel_output_path is not None:
+                module.write_excel_from_run_output(
+                    request.config,
+                    list(request.targets),
+                    output,
+                    output_path=request.excel_output_path,
+                )
+            return SimpleNamespace(active_output=output)
+
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    monkeypatch.setattr(
+        module,
+        "write_excel_from_run_output",
+        write_excel_from_run_output,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "write_method_manifest",
+        write_method_manifest,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "build_canonical_targeted_application_service",
+        lambda _runner: _Service(),
+    )
+
+
 def test_cli_runs_extraction_with_base_dir_and_skips_excel(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -330,8 +386,7 @@ def test_cli_loads_model_selection_expected_diff_approval_registry(
 
     monkeypatch.setattr(module, "load_config", fake_load_config)
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs."
-        "load_expected_diff_approval_registry",
+        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
         _load_approvals,
     )
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
@@ -354,9 +409,7 @@ def test_cli_loads_model_selection_expected_diff_approval_registry(
 
     assert exit_code == 0
     assert calls["settings_overrides"] == {
-        "model_selection_expected_diff_approval_registry": str(
-            registry_path.resolve()
-        )
+        "model_selection_expected_diff_approval_registry": str(registry_path.resolve())
     }
     assert calls["approval_registry_path"] == registry_path.resolve()
     assert calls["model_selection_expected_diff_approvals"] == {
@@ -467,9 +520,7 @@ def test_cli_explicit_shape_identity_activation_policy_override_keeps_normal_pat
 
     assert exit_code == 0
     assert calls["settings_overrides"] == {
-        "targeted_ms1_shape_identity_activation_policy": (
-            "explicit_support_tsv"
-        )
+        "targeted_ms1_shape_identity_activation_policy": ("explicit_support_tsv")
     }
     assert calls["run_config"].targeted_ms1_shape_identity_activation_policy == (
         "explicit_support_tsv"
@@ -586,15 +637,12 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
     def fake_manifest(manifest_config, _targets, *, context):
         calls["manifest_entrypoints"].append(context.entrypoint)
         calls[f"{context.entrypoint}_config"] = manifest_config
-        calls[f"{context.entrypoint}_settings_overrides"] = (
-            context.settings_overrides
-        )
+        calls[f"{context.entrypoint}_settings_overrides"] = context.settings_overrides
         return manifest_config.output_csv.with_name("method_manifest.json")
 
     monkeypatch.setattr(module.extractor, "run", fake_run)
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs."
-        "load_expected_diff_approval_registry",
+        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
         fake_load_approvals,
     )
     monkeypatch.setattr(
@@ -677,7 +725,7 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
         "xic-extractor-cli-targeted-ms1-auto-limited-default_config"
     ]
     assert manifest_final_config.output_csv == (
-        auto_dir / "final" / "output" / "xic_results.csv"
+        auto_dir / "final_unverified" / "output" / "xic_results.csv"
     )
     assert (auto_dir / "final" / "output" / "xic_results.csv").is_file()
     assert not (auto_dir / "final_unverified" / "output").exists()
@@ -692,8 +740,7 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
     assert "Auto limited support rows: 1" in stdout
     assert "Auto limited expected-diff gate: pass (1 rows, 6 matrix cells)" in stdout
     assert (
-        f"Auto limited verified final output: {auto_dir / 'final' / 'output'}"
-        in stdout
+        f"Auto limited verified final output: {auto_dir / 'final' / 'output'}" in stdout
     )
     assert "Excel skipped." in stdout
 
@@ -730,9 +777,7 @@ def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
     monkeypatch.setattr(
         module,
         "write_targeted_ms1_shape_identity_auto_diff_artifacts",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            ValueError("support key set mismatch")
-        ),
+        lambda **_kwargs: (_ for _ in ()).throw(ValueError("support key set mismatch")),
     )
 
     exit_code = module.main(
@@ -956,9 +1001,7 @@ def test_cli_replay_rejects_runtime_overrides(
 
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
 
-    exit_code = module.main(
-        ["--replay-manifest", str(manifest_path), "--skip-excel"]
-    )
+    exit_code = module.main(["--replay-manifest", str(manifest_path), "--skip-excel"])
 
     captured = capsys.readouterr()
     assert exit_code == 2

@@ -55,9 +55,7 @@ NoWriteState: TypeAlias = Literal[
 ]
 CellSubject: TypeAlias = TargetCellSubject | GroupCellSubject
 CellEvidence: TypeAlias = (
-    ObservedSearchSubject
-    | SearchedNoObservationSubject
-    | FinalGroupCellObservation
+    ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
 )
 
 _DECISION_PREFIX = "xic.production-cell-decision.v1:"
@@ -390,10 +388,6 @@ def _decide_target(subject: TargetCellSubject) -> CellDecisionPayload:
         raise CellDecisionContractError(
             "Target observed terminal requires an owner-backed PeakHypothesis"
         )
-    if terminal.trace_group_id != hypothesis.trace_group_id:
-        raise CellDecisionContractError(
-            "Target terminal crossed its owner PeakHypothesis"
-        )
     return _payload_from_integration(hypothesis.integration)
 
 
@@ -486,8 +480,7 @@ def _validate_target_projection(
             "Target row binding groups are duplicate or non-canonical"
         )
     if any(
-        group.processing_request_id
-        != projection.scope.request.processing_request_id
+        group.processing_request_id != projection.scope.request.processing_request_id
         or group.disposition not in {"established", "provisional"}
         for group in groups
     ):
@@ -501,9 +494,7 @@ def _validate_target_projection(
             key=lambda sample: sample.identity.sample_identity_id,
         )
     )
-    actual_samples = tuple(
-        subject.canonical_sample for subject in owner_subjects
-    )
+    actual_samples = tuple(subject.canonical_sample for subject in owner_subjects)
     if actual_samples != expected_samples:
         raise CellDecisionContractError(
             "Target projection does not retain the complete canonical sample population"
@@ -566,9 +557,7 @@ def _bind_complete_observation_population(
     owner_observations: tuple[FinalGroupCellObservation, ...],
 ) -> tuple[FinalGroupCellObservation, ...]:
     if isinstance(observations, (str, bytes)):
-        raise CellDecisionContractError(
-            "Group observations must be a finite sequence"
-        )
+        raise CellDecisionContractError("Group observations must be a finite sequence")
     requested = tuple(observations)
     if any(type(item) is not FinalGroupCellObservation for item in requested):
         raise CellDecisionContractError(
@@ -592,9 +581,7 @@ def _validate_group_binding(
     observation: FinalGroupCellObservation,
 ) -> None:
     if observation.group is not subject.group:
-        raise CellDecisionContractError(
-            "Group decision crossed the exact final group"
-        )
+        raise CellDecisionContractError("Group decision crossed the exact final group")
     if observation.canonical_sample is not subject.canonical_sample:
         raise CellDecisionContractError(
             "Group decision crossed the exact canonical sample"
@@ -650,9 +637,7 @@ def _validate_decision_binding(decision: ProductionCellDecision) -> None:
         raise CellDecisionContractError(
             "production cell decision mismatches its exact basis"
         )
-    if decision.decision_id != typed_identity_digest(
-        _DECISION_PREFIX, expected_basis
-    ):
+    if decision.decision_id != typed_identity_digest(_DECISION_PREFIX, expected_basis):
         raise CellDecisionContractError(
             "production cell decision ID mismatches its exact basis"
         )
@@ -682,9 +667,7 @@ def _decision_basis(
                 "candidate_id": evidence.candidate_id,
                 "trace_group_id": evidence.trace_group_id,
                 "hypothesis_id": evidence.hypothesis.hypothesis_id,
-                "integration": _integration_identity(
-                    evidence.hypothesis.integration
-                ),
+                "integration": _integration_identity(evidence.hypothesis.integration),
             }
         elif type(evidence) is SearchedNoObservationSubject:
             evidence_identity = {

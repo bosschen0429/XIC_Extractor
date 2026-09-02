@@ -1,5 +1,5 @@
 import statistics
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,7 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.extractor import ExtractionResult, RunOutput
-from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError
 
 
@@ -51,6 +51,7 @@ class PipelineWorker(QThread):
                 raise RuntimeError(
                     "diagnostic request and telemetry providers must propagate together"
                 )
+            scope: AbstractContextManager[None]
             if provider is None:
                 scope = nullcontext()
             else:
@@ -59,26 +60,29 @@ class PipelineWorker(QThread):
                     provider,
                     telemetry_provider=telemetry_provider,
                 )
+            excel_path = _excel_output_path(config)
             with scope:
-                output = build_canonical_targeted_application_service(
-                    extractor.run
-                ).execute_application(
-                    build_targeted_application_request(
-                        config,
-                        targets,
-                        progress_callback=self.progress.emit,
-                        should_stop=self.isInterruptionRequested,
+                output = (
+                    build_canonical_targeted_application_service(extractor.acquire)
+                    .execute_application(
+                        build_targeted_application_request(
+                            config,
+                            targets,
+                            progress_callback=self.progress.emit,
+                            should_stop=self.isInterruptionRequested,
+                            method_manifest_context=MethodManifestContext(
+                                entrypoint="xic-extractor-gui",
+                                config_dir=self._config_dir,
+                                output_mode="excel",
+                            ),
+                            excel_output_path=excel_path,
+                        )
                     )
-                ).active_output
+                    .active_output
+                )
             if self.isInterruptionRequested():
                 self.cancelled.emit()
                 return
-            excel_path = write_excel_from_run_output(
-                config,
-                targets,
-                output,
-                output_path=_excel_output_path(config),
-            )
             summary = build_summary(config, targets, output, excel_path)
             self.finished.emit(summary)
         except ConfigError as exc:
