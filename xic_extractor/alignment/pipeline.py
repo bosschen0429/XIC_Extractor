@@ -357,7 +357,7 @@ def run_alignment(
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
     signal_processing_profile: SignalProcessingProfile | None = None,
-    output_level: AlignmentOutputLevel = "machine",
+    output_level: AlignmentOutputLevel = "production",
     emit_alignment_cells: bool = False,
     emit_alignment_status_matrix: bool = False,
     emit_alignment_integration_audit: bool = False,

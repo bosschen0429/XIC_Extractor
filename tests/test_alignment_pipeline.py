@@ -885,21 +885,14 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     assert calls["matrix_features"] == ("feature",)
     assert calls["ambiguous_by_sample"] == {}
     assert calls["rescued_cells"] == ("rescued",)
-    assert outputs.review_tsv == tmp_path / "out" / "alignment_review.tsv"
     assert outputs.matrix_tsv == tmp_path / "out" / "alignment_matrix.tsv"
-    assert (
-        outputs.matrix_identity_tsv
-        == tmp_path / "out" / "alignment_matrix_identity.tsv"
-    )
-    assert outputs.workbook == tmp_path / "out" / "alignment_results.xlsx"
-    assert outputs.review_html == tmp_path / "out" / "review_report.html"
+    assert outputs.review_tsv is None
+    assert outputs.matrix_identity_tsv is None
+    assert outputs.workbook is None
+    assert outputs.review_html is None
     assert outputs.cells_tsv is None
     assert outputs.status_matrix_tsv is None
-    assert outputs.workbook.exists()
-    assert outputs.review_html.exists()
-    assert outputs.review_tsv.exists()
     assert outputs.matrix_tsv.exists()
-    assert outputs.matrix_identity_tsv.exists()
     assert not (tmp_path / "out" / "alignment_cells.tsv").exists()
     assert not (tmp_path / "out" / "alignment_matrix_status.tsv").exists()
 

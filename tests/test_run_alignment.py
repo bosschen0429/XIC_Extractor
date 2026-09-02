@@ -135,7 +135,7 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert signal_profile.method == "gaussian"
     assert signal_profile.window_points == 15
     assert peak_config.signal_processing_window_points == signal_profile.window_points
-    assert captured["output_level"] == "machine"
+    assert captured["output_level"] == "production"
     assert captured["emit_alignment_cells"] is True
     assert captured["emit_alignment_integration_audit"] is True
     assert captured["emit_alignment_backfill_seed_audit"] is True
