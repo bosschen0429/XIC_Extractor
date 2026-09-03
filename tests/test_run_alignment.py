@@ -148,6 +148,7 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert captured["owner_backfill_superwindow_span_factor"] == 2
     assert captured["backfill_scope"] == "full-audit"
     assert captured["audit_evidence_mode"] == "auto"
+    assert captured["discovery_settings"] is None
     assert captured["selected_family_ids"] == frozenset()
     assert captured["drift_lookup"] is None
     stdout = capsys.readouterr().out
@@ -790,6 +791,13 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     output_dir = tmp_path / "alignment"
     captured_alignment: dict[str, object] = {}
     captured_preset: dict[str, object] = {}
+    bound_recipes: list[object] = []
+    real_bind = run_alignment.bind_cid_nl_recipe
+
+    def bind_once(*args, **kwargs):
+        recipe = real_bind(*args, **kwargs)
+        bound_recipes.append(recipe)
+        return recipe
 
     def fake_run_alignment(**kwargs):
         captured_alignment.update(kwargs)
@@ -826,6 +834,7 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
         fake_preset_runner,
         raising=False,
     )
+    monkeypatch.setattr(run_alignment, "bind_cid_nl_recipe", bind_once)
 
     code = run_alignment.main(
         [
@@ -846,6 +855,9 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["emit_alignment_cells"] is False
     assert captured_alignment["require_discovery_owner_closure"] is True
+    assert len(bound_recipes) == 1
+    recipe = bound_recipes[0]
+    assert captured_alignment["discovery_settings"] is recipe.discovery_settings
     assert captured_preset == {}
 
 

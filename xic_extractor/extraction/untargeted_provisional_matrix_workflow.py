@@ -94,6 +94,7 @@ def run_untargeted_provisional_matrix_workflow(
         output_dir=alignment_dir,
         alignment_config=alignment_config,
         peak_config=peak_config,
+        discovery_settings=discovery_settings,
         output_level="validation-minimal",
         raw_workers=raw_workers,
         raw_xic_batch_size=raw_xic_batch_size,

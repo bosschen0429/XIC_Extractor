@@ -284,6 +284,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 baseline_integration_method=_baseline_integration_method(args),
                 signal_processing_profile=signal_processing_profile,
             ),
+            "discovery_settings": (
+                recipe.discovery_settings if recipe is not None else None
+            ),
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
             "emit_alignment_cells": args.emit_alignment_cells,

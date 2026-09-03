@@ -37,6 +37,11 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
 
     provisional_matrix = tmp_path / "provisional_alignment_matrix.tsv"
     physical_provenance = tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
+    discovery_settings = DiscoverySettings(
+        neutral_loss_profiles=(
+            NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0473),
+        ),
+    )
 
     def fake_alignment(**kwargs):
         captured["alignment"] = kwargs
@@ -59,11 +64,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         raw_files=raw_files,
         dll_dir=dll_dir,
         output_dir=tmp_path / "run",
-        discovery_settings=DiscoverySettings(
-            neutral_loss_profiles=(
-                NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0473),
-            ),
-        ),
+        discovery_settings=discovery_settings,
         alignment_config=AlignmentConfig(),
         raw_workers=3,
         raw_xic_batch_size=16,
@@ -79,6 +80,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     alignment = captured["alignment"]
     assert isinstance(alignment, dict)
     assert alignment["discovery_batch_index"] == discovery_index
+    assert alignment["discovery_settings"] is discovery_settings
     assert alignment["backfill_scope"] == "full-audit"
     assert alignment["selected_family_ids"] == frozenset()
     assert alignment["emit_provisional_matrix"] is True

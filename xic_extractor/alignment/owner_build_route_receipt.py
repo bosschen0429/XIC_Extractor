@@ -10,6 +10,7 @@ from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 EffectiveOwnerBuildRoute = Literal[
     "configured_backend",
     "discovery_physical_bindings",
+    "retained_untargeted_cid_nl_batch",
 ]
 
 _OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN = object()
@@ -57,13 +58,27 @@ class OwnerBuildRouteReceipt:
                 raise ValueError(
                     "configured route cannot claim a ProcessingRunSpec hash"
                 )
-        else:
+        elif self.effective_owner_build_route == "discovery_physical_bindings":
             if self.effective_owner_build_xic_backend is not None:
                 raise ValueError("Discovery physical bindings do not execute a backend")
             if not self.processing_run_spec_id or not self.processing_run_spec_hash:
                 raise ValueError(
                     "Discovery physical bindings require ProcessingRunSpec identity"
                 )
+        elif self.effective_owner_build_route == "retained_untargeted_cid_nl_batch":
+            if self.effective_owner_build_xic_backend is not None:
+                raise ValueError(
+                    "retained CID-NL batch does not execute a legacy backend"
+                )
+            if (
+                self.processing_run_spec_id is not None
+                or self.processing_run_spec_hash is not None
+            ):
+                raise ValueError(
+                    "retained CID-NL batch does not claim a ProcessingRunSpec route"
+                )
+        else:
+            raise ValueError("unsupported effective owner build route")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -102,6 +117,22 @@ def _mint_owner_build_route_receipt(
         ),
         processing_run_spec_id=processing_run_spec_id,
         processing_run_spec_hash=processing_run_spec_hash,
+        _mint_token=_OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN,
+    )
+
+
+def _mint_retained_untargeted_cid_nl_route_receipt(
+    *,
+    configured_backend: OwnerBuildXicBackend,
+) -> OwnerBuildRouteReceipt:
+    return OwnerBuildRouteReceipt(
+        configured_owner_build_xic_backend=_validate_owner_build_xic_backend(
+            configured_backend
+        ),
+        effective_owner_build_route="retained_untargeted_cid_nl_batch",
+        effective_owner_build_xic_backend=None,
+        processing_run_spec_id=None,
+        processing_run_spec_hash=None,
         _mint_token=_OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN,
     )
 

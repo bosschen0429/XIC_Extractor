@@ -263,6 +263,7 @@ class DiscoveryWorker(QThread):
             output_dir=request.output_dir,
             alignment_config=recipe.alignment_config,
             peak_config=self._alignment_peak_config(request),
+            discovery_settings=recipe.discovery_settings,
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             discovery_processing_run_spec=processing_run_spec,
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,

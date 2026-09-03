@@ -49,6 +49,26 @@ def test_alignment_public_type_hints_resolve_without_raw_reader_import():
 
 def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
     alignment_dir = Path(__file__).parents[1] / "xic_extractor" / "alignment"
+    allowed_composition_imports = {
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_alignment."
+            "complete_untargeted_cid_nl_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_production_batch",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_cid_nl_production_batch."
+            "is_pure_single_provider_cid_nl",
+        ),
+    }
     banned_roots = (
         "gui",
         "scripts",
@@ -74,7 +94,10 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
                     and not raw_reader_allowed
                 ):
                     violations.append((path.name, imported_name))
-                elif imported_name.startswith(banned_roots):
+                elif imported_name.startswith(banned_roots) and (
+                    path.name,
+                    imported_name,
+                ) not in allowed_composition_imports:
                     violations.append((path.name, imported_name))
 
     assert violations == []

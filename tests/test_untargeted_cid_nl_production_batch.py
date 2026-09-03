@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
+import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -18,6 +20,16 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raws,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.ownership import OwnershipBuildResult
+from xic_extractor.alignment.pipeline_outputs import (
+    alignment_metadata,
+    output_paths,
+    write_outputs_atomic,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    project_completed_untarget_batch_writer_inputs,
+)
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
@@ -26,6 +38,40 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     execute_untargeted_cid_nl_production_batch,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
+    facts = {"physical-1": (500.0, 8.0)}
+
+    with pytest.raises(ValueError, match="duplicate physical identity"):
+        finalized_matrix._add_presentation_fact(
+            facts,
+            physical_id="physical-1",
+            mz=500.0,
+            rt=8.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mz", "rt"),
+    (
+        (float("nan"), 8.0),
+        (500.0, float("inf")),
+        (True, 8.0),
+        (500.0, False),
+    ),
+)
+def test_writer_projection_rejects_invalid_presentation_coordinates(
+    mz: float,
+    rt: float,
+) -> None:
+    with pytest.raises(ValueError, match="finite owner-backed"):
+        finalized_matrix._add_presentation_fact(
+            {},
+            physical_id="physical-1",
+            mz=mz,
+            rt=rt,
+        )
 
 
 def test_production_batch_preserves_exact_nearby_subject_membership(
@@ -93,6 +139,91 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         job.candidates is batch.context.candidates_by_sample["S1"]
         for job in batch.jobs
     )
+
+
+def test_alignment_adapter_builds_executes_and_composes_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "S1.raw"
+    raw_path.write_bytes(b"issue367-alignment-adapter:S1")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    _source_raw, candidates = _nearby_subject_candidates(
+        raw_path,
+        settings=settings,
+        peak_config=peak_config,
+    )
+    receipts = _discovery_receipts(
+        tmp_path,
+        (raw_path,),
+        {"S1": candidates},
+    )
+    discovery_batch = DiscoveryBatchInput(
+        sample_order=("S1",),
+        candidate_csvs={"S1": tmp_path / "S1.csv"},
+        raw_files={"S1": raw_path},
+        review_csvs={"S1": None},
+        candidate_receipts=receipts,
+    )
+    built = object()
+    executed = object()
+    completed = object()
+    calls: list[tuple[str, object]] = []
+
+    def build(**kwargs: object) -> object:
+        calls.append(("build", kwargs))
+        return built
+
+    def execute(batch: object, **kwargs: object) -> object:
+        assert batch is built
+        calls.append(("execute", kwargs))
+        return executed
+
+    def compose(batch: object, runtime: object, **kwargs: object) -> object:
+        assert batch is built
+        assert runtime is executed
+        calls.append(("compose", kwargs))
+        return completed
+
+    monkeypatch.setattr(
+        alignment_adapter,
+        "build_untargeted_cid_nl_production_batch",
+        build,
+    )
+    monkeypatch.setattr(
+        alignment_adapter,
+        "execute_untargeted_cid_nl_production_batch",
+        execute,
+    )
+    monkeypatch.setattr(
+        alignment_adapter,
+        "compose_untargeted_cid_nl_production_result",
+        compose,
+    )
+
+    result = alignment_adapter.complete_untargeted_cid_nl_alignment(
+        discovery_batch=discovery_batch,
+        candidates_by_sample={"S1": candidates},
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=peak_config,
+        alignment_config=AlignmentConfig(),
+    )
+
+    assert result is completed
+    assert [name for name, _kwargs in calls] == ["build", "execute", "compose"]
+    build_kwargs = calls[0][1]
+    assert isinstance(build_kwargs, dict)
+    assert build_kwargs["raw_paths"] == (raw_path,)
+    assert build_kwargs["candidates_by_sample"] == {"S1": candidates}
+    assert build_kwargs["discovery_receipts_by_sample"] == receipts
+    sample_metadata = build_kwargs["sample_metadata"]
+    assert isinstance(sample_metadata, tuple)
+    assert tuple(row.raw_stem for row in sample_metadata) == ("S1",)
+    assert tuple(row.injection_order for row in sample_metadata) == (1,)
 
 
 def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -> None:
@@ -188,10 +319,11 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert len(result.sample_results) == len(batch.jobs) == 2
     assert vendor_raw.chromatogram_request_counts == [2]
 
+    alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = compose_untargeted_cid_nl_production_result(
         batch,
         result,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        alignment_config=alignment_config,
     )
 
     assert type(completed) is CompletedUntargetBatchWorkflowResult
@@ -203,6 +335,62 @@ def test_production_batch_executes_one_atomic_sample_phase(
         )
         if method_subject_id == subject.method_subject_id
     )
+    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    assert writer_inputs.matrix.sample_order == ("S1",)
+    assert len(writer_inputs.matrix.clusters) == 2
+    assert len(writer_inputs.matrix.cells) == 2
+    assert all(cell.group_hypothesis_id for cell in writer_inputs.matrix.cells)
+    assert all(
+        writer_inputs.production_decisions.cell(
+            cell.cluster_id,
+            cell.sample_stem,
+        ).matrix_value
+        is not None
+        for cell in writer_inputs.matrix.cells
+    )
+    writer_dir = tmp_path / "writer"
+    outputs = output_paths(
+        writer_dir,
+        output_level="machine",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    write_outputs_atomic(
+        outputs,
+        writer_inputs.matrix,
+        metadata=alignment_metadata(
+            discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            owner_build_xic_backend="raw",
+            owner_backfill_xic_backend="raw",
+            output_level="machine",
+            peak_config=peak_config,
+            audit_evidence_mode="none",
+            heavy_audit_enabled=False,
+            require_discovery_owner_closure=True,
+            owner_backfill_peak_fact_provenance_row_count=1,
+        ),
+        ownership=OwnershipBuildResult(
+            owners=(),
+            assignments=(),
+            ambiguous_records=(),
+        ),
+        alignment_config=alignment_config,
+        production_decisions=writer_inputs.production_decisions,
+    )
+    assert {
+        path.name
+        for path in writer_dir.iterdir()
+        if path.is_file()
+    } == {
+        "alignment_matrix.tsv",
+        "alignment_matrix_identity.tsv",
+        "alignment_owner_backfill_peak_fact_provenance.tsv",
+        "alignment_results.xlsx",
+        "alignment_review.tsv",
+        "review_report.html",
+    }
 
 
 def test_production_composition_closes_observation_only_hold_without_membership(
@@ -293,6 +481,18 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     assert hold_observation_ids[0] not in (
         completed.application_result.physical_observation_ids
     )
+    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    assert writer_inputs.matrix.sample_order == ("Support", "Hold")
+    assert len(writer_inputs.matrix.clusters) == 1
+    assert tuple(cell.sample_stem for cell in writer_inputs.matrix.cells) == (
+        "Support",
+        "Hold",
+    )
+    decisions = writer_inputs.production_decisions
+    cluster_id = writer_inputs.matrix.cells[0].cluster_id
+    assert decisions.cell(cluster_id, "Support").write_matrix_value is True
+    assert decisions.cell(cluster_id, "Hold").write_matrix_value is False
+    assert decisions.cell(cluster_id, "Hold").blank_reason != ""
 
 
 def test_production_composition_closes_recovered_observation_without_candidate(
@@ -305,7 +505,14 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         raw_path.write_bytes(f"issue329-production-recovery:{raw_path.stem}".encode())
     settings = _settings()
     peak_config = _peak_config(tmp_path)
-    source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
+    source_raws = {
+        raw_path: _FakeRaw((apex_rt,))
+        for raw_path, apex_rt in zip(
+            raw_paths,
+            (7.97, 7.99, 8.01, 8.03),
+            strict=True,
+        )
+    }
     candidates_by_sample = {
         raw_path.stem: (
             _current_candidates(
@@ -370,6 +577,45 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
 
     assert completed.application_result.children
+    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    assert writer_inputs.matrix.sample_order == sample_stems
+    assert len(writer_inputs.matrix.clusters) == 1
+    assert tuple(
+        cell.sample_stem for cell in writer_inputs.matrix.cells
+    ) == sample_stems
+    row = writer_inputs.matrix.clusters[0]
+    expected_presentation_facts: dict[str, tuple[float, float]] = {}
+    for child in completed.application_result.children:
+        for projected in child.completed_projection.rows:
+            for decision in projected.decisions:
+                for direct in decision.evidence.direct_observations:
+                    expected_presentation_facts[
+                        direct.content.peak_observation_content_id
+                    ] = (
+                        direct.content.mz,
+                        direct.content.integration.rt_apex_min,
+                    )
+                for repaired_observation in decision.evidence.repaired_observations:
+                    if repaired_observation.selected_for_output:
+                        expected_presentation_facts[
+                            repaired_observation.prepared_signal_id
+                            or repaired_observation.work_unit_key
+                        ] = (
+                            repaired_observation.cell.backfill_seed_mz,
+                            repaired_observation.cell.apex_rt,
+                        )
+    assert len(expected_presentation_facts) == len(sample_stems)
+    assert row.physical_observation_ids == tuple(sorted(expected_presentation_facts))
+    assert row.family_center_mz == pytest.approx(
+        sum(value[0] for value in expected_presentation_facts.values())
+        / len(expected_presentation_facts)
+    )
+    assert row.family_center_rt == pytest.approx(
+        sum(value[1] for value in expected_presentation_facts.values())
+        / len(expected_presentation_facts)
+    )
+    assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean_v1"
+    assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean_v1"
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))

@@ -328,6 +328,8 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
 
     assert summary is not None
     assert len(bound_recipes) == 1
+    recipe = bound_recipes[0]
+    assert captured_alignment["discovery_settings"] is recipe.discovery_settings
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["output_level"] == "production"

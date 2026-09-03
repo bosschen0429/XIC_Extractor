@@ -18,6 +18,7 @@ from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.alignment_pipeline_helpers import (
     write_owner_closed_partial_batch as _write_owner_closed_partial_batch,
 )
+from tests.test_targeted_real_data_adapter import _settings
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.matrix import AlignmentMatrix
@@ -50,6 +51,233 @@ class _FamilyId(str):
 
 class _FamilyIds(frozenset):
     pass
+
+
+def test_pure_single_provider_cid_nl_dispatches_after_collision_guard_before_legacy_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    expected = pipeline_module.AlignmentRunOutputs(
+        matrix_tsv=tmp_path / "out" / "alignment_matrix.tsv"
+    )
+    calls: list[dict[str, object]] = []
+
+    def run_cid_nl(**kwargs: object):
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        run_cid_nl,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_existing_raw_paths",
+        lambda **_kwargs: pytest.fail("pure CID-NL reached legacy RAW routing"),
+    )
+
+    result = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=tmp_path / "raw",
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        discovery_settings=_settings(),
+        owner_build_xic_backend="raw_superwindow",
+    )
+
+    assert result is expected
+    assert len(calls) == 1
+    assert calls[0]["settings"] == _settings()
+    assert calls[0]["outputs"] == expected
+    assert calls[0]["owner_build_route_receipt"].as_dict() == {
+        "configured_owner_build_xic_backend": "raw_superwindow",
+        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
+        "effective_owner_build_xic_backend": None,
+        "effective_route_validation": "owner_validated",
+        "processing_run_spec_id": None,
+        "processing_run_spec_hash": None,
+    }
+
+
+def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    completed = object()
+    writer_inputs = SimpleNamespace(
+        matrix=_matrix(("S1",)),
+        production_decisions=object(),
+    )
+    captured_write: dict[str, object] = {}
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: completed,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "project_completed_untarget_batch_writer_inputs",
+        lambda value: writer_inputs if value is completed else pytest.fail(),
+    )
+
+    def write_outputs(*_args: object, **kwargs: object) -> None:
+        captured_write.update(kwargs)
+
+    monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", write_outputs)
+
+    result = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=tmp_path / "raw",
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        discovery_settings=_settings(),
+        owner_build_xic_backend="raw_superwindow",
+    )
+
+    assert result.untargeted_cid_nl_result is completed
+    assert result.owner_build_route_receipt is not None
+    assert result.owner_build_route_receipt.as_dict() == {
+        "configured_owner_build_xic_backend": "raw_superwindow",
+        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
+        "effective_owner_build_xic_backend": None,
+        "effective_route_validation": "owner_validated",
+        "processing_run_spec_id": None,
+        "processing_run_spec_hash": None,
+    }
+    metadata = captured_write["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["owner_build_xic_backend"] == "raw_superwindow"
+    assert metadata["owner_build_xic_backend_role"] == "configured_legacy_option"
+    assert metadata["effective_owner_build_route"] == (
+        "retained_untargeted_cid_nl_batch"
+    )
+    assert metadata["effective_owner_build_xic_backend"] == "none"
+
+
+def test_pure_cid_nl_collision_rejects_before_retained_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "alignment_matrix.tsv").write_text("owned\n", encoding="utf-8")
+    monkeypatch.setattr(
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        lambda **_kwargs: pytest.fail("collision reached retained runtime"),
+    )
+
+    with pytest.raises(FileExistsError, match="owned artifact collisions"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            raw_workers=2,
+        )
+
+
+def test_pure_cid_nl_rejects_legacy_raw_knobs_before_acquisition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
+    )
+
+    with pytest.raises(ValueError, match="raw_workers"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            raw_workers=2,
+        )
+
+
+def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    output_dir = tmp_path / "out"
+    completed = object()
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: completed,
+    )
+
+    def reject_projection(value: object) -> object:
+        assert value is completed
+        raise ValueError("invalid finalized projection")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "project_completed_untarget_batch_writer_inputs",
+        reject_projection,
+    )
+
+    with pytest.raises(ValueError, match="invalid finalized projection"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+        )
+
+    assert not (output_dir / "alignment_matrix.tsv").exists()
+    assert not (output_dir / "alignment_results.xlsx").exists()
+    assert not (output_dir / "review_report.html").exists()
+
+
+def test_intersection_settings_remain_on_explicit_legacy_route(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    intersection = replace(_settings(), tag_combine_mode="intersection")
+    monkeypatch.setattr(
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        lambda **_kwargs: pytest.fail("intersection crossed into pure CID-NL"),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_existing_raw_paths",
+        lambda **_kwargs: (_ for _ in ()).throw(_RouteReachedBatch()),
+    )
+
+    with pytest.raises(_RouteReachedBatch):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=intersection,
+        )
 
 
 def _allow_product_quantitative_projection_authority(

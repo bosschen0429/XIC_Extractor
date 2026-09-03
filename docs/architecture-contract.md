@@ -58,6 +58,10 @@ Active convergence scope and sequencing belong in their GitHub Issues.
 - Domain algorithms must not import GUI, workbook builders, CLI scripts,
   process backends, report renderers, or RAW/CSV adapters.
 - Adapters, IO, rendering, and entry points depend inward on domain owners.
+- `alignment.pipeline.run_alignment` may dispatch pure single-provider CID-NL
+  work to the retained execution adapter in `extraction/` after Alignment's
+  output-collision guard. Alignment may only consume the completed typed batch
+  result; it must not duplicate that runtime or let the adapter write outputs.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,
@@ -80,7 +84,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
-| `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination | GUI, workbook rendering, or Alignment decisions |
+| `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination, and retained Untargeted CID-NL execution | GUI, workbook rendering, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |

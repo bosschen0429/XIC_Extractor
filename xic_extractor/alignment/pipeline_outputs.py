@@ -5,6 +5,12 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.workflow import (
+        CompletedUntargetBatchWorkflowResult,
+    )
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -109,6 +115,7 @@ class AlignmentRunOutputs:
     owner_backfill_evaluation_coverage: (
         OwnerBackfillEvaluationCoverageBatch | None
     ) = None
+    untargeted_cid_nl_result: CompletedUntargetBatchWorkflowResult | None = None
 
 
 def output_paths(

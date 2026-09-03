@@ -73,6 +73,7 @@ from xic_extractor.alignment.owner_backfill import (
     build_owner_backfill_result,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
     OwnerBackfillCellProjectionV2,
     PreparedOwnerBackfillPeakFact,
     build_owner_backfill_peak_fact_provenance_batch_from_rows,
@@ -86,7 +87,9 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
+    OwnerBuildRouteReceipt,
     _mint_owner_build_route_receipt,
+    _mint_retained_untargeted_cid_nl_route_receipt,
     _validate_owner_build_xic_backend,
 )
 from xic_extractor.alignment.owner_clustering import (
@@ -96,6 +99,7 @@ from xic_extractor.alignment.owner_clustering import (
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership import (
     AlignmentCrossSampleIdentityContext,
+    OwnershipBuildResult,
     build_sample_local_owners,
     build_sample_local_owners_from_discovery_bindings,
     discovery_candidate_is_owner_build_eligible,
@@ -142,15 +146,24 @@ from xic_extractor.alignment.raw_sources import (
     timed_owner_backfill_sources,
     timed_raw_sources,
 )
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    project_completed_untarget_batch_writer_inputs,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
     validate_discovery_candidate_physical_bindings,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
+)
+from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+    complete_untargeted_cid_nl_alignment,
+)
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
 )
 from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
@@ -356,6 +369,7 @@ def run_alignment(
     output_dir: Path,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
+    discovery_settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     output_level: AlignmentOutputLevel = "production",
     emit_alignment_cells: bool = False,
@@ -390,6 +404,15 @@ def run_alignment(
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
+    if (
+        discovery_settings is not None
+        and type(discovery_settings) is not DiscoverySettings
+    ):
+        raise TypeError("discovery_settings must be an exact DiscoverySettings")
+    pure_untargeted_cid_nl = (
+        discovery_settings is not None
+        and is_pure_single_provider_cid_nl(discovery_settings)
+    )
     owner_build_xic_backend = _validate_owner_build_xic_backend(
         owner_build_xic_backend,
     )
@@ -461,7 +484,11 @@ def run_alignment(
         raise ValueError(
             "provisional matrix emission does not allow a family selection"
         )
-    if require_discovery_owner_closure and raw_opener is not None:
+    if (
+        require_discovery_owner_closure
+        and raw_opener is not None
+        and not pure_untargeted_cid_nl
+    ):
         raise ValueError("Discovery owner closure does not allow a custom RAW opener")
     if (
         require_discovery_owner_closure
@@ -481,19 +508,21 @@ def run_alignment(
             raise ValueError(
                 "production-equivalent Backfill does not allow a family selection"
             )
-        require_product_quantitative_projection_authority(
-            consumer_id=(
-                "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
-            ),
-            signal_processing_profile_id=signal_processing_profile.profile_id,
-        )
+        if not pure_untargeted_cid_nl:
+            require_product_quantitative_projection_authority(
+                consumer_id=(
+                    "xic_extractor.alignment.pipeline.run_alignment:"
+                    "production-equivalent"
+                ),
+                signal_processing_profile_id=signal_processing_profile.profile_id,
+            )
     elif backfill_scope == "full-audit":
         if family_selection_requested:
             raise ValueError(
                 "full-audit Backfill does not allow a family selection; "
                 "use selected-families"
             )
-        if default_signal_processing_profile:
+        if default_signal_processing_profile and not pure_untargeted_cid_nl:
             load_quantitative_projection_authority_for_diagnostic()
     elif backfill_scope != "selected-families":
         raise ValueError(
@@ -541,7 +570,9 @@ def run_alignment(
     with recorder.stage("alignment.read_batch_index"):
         batch = read_discovery_batch_index(
             discovery_batch_index,
-            require_owner_closure=require_discovery_owner_closure,
+            require_owner_closure=(
+                require_discovery_owner_closure or pure_untargeted_cid_nl
+            ),
         )
     cross_sample_acquisition_sources = (
         _expected_acquisition_sources(batch)
@@ -569,7 +600,7 @@ def run_alignment(
         else None
     )
     with recorder.stage("alignment.read_candidates") as stage:
-        if require_discovery_owner_closure:
+        if require_discovery_owner_closure or pure_untargeted_cid_nl:
             candidates_by_sample = {
                 sample_stem: read_owner_bound_discovery_candidates_csv(
                     batch.candidate_csvs[sample_stem],
@@ -618,6 +649,12 @@ def run_alignment(
             processing_run_spec_id=discovery_processing_run_spec.run_spec_id,
             processing_run_spec_hash=discovery_processing_run_spec.run_spec_hash,
         )
+    if pure_untargeted_cid_nl:
+        owner_build_route_receipt = (
+            _mint_retained_untargeted_cid_nl_route_receipt(
+                configured_backend=owner_build_xic_backend,
+            )
+        )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
         output_dir,
@@ -640,6 +677,49 @@ def run_alignment(
         emit_identity_coherence_diagnostic=emit_identity_coherence_diagnostic,
         identity_coherence_output_dir=identity_coherence_output_dir,
     )
+    if pure_untargeted_cid_nl:
+        assert discovery_settings is not None
+        return _run_untargeted_cid_nl_alignment(
+            discovery_batch_index=discovery_batch_index,
+            discovery_batch=batch,
+            candidates_by_sample=candidates_by_sample,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            output_dir=output_dir,
+            settings=discovery_settings,
+            peak_config=peak_config,
+            alignment_config=alignment_config,
+            outputs=outputs,
+            output_level=output_level,
+            owner_build_route_receipt=owner_build_route_receipt,
+            timing_recorder=recorder,
+            capture_artifact_fingerprints=capture_artifact_fingerprints,
+            raw_opener=raw_opener,
+            raw_workers=raw_workers,
+            raw_xic_batch_size=raw_xic_batch_size,
+            owner_build_xic_backend=owner_build_xic_backend,
+            owner_backfill_xic_backend=owner_backfill_xic_backend,
+            owner_backfill_window_strategy=owner_backfill_window_strategy,
+            owner_backfill_superwindow_span_factor=(
+                owner_backfill_superwindow_span_factor
+            ),
+            preconsolidate_owner_families=preconsolidate_owner_families,
+            emit_identity_coherence_diagnostic=(
+                emit_identity_coherence_diagnostic
+            ),
+            identity_coherence_output_dir=identity_coherence_output_dir,
+            identity_coherence_controls_manifest=(
+                identity_coherence_controls_manifest
+            ),
+            drift_lookup=drift_lookup,
+            sample_column_injection_order=sample_column_injection_order,
+            backfill_scope=backfill_scope,
+            audit_evidence_mode=audit_evidence_mode,
+            selected_family_ids=selected_family_ids,
+            selected_family_source=selected_family_source,
+            emit_early_loser_shadow=emit_early_loser_shadow,
+            signal_processing_profile=signal_processing_profile,
+        )
     resolved_audit_evidence_mode, audit_evidence_mode_reason = (
         _resolve_audit_evidence_mode(
             backfill_scope=backfill_scope,
@@ -1278,6 +1358,176 @@ def run_alignment(
                 owner_backfill_evaluation_coverage
             ),
         )
+
+
+def _run_untargeted_cid_nl_alignment(
+    *,
+    discovery_batch_index: Path,
+    discovery_batch: DiscoveryBatchInput,
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    alignment_config: AlignmentConfig,
+    outputs: AlignmentRunOutputs,
+    output_level: AlignmentOutputLevel,
+    owner_build_route_receipt: OwnerBuildRouteReceipt,
+    timing_recorder: TimingRecorder,
+    capture_artifact_fingerprints: bool,
+    raw_opener: RawOpener | None,
+    raw_workers: int,
+    raw_xic_batch_size: int,
+    owner_build_xic_backend: OwnerBuildXicBackend,
+    owner_backfill_xic_backend: OwnerBackfillXicBackend,
+    owner_backfill_window_strategy: OwnerBackfillWindowStrategy,
+    owner_backfill_superwindow_span_factor: int,
+    preconsolidate_owner_families: bool,
+    emit_identity_coherence_diagnostic: bool,
+    identity_coherence_output_dir: Path | None,
+    identity_coherence_controls_manifest: Path | None,
+    drift_lookup: DriftLookupProtocol | None,
+    sample_column_injection_order: Path | None,
+    backfill_scope: BackfillScope,
+    audit_evidence_mode: str,
+    selected_family_ids: frozenset[str],
+    selected_family_source: str,
+    emit_early_loser_shadow: bool,
+    signal_processing_profile: SignalProcessingProfile,
+) -> AlignmentRunOutputs:
+    """Run the retained CID-NL owner and project its completed result once."""
+
+    unsupported: list[str] = []
+    if raw_opener is not None:
+        unsupported.append("raw_opener")
+    if raw_workers != 1:
+        unsupported.append("raw_workers")
+    if raw_xic_batch_size != 1:
+        unsupported.append("raw_xic_batch_size")
+    if owner_backfill_xic_backend != "raw":
+        unsupported.append("owner_backfill_xic_backend")
+    if owner_backfill_window_strategy != "exact":
+        unsupported.append("owner_backfill_window_strategy")
+    if owner_backfill_superwindow_span_factor != 2:
+        unsupported.append("owner_backfill_superwindow_span_factor")
+    if preconsolidate_owner_families:
+        unsupported.append("preconsolidate_owner_families")
+    if emit_identity_coherence_diagnostic:
+        unsupported.append("emit_identity_coherence_diagnostic")
+    if identity_coherence_output_dir is not None:
+        unsupported.append("identity_coherence_output_dir")
+    if identity_coherence_controls_manifest is not None:
+        unsupported.append("identity_coherence_controls_manifest")
+    if drift_lookup is not None:
+        unsupported.append("drift_lookup")
+    if sample_column_injection_order is not None:
+        unsupported.append("sample_column_injection_order")
+    if backfill_scope != "full-audit":
+        unsupported.append("backfill_scope")
+    if audit_evidence_mode not in {"auto", "none"}:
+        unsupported.append("audit_evidence_mode")
+    if selected_family_ids:
+        unsupported.append("selected_family_ids")
+    if selected_family_source.strip():
+        unsupported.append("selected_family_source")
+    if emit_early_loser_shadow:
+        unsupported.append("emit_early_loser_shadow")
+    if signal_processing_profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID:
+        unsupported.append("signal_processing_profile")
+    if unsupported:
+        raise ValueError(
+            "pure CID-NL retained route does not support legacy Alignment options: "
+            + ", ".join(unsupported)
+        )
+
+    completed = complete_untargeted_cid_nl_alignment(
+        discovery_batch=discovery_batch,
+        candidates_by_sample=candidates_by_sample,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        output_dir=output_dir,
+        settings=settings,
+        peak_config=peak_config,
+        alignment_config=alignment_config,
+        timing_recorder=timing_recorder,
+    )
+    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    metadata = _metadata(
+        discovery_batch_index=discovery_batch_index,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        owner_build_xic_backend=owner_build_xic_backend,
+        owner_backfill_xic_backend=owner_backfill_xic_backend,
+        owner_backfill_window_strategy=owner_backfill_window_strategy,
+        owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
+        output_level=output_level,
+        peak_config=peak_config,
+        backfill_scope="full-audit",
+        output_scope="full-audit",
+        audit_evidence_mode="none",
+        requested_audit_evidence_mode=audit_evidence_mode,
+        heavy_audit_enabled=False,
+        audit_evidence_mode_reason="retained_untargeted_cid_nl_owner",
+        require_discovery_owner_closure=True,
+        signal_processing_profile=signal_processing_profile,
+        owner_backfill_peak_fact_provenance_row_count=len(
+            EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
+        ),
+    )
+    metadata.update(
+        {
+            "alignment_route": "untargeted_cid_nl_finalized_v1",
+            "effective_owner_build_route": (
+                owner_build_route_receipt.effective_owner_build_route
+            ),
+            "effective_owner_build_xic_backend": "none",
+            "owner_build_xic_backend_role": "configured_legacy_option",
+            "matrix_value_policy": "owner_finalized_cell_decision_v1",
+            "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean_v1",
+        }
+    )
+    with timing_recorder.stage("alignment.write_outputs"):
+        artifact_fingerprint_batch = _write_outputs_atomic(
+            outputs,
+            writer_inputs.matrix,
+            metadata=metadata,
+            ownership=OwnershipBuildResult(
+                owners=(),
+                assignments=(),
+                ambiguous_records=(),
+            ),
+            alignment_config=alignment_config,
+            owner_backfill_peak_fact_provenance=(
+                EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
+            ),
+            production_decisions=writer_inputs.production_decisions,
+            baseline_integration_method=getattr(
+                peak_config,
+                "baseline_integration_method",
+                "asls",
+            ),
+            baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
+            timing_recorder=timing_recorder,
+            capture_artifact_fingerprints=capture_artifact_fingerprints,
+        )
+    if capture_artifact_fingerprints:
+        if not isinstance(
+            artifact_fingerprint_batch,
+            AlignmentArtifactFingerprintBatch,
+        ):
+            raise TypeError(
+                "Alignment writer must return an owner-minted fingerprint batch"
+            )
+        outputs = replace(
+            outputs,
+            artifact_fingerprint_batch=artifact_fingerprint_batch,
+        )
+    return replace(
+        outputs,
+        owner_build_route_receipt=owner_build_route_receipt,
+        untargeted_cid_nl_result=completed,
+    )
 
 
 _existing_raw_paths = existing_raw_paths
