@@ -164,6 +164,49 @@ def test_service_isolates_runner_inputs_from_callback_mutation(tmp_path: Path) -
     assert runner_injection_order == {"SampleA": 1}
 
 
+def test_service_retains_noncopyable_bound_lifecycle_callbacks(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+
+    class LifecycleAdapter:
+        def __init__(self) -> None:
+            self.stopped = False
+            self.progress_calls: list[tuple[int, int, str]] = []
+
+        def __deepcopy__(self, _memo):
+            raise AssertionError("lifecycle callback receiver must not be copied")
+
+        def progress(self, done: int, total: int, name: str) -> None:
+            self.progress_calls.append((done, total, name))
+
+        def should_stop(self) -> bool:
+            return self.stopped
+
+    adapter = LifecycleAdapter()
+    progress_callback = adapter.progress
+    should_stop = adapter.should_stop
+
+    def runner(_config, _targets, **kwargs):
+        assert kwargs["progress_callback"] is progress_callback
+        assert kwargs["should_stop"] is should_stop
+        kwargs["progress_callback"](1, 1, "SampleA.raw")
+        adapter.stopped = True
+        return RunOutput(file_results=[], diagnostics=[])
+
+    request = build_targeted_application_request(
+        config,
+        [_target()],
+        progress_callback=progress_callback,
+        should_stop=should_stop,
+    )
+
+    TargetedApplicationService(runner).execute(request)
+
+    assert adapter.progress_calls == [(1, 1, "SampleA.raw")]
+
+
 def test_service_resolves_approval_registry_at_adapter_boundary(
     tmp_path: Path,
     monkeypatch,

@@ -163,7 +163,9 @@ class TargetedApplicationService:
     ) -> TargetedApplicationExecution:
         """Acquire once and publish only a complete finalized Target population."""
 
-        resolved_request = deepcopy(_resolve_application_request(request))
+        resolved_request = _isolate_application_request(
+            _resolve_application_request(request)
+        )
         from xic_extractor.processing_identity import FingerprintCancelledError
 
         from .targeted_production_workflow import (
@@ -180,7 +182,7 @@ class TargetedApplicationService:
             return TargetedApplicationExecution(
                 active_output=RunOutput(file_results=[], diagnostics=[])
             )
-        runner_request = deepcopy(resolved_request)
+        runner_request = _isolate_application_request(resolved_request)
         active_output = self.runner(
             runner_request.config,
             list(runner_request.targets),
@@ -440,4 +442,22 @@ def _resolve_application_request(
     return replace(
         request,
         model_selection_expected_diff_approvals=resolved_approvals,
+    )
+
+
+def _isolate_application_request(
+    request: TargetedApplicationRequest,
+) -> TargetedApplicationRequest:
+    """Copy mutable data inputs while retaining lifecycle callback adapters."""
+
+    return replace(
+        request,
+        config=deepcopy(request.config),
+        targets=deepcopy(request.targets),
+        injection_order=deepcopy(request.injection_order),
+        rt_prior_library=deepcopy(request.rt_prior_library),
+        model_selection_expected_diff_approvals=deepcopy(
+            request.model_selection_expected_diff_approvals
+        ),
+        method_manifest_context=deepcopy(request.method_manifest_context),
     )
