@@ -40,6 +40,8 @@ if TYPE_CHECKING:
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
     )
+    from xic_extractor.processing_identity import ProcessingRequestIdentity
+    from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
 class TargetedRunner(Protocol):
@@ -193,23 +195,62 @@ class TargetedApplicationService:
                 resolved_request.model_selection_expected_diff_approvals
             ),
         )
-        if (
-            resolved_request.should_stop is not None
-            and resolved_request.should_stop()
-        ):
+        if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(active_output=active_output)
         finalized_runner = self.finalized_workflow_runner
         publisher = self.output_publisher
-        if finalized_runner is not None or publisher is not None:
-            if finalized_runner is None or publisher is None:
+        use_default_production = (
+            finalized_runner is None
+            and publisher is None
+            and self.diagnostic_method_runner is None
+            and self.diagnostic_method_request_factory is None
+        )
+        if (
+            use_default_production
+            or finalized_runner is not None
+            or publisher is not None
+        ):
+            if not use_default_production and (
+                finalized_runner is None or publisher is None
+            ):
                 raise TargetedRuntimeAdapterError(
                     "finalized workflow runner and output publisher must be "
                     "configured together"
                 )
             if not active_output.file_results:
                 raise ConfigError("No RAW files were acquired for Targeted extraction.")
-            finalized_results = finalized_runner(resolved_request, active_output)
-            _validate_finalized_result_population(resolved_request, finalized_results)
+            from .targeted_production_workflow import (
+                execute_prepared_targeted_production_workflow,
+                prepare_targeted_production_workflow,
+            )
+
+            if use_default_production:
+                from .targeted_output_boundary import publish_targeted_outputs
+
+                prepared = prepare_targeted_production_workflow(
+                    resolved_request,
+                    active_output,
+                )
+                finalized_results = execute_prepared_targeted_production_workflow(
+                    resolved_request,
+                    prepared,
+                )
+                resolved_publisher = publish_targeted_outputs
+            else:
+                assert finalized_runner is not None
+                assert publisher is not None
+                finalized_results = finalized_runner(resolved_request, active_output)
+                prepared = prepare_targeted_production_workflow(
+                    resolved_request,
+                    active_output,
+                )
+                resolved_publisher = publisher
+            _validate_finalized_result_population(
+                resolved_request,
+                finalized_results,
+                expected_processing_request=prepared.owners.request,
+                expected_samples=prepared.samples,
+            )
             if (
                 resolved_request.should_stop is not None
                 and resolved_request.should_stop()
@@ -218,7 +259,7 @@ class TargetedApplicationService:
                     active_output=active_output,
                     finalized_results=finalized_results,
                 )
-            publication = publisher(
+            publication = resolved_publisher(
                 resolved_request,
                 finalized_results,
                 active_output,
@@ -334,6 +375,9 @@ class TargetedApplicationService:
 def _validate_finalized_result_population(
     request: TargetedApplicationRequest,
     results: tuple[FinalizedTargetProductionResult, ...],
+    *,
+    expected_processing_request: ProcessingRequestIdentity,
+    expected_samples: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> None:
     if type(results) is not tuple or any(
         type(result) is not FinalizedTargetApplicationResult for result in results
@@ -355,6 +399,20 @@ def _validate_finalized_result_population(
     if len(request_ids) != 1 or len(sample_populations) != 1:
         raise TargetedRuntimeAdapterError(
             "finalized Target results crossed request or sample populations"
+        )
+    expected_sample_population = tuple(
+        sample.identity.sample_identity_id for sample in expected_samples
+    )
+    if any(
+        result.processing_request != expected_processing_request
+        or tuple(
+            sample.identity.sample_identity_id for sample in result.canonical_samples
+        )
+        != expected_sample_population
+        for result in results
+    ):
+        raise TargetedRuntimeAdapterError(
+            "finalized Target results do not belong to the current acquisition"
         )
     for target, result in zip(request.targets, results, strict=True):
         finalized_target = (

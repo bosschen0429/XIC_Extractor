@@ -22,6 +22,9 @@ from xic_extractor.extraction.targeted_output_boundary import (
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
+from xic_extractor.extraction.targeted_runtime_adapter import (
+    TargetedRuntimeAdapterError,
+)
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
@@ -350,14 +353,12 @@ def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> 
     )
     service = TargetedApplicationService(
         lambda *_args, **_kwargs: output,
-        finalized_workflow_runner=execute_targeted_production_workflow,
-        output_publisher=publish_targeted_outputs,
     )
 
     final_output = service.execute(request)
-    final_projection = final_output.file_results[0].results[
-        target.label
-    ].targeted_product_projection
+    final_projection = (
+        final_output.file_results[0].results[target.label].targeted_product_projection
+    )
     assert final_projection is not None
     assert final_projection.product_state == "detected_clean"
     assert final_projection.counted_detection is True
@@ -467,10 +468,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     assert all(path.is_file() for path in winning.paths)
     diagnostics_text = config.diagnostics_csv.read_text(encoding="utf-8-sig")
     assert (
-        sum(
-            marker in diagnostics_text
-            for marker in ("concurrent-a", "concurrent-b")
-        )
+        sum(marker in diagnostics_text for marker in ("concurrent-a", "concurrent-b"))
         == 1
     )
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
@@ -712,6 +710,95 @@ def test_replay_commit_failure_restores_previous_output_set(
         )
 
     assert {path: path.read_bytes() for path in original_paths} == original_bytes
+
+
+def test_failed_rollback_preserves_recoverable_previous_outputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    original_paths = publish_targeted_outputs(request, finalized, output).paths
+    original_bytes = {path.read_bytes() for path in original_paths}
+    original_replace = Path.replace
+    commit_count = 0
+    restore_failed = False
+
+    def fail_commit_and_one_restore(source: Path, target_path: Path) -> Path:
+        nonlocal commit_count, restore_failed
+        if source.parent.name.startswith(".xic-targeted-publish-"):
+            commit_count += 1
+            if commit_count == 2:
+                raise OSError("replacement failed")
+        if source.parent.name == ".existing" and not restore_failed:
+            restore_failed = True
+            raise OSError("restore blocked")
+        return original_replace(source, target_path)
+
+    monkeypatch.setattr(Path, "replace", fail_commit_and_one_restore)
+
+    with pytest.raises(
+        TargetedOutputBoundaryError,
+        match="recoverable files retained",
+    ):
+        publish_targeted_outputs(
+            replace(request, replace_existing_outputs=True),
+            finalized,
+            output,
+        )
+
+    recovery_roots = list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
+    assert len(recovery_roots) == 1
+    recoverable = [
+        path.read_bytes()
+        for path in (recovery_roots[0] / ".existing").iterdir()
+        if path.is_file()
+    ]
+    assert recoverable
+    assert set(recoverable).issubset(original_bytes)
+
+
+def test_service_rejects_finalized_results_from_another_acquisition(
+    tmp_path: Path,
+) -> None:
+    current_root = tmp_path / "current"
+    stale_root = tmp_path / "stale"
+    current_root.mkdir()
+    stale_root.mkdir()
+    current_config, current_target, current_output = production_case(current_root)
+    stale_config, stale_target, stale_output = production_case(stale_root)
+    (stale_config.data_dir / "SampleA.raw").write_bytes(b"stale acquisition")
+    stale_request = build_targeted_application_request(
+        stale_config,
+        [stale_target],
+        injection_order={"SampleA": 1},
+    )
+    stale_finalized = execute_targeted_production_workflow(
+        stale_request,
+        stale_output,
+    )
+    current_request = build_targeted_application_request(
+        current_config,
+        [current_target],
+        injection_order={"SampleA": 1},
+    )
+    service = TargetedApplicationService(
+        lambda *_args, **_kwargs: current_output,
+        finalized_workflow_runner=lambda *_args: stale_finalized,
+        output_publisher=lambda *_args: pytest.fail("crossed result was published"),
+    )
+
+    with pytest.raises(
+        TargetedRuntimeAdapterError,
+        match="do not belong to the current acquisition",
+    ):
+        service.execute_application(current_request)
 
 
 def test_cancellation_after_typed_completion_never_invokes_publisher(

@@ -44,12 +44,6 @@ from xic_extractor.extraction.targeted_method_runtime import (
     execute_targeted_method_alignment_runtime,
     execute_targeted_method_completion_runtime,
 )
-from xic_extractor.extraction.targeted_output_boundary import (
-    publish_targeted_outputs,
-)
-from xic_extractor.extraction.targeted_production_workflow import (
-    execute_targeted_production_workflow,
-)
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationRequest,
     TargetedApplicationService,
@@ -128,11 +122,7 @@ def build_canonical_targeted_application_service(
 ) -> TargetedApplicationService:
     """Build the single production CLI/GUI service composition."""
 
-    return TargetedApplicationService(
-        runner,
-        finalized_workflow_runner=execute_targeted_production_workflow,
-        output_publisher=publish_targeted_outputs,
-    )
+    return TargetedApplicationService(runner)
 
 
 def _execute_scoped_targeted_diagnostic_method(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -118,7 +119,9 @@ _NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 
 @dataclass(frozen=True, slots=True)
-class _ProductionContext:
+class PreparedTargetedProductionWorkflow:
+    """Exact owner-bound inputs reused by service validation and execution."""
+
     owners: ProcessingOwnerReferences
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     targets: tuple[ResolvedTargetDefinition, ...]
@@ -132,20 +135,35 @@ def execute_targeted_production_workflow(
 ) -> tuple[FinalizedTargetProductionResult, ...]:
     """Produce one finalized #312 result per declared Target, in row order."""
 
-    context = _build_context(request, acquisition_evidence)
+    prepared = prepare_targeted_production_workflow(request, acquisition_evidence)
+    return execute_prepared_targeted_production_workflow(request, prepared)
+
+
+def execute_prepared_targeted_production_workflow(
+    request: TargetedApplicationRequest,
+    prepared: PreparedTargetedProductionWorkflow,
+) -> tuple[FinalizedTargetProductionResult, ...]:
+    """Execute an already owner-bound production population."""
+
     return tuple(
-        _execute_target(_context_for_target(context, index), request, target)
-        for index, target in enumerate(context.targets)
+        _execute_target(_context_for_target(prepared, index), request, target)
+        for index, target in enumerate(prepared.targets)
     )
 
 
-def _build_context(
+def prepare_targeted_production_workflow(
     request: TargetedApplicationRequest,
     acquisition_evidence: RunOutput,
-) -> _ProductionContext:
+) -> PreparedTargetedProductionWorkflow:
+    """Bind acquisition rows to exact RAW, request, sample, and Target owners."""
+
     raw_paths = resolve_targeted_raw_paths(request.config)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
+    results_by_raw_path = _bind_results_to_raw_paths(
+        raw_paths,
+        acquisition_evidence.file_results,
+    )
     resolved_inputs = resolve_targeted_inputs(
         request.config,
         raw_paths=raw_paths,
@@ -166,11 +184,7 @@ def _build_context(
             injection_order=resolved_inputs.injection_order[raw_path.stem],
             group=file_result.group or "",
         )
-        for raw_path, file_result in zip(
-            raw_paths,
-            acquisition_evidence.file_results,
-            strict=True,
-        )
+        for raw_path, file_result in results_by_raw_path
     )
     sample_snapshot = mint_sample_metadata_snapshot(
         rows,
@@ -197,21 +211,46 @@ def _build_context(
         sample_resolutions=samples,
         target_snapshot=target_snapshot,
     )
-    return _ProductionContext(
+    return PreparedTargetedProductionWorkflow(
         owners=owners,
         samples=samples,
         targets=resolved_targets,
         results_by_sample=tuple(
-            zip(samples, acquisition_evidence.file_results, strict=True)
+            (sample, file_result)
+            for sample, (_, file_result) in zip(
+                samples,
+                results_by_raw_path,
+                strict=True,
+            )
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
     )
 
 
+def _bind_results_to_raw_paths(
+    raw_paths: list[Path],
+    file_results: list[FileResult],
+) -> tuple[tuple[Path, FileResult], ...]:
+    results_by_sample: dict[str, FileResult] = {}
+    for file_result in file_results:
+        if file_result.sample_name in results_by_sample:
+            raise RuntimeError(
+                "Targeted acquisition returned duplicate sample identities"
+            )
+        results_by_sample[file_result.sample_name] = file_result
+    raw_stems = {path.stem for path in raw_paths}
+    result_names = set(results_by_sample)
+    if result_names != raw_stems:
+        raise RuntimeError(
+            "Targeted acquisition sample identities do not match resolved RAW inputs"
+        )
+    return tuple((path, results_by_sample[path.stem]) for path in raw_paths)
+
+
 def _context_for_target(
-    context: _ProductionContext,
+    context: PreparedTargetedProductionWorkflow,
     target_index: int,
-) -> _ProductionContext:
+) -> PreparedTargetedProductionWorkflow:
     """Reuse the initial attempt, then issue one attempt per later Target."""
 
     if target_index == 0:
@@ -231,7 +270,7 @@ def _context_for_target(
 
 
 def _execute_target(
-    context: _ProductionContext,
+    context: PreparedTargetedProductionWorkflow,
     request: TargetedApplicationRequest,
     target: ResolvedTargetDefinition,
 ) -> FinalizedTargetProductionResult:
@@ -636,6 +675,14 @@ def _owner_bound_trace(
         processing_owners=owners,
         sample=sample,
     )
+    if trace.sample_name != sample.metadata.sample_name:
+        raise RuntimeError(
+            "Targeted acquisition trace crossed the canonical sample identity"
+        )
+    if trace.acquisition_source_id not in {"", source.acquisition_source_id}:
+        raise RuntimeError(
+            "Targeted acquisition trace crossed the resolved acquisition source"
+        )
     return replace(
         trace,
         sample_name=sample.metadata.sample_name,

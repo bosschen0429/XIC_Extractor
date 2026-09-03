@@ -39,6 +39,10 @@ class _TargetedPublicationCancelled(Exception):
     """Internal signal for a cancellation rolled back by the publish transaction."""
 
 
+class _TargetedRollbackRecoveryRequired(TargetedOutputBoundaryError):
+    """A failed rollback retained recoverable files in the staging root."""
+
+
 _STAGE_OUTPUT_CSV = "__targeted_output__.csv"
 _STAGE_DIAGNOSTICS_CSV = "__targeted_diagnostics__.csv"
 _STAGE_EXCEL_OUTPUT = "__targeted_output__.xlsx"
@@ -60,6 +64,7 @@ def publish_targeted_outputs(
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
+    preserve_stage_root = False
     try:
         stage_config = replace(
             request.config,
@@ -114,6 +119,9 @@ def publish_targeted_outputs(
         return TargetedPublication(paths=paths, output=render_view)
     except _TargetedPublicationCancelled:
         return TargetedPublication(paths=(), output=render_view)
+    except _TargetedRollbackRecoveryRequired:
+        preserve_stage_root = True
+        raise
     except TargetedOutputBoundaryError:
         raise
     except Exception as exc:
@@ -121,21 +129,62 @@ def publish_targeted_outputs(
             f"Targeted output render failed before publication: {exc}"
         ) from exc
     finally:
-        shutil.rmtree(stage_root, ignore_errors=True)
+        if not preserve_stage_root:
+            shutil.rmtree(stage_root, ignore_errors=True)
 
 
 def _build_render_view(
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
 ) -> RunOutput:
-    decisions: dict[tuple[str, str], Any] = {}
-    for result in finalized_results:
-        target_label = (
-            result.completed_projection.row_binding.target.definition.target.label
+    if not finalized_results:
+        raise TargetedOutputBoundaryError(
+            "finalized Targeted result population is empty"
         )
+    expected_request = finalized_results[0].processing_request
+    expected_samples = finalized_results[0].canonical_samples
+    expected_sample_ids = tuple(
+        sample.identity.sample_identity_id for sample in expected_samples
+    )
+    samples_by_raw_stem = {
+        sample.metadata.raw_stem: sample for sample in expected_samples
+    }
+    if len(samples_by_raw_stem) != len(expected_samples):
+        raise TargetedOutputBoundaryError(
+            "finalized Targeted sample population contains duplicate RAW identities"
+        )
+
+    decisions: dict[tuple[str, str], Any] = {}
+    target_ids_by_label: dict[str, str] = {}
+    for result in finalized_results:
+        if (
+            result.processing_request != expected_request
+            or tuple(
+                sample.identity.sample_identity_id
+                for sample in result.canonical_samples
+            )
+            != expected_sample_ids
+        ):
+            raise TargetedOutputBoundaryError(
+                "finalized Targeted results crossed request or sample identities"
+            )
+        target = result.completed_projection.row_binding.target.definition
+        target_label = target.target.label
+        target_id = target.target_definition_id
+        if target_label in target_ids_by_label:
+            raise TargetedOutputBoundaryError(
+                "finalized Targeted result population contains duplicate Targets"
+            )
+        target_ids_by_label[target_label] = target_id
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
-            key = (subject.sample.metadata.sample_name, target_label)
+            sample_id = subject.sample.identity.sample_identity_id
+            if sample_id not in expected_sample_ids:
+                raise TargetedOutputBoundaryError(
+                    "finalized Targeted decision crossed the canonical "
+                    "sample population"
+                )
+            key = (sample_id, target_id)
             if key in decisions:
                 raise TargetedOutputBoundaryError(
                     "finalized Targeted decision population contains duplicates"
@@ -144,10 +193,28 @@ def _build_render_view(
 
     files: list[FileResult] = []
     consumed: set[tuple[str, str]] = set()
+    consumed_sample_ids: set[str] = set()
     for file_result in acquisition_evidence.file_results:
+        sample = samples_by_raw_stem.get(file_result.sample_name)
+        if sample is None:
+            raise TargetedOutputBoundaryError(
+                "acquisition evidence does not resolve to a canonical sample identity"
+            )
+        sample_id = sample.identity.sample_identity_id
+        if sample_id in consumed_sample_ids:
+            raise TargetedOutputBoundaryError(
+                "acquisition evidence contains duplicate canonical samples"
+            )
+        consumed_sample_ids.add(sample_id)
         rendered: dict[str, ExtractionResult] = {}
         for target_label, extraction in file_result.results.items():
-            key = (file_result.sample_name, target_label)
+            resolved_target_id = target_ids_by_label.get(target_label)
+            if resolved_target_id is None:
+                raise TargetedOutputBoundaryError(
+                    "acquisition evidence does not resolve to a finalized "
+                    "Target identity"
+                )
+            key = (sample_id, resolved_target_id)
             render_decision = decisions.get(key)
             if render_decision is None:
                 raise TargetedOutputBoundaryError(
@@ -309,9 +376,8 @@ def _staged_output_map(
         elif stage_excel is not None and staged == stage_excel:
             assert request.excel_output_path is not None
             final = request.excel_output_path
-        elif (
-            stage_excel is not None
-            and staged == review_report_path_for_excel(stage_excel)
+        elif stage_excel is not None and staged == review_report_path_for_excel(
+            stage_excel
         ):
             assert request.excel_output_path is not None
             final = review_report_path_for_excel(request.excel_output_path)
@@ -357,9 +423,11 @@ def _commit_staged_outputs(
     ordered = sorted(mapping.items(), key=lambda item: item[1].name)
     if not ordered:
         return ()
+    recovery_root = ordered[0][0].parent
     lock_paths_by_key = {
-        os.path.normcase(str(final.parent.expanduser().resolve(strict=False))):
-        final.parent.expanduser().resolve(strict=False) / _PUBLICATION_LOCK_NAME
+        os.path.normcase(
+            str(final.parent.expanduser().resolve(strict=False))
+        ): final.parent.expanduser().resolve(strict=False) / _PUBLICATION_LOCK_NAME
         for _, final in ordered
     }
 
@@ -408,11 +476,16 @@ def _commit_staged_outputs(
             )
             if isinstance(exc, _TargetedPublicationCancelled):
                 if rollback_failures:
-                    raise TargetedOutputBoundaryError(
+                    raise _TargetedRollbackRecoveryRequired(
                         "Targeted output commit was cancelled and rollback failed"
-                        f"{detail}"
+                        f"{detail}; recoverable files retained at {recovery_root}"
                     ) from exc
                 raise
+            if rollback_failures:
+                raise _TargetedRollbackRecoveryRequired(
+                    "Targeted output commit failed and rollback was incomplete"
+                    f"{detail}; recoverable files retained at {recovery_root}"
+                ) from exc
             raise TargetedOutputBoundaryError(
                 f"Targeted output commit failed and was rolled back{detail}"
             ) from exc
@@ -437,8 +510,7 @@ def _publication_commit_lock(lock_path: Path) -> Iterator[None]:
         )
     except FileExistsError as exc:
         raise TargetedOutputBoundaryError(
-            "Targeted output path already exists or is being published: "
-            f"{lock_path}"
+            f"Targeted output path already exists or is being published: {lock_path}"
         ) from exc
     assert descriptor is not None
     handle = os.fdopen(descriptor, "w", encoding="ascii")
@@ -453,6 +525,8 @@ def _publication_commit_lock(lock_path: Path) -> Iterator[None]:
                 lock_path.unlink()
         except FileNotFoundError:
             pass
+
+
 __all__ = [
     "TargetedOutputBoundaryError",
     "publish_targeted_outputs",

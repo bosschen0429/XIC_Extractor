@@ -87,7 +87,8 @@ def test_headless_service_preserves_inputs_and_callbacks() -> None:
         return None
 
     def should_stop() -> bool:
-        return False
+        return True
+
     request = build_targeted_application_request(
         config,
         targets,
@@ -123,7 +124,11 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
     )
 
     TargetedApplicationService(runner).execute(
-        build_targeted_application_request(config, [_target()])
+        build_targeted_application_request(
+            config,
+            [_target()],
+            should_stop=lambda: True,
+        )
     )
 
     assert calls["model_selection_expected_diff_approvals"] is resolved_approvals
@@ -198,8 +203,7 @@ def test_pipeline_input_resolution_keeps_approvals_explicit(
         model_selection_expected_diff_approval_registry=tmp_path / "registry.tsv",
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs."
-        "load_expected_diff_approval_registry",
+        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
         lambda _path: (_ for _ in ()).throw(
             AssertionError("pipeline resolver must not load adapter policy")
         ),

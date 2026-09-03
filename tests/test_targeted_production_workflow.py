@@ -184,13 +184,9 @@ def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
     assert all(not runtime.manifest_preflight_failed for _attempt, runtime in started)
     assert all(len(manifest.work_unit_keys) == 1 for manifest in manifests)
     assert all(
-        manifest.attempt is attempt
-        for attempt, manifest in zip(attempts, manifests)
+        manifest.attempt is attempt for attempt, manifest in zip(attempts, manifests)
     )
-    assert {
-        manifest.work_unit_keys[0]
-        for manifest in manifests
-    } == {
+    assert {manifest.work_unit_keys[0] for manifest in manifests} == {
         "targeted-workflow:"
         + result.completed_projection.row_binding.target.definition.target_definition_id
         for result in finalized
@@ -612,6 +608,54 @@ def test_neutral_loss_disabled_target_without_acquisition_trace_fails_closed(
                 config,
                 [target],
                 injection_order={"SampleA": 1},
+            ),
+            output,
+        )
+
+
+def test_reordered_acquisition_results_bind_by_raw_sample_identity(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    output.file_results.reverse()
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    assert [
+        (sample.metadata.raw_stem, sample.metadata.sample_name)
+        for sample in finalized[0].canonical_samples
+    ] == [("SampleA", "SampleA"), ("SampleB", "SampleB")]
+
+
+def test_crossed_acquisition_trace_sample_fails_closed(tmp_path: Path) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    extraction = output.file_results[0].results[target.label]
+    trace = extraction.acquisition_trace
+    assert trace is not None
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        acquisition_trace=replace(trace, sample_name="SampleB"),
+    )
+
+    with pytest.raises(RuntimeError, match="crossed the canonical sample identity"):
+        execute_targeted_production_workflow(
+            build_targeted_application_request(
+                config,
+                [target],
+                injection_order={"SampleA": 1, "SampleB": 2},
             ),
             output,
         )
