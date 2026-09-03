@@ -70,23 +70,6 @@ class TargetedRuntimeLifecycleRunner(Protocol):
     ) -> TargetedRuntimeWorkerBatch: ...
 
 
-class TargetedFinalizedWorkflowRunner(Protocol):
-    def __call__(
-        self,
-        request: TargetedApplicationRequest,
-        acquisition_evidence: RunOutput,
-    ) -> tuple[FinalizedTargetProductionResult, ...]: ...
-
-
-class TargetedOutputPublisher(Protocol):
-    def __call__(
-        self,
-        request: TargetedApplicationRequest,
-        finalized_results: tuple[FinalizedTargetProductionResult, ...],
-        acquisition_evidence: RunOutput,
-    ) -> TargetedPublication: ...
-
-
 class TargetedRuntimeFinalizationPersister(Protocol):
     def __call__(
         self,
@@ -101,14 +84,6 @@ class TargetedDiagnosticMethodRunner(Protocol):
         *,
         should_stop: Callable[[], bool] | None = None,
     ) -> TargetedDiagnosticMethodResult | TargetedDiagnosticApplicationOutcome: ...
-
-
-class TargetedDiagnosticMethodRequestFactory(Protocol):
-    def __call__(
-        self,
-        request: TargetedApplicationRequest,
-        authoritative_legacy_output: RunOutput,
-    ) -> TargetedDiagnosticMethodRequest | None: ...
 
 
 @dataclass(frozen=True)
@@ -142,13 +117,11 @@ class TargetedDiagnosticApplicationOutcome:
 
 @dataclass(frozen=True)
 class TargetedApplicationExecution:
-    """One adapter-neutral acquisition with optional finalized publication."""
+    """One adapter-neutral acquisition with complete finalized publication."""
 
     active_output: RunOutput
     finalized_results: tuple[FinalizedTargetProductionResult, ...] = ()
     published_paths: tuple[Any, ...] = ()
-    diagnostic_method_result: TargetedDiagnosticMethodResult | None = None
-    diagnostic_outcome: TargetedDiagnosticApplicationOutcome | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,15 +135,10 @@ class TargetedPublication:
 @dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
-    finalized_workflow_runner: TargetedFinalizedWorkflowRunner | None = None
-    output_publisher: TargetedOutputPublisher | None = None
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
     runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
     diagnostic_method_runner: TargetedDiagnosticMethodRunner | None = None
-    diagnostic_method_request_factory: TargetedDiagnosticMethodRequestFactory | None = (
-        None
-    )
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
         """Preserve the existing application API while using the canonical path."""
@@ -184,6 +152,13 @@ class TargetedApplicationService:
         """Acquire once and publish only a complete finalized Target population."""
 
         resolved_request = _resolve_application_request(request)
+        from .targeted_production_workflow import (
+            execute_prepared_targeted_production_workflow,
+            prepare_targeted_production_workflow,
+            snapshot_targeted_production_inputs,
+        )
+
+        input_snapshot = snapshot_targeted_production_inputs(resolved_request)
         active_output = self.runner(
             resolved_request.config,
             list(resolved_request.targets),
@@ -197,103 +172,40 @@ class TargetedApplicationService:
         )
         if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(active_output=active_output)
-        finalized_runner = self.finalized_workflow_runner
-        publisher = self.output_publisher
-        use_default_production = (
-            finalized_runner is None
-            and publisher is None
-            and self.diagnostic_method_runner is None
-            and self.diagnostic_method_request_factory is None
+        if not active_output.file_results:
+            raise ConfigError("No RAW files were acquired for Targeted extraction.")
+        prepared = prepare_targeted_production_workflow(
+            resolved_request,
+            active_output,
+            expected_inputs=input_snapshot,
         )
-        if (
-            use_default_production
-            or finalized_runner is not None
-            or publisher is not None
-        ):
-            if not use_default_production and (
-                finalized_runner is None or publisher is None
-            ):
-                raise TargetedRuntimeAdapterError(
-                    "finalized workflow runner and output publisher must be "
-                    "configured together"
-                )
-            if not active_output.file_results:
-                raise ConfigError("No RAW files were acquired for Targeted extraction.")
-            from .targeted_production_workflow import (
-                execute_prepared_targeted_production_workflow,
-                prepare_targeted_production_workflow,
-            )
-
-            if use_default_production:
-                from .targeted_output_boundary import publish_targeted_outputs
-
-                prepared = prepare_targeted_production_workflow(
-                    resolved_request,
-                    active_output,
-                )
-                finalized_results = execute_prepared_targeted_production_workflow(
-                    resolved_request,
-                    prepared,
-                )
-                resolved_publisher = publish_targeted_outputs
-            else:
-                assert finalized_runner is not None
-                assert publisher is not None
-                finalized_results = finalized_runner(resolved_request, active_output)
-                prepared = prepare_targeted_production_workflow(
-                    resolved_request,
-                    active_output,
-                )
-                resolved_publisher = publisher
-            _validate_finalized_result_population(
-                resolved_request,
-                finalized_results,
-                expected_processing_request=prepared.owners.request,
-                expected_samples=prepared.samples,
-            )
-            if (
-                resolved_request.should_stop is not None
-                and resolved_request.should_stop()
-            ):
-                return TargetedApplicationExecution(
-                    active_output=active_output,
-                    finalized_results=finalized_results,
-                )
-            publication = resolved_publisher(
-                resolved_request,
-                finalized_results,
-                active_output,
-            )
-            return TargetedApplicationExecution(
-                active_output=publication.output,
-                finalized_results=finalized_results,
-                published_paths=publication.paths,
-            )
-        diagnostic_runner = self.diagnostic_method_runner
-        diagnostic_factory = self.diagnostic_method_request_factory
-        if diagnostic_runner is None and diagnostic_factory is None:
-            return TargetedApplicationExecution(active_output=active_output)
-        if diagnostic_runner is None or diagnostic_factory is None:
-            raise TargetedRuntimeAdapterError(
-                "diagnostic method runner and request factory must be "
-                "configured together"
-            )
-        diagnostic_request = diagnostic_factory(resolved_request, active_output)
-        if diagnostic_request is None:
-            return TargetedApplicationExecution(active_output=active_output)
-        diagnostic_execution = diagnostic_runner(
-            diagnostic_request,
-            should_stop=resolved_request.should_stop,
+        finalized_results = execute_prepared_targeted_production_workflow(
+            resolved_request,
+            prepared,
         )
-        if isinstance(diagnostic_execution, TargetedDiagnosticApplicationOutcome):
+        validate_finalized_result_population(
+            resolved_request,
+            finalized_results,
+            expected_processing_request=prepared.owners.request,
+            expected_samples=prepared.samples,
+        )
+        if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(
                 active_output=active_output,
-                diagnostic_method_result=diagnostic_execution.method_result,
-                diagnostic_outcome=diagnostic_execution,
+                finalized_results=finalized_results,
             )
+        from .targeted_output_boundary import publish_targeted_outputs
+
+        publication = publish_targeted_outputs(
+            resolved_request,
+            finalized_results,
+            active_output,
+            prepared=prepared,
+        )
         return TargetedApplicationExecution(
-            active_output=active_output,
-            diagnostic_method_result=diagnostic_execution,
+            active_output=publication.output,
+            finalized_results=finalized_results,
+            published_paths=publication.paths,
         )
 
     def execute_runtime_lifecycle(
@@ -372,7 +284,7 @@ class TargetedApplicationService:
         return observed
 
 
-def _validate_finalized_result_population(
+def validate_finalized_result_population(
     request: TargetedApplicationRequest,
     results: tuple[FinalizedTargetProductionResult, ...],
     *,

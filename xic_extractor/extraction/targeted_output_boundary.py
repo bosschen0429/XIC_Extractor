@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, Iterator, cast
 
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.extraction.output_dispatch import write_outputs
@@ -17,6 +17,7 @@ from xic_extractor.extraction.targeted_service import (
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
     TargetedPublication,
+    validate_finalized_result_population,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
@@ -29,6 +30,11 @@ from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
+
+if TYPE_CHECKING:
+    from xic_extractor.extraction.targeted_production_workflow import (
+        PreparedTargetedProductionWorkflow,
+    )
 
 
 class TargetedOutputBoundaryError(RuntimeError):
@@ -53,9 +59,36 @@ def publish_targeted_outputs(
     request: TargetedApplicationRequest,
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
+    *,
+    prepared: PreparedTargetedProductionWorkflow | None = None,
 ) -> TargetedPublication:
     """Stage and commit one complete render set after typed finalization."""
 
+    if prepared is None:
+        from xic_extractor.extraction.targeted_production_workflow import (
+            prepare_targeted_production_workflow,
+        )
+
+        prepared = prepare_targeted_production_workflow(request, acquisition_evidence)
+    prepared_file_ids = {
+        id(file_result) for _, file_result in prepared.results_by_sample
+    }
+    acquisition_file_ids = {
+        id(file_result) for file_result in acquisition_evidence.file_results
+    }
+    if (
+        len(prepared_file_ids) != len(acquisition_evidence.file_results)
+        or prepared_file_ids != acquisition_file_ids
+    ):
+        raise TargetedOutputBoundaryError(
+            "prepared Targeted workflow crossed the acquisition evidence"
+        )
+    validate_finalized_result_population(
+        request,
+        finalized_results,
+        expected_processing_request=prepared.owners.request,
+        expected_samples=prepared.samples,
+    )
     render_view = (
         _build_acquisition_baseline_view(acquisition_evidence)
         if request.output_projection == "acquisition_baseline"
@@ -259,21 +292,15 @@ def _finalized_extraction_result(
         no_write_reason=no_write_reason,
     )
     if not no_write_reason:
-        if extraction.reported_peak_area == value:
-            return replace(extraction, targeted_product_projection=projection)
         if (
-            type(evidence) is not ObservedSearchSubject
+            value is None
+            or type(evidence) is not ObservedSearchSubject
             or _hypothesis_area(evidence.hypothesis) != value
         ):
             raise TargetedOutputBoundaryError(
                 "finalized Targeted value does not match its public result model"
             )
         integration = evidence.hypothesis.integration
-        public_selected = (
-            None
-            if extraction.selected_hypothesis is None
-            else replace(extraction.selected_hypothesis, integration=integration)
-        )
         rendered = replace(
             extraction,
             peak_result=replace(
@@ -286,8 +313,10 @@ def _finalized_extraction_result(
                     peak_start=integration.rt_left_min,
                     peak_end=integration.rt_right_min,
                 ),
+                candidates=(),
+                candidate_scores=(),
             ),
-            selected_hypothesis=public_selected,
+            selected_hypothesis=None,
             selection_decision=None,
             model_selection_result=None,
             targeted_product_projection=projection,
@@ -520,11 +549,12 @@ def _publication_commit_lock(lock_path: Path) -> Iterator[None]:
         yield
     finally:
         handle.close()
-        try:
-            if lock_path.read_text(encoding="ascii") == token:
-                lock_path.unlink()
-        except FileNotFoundError:
-            pass
+        if os.name != "nt":
+            try:
+                if lock_path.read_text(encoding="ascii") == token:
+                    lock_path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 __all__ = [

@@ -20,7 +20,7 @@ from xic_extractor.alignment.workflow import (
     WorkflowRuntimeInvocation,
     execute_alignment_workflow,
 )
-from xic_extractor.config import Target
+from xic_extractor.config import ConfigError, Target
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -47,6 +47,7 @@ from xic_extractor.execution_runtime_owner import (
     start_runtime_attempt,
 )
 from xic_extractor.extraction.targeted_inputs import (
+    ResolvedTargetedInputs,
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
@@ -94,6 +95,7 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
+    ProcessingRequestIdentity,
     canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
@@ -116,6 +118,16 @@ _NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf-v1",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedProductionInputSnapshot:
+    """Exact mutable input state observed at one production boundary."""
+
+    raw_paths: tuple[Path, ...]
+    resolved_inputs: ResolvedTargetedInputs
+    target_snapshot: TargetListSnapshot
+    processing_request: ProcessingRequestIdentity
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,29 +166,27 @@ def execute_prepared_targeted_production_workflow(
 def prepare_targeted_production_workflow(
     request: TargetedApplicationRequest,
     acquisition_evidence: RunOutput,
+    *,
+    expected_inputs: TargetedProductionInputSnapshot | None = None,
 ) -> PreparedTargetedProductionWorkflow:
     """Bind acquisition rows to exact RAW, request, sample, and Target owners."""
 
-    raw_paths = resolve_targeted_raw_paths(request.config)
+    current_inputs = snapshot_targeted_production_inputs(request)
+    if expected_inputs is not None and (
+        current_inputs.raw_paths != expected_inputs.raw_paths
+        or current_inputs.processing_request != expected_inputs.processing_request
+    ):
+        raise RuntimeError("Targeted production inputs changed during acquisition")
+    raw_paths = list(current_inputs.raw_paths)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
         acquisition_evidence.file_results,
     )
-    resolved_inputs = resolve_targeted_inputs(
-        request.config,
-        raw_paths=raw_paths,
-        injection_order=request.injection_order,
-        rt_prior_library=request.rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            request.model_selection_expected_diff_approvals
-        ),
-    )
-    target_snapshot = mint_target_list_snapshot(
-        request.targets,
-        identity_namespace=_IDENTITY_NAMESPACE,
-    )
+    resolved_inputs = current_inputs.resolved_inputs
+    target_snapshot = current_inputs.target_snapshot
+    processing_request = current_inputs.processing_request
     rows = tuple(
         SampleMetadata(
             sample_name=file_result.sample_name,
@@ -192,12 +202,6 @@ def prepare_targeted_production_workflow(
     )
     samples = tuple(
         resolve_canonical_sample_identity(sample_snapshot, row.raw_stem) for row in rows
-    )
-    processing_request = build_targeted_processing_request_identity(
-        request.config,
-        target_snapshot=target_snapshot,
-        raw_paths=raw_paths,
-        resolved_inputs=resolved_inputs,
     )
     attempt = issue_processing_attempt(processing_request)
     resolved_targets = tuple(
@@ -224,6 +228,41 @@ def prepare_targeted_production_workflow(
             )
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
+    )
+
+
+def snapshot_targeted_production_inputs(
+    request: TargetedApplicationRequest,
+) -> TargetedProductionInputSnapshot:
+    """Fingerprint every mutable scientific input for a production phase."""
+
+    raw_paths = resolve_targeted_raw_paths(request.config)
+    if not raw_paths:
+        raise ConfigError("No RAW files were found for Targeted extraction.")
+    resolved_inputs = resolve_targeted_inputs(
+        request.config,
+        raw_paths=raw_paths,
+        injection_order=request.injection_order,
+        rt_prior_library=request.rt_prior_library,
+        model_selection_expected_diff_approvals=(
+            request.model_selection_expected_diff_approvals
+        ),
+    )
+    target_snapshot = mint_target_list_snapshot(
+        request.targets,
+        identity_namespace=_IDENTITY_NAMESPACE,
+    )
+    processing_request = build_targeted_processing_request_identity(
+        request.config,
+        target_snapshot=target_snapshot,
+        raw_paths=raw_paths,
+        resolved_inputs=resolved_inputs,
+    )
+    return TargetedProductionInputSnapshot(
+        raw_paths=tuple(raw_paths),
+        resolved_inputs=resolved_inputs,
+        target_snapshot=target_snapshot,
+        processing_request=processing_request,
     )
 
 

@@ -195,7 +195,38 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     published = publish_targeted_outputs(request, finalized, output)
 
     rendered = published.output.file_results[0].results[target.label]
+    finalized_integration = (
+        finalized[0].completed_projection.decisions[0].evidence.hypothesis.integration
+    )
     assert rendered.reported_peak_area == finalized_value
+    assert rendered.reported_rt == finalized_integration.rt_apex_min
+    assert rendered.peak is not None
+    assert rendered.peak.peak_start == finalized_integration.rt_left_min
+    assert rendered.peak.peak_end == finalized_integration.rt_right_min
+    assert rendered.selected_hypothesis is None
+    assert rendered.selection_decision is None
+    assert rendered.model_selection_result is None
+
+
+def test_publication_retires_equal_area_legacy_selection_authority(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    published = publish_targeted_outputs(request, finalized, output)
+
+    rendered = published.output.file_results[0].results[target.label]
+    assert rendered.selected_hypothesis is None
+    assert rendered.selection_decision is None
+    assert rendered.model_selection_result is None
+    assert rendered.peak_result.candidates == ()
+    assert rendered.peak_result.candidate_scores == ()
 
 
 def test_manifest_does_not_claim_any_unstaged_stale_output(
@@ -764,7 +795,7 @@ def test_failed_rollback_preserves_recoverable_previous_outputs(
     assert set(recoverable).issubset(original_bytes)
 
 
-def test_service_rejects_finalized_results_from_another_acquisition(
+def test_publisher_rejects_finalized_results_from_another_acquisition(
     tmp_path: Path,
 ) -> None:
     current_root = tmp_path / "current"
@@ -788,21 +819,38 @@ def test_service_rejects_finalized_results_from_another_acquisition(
         [current_target],
         injection_order={"SampleA": 1},
     )
-    service = TargetedApplicationService(
-        lambda *_args, **_kwargs: current_output,
-        finalized_workflow_runner=lambda *_args: stale_finalized,
-        output_publisher=lambda *_args: pytest.fail("crossed result was published"),
-    )
-
     with pytest.raises(
         TargetedRuntimeAdapterError,
         match="do not belong to the current acquisition",
     ):
-        service.execute_application(current_request)
+        publish_targeted_outputs(
+            current_request,
+            stale_finalized,
+            current_output,
+        )
+
+
+def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+
+    def mutate_raw_then_return(*_args, **_kwargs):
+        (config.data_dir / "SampleA.raw").write_bytes(b"mutated during acquisition")
+        return output
+
+    with pytest.raises(RuntimeError, match="inputs changed during acquisition"):
+        TargetedApplicationService(mutate_raw_then_return).execute_application(request)
+
+    assert not config.output_csv.exists()
 
 
 def test_cancellation_after_typed_completion_never_invokes_publisher(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
     stop_results = iter((False, True))
@@ -813,20 +861,25 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
         should_stop=lambda: next(stop_results),
     )
 
-    service = TargetedApplicationService(
-        lambda *_args, **_kwargs: output,
-        finalized_workflow_runner=execute_targeted_production_workflow,
-        output_publisher=lambda *_args: pytest.fail("cancelled run published output"),
+    monkeypatch.setattr(
+        targeted_output_boundary,
+        "publish_targeted_outputs",
+        lambda *_args, **_kwargs: pytest.fail("cancelled run published output"),
     )
 
-    execution = service.execute_application(request)
+    execution = TargetedApplicationService(
+        lambda *_args, **_kwargs: output
+    ).execute_application(request)
 
     assert execution.active_output is output
     assert execution.finalized_results
     assert execution.published_paths == ()
 
 
-def test_cancellation_after_acquisition_skips_finalization(tmp_path: Path) -> None:
+def test_cancellation_after_acquisition_skips_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config, target, output = production_case(tmp_path)
     request = build_targeted_application_request(
         config,
@@ -834,15 +887,15 @@ def test_cancellation_after_acquisition_skips_finalization(tmp_path: Path) -> No
         injection_order={"SampleA": 1},
         should_stop=lambda: True,
     )
-    service = TargetedApplicationService(
-        lambda *_args, **_kwargs: output,
-        finalized_workflow_runner=lambda *_args: pytest.fail(
-            "cancelled run invoked finalization"
-        ),
-        output_publisher=lambda *_args: pytest.fail("cancelled run published output"),
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_production_workflow."
+        "execute_prepared_targeted_production_workflow",
+        lambda *_args: pytest.fail("cancelled run invoked finalization"),
     )
 
-    execution = service.execute_application(request)
+    execution = TargetedApplicationService(
+        lambda *_args, **_kwargs: output
+    ).execute_application(request)
 
     assert execution.active_output is output
     assert execution.finalized_results == ()

@@ -1,5 +1,5 @@
 import ast
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -30,6 +30,23 @@ def test_cli_and_gui_use_same_targeted_application_service() -> None:
             and node.func.value.id == "extractor"
         ]
         assert calls == [], f"{path} bypasses TargetedApplicationService"
+
+
+def test_retired_diagnostic_successor_is_absent_from_production_entries() -> None:
+    import xic_extractor.extraction.targeted_diagnostic_application as application
+
+    for name in (
+        "capture_targeted_diagnostic_request_provider",
+        "capture_targeted_diagnostic_telemetry_provider",
+        "targeted_diagnostic_request_provider",
+    ):
+        assert not hasattr(application, name)
+    gui_source = Path("gui/workers/pipeline_worker.py").read_text(encoding="utf-8")
+    assert "diagnostic_request_provider" not in gui_source
+    assert "diagnostic_telemetry_provider" not in gui_source
+    service_fields = {item.name for item in fields(TargetedApplicationService)}
+    assert "finalized_workflow_runner" not in service_fields
+    assert "output_publisher" not in service_fields
 
 
 def test_public_python_run_uses_canonical_targeted_application_service(
@@ -71,8 +88,11 @@ def test_public_python_run_uses_canonical_targeted_application_service(
     assert request.injection_order == {"SampleA": 1}
 
 
-def test_headless_service_preserves_inputs_and_callbacks() -> None:
-    config = _config()
+def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
     targets = [_target()]
     calls: dict[str, object] = {}
     output = RunOutput(file_results=[], diagnostics=[])
@@ -103,8 +123,11 @@ def test_headless_service_preserves_inputs_and_callbacks() -> None:
     assert calls["should_stop"] is should_stop
 
 
-def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> None:
-    resolved_approvals = {"row-1": object()}
+def test_service_resolves_approval_registry_at_adapter_boundary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    resolved_approvals: dict[str, object] = {}
     calls: dict[str, object] = {}
 
     def resolve_approvals(actual_config, approvals):
@@ -116,7 +139,10 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
         calls.update(kwargs)
         return RunOutput(file_results=[], diagnostics=[])
 
-    config = _config()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_service."
         "resolve_model_selection_expected_diff_approvals",
@@ -134,8 +160,15 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
     assert calls["model_selection_expected_diff_approvals"] is resolved_approvals
 
 
-def test_typed_workflow_failure_never_reaches_publication() -> None:
+def test_typed_workflow_failure_never_reaches_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
     acquisition = RunOutput(
         file_results=[FileResult(sample_name="SampleA", results={})],
         diagnostics=[],
@@ -145,49 +178,46 @@ def test_typed_workflow_failure_never_reaches_publication() -> None:
         calls.append("acquire")
         return acquisition
 
-    def fail_workflow(_request, observed):
-        assert observed is acquisition
+    def fail_workflow(_request, _prepared):
         calls.append("workflow")
         raise RuntimeError("typed workflow failed")
 
     def publish(*_args, **_kwargs):
         calls.append("publish")
 
-    service = TargetedApplicationService(
-        acquire,
-        finalized_workflow_runner=fail_workflow,
-        output_publisher=publish,
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_production_workflow."
+        "execute_prepared_targeted_production_workflow",
+        fail_workflow,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        publish,
     )
 
     with pytest.raises(RuntimeError, match="typed workflow failed"):
-        service.execute_application(
-            build_targeted_application_request(_config(), [_target()])
+        TargetedApplicationService(acquire).execute_application(
+            build_targeted_application_request(config, [_target()])
         )
 
     assert calls == ["acquire", "workflow"]
 
 
-def test_empty_acquisition_reports_no_input_before_finalization() -> None:
+def test_empty_acquisition_reports_no_input_before_finalization(tmp_path: Path) -> None:
     calls: list[str] = []
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
     acquisition = RunOutput(file_results=[], diagnostics=[])
 
     def acquire(*_args, **_kwargs):
         calls.append("acquire")
         return acquisition
 
-    def finalize(*_args, **_kwargs):
-        calls.append("workflow")
-
-    def publish(*_args, **_kwargs):
-        calls.append("publish")
-
     with pytest.raises(ConfigError, match="No RAW files were acquired"):
-        TargetedApplicationService(
-            acquire,
-            finalized_workflow_runner=finalize,
-            output_publisher=publish,
-        ).execute_application(
-            build_targeted_application_request(_config(), [_target()])
+        TargetedApplicationService(acquire).execute_application(
+            build_targeted_application_request(config, [_target()])
         )
 
     assert calls == ["acquire"]

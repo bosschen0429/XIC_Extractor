@@ -1,5 +1,4 @@
 import statistics
-from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,9 +10,6 @@ from xic_extractor import extractor
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.targeted_diagnostic_application import (
     build_canonical_targeted_application_service,
-    capture_targeted_diagnostic_request_provider,
-    capture_targeted_diagnostic_telemetry_provider,
-    targeted_diagnostic_request_provider,
 )
 from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
@@ -32,12 +28,6 @@ class PipelineWorker(QThread):
     def __init__(self, config_dir: Path) -> None:
         super().__init__()
         self._config_dir = config_dir
-        self._diagnostic_request_provider = (
-            capture_targeted_diagnostic_request_provider()
-        )
-        self._diagnostic_telemetry_provider = (
-            capture_targeted_diagnostic_telemetry_provider()
-        )
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -45,40 +35,23 @@ class PipelineWorker(QThread):
     def run(self) -> None:
         try:
             config, targets = config_module.load_config(self._config_dir)
-            provider = self._diagnostic_request_provider
-            telemetry_provider = self._diagnostic_telemetry_provider
-            if (provider is None) != (telemetry_provider is None):
-                raise RuntimeError(
-                    "diagnostic request and telemetry providers must propagate together"
-                )
-            scope: AbstractContextManager[None]
-            if provider is None:
-                scope = nullcontext()
-            else:
-                assert telemetry_provider is not None
-                scope = targeted_diagnostic_request_provider(
-                    provider,
-                    telemetry_provider=telemetry_provider,
-                )
             excel_path = _excel_output_path(config)
-            with scope:
-                execution = (
-                    build_canonical_targeted_application_service(extractor.acquire)
-                    .execute_application(
-                        build_targeted_application_request(
-                            config,
-                            targets,
-                            progress_callback=self.progress.emit,
-                            should_stop=self.isInterruptionRequested,
-                            method_manifest_context=MethodManifestContext(
-                                entrypoint="xic-extractor-gui",
-                                config_dir=self._config_dir,
-                                output_mode="excel",
-                            ),
-                            excel_output_path=excel_path,
-                        )
-                    )
+            execution = build_canonical_targeted_application_service(
+                extractor.acquire
+            ).execute_application(
+                build_targeted_application_request(
+                    config,
+                    targets,
+                    progress_callback=self.progress.emit,
+                    should_stop=self.isInterruptionRequested,
+                    method_manifest_context=MethodManifestContext(
+                        entrypoint="xic-extractor-gui",
+                        config_dir=self._config_dir,
+                        output_mode="excel",
+                    ),
+                    excel_output_path=excel_path,
                 )
+            )
             output = execution.active_output
             if self.isInterruptionRequested() and not execution.published_paths:
                 self.cancelled.emit()
