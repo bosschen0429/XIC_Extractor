@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from collections.abc import Iterator
+from dataclasses import InitVar, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -118,6 +119,7 @@ _NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf-v1",
 )
+_COMPLETED_WORKFLOW_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,14 +143,52 @@ class PreparedTargetedProductionWorkflow:
     raw_stems: frozenset[str]
 
 
+@dataclass(frozen=True, slots=True)
+class CompletedTargetedProductionWorkflow:
+    """One exact prepared workflow and the results produced by its attempts."""
+
+    prepared: PreparedTargetedProductionWorkflow
+    target_contexts: tuple[PreparedTargetedProductionWorkflow, ...]
+    finalized_results: tuple[FinalizedTargetProductionResult, ...]
+    _mint_token: InitVar[object] = None
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _COMPLETED_WORKFLOW_MINT_TOKEN:
+            raise TypeError(
+                "CompletedTargetedProductionWorkflow must be minted by its owner"
+            )
+        if len(self.target_contexts) != len(self.finalized_results):
+            raise RuntimeError(
+                "completed Targeted workflow crossed its execution population"
+            )
+
+    def __len__(self) -> int:
+        return len(self.finalized_results)
+
+    def __iter__(self) -> Iterator[FinalizedTargetProductionResult]:
+        return iter(self.finalized_results)
+
+    def __getitem__(self, index: int) -> FinalizedTargetProductionResult:
+        return self.finalized_results[index]
+
+
 def execute_targeted_production_workflow(
     request: TargetedApplicationRequest,
     acquisition_evidence: RunOutput,
-) -> tuple[FinalizedTargetProductionResult, ...]:
+) -> CompletedTargetedProductionWorkflow:
     """Produce one finalized #312 result per declared Target, in row order."""
 
+    return complete_targeted_production_workflow(request, acquisition_evidence)
+
+
+def complete_targeted_production_workflow(
+    request: TargetedApplicationRequest,
+    acquisition_evidence: RunOutput,
+) -> CompletedTargetedProductionWorkflow:
+    """Execute and retain the exact attempt-bound publication receipt."""
+
     prepared = prepare_targeted_production_workflow(request, acquisition_evidence)
-    return execute_prepared_targeted_production_workflow(request, prepared)
+    return complete_prepared_targeted_production_workflow(request, prepared)
 
 
 def execute_prepared_targeted_production_workflow(
@@ -157,9 +197,35 @@ def execute_prepared_targeted_production_workflow(
 ) -> tuple[FinalizedTargetProductionResult, ...]:
     """Execute an already owner-bound production population."""
 
-    return tuple(
-        _execute_target(_context_for_target(prepared, index), request, target)
-        for index, target in enumerate(prepared.targets)
+    return complete_prepared_targeted_production_workflow(
+        request,
+        prepared,
+    ).finalized_results
+
+
+def complete_prepared_targeted_production_workflow(
+    request: TargetedApplicationRequest,
+    prepared: PreparedTargetedProductionWorkflow,
+) -> CompletedTargetedProductionWorkflow:
+    """Execute one prepared population and seal its exact per-Target attempts."""
+
+    target_contexts = tuple(
+        _context_for_target(prepared, index)
+        for index, _target in enumerate(prepared.targets)
+    )
+    finalized_results = tuple(
+        _execute_target(context, request, target)
+        for context, target in zip(
+            target_contexts,
+            prepared.targets,
+            strict=True,
+        )
+    )
+    return CompletedTargetedProductionWorkflow(
+        prepared=prepared,
+        target_contexts=target_contexts,
+        finalized_results=finalized_results,
+        _mint_token=_COMPLETED_WORKFLOW_MINT_TOKEN,
     )
 
 
@@ -323,6 +389,10 @@ def _execute_target(
     candidates = []
     for sample, file_result in context.results_by_sample:
         extraction = file_result.results[target.definition.target.label]
+        if extraction.target_label != target.definition.target.label:
+            raise RuntimeError(
+                "Targeted acquisition result crossed its declared Target identity"
+            )
         if extraction.acquisition_trace is None and not ms1_only:
             if extraction.selected_hypothesis is not None:
                 raise RuntimeError(

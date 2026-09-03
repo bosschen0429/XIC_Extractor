@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Literal
 
 from xic_extractor import neutral_loss, raw_reader, signal_processing
 from xic_extractor.config import ExtractionConfig, Target
@@ -234,6 +235,8 @@ def acquire(
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
+    *,
+    publish_outputs: Literal[False] = False,
 ) -> RunOutput:
     from xic_extractor.extraction.pipeline import run_pipeline
 
@@ -246,5 +249,5 @@ def acquire(
         injection_order=injection_order,
         rt_prior_library=rt_prior_library,
         model_selection_expected_diff_approvals=expected_diffs,
-        publish_outputs=False,
+        publish_outputs=publish_outputs,
     )

@@ -22,9 +22,6 @@ from xic_extractor.extraction.targeted_output_boundary import (
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    TargetedRuntimeAdapterError,
-)
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
@@ -820,14 +817,86 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
         injection_order={"SampleA": 1},
     )
     with pytest.raises(
-        TargetedRuntimeAdapterError,
-        match="do not belong to the current acquisition",
+        TargetedOutputBoundaryError,
+        match="crossed the acquisition evidence",
     ):
         publish_targeted_outputs(
             current_request,
             stale_finalized,
             current_output,
         )
+
+
+def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+
+    with pytest.raises(
+        TargetedOutputBoundaryError,
+        match="exact attempt-bound completed workflow",
+    ):
+        publish_targeted_outputs(
+            request,
+            completed.finalized_results,  # type: ignore[arg-type]
+            output,
+        )
+
+
+def test_publisher_rejects_crossed_acquisition_result_target(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    extraction = output.file_results[0].results[target.label]
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        target_label="CrossedTarget",
+    )
+
+    with pytest.raises(
+        TargetedOutputBoundaryError,
+        match="crossed its declared Target identity",
+    ):
+        publish_targeted_outputs(request, completed, output)
+
+
+def test_service_accepts_raw_order_that_differs_from_canonical_order(
+    tmp_path: Path,
+) -> None:
+    sample_names = ("SampleA", "SampleB", "SampleC", "SampleD")
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=sample_names,
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={
+            sample_name: index
+            for index, sample_name in enumerate(sample_names, start=1)
+        },
+    )
+
+    execution = TargetedApplicationService(
+        lambda *_args, **_kwargs: output
+    ).execute_application(request)
+
+    assert execution.published_paths
+    assert (
+        tuple(
+            sample.metadata.sample_name
+            for sample in execution.finalized_results[0].canonical_samples
+        )
+        != sample_names
+    )
 
 
 def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> None:
@@ -889,7 +958,7 @@ def test_cancellation_after_acquisition_skips_finalization(
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_production_workflow."
-        "execute_prepared_targeted_production_workflow",
+        "complete_prepared_targeted_production_workflow",
         lambda *_args: pytest.fail("cancelled run invoked finalization"),
     )
 

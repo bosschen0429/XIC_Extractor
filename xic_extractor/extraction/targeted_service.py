@@ -56,6 +56,8 @@ class TargetedRunner(Protocol):
         model_selection_expected_diff_approvals: (
             Mapping[str, ExpectedDiffApprovalRecord] | None
         ) = None,
+        *,
+        publish_outputs: Literal[False] = False,
     ) -> RunOutput: ...
 
 
@@ -153,7 +155,7 @@ class TargetedApplicationService:
 
         resolved_request = _resolve_application_request(request)
         from .targeted_production_workflow import (
-            execute_prepared_targeted_production_workflow,
+            complete_prepared_targeted_production_workflow,
             prepare_targeted_production_workflow,
             snapshot_targeted_production_inputs,
         )
@@ -169,6 +171,7 @@ class TargetedApplicationService:
             model_selection_expected_diff_approvals=(
                 resolved_request.model_selection_expected_diff_approvals
             ),
+            publish_outputs=False,
         )
         if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(active_output=active_output)
@@ -179,10 +182,11 @@ class TargetedApplicationService:
             active_output,
             expected_inputs=input_snapshot,
         )
-        finalized_results = execute_prepared_targeted_production_workflow(
+        completed_workflow = complete_prepared_targeted_production_workflow(
             resolved_request,
             prepared,
         )
+        finalized_results = completed_workflow.finalized_results
         validate_finalized_result_population(
             resolved_request,
             finalized_results,
@@ -198,9 +202,8 @@ class TargetedApplicationService:
 
         publication = publish_targeted_outputs(
             resolved_request,
-            finalized_results,
+            completed_workflow,
             active_output,
-            prepared=prepared,
         )
         return TargetedApplicationExecution(
             active_output=publication.output,
@@ -313,12 +316,15 @@ def validate_finalized_result_population(
             "finalized Target results crossed request or sample populations"
         )
     expected_sample_population = tuple(
-        sample.identity.sample_identity_id for sample in expected_samples
+        sorted(sample.identity.sample_identity_id for sample in expected_samples)
     )
     if any(
         result.processing_request != expected_processing_request
         or tuple(
-            sample.identity.sample_identity_id for sample in result.canonical_samples
+            sorted(
+                sample.identity.sample_identity_id
+                for sample in result.canonical_samples
+            )
         )
         != expected_sample_population
         for result in results

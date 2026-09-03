@@ -121,6 +121,7 @@ def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None
     assert calls["targets"] == targets
     assert calls["progress_callback"] is progress
     assert calls["should_stop"] is should_stop
+    assert calls["publish_outputs"] is False
 
 
 def test_service_resolves_approval_registry_at_adapter_boundary(
@@ -187,7 +188,7 @@ def test_typed_workflow_failure_never_reaches_publication(
 
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_production_workflow."
-        "execute_prepared_targeted_production_workflow",
+        "complete_prepared_targeted_production_workflow",
         fail_workflow,
     )
     monkeypatch.setattr(

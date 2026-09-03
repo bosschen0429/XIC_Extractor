@@ -661,6 +661,25 @@ def test_crossed_acquisition_trace_sample_fails_closed(tmp_path: Path) -> None:
         )
 
 
+def test_crossed_acquisition_result_target_fails_closed(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    extraction = output.file_results[0].results[target.label]
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        target_label="CrossedTarget",
+    )
+
+    with pytest.raises(RuntimeError, match="crossed its declared Target identity"):
+        execute_targeted_production_workflow(
+            build_targeted_application_request(
+                config,
+                [target],
+                injection_order={"SampleA": 1},
+            ),
+            output,
+        )
+
+
 def production_case(
     tmp_path: Path,
     *,

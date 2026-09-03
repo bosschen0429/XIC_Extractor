@@ -33,7 +33,7 @@ from xic_extractor.peak_detection.targeted_product_projection import (
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.targeted_production_workflow import (
-        PreparedTargetedProductionWorkflow,
+        CompletedTargetedProductionWorkflow,
     )
 
 
@@ -57,19 +57,21 @@ _PUBLICATION_LOCK_NAME = ".xic-targeted-publish.lock"
 
 def publish_targeted_outputs(
     request: TargetedApplicationRequest,
-    finalized_results: tuple[FinalizedTargetProductionResult, ...],
+    completed_workflow: CompletedTargetedProductionWorkflow,
     acquisition_evidence: RunOutput,
-    *,
-    prepared: PreparedTargetedProductionWorkflow | None = None,
 ) -> TargetedPublication:
     """Stage and commit one complete render set after typed finalization."""
 
-    if prepared is None:
-        from xic_extractor.extraction.targeted_production_workflow import (
-            prepare_targeted_production_workflow,
-        )
+    from xic_extractor.extraction.targeted_production_workflow import (
+        CompletedTargetedProductionWorkflow,
+    )
 
-        prepared = prepare_targeted_production_workflow(request, acquisition_evidence)
+    if type(completed_workflow) is not CompletedTargetedProductionWorkflow:
+        raise TargetedOutputBoundaryError(
+            "publication requires an exact attempt-bound completed workflow"
+        )
+    prepared = completed_workflow.prepared
+    finalized_results = completed_workflow.finalized_results
     prepared_file_ids = {
         id(file_result) for _, file_result in prepared.results_by_sample
     }
@@ -241,6 +243,10 @@ def _build_render_view(
         consumed_sample_ids.add(sample_id)
         rendered: dict[str, ExtractionResult] = {}
         for target_label, extraction in file_result.results.items():
+            if extraction.target_label != target_label:
+                raise TargetedOutputBoundaryError(
+                    "acquisition evidence crossed its declared Target identity"
+                )
             resolved_target_id = target_ids_by_label.get(target_label)
             if resolved_target_id is None:
                 raise TargetedOutputBoundaryError(
