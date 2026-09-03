@@ -22,6 +22,7 @@ from xic_extractor.extraction.targeted_service import (
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
+    MethodManifestContext,
     method_manifest_path,
     write_method_manifest,
 )
@@ -70,21 +71,23 @@ def publish_targeted_outputs(
         raise TargetedOutputBoundaryError(
             "publication requires an exact attempt-bound completed workflow"
         )
+    if request.method_manifest_context is not None and not isinstance(
+        request.method_manifest_context,
+        MethodManifestContext,
+    ):
+        raise TargetedOutputBoundaryError(
+            "method_manifest_context must be a MethodManifestContext"
+        )
     prepared = completed_workflow.prepared
     finalized_results = completed_workflow.finalized_results
-    prepared_file_ids = {
-        id(file_result) for _, file_result in prepared.results_by_sample
-    }
-    acquisition_file_ids = {
+    acquisition_file_ids = tuple(
         id(file_result) for file_result in acquisition_evidence.file_results
-    }
-    if (
-        len(prepared_file_ids) != len(acquisition_evidence.file_results)
-        or prepared_file_ids != acquisition_file_ids
-    ):
+    )
+    if acquisition_file_ids != prepared.acquisition_file_ids:
         raise TargetedOutputBoundaryError(
             "prepared Targeted workflow crossed the acquisition evidence"
         )
+    acquisition_snapshot = prepared.acquisition_snapshot
     validate_finalized_result_population(
         request,
         finalized_results,
@@ -92,9 +95,9 @@ def publish_targeted_outputs(
         expected_samples=prepared.samples,
     )
     render_view = (
-        _build_acquisition_baseline_view(acquisition_evidence)
+        _build_acquisition_baseline_view(acquisition_snapshot)
         if request.output_projection == "acquisition_baseline"
-        else _build_render_view(finalized_results, acquisition_evidence)
+        else _build_render_view(finalized_results, acquisition_snapshot)
     )
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -492,7 +495,7 @@ def _commit_staged_outputs(
                 staged.replace(final)
                 moved.append((staged, final))
                 check_cancellation()
-        except (_TargetedPublicationCancelled, OSError) as exc:
+        except Exception as exc:
             rollback_failures: list[Path] = []
             for staged, final in reversed(moved):
                 if not _restore_moved_output(final, staged):
@@ -512,6 +515,12 @@ def _commit_staged_outputs(
                         f"{detail}; recoverable files retained at {recovery_root}"
                     ) from exc
                 raise
+            if (
+                not moved
+                and not backups
+                and isinstance(exc, TargetedOutputBoundaryError)
+            ):
+                raise
             if rollback_failures:
                 raise _TargetedRollbackRecoveryRequired(
                     "Targeted output commit failed and rollback was incomplete"
@@ -529,7 +538,7 @@ def _restore_moved_output(final: Path, staged: Path) -> bool:
         return True
     except OSError:
         try:
-            shutil.copy2(final, staged)
+            _atomic_copy_replace(final, staged)
             final.unlink()
             return True
         except OSError:
@@ -542,11 +551,30 @@ def _restore_previous_output(backup: Path, final: Path) -> bool:
         return True
     except OSError:
         try:
-            shutil.copy2(backup, final)
+            _atomic_copy_replace(backup, final)
             backup.unlink()
             return True
         except OSError:
             return False
+
+
+def _atomic_copy_replace(source: Path, destination: Path) -> None:
+    """Copy through a private sibling so a failed copy never truncates live data."""
+
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.rollback-",
+        dir=destination.parent,
+    )
+    os.close(descriptor)
+    temporary = Path(temp_name)
+    try:
+        shutil.copy2(source, temporary)
+        with temporary.open("r+b") as handle:
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 @contextmanager

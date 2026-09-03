@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from xic_extractor import neutral_loss, raw_reader, signal_processing
 from xic_extractor.config import ExtractionConfig, Target
@@ -231,6 +231,7 @@ def acquire(
     injection_order: dict[str, int] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    acquisition_sources_by_sample: Any = None,
     *,
     publish_outputs: Literal[False] = False,
 ) -> RunOutput:
@@ -243,8 +244,7 @@ def acquire(
         should_stop=should_stop,
         injection_order=injection_order,
         rt_prior_library=rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
+        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,  # noqa: E501
+        acquisition_sources_by_sample=acquisition_sources_by_sample,
         publish_outputs=publish_outputs,
     )

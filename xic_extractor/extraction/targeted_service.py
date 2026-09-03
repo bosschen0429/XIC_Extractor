@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -40,7 +41,10 @@ if TYPE_CHECKING:
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
     )
-    from xic_extractor.processing_identity import ProcessingRequestIdentity
+    from xic_extractor.processing_identity import (
+        AcquisitionSourceIdentity,
+        ProcessingRequestIdentity,
+    )
     from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
@@ -55,6 +59,9 @@ class TargetedRunner(Protocol):
         rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
         model_selection_expected_diff_approvals: (
             Mapping[str, ExpectedDiffApprovalRecord] | None
+        ) = None,
+        acquisition_sources_by_sample: (
+            Mapping[str, AcquisitionSourceIdentity] | None
         ) = None,
         *,
         publish_outputs: Literal[False] = False,
@@ -101,8 +108,8 @@ class TargetedApplicationRequest:
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
-    method_manifest_context: Any = None
-    excel_output_path: Any = None
+    method_manifest_context: object | None = None
+    excel_output_path: Path | None = None
     replace_existing_outputs: bool = False
     output_projection: Literal["finalized", "acquisition_baseline"] = "finalized"
 
@@ -123,14 +130,14 @@ class TargetedApplicationExecution:
 
     active_output: RunOutput
     finalized_results: tuple[FinalizedTargetProductionResult, ...] = ()
-    published_paths: tuple[Any, ...] = ()
+    published_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class TargetedPublication:
     """The committed paths and exact output view consumed by their writers."""
 
-    paths: tuple[Any, ...]
+    paths: tuple[Path, ...]
     output: RunOutput
 
 
@@ -179,6 +186,9 @@ class TargetedApplicationService:
             rt_prior_library=resolved_request.rt_prior_library,
             model_selection_expected_diff_approvals=(
                 resolved_request.model_selection_expected_diff_approvals
+            ),
+            acquisition_sources_by_sample=_acquisition_sources_by_sample(
+                input_snapshot.processing_request
             ),
             publish_outputs=False,
         )
@@ -351,6 +361,18 @@ def validate_finalized_result_population(
             )
 
 
+def _acquisition_sources_by_sample(
+    request: ProcessingRequestIdentity,
+) -> dict[str, AcquisitionSourceIdentity]:
+    sources_by_id = {
+        source.acquisition_source_id: source for source in request.acquisition_sources
+    }
+    return {
+        binding.adapter_input_key: sources_by_id[binding.acquisition_source_id]
+        for binding in request.acquisition_bindings
+    }
+
+
 def build_targeted_application_request(
     config: ExtractionConfig,
     targets: list[Target],
@@ -362,8 +384,8 @@ def build_targeted_application_request(
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
-    method_manifest_context: Any = None,
-    excel_output_path: Any = None,
+    method_manifest_context: object | None = None,
+    excel_output_path: Path | None = None,
     replace_existing_outputs: bool = False,
     output_projection: Literal["finalized", "acquisition_baseline"] = "finalized",
 ) -> TargetedApplicationRequest:

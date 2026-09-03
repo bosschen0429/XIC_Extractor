@@ -9,7 +9,12 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
+from xic_extractor.extraction import pipeline as extraction_pipeline
 from xic_extractor.extraction import targeted_production_workflow as production_workflow
+from xic_extractor.extraction.targeted_inputs import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
@@ -25,6 +30,7 @@ from xic_extractor.peak_detection.targeted_product_projection import (
     build_targeted_product_projection,
 )
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
+from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.signal_processing import find_peak_and_area
 
 
@@ -661,6 +667,96 @@ def test_crossed_acquisition_trace_sample_fails_closed(tmp_path: Path) -> None:
         )
 
 
+def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    extraction = output.file_results[0].results[target.label]
+    candidate = extraction.candidate_ms2_evidence
+    assert candidate is not None
+    product = candidate.best_product_evidence
+    assert product is not None
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        candidate_ms2_evidence=replace(
+            candidate,
+            best_product_evidence=replace(product, acquisition_source_id=""),
+        ),
+    )
+    source = build_acquisition_source_identity(
+        config.data_dir / "SampleA.raw",
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+
+    bound = extraction_pipeline._bind_acquisition_sources(
+        output,
+        {"SampleA": source},
+    )
+
+    bound_candidate = bound.file_results[0].results[target.label].candidate_ms2_evidence
+    assert bound_candidate is not None
+    bound_product = bound_candidate.best_product_evidence
+    assert bound_product is not None
+    assert bound_product.acquisition_source_id == source.acquisition_source_id
+
+
+def test_unstamped_ms2_acquisition_source_fails_closed(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    extraction = output.file_results[0].results[target.label]
+    candidate = extraction.candidate_ms2_evidence
+    assert candidate is not None
+    product = candidate.best_product_evidence
+    assert product is not None
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        candidate_ms2_evidence=replace(
+            candidate,
+            best_product_evidence=replace(product, acquisition_source_id=""),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="MS2 evidence crossed"):
+        execute_targeted_production_workflow(
+            build_targeted_application_request(
+                config,
+                [target],
+                injection_order={"SampleA": 1},
+            ),
+            output,
+        )
+
+
+def test_crossed_ms2_acquisition_source_fails_closed(tmp_path: Path) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    first = output.file_results[0].results[target.label]
+    first_candidate = first.candidate_ms2_evidence
+    second_candidate = (
+        output.file_results[1].results[target.label].candidate_ms2_evidence
+    )
+    assert first_candidate is not None
+    assert second_candidate is not None
+    assert second_candidate.best_product_evidence is not None
+    output.file_results[0].results[target.label] = replace(
+        first,
+        candidate_ms2_evidence=replace(
+            first_candidate,
+            best_product_evidence=second_candidate.best_product_evidence,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="MS2 evidence crossed"):
+        execute_targeted_production_workflow(
+            build_targeted_application_request(
+                config,
+                [target],
+                injection_order={"SampleA": 1, "SampleB": 2},
+            ),
+            output,
+        )
+
+
 def test_crossed_acquisition_result_target_fails_closed(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     extraction = output.file_results[0].results[target.label]
@@ -690,7 +786,13 @@ def production_case(
     config.data_dir.mkdir()
     file_results = []
     for sample_name in sample_names:
-        (config.data_dir / f"{sample_name}.raw").write_bytes(sample_name.encode())
+        raw_path = config.data_dir / f"{sample_name}.raw"
+        raw_path.write_bytes(sample_name.encode())
+        source = build_acquisition_source_identity(
+            raw_path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
         rt = np.linspace(1.0, 2.0, 101)
         intensity = 10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)
         trace = Trace.from_arrays(
@@ -747,6 +849,7 @@ def production_case(
                                 observed_loss_da=116.0,
                                 observed_loss_error_ppm=0.0,
                                 scan_number=42,
+                                acquisition_source_id=source.acquisition_source_id,
                             ),
                         ),
                         target_label=target.label,

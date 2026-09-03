@@ -15,6 +15,10 @@ from openpyxl import load_workbook
 
 from tests.test_targeted_production_workflow import production_case
 from xic_extractor.extraction import targeted_output_boundary
+from xic_extractor.extraction.targeted_inputs import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
 from xic_extractor.extraction.targeted_output_boundary import (
     TargetedOutputBoundaryError,
     publish_targeted_outputs,
@@ -30,6 +34,7 @@ from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
 from xic_extractor.output.review_report import review_report_path_for_excel
+from xic_extractor.processing_identity import build_acquisition_source_identity
 
 
 def _commit_staged_output_in_process(
@@ -439,7 +444,6 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
         [target],
         injection_order={"SampleA": 1},
     )
-    finalized = execute_targeted_production_workflow(request, output)
     original_commit = targeted_output_boundary._commit_staged_outputs
     commit_starts = Barrier(2)
 
@@ -465,8 +469,9 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
                 )
             ],
         )
+        completed = execute_targeted_production_workflow(request, evidence)
         try:
-            return ("success", publish_targeted_outputs(request, finalized, evidence))
+            return ("success", publish_targeted_outputs(request, completed, evidence))
         except Exception as exc:  # noqa: BLE001 - assert the public failure below
             return ("error", exc)
 
@@ -683,6 +688,37 @@ def test_commit_cancellation_after_final_move_rolls_back_output(
     assert not final.exists()
 
 
+def test_callback_exception_after_move_restores_complete_previous_set(
+    tmp_path: Path,
+) -> None:
+    staged = (tmp_path / "stage-a.csv", tmp_path / "stage-b.csv")
+    final = (tmp_path / "final-a.csv", tmp_path / "final-b.csv")
+    for index, path in enumerate(staged):
+        path.write_text(f"new-{index}", encoding="utf-8")
+    for index, path in enumerate(final):
+        path.write_text(f"old-{index}", encoding="utf-8")
+    checks = 0
+
+    def fail_after_first_move() -> bool:
+        nonlocal checks
+        checks += 1
+        if checks == 5:
+            raise RuntimeError("callback failed")
+        return False
+
+    with pytest.raises(TargetedOutputBoundaryError, match="was rolled back"):
+        targeted_output_boundary._commit_staged_outputs(
+            dict(zip(staged, final, strict=True)),
+            replace_existing=True,
+            should_cancel=fail_after_first_move,
+        )
+
+    assert [path.read_text(encoding="utf-8") for path in final] == [
+        "old-0",
+        "old-1",
+    ]
+
+
 def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     config = replace(config, keep_intermediate_csv=True)
@@ -785,6 +821,33 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
+def test_failed_fallback_copy_cannot_truncate_live_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup = tmp_path / "backup.csv"
+    final = tmp_path / "final.csv"
+    backup.write_bytes(b"complete-old-output")
+    final.write_bytes(b"complete-new-output")
+
+    def fail_replace(_source: Path, _destination: Path) -> Path:
+        raise OSError("primary restore blocked")
+
+    def fail_copy(_source: Path, destination: Path) -> None:
+        destination.write_bytes(b"partial")
+        raise OSError("copy interrupted")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    monkeypatch.setattr(targeted_output_boundary.shutil, "copy2", fail_copy)
+
+    restored = targeted_output_boundary._restore_previous_output(backup, final)
+
+    assert restored is False
+    assert final.read_bytes() == b"complete-new-output"
+    assert backup.read_bytes() == b"complete-old-output"
+    assert not list(tmp_path.glob(".final.csv.rollback-*"))
+
+
 def test_publisher_rejects_finalized_results_from_another_acquisition(
     tmp_path: Path,
 ) -> None:
@@ -794,7 +857,28 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     stale_root.mkdir()
     current_config, current_target, current_output = production_case(current_root)
     stale_config, stale_target, stale_output = production_case(stale_root)
-    (stale_config.data_dir / "SampleA.raw").write_bytes(b"stale acquisition")
+    stale_raw = stale_config.data_dir / "SampleA.raw"
+    stale_raw.write_bytes(b"stale acquisition")
+    stale_source = build_acquisition_source_identity(
+        stale_raw,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    stale_extraction = stale_output.file_results[0].results[stale_target.label]
+    stale_candidate = stale_extraction.candidate_ms2_evidence
+    assert stale_candidate is not None
+    stale_product = stale_candidate.best_product_evidence
+    assert stale_product is not None
+    stale_output.file_results[0].results[stale_target.label] = replace(
+        stale_extraction,
+        candidate_ms2_evidence=replace(
+            stale_candidate,
+            best_product_evidence=replace(
+                stale_product,
+                acquisition_source_id=stale_source.acquisition_source_id,
+            ),
+        ),
+    )
     stale_request = build_targeted_application_request(
         stale_config,
         [stale_target],
@@ -840,7 +924,27 @@ def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> No
         )
 
 
-def test_publisher_rejects_crossed_acquisition_result_target(tmp_path: Path) -> None:
+def test_publisher_rejects_invalid_method_manifest_context(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+
+    with pytest.raises(
+        TargetedOutputBoundaryError,
+        match="must be a MethodManifestContext",
+    ):
+        publish_targeted_outputs(
+            replace(request, method_manifest_context="invalid"),
+            completed,
+            output,
+        )
+
+
+def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     request = build_targeted_application_request(
         config,
@@ -853,10 +957,38 @@ def test_publisher_rejects_crossed_acquisition_result_target(tmp_path: Path) -> 
         extraction,
         target_label="CrossedTarget",
     )
+    output.file_results[0].group = "mutated-group"
+    output.diagnostics.append(
+        DiagnosticRecord("SampleA", target.label, "FILE_ERROR", "mutated")
+    )
+
+    publication = publish_targeted_outputs(request, completed, output)
+
+    assert publication.output.file_results[0].results[target.label].target_label == (
+        target.label
+    )
+    assert publication.output.file_results[0].group is None
+    assert publication.output.diagnostics == []
+
+
+def test_publisher_rejects_reordered_acquisition_after_completion(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1, "SampleB": 2},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    output.file_results.reverse()
 
     with pytest.raises(
         TargetedOutputBoundaryError,
-        match="crossed its declared Target identity",
+        match="crossed the acquisition evidence",
     ):
         publish_targeted_outputs(request, completed, output)
 

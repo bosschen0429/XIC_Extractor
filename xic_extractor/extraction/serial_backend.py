@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import gc
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
@@ -27,6 +28,8 @@ def run_serial(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceIdentity]
+    | None = None,
 ) -> RunOutput:
     from xic_extractor import extractor
 
@@ -35,7 +38,16 @@ def run_serial(
     for raw_path in raw_paths:
         if should_stop is not None and should_stop():
             break
-        prepass = extract_istd_anchors_only(config, istd_targets, raw_path)
+        expected_source = _expected_source(raw_path, acquisition_sources_by_sample)
+        if expected_source is None:
+            prepass = extract_istd_anchors_only(config, istd_targets, raw_path)
+        else:
+            prepass = extract_istd_anchors_only(
+                config,
+                istd_targets,
+                raw_path,
+                expected_acquisition_source=expected_source,
+            )
         if prepass is None:
             continue
         anchors, _, _, _ = prepass
@@ -57,6 +69,10 @@ def run_serial(
         if should_stop is not None and should_stop():
             break
 
+        extraction_kwargs = {}
+        expected_source = _expected_source(raw_path, acquisition_sources_by_sample)
+        if expected_source is not None:
+            extraction_kwargs["expected_acquisition_source"] = expected_source
         raw_result = extract_raw_file_result(
             index,
             config,
@@ -67,6 +83,7 @@ def run_serial(
             model_selection_expected_diff_approvals=(
                 model_selection_expected_diff_approvals
             ),
+            **extraction_kwargs,
         )
         file_results.append(raw_result.file_result)
         diagnostics.extend(raw_result.diagnostics)
@@ -77,3 +94,17 @@ def run_serial(
             gc.collect()
 
     return extractor.RunOutput(file_results=file_results, diagnostics=diagnostics)
+
+
+def _expected_source(
+    raw_path: Path,
+    sources_by_sample: Mapping[str, AcquisitionSourceIdentity] | None,
+) -> AcquisitionSourceIdentity | None:
+    if sources_by_sample is None:
+        return None
+    try:
+        return sources_by_sample[raw_path.stem]
+    except KeyError as exc:
+        raise ConfigError(
+            f"RAW input {raw_path.name!r} has no expected acquisition source."
+        ) from exc

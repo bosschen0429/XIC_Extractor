@@ -125,6 +125,9 @@ def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None
     assert calls["progress_callback"] is progress
     assert calls["should_stop"] is should_stop
     assert calls["publish_outputs"] is False
+    acquisition_sources = calls["acquisition_sources_by_sample"]
+    assert set(acquisition_sources) == {"SampleA"}
+    assert acquisition_sources["SampleA"].byte_size == len(b"sample")
 
 
 def test_service_resolves_approval_registry_at_adapter_boundary(

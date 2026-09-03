@@ -5,8 +5,13 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.targeted_inputs import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
 from xic_extractor.extractor import RunOutput
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
+from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import (
     PeakCandidate,
@@ -78,13 +83,93 @@ def test_acquire_uses_serial_backend_by_default(
         should_stop=_should_stop,
         injection_order={"SampleA": 1},
         rt_prior_library={},
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert output is returned
     assert calls == [(config, targets, ["A.raw", "B.raw"])]
+
+
+def test_process_file_opens_raw_with_expected_acquisition_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor import extractor
+    from xic_extractor.extraction.target_extraction import process_file
+
+    config = _config(tmp_path, keep_intermediate_csv=False)
+    raw_path = config.data_dir / "SampleA.raw"
+    raw_path.write_bytes(b"identity-bound-raw")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    captured = {}
+
+    class _OpenedRaw:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def open_raw(actual_path, actual_dll_dir, *, expected_acquisition_source):
+        captured["path"] = actual_path
+        captured["dll_dir"] = actual_dll_dir
+        captured["source"] = expected_acquisition_source
+        return _OpenedRaw()
+
+    monkeypatch.setattr(extractor, "open_raw", open_raw)
+
+    file_result, diagnostics = process_file(
+        config,
+        [],
+        raw_path,
+        expected_acquisition_source=source,
+    )
+
+    assert file_result.sample_name == "SampleA"
+    assert diagnostics == []
+    assert captured == {
+        "path": raw_path,
+        "dll_dir": config.dll_dir,
+        "source": source,
+    }
+
+
+def test_acquire_passes_expected_sources_to_serial_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor import extractor
+    from xic_extractor.extraction import serial_backend
+
+    config = _config(tmp_path, keep_intermediate_csv=False)
+    raw_path = config.data_dir / "SampleA.raw"
+    raw_path.write_bytes(b"identity-bound-raw")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    captured = {}
+
+    def run_serial(*_args, **kwargs):
+        captured.update(kwargs)
+        return RunOutput(file_results=[], diagnostics=[])
+
+    monkeypatch.setattr(serial_backend, "run_serial", run_serial)
+
+    extractor.acquire(
+        config,
+        [_target("Analyte")],
+        injection_order={"SampleA": 1},
+        rt_prior_library={},
+        acquisition_sources_by_sample={"SampleA": source},
+    )
+
+    assert captured["acquisition_sources_by_sample"] == {"SampleA": source}
 
 
 def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
@@ -99,9 +184,7 @@ def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
         **{
             **_config(tmp_path, keep_intermediate_csv=False).__dict__,
             "targeted_ms1_shape_identity_support_tsv": support_path,
-            "targeted_ms1_shape_identity_activation_policy": (
-                "limited_5hmdc_5medc_v1"
-            ),
+            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc_v1"),
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
@@ -173,9 +256,7 @@ def test_acquire_limited_shape_identity_policy_without_support_tsv_keeps_output(
     config = ExtractionConfig(
         **{
             **_config(tmp_path, keep_intermediate_csv=False).__dict__,
-            "targeted_ms1_shape_identity_activation_policy": (
-                "limited_5hmdc_5medc_v1"
-            ),
+            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc_v1"),
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")

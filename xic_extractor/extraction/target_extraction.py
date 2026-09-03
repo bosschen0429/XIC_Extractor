@@ -49,6 +49,7 @@ from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
 )
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import PeakCandidate
 
@@ -69,6 +70,7 @@ def extract_raw_file_result(
     scoring_context_factory: Callable[..., Any] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
 ) -> RawFileExtractionResult:
     from xic_extractor import extractor
 
@@ -79,6 +81,7 @@ def extract_raw_file_result(
         scoring_context_factory=scoring_context_factory,
         rt_prior_library=rt_prior_library,
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
+        expected_acquisition_source=expected_acquisition_source,
     )
     return extractor.RawFileExtractionResult(
         raw_index=raw_index,
@@ -100,13 +103,23 @@ def process_file(
     precomputed_istd_shape_metrics: dict[str, tuple[float, float | None]] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor import extractor
 
     sample_name = raw_path.stem
     approval_records = model_selection_expected_diff_approvals
     try:
-        with extractor.open_raw(raw_path, config.dll_dir) as raw:
+        raw_context = (
+            extractor.open_raw(raw_path, config.dll_dir)
+            if expected_acquisition_source is None
+            else extractor.open_raw(
+                raw_path,
+                config.dll_dir,
+                expected_acquisition_source=expected_acquisition_source,
+            )
+        )
+        with raw_context as raw:
             results = dict(precomputed_istd_results or {})
             peak_candidate_rows: list[dict[str, str]] = []
             peak_candidate_boundary_rows: list[dict[str, str]] = []

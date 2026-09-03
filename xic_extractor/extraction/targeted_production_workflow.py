@@ -144,6 +144,8 @@ class PreparedTargetedProductionWorkflow:
     targets: tuple[ResolvedTargetDefinition, ...]
     results_by_sample: tuple[tuple[ResolvedCanonicalSampleIdentity, FileResult], ...]
     raw_stems: frozenset[str]
+    acquisition_file_ids: tuple[int, ...]
+    acquisition_snapshot: RunOutput
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,9 +250,11 @@ def prepare_targeted_production_workflow(
     raw_paths = list(current_inputs.raw_paths)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
+    acquisition_file_ids = tuple(id(item) for item in acquisition_evidence.file_results)
+    acquisition_snapshot = deepcopy(acquisition_evidence)
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
-        acquisition_evidence.file_results,
+        acquisition_snapshot.file_results,
     )
     resolved_inputs = current_inputs.resolved_inputs
     target_snapshot = current_inputs.target_snapshot
@@ -296,6 +300,8 @@ def prepare_targeted_production_workflow(
             )
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
+        acquisition_file_ids=acquisition_file_ids,
+        acquisition_snapshot=acquisition_snapshot,
     )
 
 
@@ -556,6 +562,18 @@ def _execute_target(
                 if candidate_ms2_evidence is None
                 else candidate_ms2_evidence.best_product_evidence
             )
+            if product is not None:
+                acquisition_source = resolve_request_acquisition_source(
+                    processing_owners=context.owners,
+                    sample=sample,
+                )
+                if (
+                    product.acquisition_source_id
+                    != acquisition_source.acquisition_source_id
+                ):
+                    raise RuntimeError(
+                        "Targeted MS2 evidence crossed the resolved acquisition source"
+                    )
             if (
                 product is not None
                 and product.scan_number is not None
