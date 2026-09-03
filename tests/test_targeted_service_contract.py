@@ -96,18 +96,21 @@ def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None
     targets = [_target()]
     calls: dict[str, object] = {}
     output = RunOutput(file_results=[], diagnostics=[])
+    stopped = False
 
     def runner(actual_config, actual_targets, **kwargs):
+        nonlocal stopped
         calls["config"] = actual_config
         calls["targets"] = actual_targets
         calls.update(kwargs)
+        stopped = True
         return output
 
     def progress(_done: int, _total: int, _name: str) -> None:
         return None
 
     def should_stop() -> bool:
-        return True
+        return stopped
 
     request = build_targeted_application_request(
         config,
@@ -130,6 +133,7 @@ def test_service_resolves_approval_registry_at_adapter_boundary(
 ) -> None:
     resolved_approvals: dict[str, object] = {}
     calls: dict[str, object] = {}
+    stopped = False
 
     def resolve_approvals(actual_config, approvals):
         assert actual_config is config
@@ -137,7 +141,9 @@ def test_service_resolves_approval_registry_at_adapter_boundary(
         return resolved_approvals
 
     def runner(_config, _targets, **kwargs):
+        nonlocal stopped
         calls.update(kwargs)
+        stopped = True
         return RunOutput(file_results=[], diagnostics=[])
 
     data_dir = tmp_path / "data"
@@ -154,7 +160,7 @@ def test_service_resolves_approval_registry_at_adapter_boundary(
         build_targeted_application_request(
             config,
             [_target()],
-            should_stop=lambda: True,
+            should_stop=lambda: stopped,
         )
     )
 

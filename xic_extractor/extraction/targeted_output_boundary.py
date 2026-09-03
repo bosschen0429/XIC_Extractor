@@ -495,14 +495,10 @@ def _commit_staged_outputs(
         except (_TargetedPublicationCancelled, OSError) as exc:
             rollback_failures: list[Path] = []
             for staged, final in reversed(moved):
-                try:
-                    final.replace(staged)
-                except OSError:
+                if not _restore_moved_output(final, staged):
                     rollback_failures.append(final)
             for backup, final in reversed(backups):
-                try:
-                    backup.replace(final)
-                except OSError:
+                if not _restore_previous_output(backup, final):
                     rollback_failures.append(final)
             detail = (
                 f"; rollback failed for {rollback_failures}"
@@ -525,6 +521,32 @@ def _commit_staged_outputs(
                 f"Targeted output commit failed and was rolled back{detail}"
             ) from exc
     return tuple(final for _, final in ordered)
+
+
+def _restore_moved_output(final: Path, staged: Path) -> bool:
+    try:
+        final.replace(staged)
+        return True
+    except OSError:
+        try:
+            shutil.copy2(final, staged)
+            final.unlink()
+            return True
+        except OSError:
+            return False
+
+
+def _restore_previous_output(backup: Path, final: Path) -> bool:
+    try:
+        backup.replace(final)
+        return True
+    except OSError:
+        try:
+            shutil.copy2(backup, final)
+            backup.unlink()
+            return True
+        except OSError:
+            return False
 
 
 @contextmanager

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -17,7 +17,7 @@ from xic_extractor.peak_detection.hypotheses import (
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecord,
+    ExpectedDiffApprovalRecords,
     PeakModelSelectionResult,
 )
 from xic_extractor.peak_detection.selection_decision import (
@@ -203,9 +203,7 @@ def run(
     should_stop: Callable[[], bool] | None = None,
     injection_order: dict[str, int] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ) = None,
+    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> RunOutput:
     from xic_extractor.extraction import targeted_diagnostic_application as application
     from xic_extractor.extraction import targeted_service
@@ -232,15 +230,12 @@ def acquire(
     should_stop: Callable[[], bool] | None = None,
     injection_order: dict[str, int] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ) = None,
+    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     *,
     publish_outputs: Literal[False] = False,
 ) -> RunOutput:
     from xic_extractor.extraction.pipeline import run_pipeline
 
-    expected_diffs = model_selection_expected_diff_approvals
     return run_pipeline(
         config,
         targets,
@@ -248,6 +243,8 @@ def acquire(
         should_stop=should_stop,
         injection_order=injection_order,
         rt_prior_library=rt_prior_library,
-        model_selection_expected_diff_approvals=expected_diffs,
+        model_selection_expected_diff_approvals=(
+            model_selection_expected_diff_approvals
+        ),
         publish_outputs=publish_outputs,
     )

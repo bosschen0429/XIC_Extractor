@@ -740,7 +740,7 @@ def test_replay_commit_failure_restores_previous_output_set(
     assert {path: path.read_bytes() for path in original_paths} == original_bytes
 
 
-def test_failed_rollback_preserves_recoverable_previous_outputs(
+def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -753,7 +753,7 @@ def test_failed_rollback_preserves_recoverable_previous_outputs(
     )
     finalized = execute_targeted_production_workflow(request, output)
     original_paths = publish_targeted_outputs(request, finalized, output).paths
-    original_bytes = {path.read_bytes() for path in original_paths}
+    original_bytes = {path: path.read_bytes() for path in original_paths}
     original_replace = Path.replace
     commit_count = 0
     restore_failed = False
@@ -773,7 +773,7 @@ def test_failed_rollback_preserves_recoverable_previous_outputs(
 
     with pytest.raises(
         TargetedOutputBoundaryError,
-        match="recoverable files retained",
+        match="was rolled back",
     ):
         publish_targeted_outputs(
             replace(request, replace_existing_outputs=True),
@@ -781,15 +781,8 @@ def test_failed_rollback_preserves_recoverable_previous_outputs(
             output,
         )
 
-    recovery_roots = list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
-    assert len(recovery_roots) == 1
-    recoverable = [
-        path.read_bytes()
-        for path in (recovery_roots[0] / ".existing").iterdir()
-        if path.is_file()
-    ]
-    assert recoverable
-    assert set(recoverable).issubset(original_bytes)
+    assert {path: path.read_bytes() for path in original_paths} == original_bytes
+    assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
 def test_publisher_rejects_finalized_results_from_another_acquisition(
@@ -917,12 +910,47 @@ def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> No
     assert not config.output_csv.exists()
 
 
+def test_service_fingerprints_each_raw_only_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xic_extractor.processing_identity as identity
+
+    sample_names = ("SampleA", "SampleB")
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=sample_names,
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1, "SampleB": 2},
+    )
+    original_fingerprint = identity.fingerprint_file_content
+    fingerprinted: list[Path] = []
+
+    def observe_fingerprint(path: str | Path, **kwargs):
+        fingerprinted.append(Path(path))
+        return original_fingerprint(path, **kwargs)
+
+    monkeypatch.setattr(identity, "fingerprint_file_content", observe_fingerprint)
+
+    TargetedApplicationService(lambda *_args, **_kwargs: output).execute_application(
+        request
+    )
+
+    assert fingerprinted == [
+        config.data_dir / "SampleA.raw",
+        config.data_dir / "SampleB.raw",
+    ]
+
+
 def test_cancellation_after_typed_completion_never_invokes_publisher(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    stop_results = iter((False, True))
+    stop_results = iter((False, False, True))
     request = build_targeted_application_request(
         config,
         [target],
@@ -945,7 +973,7 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
     assert execution.published_paths == ()
 
 
-def test_cancellation_after_acquisition_skips_finalization(
+def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -963,10 +991,11 @@ def test_cancellation_after_acquisition_skips_finalization(
     )
 
     execution = TargetedApplicationService(
-        lambda *_args, **_kwargs: output
+        lambda *_args, **_kwargs: pytest.fail("cancelled run invoked acquisition")
     ).execute_application(request)
 
-    assert execution.active_output is output
+    assert execution.active_output.file_results == []
+    assert execution.active_output.diagnostics == []
     assert execution.finalized_results == ()
     assert execution.published_paths == ()
 

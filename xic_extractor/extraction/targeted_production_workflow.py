@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from copy import deepcopy
 from dataclasses import InitVar, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -21,7 +22,7 @@ from xic_extractor.alignment.workflow import (
     WorkflowRuntimeInvocation,
     execute_alignment_workflow,
 )
-from xic_extractor.config import ConfigError, Target
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -126,7 +127,9 @@ _COMPLETED_WORKFLOW_MINT_TOKEN = object()
 class TargetedProductionInputSnapshot:
     """Exact mutable input state observed at one production boundary."""
 
+    config: ExtractionConfig
     raw_paths: tuple[Path, ...]
+    raw_file_states: tuple[tuple[int, int, int, int, int], ...]
     resolved_inputs: ResolvedTargetedInputs
     target_snapshot: TargetListSnapshot
     processing_request: ProcessingRequestIdentity
@@ -237,12 +240,11 @@ def prepare_targeted_production_workflow(
 ) -> PreparedTargetedProductionWorkflow:
     """Bind acquisition rows to exact RAW, request, sample, and Target owners."""
 
-    current_inputs = snapshot_targeted_production_inputs(request)
-    if expected_inputs is not None and (
-        current_inputs.raw_paths != expected_inputs.raw_paths
-        or current_inputs.processing_request != expected_inputs.processing_request
-    ):
-        raise RuntimeError("Targeted production inputs changed during acquisition")
+    current_inputs = (
+        snapshot_targeted_production_inputs(request)
+        if expected_inputs is None
+        else _validate_targeted_production_input_snapshot(request, expected_inputs)
+    )
     raw_paths = list(current_inputs.raw_paths)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
@@ -318,17 +320,67 @@ def snapshot_targeted_production_inputs(
         request.targets,
         identity_namespace=_IDENTITY_NAMESPACE,
     )
+    raw_file_states = _raw_file_states(raw_paths)
     processing_request = build_targeted_processing_request_identity(
         request.config,
         target_snapshot=target_snapshot,
         raw_paths=raw_paths,
         resolved_inputs=resolved_inputs,
+        should_cancel=request.should_stop,
     )
+    if _raw_file_states(raw_paths) != raw_file_states:
+        raise RuntimeError("Targeted production inputs changed during fingerprinting")
     return TargetedProductionInputSnapshot(
+        config=deepcopy(request.config),
         raw_paths=tuple(raw_paths),
+        raw_file_states=raw_file_states,
         resolved_inputs=resolved_inputs,
         target_snapshot=target_snapshot,
         processing_request=processing_request,
+    )
+
+
+def _validate_targeted_production_input_snapshot(
+    request: TargetedApplicationRequest,
+    expected: TargetedProductionInputSnapshot,
+) -> TargetedProductionInputSnapshot:
+    raw_paths = resolve_targeted_raw_paths(request.config)
+    resolved_inputs = resolve_targeted_inputs(
+        request.config,
+        raw_paths=raw_paths,
+        injection_order=request.injection_order,
+        rt_prior_library=request.rt_prior_library,
+        model_selection_expected_diff_approvals=(
+            request.model_selection_expected_diff_approvals
+        ),
+    )
+    target_snapshot = mint_target_list_snapshot(
+        request.targets,
+        identity_namespace=_IDENTITY_NAMESPACE,
+    )
+    if (
+        request.config != expected.config
+        or tuple(raw_paths) != expected.raw_paths
+        or _raw_file_states(raw_paths) != expected.raw_file_states
+        or resolved_inputs != expected.resolved_inputs
+        or target_snapshot != expected.target_snapshot
+    ):
+        raise RuntimeError("Targeted production inputs changed during acquisition")
+    return expected
+
+
+def _raw_file_states(
+    raw_paths: list[Path],
+) -> tuple[tuple[int, int, int, int, int], ...]:
+    return tuple(
+        (
+            state.st_dev,
+            state.st_ino,
+            state.st_size,
+            state.st_mtime_ns,
+            state.st_ctime_ns,
+        )
+        for state in (path.stat() for path in raw_paths)
     )
 
 

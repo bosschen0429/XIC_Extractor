@@ -154,13 +154,22 @@ class TargetedApplicationService:
         """Acquire once and publish only a complete finalized Target population."""
 
         resolved_request = _resolve_application_request(request)
+        from xic_extractor.processing_identity import FingerprintCancelledError
+
         from .targeted_production_workflow import (
             complete_prepared_targeted_production_workflow,
             prepare_targeted_production_workflow,
             snapshot_targeted_production_inputs,
         )
 
-        input_snapshot = snapshot_targeted_production_inputs(resolved_request)
+        try:
+            input_snapshot = snapshot_targeted_production_inputs(resolved_request)
+        except FingerprintCancelledError:
+            from xic_extractor.extractor import RunOutput
+
+            return TargetedApplicationExecution(
+                active_output=RunOutput(file_results=[], diagnostics=[])
+            )
         active_output = self.runner(
             resolved_request.config,
             list(resolved_request.targets),
