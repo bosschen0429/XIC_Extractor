@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -30,6 +30,10 @@ from xic_extractor.peak_detection.targeted_product_projection import (
 
 class TargetedOutputBoundaryError(RuntimeError):
     """Raised before a complete finalized output set can be published."""
+
+
+class _TargetedPublicationCancelled(Exception):
+    """Internal signal for a cancellation rolled back by the publish transaction."""
 
 
 _STAGE_OUTPUT_CSV = "__targeted_output__.csv"
@@ -100,8 +104,11 @@ def publish_targeted_outputs(
         paths = _commit_staged_outputs(
             staged_to_final,
             replace_existing=request.replace_existing_outputs,
+            should_cancel=request.should_stop,
         )
         return TargetedPublication(paths=paths, output=render_view)
+    except _TargetedPublicationCancelled:
+        return TargetedPublication(paths=(), output=render_view)
     except TargetedOutputBoundaryError:
         raise
     except Exception as exc:
@@ -296,12 +303,19 @@ def _commit_staged_outputs(
     mapping: dict[Path, Path],
     *,
     replace_existing: bool = False,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[Path, ...]:
     moved: list[tuple[Path, Path]] = []
     backups: list[tuple[Path, Path]] = []
     ordered = sorted(mapping.items(), key=lambda item: item[1].name)
+
+    def check_cancellation() -> None:
+        if should_cancel is not None and should_cancel():
+            raise _TargetedPublicationCancelled
+
     try:
         if replace_existing:
+            check_cancellation()
             backup_dir = next(iter(mapping)).parent / ".existing"
             backup_dir.mkdir()
             for index, (_, final) in enumerate(ordered):
@@ -309,11 +323,14 @@ def _commit_staged_outputs(
                     backup = backup_dir / f"{index}-{final.name}"
                     final.replace(backup)
                     backups.append((backup, final))
+                    check_cancellation()
         for staged, final in ordered:
+            check_cancellation()
             final.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(final)
             moved.append((staged, final))
-    except OSError as exc:
+            check_cancellation()
+    except (_TargetedPublicationCancelled, OSError) as exc:
         rollback_failures: list[Path] = []
         for staged, final in reversed(moved):
             try:
@@ -328,6 +345,13 @@ def _commit_staged_outputs(
         detail = (
             f"; rollback failed for {rollback_failures}" if rollback_failures else ""
         )
+        if isinstance(exc, _TargetedPublicationCancelled):
+            if rollback_failures:
+                raise TargetedOutputBoundaryError(
+                    "Targeted output commit was cancelled and rollback failed"
+                    f"{detail}"
+                ) from exc
+            raise
         raise TargetedOutputBoundaryError(
             f"Targeted output commit failed and was rolled back{detail}"
         ) from exc

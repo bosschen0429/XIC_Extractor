@@ -36,7 +36,9 @@ def _isolate_gui_shell_from_production_workflow(monkeypatch):
                     output,
                     output_path=request.excel_output_path,
                 )
-            return type("Execution", (), {"active_output": output})()
+            return type(
+                "Execution", (), {"active_output": output, "published_paths": ()}
+            )()
 
     from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 
@@ -239,6 +241,52 @@ def test_worker_does_not_write_excel_or_emit_summary_after_cancellation(
     assert wrote_excel == []
     assert summaries == []
     assert cancelled == [True]
+
+
+def test_worker_emits_finished_when_interruption_follows_successful_publication(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    config = _config(tmp_path)
+    target = _target("Analyte")
+    output = RunOutput(file_results=[], diagnostics=[])
+    interrupted = {"value": False}
+    summaries: list[dict] = []
+    cancelled: list[bool] = []
+
+    monkeypatch.setattr(
+        module.config_module,
+        "load_config",
+        lambda _path: (config, [target]),
+    )
+
+    class _Service:
+        def execute_application(self, _request):
+            interrupted["value"] = True
+            return type(
+                "Execution",
+                (),
+                {
+                    "active_output": output,
+                    "published_paths": (config.output_csv,),
+                },
+            )()
+
+    monkeypatch.setattr(
+        module,
+        "build_canonical_targeted_application_service",
+        lambda _runner: _Service(),
+    )
+    worker = PipelineWorker(tmp_path / "config")
+    monkeypatch.setattr(worker, "isInterruptionRequested", lambda: interrupted["value"])
+    worker.finished.connect(summaries.append)
+    worker.cancelled.connect(lambda: cancelled.append(True))
+
+    worker.run()
+
+    assert len(summaries) == 1
+    assert cancelled == []
 
 
 @pytest.mark.parametrize(

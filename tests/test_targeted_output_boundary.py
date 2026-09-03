@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_targeted_production_workflow import production_case
+from xic_extractor.extraction import targeted_output_boundary
 from xic_extractor.extraction.targeted_output_boundary import (
     TargetedOutputBoundaryError,
     publish_targeted_outputs,
@@ -351,6 +352,55 @@ def test_commit_failure_rolls_back_all_final_paths(
         publish_targeted_outputs(request, finalized, output)
 
     assert not any(config.output_csv.parent.iterdir())
+
+
+def test_commit_cancellation_after_first_move_rolls_back_all_final_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    cancellation_requested = False
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        should_stop=lambda: cancellation_requested,
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    original_replace = Path.replace
+
+    def cancel_after_first_commit(source: Path, target_path: Path) -> Path:
+        nonlocal cancellation_requested
+        result = original_replace(source, target_path)
+        if source.parent.name.startswith(".xic-targeted-publish-"):
+            cancellation_requested = True
+        return result
+
+    monkeypatch.setattr(Path, "replace", cancel_after_first_commit)
+
+    publication = publish_targeted_outputs(request, finalized, output)
+
+    assert publication.paths == ()
+    assert not any(config.output_csv.parent.iterdir())
+
+
+def test_commit_cancellation_after_final_move_rolls_back_output(
+    tmp_path: Path,
+) -> None:
+    staged = tmp_path / "staged.csv"
+    final = tmp_path / "final.csv"
+    staged.write_text("value\n", encoding="utf-8")
+    cancellation_checks = iter((False, True))
+
+    with pytest.raises(targeted_output_boundary._TargetedPublicationCancelled):
+        targeted_output_boundary._commit_staged_outputs(
+            {staged: final},
+            should_cancel=lambda: next(cancellation_checks),
+        )
+
+    assert staged.is_file()
+    assert not final.exists()
 
 
 def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:

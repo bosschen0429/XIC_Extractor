@@ -62,7 +62,7 @@ class PipelineWorker(QThread):
                 )
             excel_path = _excel_output_path(config)
             with scope:
-                output = (
+                execution = (
                     build_canonical_targeted_application_service(extractor.acquire)
                     .execute_application(
                         build_targeted_application_request(
@@ -78,9 +78,9 @@ class PipelineWorker(QThread):
                             excel_output_path=excel_path,
                         )
                     )
-                    .active_output
                 )
-            if self.isInterruptionRequested():
+            output = execution.active_output
+            if self.isInterruptionRequested() and not execution.published_paths:
                 self.cancelled.emit()
                 return
             summary = build_summary(config, targets, output, excel_path)
