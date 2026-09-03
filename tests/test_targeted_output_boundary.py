@@ -50,6 +50,31 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
+def test_duplicate_declared_output_destinations_publish_nothing(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    duplicate_excel_path = (
+        config.output_csv.parent
+        / "equivalent-destination"
+        / ".."
+        / config.output_csv.name
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        excel_output_path=duplicate_excel_path,
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    with pytest.raises(TargetedOutputBoundaryError, match="duplicate destination"):
+        publish_targeted_outputs(request, finalized, output)
+
+    assert not any(config.output_csv.parent.iterdir())
+
+
 def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     request = build_targeted_application_request(

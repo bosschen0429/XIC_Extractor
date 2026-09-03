@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -30,6 +32,11 @@ class TargetedOutputBoundaryError(RuntimeError):
     """Raised before a complete finalized output set can be published."""
 
 
+_STAGE_OUTPUT_CSV = "__targeted_output__.csv"
+_STAGE_DIAGNOSTICS_CSV = "__targeted_diagnostics__.csv"
+_STAGE_EXCEL_OUTPUT = "__targeted_output__.xlsx"
+
+
 def publish_targeted_outputs(
     request: TargetedApplicationRequest,
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
@@ -48,8 +55,8 @@ def publish_targeted_outputs(
     try:
         stage_config = replace(
             request.config,
-            output_csv=stage_root / request.config.output_csv.name,
-            diagnostics_csv=stage_root / request.config.diagnostics_csv.name,
+            output_csv=stage_root / _STAGE_OUTPUT_CSV,
+            diagnostics_csv=stage_root / _STAGE_DIAGNOSTICS_CSV,
         )
         write_outputs(
             stage_config,
@@ -59,7 +66,7 @@ def publish_targeted_outputs(
         )
         stage_excel: Path | None = None
         if request.excel_output_path is not None:
-            stage_excel = stage_root / request.excel_output_path.name
+            stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
             write_excel_from_run_output(
                 stage_config,
                 list(request.targets),
@@ -74,16 +81,20 @@ def publish_targeted_outputs(
         )
         final_manifest = method_manifest_path(request.config)
         stage_manifest = method_manifest_path(stage_config)
+        staged_to_final[stage_manifest] = final_manifest
+        _reject_duplicate_destinations(staged_to_final)
+        artifact_sources = {
+            final: staged
+            for staged, final in staged_to_final.items()
+            if staged != stage_manifest
+        }
         write_method_manifest(
             request.config,
             request.targets,
             context=request.method_manifest_context,
             destination=stage_manifest,
-            artifact_sources={
-                final: staged for staged, final in staged_to_final.items()
-            },
+            artifact_sources=artifact_sources,
         )
-        staged_to_final[stage_manifest] = final_manifest
         if not request.replace_existing_outputs:
             _reject_collisions(staged_to_final.values())
         paths = _commit_staged_outputs(
@@ -263,6 +274,22 @@ def _reject_collisions(paths: Any) -> None:
         raise TargetedOutputBoundaryError(
             f"Targeted output path already exists: {joined}"
         )
+
+
+def _reject_duplicate_destinations(mapping: Mapping[Path, Path]) -> None:
+    staged_by_destination: dict[str, Path] = {}
+    for staged, final in mapping.items():
+        normalized_final = os.path.normcase(
+            str(Path(final).expanduser().resolve(strict=False))
+        )
+        previous_staged = staged_by_destination.get(normalized_final)
+        if previous_staged is not None:
+            raise TargetedOutputBoundaryError(
+                "Targeted output transaction maps staged artifacts "
+                f"{previous_staged} and {staged} to duplicate destination "
+                f"{normalized_final}"
+            )
+        staged_by_destination[normalized_final] = staged
 
 
 def _commit_staged_outputs(

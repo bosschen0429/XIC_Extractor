@@ -144,7 +144,8 @@ def execute_targeted_production_workflow(
 
     context = _build_context(request, acquisition_evidence)
     return tuple(
-        _execute_target(context, request, target) for target in context.targets
+        _execute_target(_context_for_target(context, index), request, target)
+        for index, target in enumerate(context.targets)
     )
 
 
@@ -214,6 +215,28 @@ def _build_context(
             zip(samples, acquisition_evidence.file_results, strict=True)
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
+    )
+
+
+def _context_for_target(
+    context: _ProductionContext,
+    target_index: int,
+) -> _ProductionContext:
+    """Reuse the initial attempt, then issue one attempt per later Target."""
+
+    if target_index == 0:
+        return context
+    owners = context.owners
+    attempt = issue_processing_attempt(owners.request)
+    return replace(
+        context,
+        owners=compose_processing_owner_references(
+            request=owners.request,
+            attempt=attempt,
+            sample_snapshot=owners.sample_snapshot,
+            sample_resolutions=owners.sample_resolutions,
+            target_snapshot=owners.target_snapshot,
+        ),
     )
 
 
@@ -584,18 +607,19 @@ def _runtime_telemetry(
     terminal = cast(Any, coordinator)
     event_count = runtime_observation_event_count(terminal)
     worker_keys = runtime_started_worker_keys(terminal)
+    reason = "not_collected_by_targeted_foreground_runner"
     return RuntimeTelemetrySamples(
         event_monotonic_offsets_ns=tuple(range(event_count)),
         artifact_io=RuntimeArtifactIoSample(0, 0, 0, 0),
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
-            availability=RuntimeMetricAvailability.MEASURED,
-            value=0,
+            availability=RuntimeMetricAvailability.UNSUPPORTED,
+            reason=reason,
         ),
         worker_peak_rss=tuple(
             RuntimeWorkerPeakRssSample(
                 worker_key=worker_key,
-                availability=RuntimeMetricAvailability.MEASURED,
-                value=0,
+                availability=RuntimeMetricAvailability.UNSUPPORTED,
+                reason=reason,
             )
             for worker_key in worker_keys
         ),
