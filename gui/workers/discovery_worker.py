@@ -262,7 +262,10 @@ class DiscoveryWorker(QThread):
             dll_dir=request.dll_dir,
             output_dir=request.output_dir,
             alignment_config=recipe.alignment_config,
-            peak_config=self._alignment_peak_config(request),
+            peak_config=self._alignment_peak_config(
+                request,
+                recipe.discovery_settings,
+            ),
             discovery_settings=recipe.discovery_settings,
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             discovery_processing_run_spec=processing_run_spec,
@@ -322,13 +325,16 @@ class DiscoveryWorker(QThread):
             resolver_mode=settings.resolver_mode,
         )
 
-    def _alignment_peak_config(self, request: DiscoveryRequest) -> ExtractionConfig:
-        defaults = CANONICAL_SETTINGS_DEFAULTS
+    def _alignment_peak_config(
+        self,
+        request: DiscoveryRequest,
+        settings: DiscoverySettings,
+    ) -> ExtractionConfig:
         return self._peak_config(
             request.raw_dir or request.output_dir,
             request,
-            nl_min_intensity_ratio=float(defaults["nl_min_intensity_ratio"]),
-            resolver_mode="local_minimum",
+            nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
+            resolver_mode=settings.resolver_mode,
         )
 
     def _peak_config(

@@ -12,6 +12,7 @@ from xic_extractor.alignment.owner_build_route_receipt import (
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
+from xic_extractor.config import ExtractionConfig
 
 
 def _alignment_outputs(
@@ -296,7 +297,11 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     request = DiscoveryRequest(
         mode=mode,
         preset="dna_dr_product_ready",
-        tuning_overrides={"nl_tolerance_ppm": 15.0},
+        tuning_overrides={
+            "nl_tolerance_ppm": 15.0,
+            "nl_min_intensity_ratio": 0.02,
+            "resolver_mode": "legacy_savgol",
+        },
         raw_dir=raw_dir,
         raw_file=None,
         dll_dir=tmp_path / "dll",
@@ -331,6 +336,10 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     recipe = bound_recipes[0]
     assert recipe.discovery_settings.nl_tolerance_ppm == 15.0
     assert captured_alignment["discovery_settings"] is recipe.discovery_settings
+    peak_config = captured_alignment["peak_config"]
+    assert isinstance(peak_config, ExtractionConfig)
+    assert peak_config.nl_min_intensity_ratio == 0.02
+    assert peak_config.resolver_mode == "legacy_savgol"
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["output_level"] == "production"
