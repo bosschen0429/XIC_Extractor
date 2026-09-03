@@ -23,6 +23,7 @@ from xic_extractor.alignment.projection.target.pre_cell import (
     TargetCellSubject,
     TargetPreCellProjection,
     TargetRowBinding,
+    validate_target_row_binding,
 )
 from xic_extractor.alignment.projection.untarget.pre_cell import (
     GroupCellSubject,
@@ -307,9 +308,14 @@ def _validate_group_population_inputs(
             label="Group",
         ),
     )
+    handoff = finalized_alignment.cell_observation_handoff
+    if handoff is None:
+        raise CellDecisionContractError(
+            "Group population requires its Backfill association handoff"
+        )
     try:
         owner_observations = validate_final_group_cell_observation_population(
-            handoff=finalized_alignment.cell_observation_handoff,
+            handoff=handoff,
             cell_observations=finalized_alignment.cell_observations,
         )
     except (CellObservationContractError, TypeError, ValueError) as exc:
@@ -462,18 +468,11 @@ def _validate_target_projection(
             "Target projection crossed its exact row binding"
         )
     binding = projection.row_binding
+    try:
+        validate_target_row_binding(binding)
+    except (TypeError, ValueError) as exc:
+        raise CellDecisionContractError(str(exc)) from exc
     groups = binding.eligible_groups
-    if type(groups) is not tuple:
-        raise CellDecisionContractError(
-            "Target row binding groups must be an immutable tuple"
-        )
-    expected_variant = (
-        "unbound" if not groups else "bound" if len(groups) == 1 else "unresolved_many"
-    )
-    if binding.variant != expected_variant:
-        raise CellDecisionContractError(
-            "Target row binding variant crossed its exact group cardinality"
-        )
     group_ids = tuple(group.group_hypothesis_id for group in groups)
     if group_ids != tuple(sorted(set(group_ids))):
         raise CellDecisionContractError(

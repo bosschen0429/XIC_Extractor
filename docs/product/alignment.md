@@ -95,16 +95,17 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
 
 `FinalizedScientificAlignment` closes the request, canonical groups,
 dispositions, membership/lineage, and refinement/repair receipts. Before cell
-decision, Targeted adds fixed `TargetKey` rows, zero/one/many
-`TargetRowBinding`, and `TargetCellSubject`; Untargeted adds projection-owned
+decision, Targeted adds fixed `TargetKey` rows, typed `TargetRowBinding`, and
+`TargetCellSubject`; Untargeted adds projection-owned
 `UntargetRowKey` and `GroupCellSubject`. After cell decision, the same projection
 owner closes inclusion, counts/reasons, Target Review Queue references, or
 Untarget archive routing. Only then may the result finalizer return the matching
 immutable workflow result.
 
-Targeted may bind a uniquely qualified established or provisional group. Zero
-groups retains a typed empty fixed row; multiple qualified groups remain
-unresolved. Untargeted standard Matrix includes established groups only.
+Targeted retains a typed empty fixed row when no group qualifies. Qualified
+groups with disjoint sample membership bind the same fixed `TargetKey` row;
+only groups competing for the same sample keep that row unresolved. Untargeted
+standard Matrix includes established groups only.
 Provisional groups belong in a compact machine archive/review surface;
 unresolved and rejected groups remain AuditTrail facts.
 

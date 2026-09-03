@@ -5,23 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillPlanningPosition,
-    build_owner_backfill_evaluation_coverage,
-    mint_owner_backfill_planning_epoch,
-    mint_owner_backfill_position_id,
-)
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairCandidate,
-)
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
-)
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
-    validate_cross_sample_peak_group_identity,
-)
 from xic_extractor.alignment.cross_sample_reconciliation import (
     apply_mode_track_refinement_run_for_workflow,
 )
@@ -32,14 +16,10 @@ from xic_extractor.alignment.mode_track import (
     ModeTrackTrajectoryPolicy,
     bootstrap_mode_track_refinement_from_cid_nl_support,
 )
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-)
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedTargetWorkflowResult,
     ModeTrackWorkflowArguments,
-    ObservationRepairWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
     WorkflowRuntimeInvocation,
@@ -298,7 +278,12 @@ def _execute_target(
         support_refs: tuple[DdaCidNlPeakSupportRef, ...] = ()
         if candidate is not None:
             result, candidate_id = candidate
-            trace = _owner_bound_trace(context.owners, sample, result)
+            trace = _target_capture_trace(
+                context.owners,
+                sample,
+                result,
+                target.definition.target,
+            )
             captured = capture_peak_hypotheses(
                 scope=scope,
                 candidate_id=candidate_id,
@@ -317,7 +302,14 @@ def _execute_target(
                 if candidate_ms2_evidence is None
                 else candidate_ms2_evidence.best_product_evidence
             )
-            if product is not None and product.scan_number is not None:
+            if (
+                product is not None
+                and product.scan_number is not None
+                and _matches_target_precursor(
+                    product.precursor_mz,
+                    target.definition.target,
+                )
+            ):
                 evidence = mint_cid_nl_evidence_ref(
                     processing_owners=context.owners,
                     sample=sample,
@@ -399,7 +391,12 @@ def _execute_target(
                     owner_hypothesis=matches[0],
                 )
             )
-    assessment_tuple = tuple(assessments)
+    assessment_tuple = tuple(
+        sorted(
+            assessments,
+            key=lambda item: item[0].identity.sample_identity_id,
+        )
+    )
     alignment_config = AlignmentConfig()
     trajectory_policy = ModeTrackTrajectoryPolicy(
         trajectory_policy_version="anchor-trajectory-v1",
@@ -420,13 +417,6 @@ def _execute_target(
         captures=tuple(owner_captures),
         run=refinement,
     )
-    spine = build_cid_nl_reference_spine(
-        processing_owners=context.owners,
-        target=target,
-        sample_assessments=assessment_tuple,
-        config=alignment_config,
-    )
-    coverage = _repair_coverage(context, spine, alignment_config)
     work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
     runtime = start_runtime_attempt(
         attempt=context.owners.attempt,
@@ -469,12 +459,8 @@ def _execute_target(
                 trajectory_policy=trajectory_policy,
                 retain_observation_only_candidates=True,
             ),
-            repair=ObservationRepairWorkflowArguments(
-                coverage=coverage,
-                cell_observations=spine.cells,
-                execute=_unexpected_repair,
-            ),
-            predecessor_cell_observations=spine.cells,
+            repair=None,
+            predecessor_cell_observations=(),
         ),
     )
     if type(terminal) is not CompletedTargetWorkflowResult:
@@ -520,7 +506,26 @@ def _capture_binding(
     result: ExtractionResult,
     candidate_id: str,
 ) -> CaptureCandidateBinding:
-    trace = _owner_bound_trace(owners, sample, result)
+    trace = _target_capture_trace(
+        owners,
+        sample,
+        result,
+        target.definition.target,
+    )
+    target_value = target.definition.target
+    retained_integration = (
+        None
+        if result.selected_hypothesis is None
+        else result.selected_hypothesis.integration
+    )
+    if retained_integration is not None and not _matches_target_rt(
+        retained_integration.rt_apex_min,
+        target_value,
+    ):
+        retained_integration = None
+    preferred_rt = result.reported_rt
+    if preferred_rt is None or not _matches_target_rt(preferred_rt, target_value):
+        preferred_rt = (target_value.rt_min + target_value.rt_max) / 2
     source = resolve_request_acquisition_source(
         processing_owners=owners,
         sample=sample,
@@ -535,16 +540,8 @@ def _capture_binding(
         query_rt_min=trace.rt_min,
         query_rt_max=trace.rt_max,
         query_ppm_tol=trace.ppm_tol,
-        preferred_rt=(
-            result.reported_rt
-            if result.reported_rt is not None
-            else (trace.rt_min + trace.rt_max) / 2
-        ),
-        retained_selected_integration=(
-            None
-            if result.selected_hypothesis is None
-            else result.selected_hypothesis.integration
-        ),
+        preferred_rt=preferred_rt,
+        retained_selected_integration=retained_integration,
     )
 
 
@@ -568,6 +565,33 @@ def _owner_bound_trace(
     )
 
 
+def _target_capture_trace(
+    owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    result: ExtractionResult,
+    target: Target,
+) -> Trace:
+    trace = _owner_bound_trace(owners, sample, result)
+    retained = result.selected_hypothesis
+    if retained is not None and _matches_target_rt(
+        retained.integration.rt_apex_min,
+        target,
+    ):
+        return trace
+    mask = (trace.rt >= target.rt_min) & (trace.rt <= target.rt_max)
+    return Trace.from_arrays(
+        sample_name=trace.sample_name,
+        mz=trace.mz,
+        rt=trace.rt[mask],
+        intensity=trace.intensity[mask],
+        rt_min=target.rt_min,
+        rt_max=target.rt_max,
+        ppm_tol=trace.ppm_tol,
+        source=trace.source,
+        acquisition_source_id=trace.acquisition_source_id,
+    )
+
+
 def _candidate_id(
     target: ResolvedTargetDefinition,
     sample: ResolvedCanonicalSampleIdentity,
@@ -586,6 +610,17 @@ def _support_policy(target: Target) -> DdaCidNlPeakSupportPolicy:
         precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
         neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
     )
+
+
+def _matches_target_precursor(observed_mz: float, target: Target) -> bool:
+    return abs(observed_mz - target.mz) <= max(
+        target.mz * target.ppm_tol / 1_000_000,
+        1e-9,
+    )
+
+
+def _matches_target_rt(observed_rt: float, target: Target) -> bool:
+    return target.rt_min <= observed_rt <= target.rt_max
 
 
 def _neutral_loss(target: Target) -> float:
@@ -624,56 +659,6 @@ def _runtime_telemetry(
             for worker_key in worker_keys
         ),
     )
-
-
-def _repair_coverage(context, spine, alignment_config):
-    group = (
-        None
-        if spine.group is None
-        else validate_cross_sample_peak_group_identity(
-            spine.group,
-            require_canonical=True,
-        )
-    )
-    groups = () if group is None else (group,)
-    positions = tuple(
-        OwnerBackfillPlanningPosition(
-            position_id=mint_owner_backfill_position_id(
-                processing_request_id=item.processing_request_id,
-                group_hypothesis_id=item.group_hypothesis_id,
-                sample_identity_id=sample.identity.sample_identity_id,
-            ),
-            group_identity=item,
-            sample=sample,
-            planning_state="not_planned",
-            planning_reason="retained_local_owner",
-            primary_logical_requests=(),
-        )
-        for item in groups
-        for sample in context.samples
-    )
-    epoch = mint_owner_backfill_planning_epoch(
-        processing_owners=context.owners,
-        group_identities=groups,
-        samples=context.samples,
-        raw_sample_stems=context.raw_stems,
-        alignment_config=alignment_config,
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit",
-        selected_family_ids=frozenset(),
-        positions=positions,
-    )
-    return build_owner_backfill_evaluation_coverage(epoch, ())
-
-
-def _unexpected_repair(
-    _candidate: ObservationRepairCandidate,
-) -> OwnerBackfillSampleResult:
-    raise RuntimeError("Targeted production cannot request legacy Backfill")
 
 
 __all__ = ["execute_targeted_production_workflow"]

@@ -25,6 +25,7 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
     CrossSamplePostRepairModeTrackInput,
     apply_mode_track_refinement_run_for_workflow,
+    close_cross_sample_without_observation_repair,
     consume_mode_track_final_attempt,
     consume_observation_repair_terminal,
 )
@@ -98,6 +99,7 @@ from xic_extractor.processing_identity import (
     ProcessingAttemptIdentity,
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
+    compose_processing_owner_references,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -314,7 +316,7 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowRequest
 class _WorkflowAdapterFields:
     capture_inputs: tuple[CaptureWorkflowArguments, ...]
     mode_track: ModeTrackWorkflowArguments
-    repair: ObservationRepairWorkflowArguments
+    repair: ObservationRepairWorkflowArguments | None
     predecessor_cell_observations: tuple[CellObservationRef, ...]
     drift_lookup: DriftLookupProtocol | None = None
 
@@ -333,11 +335,15 @@ class _WorkflowAdapterFields:
                 "adapter requires exact ModeTrack arguments"
             )
         self.mode_track.__post_init__()
-        if type(self.repair) is not ObservationRepairWorkflowArguments:
+        if (
+            self.repair is not None
+            and type(self.repair) is not ObservationRepairWorkflowArguments
+        ):
             raise AlignmentWorkflowContractError(
                 "adapter requires exact ObservationRepair arguments"
             )
-        self.repair.__post_init__()
+        if self.repair is not None:
+            self.repair.__post_init__()
         if type(self.predecessor_cell_observations) is not tuple or any(
             type(item) is not CellObservationRef
             for item in self.predecessor_cell_observations
@@ -354,7 +360,12 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
-    pass
+    def __post_init__(self) -> None:
+        super(UntargetWorkflowAdapter, self).__post_init__()
+        if self.repair is None:
+            raise AlignmentWorkflowContractError(
+                "Untarget adapter requires exact ObservationRepair arguments"
+            )
 
 
 WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
@@ -674,6 +685,26 @@ def _execute_composition_after_runtime(
             captures=captures,
             run=run,
         )
+        if adapter.repair is None:
+            if type(request) is not TargetWorkflowRequest:
+                raise AlignmentWorkflowContractError(
+                    "only Targeted may omit optional ObservationRepair"
+                )
+            final_receipt = close_cross_sample_without_observation_repair(context)
+            scientific = finalize_scientific_alignment(
+                scope=request.scope,
+                captures=captures,
+                final_cross_sample_receipt=final_receipt,
+                cell_observation_handoff=None,
+                predecessor_cell_observations=(),
+            )
+            return _finish_variant(
+                request=request,
+                scientific=scientific,
+                runtime_receipt=runtime_receipt,
+            )
+
+        repair = adapter.repair
         captured_results: list[OwnerBackfillSampleResult] = []
 
         def execute_repair(
@@ -683,7 +714,7 @@ def _execute_composition_after_runtime(
                 raise AlignmentWorkflowContractError(
                     "repair callback may be invoked at most once"
                 )
-            result = adapter.repair.execute(candidate)
+            result = repair.execute(candidate)
             if type(result) is not OwnerBackfillSampleResult:
                 raise AlignmentWorkflowContractError(
                     "repair callback must return an exact owner result"
@@ -694,8 +725,8 @@ def _execute_composition_after_runtime(
         stage = WorkflowStage.OBSERVATION_REPAIR
         terminal = execute_observation_repair(
             processing_owners=owners,
-            coverage=adapter.repair.coverage,
-            cell_observations=adapter.repair.cell_observations,
+            coverage=repair.coverage,
+            cell_observations=repair.cell_observations,
             execute=execute_repair,
         )
         repair_result = captured_results[0] if captured_results else None
@@ -1060,7 +1091,20 @@ def _validate_request_adapter(
         )
     if type(request) is not UntargetWorkflowCompositionRequest:
         _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
-    owners = adapter.repair.coverage.epoch.processing_owners
+    if adapter.repair is not None:
+        owners = adapter.repair.coverage.epoch.processing_owners
+    elif type(request) is TargetWorkflowRequest:
+        owners = compose_processing_owner_references(
+            request=request.processing_request,
+            attempt=request.processing_attempt,
+            sample_snapshot=request.scope.samples[0].snapshot,
+            sample_resolutions=request.scope.samples,
+            target_snapshot=request.scope.target_snapshot,
+        )
+    else:
+        raise AlignmentWorkflowContractError(
+            "workflow adapter lost its processing owners"
+        )
     if (
         type(owners) is not ProcessingOwnerReferences
         or owners.request is not request.processing_request

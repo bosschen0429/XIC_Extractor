@@ -957,6 +957,11 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
                 ),
             )
         )
+    transactions.sort(
+        key=lambda transaction: (
+            transaction.application_context.predecessors[0].group_hypothesis_id
+        )
+    )
     return ModeTrackRefinementRun(
         family_context=family_context,
         model_set=model_set,

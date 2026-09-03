@@ -598,10 +598,15 @@ def _mint_row_binding(
     eligible_groups: tuple[CrossSampleGroupIdentity, ...],
 ) -> TargetRowBinding:
     count = len(eligible_groups)
+    sample_ids = tuple(
+        member.canonical_sample_identity_id
+        for group in eligible_groups
+        for member in group.member_subjects
+    )
     variant: TargetRowBindingVariant
     if count == 0:
         variant = "unbound"
-    elif count == 1:
+    elif len(sample_ids) == len(set(sample_ids)):
         variant = "bound"
     else:
         variant = "unresolved_many"
@@ -652,14 +657,32 @@ def _validate_row_binding(binding: TargetRowBinding) -> None:
         raise TargetProjectionContractError(
             "Target row binding contains an ineligible or crossed group"
         )
-    count = len(binding.eligible_groups)
+    sample_ids = tuple(
+        member.canonical_sample_identity_id
+        for group in binding.eligible_groups
+        for member in group.member_subjects
+    )
     expected_variant = (
-        "unbound" if count == 0 else "bound" if count == 1 else "unresolved_many"
+        "unbound"
+        if not binding.eligible_groups
+        else "bound"
+        if len(sample_ids) == len(set(sample_ids))
+        else "unresolved_many"
     )
     if binding.variant != expected_variant:
         raise TargetProjectionContractError(
             "Target row binding variant does not match its eligible group cardinality"
         )
+
+
+def validate_target_row_binding(binding: TargetRowBinding) -> None:
+    """Revalidate one owner-minted Target row binding."""
+
+    if type(binding) is not TargetRowBinding:
+        raise TargetProjectionContractError(
+            "Target row binding must be an exact owner value"
+        )
+    _validate_row_binding(binding)
 
 
 def _validate_cell_subject(subject: TargetCellSubject) -> None:
@@ -717,4 +740,5 @@ __all__ = (
     "TargetRowBinding",
     "TargetRowBindingVariant",
     "project_target_pre_cell",
+    "validate_target_row_binding",
 )

@@ -305,10 +305,10 @@ Target-local value cannot authorize an Untargeted group cell.
 Projection is outside the kernel.
 
 - Targeted retains one row per `TargetKey`. Only `established` and `provisional`
-  groups are binding-eligible: zero keeps a typed empty state, one binds, and
-  multiple eligible groups remain unresolved and reference the existing Review
-  Queue. Rejected/unresolved groups remain review evidence rather than a unique
-  binding. Every Target row × canonical sample produces a subject. A
+  groups are binding-eligible: zero keeps a typed empty state, and groups that
+  cover distinct samples bind the fixed row. Multiple groups competing for the
+  same sample remain unresolved and reference the existing Review Queue.
+  Rejected/unresolved groups remain review evidence. Every Target row × canonical sample produces a subject. A
   provisional group may support a Target row, but cannot fill other samples
   from a singleton or RT prior alone.
 - Untargeted derives one processing-request-scoped `UntargetRowKey` per finalized

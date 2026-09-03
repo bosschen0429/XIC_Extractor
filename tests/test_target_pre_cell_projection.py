@@ -89,7 +89,7 @@ def test_public_target_projection_entry_point_exists() -> None:
         (("sample-a", "sample-b", "sample-c", "sample-d"),
          ((("sample-a", "sample-b"), "established"),
           (("sample-c", "sample-d"), "established")),
-         "unresolved_many"),
+         "bound"),
     ],
 )
 def test_projects_closed_row_binding_and_complete_cell_population(

@@ -468,6 +468,7 @@ def validate_peak_observation_trace_binding(
     canonical_sample_identity_id: str,
     trace: Trace,
     integration: IntegrationResult,
+    selection_intensity: object | None = None,
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
 ) -> None:
@@ -481,7 +482,7 @@ def validate_peak_observation_trace_binding(
         canonical_sample_identity_id=canonical_sample_identity_id,
         trace=trace,
         integration=integration,
-        selection_intensity=None,
+        selection_intensity=selection_intensity,
         resolver_mode=resolver_mode,
         proposal_sources=proposal_sources,
     )

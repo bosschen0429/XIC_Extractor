@@ -144,6 +144,37 @@ def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> No
     assert asdict(published.output)["file_results"][0]["sample_name"] == "SampleA"
 
 
+def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    finalized_value = finalized[0].completed_projection.decisions[0].value
+    extraction = output.file_results[0].results[target.label]
+    selected = extraction.selected_hypothesis
+    assert selected is not None
+    output.file_results[0].results[target.label] = replace(
+        extraction,
+        selected_hypothesis=replace(
+            selected,
+            integration=replace(
+                selected.integration,
+                area_ms1_morphology=None,
+                area_raw_counts_seconds=selected.integration.area_raw_counts_seconds
+                * 2,
+            ),
+        ),
+    )
+
+    published = publish_targeted_outputs(request, finalized, output)
+
+    rendered = published.output.file_results[0].results[target.label]
+    assert rendered.reported_peak_area == finalized_value
+
+
 def test_manifest_does_not_claim_any_unstaged_stale_output(
     tmp_path: Path,
 ) -> None:
@@ -304,6 +335,12 @@ def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> 
     )
 
     final_output = service.execute(request)
+    final_projection = final_output.file_results[0].results[
+        target.label
+    ].targeted_product_projection
+    assert final_projection is not None
+    assert final_projection.product_state == "detected_clean"
+    assert final_projection.counted_detection is True
     summary = build_summary(
         config,
         [target],

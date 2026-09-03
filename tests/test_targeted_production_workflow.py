@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
@@ -15,6 +16,9 @@ from xic_extractor.extraction.targeted_service import (
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
+from xic_extractor.peak_detection.capture_boundary_policy import (
+    promote_targeted_boundary_hypothesis,
+)
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedPriorContext,
@@ -41,6 +45,99 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
         finalized[0].completed_projection.row_binding.target.definition.target == target
     )
     assert len(finalized[0].canonical_samples) == 1
+    assert finalized[0].scientific_core.cell_observation_handoff is None
+    assert finalized[0].scientific_core.cell_observations == ()
+    assert finalized[0].scientific_core.final_cross_sample_receipt.repair_epoch == 0
+    assert finalized[0].scientific_core.repair_receipt is None
+
+
+def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    original = output.file_results[0].results[target.label]
+    evidence = original.candidate_ms2_evidence
+    assert evidence is not None
+    product = evidence.best_product_evidence
+    assert product is not None
+    shifted_precursor = target.mz + 0.4
+    output.file_results[0].results[target.label] = replace(
+        original,
+        candidate_ms2_evidence=replace(
+            evidence,
+            best_product_evidence=replace(
+                product,
+                precursor_mz=shifted_precursor,
+                product_mz=shifted_precursor - product.observed_loss_da,
+            ),
+        ),
+    )
+    second = output.file_results[1].results[target.label]
+    second_evidence = second.candidate_ms2_evidence
+    assert second_evidence is not None
+    second_product = second_evidence.best_product_evidence
+    assert second_product is not None
+    output.file_results[1].results[target.label] = replace(
+        second,
+        candidate_ms2_evidence=replace(
+            second_evidence,
+            best_product_evidence=replace(
+                second_product,
+                precursor_mz=shifted_precursor,
+                product_mz=shifted_precursor - second_product.observed_loss_da,
+            ),
+        ),
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+
+
+def test_retained_peak_outside_target_rt_is_not_a_target_capture(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+    original = output.file_results[0].results[target.label]
+    selected = original.selected_hypothesis
+    assert selected is not None
+    outside_rt = target.rt_min - 0.1
+    output.file_results[0].results[target.label] = replace(
+        original,
+        selected_hypothesis=replace(
+            selected,
+            integration=replace(
+                selected.integration,
+                rt_apex_min=outside_rt,
+                raw_apex_rt_min=outside_rt,
+            ),
+        ),
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    assert len(finalized[0].canonical_samples) == 2
 
 
 def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
@@ -177,8 +274,11 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     assert finalized[0].completed_projection.no_write_count == 0
 
 
+@pytest.mark.parametrize("promoted_retained", (False, True))
 def test_finalization_preserves_the_acquisition_selected_hypothesis(
     tmp_path: Path,
+    monkeypatch,
+    promoted_retained: bool,
 ) -> None:
     config, target, output = production_case(tmp_path)
     rt = np.linspace(1.0, 2.0, 401)
@@ -215,6 +315,23 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     )
     assert len(hypotheses) >= 2
     selected = min(hypotheses, key=lambda item: item.integration.height_raw)
+    expected_capture_height = selected.integration.height_smoothed
+    if promoted_retained:
+        selected = promote_targeted_boundary_hypothesis(
+            selected,
+            rt=rt,
+            intensity=intensity,
+            context_rt_start=float(rt[0]),
+            context_rt_end=float(rt[-1]),
+            morphology_window_points=15,
+        ).hypothesis
+        selected = replace(
+            selected,
+            integration=replace(
+                selected.integration,
+                height_smoothed=selected.integration.height_smoothed * 0.75,
+            ),
+        )
     original = output.file_results[0].results[target.label]
     evidence = original.candidate_ms2_evidence
     assert evidence is not None
@@ -243,6 +360,20 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     )
     selected_area = output.file_results[0].results[target.label].reported_peak_area
 
+    captured = []
+    original_capture = production_workflow.capture_peak_hypotheses
+
+    def record_capture(**kwargs):
+        value = original_capture(**kwargs)
+        captured.append(value)
+        return value
+
+    monkeypatch.setattr(
+        production_workflow,
+        "capture_peak_hypotheses",
+        record_capture,
+    )
+
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
             config,
@@ -253,6 +384,14 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     )
 
     assert finalized[0].completed_projection.decisions[0].value == selected_area
+    assert captured[0].selected_hypothesis is not None
+    captured_integration = captured[0].selected_hypothesis.integration
+    assert captured_integration.rt_apex_min == selected.integration.rt_apex_min
+    assert captured_integration.raw_apex_rt_min == (
+        selected.integration.raw_apex_rt_min
+    )
+    assert captured_integration.height_raw == selected.integration.height_raw
+    assert captured_integration.height_smoothed == expected_capture_height
 
 
 def test_missing_selected_peak_finalizes_as_searched_no_observation(
@@ -301,6 +440,71 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
     ) == ("searched_no_observation", "observed")
     assert projection.counted_detection_count == 1
     assert projection.no_write_count == 1
+
+
+def test_assessment_handoff_is_independent_of_injection_order(tmp_path: Path) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleB": 1, "SampleA": 2},
+        ),
+        output,
+    )
+
+    assert finalized[0].completed_projection.counted_detection_count == 2
+
+
+def test_retained_boundary_apex_rebinds_to_same_physical_raw_peak(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    original = output.file_results[0].results[target.label]
+    selected = original.selected_hypothesis
+    assert selected is not None
+    integration = selected.integration
+    shifted_apex = (integration.rt_apex_min + integration.rt_right_min) / 2
+    shifted = replace(
+        selected,
+        integration=replace(
+            integration,
+            rt_apex_min=shifted_apex,
+            raw_apex_rt_min=shifted_apex,
+            integration_method="chrom_peak_segment_gaussian15",
+        ),
+    )
+    evidence = original.candidate_ms2_evidence
+    assert evidence is not None
+    product = evidence.best_product_evidence
+    assert product is not None
+    output.file_results[0].results[target.label] = replace(
+        original,
+        selected_hypothesis=shifted,
+        candidate_ms2_evidence=replace(
+            evidence,
+            best_scan_rt=integration.rt_apex_min,
+            best_product_evidence=replace(
+                product,
+                scan_rt=integration.rt_apex_min,
+            ),
+        ),
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert finalized[0].completed_projection.counted_detection_count == 1
 
 
 def test_neutral_loss_disabled_target_uses_ms1_backfill_result(tmp_path: Path) -> None:

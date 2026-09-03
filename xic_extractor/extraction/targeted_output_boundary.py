@@ -10,6 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
+from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.targeted_service import (
     FinalizedTargetMs1BackfillResult,
@@ -24,6 +25,7 @@ from xic_extractor.output.method_manifest import (
     write_method_manifest,
 )
 from xic_extractor.output.review_report import review_report_path_for_excel
+from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
@@ -178,6 +180,7 @@ def _build_render_view(
                 extraction,
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
+                evidence=getattr(render_decision, "evidence", None),
             )
         files.append(replace(file_result, results=rendered))
     if consumed != set(decisions):
@@ -195,17 +198,51 @@ def _finalized_extraction_result(
     *,
     value: float | None,
     no_write_reason: str,
+    evidence: object,
 ) -> ExtractionResult:
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
         no_write_reason=no_write_reason,
     )
     if not no_write_reason:
-        if extraction.reported_peak_area != value:
+        if extraction.reported_peak_area == value:
+            return replace(extraction, targeted_product_projection=projection)
+        if (
+            type(evidence) is not ObservedSearchSubject
+            or _hypothesis_area(evidence.hypothesis) != value
+        ):
             raise TargetedOutputBoundaryError(
                 "finalized Targeted value does not match its public result model"
             )
-        return replace(extraction, targeted_product_projection=projection)
+        integration = evidence.hypothesis.integration
+        public_selected = (
+            None
+            if extraction.selected_hypothesis is None
+            else replace(extraction.selected_hypothesis, integration=integration)
+        )
+        rendered = replace(
+            extraction,
+            peak_result=replace(
+                extraction.peak_result,
+                peak=PeakResult(
+                    rt=integration.rt_apex_min,
+                    intensity=integration.height_raw,
+                    intensity_smoothed=integration.height_smoothed,
+                    area=value,
+                    peak_start=integration.rt_left_min,
+                    peak_end=integration.rt_right_min,
+                ),
+            ),
+            selected_hypothesis=public_selected,
+            selection_decision=None,
+            model_selection_result=None,
+            targeted_product_projection=projection,
+        )
+        if rendered.reported_peak_area != value:
+            raise TargetedOutputBoundaryError(
+                "finalized Targeted hypothesis did not produce its numeric value"
+            )
+        return rendered
     return replace(
         extraction,
         peak_result=replace(
@@ -221,6 +258,13 @@ def _finalized_extraction_result(
         model_selection_result=None,
         targeted_product_projection=projection,
     )
+
+
+def _hypothesis_area(hypothesis: Any) -> float:
+    integration = hypothesis.integration
+    if integration.area_ms1_morphology is not None:
+        return integration.area_ms1_morphology
+    return integration.area_raw_counts_seconds
 
 
 def _finalized_product_projection(
@@ -240,8 +284,14 @@ def _finalized_product_projection(
         )
     return replace(
         projection,
+        product_state="detected_clean",
         counted_detection=True,
+        review_state="none",
         projection_reason="finalized_numeric",
+        review_reasons=(),
+        conflict_reasons=(),
+        not_counted_reasons=(),
+        exclusion_reasons=(),
     )
 
 

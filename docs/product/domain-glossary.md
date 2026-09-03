@@ -107,8 +107,9 @@ Use these terms consistently:
   refinement/repair receipts needed by a workflow projection. It is not an
   output artifact or mutable Matrix.
 - `TargetRowBinding`: Target projection decision that binds one fixed
-  `TargetKey` row to zero or one uniquely resolved finalized group, or records
-  an unresolved multiple-group state. It does not rescan RAW or rank peaks.
+  `TargetKey` row to the eligible finalized groups needed by its sample cells.
+  Multiple groups are unresolved only when they compete for the same sample
+  cell. It does not rescan RAW or rank peaks.
 - `workflow projection`: the Target or Untarget owner with two ordered
   operations: pre-cell row binding/key plus cell-subject construction, then
   post-cell inclusion/count/reason and Review Queue/archive routing. It is not
