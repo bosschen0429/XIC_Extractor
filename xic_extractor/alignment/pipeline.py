@@ -1360,43 +1360,30 @@ def run_alignment(
         )
 
 
-def _run_untargeted_cid_nl_alignment(
+def _validate_untargeted_cid_nl_alignment_options(
     *,
-    discovery_batch_index: Path,
-    discovery_batch: DiscoveryBatchInput,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    raw_dir: Path,
-    dll_dir: Path,
-    output_dir: Path,
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-    alignment_config: AlignmentConfig,
-    outputs: AlignmentRunOutputs,
-    output_level: AlignmentOutputLevel,
-    owner_build_route_receipt: OwnerBuildRouteReceipt,
-    timing_recorder: TimingRecorder,
-    capture_artifact_fingerprints: bool,
-    raw_opener: RawOpener | None,
-    raw_workers: int,
-    raw_xic_batch_size: int,
-    owner_build_xic_backend: OwnerBuildXicBackend,
-    owner_backfill_xic_backend: OwnerBackfillXicBackend,
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy,
-    owner_backfill_superwindow_span_factor: int,
-    preconsolidate_owner_families: bool,
-    emit_identity_coherence_diagnostic: bool,
-    identity_coherence_output_dir: Path | None,
-    identity_coherence_controls_manifest: Path | None,
-    drift_lookup: DriftLookupProtocol | None,
-    sample_column_injection_order: Path | None,
-    backfill_scope: BackfillScope,
-    audit_evidence_mode: str,
-    selected_family_ids: frozenset[str],
-    selected_family_source: str,
-    emit_early_loser_shadow: bool,
-    signal_processing_profile: SignalProcessingProfile,
-) -> AlignmentRunOutputs:
-    """Run the retained CID-NL owner and project its completed result once."""
+    raw_opener: RawOpener | None = None,
+    raw_workers: int = 1,
+    raw_xic_batch_size: int = 1,
+    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
+    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
+    owner_backfill_superwindow_span_factor: int = 2,
+    preconsolidate_owner_families: bool = False,
+    emit_identity_coherence_diagnostic: bool = False,
+    identity_coherence_output_dir: Path | None = None,
+    identity_coherence_controls_manifest: Path | None = None,
+    drift_lookup: DriftLookupProtocol | None = None,
+    sample_column_injection_order: Path | None = None,
+    backfill_scope: BackfillScope = "full-audit",
+    audit_evidence_mode: str = "auto",
+    selected_family_ids: frozenset[str] = frozenset(),
+    selected_family_source: str = "",
+    emit_early_loser_shadow: bool = False,
+    signal_processing_profile: SignalProcessingProfile = (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE
+    ),
+) -> None:
+    """Reject legacy Alignment options unsupported by the retained CID-NL route."""
 
     unsupported: list[str] = []
     if raw_opener is not None:
@@ -1440,6 +1427,66 @@ def _run_untargeted_cid_nl_alignment(
             "pure CID-NL retained route does not support legacy Alignment options: "
             + ", ".join(unsupported)
         )
+
+
+def _run_untargeted_cid_nl_alignment(
+    *,
+    discovery_batch_index: Path,
+    discovery_batch: DiscoveryBatchInput,
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    alignment_config: AlignmentConfig,
+    outputs: AlignmentRunOutputs,
+    output_level: AlignmentOutputLevel,
+    owner_build_route_receipt: OwnerBuildRouteReceipt,
+    timing_recorder: TimingRecorder,
+    capture_artifact_fingerprints: bool,
+    raw_opener: RawOpener | None,
+    raw_workers: int,
+    raw_xic_batch_size: int,
+    owner_build_xic_backend: OwnerBuildXicBackend,
+    owner_backfill_xic_backend: OwnerBackfillXicBackend,
+    owner_backfill_window_strategy: OwnerBackfillWindowStrategy,
+    owner_backfill_superwindow_span_factor: int,
+    preconsolidate_owner_families: bool,
+    emit_identity_coherence_diagnostic: bool,
+    identity_coherence_output_dir: Path | None,
+    identity_coherence_controls_manifest: Path | None,
+    drift_lookup: DriftLookupProtocol | None,
+    sample_column_injection_order: Path | None,
+    backfill_scope: BackfillScope,
+    audit_evidence_mode: str,
+    selected_family_ids: frozenset[str],
+    selected_family_source: str,
+    emit_early_loser_shadow: bool,
+    signal_processing_profile: SignalProcessingProfile,
+) -> AlignmentRunOutputs:
+    """Run the retained CID-NL owner and project its completed result once."""
+
+    _validate_untargeted_cid_nl_alignment_options(
+        raw_opener=raw_opener,
+        raw_workers=raw_workers,
+        raw_xic_batch_size=raw_xic_batch_size,
+        owner_backfill_xic_backend=owner_backfill_xic_backend,
+        owner_backfill_window_strategy=owner_backfill_window_strategy,
+        owner_backfill_superwindow_span_factor=(owner_backfill_superwindow_span_factor),
+        preconsolidate_owner_families=preconsolidate_owner_families,
+        emit_identity_coherence_diagnostic=emit_identity_coherence_diagnostic,
+        identity_coherence_output_dir=identity_coherence_output_dir,
+        identity_coherence_controls_manifest=identity_coherence_controls_manifest,
+        drift_lookup=drift_lookup,
+        sample_column_injection_order=sample_column_injection_order,
+        backfill_scope=backfill_scope,
+        audit_evidence_mode=audit_evidence_mode,
+        selected_family_ids=selected_family_ids,
+        selected_family_source=selected_family_source,
+        emit_early_loser_shadow=emit_early_loser_shadow,
+        signal_processing_profile=signal_processing_profile,
+    )
 
     completed = complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,

@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.diagnostics.timing import TimingRecorder
@@ -66,8 +68,8 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         output_dir=tmp_path / "run",
         discovery_settings=discovery_settings,
         alignment_config=AlignmentConfig(),
-        raw_workers=3,
-        raw_xic_batch_size=16,
+        raw_workers=1,
+        raw_xic_batch_size=1,
         timing_recorder=timing_recorder,
         capture_alignment_artifact_fingerprints=True,
     )
@@ -76,7 +78,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     discovery = captured["discovery"]
     assert isinstance(discovery, dict)
     assert discovery["timing_recorder"] is timing_recorder
-    assert discovery["max_workers"] == 3
+    assert discovery["max_workers"] == 1
     alignment = captured["alignment"]
     assert isinstance(alignment, dict)
     assert alignment["discovery_batch_index"] == discovery_index
@@ -85,8 +87,8 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert alignment["selected_family_ids"] == frozenset()
     assert alignment["emit_provisional_matrix"] is True
     assert alignment["require_discovery_owner_closure"] is True
-    assert alignment["raw_workers"] == 3
-    assert alignment["raw_xic_batch_size"] == 16
+    assert alignment["raw_workers"] == 1
+    assert alignment["raw_xic_batch_size"] == 1
     assert alignment["capture_artifact_fingerprints"] is True
     assert "signal_processing_profile" not in alignment
     peak_config = alignment["peak_config"]
@@ -118,3 +120,50 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert physical_provenance.name != (
         "alignment_owner_backfill_peak_fact_provenance_v1.tsv"
     )
+
+
+def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    dll_dir = tmp_path / "dll"
+    raw_dir.mkdir()
+    dll_dir.mkdir()
+    raw_file = raw_dir / "sample-a.raw"
+    raw_file.write_bytes(b"raw")
+    (dll_dir / "reader.dll").write_bytes(b"dll")
+    output_dir = tmp_path / "run"
+    discovery_called = False
+
+    def fail_if_discovery_runs(*args, **kwargs):
+        nonlocal discovery_called
+        discovery_called = True
+        raise AssertionError("Discovery must not run before retained-route validation")
+
+    monkeypatch.setattr(workflow, "run_discovery_batch", fail_if_discovery_runs)
+
+    discovery_settings = DiscoverySettings(
+        neutral_loss_profiles=(
+            NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0473),
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match=(
+            "pure CID-NL retained route does not support legacy Alignment options: "
+            "raw_workers, raw_xic_batch_size"
+        ),
+    ):
+        workflow.run_untargeted_provisional_matrix_workflow(
+            raw_files=(raw_file,),
+            dll_dir=dll_dir,
+            output_dir=output_dir,
+            discovery_settings=discovery_settings,
+            alignment_config=AlignmentConfig(),
+            raw_workers=3,
+            raw_xic_batch_size=16,
+        )
+
+    assert discovery_called is False
+    assert not output_dir.exists()

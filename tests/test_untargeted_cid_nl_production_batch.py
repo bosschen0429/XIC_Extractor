@@ -27,6 +27,9 @@ from xic_extractor.alignment.pipeline_outputs import (
     output_paths,
     write_outputs_atomic,
 )
+from xic_extractor.alignment.result.scientific_alignment import (
+    ObservedSearchSubject,
+)
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -339,6 +342,37 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert writer_inputs.matrix.sample_order == ("S1",)
     assert len(writer_inputs.matrix.clusters) == 2
     assert len(writer_inputs.matrix.cells) == 2
+    assert tuple(
+        row.public_family_id for row in writer_inputs.matrix.clusters
+    ) == ("FAM000001", "FAM000002")
+    expected_source_ids: dict[tuple[str, str], str] = {}
+    for child in completed.application_result.children:
+        candidate_by_hypothesis = {
+            (
+                subject.canonical_sample_identity_id,
+                subject.hypothesis.hypothesis_id,
+            ): subject.candidate_id
+            for subject in child.scientific_core.terminal_subjects
+            if type(subject) is ObservedSearchSubject
+        }
+        for projected in child.completed_projection.rows:
+            for decision in projected.decisions:
+                hypothesis = decision.evidence.direct_hypotheses[0]
+                expected_source_ids[
+                    (
+                        projected.row_key.untarget_row_key_id,
+                        decision.subject.canonical_sample.metadata.raw_stem,
+                    )
+                ] = candidate_by_hypothesis[
+                    (
+                        decision.subject.canonical_sample.identity.sample_identity_id,
+                        hypothesis.hypothesis_id,
+                    )
+                ]
+    assert {
+        (cell.cluster_id, cell.sample_stem): cell.source_candidate_id
+        for cell in writer_inputs.matrix.cells
+    } == expected_source_ids
     assert all(cell.group_hypothesis_id for cell in writer_inputs.matrix.cells)
     assert all(
         writer_inputs.production_decisions.cell(
@@ -583,7 +617,16 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     assert tuple(
         cell.sample_stem for cell in writer_inputs.matrix.cells
     ) == sample_stems
+    cells_by_sample = {
+        cell.sample_stem: cell for cell in writer_inputs.matrix.cells
+    }
+    assert all(
+        cells_by_sample[sample_stem].source_candidate_id is not None
+        for sample_stem in sample_stems[:-1]
+    )
+    assert cells_by_sample["Hold"].source_candidate_id is None
     row = writer_inputs.matrix.clusters[0]
+    assert row.public_family_id == "FAM000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     for child in completed.application_result.children:
         for projected in child.completed_projection.rows:

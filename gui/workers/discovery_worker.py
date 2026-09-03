@@ -285,7 +285,11 @@ class DiscoveryWorker(QThread):
         binding = self._recipe_binding
         if binding is None:
             preset = load_preset(request.preset)
-            recipe = bind_cid_nl_recipe(preset, request.mode)
+            recipe = bind_cid_nl_recipe(
+                preset,
+                request.mode,
+                recipe_overrides=request.tuning_overrides,
+            )
             binding = (recipe, str(preset.source))
             self._recipe_binding = binding
         recipe, _preset_source = binding

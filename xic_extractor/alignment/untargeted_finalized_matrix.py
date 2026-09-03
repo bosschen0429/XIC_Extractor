@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -14,6 +15,10 @@ from xic_extractor.alignment.production_decisions import (
     ProductionRowDecision,
     ProductionStatus,
     RescueTier,
+)
+from xic_extractor.alignment.result.scientific_alignment import (
+    FinalizedScientificAlignment,
+    ObservedSearchSubject,
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.peak_detection.integration_result import IntegrationResult
@@ -128,6 +133,7 @@ def project_completed_untarget_batch_writer_inputs(
     seen_physical_ids: set[str] = set()
 
     for child in application.children:
+        direct_candidate_ids = _direct_candidate_ids(child.scientific_core)
         for projected in child.completed_projection.rows:
             row_id = projected.row_key.untarget_row_key_id
             group_id = projected.row_key.group_hypothesis_id
@@ -184,7 +190,7 @@ def project_completed_untarget_batch_writer_inputs(
             row = FinalizedUntargetMatrixRow(
                 feature_family_id=row_id,
                 group_hypothesis_id=group_id,
-                public_family_id=row_id,
+                public_family_id=f"FAM{len(rows) + 1:06d}",
                 destination=projected.route.destination,
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
@@ -203,6 +209,7 @@ def project_completed_untarget_batch_writer_inputs(
                 _aligned_cell(
                     row=row,
                     owner_decision=owner_decision,
+                    direct_candidate_ids=direct_candidate_ids,
                 )
                 for owner_decision in owner_decisions
             )
@@ -318,13 +325,18 @@ def _aligned_cell(
     *,
     row: FinalizedUntargetMatrixRow,
     owner_decision: OwnerProductionCellDecision,
+    direct_candidate_ids: Mapping[tuple[str, str], str],
 ) -> AlignedCell:
     evidence = owner_decision.evidence
     if type(evidence) is not FinalGroupCellObservation:
         raise TypeError("writer cell requires final group-cell evidence")
     status = _cell_status(owner_decision, evidence)
     integration = _selected_integration(owner_decision, evidence)
-    source_id, repaired = _selected_physical_source(owner_decision, evidence)
+    source_id, repaired = _selected_cell_source(
+        owner_decision,
+        evidence,
+        direct_candidate_ids=direct_candidate_ids,
+    )
     return AlignedCell(
         sample_stem=owner_decision.subject.canonical_sample.metadata.raw_stem,
         cluster_id=row.feature_family_id,
@@ -379,9 +391,11 @@ def _selected_integration(
     return None
 
 
-def _selected_physical_source(
+def _selected_cell_source(
     decision: OwnerProductionCellDecision,
     evidence: FinalGroupCellObservation,
+    *,
+    direct_candidate_ids: Mapping[tuple[str, str], str],
 ) -> tuple[str | None, OwnerBackfillPeakFactObservation | None]:
     if decision.value is None:
         return None, None
@@ -392,9 +406,46 @@ def _selected_physical_source(
     if len(direct) + len(repaired) != 1:
         raise ValueError("numeric writer cell requires one physical source")
     if direct:
-        return direct[0].content.peak_observation_content_id, None
+        hypothesis_ids = tuple(
+            hypothesis.hypothesis_id for hypothesis in evidence.direct_hypotheses
+        )
+        if len(hypothesis_ids) != 1:
+            raise ValueError(
+                "direct writer cell requires one source PeakHypothesis identity"
+            )
+        key = (
+            decision.subject.canonical_sample.identity.sample_identity_id,
+            hypothesis_ids[0],
+        )
+        try:
+            return direct_candidate_ids[key], None
+        except KeyError as exc:
+            raise ValueError(
+                "direct writer cell lacks its terminal Discovery candidate identity"
+            ) from exc
     selected = repaired[0]
-    return selected.prepared_signal_id or selected.work_unit_key, selected
+    return None, selected
+
+
+def _direct_candidate_ids(
+    scientific_core: FinalizedScientificAlignment,
+) -> dict[tuple[str, str], str]:
+    if type(scientific_core) is not FinalizedScientificAlignment:
+        raise TypeError("writer projection requires an exact finalized scientific core")
+    candidate_ids: dict[tuple[str, str], str] = {}
+    for subject in scientific_core.terminal_subjects:
+        if type(subject) is not ObservedSearchSubject:
+            continue
+        key = (
+            subject.canonical_sample_identity_id,
+            subject.hypothesis.hypothesis_id,
+        )
+        if key in candidate_ids:
+            raise ValueError(
+                "finalized scientific core duplicated a direct candidate identity"
+            )
+        candidate_ids[key] = subject.candidate_id
+    return candidate_ids
 
 
 def _cell_status(

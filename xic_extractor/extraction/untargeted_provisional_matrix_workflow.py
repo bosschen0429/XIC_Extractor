@@ -12,12 +12,18 @@ from xic_extractor.alignment.ms1_index_source import (
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.owner_backfill import OwnerBackfillWindowStrategy
-from xic_extractor.alignment.pipeline import run_alignment
+from xic_extractor.alignment.pipeline import (
+    _validate_untargeted_cid_nl_alignment_options,
+    run_alignment,
+)
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
+)
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
@@ -60,6 +66,17 @@ def run_untargeted_provisional_matrix_workflow(
         raise ValueError("full-universe workflow output already exists")
     if raw_workers < 1 or raw_xic_batch_size < 1:
         raise ValueError("RAW worker and XIC batch counts must be positive")
+    if is_pure_single_provider_cid_nl(discovery_settings):
+        _validate_untargeted_cid_nl_alignment_options(
+            raw_workers=raw_workers,
+            raw_xic_batch_size=raw_xic_batch_size,
+            owner_backfill_xic_backend=owner_backfill_xic_backend,
+            owner_backfill_window_strategy=owner_backfill_window_strategy,
+            owner_backfill_superwindow_span_factor=(
+                owner_backfill_superwindow_span_factor
+            ),
+            sample_column_injection_order=sample_column_injection_order,
+        )
 
     output_dir.mkdir(parents=True)
     discovery_dir = output_dir / "discovery"
