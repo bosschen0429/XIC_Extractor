@@ -120,14 +120,48 @@ def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None
     )
 
     assert TargetedApplicationService(runner).execute(request) is output
-    assert calls["config"] is config
+    assert calls["config"] == config
     assert calls["targets"] == targets
     assert calls["progress_callback"] is progress
     assert calls["should_stop"] is should_stop
     assert calls["publish_outputs"] is False
     acquisition_sources = calls["acquisition_sources_by_sample"]
     assert set(acquisition_sources) == {"SampleA"}
-    assert acquisition_sources["SampleA"].byte_size == len(b"sample")
+    assert acquisition_sources["SampleA"].source.byte_size == len(b"sample")
+
+
+def test_service_isolates_runner_inputs_from_callback_mutation(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+    caller_injection_order = {"SampleA": 1}
+    runner_injection_order: dict[str, int] = {}
+    stopped = False
+
+    def progress(_done: int, _total: int, _name: str) -> None:
+        caller_injection_order.clear()
+
+    def runner(_config, _targets, **kwargs):
+        nonlocal stopped
+        progress_callback = kwargs["progress_callback"]
+        progress_callback(0, 1, "SampleA.raw")
+        runner_injection_order.update(kwargs["injection_order"])
+        stopped = True
+        return RunOutput(file_results=[], diagnostics=[])
+
+    request = build_targeted_application_request(
+        config,
+        [_target()],
+        injection_order=caller_injection_order,
+        progress_callback=progress,
+        should_stop=lambda: stopped,
+    )
+
+    TargetedApplicationService(runner).execute(request)
+
+    assert caller_injection_order == {}
+    assert runner_injection_order == {"SampleA": 1}
 
 
 def test_service_resolves_approval_registry_at_adapter_boundary(
@@ -167,7 +201,7 @@ def test_service_resolves_approval_registry_at_adapter_boundary(
         )
     )
 
-    assert calls["model_selection_expected_diff_approvals"] is resolved_approvals
+    assert calls["model_selection_expected_diff_approvals"] == resolved_approvals
 
 
 def test_typed_workflow_failure_never_reaches_publication(

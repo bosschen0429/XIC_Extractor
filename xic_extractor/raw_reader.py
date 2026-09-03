@@ -315,6 +315,7 @@ def open_raw(
     dll_dir: Path,
     *,
     expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    _expected_path_identity: tuple[int, int, int, int, int] | None = None,
     _raw_session_capability: RawAcquisitionSessionCapability | None = None,
     _import_module: Callable[[str], Any] = importlib.import_module,
     _thermo: _ThermoApi | None = None,
@@ -335,9 +336,14 @@ def open_raw(
         raise RawReaderError(
             f"Failed to load Thermo DLL or open raw file: {exc}"
         ) from exc
-    source_binding = _verify_expected_acquisition_source(
-        path,
-        expected_acquisition_source,
+    source_binding = (
+        _verify_expected_acquisition_source(path, expected_acquisition_source)
+        if _expected_path_identity is None
+        else _bind_expected_path_identity(
+            path,
+            expected_acquisition_source,
+            _expected_path_identity,
+        )
     )
     raw_file = None
     try:
@@ -353,7 +359,11 @@ def open_raw(
             cleanup_failed=cleanup_error is not None,
         ) from exc
     try:
-        _verify_source_path_still_bound(path, source_binding)
+        _verify_source_path_still_bound(
+            path,
+            source_binding,
+            verify_content=_expected_path_identity is None,
+        )
     except RawReaderError as exc:
         cleanup_error = _dispose_after_failed_open(raw_file)
         if cleanup_error is not None:
@@ -455,11 +465,56 @@ def _verify_expected_acquisition_source(
     )
 
 
+def _bind_expected_path_identity(
+    path: Path,
+    expected: AcquisitionSourceIdentity | None,
+    expected_path_identity: tuple[int, int, int, int, int],
+) -> _VerifiedAcquisitionSourceBinding:
+    if not isinstance(expected, AcquisitionSourceIdentity):
+        raise RawReaderError(
+            "expected path identity requires an AcquisitionSourceIdentity"
+        )
+    if (
+        expected.acquisition_format != THERMO_RAW_ACQUISITION_FORMAT
+        or expected.observation_namespace != THERMO_RAW_OBSERVATION_NAMESPACE
+    ):
+        raise RawReaderError(
+            "expected acquisition source does not describe the Thermo RAW "
+            "MS-controller-1 adapter"
+        )
+    try:
+        current = _stat_identity(path.stat())
+    except OSError as exc:
+        raise RawReaderError("unable to verify the expected RAW path state") from exc
+    if current != expected_path_identity or current[2] != expected.byte_size:
+        raise RawReaderError(
+            "RAW path state does not match expected acquisition source"
+        )
+    return _VerifiedAcquisitionSourceBinding(
+        source=expected,
+        path_identity=current,
+    )
+
+
 def _verify_source_path_still_bound(
     path: Path,
     binding: _VerifiedAcquisitionSourceBinding | None,
+    *,
+    verify_content: bool = True,
 ) -> None:
     if binding is None:
+        return
+    if not verify_content:
+        try:
+            current_path_identity = _stat_identity(path.stat())
+        except OSError as exc:
+            raise RawReaderError(
+                "RAW source path changed while the vendor handle was opening"
+            ) from exc
+        if current_path_identity != binding.path_identity:
+            raise RawReaderError(
+                "RAW source path changed while the vendor handle was opening"
+            )
         return
     try:
         current_binding = _verify_expected_acquisition_source(

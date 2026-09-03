@@ -49,7 +49,7 @@ from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
 )
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import PeakCandidate
 
@@ -70,7 +70,7 @@ def extract_raw_file_result(
     scoring_context_factory: Callable[..., Any] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
-    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> RawFileExtractionResult:
     from xic_extractor import extractor
 
@@ -103,7 +103,7 @@ def process_file(
     precomputed_istd_shape_metrics: dict[str, tuple[float, float | None]] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
-    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor import extractor
 
@@ -116,7 +116,8 @@ def process_file(
             else extractor.open_raw(
                 raw_path,
                 config.dll_dir,
-                expected_acquisition_source=expected_acquisition_source,
+                expected_acquisition_source=expected_acquisition_source.source,
+                _expected_path_identity=expected_acquisition_source.path_identity,
             )
         )
         with raw_context as raw:

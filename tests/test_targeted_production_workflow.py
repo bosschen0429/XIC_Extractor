@@ -30,7 +30,10 @@ from xic_extractor.peak_detection.targeted_product_projection import (
     build_targeted_product_projection,
 )
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceExpectation,
+    build_acquisition_source_identity,
+)
 from xic_extractor.signal_processing import find_peak_and_area
 
 
@@ -686,10 +689,21 @@ def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
+    stat = (config.data_dir / "SampleA.raw").stat()
+    expectation = AcquisitionSourceExpectation(
+        source=source,
+        path_identity=(
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        ),
+    )
 
     bound = extraction_pipeline._bind_acquisition_sources(
         output,
-        {"SampleA": source},
+        {"SampleA": expectation},
     )
 
     bound_candidate = bound.file_results[0].results[target.label].candidate_ms2_evidence

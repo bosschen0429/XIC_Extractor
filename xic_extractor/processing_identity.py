@@ -234,6 +234,33 @@ class AcquisitionSourceIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class AcquisitionSourceExpectation:
+    """Content identity plus the exact local path state observed with its request."""
+
+    source: AcquisitionSourceIdentity
+    path_identity: tuple[int, int, int, int, int]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, AcquisitionSourceIdentity):
+            raise IdentityContractError("source must be an AcquisitionSourceIdentity")
+        if (
+            not isinstance(self.path_identity, tuple)
+            or len(self.path_identity) != 5
+            or any(
+                isinstance(value, bool) or not isinstance(value, int)
+                for value in self.path_identity
+            )
+        ):
+            raise IdentityContractError(
+                "path_identity must be a five-integer stat identity"
+            )
+        if self.path_identity[2] != self.source.byte_size:
+            raise IdentityContractError(
+                "path_identity size mismatches acquisition source content"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class AcquisitionInputBinding:
     """Request-local adapter key and injection order for one source."""
 

@@ -14,7 +14,7 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     load_targeted_ms1_shape_identity_supports,
 )
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
 from xic_extractor.rt_prior_library import LibraryEntry
 
@@ -33,7 +33,7 @@ def run_pipeline(
     injection_order: dict[str, int] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
-    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceIdentity]
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
     publish_outputs: bool = True,
 ) -> RunOutput:
@@ -117,7 +117,7 @@ def run_pipeline(
 
 def _bind_acquisition_sources(
     output: RunOutput,
-    sources_by_sample: Mapping[str, AcquisitionSourceIdentity],
+    sources_by_sample: Mapping[str, AcquisitionSourceExpectation],
 ) -> RunOutput:
     file_results = []
     seen_samples: set[str] = set()
@@ -128,11 +128,12 @@ def _bind_acquisition_sources(
                 f"Duplicate acquisition output for sample {sample_name!r}."
             )
         seen_samples.add(sample_name)
-        source = sources_by_sample.get(sample_name)
-        if source is None:
+        expectation = sources_by_sample.get(sample_name)
+        if expectation is None:
             raise ConfigError(
                 f"Acquisition output sample {sample_name!r} has no processing identity."
             )
+        source = expectation.source
         results = {}
         for target_label, result in file_result.results.items():
             candidate = result.candidate_ms2_evidence

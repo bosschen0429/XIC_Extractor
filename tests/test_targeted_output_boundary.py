@@ -433,6 +433,42 @@ def test_collision_leaves_existing_output_and_publishes_nothing_else(
     ]
 
 
+def test_noncooperating_collision_after_precheck_is_not_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    original_reject = targeted_output_boundary._reject_collisions
+    collided: list[Path] = []
+
+    def create_after_precheck(paths: object) -> None:
+        resolved = list(paths)
+        original_reject(resolved)
+        collided.append(resolved[0])
+        resolved[0].write_bytes(b"outside-writer")
+
+    monkeypatch.setattr(
+        targeted_output_boundary,
+        "_reject_collisions",
+        create_after_precheck,
+    )
+
+    with pytest.raises(TargetedOutputBoundaryError, match="was rolled back"):
+        publish_targeted_outputs(request, completed, output)
+
+    assert len(collided) == 1
+    assert collided[0].read_bytes() == b"outside-writer"
+    assert [path for path in config.output_csv.parent.iterdir() if path.is_file()] == [
+        collided[0]
+    ]
+
+
 def test_concurrent_non_replacing_publications_are_collision_atomic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -618,20 +654,23 @@ def test_commit_failure_rolls_back_all_final_paths(
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_replace = Path.replace
+    original_publish = targeted_output_boundary._publish_without_replace
     commit_count = 0
     failed = False
 
-    def fail_second_commit(source: Path, target_path: Path) -> Path:
+    def fail_second_commit(source: Path, target_path: Path) -> None:
         nonlocal commit_count, failed
-        if source.parent.name.startswith(".xic-targeted-publish-"):
-            commit_count += 1
-            if commit_count == 2 and not failed:
-                failed = True
-                raise OSError("commit failed")
-        return original_replace(source, target_path)
+        commit_count += 1
+        if commit_count == 2 and not failed:
+            failed = True
+            raise OSError("commit failed")
+        original_publish(source, target_path)
 
-    monkeypatch.setattr(Path, "replace", fail_second_commit)
+    monkeypatch.setattr(
+        targeted_output_boundary,
+        "_publish_without_replace",
+        fail_second_commit,
+    )
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
         publish_targeted_outputs(request, finalized, output)
@@ -653,16 +692,18 @@ def test_commit_cancellation_after_first_move_rolls_back_all_final_paths(
         should_stop=lambda: cancellation_requested,
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_replace = Path.replace
+    original_publish = targeted_output_boundary._publish_without_replace
 
-    def cancel_after_first_commit(source: Path, target_path: Path) -> Path:
+    def cancel_after_first_commit(source: Path, target_path: Path) -> None:
         nonlocal cancellation_requested
-        result = original_replace(source, target_path)
-        if source.parent.name.startswith(".xic-targeted-publish-"):
-            cancellation_requested = True
-        return result
+        original_publish(source, target_path)
+        cancellation_requested = True
 
-    monkeypatch.setattr(Path, "replace", cancel_after_first_commit)
+    monkeypatch.setattr(
+        targeted_output_boundary,
+        "_publish_without_replace",
+        cancel_after_first_commit,
+    )
 
     publication = publish_targeted_outputs(request, finalized, output)
 
@@ -848,6 +889,31 @@ def test_failed_fallback_copy_cannot_truncate_live_output(
     assert not list(tmp_path.glob(".final.csv.rollback-*"))
 
 
+def test_rollback_quarantines_new_output_when_unlink_is_denied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staged = tmp_path / "staged.csv"
+    final = tmp_path / "final.csv"
+    staged.write_bytes(b"recoverable-staged-output")
+    final.write_bytes(b"published-output")
+    original_unlink = targeted_output_boundary.os.unlink
+
+    def deny_final_unlink(path: object, *args: object, **kwargs: object) -> None:
+        if Path(path) == final:
+            raise PermissionError("final is open")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(targeted_output_boundary.os, "unlink", deny_final_unlink)
+
+    restored = targeted_output_boundary._restore_moved_output(final, staged)
+
+    assert restored is True
+    assert not final.exists()
+    assert staged.read_bytes() == b"recoverable-staged-output"
+    assert (tmp_path / ".staged.csv.published").read_bytes() == b"published-output"
+
+
 def test_publisher_rejects_finalized_results_from_another_acquisition(
     tmp_path: Path,
 ) -> None:
@@ -969,6 +1035,20 @@ def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
     )
     assert publication.output.file_results[0].group is None
     assert publication.output.diagnostics == []
+
+
+def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    completed.prepared.acquisition_snapshot.file_results[0].group = "mutated"
+
+    with pytest.raises(TargetedOutputBoundaryError, match="snapshot was mutated"):
+        publish_targeted_outputs(request, completed, output)
 
 
 def test_publisher_rejects_reordered_acquisition_after_completion(

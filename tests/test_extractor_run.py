@@ -11,7 +11,10 @@ from xic_extractor.extraction.targeted_inputs import (
 )
 from xic_extractor.extractor import RunOutput
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceExpectation,
+    build_acquisition_source_identity,
+)
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import (
     PeakCandidate,
@@ -105,6 +108,17 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
+    stat = raw_path.stat()
+    expectation = AcquisitionSourceExpectation(
+        source=source,
+        path_identity=(
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        ),
+    )
     captured = {}
 
     class _OpenedRaw:
@@ -114,10 +128,17 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         def __exit__(self, *_args: object) -> None:
             return None
 
-    def open_raw(actual_path, actual_dll_dir, *, expected_acquisition_source):
+    def open_raw(
+        actual_path,
+        actual_dll_dir,
+        *,
+        expected_acquisition_source,
+        _expected_path_identity,
+    ):
         captured["path"] = actual_path
         captured["dll_dir"] = actual_dll_dir
         captured["source"] = expected_acquisition_source
+        captured["path_identity"] = _expected_path_identity
         return _OpenedRaw()
 
     monkeypatch.setattr(extractor, "open_raw", open_raw)
@@ -126,7 +147,7 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         config,
         [],
         raw_path,
-        expected_acquisition_source=source,
+        expected_acquisition_source=expectation,
     )
 
     assert file_result.sample_name == "SampleA"
@@ -135,6 +156,7 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         "path": raw_path,
         "dll_dir": config.dll_dir,
         "source": source,
+        "path_identity": expectation.path_identity,
     }
 
 
@@ -153,6 +175,17 @@ def test_acquire_passes_expected_sources_to_serial_backend(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
+    stat = raw_path.stat()
+    expectation = AcquisitionSourceExpectation(
+        source=source,
+        path_identity=(
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        ),
+    )
     captured = {}
 
     def run_serial(*_args, **kwargs):
@@ -166,10 +199,10 @@ def test_acquire_passes_expected_sources_to_serial_backend(
         [_target("Analyte")],
         injection_order={"SampleA": 1},
         rt_prior_library={},
-        acquisition_sources_by_sample={"SampleA": source},
+        acquisition_sources_by_sample={"SampleA": expectation},
     )
 
-    assert captured["acquisition_sources_by_sample"] == {"SampleA": source}
+    assert captured["acquisition_sources_by_sample"] == {"SampleA": expectation}
 
 
 def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(

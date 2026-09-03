@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import pickle
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, replace
@@ -146,6 +148,7 @@ class PreparedTargetedProductionWorkflow:
     raw_stems: frozenset[str]
     acquisition_file_ids: tuple[int, ...]
     acquisition_snapshot: RunOutput
+    acquisition_snapshot_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +255,7 @@ def prepare_targeted_production_workflow(
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
     acquisition_file_ids = tuple(id(item) for item in acquisition_evidence.file_results)
     acquisition_snapshot = deepcopy(acquisition_evidence)
+    acquisition_snapshot_sha256 = _run_output_sha256(acquisition_snapshot)
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
         acquisition_snapshot.file_results,
@@ -302,7 +306,24 @@ def prepare_targeted_production_workflow(
         raw_stems=frozenset(path.stem for path in raw_paths),
         acquisition_file_ids=acquisition_file_ids,
         acquisition_snapshot=acquisition_snapshot,
+        acquisition_snapshot_sha256=acquisition_snapshot_sha256,
     )
+
+
+def acquisition_snapshot_for_publication(
+    prepared: PreparedTargetedProductionWorkflow,
+) -> RunOutput:
+    """Return an isolated snapshot only while the owner-sealed bytes remain exact."""
+
+    if _run_output_sha256(prepared.acquisition_snapshot) != (
+        prepared.acquisition_snapshot_sha256
+    ):
+        raise RuntimeError("prepared Targeted acquisition snapshot was mutated")
+    return deepcopy(prepared.acquisition_snapshot)
+
+
+def _run_output_sha256(output: RunOutput) -> str:
+    return hashlib.sha256(pickle.dumps(output, protocol=5)).hexdigest()
 
 
 def snapshot_targeted_production_inputs(

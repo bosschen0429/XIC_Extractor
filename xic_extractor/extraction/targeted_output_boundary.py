@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import tempfile
@@ -13,6 +14,9 @@ from typing import TYPE_CHECKING, Any, Iterator, cast
 
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.extraction.output_dispatch import write_outputs
+from xic_extractor.extraction.targeted_production_workflow import (
+    acquisition_snapshot_for_publication,
+)
 from xic_extractor.extraction.targeted_service import (
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
@@ -87,7 +91,10 @@ def publish_targeted_outputs(
         raise TargetedOutputBoundaryError(
             "prepared Targeted workflow crossed the acquisition evidence"
         )
-    acquisition_snapshot = prepared.acquisition_snapshot
+    try:
+        acquisition_snapshot = acquisition_snapshot_for_publication(prepared)
+    except RuntimeError as exc:
+        raise TargetedOutputBoundaryError(str(exc)) from exc
     validate_finalized_result_population(
         request,
         finalized_results,
@@ -492,7 +499,10 @@ def _commit_staged_outputs(
             for staged, final in ordered:
                 check_cancellation()
                 final.parent.mkdir(parents=True, exist_ok=True)
-                staged.replace(final)
+                if replace_existing:
+                    staged.replace(final)
+                else:
+                    _publish_without_replace(staged, final)
                 moved.append((staged, final))
                 check_cancellation()
         except Exception as exc:
@@ -533,14 +543,15 @@ def _commit_staged_outputs(
 
 
 def _restore_moved_output(final: Path, staged: Path) -> bool:
+    if staged.exists():
+        return _remove_published_output(final, recovery_path=staged)
     try:
         final.replace(staged)
         return True
     except OSError:
         try:
             _atomic_copy_replace(final, staged)
-            final.unlink()
-            return True
+            return _remove_published_output(final, recovery_path=staged)
         except OSError:
             return False
 
@@ -575,6 +586,44 @@ def _atomic_copy_replace(source: Path, destination: Path) -> None:
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _publish_without_replace(staged: Path, final: Path) -> None:
+    """Atomically claim a new destination without replacing an outside writer."""
+
+    try:
+        os.link(staged, final)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{final.name}.publish-",
+        dir=final.parent,
+    )
+    os.close(descriptor)
+    temporary = Path(temp_name)
+    try:
+        shutil.copy2(staged, temporary)
+        with temporary.open("r+b") as handle:
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(temporary, final)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _remove_published_output(final: Path, *, recovery_path: Path) -> bool:
+    try:
+        os.unlink(final)
+        return True
+    except OSError:
+        quarantine = recovery_path.with_name(f".{recovery_path.name}.published")
+        try:
+            os.replace(final, quarantine)
+            return True
+        except OSError:
+            return False
 
 
 @contextmanager

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
@@ -42,10 +43,12 @@ if TYPE_CHECKING:
         ExpectedDiffApprovalRecord,
     )
     from xic_extractor.processing_identity import (
-        AcquisitionSourceIdentity,
+        AcquisitionSourceExpectation,
         ProcessingRequestIdentity,
     )
     from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+
+    from .targeted_production_workflow import TargetedProductionInputSnapshot
 
 
 class TargetedRunner(Protocol):
@@ -61,7 +64,7 @@ class TargetedRunner(Protocol):
             Mapping[str, ExpectedDiffApprovalRecord] | None
         ) = None,
         acquisition_sources_by_sample: (
-            Mapping[str, AcquisitionSourceIdentity] | None
+            Mapping[str, AcquisitionSourceExpectation] | None
         ) = None,
         *,
         publish_outputs: Literal[False] = False,
@@ -160,7 +163,7 @@ class TargetedApplicationService:
     ) -> TargetedApplicationExecution:
         """Acquire once and publish only a complete finalized Target population."""
 
-        resolved_request = _resolve_application_request(request)
+        resolved_request = deepcopy(_resolve_application_request(request))
         from xic_extractor.processing_identity import FingerprintCancelledError
 
         from .targeted_production_workflow import (
@@ -177,18 +180,19 @@ class TargetedApplicationService:
             return TargetedApplicationExecution(
                 active_output=RunOutput(file_results=[], diagnostics=[])
             )
+        runner_request = deepcopy(resolved_request)
         active_output = self.runner(
-            resolved_request.config,
-            list(resolved_request.targets),
-            progress_callback=resolved_request.progress_callback,
-            should_stop=resolved_request.should_stop,
-            injection_order=resolved_request.injection_order,
-            rt_prior_library=resolved_request.rt_prior_library,
+            runner_request.config,
+            list(runner_request.targets),
+            progress_callback=runner_request.progress_callback,
+            should_stop=runner_request.should_stop,
+            injection_order=runner_request.injection_order,
+            rt_prior_library=runner_request.rt_prior_library,
             model_selection_expected_diff_approvals=(
-                resolved_request.model_selection_expected_diff_approvals
+                runner_request.model_selection_expected_diff_approvals
             ),
             acquisition_sources_by_sample=_acquisition_sources_by_sample(
-                input_snapshot.processing_request
+                input_snapshot
             ),
             publish_outputs=False,
         )
@@ -362,13 +366,27 @@ def validate_finalized_result_population(
 
 
 def _acquisition_sources_by_sample(
-    request: ProcessingRequestIdentity,
-) -> dict[str, AcquisitionSourceIdentity]:
+    snapshot: TargetedProductionInputSnapshot,
+) -> dict[str, AcquisitionSourceExpectation]:
+    from xic_extractor.processing_identity import AcquisitionSourceExpectation
+
+    request = snapshot.processing_request
     sources_by_id = {
         source.acquisition_source_id: source for source in request.acquisition_sources
     }
+    states_by_stem = {
+        path.stem: state
+        for path, state in zip(
+            snapshot.raw_paths,
+            snapshot.raw_file_states,
+            strict=True,
+        )
+    }
     return {
-        binding.adapter_input_key: sources_by_id[binding.acquisition_source_id]
+        binding.adapter_input_key: AcquisitionSourceExpectation(
+            source=sources_by_id[binding.acquisition_source_id],
+            path_identity=states_by_stem[binding.adapter_input_key],
+        )
         for binding in request.acquisition_bindings
     }
 

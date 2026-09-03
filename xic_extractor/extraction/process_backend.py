@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ def run_process(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
-    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceIdentity]
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> RunOutput:
     from xic_extractor import extractor
@@ -74,7 +74,7 @@ def collect_raw_file_results_process(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
-    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceIdentity]
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
     runner: Callable[..., list[Any]] | None = None,
 ) -> list[RawFileExtractionResult]:
@@ -120,7 +120,7 @@ def collect_istd_prepass_process(
     raw_paths: list[Path],
     *,
     should_stop: Callable[[], bool] | None = None,
-    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceIdentity]
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
     runner: Callable[..., list[Any]] | None = None,
 ) -> dict[str, dict[str, float]]:
@@ -166,8 +166,8 @@ def collect_istd_prepass_process(
 
 def _expected_source(
     raw_path: Path,
-    sources_by_sample: Mapping[str, AcquisitionSourceIdentity] | None,
-) -> AcquisitionSourceIdentity | None:
+    sources_by_sample: Mapping[str, AcquisitionSourceExpectation] | None,
+) -> AcquisitionSourceExpectation | None:
     if sources_by_sample is None:
         return None
     try:
