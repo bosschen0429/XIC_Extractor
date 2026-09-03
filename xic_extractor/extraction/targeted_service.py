@@ -193,7 +193,7 @@ class TargetedPublication:
     """The committed paths and exact output view consumed by their writers."""
 
     paths: tuple[Any, ...]
-    output: Any
+    output: RunOutput
 
 
 @dataclass(frozen=True)

@@ -22,6 +22,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
@@ -74,6 +75,7 @@ class CaptureCandidateBinding:
     query_rt_max: float
     query_ppm_tol: float
     preferred_rt: float
+    retained_selected_integration: IntegrationResult | None = None
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
@@ -96,6 +98,13 @@ class CaptureCandidateBinding:
         if not rt_min <= preferred_rt <= rt_max:
             raise SearchScopeContractError(
                 "capture candidate preferred_rt is outside its query RT interval"
+            )
+        if (
+            self.retained_selected_integration is not None
+            and type(self.retained_selected_integration) is not IntegrationResult
+        ):
+            raise SearchScopeContractError(
+                "retained capture selection must use one exact IntegrationResult"
             )
 
 

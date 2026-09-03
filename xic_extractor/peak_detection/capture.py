@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import cast
 
 from xic_extractor.peak_detection.baseline import BaselineMethod
@@ -17,6 +17,7 @@ from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     build_peak_hypotheses,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_trace_detection import (
     Ms1TracePeakDetection,
     detect_ms1_trace_peak,
@@ -167,9 +168,16 @@ def capture_peak_hypotheses(
                 "shared hypothesis owner selected more than one candidate"
             )
         receipt_hypothesis = selected_values[0] if selected_values else None
-        selected = receipt_hypothesis
+        if binding.retained_selected_integration is None:
+            selected = receipt_hypothesis
+        else:
+            hypotheses, selected = _bind_retained_selection(
+                hypotheses,
+                binding.retained_selected_integration,
+            )
         if (
             selected is not None
+            and binding.retained_selected_integration is None
             and scope.method_constraints.boundary_policy == "targeted_gaussian15"
         ):
             selected = promote_targeted_boundary_hypothesis(
@@ -207,6 +215,31 @@ def capture_peak_hypotheses(
         receipt_hypothesis=receipt_hypothesis,
         selected_hypothesis=selected,
     )
+
+
+def _bind_retained_selection(
+    hypotheses: tuple[PeakHypothesis, ...],
+    retained: IntegrationResult,
+) -> tuple[tuple[PeakHypothesis, ...], PeakHypothesis | None]:
+    if type(retained) is not IntegrationResult:
+        raise SampleLocalCaptureError(
+            "retained selection must be one exact IntegrationResult"
+        )
+    matches = tuple(item for item in hypotheses if item.integration == retained)
+    if len(matches) != 1:
+        raise SampleLocalCaptureError(
+            "retained selected hypothesis is absent from the captured trace"
+        )
+    matched = matches[0]
+    selected_hypothesis: PeakHypothesis | None = None
+    rebound = []
+    for item in hypotheses:
+        selected_item = item is matched
+        updated = replace(item, audit=replace(item.audit, selected=selected_item))
+        rebound.append(updated)
+        if selected_item:
+            selected_hypothesis = updated
+    return tuple(rebound), selected_hypothesis
 
 
 def mint_captured_peak_observation(

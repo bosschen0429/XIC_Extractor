@@ -517,6 +517,11 @@ def _capture_binding(
             if result.reported_rt is not None
             else (trace.rt_min + trace.rt_max) / 2
         ),
+        retained_selected_integration=(
+            None
+            if result.selected_hypothesis is None
+            else result.selected_hypothesis.integration
+        ),
     )
 
 

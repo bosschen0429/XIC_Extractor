@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import inspect
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -20,6 +20,7 @@ from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
+from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 
 
 def test_complete_finalized_population_publishes_csv_excel_and_manifest(
@@ -49,6 +50,26 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
+def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
+    config, target, output = production_case(tmp_path)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    published = publish_targeted_outputs(request, finalized, output)
+
+    assert type(published.output) is RunOutput
+    assert type(published.output.file_results) is list
+    assert type(published.output.file_results[0]) is FileResult
+    extraction = published.output.file_results[0].results[target.label]
+    assert type(extraction) is ExtractionResult
+    assert replace(extraction, reason="consumer-copy").reason == "consumer-copy"
+    assert asdict(published.output)["file_results"][0]["sample_name"] == "SampleA"
+
+
 def test_manifest_does_not_claim_any_unstaged_stale_output(
     tmp_path: Path,
 ) -> None:
@@ -62,9 +83,7 @@ def test_manifest_does_not_claim_any_unstaged_stale_output(
         "output_csv": config.output_csv,
         "long_csv": config.output_csv.with_name("xic_results_long.csv"),
         "diagnostics_csv": config.diagnostics_csv,
-        "score_breakdown_csv": config.output_csv.with_name(
-            "xic_score_breakdown.csv"
-        ),
+        "score_breakdown_csv": config.output_csv.with_name("xic_score_breakdown.csv"),
     }
     config.output_csv.parent.mkdir(parents=True)
     for artifact_id, path in stale_outputs.items():
@@ -79,9 +98,7 @@ def test_manifest_does_not_claim_any_unstaged_stale_output(
     publish_targeted_outputs(request, finalized, output)
 
     manifest = json.loads(
-        config.output_csv.with_name("method_manifest.json").read_text(
-            encoding="utf-8"
-        )
+        config.output_csv.with_name("method_manifest.json").read_text(encoding="utf-8")
     )
     for artifact_id, path in stale_outputs.items():
         artifact = manifest["output_artifacts"][artifact_id]
@@ -222,9 +239,10 @@ def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> 
 
     assert final_output is not output
     assert summary["targets"][0]["detected"] == 1
-    assert summary["targets"][0]["median_area"] == final_output.file_results[0].results[
-        target.label
-    ].reported_peak_area
+    assert (
+        summary["targets"][0]["median_area"]
+        == final_output.file_results[0].results[target.label].reported_peak_area
+    )
 
 
 def test_collision_leaves_existing_output_and_publishes_nothing_else(

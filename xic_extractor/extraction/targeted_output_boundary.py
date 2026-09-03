@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,7 +15,7 @@ from xic_extractor.extraction.targeted_service import (
     TargetedApplicationRequest,
     TargetedPublication,
 )
-from xic_extractor.extractor import RunOutput
+from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
     method_manifest_path,
@@ -28,80 +28,6 @@ from xic_extractor.peak_detection.targeted_product_projection import (
 
 class TargetedOutputBoundaryError(RuntimeError):
     """Raised before a complete finalized output set can be published."""
-
-
-@dataclass(frozen=True, slots=True)
-class _FinalizedExtractionRenderView:
-    acquisition: Any
-    value: float | None
-    no_write_reason: str
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.acquisition, name)
-
-    @property
-    def reported_rt(self) -> float | None:
-        return None if self.no_write_reason else self.acquisition.reported_rt
-
-    @property
-    def reported_peak_area(self) -> float | None:
-        return self.value
-
-    @property
-    def reported_peak_intensity(self) -> float | None:
-        return (
-            None if self.no_write_reason else self.acquisition.reported_peak_intensity
-        )
-
-    @property
-    def reported_peak_start(self) -> float | None:
-        return None if self.no_write_reason else self.acquisition.reported_peak_start
-
-    @property
-    def reported_peak_end(self) -> float | None:
-        return None if self.no_write_reason else self.acquisition.reported_peak_end
-
-    @property
-    def reported_peak_width(self) -> float | None:
-        return None if self.no_write_reason else self.acquisition.reported_peak_width
-
-    @property
-    def targeted_product_projection(self) -> TargetedProductProjection | None:
-        projection = self.acquisition.targeted_product_projection
-        if projection is None:
-            return None
-        if self.no_write_reason:
-            return replace(
-                projection,
-                product_state="not_counted",
-                counted_detection=False,
-                review_state="review_required",
-                projection_reason=self.no_write_reason,
-            )
-        return replace(
-            projection,
-            counted_detection=True,
-            projection_reason="finalized_numeric",
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class _FinalizedFileRenderView:
-    acquisition: Any
-    results: dict[str, _FinalizedExtractionRenderView]
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.acquisition, name)
-
-    @property
-    def extraction_results(self) -> tuple[_FinalizedExtractionRenderView, ...]:
-        return tuple(self.results.values())
-
-
-@dataclass(frozen=True, slots=True)
-class _FinalizedRunRenderView:
-    file_results: tuple[_FinalizedFileRenderView, ...]
-    diagnostics: list[Any]
 
 
 def publish_targeted_outputs(
@@ -128,7 +54,7 @@ def publish_targeted_outputs(
         write_outputs(
             stage_config,
             list(request.targets),
-            cast(RunOutput, render_view),
+            render_view,
             write_manifest=False,
         )
         stage_excel: Path | None = None
@@ -137,7 +63,7 @@ def publish_targeted_outputs(
             write_excel_from_run_output(
                 stage_config,
                 list(request.targets),
-                cast(RunOutput, render_view),
+                render_view,
                 output_path=stage_excel,
             )
         staged_to_final = _staged_output_map(
@@ -178,7 +104,7 @@ def publish_targeted_outputs(
 def _build_render_view(
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
-) -> _FinalizedRunRenderView:
+) -> RunOutput:
     decisions: dict[tuple[str, str], Any] = {}
     for result in finalized_results:
         if isinstance(result, FinalizedTargetMs1BackfillResult):
@@ -196,47 +122,104 @@ def _build_render_view(
         target_label = (
             result.completed_projection.row_binding.target.definition.target.label
         )
-        for decision in result.completed_projection.decisions:
-            subject = cast(Any, decision.subject)
+        for projection_decision in result.completed_projection.decisions:
+            subject = cast(Any, projection_decision.subject)
             key = (subject.sample.metadata.sample_name, target_label)
             if key in decisions:
                 raise TargetedOutputBoundaryError(
                     "finalized Targeted decision population contains duplicates"
                 )
-            decisions[key] = decision.payload
+            decisions[key] = projection_decision
 
-    files: list[_FinalizedFileRenderView] = []
+    files: list[FileResult] = []
     consumed: set[tuple[str, str]] = set()
     for file_result in acquisition_evidence.file_results:
-        rendered: dict[str, _FinalizedExtractionRenderView] = {}
+        rendered: dict[str, ExtractionResult] = {}
         for target_label, extraction in file_result.results.items():
             key = (file_result.sample_name, target_label)
-            payload = decisions.get(key)
-            if payload is None:
+            render_decision = decisions.get(key)
+            if render_decision is None:
                 raise TargetedOutputBoundaryError(
                     "finalized Targeted decisions do not cover acquisition evidence"
                 )
             consumed.add(key)
-            if payload.variant == "numeric":
-                rendered[target_label] = _FinalizedExtractionRenderView(
-                    extraction,
-                    payload.value,
-                    "",
+            no_write_reason = (
+                ""
+                if render_decision.variant == "numeric"
+                else getattr(
+                    render_decision,
+                    "no_write_reason",
+                    f"finalized_{render_decision.variant}",
                 )
-            else:
-                rendered[target_label] = _FinalizedExtractionRenderView(
-                    extraction,
-                    None,
-                    f"finalized_{payload.variant}",
-                )
-        files.append(_FinalizedFileRenderView(file_result, rendered))
+            )
+            rendered[target_label] = _finalized_extraction_result(
+                extraction,
+                value=render_decision.value,
+                no_write_reason=no_write_reason,
+            )
+        files.append(replace(file_result, results=rendered))
     if consumed != set(decisions):
         raise TargetedOutputBoundaryError(
             "finalized Targeted decisions crossed the acquisition sample population"
         )
-    return _FinalizedRunRenderView(
-        file_results=tuple(files),
+    return RunOutput(
+        file_results=files,
         diagnostics=list(acquisition_evidence.diagnostics),
+    )
+
+
+def _finalized_extraction_result(
+    extraction: ExtractionResult,
+    *,
+    value: float | None,
+    no_write_reason: str,
+) -> ExtractionResult:
+    projection = _finalized_product_projection(
+        extraction.targeted_product_projection,
+        no_write_reason=no_write_reason,
+    )
+    if not no_write_reason:
+        if extraction.reported_peak_area != value:
+            raise TargetedOutputBoundaryError(
+                "finalized Targeted value does not match its public result model"
+            )
+        return replace(extraction, targeted_product_projection=projection)
+    return replace(
+        extraction,
+        peak_result=replace(
+            extraction.peak_result,
+            peak=None,
+            candidates=(),
+            candidate_scores=(),
+            confidence=None,
+            reason=no_write_reason,
+        ),
+        selected_hypothesis=None,
+        selection_decision=None,
+        model_selection_result=None,
+        targeted_product_projection=projection,
+    )
+
+
+def _finalized_product_projection(
+    projection: TargetedProductProjection | None,
+    *,
+    no_write_reason: str,
+) -> TargetedProductProjection | None:
+    if projection is None:
+        return None
+    if no_write_reason:
+        return replace(
+            projection,
+            product_state="not_counted",
+            counted_detection=False,
+            review_state="review_required",
+            projection_reason=no_write_reason,
+        )
+    return replace(
+        projection,
+        counted_detection=True,
+        projection_reason="finalized_numeric",
     )
 
 

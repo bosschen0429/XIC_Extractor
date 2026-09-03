@@ -70,7 +70,6 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
             ),
         ),
     )
-
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
             config,
@@ -83,6 +82,84 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     assert len(finalized) == 1
     assert finalized[0].completed_projection.counted_detection_count == 2
     assert finalized[0].completed_projection.no_write_count == 0
+
+
+def test_finalization_preserves_the_acquisition_selected_hypothesis(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    rt = np.linspace(1.0, 2.0, 401)
+    intensity = (
+        10.0
+        + 100.0 * np.exp(-((rt - 1.40) ** 2) / 0.0005)
+        + 1000.0 * np.exp(-((rt - 1.62) ** 2) / 0.0005)
+    )
+    trace = Trace.from_arrays(
+        sample_name="SampleA",
+        mz=target.mz,
+        rt=rt,
+        intensity=intensity,
+        rt_min=target.rt_min,
+        rt_max=target.rt_max,
+        ppm_tol=target.ppm_tol,
+    )
+    peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.62)
+    hypotheses = build_peak_hypotheses(
+        analysis_mode="targeted",
+        common_evidence_source_id="test-retained-trace",
+        sample_name="SampleA",
+        target_label=target.label,
+        role="Analyte",
+        istd_pair="",
+        resolver_mode=config.resolver_mode,
+        peak_result=peak_result,
+        trace_group=targeted_trace_group(
+            trace,
+            target_label=target.label,
+            resolver_mode=config.resolver_mode,
+        ),
+        count_no_ms2_as_detected=True,
+    )
+    assert len(hypotheses) >= 2
+    selected = min(hypotheses, key=lambda item: item.integration.height_raw)
+    original = output.file_results[0].results[target.label]
+    evidence = original.candidate_ms2_evidence
+    assert evidence is not None
+    product = evidence.best_product_evidence
+    assert product is not None
+    output.file_results[0].results[target.label] = replace(
+        original,
+        peak_result=peak_result,
+        selected_hypothesis=selected,
+        acquisition_trace=trace,
+        candidate_ms2_evidence=replace(
+            evidence,
+            best_scan_rt=selected.integration.rt_apex_min,
+            best_product_evidence=replace(
+                product,
+                scan_rt=selected.integration.rt_apex_min,
+            ),
+        ),
+        targeted_product_projection=build_targeted_product_projection(
+            TargetedPriorContext(role="Analyte"),
+            rt=selected.integration.rt_apex_min,
+            area=selected.integration.area_raw_counts_seconds,
+            confidence="HIGH",
+            nl_status="OK",
+        ),
+    )
+    selected_area = output.file_results[0].results[target.label].reported_peak_area
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert finalized[0].completed_projection.decisions[0].value == selected_area
 
 
 def test_missing_selected_peak_finalizes_as_searched_no_observation(
@@ -157,9 +234,10 @@ def test_neutral_loss_disabled_target_uses_ms1_backfill_result(tmp_path: Path) -
     assert result.target == target
     assert len(result.decisions) == 1
     assert result.decisions[0].variant == "numeric"
-    assert result.decisions[0].value == output.file_results[0].results[
-        target.label
-    ].reported_peak_area
+    assert (
+        result.decisions[0].value
+        == output.file_results[0].results[target.label].reported_peak_area
+    )
 
 
 def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
