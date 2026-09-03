@@ -7,6 +7,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
+from openpyxl import load_workbook
 
 from tests.test_targeted_production_workflow import production_case
 from xic_extractor.extraction import targeted_output_boundary
@@ -22,6 +23,8 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
+from xic_extractor.output.review_report import review_report_path_for_excel
 
 
 def test_complete_finalized_population_publishes_csv_excel_and_manifest(
@@ -49,6 +52,51 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     }
     assert all(path.is_file() for path in published.paths)
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
+
+
+def test_published_workbook_binds_the_published_method_manifest(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    excel_path = config.output_csv.with_name("xic_results_20260903.xlsx")
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        excel_output_path=excel_path,
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    publish_targeted_outputs(request, finalized, output)
+
+    workbook = load_workbook(excel_path, read_only=True, data_only=True)
+    metadata = dict(workbook["Run Metadata"].iter_rows(values_only=True))
+    workbook.close()
+    manifest = method_manifest_path(config)
+    assert metadata["method_manifest_path"] == manifest.name
+    assert metadata["method_manifest_sha256"] == artifact_sha256(manifest)
+
+
+def test_published_review_report_uses_the_public_workbook_name(
+    tmp_path: Path,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, emit_review_report=True)
+    excel_path = config.output_csv.with_name("xic_results_20260903.xlsx")
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        excel_output_path=excel_path,
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    publication = publish_targeted_outputs(request, finalized, output)
+
+    report_path = review_report_path_for_excel(excel_path)
+    assert report_path in publication.paths
+    assert report_path.is_file()
+    assert not excel_path.with_name("__targeted_output__.html").exists()
 
 
 def test_duplicate_declared_output_destinations_publish_nothing(

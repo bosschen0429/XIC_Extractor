@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 
 from xic_extractor import extractor
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
-from xic_extractor.extractor import RunOutput
+from xic_extractor.extractor import FileResult, RunOutput
 
 
 def test_cli_and_gui_use_same_targeted_application_service() -> None:
@@ -131,7 +131,10 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
 
 def test_typed_workflow_failure_never_reaches_publication() -> None:
     calls: list[str] = []
-    acquisition = RunOutput(file_results=[], diagnostics=[])
+    acquisition = RunOutput(
+        file_results=[FileResult(sample_name="SampleA", results={})],
+        diagnostics=[],
+    )
 
     def acquire(*_args, **_kwargs):
         calls.append("acquire")
@@ -157,6 +160,32 @@ def test_typed_workflow_failure_never_reaches_publication() -> None:
         )
 
     assert calls == ["acquire", "workflow"]
+
+
+def test_empty_acquisition_reports_no_input_before_finalization() -> None:
+    calls: list[str] = []
+    acquisition = RunOutput(file_results=[], diagnostics=[])
+
+    def acquire(*_args, **_kwargs):
+        calls.append("acquire")
+        return acquisition
+
+    def finalize(*_args, **_kwargs):
+        calls.append("workflow")
+
+    def publish(*_args, **_kwargs):
+        calls.append("publish")
+
+    with pytest.raises(ConfigError, match="No RAW files were acquired"):
+        TargetedApplicationService(
+            acquire,
+            finalized_workflow_runner=finalize,
+            output_publisher=publish,
+        ).execute_application(
+            build_targeted_application_request(_config(), [_target()])
+        )
+
+    assert calls == ["acquire"]
 
 
 def test_pipeline_input_resolution_keeps_approvals_explicit(

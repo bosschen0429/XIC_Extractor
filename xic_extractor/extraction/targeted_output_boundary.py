@@ -23,6 +23,7 @@ from xic_extractor.output.method_manifest import (
     method_manifest_path,
     write_method_manifest,
 )
+from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
@@ -68,6 +69,23 @@ def publish_targeted_outputs(
             render_view,
             write_manifest=False,
         )
+        final_manifest = method_manifest_path(request.config)
+        stage_manifest = method_manifest_path(stage_config)
+        staged_before_excel = _staged_output_map(
+            stage_root,
+            request,
+            stage_config=stage_config,
+            stage_excel=None,
+        )
+        write_method_manifest(
+            request.config,
+            request.targets,
+            context=request.method_manifest_context,
+            destination=stage_manifest,
+            artifact_sources={
+                final: staged for staged, final in staged_before_excel.items()
+            },
+        )
         stage_excel: Path | None = None
         if request.excel_output_path is not None:
             stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
@@ -83,22 +101,8 @@ def publish_targeted_outputs(
             stage_config=stage_config,
             stage_excel=stage_excel,
         )
-        final_manifest = method_manifest_path(request.config)
-        stage_manifest = method_manifest_path(stage_config)
         staged_to_final[stage_manifest] = final_manifest
         _reject_duplicate_destinations(staged_to_final)
-        artifact_sources = {
-            final: staged
-            for staged, final in staged_to_final.items()
-            if staged != stage_manifest
-        }
-        write_method_manifest(
-            request.config,
-            request.targets,
-            context=request.method_manifest_context,
-            destination=stage_manifest,
-            artifact_sources=artifact_sources,
-        )
         if not request.replace_existing_outputs:
             _reject_collisions(staged_to_final.values())
         paths = _commit_staged_outputs(
@@ -268,6 +272,12 @@ def _staged_output_map(
         elif stage_excel is not None and staged == stage_excel:
             assert request.excel_output_path is not None
             final = request.excel_output_path
+        elif (
+            stage_excel is not None
+            and staged == review_report_path_for_excel(stage_excel)
+        ):
+            assert request.excel_output_path is not None
+            final = review_report_path_for_excel(request.excel_output_path)
         else:
             final = request.config.output_csv.parent / staged.relative_to(stage_root)
         mapping[staged] = final

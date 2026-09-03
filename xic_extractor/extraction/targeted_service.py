@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.execution_runtime import AttemptRuntime
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
@@ -245,6 +245,8 @@ class TargetedApplicationService:
                     "finalized workflow runner and output publisher must be "
                     "configured together"
                 )
+            if not active_output.file_results:
+                raise ConfigError("No RAW files were acquired for Targeted extraction.")
             finalized_results = finalized_runner(resolved_request, active_output)
             _validate_finalized_result_population(resolved_request, finalized_results)
             if (
