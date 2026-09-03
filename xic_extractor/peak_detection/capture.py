@@ -116,13 +116,23 @@ def capture_peak_hypotheses(
     except SearchScopeContractError as exc:
         raise SampleLocalCaptureError(str(exc)) from exc
     peak_config = scope.method_constraints.peak_config
-    detection = detect_ms1_trace_peak(
-        trace.rt,
-        trace.intensity,
-        peak_config=peak_config,
-        preferred_rt=binding.preferred_rt,
-        peak_finder=find_peak_and_area,
-    )
+    if (
+        binding.selection_policy == "retained_only"
+        and binding.retained_selected_integration is None
+    ):
+        detection = Ms1TracePeakDetection(
+            status="not_detected",
+            rt=trace.rt,
+            intensity=trace.intensity,
+        )
+    else:
+        detection = detect_ms1_trace_peak(
+            trace.rt,
+            trace.intensity,
+            peak_config=peak_config,
+            preferred_rt=binding.preferred_rt,
+            peak_finder=find_peak_and_area,
+        )
     label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
         scope,
         query_mz=binding.query_mz,
@@ -191,6 +201,7 @@ def capture_peak_hypotheses(
                 )
             )
             and scope.method_constraints.boundary_policy == "targeted_gaussian15"
+            and binding.selection_policy == "capture_default"
         ):
             selected = promote_targeted_boundary_hypothesis(
                 selected,

@@ -33,6 +33,7 @@ from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.refinement import (
     bootstrap_mode_track_refinement_from_cid_nl_support,
+    bootstrap_mode_track_refinement_from_ms1_hypotheses,
     run_post_repair_mode_track_final_attempt,
 )
 from xic_extractor.alignment.owner_backfill import (
@@ -203,9 +204,9 @@ class ModeTrackWorkflowArguments:
     retain_observation_only_candidates: bool = False
 
     def __post_init__(self) -> None:
-        if type(self.sample_assessments) is not tuple or not self.sample_assessments:
+        if type(self.sample_assessments) is not tuple:
             raise AlignmentWorkflowContractError(
-                "ModeTrack sample assessments must be a non-empty tuple"
+                "ModeTrack sample assessments must be an exact tuple"
             )
         if any(
             type(item) is not tuple
@@ -665,20 +666,55 @@ def _execute_composition_after_runtime(
             for item in adapter.capture_inputs
         )
         stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
-        run = bootstrap_mode_track_refinement_from_cid_nl_support(
-            processing_owners=owners,
-            sample_assessments=adapter.mode_track.sample_assessments,
-            alignment_config=adapter.mode_track.alignment_config,
-            trajectory_policy=adapter.mode_track.trajectory_policy,
-            drift_lookup=adapter.drift_lookup,
-            retain_observation_only_candidates=(
-                getattr(
-                    adapter.mode_track,
-                    "retain_observation_only_candidates",
-                    False,
-                )
-            ),
+        ms1_only_target = (
+            type(request) is TargetWorkflowRequest
+            and type(request.scope) is TargetSearchScope
+            and request.scope.target.definition.target.neutral_loss_da is None
         )
+        if not ms1_only_target:
+            run = bootstrap_mode_track_refinement_from_cid_nl_support(
+                processing_owners=owners,
+                sample_assessments=adapter.mode_track.sample_assessments,
+                alignment_config=adapter.mode_track.alignment_config,
+                trajectory_policy=adapter.mode_track.trajectory_policy,
+                drift_lookup=adapter.drift_lookup,
+                retain_observation_only_candidates=(
+                    getattr(
+                        adapter.mode_track,
+                        "retain_observation_only_candidates",
+                        False,
+                    )
+                ),
+            )
+        else:
+            assert type(request) is TargetWorkflowRequest
+            target = request.scope.target.definition.target
+            mz_delta = target.mz * target.ppm_tol / 1_000_000.0
+            sample_by_id = {
+                sample.identity.sample_identity_id: sample
+                for sample in request.scope.samples
+            }
+            sample_hypotheses = tuple(
+                (
+                    sample_by_id[
+                        item.owner_observation.content.canonical_sample_identity_id
+                    ],
+                    item.owner_hypothesis,
+                )
+                for item in adapter.capture_inputs
+                if item.owner_observation is not None
+                and item.owner_hypothesis is not None
+            )
+            run = bootstrap_mode_track_refinement_from_ms1_hypotheses(
+                processing_owners=owners,
+                samples=request.scope.samples,
+                sample_hypotheses=sample_hypotheses,
+                family_mz_interval=(target.mz - mz_delta, target.mz + mz_delta),
+                family_rt_interval=(target.rt_min, target.rt_max),
+                alignment_config=adapter.mode_track.alignment_config,
+                trajectory_policy=adapter.mode_track.trajectory_policy,
+                drift_lookup=adapter.drift_lookup,
+            )
         stage = WorkflowStage.CROSS_SAMPLE_MT0
         context = apply_mode_track_refinement_run_for_workflow(
             processing_owners=owners,
@@ -817,7 +853,7 @@ def _capture_workflow_input(
     )
     owner_observation = getattr(item, "owner_observation", None)
     owner_hypothesis = getattr(item, "owner_hypothesis", None)
-    if owner_observation is None:
+    if owner_observation is None or capture.selected_hypothesis is None:
         return capture
     assert owner_hypothesis is not None
     return bind_owner_backed_capture_hypothesis(
@@ -1127,11 +1163,23 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "capture inputs must exactly preserve declared candidate order"
         )
-    if tuple(sample for sample, _ in adapter.mode_track.sample_assessments) != tuple(
+    assessment_samples = tuple(
+        sample for sample, _ in adapter.mode_track.sample_assessments
+    )
+    expected_samples = tuple(
         sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)
+    )
+    if assessment_samples:
+        if assessment_samples != expected_samples:
+            raise AlignmentWorkflowContractError(
+                "ModeTrack assessments do not close the exact scope samples"
+            )
+    elif (
+        type(request) is not TargetWorkflowRequest
+        or request.scope.target.definition.target.neutral_loss_da is not None
     ):
         raise AlignmentWorkflowContractError(
-            "ModeTrack assessments do not close the exact scope samples"
+            "only an MS1-only Target may use captured owner facts without assessments"
         )
     if type(adapter.predecessor_cell_observations) is not tuple or any(
         type(item) is not CellObservationRef

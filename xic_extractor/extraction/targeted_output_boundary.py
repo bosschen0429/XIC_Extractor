@@ -6,14 +6,14 @@ import os
 import shutil
 import tempfile
 from collections.abc import Callable, Mapping
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Iterator, cast
 
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.targeted_service import (
-    FinalizedTargetMs1BackfillResult,
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
     TargetedPublication,
@@ -42,6 +42,7 @@ class _TargetedPublicationCancelled(Exception):
 _STAGE_OUTPUT_CSV = "__targeted_output__.csv"
 _STAGE_DIAGNOSTICS_CSV = "__targeted_diagnostics__.csv"
 _STAGE_EXCEL_OUTPUT = "__targeted_output__.xlsx"
+_PUBLICATION_LOCK_NAME = ".xic-targeted-publish.lock"
 
 
 def publish_targeted_outputs(
@@ -105,8 +106,6 @@ def publish_targeted_outputs(
         )
         staged_to_final[stage_manifest] = final_manifest
         _reject_duplicate_destinations(staged_to_final)
-        if not request.replace_existing_outputs:
-            _reject_collisions(staged_to_final.values())
         paths = _commit_staged_outputs(
             staged_to_final,
             replace_existing=request.replace_existing_outputs,
@@ -131,18 +130,6 @@ def _build_render_view(
 ) -> RunOutput:
     decisions: dict[tuple[str, str], Any] = {}
     for result in finalized_results:
-        if isinstance(result, FinalizedTargetMs1BackfillResult):
-            for backfill_decision in result.decisions:
-                key = (
-                    backfill_decision.sample.metadata.sample_name,
-                    result.target.label,
-                )
-                if key in decisions:
-                    raise TargetedOutputBoundaryError(
-                        "finalized Targeted decision population contains duplicates"
-                    )
-                decisions[key] = backfill_decision
-            continue
         target_label = (
             result.completed_projection.row_binding.target.definition.target.label
         )
@@ -368,56 +355,104 @@ def _commit_staged_outputs(
     moved: list[tuple[Path, Path]] = []
     backups: list[tuple[Path, Path]] = []
     ordered = sorted(mapping.items(), key=lambda item: item[1].name)
+    if not ordered:
+        return ()
+    lock_paths_by_key = {
+        os.path.normcase(str(final.parent.expanduser().resolve(strict=False))):
+        final.parent.expanduser().resolve(strict=False) / _PUBLICATION_LOCK_NAME
+        for _, final in ordered
+    }
 
     def check_cancellation() -> None:
         if should_cancel is not None and should_cancel():
             raise _TargetedPublicationCancelled
 
-    try:
-        if replace_existing:
-            check_cancellation()
-            backup_dir = next(iter(mapping)).parent / ".existing"
-            backup_dir.mkdir()
-            for index, (_, final) in enumerate(ordered):
-                if final.exists():
-                    backup = backup_dir / f"{index}-{final.name}"
-                    final.replace(backup)
-                    backups.append((backup, final))
-                    check_cancellation()
-        for staged, final in ordered:
-            check_cancellation()
-            final.parent.mkdir(parents=True, exist_ok=True)
-            staged.replace(final)
-            moved.append((staged, final))
-            check_cancellation()
-    except (_TargetedPublicationCancelled, OSError) as exc:
-        rollback_failures: list[Path] = []
-        for staged, final in reversed(moved):
-            try:
-                final.replace(staged)
-            except OSError:
-                rollback_failures.append(final)
-        for backup, final in reversed(backups):
-            try:
-                backup.replace(final)
-            except OSError:
-                rollback_failures.append(final)
-        detail = (
-            f"; rollback failed for {rollback_failures}" if rollback_failures else ""
-        )
-        if isinstance(exc, _TargetedPublicationCancelled):
-            if rollback_failures:
-                raise TargetedOutputBoundaryError(
-                    "Targeted output commit was cancelled and rollback failed"
-                    f"{detail}"
-                ) from exc
-            raise
-        raise TargetedOutputBoundaryError(
-            f"Targeted output commit failed and was rolled back{detail}"
-        ) from exc
+    with ExitStack() as locks:
+        for key in sorted(lock_paths_by_key):
+            locks.enter_context(_publication_commit_lock(lock_paths_by_key[key]))
+        try:
+            if not replace_existing:
+                _reject_collisions(final for _, final in ordered)
+            if replace_existing:
+                check_cancellation()
+                backup_dir = next(iter(mapping)).parent / ".existing"
+                backup_dir.mkdir()
+                for index, (_, final) in enumerate(ordered):
+                    if final.exists():
+                        backup = backup_dir / f"{index}-{final.name}"
+                        final.replace(backup)
+                        backups.append((backup, final))
+                        check_cancellation()
+            for staged, final in ordered:
+                check_cancellation()
+                final.parent.mkdir(parents=True, exist_ok=True)
+                staged.replace(final)
+                moved.append((staged, final))
+                check_cancellation()
+        except (_TargetedPublicationCancelled, OSError) as exc:
+            rollback_failures: list[Path] = []
+            for staged, final in reversed(moved):
+                try:
+                    final.replace(staged)
+                except OSError:
+                    rollback_failures.append(final)
+            for backup, final in reversed(backups):
+                try:
+                    backup.replace(final)
+                except OSError:
+                    rollback_failures.append(final)
+            detail = (
+                f"; rollback failed for {rollback_failures}"
+                if rollback_failures
+                else ""
+            )
+            if isinstance(exc, _TargetedPublicationCancelled):
+                if rollback_failures:
+                    raise TargetedOutputBoundaryError(
+                        "Targeted output commit was cancelled and rollback failed"
+                        f"{detail}"
+                    ) from exc
+                raise
+            raise TargetedOutputBoundaryError(
+                f"Targeted output commit failed and was rolled back{detail}"
+            ) from exc
     return tuple(final for _, final in ordered)
 
 
+@contextmanager
+def _publication_commit_lock(lock_path: Path) -> Iterator[None]:
+    """Claim the output root before rechecking and committing final paths."""
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    token = f"{os.getpid()}:{id(lock_path)}"
+    descriptor: int | None = None
+    open_flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    if os.name == "nt":
+        open_flags |= getattr(os, "O_TEMPORARY", 0)
+    try:
+        descriptor = os.open(
+            lock_path,
+            open_flags,
+            0o600,
+        )
+    except FileExistsError as exc:
+        raise TargetedOutputBoundaryError(
+            "Targeted output path already exists or is being published: "
+            f"{lock_path}"
+        ) from exc
+    assert descriptor is not None
+    handle = os.fdopen(descriptor, "w", encoding="ascii")
+    try:
+        handle.write(token)
+        handle.flush()
+        yield
+    finally:
+        handle.close()
+        try:
+            if lock_path.read_text(encoding="ascii") == token:
+                lock_path.unlink()
+        except FileNotFoundError:
+            pass
 __all__ = [
     "TargetedOutputBoundaryError",
     "publish_targeted_outputs",

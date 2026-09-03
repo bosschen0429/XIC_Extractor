@@ -264,6 +264,56 @@ def owner_from_cid_nl_assessment_observation(
     )
 
 
+def owner_from_ms1_observation_hypothesis(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    hypothesis: PeakHypothesis,
+) -> SampleLocalMS1Owner:
+    """Project one workflow-neutral physical MS1 observation into Alignment."""
+
+    if hypothesis.hypothesis_method != HYPOTHESIS_METHOD_MS1_OBSERVATION:
+        raise HypothesisOwnerAdapterError(
+            "MS1 owner projection requires an MS1 observation PeakHypothesis"
+        )
+    if len(hypothesis.peak_observation_refs) != 1:
+        raise HypothesisOwnerAdapterError(
+            "MS1 owner projection requires one physical observation"
+        )
+    observation = hypothesis.peak_observation_refs[0]
+    try:
+        validate_ms1_observation_peak_hypothesis_binding(
+            hypothesis,
+            processing_owners=processing_owners,
+            sample=sample,
+            peak_observation=observation,
+        )
+    except ValueError as exc:
+        raise HypothesisOwnerAdapterError(str(exc)) from exc
+    integration = observation.content.integration
+    return SampleLocalMS1Owner(
+        owner_id=hypothesis.hypothesis_id,
+        sample_stem=sample.metadata.raw_stem,
+        raw_file=observation.generation_provenance.acquisition_source_id,
+        precursor_mz=observation.content.mz,
+        owner_apex_rt=integration.rt_apex_min,
+        owner_peak_start_rt=integration.rt_left_min,
+        owner_peak_end_rt=integration.rt_right_min,
+        owner_area=integration.area_raw_counts_seconds,
+        owner_height=integration.height_raw,
+        primary_identity_event=None,
+        supporting_events=(),
+        identity_conflict=False,
+        assignment_reason="ms1_observation_hypothesis",
+        selected_integration=integration,
+        cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
+            processing_owners=processing_owners,
+            sample=sample,
+            hypothesis=hypothesis,
+        ),
+    )
+
+
 def validate_cid_nl_assessment_hypothesis_closure(
     *,
     sample: ResolvedCanonicalSampleIdentity,
@@ -373,5 +423,6 @@ __all__ = [
     "compose_peak_hypotheses_from_assessment_universe",
     "owner_from_cid_nl_assessment_observation",
     "owner_from_cid_nl_assessment_support",
+    "owner_from_ms1_observation_hypothesis",
     "validate_cid_nl_assessment_hypothesis_closure",
 ]

@@ -6,16 +6,10 @@ from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    apply_mode_track_refinement_run_for_workflow,
-)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.mode_track import (
-    ModeTrackTrajectoryPolicy,
-    bootstrap_mode_track_refinement_from_cid_nl_support,
-)
+from xic_extractor.alignment.mode_track import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedTargetWorkflowResult,
@@ -31,6 +25,11 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
     resolve_target_definition,
+)
+from xic_extractor.evidence_artifacts import (
+    EvidenceArtifactRef,
+    _mint_artifact_semantic_contract_ref,
+    _mint_evidence_artifact_ref,
 )
 from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
@@ -52,8 +51,6 @@ from xic_extractor.extraction.targeted_inputs import (
     resolve_targeted_raw_paths,
 )
 from xic_extractor.extraction.targeted_service import (
-    FinalizedTargetMs1BackfillDecision,
-    FinalizedTargetMs1BackfillResult,
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
 )
@@ -82,16 +79,21 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     resolve_dda_cid_nl_peak_support_ref,
 )
 from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    compose_ms1_observation_peak_hypothesis,
+)
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     TargetSearchScope,
+    target_ms1_subject_id,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
+    canonical_identity_basis_bytes,
     compose_processing_owner_references,
     issue_processing_attempt,
     resolve_request_acquisition_source,
@@ -105,6 +107,14 @@ from xic_extractor.sample_metadata import (
 
 _IDENTITY_NAMESPACE = "targeted-production-v1"
 _TRACE_SOURCE = "xic_extractor.targeted_production_workflow:retained-acquisition"
+_NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.extraction.targeted_production_workflow",
+    semantic_role="retained_no_observation_capture_population",
+    schema_version="targeted_no_observation_capture_v1",
+    validation_status="production_input",
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf-v1",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,21 +235,41 @@ def _execute_target(
     request: TargetedApplicationRequest,
     target: ResolvedTargetDefinition,
 ) -> FinalizedTargetProductionResult:
-    if target.definition.target.neutral_loss_da is None:
-        return _finalize_ms1_backfill(context, target)
-    method_subject = cid_nl_method_subject_from_target(target)
+    ms1_only = target.definition.target.neutral_loss_da is None
+    method_subject = None if ms1_only else cid_nl_method_subject_from_target(target)
+    method_subject_id = (
+        target_ms1_subject_id(target)
+        if method_subject is None
+        else method_subject.method_subject_id
+    )
     candidates = []
     for sample, file_result in context.results_by_sample:
         extraction = file_result.results[target.definition.target.label]
-        if extraction.acquisition_trace is None:
+        if extraction.acquisition_trace is None and not ms1_only:
             if extraction.selected_hypothesis is not None:
                 raise RuntimeError(
                     "selected Targeted result lost its acquisition trace"
                 )
             continue
+        if extraction.acquisition_trace is None:
+            if extraction.selected_hypothesis is not None:
+                raise RuntimeError(
+                    "selected Targeted result lost its acquisition trace"
+                )
+            raise RuntimeError(
+                "MS1-only Target is missing retained acquisition evidence"
+            )
         candidates.append((sample, extraction, _candidate_id(target, sample)))
     bindings = tuple(
-        _capture_binding(context.owners, target, sample, result, candidate_id)
+        _capture_binding(
+            context.owners,
+            target,
+            sample,
+            result,
+            candidate_id,
+            method_subject_id=method_subject_id,
+            retained_only=ms1_only,
+        )
         for sample, result, candidate_id in candidates
     )
     scope = TargetSearchScope(
@@ -251,10 +281,14 @@ def _execute_target(
             peak_config=request.config,
         ),
         evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=method_subject.method_subject_id,
-            ),
+            ()
+            if method_subject is None
+            else (
+                EvidenceProviderBinding(
+                    provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=method_subject.method_subject_id,
+                ),
+            )
         ),
         declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
         capture_bindings=bindings,
@@ -265,7 +299,6 @@ def _execute_target(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]
     ] = []
     capture_inputs: list[CaptureWorkflowArguments] = []
-    owner_captures = []
     candidate_by_sample = {
         sample.identity.sample_identity_id: (result, candidate_id)
         for sample, result, candidate_id in candidates
@@ -296,6 +329,27 @@ def _execute_target(
                     sample=sample,
                 )
                 observations = (observation,)
+            if ms1_only:
+                owner_hypothesis = (
+                    None
+                    if not observations
+                    else compose_ms1_observation_peak_hypothesis(
+                        processing_owners=context.owners,
+                        sample=sample,
+                        peak_observation=observations[0],
+                    )
+                )
+                capture_inputs.append(
+                    CaptureWorkflowArguments(
+                        candidate_id=captured.candidate_id,
+                        trace=captured.trace,
+                        owner_observation=(
+                            None if not observations else observations[0]
+                        ),
+                        owner_hypothesis=owner_hypothesis,
+                    )
+                )
+                continue
             candidate_ms2_evidence = result.candidate_ms2_evidence
             product = (
                 None
@@ -336,6 +390,10 @@ def _execute_target(
                         policy=_support_policy(target.definition.target),
                     )
                     support_refs = (support,)
+        if ms1_only:
+            raise RuntimeError(
+                "MS1-only Target lost its retained acquisition candidate"
+            )
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=context.owners,
             sample=sample,
@@ -357,7 +415,6 @@ def _execute_target(
         assessments.append((sample, assessment))
         if captured is not None:
             if not observations:
-                owner_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
                         candidate_id=captured.candidate_id,
@@ -382,7 +439,6 @@ def _execute_target(
                 observation=observations[0],
                 hypothesis=matches[0],
             )
-            owner_captures.append(bound)
             capture_inputs.append(
                 CaptureWorkflowArguments(
                     candidate_id=bound.candidate_id,
@@ -405,18 +461,27 @@ def _execute_target(
         max_interpolation_gap=10,
         max_extrapolation_gap=10,
     )
-    refinement = bootstrap_mode_track_refinement_from_cid_nl_support(
-        processing_owners=context.owners,
-        sample_assessments=assessment_tuple,
-        alignment_config=alignment_config,
-        trajectory_policy=trajectory_policy,
-        retain_observation_only_candidates=True,
-    )
-    apply_mode_track_refinement_run_for_workflow(
-        processing_owners=context.owners,
-        captures=tuple(owner_captures),
-        run=refinement,
-    )
+    workflow_artifact: EvidenceArtifactRef
+    if assessment_tuple:
+        workflow_artifact = assessment_tuple[0][1].artifact
+    else:
+        captured_artifact = next(
+            (
+                item.owner_observation.artifact
+                for item in capture_inputs
+                if item.owner_observation is not None
+            ),
+            None,
+        )
+        workflow_artifact = (
+            captured_artifact
+            if captured_artifact is not None
+            else _mint_no_observation_capture_artifact(
+                context.owners,
+                target,
+                tuple(capture_inputs),
+            )
+        )
     work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
     runtime = start_runtime_attempt(
         attempt=context.owners.attempt,
@@ -437,13 +502,13 @@ def _execute_target(
                             attempt=context.owners.attempt,
                             work_unit_key=work_unit_key,
                             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                            owner_result_ref=assessment_tuple[0][1].artifact,
+                            owner_result_ref=workflow_artifact,
                         ),
                     ),
                     artifact_registrations=(
                         RuntimeArtifactRegistrationReceipt(
                             work_unit_key=work_unit_key,
-                            artifact=assessment_tuple[0][1].artifact,
+                            artifact=workflow_artifact,
                         ),
                     ),
                 ),
@@ -472,30 +537,40 @@ def _execute_target(
     return terminal.application_result
 
 
-def _finalize_ms1_backfill(
-    context: _ProductionContext,
+def _mint_no_observation_capture_artifact(
+    owners: ProcessingOwnerReferences,
     target: ResolvedTargetDefinition,
-) -> FinalizedTargetMs1BackfillResult:
-    decisions = []
-    for sample, file_result in context.results_by_sample:
-        extraction = file_result.results[target.definition.target.label]
-        has_selected_ms1 = (
-            extraction.selected_hypothesis is not None
-            and extraction.reported_peak_area is not None
+    captures: tuple[CaptureWorkflowArguments, ...],
+) -> EvidenceArtifactRef:
+    if not captures or any(
+        item.owner_observation is not None or item.owner_hypothesis is not None
+        for item in captures
+    ):
+        raise RuntimeError(
+            "no-observation artifact requires a non-empty unselected capture population"
         )
-        decisions.append(
-            FinalizedTargetMs1BackfillDecision(
-                sample=sample,
-                variant="numeric" if has_selected_ms1 else "no_write",
-                value=(extraction.reported_peak_area if has_selected_ms1 else None),
-                no_write_reason="" if has_selected_ms1 else "ms1_backfill_no_peak",
-            )
-        )
-    return FinalizedTargetMs1BackfillResult(
-        target=target.definition.target,
-        processing_request=context.owners.request,
-        canonical_samples=context.samples,
-        decisions=tuple(decisions),
+    payload = canonical_identity_basis_bytes(
+        {
+            "schema_version": "targeted_no_observation_capture_v1",
+            "processing_request_id": owners.request.processing_request_id,
+            "processing_attempt_id": owners.attempt.processing_attempt_id,
+            "target_definition_id": target.definition.target_definition_id,
+            "captures": [
+                {
+                    "candidate_id": item.candidate_id,
+                    "sample_name": item.trace.sample_name,
+                    "acquisition_source_id": item.trace.acquisition_source_id,
+                    "scan_count": item.trace.scan_count,
+                }
+                for item in captures
+            ],
+        }
+    )
+    return _mint_evidence_artifact_ref(
+        producer_processing_request_id=owners.request.processing_request_id,
+        producer_processing_attempt_id=owners.attempt.processing_attempt_id,
+        semantic_contract=_NO_OBSERVATION_ARTIFACT_CONTRACT,
+        payload_bytes=payload,
     )
 
 
@@ -505,6 +580,9 @@ def _capture_binding(
     sample: ResolvedCanonicalSampleIdentity,
     result: ExtractionResult,
     candidate_id: str,
+    *,
+    method_subject_id: str,
+    retained_only: bool,
 ) -> CaptureCandidateBinding:
     trace = _target_capture_trace(
         owners,
@@ -532,7 +610,7 @@ def _capture_binding(
     )
     return CaptureCandidateBinding(
         candidate_id=candidate_id,
-        method_subject_id=cid_nl_method_subject_from_target(target).method_subject_id,
+        method_subject_id=method_subject_id,
         sample_identity_id=sample.identity.sample_identity_id,
         sample_name=sample.metadata.sample_name,
         acquisition_source_id=source.acquisition_source_id,
@@ -542,6 +620,7 @@ def _capture_binding(
         query_ppm_tol=trace.ppm_tol,
         preferred_rt=preferred_rt,
         retained_selected_integration=retained_integration,
+        selection_policy="retained_only" if retained_only else "capture_default",
     )
 
 

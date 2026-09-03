@@ -39,7 +39,7 @@ class SampleLocalMS1Owner:
     owner_peak_end_rt: float
     owner_area: float
     owner_height: float
-    primary_identity_event: IdentityEvent
+    primary_identity_event: IdentityEvent | None
     supporting_events: tuple[IdentityEvent, ...]
     identity_conflict: bool
     assignment_reason: str
@@ -71,10 +71,14 @@ class SampleLocalMS1Owner:
 
     @property
     def all_events(self) -> tuple[IdentityEvent, ...]:
+        if self.primary_identity_event is None:
+            return self.supporting_events
         return (self.primary_identity_event, *self.supporting_events)
 
     @property
     def neutral_loss_tag(self) -> str:
+        if self.primary_identity_event is None:
+            return ""
         return self.primary_identity_event.neutral_loss_tag
 
     @property

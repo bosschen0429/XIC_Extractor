@@ -1430,7 +1430,7 @@ class CrossSampleSuccessorApplication:
             raise CrossSampleContractError(
                 "successor application closures must be immutable tuples"
             )
-        if not self.predecessors or any(
+        if any(
             not isinstance(group, CrossSampleGroupIdentity)
             for group in self.predecessors
         ):
@@ -1447,7 +1447,8 @@ class CrossSampleSuccessorApplication:
         validate_cross_sample_group_population(self.predecessors)
         if self.status == "unassessable":
             if (
-                self.successors
+                not self.predecessors
+                or self.successors
                 or self.lineage
                 or self.reason != ("eligible_neighborhood_exceeds_budget")
             ):
@@ -1455,7 +1456,9 @@ class CrossSampleSuccessorApplication:
                     "unassessable successor application is not atomic"
                 )
             return
-        if self.status != "assessable" or not self.successors:
+        if self.status != "assessable" or bool(self.successors) != bool(
+            self.predecessors
+        ):
             raise CrossSampleContractError("successor application status is invalid")
         successor_ids = tuple(group.group_hypothesis_id for group in self.successors)
         if successor_ids != tuple(sorted(successor_ids)):
@@ -2080,10 +2083,10 @@ class _GroupHardGateEnvelope:
     sample_stems: frozenset[str]
     precursor_mz_min: float
     precursor_mz_max: float
-    product_mz_min: float
-    product_mz_max: float
-    observed_loss_min: float
-    observed_loss_max: float
+    product_mz_min: float | None
+    product_mz_max: float | None
+    observed_loss_min: float | None
+    observed_loss_max: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -3182,8 +3185,8 @@ class _GroupIdentityFacts:
     neutral_loss_tag: str
     center_mz: float
     center_rt: float
-    center_product_mz: float
-    center_observed_loss: float
+    center_product_mz: float | None
+    center_observed_loss: float | None
     sample_stems: frozenset[str]
     owners: tuple[SampleLocalMS1Owner, ...]
     envelope: _GroupHardGateEnvelope
@@ -3195,18 +3198,25 @@ def _group_identity_facts(
     envelope = _group_envelope_for_owner(group[0])
     for owner in group[1:]:
         envelope = _extend_group_envelope(envelope, owner)
+    events = tuple(
+        owner.primary_identity_event
+        for owner in group
+        if owner.primary_identity_event is not None
+    )
     return _GroupIdentityFacts(
         neutral_loss_tag=group[0].neutral_loss_tag,
         center_mz=sum(owner.precursor_mz for owner in group) / len(group),
         center_rt=sum(owner.owner_apex_rt for owner in group) / len(group),
-        center_product_mz=sum(
-            owner.primary_identity_event.product_mz for owner in group
-        )
-        / len(group),
-        center_observed_loss=sum(
-            owner.primary_identity_event.observed_neutral_loss_da for owner in group
-        )
-        / len(group),
+        center_product_mz=(
+            None
+            if not events
+            else sum(event.product_mz for event in events) / len(events)
+        ),
+        center_observed_loss=(
+            None
+            if not events
+            else sum(event.observed_neutral_loss_da for event in events) / len(events)
+        ),
         sample_stems=frozenset(owner.sample_stem for owner in group),
         owners=group,
         envelope=envelope,
@@ -3393,7 +3403,6 @@ def _group_passes_hard_envelope(
 ) -> bool:
     if (
         len({owner.sample_stem for owner in group}) != len(group)
-        or not group[0].neutral_loss_tag
         or any(
             owner.neutral_loss_tag != group[0].neutral_loss_tag for owner in group[1:]
         )
@@ -3402,6 +3411,22 @@ def _group_passes_hard_envelope(
     envelope = _group_envelope_for_owner(group[0])
     for owner in group[1:]:
         envelope = _extend_group_envelope(envelope, owner)
+    if all(owner.primary_identity_event is None for owner in group):
+        return all(
+            not _range_exceeds_ppm(
+                owner.precursor_mz,
+                envelope.precursor_mz_min,
+                envelope.precursor_mz_max,
+                config.max_ppm,
+            )
+            for owner in group
+        )
+    if any(owner.primary_identity_event is None for owner in group):
+        return False
+    assert envelope.product_mz_min is not None
+    assert envelope.product_mz_max is not None
+    assert envelope.observed_loss_min is not None
+    assert envelope.observed_loss_max is not None
     return all(
         not _range_exceeds_ppm(
             owner.precursor_mz,
@@ -3410,13 +3435,13 @@ def _group_passes_hard_envelope(
             config.max_ppm,
         )
         and not _range_exceeds_ppm(
-            owner.primary_identity_event.product_mz,
+            owner.primary_identity_event.product_mz,  # type: ignore[union-attr]
             envelope.product_mz_min,
             envelope.product_mz_max,
             config.product_mz_tolerance_ppm,
         )
         and not _range_exceeds_ppm(
-            owner.primary_identity_event.observed_neutral_loss_da,
+            owner.primary_identity_event.observed_neutral_loss_da,  # type: ignore[union-attr]
             envelope.observed_loss_min,
             envelope.observed_loss_max,
             config.observed_loss_tolerance_ppm,
@@ -3450,8 +3475,6 @@ def _candidate_group_indexes_for_owner(
     group_indexes_by_precursor_bucket: dict[tuple[str, int], list[int]],
     config: AlignmentConfig,
 ) -> tuple[int, ...]:
-    if not owner.neutral_loss_tag:
-        return ()
     tag_group_indexes = group_indexes_by_tag.get(owner.neutral_loss_tag, [])
     if (
         not tag_group_indexes
@@ -3518,10 +3541,7 @@ def _owner_within_group_envelope(
     envelope: _GroupHardGateEnvelope,
     config: AlignmentConfig,
 ) -> bool:
-    if (
-        not owner.neutral_loss_tag
-        or owner.neutral_loss_tag != envelope.neutral_loss_tag
-    ):
+    if owner.neutral_loss_tag != envelope.neutral_loss_tag:
         return False
     precursor_denominator = max(abs(owner.precursor_mz), 1e-12)
     if (
@@ -3537,6 +3557,15 @@ def _owner_within_group_envelope(
         return False
 
     event = owner.primary_identity_event
+    if event is None:
+        return envelope.product_mz_min is None and envelope.observed_loss_min is None
+    if (
+        envelope.product_mz_min is None
+        or envelope.product_mz_max is None
+        or envelope.observed_loss_min is None
+        or envelope.observed_loss_max is None
+    ):
+        return False
     product_denominator = max(abs(event.product_mz), 1e-12)
     if (
         abs(event.product_mz - envelope.product_mz_min)
@@ -3583,10 +3612,10 @@ def _group_envelope_for_owner(
         sample_stems=frozenset((owner.sample_stem,)),
         precursor_mz_min=owner.precursor_mz,
         precursor_mz_max=owner.precursor_mz,
-        product_mz_min=event.product_mz,
-        product_mz_max=event.product_mz,
-        observed_loss_min=event.observed_neutral_loss_da,
-        observed_loss_max=event.observed_neutral_loss_da,
+        product_mz_min=None if event is None else event.product_mz,
+        product_mz_max=None if event is None else event.product_mz,
+        observed_loss_min=None if event is None else event.observed_neutral_loss_da,
+        observed_loss_max=None if event is None else event.observed_neutral_loss_da,
     )
 
 
@@ -3595,21 +3624,42 @@ def _extend_group_envelope(
     owner: SampleLocalMS1Owner,
 ) -> _GroupHardGateEnvelope:
     event = owner.primary_identity_event
+    if event is None:
+        if envelope.product_mz_min is not None:
+            raise CrossSampleContractError(
+                "MS1-only and CID-NL owners cannot share one group envelope"
+            )
+        product_mz_min = product_mz_max = None
+        observed_loss_min = observed_loss_max = None
+    else:
+        if (
+            envelope.product_mz_min is None
+            or envelope.product_mz_max is None
+            or envelope.observed_loss_min is None
+            or envelope.observed_loss_max is None
+        ):
+            raise CrossSampleContractError(
+                "MS1-only and CID-NL owners cannot share one group envelope"
+            )
+        product_mz_min = min(envelope.product_mz_min, event.product_mz)
+        product_mz_max = max(envelope.product_mz_max, event.product_mz)
+        observed_loss_min = min(
+            envelope.observed_loss_min,
+            event.observed_neutral_loss_da,
+        )
+        observed_loss_max = max(
+            envelope.observed_loss_max,
+            event.observed_neutral_loss_da,
+        )
     return _GroupHardGateEnvelope(
         neutral_loss_tag=envelope.neutral_loss_tag,
         sample_stems=envelope.sample_stems | frozenset((owner.sample_stem,)),
         precursor_mz_min=min(envelope.precursor_mz_min, owner.precursor_mz),
         precursor_mz_max=max(envelope.precursor_mz_max, owner.precursor_mz),
-        product_mz_min=min(envelope.product_mz_min, event.product_mz),
-        product_mz_max=max(envelope.product_mz_max, event.product_mz),
-        observed_loss_min=min(
-            envelope.observed_loss_min,
-            event.observed_neutral_loss_da,
-        ),
-        observed_loss_max=max(
-            envelope.observed_loss_max,
-            event.observed_neutral_loss_da,
-        ),
+        product_mz_min=product_mz_min,
+        product_mz_max=product_mz_max,
+        observed_loss_min=observed_loss_min,
+        observed_loss_max=observed_loss_max,
     )
 
 
@@ -3659,11 +3709,16 @@ def _owner_match_score(
         * 60.0
         / config.identity_rt_candidate_window_sec
     )
-    product_ppm = _ppm(
-        left.primary_identity_event.product_mz,
-        right.primary_identity_event.product_mz,
+    left_event = left.primary_identity_event
+    right_event = right.primary_identity_event
+    product_score = (
+        0.0
+        if left_event is None and right_event is None
+        else _ppm(left_event.product_mz, right_event.product_mz)
+        / config.product_mz_tolerance_ppm
+        if left_event is not None and right_event is not None
+        else math.inf
     )
-    product_score = product_ppm / config.product_mz_tolerance_ppm
     return (mz_score + rt_score + product_score, mz_score, rt_score)
 
 
@@ -3681,12 +3736,19 @@ def _hypothesis_from_owner_group(
 ) -> CrossSamplePeakGroupHypothesis:
     center_mz = sum(owner.precursor_mz for owner in group) / len(group)
     center_rt = sum(owner.owner_apex_rt for owner in group) / len(group)
-    center_product_mz = sum(
-        owner.primary_identity_event.product_mz for owner in group
-    ) / len(group)
-    center_loss = sum(
-        owner.primary_identity_event.observed_neutral_loss_da for owner in group
-    ) / len(group)
+    events = tuple(
+        owner.primary_identity_event
+        for owner in group
+        if owner.primary_identity_event is not None
+    )
+    center_product_mz = (
+        None if not events else sum(event.product_mz for event in events) / len(events)
+    )
+    center_loss = (
+        None
+        if not events
+        else sum(event.observed_neutral_loss_da for event in events) / len(events)
+    )
     event_ids = tuple(
         event_id for owner in group for event_id in owner.event_candidate_ids
     )
@@ -3768,8 +3830,8 @@ def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
         owner.precursor_mz,
         owner.owner_apex_rt,
         owner.sample_stem,
-        -event.evidence_score,
-        -event.seed_event_count,
+        0 if event is None else -event.evidence_score,
+        0 if event is None else -event.seed_event_count,
         owner.owner_id,
     )
 
@@ -3781,8 +3843,8 @@ def _owner_rt_sort_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
         owner.owner_apex_rt,
         owner.precursor_mz,
         owner.sample_stem,
-        -event.evidence_score,
-        -event.seed_event_count,
+        0 if event is None else -event.evidence_score,
+        0 if event is None else -event.seed_event_count,
         owner.owner_id,
     )
 

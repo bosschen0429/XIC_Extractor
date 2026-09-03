@@ -18,9 +18,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
 )
-from xic_extractor.processing_identity import ProcessingRequestIdentity
 from xic_extractor.rt_prior_library import LibraryEntry
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 from .targeted_inputs import resolve_model_selection_expected_diff_approvals
 from .targeted_runtime_adapter import (
@@ -59,44 +57,7 @@ class TargetedRunner(Protocol):
     ) -> RunOutput: ...
 
 
-@dataclass(frozen=True, slots=True)
-class FinalizedTargetMs1BackfillDecision:
-    """One Target cell finalized by the shared MS1 selection owner."""
-
-    sample: ResolvedCanonicalSampleIdentity
-    variant: Literal["numeric", "no_write"]
-    value: float | None
-    no_write_reason: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class FinalizedTargetMs1BackfillResult:
-    """A no-NL Target finalized from the constrained MS1 backfill path."""
-
-    target: Target
-    processing_request: ProcessingRequestIdentity
-    canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
-    decisions: tuple[FinalizedTargetMs1BackfillDecision, ...]
-
-    def __post_init__(self) -> None:
-        if self.target.neutral_loss_da is not None:
-            raise ValueError(
-                "MS1 backfill result requires a neutral-loss-disabled Target"
-            )
-        if len(self.decisions) != len(self.canonical_samples) or any(
-            decision.sample is not sample
-            for decision, sample in zip(
-                self.decisions,
-                self.canonical_samples,
-                strict=True,
-            )
-        ):
-            raise ValueError("MS1 backfill decisions must cover the sample population")
-
-
-FinalizedTargetProductionResult: TypeAlias = (
-    FinalizedTargetApplicationResult | FinalizedTargetMs1BackfillResult
-)
+FinalizedTargetProductionResult: TypeAlias = FinalizedTargetApplicationResult
 
 
 class TargetedRuntimeLifecycleRunner(Protocol):
@@ -375,9 +336,7 @@ def _validate_finalized_result_population(
     results: tuple[FinalizedTargetProductionResult, ...],
 ) -> None:
     if type(results) is not tuple or any(
-        type(result)
-        not in (FinalizedTargetApplicationResult, FinalizedTargetMs1BackfillResult)
-        for result in results
+        type(result) is not FinalizedTargetApplicationResult for result in results
     ):
         raise TargetedRuntimeAdapterError(
             "finalized workflow must return an exact immutable Target result tuple"
@@ -399,9 +358,7 @@ def _validate_finalized_result_population(
         )
     for target, result in zip(request.targets, results, strict=True):
         finalized_target = (
-            result.target
-            if isinstance(result, FinalizedTargetMs1BackfillResult)
-            else result.completed_projection.row_binding.target.definition.target
+            result.completed_projection.row_binding.target.definition.target
         )
         if finalized_target != target:
             raise TargetedRuntimeAdapterError(

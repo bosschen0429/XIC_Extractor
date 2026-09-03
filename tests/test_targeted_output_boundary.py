@@ -3,8 +3,12 @@ from __future__ import annotations
 import csv
 import inspect
 import json
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import asdict, replace
+from multiprocessing import get_context
 from pathlib import Path
+from threading import Barrier
+from typing import Any
 
 import pytest
 from openpyxl import load_workbook
@@ -23,8 +27,24 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
 from xic_extractor.output.review_report import review_report_path_for_excel
+
+
+def _commit_staged_output_in_process(
+    staged: str,
+    final: str,
+    start_barrier: Any,
+) -> tuple[str, str]:
+    start_barrier.wait(timeout=30)
+    try:
+        paths = targeted_output_boundary._commit_staged_outputs(
+            {Path(staged): Path(final)}
+        )
+    except TargetedOutputBoundaryError as exc:
+        return ("error", str(exc))
+    return ("success", str(paths[0]))
 
 
 def test_complete_finalized_population_publishes_csv_excel_and_manifest(
@@ -377,6 +397,155 @@ def test_collision_leaves_existing_output_and_publishes_nothing_else(
     assert sorted(path.name for path in config.output_csv.parent.iterdir()) == [
         config.output_csv.name
     ]
+
+
+def test_concurrent_non_replacing_publications_are_collision_atomic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    original_commit = targeted_output_boundary._commit_staged_outputs
+    commit_starts = Barrier(2)
+
+    def synchronize_commit(*args: object, **kwargs: object) -> tuple[Path, ...]:
+        commit_starts.wait(timeout=10)
+        return original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(
+        targeted_output_boundary,
+        "_commit_staged_outputs",
+        synchronize_commit,
+    )
+
+    def publish_with_marker(marker: str) -> tuple[str, object]:
+        evidence = replace(
+            output,
+            diagnostics=[
+                DiagnosticRecord(
+                    sample_name="SampleA",
+                    target_label=target.label,
+                    issue="FILE_ERROR",
+                    reason=marker,
+                )
+            ],
+        )
+        try:
+            return ("success", publish_targeted_outputs(request, finalized, evidence))
+        except Exception as exc:  # noqa: BLE001 - assert the public failure below
+            return ("error", exc)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(
+            executor.map(
+                publish_with_marker,
+                ("concurrent-a", "concurrent-b"),
+            )
+        )
+
+    successes = [value for status, value in outcomes if status == "success"]
+    failures = [value for status, value in outcomes if status == "error"]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert isinstance(failures[0], TargetedOutputBoundaryError)
+
+    winning = successes[0]
+    assert isinstance(winning, targeted_output_boundary.TargetedPublication)
+    expected_paths = {
+        config.output_csv,
+        config.output_csv.with_name("xic_results_long.csv"),
+        config.diagnostics_csv,
+        config.output_csv.with_name("method_manifest.json"),
+    }
+    assert set(winning.paths) == expected_paths
+    assert all(path.is_file() for path in winning.paths)
+    diagnostics_text = config.diagnostics_csv.read_text(encoding="utf-8-sig")
+    assert (
+        sum(
+            marker in diagnostics_text
+            for marker in ("concurrent-a", "concurrent-b")
+        )
+        == 1
+    )
+    assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
+    assert not (config.output_csv.parent / ".xic-targeted-publish.lock").exists()
+
+
+def test_concurrent_commits_lock_every_destination_parent(tmp_path: Path) -> None:
+    commit_starts = Barrier(2)
+    shared_final = tmp_path / "shared" / "results.xlsx"
+
+    def commit(run_name: str) -> tuple[str, object]:
+        stage_root = tmp_path / f"stage-{run_name}"
+        unique_stage = stage_root / "unique.csv"
+        shared_stage = stage_root / "shared.xlsx"
+        unique_final = tmp_path / run_name / "unique.csv"
+        stage_root.mkdir()
+        unique_stage.write_text(run_name, encoding="utf-8")
+        shared_stage.write_text(run_name, encoding="utf-8")
+        commit_starts.wait(timeout=10)
+        try:
+            paths = targeted_output_boundary._commit_staged_outputs(
+                {
+                    unique_stage: unique_final,
+                    shared_stage: shared_final,
+                }
+            )
+            return ("success", paths)
+        except Exception as exc:  # noqa: BLE001 - assert the public failure below
+            return ("error", exc)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(commit, ("run-a", "run-b")))
+
+    successes = [value for status, value in outcomes if status == "success"]
+    failures = [value for status, value in outcomes if status == "error"]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert isinstance(failures[0], TargetedOutputBoundaryError)
+
+    winner = shared_final.read_text(encoding="utf-8")
+    assert winner in {"run-a", "run-b"}
+    assert (tmp_path / winner / "unique.csv").read_text(encoding="utf-8") == winner
+    loser = "run-b" if winner == "run-a" else "run-a"
+    assert not (tmp_path / loser / "unique.csv").exists()
+    assert not list(tmp_path.rglob(".xic-targeted-publish.lock"))
+
+
+def test_separate_process_commits_are_collision_atomic(tmp_path: Path) -> None:
+    shared_final = tmp_path / "shared" / "results.csv"
+    staged_paths = (tmp_path / "a.csv", tmp_path / "b.csv")
+    for staged, marker in zip(staged_paths, ("process-a", "process-b"), strict=True):
+        staged.write_text(marker, encoding="utf-8")
+
+    spawn_context = get_context("spawn")
+    with spawn_context.Manager() as manager:
+        start_barrier = manager.Barrier(2)
+        with ProcessPoolExecutor(
+            max_workers=2,
+            mp_context=spawn_context,
+        ) as executor:
+            futures = tuple(
+                executor.submit(
+                    _commit_staged_output_in_process,
+                    str(staged),
+                    str(shared_final),
+                    start_barrier,
+                )
+                for staged in staged_paths
+            )
+            outcomes = tuple(future.result(timeout=45) for future in futures)
+
+    assert [status for status, _ in outcomes].count("success") == 1
+    assert [status for status, _ in outcomes].count("error") == 1
+    assert shared_final.read_text(encoding="utf-8") in {"process-a", "process-b"}
+    assert not (shared_final.parent / ".xic-targeted-publish.lock").exists()
 
 
 def test_render_failure_publishes_no_final_output(

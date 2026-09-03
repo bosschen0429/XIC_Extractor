@@ -673,10 +673,10 @@ def apply_mode_track_refinement_run_for_workflow(
             "ModeTrack run predecessor population crossed Family context"
         )
     transaction_tuple = run.transactions
-    if not transaction_tuple or any(
+    if any(
         type(transaction) is not ModeTrackRefinementTransaction
         for transaction in transaction_tuple
-    ):
+    ) or bool(transaction_tuple) != bool(predecessors):
         raise CrossSampleReconciliationContractError(
             "ModeTrack run requires complete typed component transactions"
         )
@@ -2359,6 +2359,7 @@ def _mint_context_trajectory(
             injection_order=dict(canonical_injection_order),
             evidence_profile=evidence_profile,
             budget=budget,
+            processing_request_id=request_id,
         )
     except (TypeError, ValueError, KeyError) as exc:
         raise CrossSampleReconciliationContractError(
