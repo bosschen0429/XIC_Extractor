@@ -1,17 +1,12 @@
-"""Internal composition for the bounded no-RAW Targeted diagnostic method.
+"""Targeted production composition plus retained diagnostic utilities.
 
-The product adapters always use this builder.  Legacy remains authoritative;
-the successor runs only while an internal owner-backed request provider is
-installed for a bounded diagnostic execution.  No public CLI/config switch is
-introduced.
+Product adapters use the builder's acquire → typed workflow → publish route.
+The separately invoked diagnostic method remains available to explicit callers.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import replace
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -46,27 +41,12 @@ from xic_extractor.extraction.targeted_method_runtime import (
     execute_targeted_method_completion_runtime,
 )
 from xic_extractor.extraction.targeted_service import (
-    TargetedApplicationRequest,
     TargetedApplicationService,
     TargetedDiagnosticApplicationOutcome,
     TargetedRunner,
 )
-from xic_extractor.extractor import RunOutput
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
-TargetedDiagnosticRequestProvider = Callable[
-    [TargetedApplicationRequest, RunOutput],
-    TargetedDiagnosticMethodRequest,
-]
-
-_REQUEST_PROVIDER: ContextVar[TargetedDiagnosticRequestProvider | None] = ContextVar(
-    "xic_targeted_diagnostic_request_provider",
-    default=None,
-)
-_TELEMETRY_PROVIDER: ContextVar[RuntimeTelemetryProvider | None] = ContextVar(
-    "xic_targeted_diagnostic_telemetry_provider",
-    default=None,
-)
 _ALIGNMENT_WORK_UNIT_KEY = "package2:alignment-method"
 _TARGETED_WORK_UNIT_KEY = "package2:targeted-method"
 _RUNTIME_CONTRACT = "targeted-diagnostic-application:v1"
@@ -83,91 +63,12 @@ class _RuntimeJob(Protocol):
     def work_unit_key(self) -> str: ...
 
 
-@contextmanager
-def targeted_diagnostic_request_provider(
-    provider: TargetedDiagnosticRequestProvider,
-    *,
-    telemetry_provider: RuntimeTelemetryProvider,
-) -> Iterator[None]:
-    """Install scoped scientific-input and telemetry providers for one run."""
-
-    if not callable(provider):
-        raise TypeError("provider must be callable")
-    if not callable(telemetry_provider):
-        raise TypeError("telemetry_provider must be callable")
-    request_token = _REQUEST_PROVIDER.set(provider)
-    telemetry_token = _TELEMETRY_PROVIDER.set(telemetry_provider)
-    try:
-        yield
-    finally:
-        _TELEMETRY_PROVIDER.reset(telemetry_token)
-        _REQUEST_PROVIDER.reset(request_token)
-
-
-def capture_targeted_diagnostic_request_provider(
-) -> TargetedDiagnosticRequestProvider | None:
-    """Capture the scoped provider for explicit propagation into a GUI thread."""
-
-    return _REQUEST_PROVIDER.get()
-
-
-def capture_targeted_diagnostic_telemetry_provider(
-) -> RuntimeTelemetryProvider | None:
-    """Capture scoped telemetry for explicit propagation into a GUI thread."""
-
-    return _TELEMETRY_PROVIDER.get()
-
-
 def build_canonical_targeted_application_service(
     runner: TargetedRunner,
 ) -> TargetedApplicationService:
     """Build the single production CLI/GUI service composition."""
 
-    return TargetedApplicationService(
-        runner,
-        diagnostic_method_runner=_execute_scoped_targeted_diagnostic_method,
-        diagnostic_method_request_factory=_resolve_scoped_diagnostic_request,
-    )
-
-
-def _execute_scoped_targeted_diagnostic_method(
-    request: TargetedDiagnosticMethodRequest,
-    *,
-    should_stop: Callable[[], bool] | None = None,
-) -> TargetedDiagnosticApplicationOutcome:
-    telemetry_provider = _TELEMETRY_PROVIDER.get()
-    if telemetry_provider is None:
-        raise TargetedMethodRuntimeError(
-            "diagnostic execution requires a scoped runtime telemetry provider"
-        )
-    return execute_spawned_targeted_diagnostic_method(
-        request,
-        telemetry_provider=telemetry_provider,
-        should_stop=should_stop,
-    )
-
-
-def _resolve_scoped_diagnostic_request(
-    request: TargetedApplicationRequest,
-    authoritative_legacy_output: RunOutput,
-) -> TargetedDiagnosticMethodRequest | None:
-    provider = _REQUEST_PROVIDER.get()
-    if provider is None:
-        return None
-    resolved = provider(request, authoritative_legacy_output)
-    if not isinstance(resolved, TargetedDiagnosticMethodRequest):
-        raise TargetedMethodRuntimeError(
-            "diagnostic request provider returned an invalid request"
-        )
-    if resolved.targets != request.targets:
-        raise TargetedMethodRuntimeError(
-            "diagnostic request target tuple differs from the application request"
-        )
-    return replace(
-        resolved,
-        peak_config=request.config,
-        authoritative_legacy_output=authoritative_legacy_output,
-    )
+    return TargetedApplicationService(runner)
 
 
 def execute_spawned_targeted_diagnostic_method(
@@ -347,8 +248,5 @@ def _marker(attempt_dir: Path, phase: str) -> OwnerPathRuntimeMarker:
 
 __all__ = [
     "build_canonical_targeted_application_service",
-    "capture_targeted_diagnostic_request_provider",
-    "capture_targeted_diagnostic_telemetry_provider",
     "execute_spawned_targeted_diagnostic_method",
-    "targeted_diagnostic_request_provider",
 ]

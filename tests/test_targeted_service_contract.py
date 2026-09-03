@@ -1,14 +1,17 @@
 import ast
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
-from xic_extractor.config import ExtractionConfig, Target
+import pytest
+
+from xic_extractor import extractor
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
-from xic_extractor.extractor import RunOutput
+from xic_extractor.extractor import FileResult, RunOutput
 
 
 def test_cli_and_gui_use_same_targeted_application_service() -> None:
@@ -29,23 +32,86 @@ def test_cli_and_gui_use_same_targeted_application_service() -> None:
         assert calls == [], f"{path} bypasses TargetedApplicationService"
 
 
-def test_headless_service_preserves_inputs_and_callbacks() -> None:
+def test_retired_diagnostic_successor_is_absent_from_production_entries() -> None:
+    import xic_extractor.extraction.targeted_diagnostic_application as application
+
+    for name in (
+        "capture_targeted_diagnostic_request_provider",
+        "capture_targeted_diagnostic_telemetry_provider",
+        "targeted_diagnostic_request_provider",
+    ):
+        assert not hasattr(application, name)
+    gui_source = Path("gui/workers/pipeline_worker.py").read_text(encoding="utf-8")
+    assert "diagnostic_request_provider" not in gui_source
+    assert "diagnostic_telemetry_provider" not in gui_source
+    service_fields = {item.name for item in fields(TargetedApplicationService)}
+    assert "finalized_workflow_runner" not in service_fields
+    assert "output_publisher" not in service_fields
+
+
+def test_public_python_run_uses_canonical_targeted_application_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _config()
+    targets = [_target()]
+    output = RunOutput(file_results=[], diagnostics=[])
+    captured: dict[str, object] = {}
+
+    class _Service:
+        def execute(self, request):
+            captured["request"] = request
+            return output
+
+    def build_service(runner):
+        captured["runner"] = runner
+        return _Service()
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_diagnostic_application."
+        "build_canonical_targeted_application_service",
+        build_service,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.pipeline.run_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("public run bypassed finalization")
+        ),
+    )
+
+    actual = extractor.run(config, targets, injection_order={"SampleA": 1})
+
+    assert actual is output
+    assert captured["runner"] is extractor.acquire
+    request = captured["request"]
+    assert request.config is config
+    assert request.targets == tuple(targets)
+    assert request.injection_order == {"SampleA": 1}
+
+
+def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
     targets = [_target()]
     calls: dict[str, object] = {}
     output = RunOutput(file_results=[], diagnostics=[])
+    stopped = False
 
     def runner(actual_config, actual_targets, **kwargs):
+        nonlocal stopped
         calls["config"] = actual_config
         calls["targets"] = actual_targets
         calls.update(kwargs)
+        stopped = True
         return output
 
     def progress(_done: int, _total: int, _name: str) -> None:
         return None
 
     def should_stop() -> bool:
-        return False
+        return stopped
+
     request = build_targeted_application_request(
         config,
         targets,
@@ -54,15 +120,100 @@ def test_headless_service_preserves_inputs_and_callbacks() -> None:
     )
 
     assert TargetedApplicationService(runner).execute(request) is output
-    assert calls["config"] is config
+    assert calls["config"] == config
     assert calls["targets"] == targets
     assert calls["progress_callback"] is progress
     assert calls["should_stop"] is should_stop
+    assert calls["publish_outputs"] is False
+    acquisition_sources = calls["acquisition_sources_by_sample"]
+    assert set(acquisition_sources) == {"SampleA"}
+    assert acquisition_sources["SampleA"].source.byte_size == len(b"sample")
 
 
-def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> None:
-    resolved_approvals = {"row-1": object()}
+def test_service_isolates_runner_inputs_from_callback_mutation(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+    caller_injection_order = {"SampleA": 1}
+    runner_injection_order: dict[str, int] = {}
+    stopped = False
+
+    def progress(_done: int, _total: int, _name: str) -> None:
+        caller_injection_order.clear()
+
+    def runner(_config, _targets, **kwargs):
+        nonlocal stopped
+        progress_callback = kwargs["progress_callback"]
+        progress_callback(0, 1, "SampleA.raw")
+        runner_injection_order.update(kwargs["injection_order"])
+        stopped = True
+        return RunOutput(file_results=[], diagnostics=[])
+
+    request = build_targeted_application_request(
+        config,
+        [_target()],
+        injection_order=caller_injection_order,
+        progress_callback=progress,
+        should_stop=lambda: stopped,
+    )
+
+    TargetedApplicationService(runner).execute(request)
+
+    assert caller_injection_order == {}
+    assert runner_injection_order == {"SampleA": 1}
+
+
+def test_service_retains_noncopyable_bound_lifecycle_callbacks(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+
+    class LifecycleAdapter:
+        def __init__(self) -> None:
+            self.stopped = False
+            self.progress_calls: list[tuple[int, int, str]] = []
+
+        def __deepcopy__(self, _memo):
+            raise AssertionError("lifecycle callback receiver must not be copied")
+
+        def progress(self, done: int, total: int, name: str) -> None:
+            self.progress_calls.append((done, total, name))
+
+        def should_stop(self) -> bool:
+            return self.stopped
+
+    adapter = LifecycleAdapter()
+    progress_callback = adapter.progress
+    should_stop = adapter.should_stop
+
+    def runner(_config, _targets, **kwargs):
+        assert kwargs["progress_callback"] is progress_callback
+        assert kwargs["should_stop"] is should_stop
+        kwargs["progress_callback"](1, 1, "SampleA.raw")
+        adapter.stopped = True
+        return RunOutput(file_results=[], diagnostics=[])
+
+    request = build_targeted_application_request(
+        config,
+        [_target()],
+        progress_callback=progress_callback,
+        should_stop=should_stop,
+    )
+
+    TargetedApplicationService(runner).execute(request)
+
+    assert adapter.progress_calls == [(1, 1, "SampleA.raw")]
+
+
+def test_service_resolves_approval_registry_at_adapter_boundary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    resolved_approvals: dict[str, object] = {}
     calls: dict[str, object] = {}
+    stopped = False
 
     def resolve_approvals(actual_config, approvals):
         assert actual_config is config
@@ -70,10 +221,15 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
         return resolved_approvals
 
     def runner(_config, _targets, **kwargs):
+        nonlocal stopped
         calls.update(kwargs)
+        stopped = True
         return RunOutput(file_results=[], diagnostics=[])
 
-    config = _config()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_service."
         "resolve_model_selection_expected_diff_approvals",
@@ -81,10 +237,77 @@ def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> 
     )
 
     TargetedApplicationService(runner).execute(
-        build_targeted_application_request(config, [_target()])
+        build_targeted_application_request(
+            config,
+            [_target()],
+            should_stop=lambda: stopped,
+        )
     )
 
-    assert calls["model_selection_expected_diff_approvals"] is resolved_approvals
+    assert calls["model_selection_expected_diff_approvals"] == resolved_approvals
+
+
+def test_typed_workflow_failure_never_reaches_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+    acquisition = RunOutput(
+        file_results=[FileResult(sample_name="SampleA", results={})],
+        diagnostics=[],
+    )
+
+    def acquire(*_args, **_kwargs):
+        calls.append("acquire")
+        return acquisition
+
+    def fail_workflow(_request, _prepared):
+        calls.append("workflow")
+        raise RuntimeError("typed workflow failed")
+
+    def publish(*_args, **_kwargs):
+        calls.append("publish")
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_production_workflow."
+        "complete_prepared_targeted_production_workflow",
+        fail_workflow,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        publish,
+    )
+
+    with pytest.raises(RuntimeError, match="typed workflow failed"):
+        TargetedApplicationService(acquire).execute_application(
+            build_targeted_application_request(config, [_target()])
+        )
+
+    assert calls == ["acquire", "workflow"]
+
+
+def test_empty_acquisition_reports_no_input_before_finalization(tmp_path: Path) -> None:
+    calls: list[str] = []
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+    acquisition = RunOutput(file_results=[], diagnostics=[])
+
+    def acquire(*_args, **_kwargs):
+        calls.append("acquire")
+        return acquisition
+
+    with pytest.raises(ConfigError, match="No RAW files were acquired"):
+        TargetedApplicationService(acquire).execute_application(
+            build_targeted_application_request(config, [_target()])
+        )
+
+    assert calls == ["acquire"]
 
 
 def test_pipeline_input_resolution_keeps_approvals_explicit(
@@ -97,8 +320,7 @@ def test_pipeline_input_resolution_keeps_approvals_explicit(
         model_selection_expected_diff_approval_registry=tmp_path / "registry.tsv",
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs."
-        "load_expected_diff_approval_registry",
+        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
         lambda _path: (_ for _ in ()).throw(
             AssertionError("pipeline resolver must not load adapter policy")
         ),

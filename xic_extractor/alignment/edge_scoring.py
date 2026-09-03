@@ -164,13 +164,18 @@ def _hard_gate_failure(
         return "identity_conflict"
     if left.sample_stem == right.sample_stem:
         return "same_sample"
-    if not left.neutral_loss_tag or left.neutral_loss_tag != right.neutral_loss_tag:
+    left_event = left.primary_identity_event
+    right_event = right.primary_identity_event
+    if (left_event is None) != (right_event is None):
+        return "neutral_loss_tag_mismatch"
+    if left.neutral_loss_tag != right.neutral_loss_tag:
         return "neutral_loss_tag_mismatch"
     if _ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance"
 
-    left_event = left.primary_identity_event
-    right_event = right.primary_identity_event
+    if left_event is None:
+        return None
+    assert right_event is not None
     if _ppm(left_event.product_mz, right_event.product_mz) > (
         config.product_mz_tolerance_ppm
     ):
@@ -246,11 +251,16 @@ def _seed_support_level(
     count, which Alignment does not re-derive.  Owners whose integration never
     recorded a baseline residual keep the Discovery-score rating.
     """
-    min_seed_count = min(
-        left.primary_identity_event.seed_event_count,
-        right.primary_identity_event.seed_event_count,
-    )
+    left_event = left.primary_identity_event
+    right_event = right.primary_identity_event
     min_snr = _min_owner_peak_snr(left, right)
+    if left_event is None or right_event is None:
+        if min_snr is not None and min_snr >= _QUANTITATION_LIMIT_SNR:
+            return "strong"
+        if min_snr is not None and min_snr >= _DETECTION_LIMIT_SNR:
+            return "moderate"
+        return "weak"
+    min_seed_count = min(left_event.seed_event_count, right_event.seed_event_count)
     if min_snr is None:
         return _discovery_seed_support_level(left, right, config)
     if min_snr >= _QUANTITATION_LIMIT_SNR and (
@@ -267,14 +277,12 @@ def _discovery_seed_support_level(
     right: SampleLocalMS1Owner,
     config: AlignmentConfig,
 ) -> SeedSupportLevel:
-    min_score = min(
-        left.primary_identity_event.evidence_score,
-        right.primary_identity_event.evidence_score,
-    )
-    min_seed_count = min(
-        left.primary_identity_event.seed_event_count,
-        right.primary_identity_event.seed_event_count,
-    )
+    left_event = left.primary_identity_event
+    right_event = right.primary_identity_event
+    if left_event is None or right_event is None:
+        return "weak"
+    min_score = min(left_event.evidence_score, right_event.evidence_score)
+    min_seed_count = min(left_event.seed_event_count, right_event.seed_event_count)
     if (
         min_score >= config.anchor_min_evidence_score
         and min_seed_count >= config.anchor_min_seed_events

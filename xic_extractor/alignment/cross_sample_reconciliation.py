@@ -673,10 +673,10 @@ def apply_mode_track_refinement_run_for_workflow(
             "ModeTrack run predecessor population crossed Family context"
         )
     transaction_tuple = run.transactions
-    if not transaction_tuple or any(
+    if any(
         type(transaction) is not ModeTrackRefinementTransaction
         for transaction in transaction_tuple
-    ):
+    ) or bool(transaction_tuple) != bool(predecessors):
         raise CrossSampleReconciliationContractError(
             "ModeTrack run requires complete typed component transactions"
         )
@@ -1023,9 +1023,12 @@ class CrossSampleReconciledState:
         if self.repair_epoch == 0:
             if (
                 self.repair_outcome not in {"not_run", "multiple_eligible"}
-                or self.repair_authorization_id is None
                 or self.repair_receipt_id is not None
                 or self.trajectory_changed
+                or (
+                    self.repair_outcome == "multiple_eligible"
+                    and self.repair_authorization_id is None
+                )
             ):
                 raise CrossSampleReconciliationContractError(
                     "epoch-zero CS2 state contradicts repair authorization"
@@ -1591,6 +1594,46 @@ def consume_observation_repair_terminal(
     )
 
 
+def close_cross_sample_without_observation_repair(
+    context: CrossSamplePostMT0Context,
+) -> CrossSampleFinalReceipt:
+    """Close a post-MT0 population when the application requests no repair."""
+
+    _validate_post_mt0_context(context)
+    final_application = _mint_unchanged_successor_application(context)
+    state = CrossSampleReconciledState(
+        processing_request_id=context.processing_request_id,
+        population=context.population,
+        repair_receipt_id=None,
+        repair_epoch=0,
+        repair_outcome="not_run",
+        member_subject_ids=tuple(
+            sorted(
+                member.member_subject_id
+                for group in context.population
+                for member in group.member_subjects
+            )
+        ),
+        trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        trajectory_changed=False,
+        repair_authorization_id=None,
+    )
+    return _mint_final_receipt(
+        processing_request_id=context.processing_request_id,
+        post_mt0_application=context.application,
+        repair_terminal=None,
+        repair_receipt=None,
+        repair_epoch=0,
+        cs2_state=state,
+        pre_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        post_trajectory_input_id=context.trajectory_input.trajectory_input_id,
+        mode_track_proposal=None,
+        mode_track_final_attempt=None,
+        final_application=final_application,
+        final_population=context.population,
+    )
+
+
 def consume_mode_track_final_attempt(
     *,
     context: CrossSamplePostMT0Context,
@@ -2105,6 +2148,14 @@ def _validate_final_repair_binding(
             "final receipt repair epoch must be an exact integer"
         )
     if terminal is None:
+        if (
+            receipt is None
+            and repair_epoch == 0
+            and state.repair_outcome == "not_run"
+            and state.repair_authorization_id is None
+            and state.repair_receipt_id is None
+        ):
+            return
         if type(receipt) is not ObservationRepairReceipt or repair_epoch != 1:
             raise CrossSampleReconciliationContractError(
                 "legacy final receipt requires one exact repair receipt"
@@ -2308,6 +2359,7 @@ def _mint_context_trajectory(
             injection_order=dict(canonical_injection_order),
             evidence_profile=evidence_profile,
             budget=budget,
+            processing_request_id=request_id,
         )
     except (TypeError, ValueError, KeyError) as exc:
         raise CrossSampleReconciliationContractError(
@@ -3774,7 +3826,11 @@ def _final_receipt_basis(
     final_application: CrossSampleSuccessorApplication,
     final_population: tuple[CrossSampleGroupIdentity, ...],
 ) -> bytes:
-    if repair_terminal is None and mode_track_final_attempt is None:
+    if (
+        repair_terminal is None
+        and repair_receipt is not None
+        and mode_track_final_attempt is None
+    ):
         if repair_receipt is None:
             raise CrossSampleReconciliationContractError(
                 "legacy final basis requires its exact repair receipt"
@@ -3969,6 +4025,7 @@ __all__ = (
     "CrossSampleReconciliationContractError",
     "apply_mode_track_refinement_run_for_workflow",
     "build_cross_sample_post_mt0_context",
+    "close_cross_sample_without_observation_repair",
     "consume_mode_track_final_attempt",
     "consume_observation_repair_terminal",
     "reconcile_observation_repair",

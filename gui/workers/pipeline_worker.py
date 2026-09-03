@@ -1,5 +1,4 @@
 import statistics
-from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,15 +10,12 @@ from xic_extractor import extractor
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.targeted_diagnostic_application import (
     build_canonical_targeted_application_service,
-    capture_targeted_diagnostic_request_provider,
-    capture_targeted_diagnostic_telemetry_provider,
-    targeted_diagnostic_request_provider,
 )
 from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.extractor import ExtractionResult, RunOutput
-from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError
 
 
@@ -32,12 +28,6 @@ class PipelineWorker(QThread):
     def __init__(self, config_dir: Path) -> None:
         super().__init__()
         self._config_dir = config_dir
-        self._diagnostic_request_provider = (
-            capture_targeted_diagnostic_request_provider()
-        )
-        self._diagnostic_telemetry_provider = (
-            capture_targeted_diagnostic_telemetry_provider()
-        )
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -45,40 +35,27 @@ class PipelineWorker(QThread):
     def run(self) -> None:
         try:
             config, targets = config_module.load_config(self._config_dir)
-            provider = self._diagnostic_request_provider
-            telemetry_provider = self._diagnostic_telemetry_provider
-            if (provider is None) != (telemetry_provider is None):
-                raise RuntimeError(
-                    "diagnostic request and telemetry providers must propagate together"
+            excel_path = _excel_output_path(config)
+            execution = build_canonical_targeted_application_service(
+                extractor.acquire
+            ).execute_application(
+                build_targeted_application_request(
+                    config,
+                    targets,
+                    progress_callback=self.progress.emit,
+                    should_stop=self.isInterruptionRequested,
+                    method_manifest_context=MethodManifestContext(
+                        entrypoint="xic-extractor-gui",
+                        config_dir=self._config_dir,
+                        output_mode="excel",
+                    ),
+                    excel_output_path=excel_path,
                 )
-            if provider is None:
-                scope = nullcontext()
-            else:
-                assert telemetry_provider is not None
-                scope = targeted_diagnostic_request_provider(
-                    provider,
-                    telemetry_provider=telemetry_provider,
-                )
-            with scope:
-                output = build_canonical_targeted_application_service(
-                    extractor.run
-                ).execute_application(
-                    build_targeted_application_request(
-                        config,
-                        targets,
-                        progress_callback=self.progress.emit,
-                        should_stop=self.isInterruptionRequested,
-                    )
-                ).active_output
-            if self.isInterruptionRequested():
+            )
+            output = execution.active_output
+            if self.isInterruptionRequested() and not execution.published_paths:
                 self.cancelled.emit()
                 return
-            excel_path = write_excel_from_run_output(
-                config,
-                targets,
-                output,
-                output_path=_excel_output_path(config),
-            )
             summary = build_summary(config, targets, output, excel_path)
             self.finished.emit(summary)
         except ConfigError as exc:
@@ -145,8 +122,8 @@ def _target_summary(
                 nl_no_ms2 += 1
         if _is_detected(config, target, result):
             detected += 1
-            if result.peak_result.peak is not None:
-                detected_areas.append(result.peak_result.peak.area)
+            if result.reported_peak_area is not None:
+                detected_areas.append(result.reported_peak_area)
 
     median_area = statistics.median(detected_areas) if detected_areas else None
     return {
@@ -166,6 +143,9 @@ def _is_detected(
     target: Target,
     result: ExtractionResult,
 ) -> bool:
+    projection = result.targeted_product_projection
+    if projection is not None:
+        return projection.counted_detection
     if result.peak_result.status != "OK" or result.peak_result.peak is None:
         return False
     if target.neutral_loss_da is None:

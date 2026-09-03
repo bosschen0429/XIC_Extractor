@@ -21,15 +21,16 @@ from xic_extractor.extraction.targeted_diagnostic_application import (
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
+from xic_extractor.extraction.targeted_output_boundary import (
+    TargetedOutputBoundaryError,
+)
 from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
-from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
     MethodManifestError,
     load_method_manifest_for_replay,
-    write_method_manifest,
 )
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.targeted_ms1_shape_identity_policy import (
@@ -80,9 +81,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "targeted_ms1_shape_identity_activation_policy"
                     ] = EXPLICIT_SUPPORT_TSV_POLICY
             if args.targeted_ms1_shape_identity_activation_policy is not None:
-                settings_overrides[
-                    "targeted_ms1_shape_identity_activation_policy"
-                ] = args.targeted_ms1_shape_identity_activation_policy
+                settings_overrides["targeted_ms1_shape_identity_activation_policy"] = (
+                    args.targeted_ms1_shape_identity_activation_policy
+                )
 
         if settings_overrides:
             config, targets = load_config(
@@ -103,11 +104,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         skip_excel = output_mode == "csv_only"
         run_config = (
-            replace(config, keep_intermediate_csv=True)
-            if skip_excel
-            else config
+            replace(config, keep_intermediate_csv=True) if skip_excel else config
         )
-        excel_config = config
         if _should_run_targeted_ms1_shape_identity_auto_limited_default(
             args,
             config,
@@ -133,34 +131,40 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "targeted MS1 shape identity auto-limited workflow failed; "
                     f"verified final output was not published: {exc}"
                 ) from exc
-            output, excel_config = auto_result
+            output, _ = auto_result
         else:
-            output = build_canonical_targeted_application_service(
-                extractor.run
-            ).execute_application(
-                build_targeted_application_request(
-                    run_config,
-                    targets,
-                    progress_callback=_print_progress,
+            excel_output_path = None if skip_excel else _excel_output_path(config)
+            output = (
+                build_canonical_targeted_application_service(extractor.acquire)
+                .execute_application(
+                    build_targeted_application_request(
+                        run_config,
+                        targets,
+                        progress_callback=_print_progress,
+                        method_manifest_context=MethodManifestContext(
+                            entrypoint=(
+                                "xic-extractor-cli-replay"
+                                if replay_request is not None
+                                else "xic-extractor-cli"
+                            ),
+                            argv=cli_argv,
+                            base_dir=base_dir,
+                            config_dir=config_dir,
+                            settings_overrides=settings_overrides,
+                            output_mode=output_mode,
+                        ),
+                        excel_output_path=excel_output_path,
+                        replace_existing_outputs=replay_request is not None,
+                    )
                 )
-            ).active_output
-            write_method_manifest(
-                run_config,
-                targets,
-                context=MethodManifestContext(
-                    entrypoint=(
-                        "xic-extractor-cli-replay"
-                        if replay_request is not None
-                        else "xic-extractor-cli"
-                    ),
-                    argv=cli_argv,
-                    base_dir=base_dir,
-                    config_dir=config_dir,
-                    settings_overrides=settings_overrides,
-                    output_mode=output_mode,
-                ),
+                .active_output
             )
-    except (ConfigError, MethodManifestError, RawReaderError) as exc:
+    except (
+        ConfigError,
+        MethodManifestError,
+        RawReaderError,
+        TargetedOutputBoundaryError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
@@ -171,12 +175,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Excel skipped.")
         return 0
 
-    write_excel_from_run_output(
-        excel_config,
-        targets,
-        output,
-        output_path=_excel_output_path(excel_config),
-    )
     return 0
 
 
@@ -343,8 +341,7 @@ def _should_run_targeted_ms1_shape_identity_auto_limited_default(
     if args.targeted_ms1_shape_identity_auto_limited_default:
         return True
     return (
-        config.targeted_ms1_shape_identity_activation_policy
-        == LIMITED_HMDC_MEDC_POLICY
+        config.targeted_ms1_shape_identity_activation_policy == LIMITED_HMDC_MEDC_POLICY
         and config.targeted_ms1_shape_identity_support_tsv is None
     )
 
@@ -390,26 +387,23 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited baseline output: {baseline_output_dir}")
-    build_canonical_targeted_application_service(extractor.run).execute_application(
+    build_canonical_targeted_application_service(extractor.acquire).execute_application(
         build_targeted_application_request(
             baseline_config,
             targets,
             progress_callback=_print_progress,
             model_selection_expected_diff_approvals=approval_snapshot,
+            method_manifest_context=MethodManifestContext(
+                entrypoint="xic-extractor-cli-targeted-ms1-auto-baseline",
+                argv=tuple(cli_argv),
+                base_dir=base_dir,
+                config_dir=config_dir,
+                settings_overrides=baseline_settings_overrides,
+                output_mode="csv_only",
+            ),
+            output_projection="acquisition_baseline",
         )
     ).active_output
-    write_method_manifest(
-        baseline_config,
-        targets,
-        context=MethodManifestContext(
-            entrypoint="xic-extractor-cli-targeted-ms1-auto-baseline",
-            argv=cli_argv,
-            base_dir=base_dir,
-            config_dir=config_dir,
-            settings_overrides=baseline_settings_overrides,
-            output_mode="csv_only",
-        ),
-    )
     support_tsv = support_dir / "targeted_ms1_shape_identity_v0.tsv"
     support_outputs = run_build_targeted_ms1_shape_identity_supports(
         long_csv=baseline_config.output_csv.with_name("xic_results_long.csv"),
@@ -435,16 +429,31 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited unverified final output: {final_staging_output_dir}")
-    final_output = build_canonical_targeted_application_service(
-        extractor.run
-    ).execute_application(
-        build_targeted_application_request(
-            final_staging_config,
-            targets,
-            progress_callback=_print_progress,
-            model_selection_expected_diff_approvals=approval_snapshot,
+    final_output = (
+        build_canonical_targeted_application_service(extractor.acquire)
+        .execute_application(
+            build_targeted_application_request(
+                final_staging_config,
+                targets,
+                progress_callback=_print_progress,
+                model_selection_expected_diff_approvals=approval_snapshot,
+                method_manifest_context=MethodManifestContext(
+                    entrypoint="xic-extractor-cli-targeted-ms1-auto-limited-default",
+                    argv=tuple(cli_argv),
+                    base_dir=base_dir,
+                    config_dir=config_dir,
+                    settings_overrides=final_settings_overrides,
+                    output_mode=output_mode,
+                ),
+                excel_output_path=(
+                    None
+                    if output_mode == "csv_only"
+                    else _excel_output_path(final_staging_config)
+                ),
+            )
         )
-    ).active_output
+        .active_output
+    )
     diff_outputs = write_targeted_ms1_shape_identity_auto_diff_artifacts(
         baseline_output_dir=baseline_output_dir,
         optin_output_dir=final_staging_output_dir,
@@ -466,18 +475,6 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         final_staging_config,
         output_csv=final_output_dir / "xic_results.csv",
         diagnostics_csv=final_output_dir / "xic_diagnostics.csv",
-    )
-    write_method_manifest(
-        final_config,
-        targets,
-        context=MethodManifestContext(
-            entrypoint="xic-extractor-cli-targeted-ms1-auto-limited-default",
-            argv=cli_argv,
-            base_dir=base_dir,
-            config_dir=config_dir,
-            settings_overrides=final_settings_overrides,
-            output_mode=output_mode,
-        ),
     )
     print(f"Auto limited verified final output: {final_output_dir}")
     return final_output, final_config

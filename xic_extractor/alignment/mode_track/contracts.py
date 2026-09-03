@@ -21,9 +21,11 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.processing_identity import (
+    PROCESSING_REQUEST_ID_PREFIX,
     ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
     typed_identity_digest,
+    validate_typed_identity_id,
 )
 
 from .assignment import (
@@ -343,14 +345,38 @@ def mint_mode_track_trajectory_input(
     injection_order: Mapping[str, int],
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
+    processing_request_id: str | None = None,
 ) -> ModeTrackTrajectoryInput:
     predecessor_groups = validate_cross_sample_group_population(predecessors)
     request_ids = {group.processing_request_id for group in predecessor_groups}
-    if len(request_ids) != 1:
+    if len(request_ids) > 1:
         raise ModeTrackRefinementContractError(
             "trajectory predecessors crossed processing requests"
         )
-    processing_request_id = next(iter(request_ids))
+    explicit_request_id = (
+        None
+        if processing_request_id is None
+        else validate_typed_identity_id(
+            processing_request_id,
+            prefix=PROCESSING_REQUEST_ID_PREFIX,
+            field="processing_request_id",
+        )
+    )
+    if request_ids:
+        resolved_request_id = next(iter(request_ids))
+        if (
+            explicit_request_id is not None
+            and explicit_request_id != resolved_request_id
+        ):
+            raise ModeTrackRefinementContractError(
+                "trajectory request identity crossed its predecessors"
+            )
+    elif explicit_request_id is None:
+        raise ModeTrackRefinementContractError(
+            "empty trajectory requires an explicit processing request identity"
+        )
+    else:
+        resolved_request_id = explicit_request_id
     members = tuple(
         member for group in predecessor_groups for member in group.member_subjects
     )
@@ -394,7 +420,7 @@ def mint_mode_track_trajectory_input(
     for anchor in typed_anchors:
         anchor_owner = owner_by_id.get(anchor.peak_hypothesis_id)
         if (
-            anchor.processing_request_id != processing_request_id
+            anchor.processing_request_id != resolved_request_id
             or anchor_owner is None
             or type(anchor_owner) is not SampleLocalMS1Owner
             or anchor.canonical_sample_identity_id
@@ -438,7 +464,7 @@ def mint_mode_track_trajectory_input(
     )
     exclusions = _canonical_exclusions(edges)
     payload = _trajectory_input_payload(
-        processing_request_id=processing_request_id,
+        processing_request_id=resolved_request_id,
         anchor_ids=canonical_anchor_ids,
         member_subject_ids=member_subject_ids,
         member_apexes=member_apexes,
@@ -452,7 +478,7 @@ def mint_mode_track_trajectory_input(
     )
     return ModeTrackTrajectoryInput(
         trajectory_input_id=trajectory_input_id,
-        processing_request_id=processing_request_id,
+        processing_request_id=resolved_request_id,
         anchor_ids=canonical_anchor_ids,
         member_subject_ids=member_subject_ids,
         member_apexes=member_apexes,

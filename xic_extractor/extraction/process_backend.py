@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
@@ -24,6 +25,8 @@ def run_process(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
 ) -> RunOutput:
     from xic_extractor import extractor
     from xic_extractor.extraction.jobs import ScoringInputs
@@ -34,6 +37,7 @@ def run_process(
         istd_targets,
         raw_paths,
         should_stop=should_stop,
+        acquisition_sources_by_sample=acquisition_sources_by_sample,
     )
     scoring_inputs = ScoringInputs(
         injection_order=injection_order,
@@ -50,6 +54,7 @@ def run_process(
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
+        acquisition_sources_by_sample=acquisition_sources_by_sample,
     )
 
     file_results = [result.file_result for result in raw_results]
@@ -69,6 +74,8 @@ def collect_raw_file_results_process(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
     runner: Callable[..., list[Any]] | None = None,
 ) -> list[RawFileExtractionResult]:
     from xic_extractor.extraction.jobs import (
@@ -88,6 +95,10 @@ def collect_raw_file_results_process(
             scoring_inputs=scoring_inputs,
             model_selection_expected_diff_approvals=(
                 dict(model_selection_expected_diff_approvals or {})
+            ),
+            expected_acquisition_source=_expected_source(
+                raw_path,
+                acquisition_sources_by_sample,
             ),
         )
         for index, raw_path in enumerate(raw_paths, start=1)
@@ -109,6 +120,8 @@ def collect_istd_prepass_process(
     raw_paths: list[Path],
     *,
     should_stop: Callable[[], bool] | None = None,
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
+    | None = None,
     runner: Callable[..., list[Any]] | None = None,
 ) -> dict[str, dict[str, float]]:
     from xic_extractor.extraction.jobs import (
@@ -127,6 +140,10 @@ def collect_istd_prepass_process(
             raw_path=raw_path,
             config=config,
             targets=istd_targets,
+            expected_acquisition_source=_expected_source(
+                raw_path,
+                acquisition_sources_by_sample,
+            ),
         )
         for index, raw_path in enumerate(raw_paths, start=1)
     ]
@@ -141,7 +158,21 @@ def collect_istd_prepass_process(
     ordered_results = collect_istd_prepass_results(results)
     for result in ordered_results:
         for istd_label, anchor_rt in result.anchors.items():
-            istd_rts_by_sample.setdefault(istd_label, {})[
-                result.sample_name
-            ] = anchor_rt
+            istd_rts_by_sample.setdefault(istd_label, {})[result.sample_name] = (
+                anchor_rt
+            )
     return istd_rts_by_sample
+
+
+def _expected_source(
+    raw_path: Path,
+    sources_by_sample: Mapping[str, AcquisitionSourceExpectation] | None,
+) -> AcquisitionSourceExpectation | None:
+    if sources_by_sample is None:
+        return None
+    try:
+        return sources_by_sample[raw_path.stem]
+    except KeyError as exc:
+        raise ConfigError(
+            f"RAW input {raw_path.name!r} has no expected acquisition source."
+        ) from exc

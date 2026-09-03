@@ -28,6 +28,7 @@ from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
     build_targeted_product_projection,
 )
+from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.signal_processing import PeakCandidate, PeakDetectionResult
 from xic_extractor.target_sample_applicability import (
     TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING,
@@ -50,6 +51,7 @@ def build_extraction_result(
     selected_hypothesis: PeakHypothesis | None = None,
     selection_decision: PeakHypothesisSelectionDecision | None = None,
     model_selection_result: PeakModelSelectionResult | None = None,
+    acquisition_trace: Trace | None = None,
     sample_name: str = "",
 ) -> ExtractionResult:
     if selected_hypothesis is not None:
@@ -90,6 +92,7 @@ def build_extraction_result(
         selected_hypothesis=selected_hypothesis,
         selection_decision=resolved_selection_decision,
         model_selection_result=model_selection_result,
+        acquisition_trace=acquisition_trace,
     )
     return replace(
         result,
@@ -545,23 +548,19 @@ def _downgrade_trace_conflict_to_paired_analyte_review(
     reason: str,
     support_reasons: tuple[str, ...],
 ) -> bool:
-    return (
-        reason
-        in {
-            "trace_morphology_conflict",
-            "hard_local_quality_conflict",
-            "hard_quality_flag_conflict",
-        }
-        and (
-            _paired_analyte_has_product_supported_peak(
-                result,
-                target,
-                support_reasons,
-            )
-            or (
-                reason == "trace_morphology_conflict"
-                and _paired_analyte_has_anchor_supported_peak(result, target)
-            )
+    return reason in {
+        "trace_morphology_conflict",
+        "hard_local_quality_conflict",
+        "hard_quality_flag_conflict",
+    } and (
+        _paired_analyte_has_product_supported_peak(
+            result,
+            target,
+            support_reasons,
+        )
+        or (
+            reason == "trace_morphology_conflict"
+            and _paired_analyte_has_anchor_supported_peak(result, target)
         )
     )
 
@@ -807,9 +806,10 @@ def _projection_not_counted_reasons(
         reasons.append("analyte_nl_fail_requires_policy")
     if no_ms2 and result.role.upper() != "ISTD" and not paired_supported:
         reasons.append("analyte_missing_ms2_requires_policy")
-    if nl_failed and result.role.upper() == "ISTD" and not (
-        "plausible_dda_nl_dropout" in review_reasons
-        and not conflict_reasons
+    if (
+        nl_failed
+        and result.role.upper() == "ISTD"
+        and not ("plausible_dda_nl_dropout" in review_reasons and not conflict_reasons)
     ):
         reasons.append("istd_nl_fail_without_dropout_support")
     return _unique(reasons)
@@ -855,10 +855,5 @@ def _selection_reason_overlay(
 
 def _merge_reasons(*groups: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(
-        dict.fromkeys(
-            reason
-            for group in groups
-            for reason in group
-            if reason
-        )
+        dict.fromkeys(reason for group in groups for reason in group if reason)
     )

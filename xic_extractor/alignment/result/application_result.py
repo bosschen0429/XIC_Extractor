@@ -665,9 +665,12 @@ def _validate_untarget_batch_request(
             raise ApplicationResultContractError(
                 "Untarget batch child crossed its processing request"
             )
-        child_attempt = (
-            core.cell_observation_handoff.coverage.epoch.processing_owners.attempt
-        )
+        handoff = core.cell_observation_handoff
+        if handoff is None:
+            raise ApplicationResultContractError(
+                "Untarget batch child lost its Backfill association handoff"
+            )
+        child_attempt = handoff.coverage.epoch.processing_owners.attempt
         if child_attempt is not request.processing_attempt:
             raise ApplicationResultContractError(
                 "Untarget batch child crossed its processing attempt"

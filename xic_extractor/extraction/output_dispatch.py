@@ -36,6 +36,7 @@ def write_outputs(
     output: RunOutput,
     *,
     method_manifest_context: MethodManifestContext | None = None,
+    write_manifest: bool = True,
 ) -> None:
     if config.target_pair_rt_calibration_path is not None and not (
         config.emit_peak_candidates
@@ -79,7 +80,8 @@ def write_outputs(
                 target_config_hash=config.target_config_hash or None,
             )
     if not config.keep_intermediate_csv:
-        write_method_manifest(config, targets, context=method_manifest_context)
+        if write_manifest:
+            write_method_manifest(config, targets, context=method_manifest_context)
         return
     csv_writers.write_all(
         config,
@@ -88,4 +90,5 @@ def write_outputs(
         output.diagnostics,
         emit_score_breakdown=config.emit_score_breakdown,
     )
-    write_method_manifest(config, targets, context=method_manifest_context)
+    if write_manifest:
+        write_method_manifest(config, targets, context=method_manifest_context)

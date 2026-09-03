@@ -14,6 +14,7 @@ from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extractor import RawFileExtractionResult
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ class RawFileJob:
     model_selection_expected_diff_approvals: (
         dict[str, ExpectedDiffApprovalRecord] | None
     ) = None
+    expected_acquisition_source: AcquisitionSourceExpectation | None = None
 
 
 @dataclass(frozen=True)
@@ -180,9 +182,8 @@ def _run_jobs(
 
         def _submit_until_capacity() -> None:
             nonlocal next_job_index
-            while (
-                len(future_to_job) < max_workers
-                and next_job_index < len(pending_jobs)
+            while len(future_to_job) < max_workers and next_job_index < len(
+                pending_jobs
             ):
                 if should_stop is not None and should_stop():
                     return
@@ -242,6 +243,11 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
                 istd_rts_by_sample=job.scoring_inputs.istd_rts_by_sample,
                 rt_prior_library=job.scoring_inputs.rt_prior_library,
             )
+        extraction_kwargs = {}
+        if job.expected_acquisition_source is not None:
+            extraction_kwargs["expected_acquisition_source"] = (
+                job.expected_acquisition_source
+            )
         return extract_raw_file_result(
             job.raw_index,
             job.config,
@@ -256,6 +262,7 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
             model_selection_expected_diff_approvals=(
                 job.model_selection_expected_diff_approvals
             ),
+            **extraction_kwargs,
         )
     except Exception as exc:
         return WorkerError(
@@ -269,11 +276,19 @@ def extract_istd_prepass_job(job: RawFileJob) -> IstdPrepassWorkerResult:
     from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 
     try:
-        prepass = extract_istd_anchors_only(
-            job.config,
-            list(job.targets),
-            job.raw_path,
-        )
+        if job.expected_acquisition_source is None:
+            prepass = extract_istd_anchors_only(
+                job.config,
+                list(job.targets),
+                job.raw_path,
+            )
+        else:
+            prepass = extract_istd_anchors_only(
+                job.config,
+                list(job.targets),
+                job.raw_path,
+                expected_acquisition_source=job.expected_acquisition_source,
+            )
         if prepass is None:
             return IstdPrepassResult(
                 raw_index=job.raw_index,

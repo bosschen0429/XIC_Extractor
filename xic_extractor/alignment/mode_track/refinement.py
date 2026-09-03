@@ -38,11 +38,13 @@ from xic_extractor.alignment.mode_track.assignment import (
 from xic_extractor.alignment.mode_track.family_context import FamilyContextRef
 from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
+    bootstrap_mode_tracks_from_ms1_hypotheses,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
@@ -819,16 +821,69 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
     drift_lookup: DriftLookupProtocol | None = None,
     retain_observation_only_candidates: bool = False,
 ) -> ModeTrackRefinementRun:
-    family_context, model_set, assignment_batches, fit_once_source = (
-        bootstrap_mode_tracks_from_cid_nl_support(
+    bootstrap_result = bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=processing_owners,
             sample_assessments=sample_assessments,
             alignment_config=alignment_config,
             trajectory_policy=trajectory_policy,
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=retain_observation_only_candidates,
-        )
     )
+    return _bootstrap_mode_track_refinement(
+        processing_owners=processing_owners,
+        bootstrap_result=bootstrap_result,
+        alignment_config=alignment_config,
+        trajectory_policy=trajectory_policy,
+        drift_lookup=drift_lookup,
+    )
+
+
+def bootstrap_mode_track_refinement_from_ms1_hypotheses(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_hypotheses: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, PeakHypothesis], ...
+    ],
+    family_mz_interval: tuple[float, float],
+    family_rt_interval: tuple[float, float],
+    alignment_config: AlignmentConfig,
+    trajectory_policy: ModeTrackTrajectoryPolicy,
+    drift_lookup: DriftLookupProtocol | None = None,
+) -> ModeTrackRefinementRun:
+    bootstrap_result = bootstrap_mode_tracks_from_ms1_hypotheses(
+        processing_owners=processing_owners,
+        samples=samples,
+        sample_hypotheses=sample_hypotheses,
+        family_mz_interval=family_mz_interval,
+        family_rt_interval=family_rt_interval,
+        alignment_config=alignment_config,
+        trajectory_policy=trajectory_policy,
+        drift_lookup=drift_lookup,
+    )
+    return _bootstrap_mode_track_refinement(
+        processing_owners=processing_owners,
+        bootstrap_result=bootstrap_result,
+        alignment_config=alignment_config,
+        trajectory_policy=trajectory_policy,
+        drift_lookup=drift_lookup,
+    )
+
+
+def _bootstrap_mode_track_refinement(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    bootstrap_result: tuple[
+        FamilyContextRef,
+        ModeTrackModelSet,
+        tuple[ModeTrackAssignmentBatch, ...],
+        ModeTrackFitOnceSource,
+    ],
+    alignment_config: AlignmentConfig,
+    trajectory_policy: ModeTrackTrajectoryPolicy,
+    drift_lookup: DriftLookupProtocol | None,
+) -> ModeTrackRefinementRun:
+    family_context, model_set, assignment_batches, fit_once_source = bootstrap_result
     groups = family_context.mode_tracks
     predecessors = validate_cross_sample_group_population(
         tuple(
@@ -957,6 +1012,11 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
                 ),
             )
         )
+    transactions.sort(
+        key=lambda transaction: (
+            transaction.application_context.predecessors[0].group_hypothesis_id
+        )
+    )
     return ModeTrackRefinementRun(
         family_context=family_context,
         model_set=model_set,

@@ -69,7 +69,7 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
     validate_target_post_cell_projection(completed)
 
 
-def test_unresolved_target_binding_routes_every_exact_cell_without_dropping_value(
+def test_disjoint_internal_groups_bind_one_fixed_target_row(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -91,15 +91,10 @@ def test_unresolved_target_binding_routes_every_exact_cell_without_dropping_valu
 
     completed = project_target_post_cell(pre_cell, decisions)
 
-    assert pre_cell.row_binding.variant == "unresolved_many"
+    assert pre_cell.row_binding.variant == "bound"
     assert completed.counted_detection_count == 2
     assert completed.no_write_count == 0
-    assert completed.review_queue_count == 2
-    assert tuple(ref.decision for ref in completed.review_queue_references) == decisions
-    assert all(
-        ref.reasons == ("unresolved_target_binding",)
-        for ref in completed.review_queue_references
-    )
+    assert completed.review_queue_count == 0
 
 
 @pytest.mark.parametrize(

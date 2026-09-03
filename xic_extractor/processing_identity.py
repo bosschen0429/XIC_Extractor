@@ -38,6 +38,10 @@ class IdentityContractError(ValueError):
     """Raised when an immutable identity cannot satisfy its contract."""
 
 
+class FingerprintCancelledError(IdentityContractError):
+    """Raised when a caller cancels an in-progress content fingerprint."""
+
+
 _ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source.v1:"
 _PROCESSING_REQUEST_PREFIX = "xic.processing-request.v1:"
 _PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt.v1:"
@@ -226,6 +230,33 @@ class AcquisitionSourceIdentity:
         if source_id != expected_id:
             raise IdentityContractError(
                 "acquisition_source_id rebind mismatches immutable content"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class AcquisitionSourceExpectation:
+    """Content identity plus the exact local path state observed with its request."""
+
+    source: AcquisitionSourceIdentity
+    path_identity: tuple[int, int, int, int, int]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, AcquisitionSourceIdentity):
+            raise IdentityContractError("source must be an AcquisitionSourceIdentity")
+        if (
+            not isinstance(self.path_identity, tuple)
+            or len(self.path_identity) != 5
+            or any(
+                isinstance(value, bool) or not isinstance(value, int)
+                for value in self.path_identity
+            )
+        ):
+            raise IdentityContractError(
+                "path_identity must be a five-integer stat identity"
+            )
+        if self.path_identity[2] != self.source.byte_size:
+            raise IdentityContractError(
+                "path_identity size mismatches acquisition source content"
             )
 
 
@@ -726,10 +757,11 @@ def build_acquisition_source_identity(
     *,
     acquisition_format: str,
     observation_namespace: str,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> AcquisitionSourceIdentity:
     """Hash one regular file and bind its acquisition observation namespace."""
 
-    fingerprint = fingerprint_file_content(path)
+    fingerprint = fingerprint_file_content(path, should_cancel=should_cancel)
     return _build_acquisition_source_identity(
         content_sha256=fingerprint.content_sha256,
         byte_size=fingerprint.byte_size,
@@ -742,6 +774,7 @@ def fingerprint_file_content(
     path: str | Path,
     *,
     observation: Callable[[Mapping[str, object]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> FileContentFingerprint:
     """Hash one stable regular-file handle and reject path replacement."""
 
@@ -772,6 +805,8 @@ def fingerprint_file_content(
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
                 byte_size += len(chunk)
+                if should_cancel is not None and should_cancel():
+                    raise FingerprintCancelledError("content fingerprint was cancelled")
             after = os.fstat(handle.fileno())
         path_after = source_path.stat()
         stat_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")

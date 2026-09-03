@@ -19,11 +19,11 @@ value implementation.
 - `TargetSearchScope` narrows the allowed target universe but may still ask the
   shared Discovery/capture method to inspect broad evidence relationships such
   as dR, R, or MeR. Broad candidate discovery is not Untargeted-only.
-- `TargetRowBinding` resolves zero, one, or many qualified finalized groups for
-  each fixed Target row. Zero keeps the row with a typed state; one unique group
-  binds; many remain unresolved with stable references in the existing Review
-  Queue. It does not rescan RAW, rank by area, change integration, or choose an
-  arbitrary winner.
+- `TargetRowBinding` retains the qualified finalized groups needed by each
+  fixed Target row. Zero keeps the row with a typed state. Groups covering
+  distinct samples bind the same `TargetKey` row; multiple groups competing
+  for one sample remain unresolved with stable Review Queue references. It does
+  not rescan RAW, rank by area, change integration, or choose an arbitrary winner.
 - A Target row may bind a unique established or provisional group. An
   owner-backed direct local observation may produce a Target cell value even
   when the group is provisional or the observation is not a group member.

@@ -178,9 +178,7 @@ def project_target_pre_cell(
     scope = cast(TargetSearchScope, finalized_alignment.scope)
     _revalidate_scope(scope)
     samples = _canonical_samples(scope.samples)
-    sample_by_id = {
-        sample.identity.sample_identity_id: sample for sample in samples
-    }
+    sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
     terminals = _terminals_by_sample(
         finalized_alignment,
         scope=scope,
@@ -395,7 +393,6 @@ def _terminals_by_sample(
             raise TargetProjectionContractError(
                 "finalized terminal population contains an unsupported subject"
             )
-        _validate_terminal_owner_fields(terminal)
         sample_id = terminal.canonical_sample_identity_id
         if sample_id not in samples:
             raise TargetProjectionContractError(
@@ -407,6 +404,16 @@ def _terminals_by_sample(
             raise TargetProjectionContractError(
                 "finalized terminal candidate lacks its exact scope capture binding"
             ) from exc
+        _validate_terminal_owner_fields(
+            terminal,
+            expected_owner_trace_group_id="|".join(
+                (
+                    scope.request.processing_request_id,
+                    binding.sample_name,
+                    binding.candidate_id,
+                )
+            ),
+        )
         if binding.sample_identity_id != sample_id:
             raise TargetProjectionContractError(
                 "finalized terminal candidate crossed its capture-binding sample"
@@ -423,7 +430,11 @@ def _terminals_by_sample(
     return terminals
 
 
-def _validate_terminal_owner_fields(terminal: TerminalSearchObservation) -> None:
+def _validate_terminal_owner_fields(
+    terminal: TerminalSearchObservation,
+    *,
+    expected_owner_trace_group_id: str,
+) -> None:
     values = (
         terminal.candidate_id,
         terminal.canonical_sample_identity_id,
@@ -441,7 +452,13 @@ def _validate_terminal_owner_fields(terminal: TerminalSearchObservation) -> None
             raise TargetProjectionContractError(
                 "finalized observed terminal requires an exact PeakHypothesis"
             )
-        if terminal.trace_group_id != terminal.hypothesis.trace_group_id:
+        expected_trace_group_id = (
+            expected_owner_trace_group_id
+            if terminal.hypothesis.is_owner_backed
+            and not terminal.hypothesis.trace_group_id
+            else terminal.hypothesis.trace_group_id
+        )
+        if terminal.trace_group_id != expected_trace_group_id:
             raise TargetProjectionContractError(
                 "finalized observed terminal crossed its trace-group hypothesis"
             )
@@ -470,9 +487,7 @@ def _eligible_groups(
             raise TargetProjectionContractError(
                 "final CrossSample population contains a non-owner group"
             )
-    ordered_groups = tuple(
-        sorted(groups, key=lambda group: group.group_hypothesis_id)
-    )
+    ordered_groups = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     if ordered_groups != groups:
         raise TargetProjectionContractError(
             "final CrossSample population is not canonical identity ordered"
@@ -583,10 +598,15 @@ def _mint_row_binding(
     eligible_groups: tuple[CrossSampleGroupIdentity, ...],
 ) -> TargetRowBinding:
     count = len(eligible_groups)
+    sample_ids = tuple(
+        member.canonical_sample_identity_id
+        for group in eligible_groups
+        for member in group.member_subjects
+    )
     variant: TargetRowBindingVariant
     if count == 0:
         variant = "unbound"
-    elif count == 1:
+    elif len(sample_ids) == len(set(sample_ids)):
         variant = "bound"
     else:
         variant = "unresolved_many"
@@ -617,8 +637,7 @@ def _validate_row_binding(binding: TargetRowBinding) -> None:
             "Target row binding groups must be an immutable tuple"
         )
     if any(
-        type(group) is not CrossSampleGroupIdentity
-        for group in binding.eligible_groups
+        type(group) is not CrossSampleGroupIdentity for group in binding.eligible_groups
     ):
         raise TargetProjectionContractError(
             "Target row binding groups must be exact owner identities"
@@ -638,14 +657,32 @@ def _validate_row_binding(binding: TargetRowBinding) -> None:
         raise TargetProjectionContractError(
             "Target row binding contains an ineligible or crossed group"
         )
-    count = len(binding.eligible_groups)
+    sample_ids = tuple(
+        member.canonical_sample_identity_id
+        for group in binding.eligible_groups
+        for member in group.member_subjects
+    )
     expected_variant = (
-        "unbound" if count == 0 else "bound" if count == 1 else "unresolved_many"
+        "unbound"
+        if not binding.eligible_groups
+        else "bound"
+        if len(sample_ids) == len(set(sample_ids))
+        else "unresolved_many"
     )
     if binding.variant != expected_variant:
         raise TargetProjectionContractError(
             "Target row binding variant does not match its eligible group cardinality"
         )
+
+
+def validate_target_row_binding(binding: TargetRowBinding) -> None:
+    """Revalidate one owner-minted Target row binding."""
+
+    if type(binding) is not TargetRowBinding:
+        raise TargetProjectionContractError(
+            "Target row binding must be an exact owner value"
+        )
+    _validate_row_binding(binding)
 
 
 def _validate_cell_subject(subject: TargetCellSubject) -> None:
@@ -687,6 +724,8 @@ def _validate_cell_subject(subject: TargetCellSubject) -> None:
         raise TargetProjectionContractError(
             "Target cell subject crossed its canonical sample terminal"
         )
+
+
 def _require_projection_mint(value: object) -> None:
     if value is not _TARGET_PROJECTION_MINT_TOKEN:
         raise TargetProjectionContractError(
@@ -701,4 +740,5 @@ __all__ = (
     "TargetRowBinding",
     "TargetRowBindingVariant",
     "project_target_pre_cell",
+    "validate_target_row_binding",
 )

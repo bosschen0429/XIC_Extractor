@@ -91,6 +91,7 @@ class CandidateMS2Evidence:
     ms1_peak_group_strict_nl_event_count: int | None = None
     outside_ms1_peak_group_trigger_scan_count: int | None = None
     outside_ms1_peak_group_strict_nl_scan_count: int | None = None
+    best_product_evidence: MS2ProductEvidence | None = None
 
     def to_token(self) -> str:
         if self.nl_status == "WARN" and self.best_loss_ppm is not None:
@@ -326,10 +327,7 @@ def collect_candidate_ms2_evidence(
 
         if scoped_peak_group is not None and not inside_peak_group:
             outside_peak_group_trigger_scan_count += 1
-            if (
-                evidence is not None
-                and evidence.observed_loss_error_ppm <= nl_ppm_max
-            ):
+            if evidence is not None and evidence.observed_loss_error_ppm <= nl_ppm_max:
                 outside_peak_group_strict_nl_scan_count += 1
             continue
 
@@ -359,8 +357,7 @@ def collect_candidate_ms2_evidence(
             )
         if (
             best_evidence is None
-            or evidence.observed_loss_error_ppm
-            < best_evidence.observed_loss_error_ppm
+            or evidence.observed_loss_error_ppm < best_evidence.observed_loss_error_ppm
         ):
             best_evidence = evidence
             best_evidence_source = source
@@ -393,11 +390,7 @@ def collect_candidate_ms2_evidence(
     else:
         alignment_source = "none"
     ms1_peak_group_strict_nl_event_count = (
-        None
-        if scoped_peak_group is None
-        else 1
-        if strict_nl_scan_count > 0
-        else 0
+        None if scoped_peak_group is None else 1 if strict_nl_scan_count > 0 else 0
     )
 
     return CandidateMS2Evidence(
@@ -467,6 +460,7 @@ def collect_candidate_ms2_evidence(
             if scoped_peak_group is not None
             else None
         ),
+        best_product_evidence=best_evidence,
     )
 
 
@@ -556,9 +550,7 @@ def _best_product_probe(
     nearest_product_mz = float(masses[nearest_index])
     nearest_observed_loss_da = scan.precursor_mz - nearest_product_mz
     nearest_product_loss_ppm = (
-        abs(nearest_observed_loss_da - neutral_loss_da)
-        / neutral_loss_da
-        * 1_000_000.0
+        abs(nearest_observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
     )
     nearest_product_base_ratio = float(intensities[nearest_index] / scan.base_peak)
     mask = (intensities >= intensity_floor) & (scan_product_ppm <= diagnostic_ppm)

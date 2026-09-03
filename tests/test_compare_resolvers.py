@@ -160,7 +160,7 @@ def test_compare_resolvers_main_runs_both_modes_and_writes_csv(
         )
 
     monkeypatch.setattr(module, "load_config", _load_config)
-    monkeypatch.setattr(module.extractor, "run", _run)
+    monkeypatch.setattr(module.extractor, "acquire", _run)
 
     output_path = tmp_path / "resolver_compare.csv"
     exit_code = main(

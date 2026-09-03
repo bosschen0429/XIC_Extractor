@@ -454,6 +454,90 @@ def test_open_raw_rejects_source_path_replacement_during_vendor_open(
     assert raw.disposed
 
 
+def test_open_raw_uses_owner_verified_path_state_without_rehashing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xic_extractor.raw_reader as raw_reader
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    raw_reader.reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    stat = raw_path.stat()
+    path_identity = (
+        stat.st_dev,
+        stat.st_ino,
+        stat.st_size,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    )
+
+    def _unexpected_fingerprint(_path: Path):
+        raise AssertionError("owner-verified RAW path state must not be rehashed")
+
+    monkeypatch.setattr(
+        raw_reader,
+        "fingerprint_file_content",
+        _unexpected_fingerprint,
+    )
+
+    with raw_reader.open_raw(
+        raw_path,
+        tmp_path,
+        expected_acquisition_source=source,
+        _expected_path_identity=path_identity,
+        _import_module=_working_imports(),
+        _thermo=_fake_thermo(_FakeRaw()),
+    ):
+        pass
+
+
+def test_open_raw_rejects_stale_owner_verified_path_state(tmp_path: Path) -> None:
+    import xic_extractor.raw_reader as raw_reader
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    raw_reader.reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    replacement_path = tmp_path / "replacement.raw"
+    raw_path.write_bytes(b"sample-a")
+    replacement_path.write_bytes(b"sample-b")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    stat = raw_path.stat()
+    path_identity = (
+        stat.st_dev,
+        stat.st_ino,
+        stat.st_size,
+        stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    )
+    replacement_path.replace(raw_path)
+
+    with pytest.raises(
+        raw_reader.RawReaderError,
+        match="RAW path state does not match expected acquisition source",
+    ):
+        raw_reader.open_raw(
+            raw_path,
+            tmp_path,
+            expected_acquisition_source=source,
+            _expected_path_identity=path_identity,
+            _import_module=_working_imports(),
+            _thermo=_fake_thermo(_FakeRaw()),
+        )
+
+
 def test_open_raw_rechecks_content_after_vendor_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

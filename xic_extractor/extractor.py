@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any, Literal
 
 from xic_extractor import neutral_loss, raw_reader, signal_processing
 from xic_extractor.config import ExtractionConfig, Target
@@ -16,7 +17,7 @@ from xic_extractor.peak_detection.hypotheses import (
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecord,
+    ExpectedDiffApprovalRecords,
     PeakModelSelectionResult,
 )
 from xic_extractor.peak_detection.selection_decision import (
@@ -25,6 +26,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
+from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.rt_prior_library import LibraryEntry
 
 open_raw = raw_reader.open_raw
@@ -43,6 +45,7 @@ __all__ = [
     "ExtractionResult",
     "FileResult",
     "RunOutput",
+    "acquire",
     "run",
 ]
 
@@ -66,6 +69,7 @@ class ExtractionResult:
     selected_hypothesis: PeakHypothesis | None = None
     selection_decision: PeakHypothesisSelectionDecision | None = None
     model_selection_result: PeakModelSelectionResult | None = None
+    acquisition_trace: Trace | None = None
     targeted_product_projection: TargetedProductProjection | None = None
 
     def __post_init__(self) -> None:
@@ -199,9 +203,37 @@ def run(
     should_stop: Callable[[], bool] | None = None,
     injection_order: dict[str, int] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ) = None,
+    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+) -> RunOutput:
+    from xic_extractor.extraction import targeted_diagnostic_application as application
+    from xic_extractor.extraction import targeted_service
+
+    return application.build_canonical_targeted_application_service(acquire).execute(
+        targeted_service.build_targeted_application_request(
+            config,
+            targets,
+            progress_callback=progress_callback,
+            should_stop=should_stop,
+            injection_order=injection_order,
+            rt_prior_library=rt_prior_library,
+            model_selection_expected_diff_approvals=(
+                model_selection_expected_diff_approvals
+            ),
+        )
+    )
+
+
+def acquire(
+    config: ExtractionConfig,
+    targets: list[Target],
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    injection_order: dict[str, int] | None = None,
+    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
+    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    acquisition_sources_by_sample: Any = None,
+    *,
+    publish_outputs: Literal[False] = False,
 ) -> RunOutput:
     from xic_extractor.extraction.pipeline import run_pipeline
 
@@ -212,7 +244,7 @@ def run(
         should_stop=should_stop,
         injection_order=injection_order,
         rt_prior_library=rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
+        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,  # noqa: E501
+        acquisition_sources_by_sample=acquisition_sources_by_sample,
+        publish_outputs=publish_outputs,
     )

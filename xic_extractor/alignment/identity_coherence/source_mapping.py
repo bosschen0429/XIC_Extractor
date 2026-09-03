@@ -47,19 +47,21 @@ def build_identity_coherence_seed_sources(
     identity_config = config or IdentityCoherenceConfig()
     candidates_by_id = {candidate.candidate_id: candidate for candidate in candidates}
     assignment_by_candidate_id = assignment_status_by_candidate_id(ownership)
-    joined_sources: list[tuple[SampleLocalMS1Owner, DiscoveryCandidate]] = []
+    joined_sources: list[tuple[SampleLocalMS1Owner, DiscoveryCandidate, str]] = []
     for owner in sorted(ownership.owners, key=_owner_sort_key):
-        seed_id = owner.primary_identity_event.candidate_id
+        event = owner.primary_identity_event
+        if event is None:
+            continue
+        seed_id = event.candidate_id
         seed_candidate = candidates_by_id.get(seed_id)
         if seed_candidate is None:
             continue
         if seed_id not in assignment_by_candidate_id:
             continue
-        joined_sources.append((owner, seed_candidate))
+        joined_sources.append((owner, seed_candidate, seed_id))
 
     sources: list[IdentityCoherenceSeedSource] = []
-    for index, (owner, seed_candidate) in enumerate(joined_sources, start=1):
-        seed_id = owner.primary_identity_event.candidate_id
+    for index, (owner, seed_candidate, seed_id) in enumerate(joined_sources, start=1):
         request_id = candidate_request_id(index)
         decision_id = candidate_decision_id(index)
         request = build_identity_coherence_request(
@@ -145,10 +147,11 @@ def candidate_is_non_seed_pool_member(
 
 
 def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[str, float, str]:
+    event = owner.primary_identity_event
     return (
         owner.sample_stem,
         owner.owner_apex_rt,
-        owner.primary_identity_event.candidate_id,
+        "" if event is None else event.candidate_id,
     )
 
 

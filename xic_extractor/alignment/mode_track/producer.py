@@ -15,6 +15,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
+    owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignmentBatch,
@@ -45,6 +46,7 @@ from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 _FAMILY_CONTEXT_POLICY_VERSION = "cid-nl-method-subject-family-v1"
+_MS1_FAMILY_CONTEXT_POLICY_VERSION = "target-ms1-family-v1"
 
 
 class ModeTrackProducerError(ValueError):
@@ -110,6 +112,18 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         hypotheses_by_sample[sample_id] = hypotheses
         assessment_by_sample[sample_id] = assessment
         sample_by_id[sample_id] = sample
+    has_direct_support = any(
+        hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        for hypotheses in hypotheses_by_sample.values()
+        for hypothesis in hypotheses
+    )
+    include_observation_only = (
+        not retain_observation_only_candidates or not has_direct_support
+    )
+    for sample_id in sorted(hypotheses_by_sample):
+        sample = sample_by_id[sample_id]
+        assessment = assessment_by_sample[sample_id]
+        hypotheses = hypotheses_by_sample[sample_id]
         for hypothesis in hypotheses:
             if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
                 owners.append(
@@ -119,7 +133,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
                         hypothesis=hypothesis,
                     )
                 )
-            elif not retain_observation_only_candidates:
+            elif include_observation_only:
                 owners.append(
                     owner_from_cid_nl_assessment_observation(
                         processing_owners=processing_owners,
@@ -129,9 +143,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
                     )
                 )
     if not owners:
-        raise ModeTrackProducerError(
-            "bootstrap assessments must retain at least one direct support hypothesis"
-        )
+        raise ModeTrackProducerError("bootstrap assessments have no peak observations")
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
@@ -139,7 +151,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     )
     if not provisional_groups or any(track.review_only for track in provisional_groups):
         raise ModeTrackProducerError(
-            "direct support did not produce consumable cross-sample groups"
+            "bootstrap observations did not produce consumable cross-sample groups"
         )
     provisional_group_ids = {
         owner_id: track.group_hypothesis_id
@@ -151,7 +163,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         for hypotheses in hypotheses_by_sample.values()
         for hypothesis in hypotheses
         if (
-            not retain_observation_only_candidates
+            include_observation_only
             or hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         )
     }
@@ -166,7 +178,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         for hypothesis in hypotheses
         if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
     }
-    if not direct_group_ids:
+    if has_direct_support and not direct_group_ids:
         raise ModeTrackProducerError(
             "no provisional group has a direct CID-NL trajectory anchor"
         )
@@ -279,7 +291,143 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     return family_context, model_set, batches_tuple, source
 
 
+def bootstrap_mode_tracks_from_ms1_hypotheses(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_hypotheses: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, PeakHypothesis], ...
+    ],
+    family_mz_interval: tuple[float, float],
+    family_rt_interval: tuple[float, float],
+    alignment_config: AlignmentConfig,
+    trajectory_policy: ModeTrackTrajectoryPolicy,
+    drift_lookup: DriftLookupProtocol | None = None,
+) -> tuple[
+    FamilyContextRef,
+    ModeTrackModelSet,
+    tuple[ModeTrackAssignmentBatch, ...],
+    ModeTrackFitOnceSource,
+]:
+    """Run M3/M8 from workflow-neutral captured MS1 hypotheses."""
+
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise ModeTrackProducerError("processing_owners must be owner-validated")
+    if type(samples) is not tuple or not samples or any(
+        type(sample) is not ResolvedCanonicalSampleIdentity for sample in samples
+    ):
+        raise ModeTrackProducerError("samples must be an exact non-empty tuple")
+    if type(sample_hypotheses) is not tuple:
+        raise ModeTrackProducerError("sample_hypotheses must be an exact tuple")
+    if type(alignment_config) is not AlignmentConfig:
+        raise ModeTrackProducerError("alignment_config must be explicit and typed")
+    if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
+        raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
+    sample_by_id = {
+        sample.identity.sample_identity_id: sample for sample in samples
+    }
+    hypotheses_by_sample: dict[str, list[PeakHypothesis]] = {
+        sample_id: [] for sample_id in sample_by_id
+    }
+    owners: list[SampleLocalMS1Owner] = []
+    seen_hypothesis_ids: set[str] = set()
+    for sample, hypothesis in sample_hypotheses:
+        sample_id = sample.identity.sample_identity_id
+        if sample_by_id.get(sample_id) is not sample:
+            raise ModeTrackProducerError(
+                "MS1 hypothesis sample is outside the exact scope population"
+            )
+        if hypothesis.hypothesis_id in seen_hypothesis_ids:
+            raise ModeTrackProducerError("MS1 bootstrap duplicated a hypothesis")
+        seen_hypothesis_ids.add(hypothesis.hypothesis_id)
+        hypotheses_by_sample[sample_id].append(hypothesis)
+        owners.append(
+            owner_from_ms1_observation_hypothesis(
+                processing_owners=processing_owners,
+                sample=sample,
+                hypothesis=hypothesis,
+            )
+        )
+
+    provisional_groups = construct_cross_sample_peak_group_hypotheses(
+        tuple(owners),
+        config=alignment_config,
+        drift_lookup=drift_lookup,
+    )
+    if any(group.review_only for group in provisional_groups):
+        raise ModeTrackProducerError(
+            "MS1 bootstrap observations did not produce consumable groups"
+        )
+    family_context = mint_family_context_ref(
+        mz_interval=family_mz_interval,
+        rt_interval=family_rt_interval,
+        context_policy_version=_MS1_FAMILY_CONTEXT_POLICY_VERSION,
+        source_lineage_refs=(
+            tuple(sorted(seen_hypothesis_ids))
+            or (processing_owners.request.processing_request_id,)
+        ),
+        mode_tracks=provisional_groups,
+    )
+    model_set = fit_mode_track_model_set(
+        processing_owners=processing_owners,
+        family_context=family_context,
+        direct_support_anchors=(),
+        policy=trajectory_policy,
+    )
+
+    batches = []
+    sample_sources = []
+    for sample_id in sorted(sample_by_id):
+        sample = sample_by_id[sample_id]
+        candidates = tuple(
+            mint_mode_track_candidate_observation(
+                processing_owners=processing_owners,
+                sample=sample,
+                peak_hypothesis=hypothesis,
+            )
+            for hypothesis in sorted(
+                hypotheses_by_sample[sample_id],
+                key=lambda item: item.hypothesis_id,
+            )
+        )
+        trajectory_assessment = assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(points=()),
+            (sample.metadata.raw_stem,),
+        )
+        batch = assign_mode_tracks(
+            processing_owners=processing_owners,
+            sample=sample,
+            model_set=model_set,
+            candidates=candidates,
+            trajectory_assessment=trajectory_assessment,
+        )
+        validate_mode_track_assignment_batch_for_consumption(
+            processing_owners=processing_owners,
+            model_set=model_set,
+            assignment_batch=batch,
+        )
+        batches.append(batch)
+        sample_sources.append(
+            mint_mode_track_fit_once_sample_source(
+                processing_owners=processing_owners,
+                sample=sample,
+                candidates=candidates,
+                trajectory_assessment=trajectory_assessment,
+            )
+        )
+    batches_tuple = tuple(sorted(batches, key=lambda batch: batch.assignment_batch_id))
+    source = mint_mode_track_fit_once_source(
+        processing_owners=processing_owners,
+        family_context=family_context,
+        model_set=model_set,
+        sample_sources=tuple(sample_sources),
+        initial_assignment_batches=batches_tuple,
+    )
+    return family_context, model_set, batches_tuple, source
+
+
 __all__ = [
     "ModeTrackProducerError",
     "bootstrap_mode_tracks_from_cid_nl_support",
+    "bootstrap_mode_tracks_from_ms1_hypotheses",
 ]

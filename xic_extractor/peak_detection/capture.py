@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import cast
 
-from xic_extractor.peak_detection.baseline import BaselineMethod
+import numpy as np
+
+from xic_extractor.peak_detection.baseline import BaselineMethod, asls_baseline
 from xic_extractor.peak_detection.capture_boundary_policy import (
     promote_targeted_boundary_hypothesis,
 )
@@ -16,6 +18,10 @@ from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     build_peak_hypotheses,
+)
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.ms1_morphology import (
+    gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.ms1_trace_detection import (
     Ms1TracePeakDetection,
@@ -110,13 +116,23 @@ def capture_peak_hypotheses(
     except SearchScopeContractError as exc:
         raise SampleLocalCaptureError(str(exc)) from exc
     peak_config = scope.method_constraints.peak_config
-    detection = detect_ms1_trace_peak(
-        trace.rt,
-        trace.intensity,
-        peak_config=peak_config,
-        preferred_rt=binding.preferred_rt,
-        peak_finder=find_peak_and_area,
-    )
+    if (
+        binding.selection_policy == "retained_only"
+        and binding.retained_selected_integration is None
+    ):
+        detection = Ms1TracePeakDetection(
+            status="not_detected",
+            rt=trace.rt,
+            intensity=trace.intensity,
+        )
+    else:
+        detection = detect_ms1_trace_peak(
+            trace.rt,
+            trace.intensity,
+            peak_config=peak_config,
+            preferred_rt=binding.preferred_rt,
+            peak_finder=find_peak_and_area,
+        )
     label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
         scope,
         query_mz=binding.query_mz,
@@ -167,10 +183,25 @@ def capture_peak_hypotheses(
                 "shared hypothesis owner selected more than one candidate"
             )
         receipt_hypothesis = selected_values[0] if selected_values else None
-        selected = receipt_hypothesis
+        if binding.retained_selected_integration is None:
+            selected = receipt_hypothesis
+        else:
+            hypotheses, selected = _bind_retained_selection(
+                hypotheses,
+                binding.retained_selected_integration,
+            )
         if (
             selected is not None
+            and (
+                binding.retained_selected_integration is None
+                or binding.retained_selected_integration.integration_method
+                in (
+                    "selected_envelope_gaussian15",
+                    "chrom_peak_segment_gaussian15",
+                )
+            )
             and scope.method_constraints.boundary_policy == "targeted_gaussian15"
+            and binding.selection_policy == "capture_default"
         ):
             selected = promote_targeted_boundary_hypothesis(
                 selected,
@@ -182,6 +213,13 @@ def capture_peak_hypotheses(
                     peak_config.ms1_morphology_smoothing_window_points
                 ),
             ).hypothesis
+            selected = _normalize_promoted_capture_hypothesis(
+                selected,
+                detection=detection,
+                morphology_window_points=(
+                    peak_config.ms1_morphology_smoothing_window_points
+                ),
+            )
             hypotheses = tuple(
                 selected if item.hypothesis_id == selected.hypothesis_id else item
                 for item in hypotheses
@@ -206,6 +244,63 @@ def capture_peak_hypotheses(
         hypotheses=hypotheses,
         receipt_hypothesis=receipt_hypothesis,
         selected_hypothesis=selected,
+    )
+
+
+def _bind_retained_selection(
+    hypotheses: tuple[PeakHypothesis, ...],
+    retained: IntegrationResult,
+) -> tuple[tuple[PeakHypothesis, ...], PeakHypothesis | None]:
+    if type(retained) is not IntegrationResult:
+        raise SampleLocalCaptureError(
+            "retained selection must be one exact IntegrationResult"
+        )
+    matches = tuple(item for item in hypotheses if item.integration == retained)
+    if not matches:
+        matches = tuple(
+            item
+            for item in hypotheses
+            if _same_physical_peak(item.integration, retained)
+        )
+    if len(matches) != 1:
+        raise SampleLocalCaptureError(
+            "retained selected hypothesis is absent from the captured trace"
+        )
+    matched = matches[0]
+    selected_hypothesis: PeakHypothesis | None = None
+    rebound = []
+    for item in hypotheses:
+        selected_item = item is matched
+        updated = replace(item, audit=replace(item.audit, selected=selected_item))
+        rebound.append(updated)
+        if selected_item:
+            selected_hypothesis = updated
+    return tuple(rebound), selected_hypothesis
+
+
+def _same_physical_peak(
+    current: IntegrationResult,
+    retained: IntegrationResult,
+) -> bool:
+    if (
+        current.height_raw == retained.height_raw
+        and current.rt_apex_min == retained.rt_apex_min
+        and current.raw_apex_rt_min == retained.raw_apex_rt_min
+    ):
+        return True
+    if (
+        current.height_raw != retained.height_raw
+        and retained.integration_method
+        not in {
+            "selected_envelope_gaussian15",
+            "chrom_peak_segment_gaussian15",
+        }
+    ):
+        return False
+    return (
+        bool(set(current.raw_scan_indices) & set(retained.raw_scan_indices))
+        and current.rt_left_min <= retained.rt_apex_min <= current.rt_right_min
+        and retained.rt_left_min <= current.rt_apex_min <= retained.rt_right_min
     )
 
 
@@ -243,6 +338,7 @@ def mint_captured_peak_observation(
         sample=sample,
         trace=capture.trace,
         integration=selected.integration,
+        selection_intensity=_captured_selection_intensity(capture),
         resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
         proposal_sources=selected.audit.proposal_sources,
     )
@@ -281,6 +377,7 @@ def bind_owner_backed_capture_hypothesis(
             canonical_sample_identity_id=binding.sample_identity_id,
             trace=capture.trace,
             integration=selected.integration,
+            selection_intensity=_captured_selection_intensity(capture),
             resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
             proposal_sources=selected.audit.proposal_sources,
         )
@@ -309,6 +406,59 @@ def bind_owner_backed_capture_hypothesis(
         hypotheses=hypotheses,
         receipt_hypothesis=capture.receipt_hypothesis,
         selected_hypothesis=hypothesis,
+    )
+
+
+def _captured_selection_intensity(capture: SampleLocalCapture) -> object | None:
+    selected = capture.selected_hypothesis
+    if selected is None or selected.integration.integration_method not in {
+        "selected_envelope_gaussian15",
+        "chrom_peak_segment_gaussian15",
+    }:
+        return None
+    return gaussian15_positive_asls_residual_trace(
+        capture.trace.intensity,
+        asls_baseline(capture.trace.intensity),
+        window_points=(
+            capture.scope.method_constraints.peak_config
+            .ms1_morphology_smoothing_window_points
+        ),
+    )
+
+
+def _normalize_promoted_capture_hypothesis(
+    hypothesis: PeakHypothesis,
+    *,
+    detection: Ms1TracePeakDetection,
+    morphology_window_points: int,
+) -> PeakHypothesis:
+    integration = hypothesis.integration
+    if integration.integration_method not in {
+        "selected_envelope_gaussian15",
+        "chrom_peak_segment_gaussian15",
+    }:
+        return hypothesis
+    indices = integration.raw_scan_indices
+    if not indices:
+        return hypothesis
+    left = min(indices)
+    right = max(indices) + 1
+    raw_apex_index = left + int(np.argmax(detection.intensity[left:right]))
+    selection_trace = gaussian15_positive_asls_residual_trace(
+        detection.intensity,
+        asls_baseline(detection.intensity),
+        window_points=morphology_window_points,
+    )
+    selection_apex_index = left + int(np.argmax(selection_trace[left:right]))
+    return replace(
+        hypothesis,
+        integration=replace(
+            integration,
+            rt_apex_min=float(detection.rt[selection_apex_index]),
+            raw_apex_rt_min=float(detection.rt[raw_apex_index]),
+            height_raw=float(detection.intensity[raw_apex_index]),
+            height_smoothed=float(selection_trace[selection_apex_index]),
+        ),
     )
 
 

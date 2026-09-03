@@ -108,7 +108,7 @@ class FinalizedScientificAlignment:
     processing_request: ProcessingRequestIdentity
     canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     terminal_subjects: tuple[TerminalSearchObservation, ...]
-    cell_observation_handoff: CrossSampleAssociationLineageHandoff
+    cell_observation_handoff: CrossSampleAssociationLineageHandoff | None
     cell_observations: tuple[FinalGroupCellObservation, ...]
     final_cross_sample_receipt: CrossSampleFinalReceipt
     _completion_seal: bytes = field(init=False, repr=False, compare=False)
@@ -149,7 +149,7 @@ def finalize_scientific_alignment(
     scope: SearchScope,
     captures: Sequence[SampleLocalCapture],
     final_cross_sample_receipt: CrossSampleFinalReceipt,
-    cell_observation_handoff: CrossSampleAssociationLineageHandoff,
+    cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
     predecessor_cell_observations: Sequence[CellObservationRef],
     repair_receipts: Sequence[ObservationRepairReceipt] = (),
     repaired_observations: Sequence[OwnerBackfillPeakFactObservation] = (),
@@ -186,21 +186,35 @@ def finalize_scientific_alignment(
             key=lambda sample: sample.identity.sample_identity_id,
         )
     )
-    _validate_cell_observation_handoff(
-        handoff=cell_observation_handoff,
-        final_cross_sample_receipt=final_cross_sample_receipt,
-        canonical_samples=canonical_samples,
-        processing_request_id=scope.request.processing_request_id,
-    )
-    try:
-        canonical_cells = compose_final_group_cell_observation_population(
+    canonical_cells: tuple[FinalGroupCellObservation, ...]
+    if cell_observation_handoff is None:
+        if (
+            predecessor_cell_observations
+            or repair_receipts
+            or repaired_observations
+            or final_cross_sample_receipt.repair_epoch != 0
+            or final_cross_sample_receipt.repair_receipt is not None
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "repair-free finalization cannot carry repair lineage"
+            )
+        canonical_cells = ()
+    else:
+        _validate_cell_observation_handoff(
             handoff=cell_observation_handoff,
-            predecessor_cells=predecessor_cell_observations,
-            repair_receipts=repair_receipts,
-            repaired_observations=repaired_observations,
+            final_cross_sample_receipt=final_cross_sample_receipt,
+            canonical_samples=canonical_samples,
+            processing_request_id=scope.request.processing_request_id,
         )
-    except CellObservationContractError as exc:
-        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
+        try:
+            canonical_cells = compose_final_group_cell_observation_population(
+                handoff=cell_observation_handoff,
+                predecessor_cells=predecessor_cell_observations,
+                repair_receipts=repair_receipts,
+                repaired_observations=repaired_observations,
+            )
+        except CellObservationContractError as exc:
+            raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     result = FinalizedScientificAlignment(
         scope=scope,
         processing_request=scope.request,
@@ -318,19 +332,30 @@ def _validate_finalized_alignment(result: FinalizedScientificAlignment) -> None:
             "terminal subjects are not canonical-sorted"
         )
     _validate_terminal_population(result.scope, result.terminal_subjects)
-    _validate_cell_observation_handoff(
-        handoff=result.cell_observation_handoff,
-        final_cross_sample_receipt=result.final_cross_sample_receipt,
-        canonical_samples=result.canonical_samples,
-        processing_request_id=result.processing_request_id,
-    )
-    try:
-        canonical_cells = validate_final_group_cell_observation_population(
+    canonical_cells: tuple[FinalGroupCellObservation, ...]
+    if result.cell_observation_handoff is None:
+        if (
+            result.cell_observations
+            or result.final_cross_sample_receipt.repair_epoch != 0
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "repair-free finalized alignment carries repair observations"
+            )
+        canonical_cells = ()
+    else:
+        _validate_cell_observation_handoff(
             handoff=result.cell_observation_handoff,
-            cell_observations=result.cell_observations,
+            final_cross_sample_receipt=result.final_cross_sample_receipt,
+            canonical_samples=result.canonical_samples,
+            processing_request_id=result.processing_request_id,
         )
-    except CellObservationContractError as exc:
-        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
+        try:
+            canonical_cells = validate_final_group_cell_observation_population(
+                handoff=result.cell_observation_handoff,
+                cell_observations=result.cell_observations,
+            )
+        except CellObservationContractError as exc:
+            raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     if result.cell_observations != canonical_cells:
         raise FinalizedScientificAlignmentContractError(
             "final cell observations are not canonical-sorted"

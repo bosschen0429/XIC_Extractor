@@ -22,6 +22,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
@@ -31,6 +32,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 SEARCH_SCOPE_SCHEMA_VERSION = "search_scope_v1"
 SearchScopeVariant = Literal["targeted", "untargeted"]
 CaptureBoundaryPolicy = Literal["resolver_interval", "targeted_gaussian15"]
+CaptureSelectionPolicy = Literal["capture_default", "retained_only"]
 
 
 class SearchScopeContractError(ValueError):
@@ -74,6 +76,8 @@ class CaptureCandidateBinding:
     query_rt_max: float
     query_ppm_tol: float
     preferred_rt: float
+    retained_selected_integration: IntegrationResult | None = None
+    selection_policy: CaptureSelectionPolicy = "capture_default"
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
@@ -89,6 +93,10 @@ class CaptureCandidateBinding:
             self.preferred_rt,
             field="preferred_rt",
         )
+        if self.selection_policy not in {"capture_default", "retained_only"}:
+            raise SearchScopeContractError(
+                "capture selection_policy must be capture_default or retained_only"
+            )
         if rt_min > rt_max:
             raise SearchScopeContractError(
                 "capture candidate query RT interval must be ordered"
@@ -96,6 +104,13 @@ class CaptureCandidateBinding:
         if not rt_min <= preferred_rt <= rt_max:
             raise SearchScopeContractError(
                 "capture candidate preferred_rt is outside its query RT interval"
+            )
+        if (
+            self.retained_selected_integration is not None
+            and type(self.retained_selected_integration) is not IntegrationResult
+        ):
+            raise SearchScopeContractError(
+                "retained capture selection must use one exact IntegrationResult"
             )
 
 
@@ -363,14 +378,13 @@ def _validate_common_scope(
         )
     if (
         not isinstance(evidence_providers, tuple)
-        or not evidence_providers
         or any(
             not isinstance(provider, EvidenceProviderBinding)
             for provider in evidence_providers
         )
     ):
         raise SearchScopeContractError(
-            "evidence_providers must be a non-empty typed tuple"
+            "evidence_providers must be a typed tuple"
         )
     provider_keys = tuple(
         (provider.provider_id, provider.method_subject_id)
@@ -423,18 +437,24 @@ def _validate_targeted_capture_bindings(
     target: ResolvedTargetDefinition,
 ) -> None:
     value = target.definition.target
-    try:
-        expected_subject = cid_nl_method_subject_from_target(target)
-    except CidNlMethodSubjectContractError as exc:
-        raise SearchScopeContractError(str(exc)) from exc
+    expected_subject_id = _target_capture_subject_id(target)
     for binding in bindings:
         if (
-            binding.method_subject_id != expected_subject.method_subject_id
+            binding.method_subject_id != expected_subject_id
             or binding.query_mz != value.mz
             or binding.query_ppm_tol != value.ppm_tol
         ):
             raise SearchScopeContractError(
                 "Target capture binding mismatches exact Target subject/m/z/ppm"
+            )
+        expected_selection_policy = (
+            "retained_only"
+            if value.neutral_loss_da is None
+            else "capture_default"
+        )
+        if binding.selection_policy != expected_selection_policy:
+            raise SearchScopeContractError(
+                "Target capture selection policy mismatches its evidence method"
             )
         if not value.rt_min <= binding.preferred_rt <= value.rt_max:
             raise SearchScopeContractError(
@@ -622,6 +642,12 @@ def _validate_targeted_evidence_provider(
     *,
     target: ResolvedTargetDefinition,
 ) -> None:
+    if target.definition.target.neutral_loss_da is None:
+        if providers:
+            raise SearchScopeContractError(
+                "MS1-only Target SearchScope does not accept a CID-NL provider"
+            )
+        return
     try:
         expected_subject = cid_nl_method_subject_from_target(target)
     except CidNlMethodSubjectContractError as exc:
@@ -631,6 +657,25 @@ def _validate_targeted_evidence_provider(
         expected_method_subject_id=expected_subject.method_subject_id,
         variant="Target",
     )
+
+
+def target_ms1_subject_id(target: ResolvedTargetDefinition) -> str:
+    """Return the exact Target-definition identity used by MS1-only capture."""
+
+    if not isinstance(target, ResolvedTargetDefinition):
+        raise SearchScopeContractError("MS1 Target subject must be owner-resolved")
+    if target.definition.target.neutral_loss_da is not None:
+        raise SearchScopeContractError("MS1 Target subject requires neutral loss off")
+    return f"target-ms1:{target.definition.target_definition_id}"
+
+
+def _target_capture_subject_id(target: ResolvedTargetDefinition) -> str:
+    if target.definition.target.neutral_loss_da is None:
+        return target_ms1_subject_id(target)
+    try:
+        return cid_nl_method_subject_from_target(target).method_subject_id
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(str(exc)) from exc
 
 
 def _validate_untargeted_evidence_provider(
@@ -751,6 +796,7 @@ __all__ = (
     "CaptureBoundaryPolicy",
     "CaptureCandidateBinding",
     "CaptureMethodConstraints",
+    "CaptureSelectionPolicy",
     "EvidenceProviderBinding",
     "SearchScope",
     "SearchScopeAuthorizationError",
@@ -760,6 +806,7 @@ __all__ = (
     "UntargetedSearchScope",
     "require_capture_binding",
     "scope_allows_evidence_inspection",
+    "target_ms1_subject_id",
     "validate_scope_owner_binding",
     "validate_scope_trace_coordinates",
 )

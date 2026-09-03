@@ -49,6 +49,7 @@ from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
 )
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import PeakCandidate
 
@@ -69,6 +70,7 @@ def extract_raw_file_result(
     scoring_context_factory: Callable[..., Any] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> RawFileExtractionResult:
     from xic_extractor import extractor
 
@@ -79,6 +81,7 @@ def extract_raw_file_result(
         scoring_context_factory=scoring_context_factory,
         rt_prior_library=rt_prior_library,
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
+        expected_acquisition_source=expected_acquisition_source,
     )
     return extractor.RawFileExtractionResult(
         raw_index=raw_index,
@@ -100,13 +103,24 @@ def process_file(
     precomputed_istd_shape_metrics: dict[str, tuple[float, float | None]] | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+    expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor import extractor
 
     sample_name = raw_path.stem
     approval_records = model_selection_expected_diff_approvals
     try:
-        with extractor.open_raw(raw_path, config.dll_dir) as raw:
+        raw_context = (
+            extractor.open_raw(raw_path, config.dll_dir)
+            if expected_acquisition_source is None
+            else extractor.open_raw(
+                raw_path,
+                config.dll_dir,
+                expected_acquisition_source=expected_acquisition_source.source,
+                _expected_path_identity=expected_acquisition_source.path_identity,
+            )
+        )
+        with raw_context as raw:
             results = dict(precomputed_istd_results or {})
             peak_candidate_rows: list[dict[str, str]] = []
             peak_candidate_boundary_rows: list[dict[str, str]] = []
@@ -205,9 +219,7 @@ def process_file(
         reason = f"Failed to open .raw: {type(exc).__name__}: {exc}"
         return (
             extractor.FileResult(sample_name=sample_name, results={}, error=reason),
-            [
-                DiagnosticRecord(sample_name, "", "FILE_ERROR", reason)
-            ],
+            [DiagnosticRecord(sample_name, "", "FILE_ERROR", reason)],
         )
 
 
@@ -416,6 +428,11 @@ def extract_one_target(
         selected_hypothesis=handoff_peak.selected_hypothesis,
         selection_decision=handoff_peak.selection_decision,
         model_selection_result=handoff_peak.model_selection_result,
+        acquisition_trace=(
+            None
+            if handoff_peak.trace_group is None
+            else handoff_peak.trace_group.primary_trace
+        ),
         sample_name=sample_name,
     )
     results[target.label] = result
@@ -523,12 +540,9 @@ def _selected_envelope_guarded_decision(
     if evaluation.row_boundary_decision == "accept_candidate":
         return decision
     guard = f"selected_envelope_{evaluation.boundary_change_class}"
-    not_counted = (
-        f"selected_envelope_boundary_{evaluation.row_boundary_decision}"
-    )
+    not_counted = f"selected_envelope_boundary_{evaluation.row_boundary_decision}"
     projected_reason = (
-        f"decision: not_counted; not_counted: {not_counted}; "
-        f"review: {guard}"
+        f"decision: not_counted; not_counted: {not_counted}; review: {guard}"
     )
     return replace(
         decision,

@@ -434,7 +434,7 @@ def _run_case(
         settings_overrides=parameter_set.settings_overrides,
     )
     config, targets = load_config(config_dir)
-    run_output = extractor.run(config, targets)
+    run_output = extractor.acquire(config, targets)
     return _collect_program_rows(run_output, targets)
 
 

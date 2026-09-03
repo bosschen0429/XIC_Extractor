@@ -466,7 +466,8 @@ def test_process_run_writes_output_only_after_collecting_worker_results(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.extractor import FileResult, RawFileExtractionResult, run
+    from xic_extractor.extraction.pipeline import run_pipeline
+    from xic_extractor.extractor import FileResult, RawFileExtractionResult
 
     config = replace(
         _config(tmp_path),
@@ -510,7 +511,7 @@ def test_process_run_writes_output_only_after_collecting_worker_results(
         _fake_write_all,
     )
 
-    output = run(config, targets)
+    output = run_pipeline(config, targets)
 
     assert [file_result.sample_name for file_result in output.file_results] == ["A"]
     assert calls == ["collect", "write"]

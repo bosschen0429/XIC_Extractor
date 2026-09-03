@@ -26,6 +26,7 @@ from xic_extractor.peak_detection.model_selection import (
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     AcquisitionSourceIdentity,
+    FingerprintCancelledError,
     IdentityContractError,
     build_acquisition_source_identity,
     build_processing_request_identity,
@@ -162,6 +163,13 @@ def test_fingerprint_without_observer_skips_diagnostic_timer(
     fingerprint = fingerprint_file_content(path)
 
     assert fingerprint.byte_size == len(b"content")
+
+
+def test_fingerprint_cancellation_is_checked_between_chunks(tmp_path: Path) -> None:
+    path = _raw(tmp_path / "sample.raw", b"x" * (2 * 1024 * 1024))
+
+    with pytest.raises(FingerprintCancelledError, match="was cancelled"):
+        fingerprint_file_content(path, should_cancel=lambda: True)
 
 
 @pytest.mark.parametrize("path_kind", ["invalid", "missing", "directory"])

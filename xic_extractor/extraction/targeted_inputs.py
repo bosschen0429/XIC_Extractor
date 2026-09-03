@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -135,6 +135,7 @@ def build_targeted_processing_request_identity(
     current_discovery_candidates_by_sample: (
         Mapping[str, Sequence[DiscoveryCandidate]] | None
     ) = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> ProcessingRequestIdentity:
     """Bind resolved Targeted extraction inputs to exact acquisition content."""
 
@@ -147,6 +148,7 @@ def build_targeted_processing_request_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            should_cancel=should_cancel,
         )
 
     identity_injection_order = (
@@ -194,9 +196,7 @@ def build_targeted_processing_request_identity(
     }
     if current_discovery_settings is not None:
         scientific_inputs[TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY] = (
-            targeted_real_data_discovery_settings_payload(
-                current_discovery_settings
-            )
+            targeted_real_data_discovery_settings_payload(current_discovery_settings)
         )
     return build_processing_request_identity(
         acquisition_sources=tuple(sources_by_stem.values()),
@@ -215,15 +215,11 @@ def targeted_real_data_candidate_universe_payload(
 ) -> dict[str, object]:
     """Bind one complete, order-insensitive Discovery universe per sample."""
 
-    sample_stems = _canonical_candidate_universe_sample_stems(
-        expected_sample_stems
-    )
+    sample_stems = _canonical_candidate_universe_sample_stems(expected_sample_stems)
     if candidates_by_sample is not None and not isinstance(
         candidates_by_sample, Mapping
     ):
-        raise IdentityContractError(
-            "candidate universe must be a sample-keyed mapping"
-        )
+        raise IdentityContractError("candidate universe must be a sample-keyed mapping")
     declared = (
         {sample_stem: () for sample_stem in sample_stems}
         if candidates_by_sample is None
@@ -262,9 +258,7 @@ def validate_targeted_real_data_candidate_universe_payload(
 ) -> tuple[dict[str, object], ...]:
     """Validate the complete persisted v1 universe before runtime replay."""
 
-    sample_stems = _canonical_candidate_universe_sample_stems(
-        expected_sample_stems
-    )
+    sample_stems = _canonical_candidate_universe_sample_stems(expected_sample_stems)
     if not isinstance(payload, dict) or set(payload) != {
         "schema_version",
         "samples",
@@ -334,9 +328,7 @@ def validate_targeted_real_data_candidate_universe_payload(
                 "candidate universe digest must be a lower-case SHA-256 value"
             )
         typed_samples.append(entry)
-    actual_stems = tuple(
-        entry["sample_stem"] for entry in typed_samples
-    )
+    actual_stems = tuple(entry["sample_stem"] for entry in typed_samples)
     if actual_stems != sample_stems:
         raise IdentityContractError(
             "candidate universe payload must contain one canonical entry per "
@@ -349,8 +341,7 @@ def _canonical_candidate_universe_sample_stems(
     expected_sample_stems: Sequence[str],
 ) -> tuple[str, ...]:
     if isinstance(expected_sample_stems, (str, bytes)) or any(
-        not isinstance(item, str) or not item.strip()
-        for item in expected_sample_stems
+        not isinstance(item, str) or not item.strip() for item in expected_sample_stems
     ):
         raise IdentityContractError(
             "candidate universe requires non-empty acquisition sample stems"

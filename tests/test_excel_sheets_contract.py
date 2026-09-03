@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 
 from xic_extractor import extractor
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extractor import DiagnosticRecord, RunOutput
 from xic_extractor.neutral_loss import NLResult
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
@@ -125,7 +126,8 @@ def _run_pipeline(
         lambda *_args, **_kwargs: NLResult("OK", 1.0, None, 1, 0, 1),
     )
 
-    run_output = extractor.run(config, [target])
+    run_output = extractor.acquire(config, [target])
+    write_outputs(config, [target], run_output)
     if with_diagnostics:
         run_output = RunOutput(
             file_results=run_output.file_results,
