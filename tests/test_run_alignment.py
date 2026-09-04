@@ -15,6 +15,7 @@ from xic_extractor.alignment.owner_build_route_receipt import (
 from xic_extractor.alignment.pipeline import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
+from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
@@ -148,6 +149,7 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert captured["owner_backfill_superwindow_span_factor"] == 2
     assert captured["backfill_scope"] == "full-audit"
     assert captured["audit_evidence_mode"] == "auto"
+    assert captured["discovery_settings"] is None
     assert captured["selected_family_ids"] == frozenset()
     assert captured["drift_lookup"] is None
     stdout = capsys.readouterr().out
@@ -790,6 +792,13 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     output_dir = tmp_path / "alignment"
     captured_alignment: dict[str, object] = {}
     captured_preset: dict[str, object] = {}
+    bound_recipes: list[object] = []
+    real_bind = run_alignment.bind_cid_nl_recipe
+
+    def bind_once(*args, **kwargs):
+        recipe = real_bind(*args, **kwargs)
+        bound_recipes.append(recipe)
+        return recipe
 
     def fake_run_alignment(**kwargs):
         captured_alignment.update(kwargs)
@@ -826,6 +835,7 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
         fake_preset_runner,
         raising=False,
     )
+    monkeypatch.setattr(run_alignment, "bind_cid_nl_recipe", bind_once)
 
     code = run_alignment.main(
         [
@@ -846,7 +856,74 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["emit_alignment_cells"] is False
     assert captured_alignment["require_discovery_owner_closure"] is True
+    assert len(bound_recipes) == 1
+    recipe = bound_recipes[0]
+    assert captured_alignment["discovery_settings"] is recipe.discovery_settings
     assert captured_preset == {}
+
+
+def test_run_alignment_cli_binds_pure_preset_peak_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    preset_path = tmp_path / "custom_pure_cid_nl.toml"
+    preset_path.write_text(
+        """
+name = "Custom pure CID-NL"
+description = "Custom pure CID-NL settings"
+combine_mode = "single"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "NL116"
+value = 116.0474
+
+[discovery]
+resolver_mode = "legacy_savgol"
+nl_min_intensity_ratio = 0.37
+""".strip(),
+        encoding="utf-8",
+    )
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    captured: dict[str, object] = {}
+
+    def fake_run_alignment(**kwargs):
+        captured.update(kwargs)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(tmp_path / "alignment"),
+            "--preset",
+            str(preset_path),
+            "--resolver-mode",
+            "local_minimum",
+        ]
+    )
+
+    assert code == 0
+    settings = captured["discovery_settings"]
+    peak_config = captured["peak_config"]
+    assert peak_config.resolver_mode == settings.resolver_mode == "legacy_savgol"
+    assert (
+        peak_config.nl_min_intensity_ratio
+        == settings.nl_min_intensity_ratio
+        == pytest.approx(0.37)
+    )
 
 
 def test_run_alignment_cli_product_ready_preset_runs_owner_backfill_only(
@@ -2561,6 +2638,39 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Timing live JSON:" in stdout
 
 
+def test_run_alignment_cli_preflight_rejects_unsupported_retained_options(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    batch_index, raw_dir = _write_owner_closed_preflight_batch(
+        tmp_path,
+        ("S1",),
+    )
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--preset",
+            "dna_dr",
+            "--raw-workers",
+            "2",
+            "--preflight-only",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "raw_workers" in captured.err
+    assert "Alignment launch preflight OK" not in captured.out
+
+
 def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2785,7 +2895,14 @@ def test_run_alignment_cli_rejects_85raw_wrong_python_environment(
     assert "Python executable must be under this worktree .venv" in stderr
 
 
-@pytest.mark.parametrize("exc", [RawReaderError("raw fail"), ValueError("bad input")])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RawReaderError("raw fail"),
+        ValueError("bad input"),
+        AlignmentProcessExecutionError("retained runtime failed"),
+    ],
+)
 def test_run_alignment_cli_returns_2_for_user_visible_errors(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

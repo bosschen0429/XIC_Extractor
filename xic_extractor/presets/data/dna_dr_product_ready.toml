@@ -1,5 +1,5 @@
 name = "DNA dR Owner Backfill (compat)"
-description = "Historical product-ready compatibility profile; Owner Backfill only; the preset name does not assert readiness"
+description = "Historical compatibility profile; finalized CID-NL uses the retained batch and the preset name does not assert readiness"
 combine_mode = "single"
 
 [[tag]]

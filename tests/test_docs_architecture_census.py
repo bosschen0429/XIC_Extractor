@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import configparser
 import json
 import shutil
@@ -701,6 +702,78 @@ def test_grimp_census_records_only_importable_internal_modules(
     assert {
         reference.imported_module for reference in observed.internal_static_imports
     } <= importable_modules
+
+
+@pytest.mark.current_repository_census
+def test_alignment_to_extraction_imports_are_exact_owner_edges(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = {
+        (reference.source_module, reference.imported_module)
+        for reference in current_architecture_census.internal_static_imports
+        if reference.source_module.startswith("xic_extractor.alignment")
+        and reference.imported_module.startswith("xic_extractor.extraction")
+    }
+
+    assert observed == {
+        (
+            "xic_extractor.alignment.pipeline",
+            "xic_extractor.extraction.untargeted_cid_nl_alignment",
+        ),
+        (
+            "xic_extractor.alignment.pipeline",
+            "xic_extractor.extraction.untargeted_cid_nl_production_batch",
+        ),
+        (
+            "xic_extractor.alignment.result.application_result",
+            "xic_extractor.extraction.untargeted_cid_nl_real_data_inputs",
+        ),
+    }
+
+
+@pytest.mark.current_repository_census
+def test_issue367_production_activation_loci_are_exact() -> None:
+    production_calls: dict[str, set[Path]] = {
+        "run_alignment": set(),
+        "complete_untargeted_cid_nl_alignment": set(),
+        "execute_untargeted_cid_nl_production_batch": set(),
+    }
+    for path in census.repository_python_paths(ROOT):
+        if not path.parts or path.parts[0] == "tests":
+            continue
+        tree = ast.parse((ROOT / path).read_text(encoding="utf-8-sig"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = (
+                node.func.id
+                if isinstance(node.func, ast.Name)
+                else node.func.attr
+                if isinstance(node.func, ast.Attribute)
+                else ""
+            )
+            if called in production_calls:
+                production_calls[called].add(path)
+
+    outer_callers = production_calls["run_alignment"]
+    assert outer_callers == {
+        Path("scripts/run_alignment.py"),
+        Path("gui/workers/discovery_worker.py"),
+        Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
+    }
+    activation_loci = outer_callers | {Path("xic_extractor/alignment/pipeline.py")}
+    assert activation_loci == {
+        Path("xic_extractor/alignment/pipeline.py"),
+        Path("scripts/run_alignment.py"),
+        Path("gui/workers/discovery_worker.py"),
+        Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
+    }
+    assert production_calls["complete_untargeted_cid_nl_alignment"] == {
+        Path("xic_extractor/alignment/pipeline.py")
+    }
+    assert production_calls["execute_untargeted_cid_nl_production_batch"] == {
+        Path("xic_extractor/extraction/untargeted_cid_nl_alignment.py")
+    }
 
 
 def test_census_excludes_ignored_modules_from_grimp_graph(

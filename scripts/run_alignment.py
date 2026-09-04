@@ -17,9 +17,15 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
 )
 from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evidence
-from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
+from xic_extractor.alignment.ms1_index_source import (
+    OwnerBackfillXicBackend,
+    OwnerBuildXicBackend,
+)
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.pipeline import run_alignment
+from xic_extractor.alignment.pipeline import (
+    _validate_untargeted_cid_nl_alignment_options,
+    run_alignment,
+)
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
@@ -28,6 +34,9 @@ from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.loader import load_target_list_snapshot
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
+)
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -92,6 +101,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=args.signal_processing_method,
         signal_processing_window_points=args.signal_processing_window_points,
+    )
+    peak_config_resolver_mode, peak_config_nl_min_intensity_ratio = (
+        _effective_peak_config_settings(args, recipe)
     )
     owner_build_xic_backend = _effective_owner_build_xic_backend(
         args,
@@ -212,6 +224,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    if recipe is not None and is_pure_single_provider_cid_nl(
+        recipe.discovery_settings
+    ):
+        try:
+            _validate_untargeted_cid_nl_alignment_options(
+                raw_workers=raw_workers,
+                raw_xic_batch_size=raw_xic_batch_size,
+                owner_backfill_xic_backend=_owner_backfill_xic_backend(
+                    args.owner_backfill_xic_backend
+                ),
+                owner_backfill_window_strategy=args.owner_backfill_window_strategy,
+                owner_backfill_superwindow_span_factor=(
+                    args.owner_backfill_superwindow_span_factor
+                ),
+                preconsolidate_owner_families=args.preconsolidate_owner_families,
+                emit_identity_coherence_diagnostic=(
+                    args.emit_identity_coherence_diagnostic
+                ),
+                identity_coherence_output_dir=identity_coherence_output_dir,
+                identity_coherence_controls_manifest=(
+                    identity_coherence_controls_manifest
+                ),
+                drift_lookup=sample_info,
+                sample_column_injection_order=sample_column_injection_order,
+                backfill_scope=args.backfill_scope,
+                audit_evidence_mode=args.audit_evidence_mode,
+                selected_family_ids=selected_family_ids,
+                selected_family_source=selected_family_source,
+                emit_early_loser_shadow=args.emit_early_loser_shadow,
+                signal_processing_profile=signal_processing_profile,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+
     if args.preflight_only:
         try:
             discovery_batch = read_discovery_batch_index(
@@ -279,10 +326,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raw_dir,
                 dll_dir,
                 output_dir,
-                _alignment_production_resolver_mode(args.resolver_mode),
+                peak_config_resolver_mode,
                 baseline_audit_method=_baseline_audit_method(args),
                 baseline_integration_method=_baseline_integration_method(args),
                 signal_processing_profile=signal_processing_profile,
+                nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
+            ),
+            "discovery_settings": (
+                recipe.discovery_settings if recipe is not None else None
             ),
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
@@ -1134,12 +1185,14 @@ def _write_cprofile_outputs(profiler: cProfile.Profile, output_dir: Path) -> Non
     print(f"cProfile top functions: {top_path}")
 
 
-def _owner_backfill_xic_backend(value: str) -> str:
+def _owner_backfill_xic_backend(value: str) -> OwnerBackfillXicBackend:
+    if value == "raw":
+        return "raw"
     if value == "ms1-index":
         return "ms1_index"
     if value == "ms1-index-hybrid":
         return "ms1_index_hybrid"
-    return value
+    raise ValueError(f"unsupported owner backfill XIC backend: {value}")
 
 
 def _effective_owner_build_xic_backend(
@@ -1165,6 +1218,18 @@ def _alignment_production_resolver_mode(resolver_mode: str) -> str:
     if resolver_mode == "region_first_safe_merge":
         return "local_minimum"
     return resolver_mode
+
+
+def _effective_peak_config_settings(
+    args: argparse.Namespace,
+    recipe: BoundCidNlRecipe | None,
+) -> tuple[str, float | None]:
+    if recipe is not None and is_pure_single_provider_cid_nl(
+        recipe.discovery_settings
+    ):
+        settings = recipe.discovery_settings
+        return settings.resolver_mode, settings.nl_min_intensity_ratio
+    return _alignment_production_resolver_mode(args.resolver_mode), None
 
 
 def _baseline_audit_method(args: argparse.Namespace) -> str:
@@ -1200,6 +1265,7 @@ def _peak_config(
     baseline_audit_method: str = "",
     baseline_integration_method: str = "asls",
     signal_processing_profile: SignalProcessingProfile | None = None,
+    nl_min_intensity_ratio: float | None = None,
 ) -> ExtractionConfig:
     defaults = CANONICAL_SETTINGS_DEFAULTS
     profile = signal_processing_profile or resolve_signal_processing_profile()
@@ -1216,7 +1282,11 @@ def _peak_config(
         peak_rel_height=float(defaults["peak_rel_height"]),
         peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
         ms2_precursor_tol_da=float(defaults["ms2_precursor_tol_da"]),
-        nl_min_intensity_ratio=float(defaults["nl_min_intensity_ratio"]),
+        nl_min_intensity_ratio=(
+            float(defaults["nl_min_intensity_ratio"])
+            if nl_min_intensity_ratio is None
+            else nl_min_intensity_ratio
+        ),
         resolver_mode=resolver_mode,
         resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
         resolver_min_search_range_min=float(defaults["resolver_min_search_range_min"]),

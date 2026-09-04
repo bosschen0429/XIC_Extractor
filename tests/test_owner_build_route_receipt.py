@@ -8,6 +8,7 @@ from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
     OwnerBuildRouteReceipt,
     _mint_owner_build_route_receipt,
+    _mint_retained_untargeted_cid_nl_route_receipt,
 )
 
 
@@ -29,6 +30,21 @@ def test_receipt_rejects_incomplete_run_spec_identity() -> None:
             configured_backend="raw",
             processing_run_spec_id="run-spec-id",
         )
+
+
+def test_retained_cid_nl_receipt_separates_configured_legacy_backend() -> None:
+    receipt = _mint_retained_untargeted_cid_nl_route_receipt(
+        configured_backend="raw_superwindow"
+    )
+
+    assert receipt.as_dict() == {
+        "configured_owner_build_xic_backend": "raw_superwindow",
+        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
+        "effective_owner_build_xic_backend": None,
+        "effective_route_validation": "owner_validated",
+        "processing_run_spec_id": None,
+        "processing_run_spec_hash": None,
+    }
 
 
 def test_pipeline_rejects_invalid_backend_before_input_io(

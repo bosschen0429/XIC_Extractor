@@ -99,6 +99,8 @@ class DiscoveryWorker(QThread):
                 self.cancelled.emit()
                 return
             self.finished.emit(summary)
+        except InterruptedError:
+            self.cancelled.emit()
         except PresetError as exc:
             self.error.emit(f"Preset 錯誤：{exc}")
         except RawReaderError as exc:
@@ -262,7 +264,11 @@ class DiscoveryWorker(QThread):
             dll_dir=request.dll_dir,
             output_dir=request.output_dir,
             alignment_config=recipe.alignment_config,
-            peak_config=self._alignment_peak_config(request),
+            peak_config=self._alignment_peak_config(
+                request,
+                recipe.discovery_settings,
+            ),
+            discovery_settings=recipe.discovery_settings,
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             discovery_processing_run_spec=processing_run_spec,
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
@@ -270,6 +276,7 @@ class DiscoveryWorker(QThread):
                 processing_run_spec is not None
                 or physical_bindings_by_sample is not None
             ),
+            should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )
         owner_build_route = outputs.owner_build_route_receipt
@@ -284,7 +291,11 @@ class DiscoveryWorker(QThread):
         binding = self._recipe_binding
         if binding is None:
             preset = load_preset(request.preset)
-            recipe = bind_cid_nl_recipe(preset, request.mode)
+            recipe = bind_cid_nl_recipe(
+                preset,
+                request.mode,
+                recipe_overrides=request.tuning_overrides,
+            )
             binding = (recipe, str(preset.source))
             self._recipe_binding = binding
         recipe, _preset_source = binding
@@ -317,13 +328,16 @@ class DiscoveryWorker(QThread):
             resolver_mode=settings.resolver_mode,
         )
 
-    def _alignment_peak_config(self, request: DiscoveryRequest) -> ExtractionConfig:
-        defaults = CANONICAL_SETTINGS_DEFAULTS
+    def _alignment_peak_config(
+        self,
+        request: DiscoveryRequest,
+        settings: DiscoverySettings,
+    ) -> ExtractionConfig:
         return self._peak_config(
             request.raw_dir or request.output_dir,
             request,
-            nl_min_intensity_ratio=float(defaults["nl_min_intensity_ratio"]),
-            resolver_mode="local_minimum",
+            nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
+            resolver_mode=settings.resolver_mode,
         )
 
     def _peak_config(

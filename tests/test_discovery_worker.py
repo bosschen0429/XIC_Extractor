@@ -12,6 +12,7 @@ from xic_extractor.alignment.owner_build_route_receipt import (
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
+from xic_extractor.config import ExtractionConfig
 
 
 def _alignment_outputs(
@@ -296,7 +297,11 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     request = DiscoveryRequest(
         mode=mode,
         preset="dna_dr_product_ready",
-        tuning_overrides={},
+        tuning_overrides={
+            "nl_tolerance_ppm": 15.0,
+            "nl_min_intensity_ratio": 0.02,
+            "resolver_mode": "legacy_savgol",
+        },
         raw_dir=raw_dir,
         raw_file=None,
         dll_dir=tmp_path / "dll",
@@ -328,6 +333,13 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
 
     assert summary is not None
     assert len(bound_recipes) == 1
+    recipe = bound_recipes[0]
+    assert recipe.discovery_settings.nl_tolerance_ppm == 15.0
+    assert captured_alignment["discovery_settings"] is recipe.discovery_settings
+    peak_config = captured_alignment["peak_config"]
+    assert isinstance(peak_config, ExtractionConfig)
+    assert peak_config.nl_min_intensity_ratio == 0.02
+    assert peak_config.resolver_mode == "legacy_savgol"
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["output_level"] == "production"
@@ -335,6 +347,9 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["audit_evidence_mode"] == "none"
     assert captured_alignment["require_discovery_owner_closure"] is (mode == "full")
+    should_cancel = captured_alignment["should_cancel"]
+    assert callable(should_cancel)
+    assert should_cancel() is False
     assert summary["gallery_html"] is None
     assert summary["gallery_error"] == (
         "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
@@ -381,6 +396,39 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert not any(
         name.startswith("standard_peak_") for name in summary["alignment_outputs"]
     )
+
+
+def test_discovery_worker_reports_alignment_interruption_as_cancelled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = DiscoveryRequest(
+        mode="align_only",
+        preset="dna_dr_product_ready",
+        tuning_overrides={},
+        raw_dir=tmp_path / "raw",
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+    )
+    worker = DiscoveryWorker(request)
+    cancelled: list[bool] = []
+    errors: list[str] = []
+    worker.cancelled.connect(lambda: cancelled.append(True))
+    worker.error.connect(errors.append)
+    monkeypatch.setattr(
+        worker,
+        "_run_align_only",
+        lambda _request: (_ for _ in ()).throw(
+            InterruptedError("Alignment cancelled before output publication")
+        ),
+    )
+
+    worker.run()
+
+    assert cancelled == [True]
+    assert errors == []
 
 
 def test_discovery_worker_has_no_automatic_gallery_referrer() -> None:

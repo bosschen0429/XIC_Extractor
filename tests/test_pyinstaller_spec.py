@@ -60,6 +60,64 @@ metadata_output.write_text(
     encoding="utf-8",
 )
 """
+ISSUE367_INSTALLED_WHEEL_PROBE = """
+import json
+import sys
+from pathlib import Path
+
+target = Path(sys.argv[1]).resolve()
+metadata_output = Path(sys.argv[2])
+sys.path.insert(0, str(target))
+
+from xic_extractor.alignment.pipeline import run_alignment
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    project_completed_untarget_batch_writer_inputs,
+)
+from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+    complete_untargeted_cid_nl_alignment,
+)
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
+)
+from xic_extractor.presets import bind_cid_nl_recipe, load_preset
+
+preset = load_preset("dna_dr")
+recipe = bind_cid_nl_recipe(preset, "align_only")
+if not is_pure_single_provider_cid_nl(recipe.discovery_settings):
+    raise RuntimeError("installed public CID-NL preset did not satisfy its predicate")
+
+public_objects = {
+    "bind_cid_nl_recipe": bind_cid_nl_recipe,
+    "run_alignment": run_alignment,
+    "complete_untargeted_cid_nl_alignment": complete_untargeted_cid_nl_alignment,
+    "is_pure_single_provider_cid_nl": is_pure_single_provider_cid_nl,
+    "load_preset": load_preset,
+    "project_completed_untarget_batch_writer_inputs": (
+        project_completed_untarget_batch_writer_inputs
+    ),
+}
+module_files = {}
+for public_name, public_object in public_objects.items():
+    module = sys.modules[public_object.__module__]
+    module_file = Path(module.__file__).resolve()
+    if not module_file.is_relative_to(target):
+        raise RuntimeError(
+            f"{public_name} was not loaded from installed target: {module_file}"
+        )
+    module_files[public_name] = str(module_file)
+
+metadata_output.write_text(
+    json.dumps(
+        {
+            "public_names": sorted(public_objects),
+            "module_files": module_files,
+            "preset": preset.name,
+            "route": recipe.route,
+        }
+    ),
+    encoding="utf-8",
+)
+"""
 PACKAGING_SOURCE_DIRECTORIES = (
     "assets",
     "config",
@@ -279,6 +337,82 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
         Path(metadata["module_file"]).resolve().is_relative_to(install_target.resolve())
     )
     _assert_resource_bytes_match_source(installed_resource.read_bytes())
+
+
+@pytest.mark.packaging_build
+@pytest.mark.serial_ci
+def test_built_wheel_exposes_issue367_public_activation_surface(
+    issue256_packaging_source: Path,
+) -> None:
+    artifact_root = issue256_packaging_source.parent / "issue367-wheel-artifacts"
+    uv_cache_root = issue256_packaging_source.parent / "issue367-uv-cache"
+    artifact_root.mkdir()
+    _run_packaging_command(
+        (
+            "uv",
+            "build",
+            "--cache-dir",
+            str(uv_cache_root),
+            "--wheel",
+            "--no-build-isolation",
+            "--out-dir",
+            str(artifact_root),
+            "--python",
+            sys.executable,
+            str(issue256_packaging_source),
+        ),
+        cwd=issue256_packaging_source.parent,
+        timeout_seconds=300,
+    )
+
+    wheels = list(artifact_root.glob("*.whl"))
+    assert len(wheels) == 1
+    install_target = issue256_packaging_source.parent / "issue367-installed-wheel"
+    _run_packaging_command(
+        (
+            "uv",
+            "pip",
+            "install",
+            "--cache-dir",
+            str(uv_cache_root),
+            "--python",
+            sys.executable,
+            "--target",
+            str(install_target),
+            "--no-deps",
+            str(wheels[0]),
+        ),
+        cwd=issue256_packaging_source.parent,
+        timeout_seconds=300,
+    )
+
+    probe_metadata = issue256_packaging_source.parent / "issue367-installed-probe.json"
+    _run_packaging_command(
+        (
+            sys.executable,
+            "-I",
+            "-c",
+            ISSUE367_INSTALLED_WHEEL_PROBE,
+            str(install_target),
+            str(probe_metadata),
+        ),
+        cwd=issue256_packaging_source.parent,
+        timeout_seconds=60,
+    )
+
+    metadata = json.loads(probe_metadata.read_text(encoding="utf-8"))
+    assert metadata["public_names"] == [
+        "bind_cid_nl_recipe",
+        "complete_untargeted_cid_nl_alignment",
+        "is_pure_single_provider_cid_nl",
+        "load_preset",
+        "project_completed_untarget_batch_writer_inputs",
+        "run_alignment",
+    ]
+    assert metadata["preset"] == "DNA dR"
+    assert metadata["route"] == "align_only"
+    for module_file in metadata["module_files"].values():
+        assert Path(module_file).resolve().is_relative_to(install_target.resolve())
 
 
 @pytest.mark.packaging_build

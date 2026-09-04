@@ -26,6 +26,9 @@ from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
 )
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    FinalizedUntargetMatrixRow,
+)
 
 _ALLOWED_ROW_IDENTITY_BASIS = {
     "no_split_peak_hypothesis",
@@ -560,6 +563,8 @@ def _center_rt(
     *,
     fallback_cluster: Any | None = None,
 ) -> tuple[float, str]:
+    if type(cluster) is FinalizedUntargetMatrixRow:
+        return cluster.family_center_rt, cluster.center_rt_basis
     weighted_sum = 0.0
     weight_sum = 0.0
     for cell, decision in product_cells:

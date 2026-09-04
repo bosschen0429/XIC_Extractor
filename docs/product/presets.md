@@ -49,11 +49,14 @@ The current V1 routes remain the existing entry-point modes:
 | Existing route | Preset-backed behavior |
 | --- | --- |
 | `discovery_only` | RAW to the existing Discovery terminal |
-| `full` | RAW -> Discovery -> generic Alignment -> Owner Backfill -> canonical Matrix |
-| `align_only` | Existing Discovery index -> generic Alignment -> Owner Backfill -> canonical Matrix |
+| `full` | RAW -> Discovery -> retained finalized CID-NL batch -> canonical Matrix writer |
+| `align_only` | Existing Discovery index -> retained finalized CID-NL batch -> canonical Matrix writer |
 | diagnostic ModeTrack review runner | Opt-in single-subject debug/batch review; no product authority |
 
-Generic Alignment and Owner Backfill close the Matrix loop. Standard Peak is
+The retained finalized CID-NL batch closes the Matrix loop for pure
+single-provider presets. Its route receipt preserves any configured legacy
+owner-build backend for compatibility but reports no effective legacy backend.
+Generic Alignment remains the explicit route for non-pure methods. Standard Peak is
 not reachable from normal CLI/GUI/preset execution, and the source-Matrix
 republisher and its authority/productization chain are deleted. Retained
 Standard Peak helpers are explicit offline falsifiers/renderers only; T5D does

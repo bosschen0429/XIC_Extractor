@@ -5,18 +5,18 @@ named method. They live in `xic_extractor/presets/data/` and are selectable
 from the GUI or passed to CLI scripts.
 
 For current CID-NL entry points, one preset selection is bound before execution
-to the existing route. GUI `full` runs RAW -> Discovery -> generic Alignment ->
-Owner Backfill -> the canonical Matrix writer; `align_only` starts from an
-existing Discovery index; and `discovery_only` stops at Discovery. Normal
-presets do not run Standard Peak. Presets do not expose a public workflow graph
-or `[workflow]` TOML section.
+to the existing route. GUI `full` runs RAW -> Discovery -> the retained
+finalized CID-NL batch -> the canonical Matrix writer; `align_only` starts from
+an existing Discovery index and enters the same retained batch;
+`discovery_only` stops at Discovery. Normal presets do not run Standard Peak.
+Presets do not expose a public workflow graph or `[workflow]` TOML section.
 
 ## Available Presets
 
 | Name | Display name | Strategy | NL mass (Da) | Description |
 | --- | --- | --- | --- | --- |
 | `dna_dr` | DNA dR | CID neutral loss | 116.0474 | 2'-deoxyribose neutral-loss discovery |
-| `dna_dr_product_ready` | DNA dR Owner Backfill (compat) | CID neutral loss | 116.0474 | Historical compatibility profile using super-window Owner Build; the preset ID is not a readiness assertion |
+| `dna_dr_product_ready` | DNA dR Owner Backfill (compat) | CID neutral loss | 116.0474 | Historical compatibility profile; pure CID-NL execution uses the retained batch, and the preset ID is not a readiness assertion |
 
 ---
 
@@ -89,6 +89,12 @@ compatibility mode or replacement publication choice.
 | `raw` | Read directly from RAW files (default) |
 | `raw-super-window` | RAW with wider super-window for cross-sample coverage |
 | `ms1-index` | Use pre-built MS1 index (faster, requires prior indexing) |
+
+For pure single-provider CID-NL, the retained batch supersedes these legacy
+owner-construction backends. The configured value remains visible in the route
+receipt for compatibility, while the effective route is reported as
+`retained_untargeted_cid_nl_batch` with no effective legacy backend. The values
+above continue to apply to explicit legacy/non-pure Alignment routes.
 
 ---
 
