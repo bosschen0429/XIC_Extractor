@@ -198,6 +198,51 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
         )
 
 
+def test_pure_cid_nl_cancellation_during_projection_skips_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    completed = object()
+    writer_inputs = SimpleNamespace(
+        matrix=_matrix(("S1",)),
+        production_decisions=object(),
+    )
+    cancellation_checks = iter((False, False, True))
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: completed,
+    )
+
+    def project(value: object) -> object:
+        assert value is completed
+        return writer_inputs
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "project_completed_untarget_batch_writer_inputs",
+        project,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_write_outputs_atomic",
+        lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
+    )
+
+    with pytest.raises(InterruptedError, match="before output publication"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            should_cancel=lambda: next(cancellation_checks),
+        )
+
+
 def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

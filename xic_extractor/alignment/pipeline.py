@@ -1511,6 +1511,8 @@ def _run_untargeted_cid_nl_alignment(
     if should_cancel is not None and should_cancel():
         raise InterruptedError("Alignment cancelled before output publication")
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("Alignment cancelled before output publication")
     metadata = _metadata(
         discovery_batch_index=discovery_batch_index,
         raw_dir=raw_dir,
