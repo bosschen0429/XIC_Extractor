@@ -11,6 +11,9 @@ import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import (
+    owner_backfill_result as _owner_backfill_result,
+)
+from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
 )
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
@@ -1117,6 +1120,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         region_audit_family_ids,
         audit_evidence_mode,
         cross_sample_identity_context,
+        **kwargs,
     ):
         calls["candidates"] = tuple(candidate.sample_stem for candidate in candidates)
         calls["candidate_states"] = tuple(
@@ -1158,6 +1162,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         emit_region_audit,
         region_audit_family_ids,
         audit_evidence_mode,
+        **kwargs,
     ):
         calls["features"] = features
         calls["sample_order"] = sample_order
@@ -1170,7 +1175,10 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
         calls["emit_region_audit"] = emit_region_audit
         calls["backfill_region_audit_family_ids"] = region_audit_family_ids
         calls["audit_evidence_mode"] = audit_evidence_mode
-        return ("rescued",)
+        return _owner_backfill_result(
+            cells=("rescued",),
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     def fake_owner_matrix(
         features,
@@ -1197,7 +1205,7 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -1266,8 +1274,11 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         run_spec_id="run-spec-id",
         run_spec_hash="run-spec-hash",
     )
-    cross_sample_identity_context = object()
     calls: dict[str, object] = {}
+    real_alignment_identity_context = (
+        pipeline_module._alignment_cross_sample_identity_context
+    )
+    alignment_identity_contexts = []
 
     def ordered_bindings(**kwargs):
         calls["binding_samples"] = tuple(kwargs["bindings_by_sample"])
@@ -1309,10 +1320,17 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         "build_sample_local_owners_from_discovery_bindings",
         build_from_bindings,
     )
+    def build_alignment_identity_context(**kwargs):
+        context_kwargs = dict(kwargs)
+        context_kwargs["discovery_physical_bindings"] = None
+        context = real_alignment_identity_context(**context_kwargs)
+        alignment_identity_contexts.append(context)
+        return context
+
     monkeypatch.setattr(
         pipeline_module,
         "_alignment_cross_sample_identity_context",
-        lambda **_kwargs: cross_sample_identity_context,
+        build_alignment_identity_context,
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -1321,8 +1339,10 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
-        lambda features, **kwargs: (),
+        "build_owner_backfill_result",
+        lambda features, **kwargs: _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        ),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -1348,7 +1368,8 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     assert calls["processing_run_spec"] is processing_run_spec
     assert calls["bindings"] == (canonical_binding,)
     assert calls["alignment_config"] == AlignmentConfig()
-    assert calls["cross_sample_identity_context"] is cross_sample_identity_context
+    assert len(alignment_identity_contexts) == 1
+    assert calls["cross_sample_identity_context"] is alignment_identity_contexts[0]
     assert outputs.owner_build_route_receipt is not None
     assert outputs.owner_build_route_receipt.as_dict() == {
         "configured_owner_build_xic_backend": "raw",
@@ -1415,7 +1436,10 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
         calls["backfill_features"] = features
         calls["sample_order"] = sample_order
         calls["raw_sources"] = raw_sources
-        return ("rescued",)
+        return _owner_backfill_result(
+            cells=("rescued",),
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     def fake_owner_matrix(features, *, ambiguous_by_sample, rescued_cells, **kwargs):
         calls["matrix_features"] = features
@@ -1435,7 +1459,7 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_backfill,
     )
     monkeypatch.setattr(
@@ -1524,13 +1548,15 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
 
     def fake_backfill(features, **kwargs):
         calls["backfill_features"] = features
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     def fake_owner_matrix(features, *, sample_order, **kwargs):
         calls["matrix_features"] = features
         return _matrix(sample_order)
 
-    monkeypatch.setattr(pipeline_module, "build_owner_backfill_cells", fake_backfill)
+    monkeypatch.setattr(pipeline_module, "build_owner_backfill_result", fake_backfill)
     monkeypatch.setattr(
         pipeline_module, "build_owner_alignment_matrix", fake_owner_matrix
     )
@@ -1584,10 +1610,12 @@ def test_pipeline_production_equivalent_validation_does_not_enable_heavy_audit(
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
         calls["audit_evidence_mode"] = kwargs["audit_evidence_mode"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
-        pipeline_module, "build_owner_backfill_cells", fake_owner_backfill
+        pipeline_module, "build_owner_backfill_result", fake_owner_backfill
     )
 
     pipeline_module.run_alignment(
@@ -1631,10 +1659,12 @@ def test_pipeline_asls_flag_without_audit_destination_stays_slim(
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
         calls["audit_evidence_mode"] = kwargs["audit_evidence_mode"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
-        pipeline_module, "build_owner_backfill_cells", fake_owner_backfill
+        pipeline_module, "build_owner_backfill_result", fake_owner_backfill
     )
 
     pipeline_module.run_alignment(

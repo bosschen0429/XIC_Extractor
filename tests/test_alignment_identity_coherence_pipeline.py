@@ -5,6 +5,9 @@ import pytest
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
 from tests.alignment_pipeline_helpers import (
+    owner_backfill_result as _owner_backfill_result,
+)
+from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
 )
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
@@ -211,9 +214,11 @@ def test_identity_coherence_diagnostic_does_not_change_backfill_inputs(
         captured_features.append(
             tuple(feature.feature_family_id for feature in features)
         )
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
-    monkeypatch.setattr(pipeline_module, "build_owner_backfill_cells", fake_backfill)
+    monkeypatch.setattr(pipeline_module, "build_owner_backfill_result", fake_backfill)
     monkeypatch.setattr(
         pipeline_module,
         "run_identity_coherence_diagnostic",

@@ -1,18 +1,19 @@
 # Backfill
 
-Backfill is the bounded scientific module for repairing an observation in a
-pre-existing Target or cross-sample group cell. It returns an independently
-traceable `ObservationRepair` decision; it does not select a product value,
-create membership, or write an output. Current files that combine Backfill with
-Matrix promotion are migration sources and compatibility behavior, not the
-target interface.
+Backfill is the bounded missing-cell recovery module for an owner-backed Target
+or existing cross-sample group. It makes one context-directed revisit and
+returns an independently traceable `ObservationRepair` decision containing a
+repaired/new observation or typed no-repair result. It does not select a
+product value, create membership, or write an output.
 
 ## Contract
 
 - Backfill is evidence-based recovery for an owner-backed Target or existing
-  group cell after Discovery/capture has produced a sample-local hypothesis
-  elsewhere in the relevant context. It is not blind imputation, a first-hit
-  Discovery path, recursive candidate generation, or counted detection.
+  group cell after Discovery/capture has established the relevant context
+  elsewhere. It may recover the first usable observation for that cell, but it
+  cannot originate the Target/group or bootstrap a group without prior
+  owner-backed evidence. It is not blind imputation, recursive candidate
+  generation, or counted detection.
 - One request yields a typed `ObservationRepair` decision containing an
   owner-backed repaired observation or a typed no-repair outcome. It never
   returns a caller-authored area alias or a writer decision.
@@ -42,9 +43,6 @@ target interface.
 - Broad auto-write from the full candidate universe has no registered writer
   authority. The candidate/audit universe is not the writer pool; consult the
   status index for current lane readiness.
-- Current expansion priorities: mechanical adjudication, structured review,
-  truth acquisition, trace-evidence recovery, and evidence provenance -- before
-  any new writer scope.
 - Lifecycle vocabulary (missing call, candidate, evidence-chain packet, review
   item, approval decision, export policy, quant-matrix version) describes
   separate states and is not writer authority by itself.

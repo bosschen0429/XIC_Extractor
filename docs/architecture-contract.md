@@ -47,9 +47,13 @@ delivery lineage are owned by
 cancellation, cleanup, recovery, and observability are owned by
 [`execution-runtime.md`](product/execution-runtime.md).
 
-The current Targeted and Untargeted paths are not fully converged. Treat that
-as implementation state, not permission to create a second decision core.
-Active convergence scope and sequencing belong in their GitHub Issues.
+Targeted and Untargeted now close through the shared scientific-owner
+interfaces while retaining their application-specific search scope,
+projection, and writer contracts. Discovery providers may interpret different
+inputs and publish different typed evidence, but they enter one shared
+observation, Alignment, ObservationRepair, Backfill, and cell-decision
+lifecycle. Provider-specific evidence handling must not create a parallel
+downstream decision core.
 
 ## Dependency Direction
 
@@ -157,5 +161,6 @@ resolution order is in [`decision-policy.md`](product/decision-policy.md).
 - Follow [`testing.md`](agent/testing.md) for observable-based test selection
   and RAW/workbook validation.
 - Shared models or protocols are justified when they prevent an actual import
-  cycle or schema drift; do not create shared concrete implementations before
-  Targeted and Untargeted semantics match.
+  cycle or schema drift. A new shared behavior needs current consumers from
+  both sides of the claimed seam; a provider-specific implementation does not
+  become shared merely by moving it into a common package.

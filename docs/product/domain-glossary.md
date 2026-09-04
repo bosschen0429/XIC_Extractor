@@ -16,11 +16,11 @@ XIC Extractor is an LC-MS evidence and model-selection system. It should make
 peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
-XIC has one core method lifecycle. Untargeted extraction is its general form;
-Targeted extraction is a constrained specialization of that method, not a
-second peer core:
+XIC has one shared scientific processing lifecycle. Untargeted extraction is
+its general application; Targeted extraction is a constrained application,
+not a second peer core:
 
-`SearchScope -> Discovery/capture -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair or Backfill -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,
@@ -36,23 +36,24 @@ second peer core:
   discards unrelated groups from that delivery. It does not require a second
   peak-capture, cross-sample, trajectory, repair, or cell-decision core.
 
-Discovery methods such as CID-NL, HCD-PI, and Delta Mass produce sample-local
-evidence and hypotheses. `CrossSample` owns group membership, identity,
-disposition, and lineage. `ModeTrack` may propose trajectory-based refinements,
-but only `CrossSample` can apply them. Backfill performs a bounded,
-independently traceable `ObservationRepair`; it does not create the first hit,
-mint a group, select a product value, or grant writer authority.
+Discovery providers such as CID-NL, HCD-PI, and Delta Mass interpret their
+method-specific inputs and produce sample-local evidence and hypotheses through
+the shared contract. Downstream owners may use typed provider provenance,
+capabilities, or an explicit interpretation/integration strategy when required;
+shared does not mean method-blind. `CrossSample` owns group membership,
+identity, disposition, and lineage. `ModeTrack` may propose trajectory-based
+refinements, but only `CrossSample` can apply them. `ObservationRepair` repairs
+an existing but incomplete or inconsistent observation. Backfill uses an
+already owner-backed Target or group context to make one bounded revisit of a
+missing or insufficient cell and returns a repaired/new observation or typed
+no-repair result. It may recover the first usable observation for that cell,
+but it cannot originate the Target/group, mint membership, select a product
+value, or grant writer authority.
 The workflow-owned projection first creates typed Target/Group row bindings and
 cell subjects; `ProductionCellDecision` alone selects the value or no-write
 result; the same projection then owns row inclusion, counts/reasons, Review
 Queue/archive routing, and delivery shape. These are two ordered operations of
 one projection owner, not two owners.
-
-The current implementation only partially shares these stage owners. Targeted
-uses its own RT, paired-area, and MS1-shape evidence path. The headless limited
-`5-hmdC + 5-medC` CLI runs a baseline/support/final rescue, but GUI and direct
-API entry points do not generate that support automatically. This is an
-implementation parity gap, not a different product lifecycle.
 
 Targeted and Untargeted may apply different search scopes, priors, projection
 rules, GUI flows, and output contracts. Evidence or output authority from one
