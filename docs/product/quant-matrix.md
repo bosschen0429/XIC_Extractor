@@ -63,7 +63,7 @@ themselves.
   produced byte-identical `alignment_matrix.tsv`, `alignment_review.tsv`, and
   `alignment_cells.tsv` against accepted P8b outputs.
 - That PR70 claim is limited to the alignment matrix handoff behavior. It does
-  not promote baseline policy, resolver defaults, broader Phase2 cleanup, or any
+  not promote baseline policy, resolver defaults, broader cleanup work, or any
   new matrix writer scope.
 - Future branches should use stable `local_validation_artifacts/` discovery
   batch indexes for this validation shape rather than another worktree's

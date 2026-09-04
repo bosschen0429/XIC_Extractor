@@ -131,8 +131,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--write-readiness-fixture",
         action="store_true",
         help=(
-            "Also write a synthetic contract-ready fixture and run the Phase 5 "
-            "readiness checker against this packet."
+            "Also write a synthetic contract-ready fixture and run the promotion "
+            "readiness evaluation against this packet."
         ),
     )
     parser.add_argument("--check-only", action="store_true")

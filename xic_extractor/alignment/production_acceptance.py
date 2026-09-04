@@ -323,7 +323,7 @@ def _check_schema_authority_rules(
     expected = {
         "primary_key": ["peak_hypothesis_id", "sample_stem"],
         "family_id_is_context_only": True,
-        "phase2_writes_default_matrix": False,
+        "acceptance_manifest_writes_default_matrix": False,
         "accepted_decisions_require_write_authority": True,
         "non_acceptance_decisions_must_not_write": True,
         "manual_negative_hard_stop": True,

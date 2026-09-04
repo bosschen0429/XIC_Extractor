@@ -54,6 +54,12 @@ Having `main()`, living under `scripts/`, being importable, or having a test
 does not by itself make a command public. Conversely, a product artifact may be
 public even when its producer is not installed as a console command.
 
+Durable module, command, help, and artifact-contract language names the owned
+product or diagnostic role. Ticket numbers, rollout waves, and construction
+phase numbers belong only in history; they must not become current interface or
+module identity. A real runtime state such as an execution phase remains valid
+when the state itself is part of the current domain contract.
+
 ## Diagnostic Boundaries
 
 `tools/diagnostics/` is maintained product-adjacent code. Entry points

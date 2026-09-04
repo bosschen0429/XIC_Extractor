@@ -1,9 +1,9 @@
 """Check QuantMatrixVersion promotion readiness without running scorer or RAW.
 
-This Phase 5 checker separates contract correctness from scientific confidence.
-It reads existing QuantMatrixVersion/review artifacts, writes readiness sidecars,
-and does not mutate ProductWriter, workbook, GUI, selected peak, selected area,
-or counted-detection behavior.
+This promotion readiness evaluation separates contract correctness from
+scientific confidence. It reads existing QuantMatrixVersion/review artifacts,
+writes readiness sidecars, and does not mutate ProductWriter, workbook, GUI,
+selected peak, selected area, or counted-detection behavior.
 """
 
 from __future__ import annotations

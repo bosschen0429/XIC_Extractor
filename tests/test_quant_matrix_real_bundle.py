@@ -109,7 +109,7 @@ def test_real_bundle_builds_self_validating_contract_outputs(tmp_path: Path) -> 
             "baseline_value": "",
             "activated_value": "222.2",
             "expected_matrix_effect": "write_accepted_backfill",
-            "expected_reason": "phase7_current_511_authority_replay",
+            "expected_reason": "current_511_authority_replay",
         }
     ]
 

@@ -1,7 +1,8 @@
 """Build/check the QuantMatrix default activation dry-run gate.
 
-This Phase 9 adapter reruns the manifest-driven QuantMatrixVersion activation
-in a temporary directory and compares the result with the Phase 7 real bundle.
+This default activation replay reruns the manifest-driven QuantMatrixVersion
+activation in a temporary directory and compares the result with the
+real/candidate QuantMatrix bundle.
 It writes only a comparison sidecar and summary. It does not mutate
 ProductWriter, default matrix output, workbooks, GUI behavior, selected
 peaks/areas, or counted detections.
@@ -507,7 +508,7 @@ def _write_summary(
 ) -> None:
     payload = {
         "schema_version": DEFAULT_ACTIVATION_DRY_RUN_SCHEMA,
-        "phase": "phase9_default_activation_dry_run",
+        "artifact_role": "default_activation_replay",
         "status": "pass",
         "default_activation_dry_run_gate_status": "pass",
         "source_run_id": bundle_payload.get("source_run_id", ""),
@@ -590,7 +591,7 @@ def _write_summary(
             "comparison_tsv": _artifact_record(comparison_tsv, base_dir=output_dir),
         },
         "authority_statement": (
-            "Phase 9 default activation dry-run gate only. It proves the "
+            "Default activation replay gate only. It proves the "
             "manifest-driven default matrix candidate replays to the same "
             "QuantMatrixVersion outputs and expected-diff closure, but it does "
             "not write default ProductWriter outputs or change matrix authority."
@@ -608,7 +609,7 @@ def _append_expected_field_problems(
 ) -> None:
     for field, expected_text in (
         ("schema_version", DEFAULT_ACTIVATION_DRY_RUN_SCHEMA),
-        ("phase", "phase9_default_activation_dry_run"),
+        ("artifact_role", "default_activation_replay"),
         ("status", "pass"),
         ("default_activation_dry_run_gate_status", "pass"),
         ("promotion_packet_readiness_label", "production_ready_candidate_packet"),

@@ -56,6 +56,41 @@ def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
 
+def test_durable_module_language_rejects_construction_phase_identity(
+    tmp_path: Path,
+) -> None:
+    bad_path = Path("scripts/build_phase_7_bundle.py")
+    bad_source = tmp_path / bad_path
+    bad_source.parent.mkdir(parents=True)
+    bad_source.write_text(
+        '"""Build the Phase 7 bundle."""\n',
+        encoding="utf-8",
+    )
+
+    problems = census.validate_durable_module_language(tmp_path, (bad_path,))
+
+    assert any(
+        "module path uses construction phase identity" in item for item in problems
+    )
+    assert any(
+        "name the owned role instead" in item
+        for item in problems
+        if item.startswith(f"{bad_path.as_posix()}:1:")
+    )
+
+
+def test_durable_module_language_accepts_role_based_identity(tmp_path: Path) -> None:
+    role_path = Path("scripts/build_quant_matrix_real_bundle.py")
+    role_source = tmp_path / role_path
+    role_source.parent.mkdir(parents=True)
+    role_source.write_text(
+        '"""Build the candidate QuantMatrix bundle."""\n',
+        encoding="utf-8",
+    )
+
+    assert census.validate_durable_module_language(tmp_path, (role_path,)) == []
+
+
 def test_runtime_phase_exception_public_types_are_allowlisted() -> None:
     from xic_extractor import execution_runtime_owner
 

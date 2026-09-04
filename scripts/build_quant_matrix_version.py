@@ -1,8 +1,8 @@
 """Build QuantMatrixVersion v1 from a ProductionAcceptanceManifest.
 
-This Phase 3 adapter writes explicit activation artifacts only. It does not run
-RAW, recompute evidence, change ProductWriter defaults, update workbooks, or
-touch GUI behavior.
+This QuantMatrixVersion activation renderer writes explicit activation artifacts
+only. It does not run RAW, recompute evidence, change ProductWriter defaults,
+update workbooks, or touch GUI behavior.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 {
   "schema_version": "quant_matrix_version_schema_v1",
   "quant_matrix_version": "quant_matrix_version_v1",
-  "purpose": "Defines the Phase 3 explicit QuantMatrixVersion activation outputs produced from a validated ProductionAcceptanceManifest and an expected-diff TSV. This schema does not change ProductWriter default extraction, workbooks, GUI behavior, selected peaks, selected areas, or counted detections.",
+  "purpose": "Defines the explicit QuantMatrixVersion activation outputs produced from a validated ProductionAcceptanceManifest and an expected-diff TSV. This schema does not change ProductWriter default extraction, workbooks, GUI behavior, selected peaks, selected areas, or counted detections.",
   "output_files": {
     "quant_matrix": "quant_matrix.tsv",
     "cell_provenance": "cell_provenance.tsv",
@@ -86,7 +86,7 @@
     "detected_only_view_reconstructable_from_quant_matrix_and_cell_provenance": true,
     "expected_diff_required_for_every_accepted_backfill_write": true
   },
-  "phase4_requires": [
+  "review_report_requires": [
     "gallery_report_alignment",
     "accepted_backfill_vs_detected_visibility",
     "prevalence_uncertainty_explanation",

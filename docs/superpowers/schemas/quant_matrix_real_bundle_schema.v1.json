@@ -1,7 +1,7 @@
 {
   "schema_version": "quant_matrix_real_bundle_schema_v1",
   "real_bundle_schema": "quant_matrix_real_bundle_v1",
-  "purpose": "Defines the Phase 7 no-RAW real QuantMatrixVersion bundle assembled from the current standard-peak Backfill authority replay. The bundle is a contract/readiness artifact only: it does not change ProductWriter defaults, workbook/GUI behavior, selected peak/area, counted detections, broad Backfill authority, or default extraction.",
+  "purpose": "Defines the no-RAW real QuantMatrixVersion candidate bundle assembled from the current standard-peak Backfill authority replay. The bundle is a contract/readiness artifact only: it does not change ProductWriter defaults, workbook/GUI behavior, selected peak/area, counted detections, broad Backfill authority, or default extraction.",
   "output_files": {
     "summary_json": "quant_matrix_real_bundle_summary.json",
     "baseline_quant_matrix": "inputs/baseline_quant_matrix.tsv",
@@ -16,7 +16,7 @@
   },
   "summary_required_fields": [
     "schema_version",
-    "phase",
+    "artifact_role",
     "status",
     "bundle_kind",
     "validation_status",

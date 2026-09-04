@@ -180,7 +180,7 @@ def test_batch_outlier_takes_precedence_over_prior_mismatch() -> None:
     assert "PRIOR_RT_SHIFT" in outlier.prior_conflict_flags
 
 
-def test_load_phase1_rows_and_metadata(tmp_path: Path) -> None:
+def test_load_instrument_trend_rows_and_metadata(tmp_path: Path) -> None:
     trend = tmp_path / "trend.tsv"
     with trend.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
@@ -231,7 +231,7 @@ def test_load_phase1_rows_and_metadata(tmp_path: Path) -> None:
     }
 
 
-def test_load_phase1_rows_fails_on_missing_columns(tmp_path: Path) -> None:
+def test_load_instrument_trend_rows_fails_on_missing_columns(tmp_path: Path) -> None:
     trend = tmp_path / "trend.tsv"
     trend.write_text("sample_name\tcompound\nS1\tSDO\n", encoding="utf-8")
 

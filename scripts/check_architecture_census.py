@@ -16,6 +16,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -30,6 +31,10 @@ import grimp
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOTS = ("xic_extractor", "gui", "scripts", "tools")
 STATIC_DEPENDENCY_SCOPE = "grimp_static_import_graph"
+CONSTRUCTION_PHASE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])phase(?:\s+|[_-])?\d+(?!\d)",
+    re.IGNORECASE,
+)
 _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
     {
         "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -331,7 +336,44 @@ def validate_architecture_census(
         if owner is None or not owner.is_file():
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
     problems.extend(validate_runtime_boundary_authority(repo_root))
+    problems.extend(validate_durable_module_language(repo_root))
     return problems
+
+
+def validate_durable_module_language(
+    repo_root: Path,
+    python_paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject construction chronology from durable Python module language."""
+
+    paths = (
+        repository_python_paths(repo_root)
+        if python_paths is None
+        else tuple(python_paths)
+    )
+    problems: list[str] = []
+    for relative_path in paths:
+        if relative_path.parts[0] not in REPOSITORY_ROOTS:
+            continue
+        path_key = relative_path.as_posix()
+        path_match = CONSTRUCTION_PHASE_PATTERN.search(path_key)
+        if path_match is not None:
+            problems.append(
+                f"{path_key}: durable module path uses construction phase identity"
+            )
+        source_path = repo_root / relative_path
+        try:
+            source = source_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            problems.append(f"{path_key}: durable module language scan failed: {exc}")
+            continue
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            if CONSTRUCTION_PHASE_PATTERN.search(line) is not None:
+                problems.append(
+                    f"{path_key}:{line_number}: durable module language uses "
+                    "construction phase identity; name the owned role instead"
+                )
+    return sorted(set(problems))
 
 
 def validate_runtime_boundary_authority(

@@ -21,7 +21,7 @@
   ],
   "summary_required_fields": [
     "schema_version",
-    "phase",
+    "artifact_role",
     "status",
     "activation_label",
     "source_run_id",

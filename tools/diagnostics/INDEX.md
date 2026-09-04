@@ -1535,7 +1535,7 @@ are not daily).
 
 ### `instrument_qc_sdolek_calibration.py`
 
-**Purpose**: Calibrate Phase 1 SDO/LEK trends with method-doc order.
+**Purpose**: Calibrate SDO/LEK instrument trends with method-doc order.
 **Originating spec**: `retired-provenance:77f7869271f4`
 **Recent doc**: `retired-provenance:b15c365ea97c`
 

@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode",
         default="sdolek",
-        help="Instrument QC mode. Phase 2 supports only 'sdolek'.",
+        help="Current instrument QC mode supports only sdolek.",
     )
     parser.add_argument(
         "--injection-order-source",
@@ -122,7 +122,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.mode != "sdolek":
         print(
-            f"unsupported mode: {args.mode}. Phase 2 supports only 'sdolek'.",
+            f"unsupported mode: {args.mode}. "
+            "Current instrument QC mode supports only sdolek.",
             file=sys.stderr,
         )
         return 2

@@ -2,7 +2,7 @@
   "schema_version": "quant_matrix_product_ready_closeout_schema_v1",
   "product_ready_closeout_schema": "quant_matrix_product_ready_closeout_v1",
   "check_schema": "quant_matrix_product_ready_closeout_check_v1",
-  "purpose": "Defines the Phase 10 no-RAW Product Ready closeout packet for the default QuantMatrix candidate. The packet collects Phase 8 promotion packet v2 and Phase 9 default activation dry-run evidence into one activation-ready candidate statement without changing ProductWriter defaults or matrix authority.",
+  "purpose": "Defines the no-RAW Product Ready closeout packet for the default QuantMatrix candidate. The packet collects promotion candidate packet v2 and default activation replay evidence into one activation-ready candidate statement without changing ProductWriter defaults or matrix authority.",
   "output_files": {
     "summary_json": "quant_matrix_product_ready_closeout_summary.json",
     "checks_tsv": "quant_matrix_product_ready_closeout_checks.tsv"
@@ -16,7 +16,7 @@
   ],
   "summary_required_fields": [
     "schema_version",
-    "phase",
+    "artifact_role",
     "status",
     "closeout_label",
     "source_run_id",
@@ -60,7 +60,7 @@
     "default_activation_dry_run_must_validate": true,
     "input_artifact_hashes_must_match": true,
     "checks_tsv_must_match_inputs": true,
-    "phase8_and_phase9_source_identity_must_match": true,
+    "promotion_packet_and_activation_replay_source_identity_must_match": true,
     "expected_diff_must_close_with_zero_unused_rows": true
   },
   "authority_rules": {

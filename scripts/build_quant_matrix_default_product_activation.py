@@ -540,7 +540,9 @@ def _reference_output_problems(
         if file_sha256(activation_outputs[label]) != file_sha256(
             reference_paths[label],
         ):
-            problems.append(f"{label} does not match Phase 7 reference")
+            problems.append(
+                f"{label} does not match real/candidate QuantMatrix bundle reference"
+            )
     return problems
 
 
@@ -711,13 +713,14 @@ def _check_rows(
     for label in REFERENCE_OUTPUT_LABELS:
         rows.append(
             _check_row(
-                f"{label}_matches_phase7_reference",
+                f"{label}_matches_real_quant_matrix_bundle_reference",
                 "pass"
                 if file_sha256(activation_outputs[label])
                 == file_sha256(reference_paths[label])
                 else "fail",
                 label,
-                f"{label} default output matches Phase 7 reference hash.",
+                f"{label} default output matches the real/candidate QuantMatrix "
+                "bundle reference hash.",
             )
         )
     rows.append(
@@ -769,9 +772,13 @@ def _failed_check_problems(rows: Sequence[Mapping[str, str]]) -> list[str]:
         if row.get("status") == "pass":
             continue
         check_id = row.get("check_id", "")
-        if check_id.endswith("_matches_phase7_reference"):
-            label = check_id.removesuffix("_matches_phase7_reference")
-            problems.append(f"{label} does not match Phase 7 reference")
+        if check_id.endswith("_matches_real_quant_matrix_bundle_reference"):
+            label = check_id.removesuffix(
+                "_matches_real_quant_matrix_bundle_reference"
+            )
+            problems.append(
+                f"{label} does not match real/candidate QuantMatrix bundle reference"
+            )
         else:
             problems.append(f"default product activation check failed: {check_id}")
     return problems
@@ -796,7 +803,7 @@ def _write_summary(
 ) -> None:
     payload = {
         "schema_version": DEFAULT_PRODUCT_ACTIVATION_SCHEMA,
-        "phase": "phase11_default_product_activation",
+        "artifact_role": "default_product_activation",
         "status": "pass",
         "activation_label": "product_ready_default_matrix_activated",
         "source_run_id": bundle_payload.get("source_run_id", ""),
@@ -914,7 +921,7 @@ def _append_expected_field_problems(
 ) -> None:
     for field, expected_text in (
         ("schema_version", DEFAULT_PRODUCT_ACTIVATION_SCHEMA),
-        ("phase", "phase11_default_product_activation"),
+        ("artifact_role", "default_product_activation"),
         ("status", "pass"),
         ("activation_label", "product_ready_default_matrix_activated"),
         ("product_authority_scope", PRODUCT_AUTHORITY_SCOPE),

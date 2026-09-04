@@ -337,7 +337,7 @@ def _write_activated_quant_matrix(
                 "baseline_value": "",
                 "activated_value": "222.2",
                 "expected_matrix_effect": "write_accepted_backfill",
-                "expected_reason": "phase4_fixture",
+                "expected_reason": "review_report_fixture",
             }
         ],
     )
@@ -380,7 +380,7 @@ def _acceptance_row(
         "hard_blocker_rule_ids": "",
         "triggered_risk_rule_ids": "low_seed_support;high_backfill_dependency",
         "closure_rule_ids": "",
-        "decision_reason": "phase4_fixture",
+        "decision_reason": "review_report_fixture",
         "next_evidence_needed": "",
         "doublet_status": "no_doublet_claim",
         "reference_side": "not_applicable",

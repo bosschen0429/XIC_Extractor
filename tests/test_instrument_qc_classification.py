@@ -27,7 +27,7 @@ def test_biological_root_raw_is_not_instrument_qc() -> None:
     assert classify_instrument_qc_raw(raw, root) is None
 
 
-def test_non_sdolek_folders_are_not_phase1_instrument_qc() -> None:
+def test_non_sdolek_folders_are_not_sdolek_instrument_qc() -> None:
     root = Path("C:/data/batch")
 
     for folder in ("RNA", "Pairs", "validation", "except sample", "STDs"):

@@ -1,6 +1,6 @@
 """Build/check the QuantMatrix promotion packet v2.
 
-This no-RAW adapter binds the Phase 7 real QuantMatrix bundle to the existing
+This no-RAW adapter binds the real/candidate QuantMatrix bundle to the existing
 large-cohort and heldout-oracle evidence packet, then runs promotion readiness
 against the real bundle inputs. It does not mutate ProductWriter, default
 matrix output, workbooks, GUI behavior, selected peaks/areas, or counted
@@ -132,7 +132,7 @@ def build_quant_matrix_promotion_packet_v2(
                 ),
                 downstream_scope=downstream_scope,
                 evidence_note=(
-                    "Phase 7 real QuantMatrixVersion downstream-impact smoke "
+                    "Real/candidate QuantMatrixVersion downstream-impact smoke "
                     "artifact bound by copied summary and row metrics hashes."
                 ),
             ),
@@ -218,7 +218,7 @@ def validate_quant_matrix_promotion_packet_v2(
 
     for field, expected_text in (
         ("schema_version", PROMOTION_PACKET_V2_SUMMARY_SCHEMA),
-        ("phase", "phase8_promotion_packet_v2"),
+        ("artifact_role", "promotion_candidate_packet_v2"),
         ("status", "pass"),
         ("requested_readiness_label", "production_ready"),
         ("readiness_label", "production_ready_candidate_packet"),
@@ -343,7 +343,7 @@ def _write_summary(
     readiness = _read_json_object(readiness_outputs["summary_json"])
     payload = {
         "schema_version": PROMOTION_PACKET_V2_SUMMARY_SCHEMA,
-        "phase": "phase8_promotion_packet_v2",
+        "artifact_role": "promotion_candidate_packet_v2",
         "status": "pass",
         "packet_id": packet_id,
         "requested_readiness_label": requested_readiness_label,
@@ -413,7 +413,7 @@ def _write_summary(
             ),
         },
         "authority_statement": (
-            "Phase 8 promotion packet v2 is a Product Ready candidate packet "
+            "Promotion candidate packet v2 is a Product Ready candidate packet "
             "only. It may promote a later default quant matrix activation gate, "
             "but this artifact itself is read-only and does not change "
             "ProductWriter defaults or matrix-writing authority."
