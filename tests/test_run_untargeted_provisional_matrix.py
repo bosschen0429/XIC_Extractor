@@ -10,6 +10,9 @@ import scripts.run_untargeted_provisional_matrix as runner
 import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.pipeline import (
+    _validate_untargeted_cid_nl_alignment_options,
+)
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
@@ -61,6 +64,20 @@ def test_runner_publishes_full_universe_outputs_atomically(
 
     def fake_workflow(**kwargs):
         captured.update(kwargs)
+        # Exercise the retained route's actual option gate so this test catches
+        # forwarding metadata that the pure owner must mint itself.
+        _validate_untargeted_cid_nl_alignment_options(
+            raw_workers=kwargs["raw_workers"],
+            raw_xic_batch_size=kwargs["raw_xic_batch_size"],
+            owner_backfill_xic_backend=kwargs["owner_backfill_xic_backend"],
+            owner_backfill_window_strategy=kwargs[
+                "owner_backfill_window_strategy"
+            ],
+            owner_backfill_superwindow_span_factor=kwargs[
+                "owner_backfill_superwindow_span_factor"
+            ],
+            sample_column_injection_order=kwargs.get("sample_column_injection_order"),
+        )
         workflow_dir = kwargs["output_dir"]
         alignment_dir = workflow_dir / "alignment"
         alignment_dir.mkdir(parents=True)
@@ -123,10 +140,6 @@ def test_runner_publishes_full_universe_outputs_atomically(
             str(tmp_path),
             "--expected-sample-count",
             "2",
-            "--raw-workers",
-            "3",
-            "--raw-xic-batch-size",
-            "16",
         ]
     )
 
@@ -145,23 +158,19 @@ def test_runner_publishes_full_universe_outputs_atomically(
     retained_metadata = output_dir / "inputs" / f"sample_metadata{metadata_suffix}"
     assert retained_metadata.read_bytes() == inputs.sample_metadata_path.read_bytes()
     assert captured["raw_files"] == inputs.raw_files
-    assert captured["raw_workers"] == 3
-    assert captured["raw_xic_batch_size"] == 16
+    assert captured["raw_workers"] == 1
+    assert captured["raw_xic_batch_size"] == 1
     assert captured["capture_alignment_artifact_fingerprints"] is True
     assert "signal_processing_profile" not in captured
-    assert captured["sample_column_injection_order"] == (
-        output_dir.with_name("final.attempt")
-        / "inputs"
-        / f"sample_metadata{metadata_suffix}"
-    )
+    assert captured["sample_column_injection_order"] is None
     manifest = captured["manifest"]
     assert isinstance(manifest, dict)
     assert manifest["code_revision"] == "a" * 40
     assert "validation_status" not in manifest
     assert "product_authority" not in manifest
     assert runner.PROVISIONAL_VALIDATION_STATUS == "diagnostic_only"
-    assert manifest["runtime"].raw_workers == 3
-    assert manifest["runtime"].raw_xic_batch_size == 16
+    assert manifest["runtime"].raw_workers == 1
+    assert manifest["runtime"].raw_xic_batch_size == 1
     assert isinstance(
         manifest["retained_sample_metadata_fingerprint"],
         manifest_owner.RetainedSampleMetadataFingerprintReceipt,

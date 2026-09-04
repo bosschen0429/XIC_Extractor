@@ -21,6 +21,9 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
+from xic_extractor.peak_detection.evidence_facts import (
+    validate_bounded_physical_peak_evaluation,
+)
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 if TYPE_CHECKING:
@@ -278,7 +281,28 @@ def _presentation_facts(
         for repaired in observation.repaired_observations:
             if not repaired.selected_for_output:
                 continue
-            physical_id = repaired.prepared_signal_id or repaired.work_unit_key
+            receipt = repaired.facts
+            if receipt is None:
+                raise ValueError(
+                    "selected repaired observation lacks a physical fact receipt"
+                )
+            physical_evaluation = receipt.physical_evaluation
+            if physical_evaluation is None:
+                raise ValueError(
+                    "selected repaired observation lacks a physical evaluation"
+                )
+            try:
+                validate_bounded_physical_peak_evaluation(physical_evaluation)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "selected repaired observation has invalid physical evaluation"
+                ) from exc
+            physical_facts = physical_evaluation.facts
+            if physical_facts is None:
+                raise ValueError(
+                    "selected repaired observation lacks complete physical facts"
+                )
+            physical_id = physical_facts.fact_content_id
             _add_presentation_fact(
                 facts,
                 physical_id=physical_id,
@@ -342,7 +366,11 @@ def _aligned_cell(
         cluster_id=row.feature_family_id,
         status=status,
         area=owner_decision.value,
-        apex_rt=(row.family_center_rt if owner_decision.value is not None else None),
+        apex_rt=(
+            integration.rt_apex_min
+            if owner_decision.value is not None and integration is not None
+            else None
+        ),
         height=(integration.height_raw if integration is not None else None),
         peak_start_rt=(integration.rt_left_min if integration is not None else None),
         peak_end_rt=(integration.rt_right_min if integration is not None else None),

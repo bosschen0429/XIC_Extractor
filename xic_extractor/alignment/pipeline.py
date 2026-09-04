@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -125,6 +125,7 @@ from xic_extractor.alignment.process_backend import (
     run_owner_backfill_process,
     run_owner_build_process,
 )
+from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
@@ -403,6 +404,7 @@ def run_alignment(
     ) = None,
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> AlignmentRunOutputs:
     if (
         discovery_settings is not None
@@ -719,6 +721,7 @@ def run_alignment(
             selected_family_source=selected_family_source,
             emit_early_loser_shadow=emit_early_loser_shadow,
             signal_processing_profile=signal_processing_profile,
+            should_cancel=should_cancel,
         )
     resolved_audit_evidence_mode, audit_evidence_mode_reason = (
         _resolve_audit_evidence_mode(
@@ -1464,6 +1467,7 @@ def _run_untargeted_cid_nl_alignment(
     selected_family_source: str,
     emit_early_loser_shadow: bool,
     signal_processing_profile: SignalProcessingProfile,
+    should_cancel: Callable[[], bool] | None,
 ) -> AlignmentRunOutputs:
     """Run the retained CID-NL owner and project its completed result once."""
 
@@ -1488,17 +1492,24 @@ def _run_untargeted_cid_nl_alignment(
         signal_processing_profile=signal_processing_profile,
     )
 
-    completed = complete_untargeted_cid_nl_alignment(
-        discovery_batch=discovery_batch,
-        candidates_by_sample=candidates_by_sample,
-        raw_dir=raw_dir,
-        dll_dir=dll_dir,
-        output_dir=output_dir,
-        settings=settings,
-        peak_config=peak_config,
-        alignment_config=alignment_config,
-        timing_recorder=timing_recorder,
-    )
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("Alignment cancelled before retained CID-NL execution")
+    try:
+        completed = complete_untargeted_cid_nl_alignment(
+            discovery_batch=discovery_batch,
+            candidates_by_sample=candidates_by_sample,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            output_dir=output_dir,
+            settings=settings,
+            peak_config=peak_config,
+            alignment_config=alignment_config,
+            timing_recorder=timing_recorder,
+        )
+    except RuntimeError as exc:
+        raise AlignmentProcessExecutionError(str(exc)) from exc
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("Alignment cancelled before output publication")
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
     metadata = _metadata(
         discovery_batch_index=discovery_batch_index,

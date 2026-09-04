@@ -347,6 +347,9 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["audit_evidence_mode"] == "none"
     assert captured_alignment["require_discovery_owner_closure"] is (mode == "full")
+    should_cancel = captured_alignment["should_cancel"]
+    assert callable(should_cancel)
+    assert should_cancel() is False
     assert summary["gallery_html"] is None
     assert summary["gallery_error"] == (
         "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
@@ -393,6 +396,39 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert not any(
         name.startswith("standard_peak_") for name in summary["alignment_outputs"]
     )
+
+
+def test_discovery_worker_reports_alignment_interruption_as_cancelled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = DiscoveryRequest(
+        mode="align_only",
+        preset="dna_dr_product_ready",
+        tuning_overrides={},
+        raw_dir=tmp_path / "raw",
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+    )
+    worker = DiscoveryWorker(request)
+    cancelled: list[bool] = []
+    errors: list[str] = []
+    worker.cancelled.connect(lambda: cancelled.append(True))
+    worker.error.connect(errors.append)
+    monkeypatch.setattr(
+        worker,
+        "_run_align_only",
+        lambda _request: (_ for _ in ()).throw(
+            InterruptedError("Alignment cancelled before output publication")
+        ),
+    )
+
+    worker.run()
+
+    assert cancelled == [True]
+    assert errors == []
 
 
 def test_discovery_worker_has_no_automatic_gallery_referrer() -> None:

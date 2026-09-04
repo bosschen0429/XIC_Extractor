@@ -28,6 +28,9 @@ from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.loader import load_target_list_snapshot
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
+)
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -92,6 +95,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=args.signal_processing_method,
         signal_processing_window_points=args.signal_processing_window_points,
+    )
+    peak_config_resolver_mode, peak_config_nl_min_intensity_ratio = (
+        _effective_peak_config_settings(args, recipe)
     )
     owner_build_xic_backend = _effective_owner_build_xic_backend(
         args,
@@ -279,10 +285,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raw_dir,
                 dll_dir,
                 output_dir,
-                _alignment_production_resolver_mode(args.resolver_mode),
+                peak_config_resolver_mode,
                 baseline_audit_method=_baseline_audit_method(args),
                 baseline_integration_method=_baseline_integration_method(args),
                 signal_processing_profile=signal_processing_profile,
+                nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
             ),
             "discovery_settings": (
                 recipe.discovery_settings if recipe is not None else None
@@ -1170,6 +1177,18 @@ def _alignment_production_resolver_mode(resolver_mode: str) -> str:
     return resolver_mode
 
 
+def _effective_peak_config_settings(
+    args: argparse.Namespace,
+    recipe: BoundCidNlRecipe | None,
+) -> tuple[str, float | None]:
+    if recipe is not None and is_pure_single_provider_cid_nl(
+        recipe.discovery_settings
+    ):
+        settings = recipe.discovery_settings
+        return settings.resolver_mode, settings.nl_min_intensity_ratio
+    return _alignment_production_resolver_mode(args.resolver_mode), None
+
+
 def _baseline_audit_method(args: argparse.Namespace) -> str:
     if args.emit_baseline_audit_asls:
         return "asls"
@@ -1203,6 +1222,7 @@ def _peak_config(
     baseline_audit_method: str = "",
     baseline_integration_method: str = "asls",
     signal_processing_profile: SignalProcessingProfile | None = None,
+    nl_min_intensity_ratio: float | None = None,
 ) -> ExtractionConfig:
     defaults = CANONICAL_SETTINGS_DEFAULTS
     profile = signal_processing_profile or resolve_signal_processing_profile()
@@ -1219,7 +1239,11 @@ def _peak_config(
         peak_rel_height=float(defaults["peak_rel_height"]),
         peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
         ms2_precursor_tol_da=float(defaults["ms2_precursor_tol_da"]),
-        nl_min_intensity_ratio=float(defaults["nl_min_intensity_ratio"]),
+        nl_min_intensity_ratio=(
+            float(defaults["nl_min_intensity_ratio"])
+            if nl_min_intensity_ratio is None
+            else nl_min_intensity_ratio
+        ),
         resolver_mode=resolver_mode,
         resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
         resolver_min_search_range_min=float(defaults["resolver_min_search_range_min"]),

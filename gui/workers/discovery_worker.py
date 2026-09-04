@@ -99,6 +99,8 @@ class DiscoveryWorker(QThread):
                 self.cancelled.emit()
                 return
             self.finished.emit(summary)
+        except InterruptedError:
+            self.cancelled.emit()
         except PresetError as exc:
             self.error.emit(f"Preset 錯誤：{exc}")
         except RawReaderError as exc:
@@ -274,6 +276,7 @@ class DiscoveryWorker(QThread):
                 processing_run_spec is not None
                 or physical_bindings_by_sample is not None
             ),
+            should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )
         owner_build_route = outputs.owner_build_route_receipt

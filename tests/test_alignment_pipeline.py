@@ -22,6 +22,7 @@ from tests.test_targeted_real_data_adapter import _settings
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.matrix import AlignmentMatrix
+from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
@@ -159,6 +160,69 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "retained_untargeted_cid_nl_batch"
     )
     assert metadata["effective_owner_build_xic_backend"] == "none"
+
+
+def test_pure_cid_nl_cancellation_after_completion_skips_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    completed = object()
+    cancellation_checks = iter((False, True))
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: completed,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "project_completed_untarget_batch_writer_inputs",
+        lambda _value: pytest.fail("cancelled run reached writer projection"),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_write_outputs_atomic",
+        lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
+    )
+
+    with pytest.raises(InterruptedError, match="before output publication"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            should_cancel=lambda: next(cancellation_checks),
+        )
+
+
+def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+
+    def fail_runtime(**_kwargs: object) -> object:
+        raise RuntimeError("retained runtime failed")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        fail_runtime,
+    )
+
+    with pytest.raises(AlignmentProcessExecutionError, match="retained runtime failed"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+        )
 
 
 def test_pure_cid_nl_collision_rejects_before_retained_runtime(

@@ -15,6 +15,7 @@ from xic_extractor.alignment.owner_build_route_receipt import (
 from xic_extractor.alignment.pipeline import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
+from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
@@ -859,6 +860,70 @@ def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     recipe = bound_recipes[0]
     assert captured_alignment["discovery_settings"] is recipe.discovery_settings
     assert captured_preset == {}
+
+
+def test_run_alignment_cli_binds_pure_preset_peak_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    preset_path = tmp_path / "custom_pure_cid_nl.toml"
+    preset_path.write_text(
+        """
+name = "Custom pure CID-NL"
+description = "Custom pure CID-NL settings"
+combine_mode = "single"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "NL116"
+value = 116.0474
+
+[discovery]
+resolver_mode = "legacy_savgol"
+nl_min_intensity_ratio = 0.37
+""".strip(),
+        encoding="utf-8",
+    )
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    captured: dict[str, object] = {}
+
+    def fake_run_alignment(**kwargs):
+        captured.update(kwargs)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(tmp_path / "alignment"),
+            "--preset",
+            str(preset_path),
+            "--resolver-mode",
+            "local_minimum",
+        ]
+    )
+
+    assert code == 0
+    settings = captured["discovery_settings"]
+    peak_config = captured["peak_config"]
+    assert peak_config.resolver_mode == settings.resolver_mode == "legacy_savgol"
+    assert (
+        peak_config.nl_min_intensity_ratio
+        == settings.nl_min_intensity_ratio
+        == pytest.approx(0.37)
+    )
 
 
 def test_run_alignment_cli_product_ready_preset_runs_owner_backfill_only(
@@ -2797,7 +2862,14 @@ def test_run_alignment_cli_rejects_85raw_wrong_python_environment(
     assert "Python executable must be under this worktree .venv" in stderr
 
 
-@pytest.mark.parametrize("exc", [RawReaderError("raw fail"), ValueError("bad input")])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RawReaderError("raw fail"),
+        ValueError("bad input"),
+        AlignmentProcessExecutionError("retained runtime failed"),
+    ],
+)
 def test_run_alignment_cli_returns_2_for_user_visible_errors(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

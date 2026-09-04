@@ -30,6 +30,9 @@ from xic_extractor.extraction.provisional_run_manifest import (
     mint_retained_sample_metadata_fingerprint_receipt,
     publish_provisional_run_bundle_atomic,
 )
+from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    is_pure_single_provider_cid_nl,
+)
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     run_untargeted_provisional_matrix_workflow,
 )
@@ -207,9 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             alignment_config=inputs.alignment_config,
             raw_workers=runtime_configuration.raw_workers,
             raw_xic_batch_size=runtime_configuration.raw_xic_batch_size,
-            owner_build_xic_backend=(
-                runtime_configuration.owner_build_xic_backend
-            ),
+            owner_build_xic_backend=runtime_configuration.owner_build_xic_backend,
             owner_backfill_xic_backend=(
                 runtime_configuration.owner_backfill_xic_backend
             ),
@@ -219,7 +220,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             owner_backfill_superwindow_span_factor=(
                 runtime_configuration.owner_backfill_superwindow_span_factor
             ),
-            sample_column_injection_order=retained_sample_metadata,
+            sample_column_injection_order=(
+                None
+                if is_pure_single_provider_cid_nl(inputs.discovery_settings)
+                else retained_sample_metadata
+            ),
             timing_recorder=timing_recorder,
             progress_callback=progress,
             capture_alignment_artifact_fingerprints=True,

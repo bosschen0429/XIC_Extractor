@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -40,6 +42,13 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     compose_untargeted_cid_nl_production_result,
     execute_untargeted_cid_nl_production_batch,
 )
+from xic_extractor.peak_detection.evidence_facts import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -75,6 +84,59 @@ def test_writer_projection_rejects_invalid_presentation_coordinates(
             mz=mz,
             rt=rt,
         )
+
+
+def test_writer_projection_keeps_distinct_repaired_facts_with_shared_signal() -> None:
+    rt = tuple(7.0 + 0.01 * index for index in range(101))
+    raw = tuple(
+        1.0 + 100.0 * math.exp(-0.5 * ((index - 50) / 4.0) ** 2)
+        for index in range(101)
+    )
+    prepared = prepare_physical_signal(
+        rt,
+        raw,
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    evaluations = tuple(
+        evaluate_physical_peak(
+            prepared,
+            selection_subject_id=subject_id,
+            query_rt_min=7.5,
+        )
+        for subject_id in ("repair-subject-a", "repair-subject-b")
+    )
+    assert evaluations[0].prepared.prepared_signal_id == (
+        evaluations[1].prepared.prepared_signal_id
+    )
+    assert evaluations[0].facts is not None
+    assert evaluations[1].facts is not None
+    assert evaluations[0].facts.fact_content_id != evaluations[1].facts.fact_content_id
+
+    repaired_observations = tuple(
+        SimpleNamespace(
+            selected_for_output=True,
+            facts=SimpleNamespace(physical_evaluation=evaluation),
+            cell=SimpleNamespace(
+                backfill_seed_mz=500.0 + index,
+                apex_rt=evaluation.facts.apex_rt_min,
+            ),
+        )
+        for index, evaluation in enumerate(evaluations)
+    )
+    observation = SimpleNamespace(
+        direct_observations=(),
+        repaired_observations=repaired_observations,
+    )
+
+    _mz_values, _rt_values, physical_ids = finalized_matrix._presentation_facts(
+        (observation,)
+    )
+
+    assert set(physical_ids) == {
+        evaluations[0].facts.fact_content_id,
+        evaluations[1].facts.fact_content_id,
+    }
+    assert len(physical_ids) == 2
 
 
 def test_production_batch_preserves_exact_nearby_subject_membership(
@@ -628,9 +690,27 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     row = writer_inputs.matrix.clusters[0]
     assert row.public_family_id == "FAM000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
+    expected_cell_apexes: dict[str, float] = {}
     for child in completed.application_result.children:
         for projected in child.completed_projection.rows:
             for decision in projected.decisions:
+                direct_observations = decision.evidence.direct_observations
+                selected_repairs = tuple(
+                    observation
+                    for observation in decision.evidence.repaired_observations
+                    if observation.selected_for_output
+                )
+                if direct_observations and decision.value is not None:
+                    assert len(direct_observations) == 1
+                    expected_cell_apexes[
+                        decision.subject.canonical_sample.metadata.raw_stem
+                    ] = direct_observations[0].content.integration.rt_apex_min
+                elif selected_repairs and decision.value is not None:
+                    assert len(selected_repairs) == 1
+                    assert selected_repairs[0].facts is not None
+                    expected_cell_apexes[
+                        decision.subject.canonical_sample.metadata.raw_stem
+                    ] = selected_repairs[0].facts.integration.rt_apex_min
                 for direct in decision.evidence.direct_observations:
                     expected_presentation_facts[
                         direct.content.peak_observation_content_id
@@ -640,9 +720,20 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                     )
                 for repaired_observation in decision.evidence.repaired_observations:
                     if repaired_observation.selected_for_output:
+                        assert repaired_observation.facts is not None
+                        assert (
+                            repaired_observation.facts.physical_evaluation
+                            is not None
+                        )
+                        assert (
+                            repaired_observation.facts.physical_evaluation.facts
+                            is not None
+                        )
+                        physical_facts = (
+                            repaired_observation.facts.physical_evaluation.facts
+                        )
                         expected_presentation_facts[
-                            repaired_observation.prepared_signal_id
-                            or repaired_observation.work_unit_key
+                            physical_facts.fact_content_id
                         ] = (
                             repaired_observation.cell.backfill_seed_mz,
                             repaired_observation.cell.apex_rt,
@@ -657,6 +748,13 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         sum(value[1] for value in expected_presentation_facts.values())
         / len(expected_presentation_facts)
     )
+    assert len(set(expected_cell_apexes.values())) > 1
+    for sample_stem in sample_stems:
+        cell_apex = cells_by_sample[sample_stem].apex_rt
+        if sample_stem in expected_cell_apexes:
+            assert cell_apex == pytest.approx(expected_cell_apexes[sample_stem])
+        else:
+            assert cell_apex is None
     assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean_v1"
     assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean_v1"
 

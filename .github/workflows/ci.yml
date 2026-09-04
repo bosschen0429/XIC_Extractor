@@ -124,6 +124,7 @@ jobs:
           if ($runPackagingBuild) {
             $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_one_byte_identical_quantitative_authority"
             $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority"
+            $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_exposes_issue367_public_activation_surface"
           }
           $serialStarted = Get-Date
           & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short -x --durations=10
