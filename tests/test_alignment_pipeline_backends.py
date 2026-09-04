@@ -8,6 +8,9 @@ import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import (
+    owner_backfill_result as _owner_backfill_result,
+)
+from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
 )
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
@@ -78,7 +81,9 @@ def test_pipeline_applies_single_worker_hybrid_owner_backfill_backend(
     ):
         calls["backfill_raw_sources"] = raw_sources
         calls["validation_raw_sources"] = validation_raw_sources
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         raw_sources_module,
@@ -87,7 +92,7 @@ def test_pipeline_applies_single_worker_hybrid_owner_backfill_backend(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -160,8 +165,10 @@ def test_pipeline_applies_single_worker_owner_build_backend(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
-        lambda features, *, sample_order, raw_sources, **kwargs: (),
+        "build_owner_backfill_result",
+        lambda features, *, sample_order, raw_sources, **kwargs: _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        ),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -229,7 +236,9 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
 
     def fake_owner_backfill(features, **kwargs):
         calls["backfill_features"] = features
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         pipeline_module,
@@ -238,7 +247,7 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -319,7 +328,9 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
 
     def fake_owner_backfill(features, **kwargs):
         calls["backfill_features"] = features
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     final_matrix = _matrix(("Sample_A",))
 
@@ -339,7 +350,7 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -600,8 +611,10 @@ def test_pipeline_uses_raw_dir_as_authority_and_fallbacks_to_sample_stem(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
-        lambda features, *, sample_order, raw_sources, **kwargs: (),
+        "build_owner_backfill_result",
+        lambda features, *, sample_order, raw_sources, **kwargs: _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        ),
     )
     monkeypatch.setattr(
         pipeline_module,

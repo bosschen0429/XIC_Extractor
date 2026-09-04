@@ -9,6 +9,9 @@ import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
 from tests.alignment_pipeline_helpers import matrix as _matrix
+from tests.alignment_pipeline_helpers import (
+    owner_backfill_result as _owner_backfill_result,
+)
 from tests.alignment_pipeline_helpers import owner_edge_evidence as _edge_evidence
 from tests.alignment_pipeline_helpers import (
     patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
@@ -1148,11 +1151,13 @@ def test_pipeline_enables_region_audit_only_when_alignment_cells_are_emitted(
 
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -1209,11 +1214,13 @@ def test_pipeline_enables_region_audit_when_integration_sidecar_is_emitted(
 
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -1272,11 +1279,13 @@ def test_pipeline_backfill_seed_sidecar_does_not_force_alignment_cells_or_region
 
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -1337,11 +1346,13 @@ def test_pipeline_backfill_candidate_audit_requires_own_flag(
 
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(
@@ -1496,11 +1507,13 @@ def test_validation_minimal_auto_mode_does_not_enable_heavy_region_audit(
     def fake_owner_backfill(features, **kwargs):
         calls["emit_region_audit"] = kwargs["emit_region_audit"]
         calls["audit_evidence_mode"] = kwargs["audit_evidence_mode"]
-        return ()
+        return _owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        )
 
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
+        "build_owner_backfill_result",
         fake_owner_backfill,
     )
     monkeypatch.setattr(

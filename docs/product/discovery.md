@@ -9,6 +9,13 @@ reviewable candidates. It does not directly publish product outputs;
 publication requires closed cell decisions and the relevant workflow
 projection/writer authority.
 
+Discovery is provider-specific at its input and initial-interpretation seam.
+CID-NL, HCD-PI, Delta Mass, and future providers may consume different evidence
+and use different candidate-generation strategies. They publish owner-backed
+observations and hypotheses through the shared evidence contract so downstream
+Alignment, ObservationRepair, and Backfill owners do not require a parallel
+lifecycle for each provider.
+
 ## Contract
 
 - Discovery produces candidate and review surfaces, not final product authority.
@@ -129,13 +136,6 @@ Targeted applies this flow to a bounded target universe and ends in its own
 delivery projection. Untargeted is the general form and ends in the analytical
 feature-by-sample Matrix. Different projections do not create different
 Discovery, Alignment, or Backfill cores.
-
-Current Targeted implementation is a migration slice, not full shared-runtime
-parity. It uses configured target identity plus cross-sample RT, paired-area,
-and MS1-shape evidence. The headless limited `5-hmdC + 5-medC` CLI performs a
-baseline/support/final rescue; GUI and direct API entry points do not generate
-that support automatically, and Targeted does not yet reuse Untargeted
-owner/group Alignment and Backfill objects.
 
 ## Evidence Provider Naming
 

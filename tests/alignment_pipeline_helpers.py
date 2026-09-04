@@ -3,10 +3,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import xic_extractor.alignment.pipeline as pipeline_module
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    build_owner_backfill_evaluation_coverage,
+    mint_owner_backfill_planning_epoch,
+)
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
+from xic_extractor.alignment.owner_backfill import OwnerBackfillResult
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -16,6 +21,39 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
 from xic_extractor.processing_identity import build_acquisition_source_identity
+
+
+def owner_backfill_result(
+    *,
+    cells=(),
+    candidate_audit_rows=(),
+    evaluation_coverage_context=None,
+) -> OwnerBackfillResult:
+    coverage = None
+    if evaluation_coverage_context is not None:
+        epoch = mint_owner_backfill_planning_epoch(
+            processing_owners=evaluation_coverage_context.processing_owners,
+            group_identities=(),
+            samples=evaluation_coverage_context.samples,
+            raw_sample_stems=evaluation_coverage_context.raw_sample_stems,
+            alignment_config=evaluation_coverage_context.alignment_config,
+            backend=evaluation_coverage_context.backend,
+            window_strategy=evaluation_coverage_context.window_strategy,
+            superwindow_span_factor=(
+                evaluation_coverage_context.superwindow_span_factor
+            ),
+            validation_mode=evaluation_coverage_context.validation_mode,
+            result_semantics=evaluation_coverage_context.result_semantics,
+            scope=evaluation_coverage_context.scope,
+            selected_family_ids=evaluation_coverage_context.selected_family_ids,
+            positions=(),
+        )
+        coverage = build_owner_backfill_evaluation_coverage(epoch, ())
+    return OwnerBackfillResult(
+        cells=tuple(cells),
+        candidate_audit_rows=tuple(candidate_audit_rows),
+        evaluation_coverage=coverage,
+    )
 
 
 def patch_owner_pipeline_to_matrix(monkeypatch) -> None:
@@ -40,8 +78,10 @@ def patch_owner_pipeline_to_matrix(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         pipeline_module,
-        "build_owner_backfill_cells",
-        lambda features, *, sample_order, raw_sources, **kwargs: (),
+        "build_owner_backfill_result",
+        lambda features, *, sample_order, raw_sources, **kwargs: owner_backfill_result(
+            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
+        ),
     )
     monkeypatch.setattr(
         pipeline_module,

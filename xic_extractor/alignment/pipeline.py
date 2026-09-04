@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager, ExitStack
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Protocol
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -67,9 +67,7 @@ from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
     OwnerBackfillPeakFactObservation,
     OwnerBackfillRequestReuseObservation,
-    OwnerBackfillResult,
     OwnerBackfillWindowStrategy,
-    build_owner_backfill_cells,
     build_owner_backfill_result,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
@@ -1027,11 +1025,7 @@ def run_alignment(
             )
             if not preconsolidate_owner_families
             and (
-                (
-                    raw_workers == 1
-                    and build_owner_backfill_cells
-                    is _DEFAULT_BUILD_OWNER_BACKFILL_CELLS
-                )
+                raw_workers == 1
                 or (
                     raw_workers > 1
                     and run_owner_backfill_process
@@ -1133,16 +1127,11 @@ def run_alignment(
                     backend=owner_backfill_xic_backend,
                     stage="alignment.owner_backfill.extract_xic",
                 )
-                validation_kwargs = (
-                    {"validation_raw_sources": validation_raw_sources}
-                    if validation_raw_sources is not None
-                    else {}
-                )
-                backfill_result = _build_owner_backfill_result(
+                backfill_result = build_owner_backfill_result(
                     backfill_features,
                     sample_order=batch.sample_order,
                     raw_sources=backfill_raw_sources,
-                    **validation_kwargs,
+                    validation_raw_sources=validation_raw_sources,
                     expected_acquisition_sources=expected_acquisition_sources,
                     alignment_config=alignment_config,
                     peak_config=peak_config,
@@ -1597,7 +1586,6 @@ def _run_untargeted_cid_nl_alignment(
 _existing_raw_paths = existing_raw_paths
 _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
-_DEFAULT_BUILD_OWNER_BACKFILL_CELLS = build_owner_backfill_cells
 _DEFAULT_RUN_OWNER_BACKFILL_PROCESS = run_owner_backfill_process
 
 _IDENTITY_COHERENCE_ARTIFACT_NAMES = (
@@ -1861,22 +1849,6 @@ def _alignment_identity_json(value: object) -> object:
     if isinstance(value, tuple | list):
         return [_alignment_identity_json(item) for item in value]
     return value
-
-
-def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResult:
-    if build_owner_backfill_cells is not _DEFAULT_BUILD_OWNER_BACKFILL_CELLS:
-        legacy_kwargs = dict(kwargs)
-        legacy_kwargs.pop("expected_acquisition_sources", None)
-        legacy_kwargs.pop("owner_backfill_xic_backend", None)
-        legacy_kwargs.pop("signal_processing_profile", None)
-        legacy_kwargs.pop("emit_candidate_audit_rows", None)
-        legacy_kwargs.pop("evaluation_coverage_context", None)
-        legacy_kwargs.pop("evaluation_coverage_positions", None)
-        return OwnerBackfillResult(
-            cells=tuple(build_owner_backfill_cells(*args, **legacy_kwargs)),
-            candidate_audit_rows=(),
-        )
-    return build_owner_backfill_result(*args, **kwargs)
 
 
 def _owner_backfill_peak_fact_provenance(
