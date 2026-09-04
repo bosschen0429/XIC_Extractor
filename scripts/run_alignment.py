@@ -17,9 +17,15 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
 )
 from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evidence
-from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
+from xic_extractor.alignment.ms1_index_source import (
+    OwnerBackfillXicBackend,
+    OwnerBuildXicBackend,
+)
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.pipeline import run_alignment
+from xic_extractor.alignment.pipeline import (
+    _validate_untargeted_cid_nl_alignment_options,
+    run_alignment,
+)
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
@@ -217,6 +223,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+
+    if recipe is not None and is_pure_single_provider_cid_nl(
+        recipe.discovery_settings
+    ):
+        try:
+            _validate_untargeted_cid_nl_alignment_options(
+                raw_workers=raw_workers,
+                raw_xic_batch_size=raw_xic_batch_size,
+                owner_backfill_xic_backend=_owner_backfill_xic_backend(
+                    args.owner_backfill_xic_backend
+                ),
+                owner_backfill_window_strategy=args.owner_backfill_window_strategy,
+                owner_backfill_superwindow_span_factor=(
+                    args.owner_backfill_superwindow_span_factor
+                ),
+                preconsolidate_owner_families=args.preconsolidate_owner_families,
+                emit_identity_coherence_diagnostic=(
+                    args.emit_identity_coherence_diagnostic
+                ),
+                identity_coherence_output_dir=identity_coherence_output_dir,
+                identity_coherence_controls_manifest=(
+                    identity_coherence_controls_manifest
+                ),
+                drift_lookup=sample_info,
+                sample_column_injection_order=sample_column_injection_order,
+                backfill_scope=args.backfill_scope,
+                audit_evidence_mode=args.audit_evidence_mode,
+                selected_family_ids=selected_family_ids,
+                selected_family_source=selected_family_source,
+                emit_early_loser_shadow=args.emit_early_loser_shadow,
+                signal_processing_profile=signal_processing_profile,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
 
     if args.preflight_only:
         try:
@@ -1144,12 +1185,14 @@ def _write_cprofile_outputs(profiler: cProfile.Profile, output_dir: Path) -> Non
     print(f"cProfile top functions: {top_path}")
 
 
-def _owner_backfill_xic_backend(value: str) -> str:
+def _owner_backfill_xic_backend(value: str) -> OwnerBackfillXicBackend:
+    if value == "raw":
+        return "raw"
     if value == "ms1-index":
         return "ms1_index"
     if value == "ms1-index-hybrid":
         return "ms1_index_hybrid"
-    return value
+    raise ValueError(f"unsupported owner backfill XIC backend: {value}")
 
 
 def _effective_owner_build_xic_backend(

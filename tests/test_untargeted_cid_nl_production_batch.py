@@ -276,6 +276,16 @@ def test_alignment_adapter_builds_executes_and_composes_once(
         settings=settings,
         peak_config=peak_config,
         alignment_config=AlignmentConfig(),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=7,
+                sample_role="blank",
+                excluded=True,
+                exclusion_reason="operator exclusion",
+            ),
+        ),
     )
 
     assert result is completed
@@ -288,7 +298,9 @@ def test_alignment_adapter_builds_executes_and_composes_once(
     sample_metadata = build_kwargs["sample_metadata"]
     assert isinstance(sample_metadata, tuple)
     assert tuple(row.raw_stem for row in sample_metadata) == ("S1",)
-    assert tuple(row.injection_order for row in sample_metadata) == (1,)
+    assert tuple(row.injection_order for row in sample_metadata) == (7,)
+    assert tuple(row.sample_role for row in sample_metadata) == ("blank",)
+    assert tuple(row.excluded for row in sample_metadata) == (True,)
 
 
 def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -> None:

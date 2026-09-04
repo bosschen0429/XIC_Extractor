@@ -40,6 +40,7 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class _RouteReachedBatch(RuntimeError):
@@ -114,11 +115,27 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
     )
+    retained_sample_metadata = (
+        SampleMetadata(
+            sample_name="S1",
+            raw_stem="S1",
+            injection_order=4,
+            sample_role="blank",
+            excluded=True,
+            exclusion_reason="operator exclusion",
+        ),
+    )
+    captured_retained: dict[str, object] = {}
     captured_write: dict[str, object] = {}
+
+    def complete(**kwargs: object) -> object:
+        captured_retained.update(kwargs)
+        return completed
+
     monkeypatch.setattr(
         pipeline_module,
         "complete_untargeted_cid_nl_alignment",
-        lambda **_kwargs: completed,
+        complete,
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -140,9 +157,11 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         peak_config=_peak_config(),
         discovery_settings=_settings(),
         owner_build_xic_backend="raw_superwindow",
+        sample_metadata=retained_sample_metadata,
     )
 
     assert result.untargeted_cid_nl_result is completed
+    assert captured_retained["sample_metadata"] is retained_sample_metadata
     assert result.owner_build_route_receipt is not None
     assert result.owner_build_route_receipt.as_dict() == {
         "configured_owner_build_xic_backend": "raw_superwindow",

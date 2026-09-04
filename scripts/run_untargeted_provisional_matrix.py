@@ -42,7 +42,7 @@ from xic_extractor.presets import (
 )
 from xic_extractor.processing_identity import fingerprint_file_content
 from xic_extractor.raw_reader import preflight_raw_reader
-from xic_extractor.sample_metadata import load_sample_metadata
+from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +52,7 @@ class _OperatorInputs:
     discovery_settings: DiscoverySettings
     alignment_config: AlignmentConfig
     sample_metadata_path: Path
+    sample_metadata: tuple[SampleMetadata, ...]
     owner_build_xic_backend: OwnerBuildXicBackend
     code_revision: str
 
@@ -225,6 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if is_pure_single_provider_cid_nl(inputs.discovery_settings)
                 else retained_sample_metadata
             ),
+            sample_metadata=inputs.sample_metadata,
             timing_recorder=timing_recorder,
             progress_callback=progress,
             capture_alignment_artifact_fingerprints=True,
@@ -370,6 +372,7 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         discovery_settings=recipe.discovery_settings,
         alignment_config=recipe.alignment_config,
         sample_metadata_path=sample_metadata_path,
+        sample_metadata=metadata,
         owner_build_xic_backend=recipe.owner_build_xic_backend,
         code_revision=code_revision,
     )

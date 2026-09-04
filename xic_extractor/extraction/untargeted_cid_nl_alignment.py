@@ -47,6 +47,7 @@ def complete_untargeted_cid_nl_alignment(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     alignment_config: AlignmentConfig,
+    sample_metadata: tuple[SampleMetadata, ...] | None = None,
     timing_recorder: TimingRecorder | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
@@ -71,20 +72,27 @@ def complete_untargeted_cid_nl_alignment(
             )
         receipts[sample_stem] = receipt
 
-    sample_metadata = tuple(
-        SampleMetadata(
-            sample_name=sample_stem,
-            raw_stem=sample_stem,
-            injection_order=index,
-            sample_role="study_sample",
+    retained_sample_metadata = (
+        sample_metadata
+        if sample_metadata is not None
+        else tuple(
+            SampleMetadata(
+                sample_name=sample_stem,
+                raw_stem=sample_stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, sample_stem in enumerate(
+                discovery_batch.sample_order,
+                start=1,
+            )
         )
-        for index, sample_stem in enumerate(discovery_batch.sample_order, start=1)
     )
     batch = build_untargeted_cid_nl_production_batch(
         raw_paths=tuple(
             raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
         ),
-        sample_metadata=sample_metadata,
+        sample_metadata=retained_sample_metadata,
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,

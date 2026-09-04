@@ -24,6 +24,7 @@ from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     is_pure_single_provider_cid_nl,
 )
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
@@ -47,6 +48,7 @@ def run_untargeted_provisional_matrix_workflow(
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     sample_column_injection_order: Path | None = None,
+    sample_metadata: tuple[SampleMetadata, ...] | None = None,
     timing_recorder: TimingRecorder | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     capture_alignment_artifact_fingerprints: bool = False,
@@ -122,6 +124,7 @@ def run_untargeted_provisional_matrix_workflow(
             owner_backfill_superwindow_span_factor
         ),
         sample_column_injection_order=sample_column_injection_order,
+        sample_metadata=sample_metadata,
         timing_recorder=timing_recorder,
         capture_artifact_fingerprints=capture_alignment_artifact_fingerprints,
         backfill_scope="full-audit",

@@ -2638,6 +2638,39 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Timing live JSON:" in stdout
 
 
+def test_run_alignment_cli_preflight_rejects_unsupported_retained_options(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    batch_index, raw_dir = _write_owner_closed_preflight_batch(
+        tmp_path,
+        ("S1",),
+    )
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--preset",
+            "dna_dr",
+            "--raw-workers",
+            "2",
+            "--preflight-only",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "raw_workers" in captured.err
+    assert "Alignment launch preflight OK" not in captured.out
+
+
 def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

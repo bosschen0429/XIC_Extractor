@@ -19,7 +19,7 @@ from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     UntargetedProvisionalMatrixRun,
 )
 from xic_extractor.processing_identity import fingerprint_file_content
-from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS, SampleMetadata
 from xic_extractor.tabular_io import render_delimited_rows
 
 
@@ -163,6 +163,9 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert captured["capture_alignment_artifact_fingerprints"] is True
     assert "signal_processing_profile" not in captured
     assert captured["sample_column_injection_order"] is None
+    assert captured["sample_metadata"] == inputs.sample_metadata
+    assert captured["sample_metadata"][1].sample_role == "blank"
+    assert captured["sample_metadata"][1].excluded is True
     manifest = captured["manifest"]
     assert isinstance(manifest, dict)
     assert manifest["code_revision"] == "a" * 40
@@ -481,6 +484,22 @@ def _inputs(
         ),
         alignment_config=AlignmentConfig(),
         sample_metadata_path=metadata_path,
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="sample-a",
+                raw_stem="sample-a",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+            SampleMetadata(
+                sample_name="sample-b",
+                raw_stem="sample-b",
+                injection_order=2,
+                sample_role="blank",
+                excluded=True,
+                exclusion_reason="operator exclusion",
+            ),
+        ),
         owner_build_xic_backend="raw",
         code_revision="a" * 40,
     )
