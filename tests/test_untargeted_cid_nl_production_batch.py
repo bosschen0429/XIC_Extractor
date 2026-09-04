@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import csv
 import math
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from openpyxl import load_workbook
 
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
@@ -29,6 +31,7 @@ from xic_extractor.alignment.pipeline_outputs import (
     output_paths,
     write_outputs_atomic,
 )
+from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
@@ -89,8 +92,7 @@ def test_writer_projection_rejects_invalid_presentation_coordinates(
 def test_writer_projection_keeps_distinct_repaired_facts_with_shared_signal() -> None:
     rt = tuple(7.0 + 0.01 * index for index in range(101))
     raw = tuple(
-        1.0 + 100.0 * math.exp(-0.5 * ((index - 50) / 4.0) ** 2)
-        for index in range(101)
+        1.0 + 100.0 * math.exp(-0.5 * ((index - 50) / 4.0) ** 2) for index in range(101)
     )
     prepared = prepare_physical_signal(
         rt,
@@ -201,8 +203,7 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         batch.subject_batch.subjects
     )
     assert all(
-        job.candidates is batch.context.candidates_by_sample["S1"]
-        for job in batch.jobs
+        job.candidates is batch.context.candidates_by_sample["S1"] for job in batch.jobs
     )
 
 
@@ -416,9 +417,10 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert writer_inputs.matrix.sample_order == ("S1",)
     assert len(writer_inputs.matrix.clusters) == 2
     assert len(writer_inputs.matrix.cells) == 2
-    assert tuple(
-        row.public_family_id for row in writer_inputs.matrix.clusters
-    ) == ("FAM000001", "FAM000002")
+    assert tuple(row.public_family_id for row in writer_inputs.matrix.clusters) == (
+        "FAM000001",
+        "FAM000002",
+    )
     expected_source_ids: dict[tuple[str, str], str] = {}
     for child in completed.application_result.children:
         candidate_by_hypothesis = {
@@ -487,11 +489,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )
-    assert {
-        path.name
-        for path in writer_dir.iterdir()
-        if path.is_file()
-    } == {
+    assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
@@ -688,12 +686,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
     assert writer_inputs.matrix.sample_order == sample_stems
     assert len(writer_inputs.matrix.clusters) == 1
-    assert tuple(
-        cell.sample_stem for cell in writer_inputs.matrix.cells
-    ) == sample_stems
-    cells_by_sample = {
-        cell.sample_stem: cell for cell in writer_inputs.matrix.cells
-    }
+    assert (
+        tuple(cell.sample_stem for cell in writer_inputs.matrix.cells) == sample_stems
+    )
+    cells_by_sample = {cell.sample_stem: cell for cell in writer_inputs.matrix.cells}
     assert all(
         cells_by_sample[sample_stem].source_candidate_id is not None
         for sample_stem in sample_stems[:-1]
@@ -734,8 +730,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                     if repaired_observation.selected_for_output:
                         assert repaired_observation.facts is not None
                         assert (
-                            repaired_observation.facts.physical_evaluation
-                            is not None
+                            repaired_observation.facts.physical_evaluation is not None
                         )
                         assert (
                             repaired_observation.facts.physical_evaluation.facts
@@ -744,9 +739,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         physical_facts = (
                             repaired_observation.facts.physical_evaluation.facts
                         )
-                        expected_presentation_facts[
-                            physical_facts.fact_content_id
-                        ] = (
+                        expected_presentation_facts[physical_facts.fact_content_id] = (
                             repaired_observation.cell.backfill_seed_mz,
                             repaired_observation.cell.apex_rt,
                         )
@@ -770,6 +763,111 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean_v1"
     assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean_v1"
 
+    base_cells = writer_inputs.production_decisions.cells
+    weighted_values = dict(zip(sample_stems, (1.0, 9.0, 1.0, 9.0), strict=True))
+    for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
+        decisions = ProductionDecisionSet(
+            cells={
+                key: replace(
+                    decision,
+                    production_status=(
+                        "blank"
+                        if decision.sample_stem == no_write_sample
+                        else decision.production_status
+                    ),
+                    rescue_tier=(
+                        ""
+                        if decision.sample_stem == no_write_sample
+                        else decision.rescue_tier
+                    ),
+                    write_matrix_value=decision.sample_stem != no_write_sample,
+                    matrix_value=(
+                        None
+                        if decision.sample_stem == no_write_sample
+                        else weighted_values[decision.sample_stem]
+                    ),
+                    blank_reason=(
+                        "regression_no_write"
+                        if decision.sample_stem == no_write_sample
+                        else decision.blank_reason
+                    ),
+                )
+                for key, decision in base_cells.items()
+            },
+            rows=writer_inputs.production_decisions.rows,
+        )
+        accepted = tuple(
+            (
+                cells_by_sample[stem],
+                decisions.cell(cells_by_sample[stem].cluster_id, stem),
+            )
+            for stem in sample_stems
+            if stem != no_write_sample
+        )
+        legacy_rt = sum(
+            cell.apex_rt * decision.matrix_value
+            for cell, decision in accepted
+            if cell.apex_rt is not None and decision.matrix_value is not None
+        ) / sum(
+            decision.matrix_value
+            for _cell, decision in accepted
+            if decision.matrix_value is not None
+        )
+        assert legacy_rt != pytest.approx(row.family_center_rt)
+
+        writer_dir = tmp_path / f"writer-{variant}"
+        outputs = output_paths(
+            writer_dir,
+            output_level="machine",
+            emit_alignment_cells=False,
+            emit_alignment_status_matrix=False,
+        )
+        write_outputs_atomic(
+            outputs,
+            writer_inputs.matrix,
+            metadata=alignment_metadata(
+                discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+                raw_dir=tmp_path,
+                dll_dir=tmp_path,
+                owner_build_xic_backend="raw",
+                owner_backfill_xic_backend="raw",
+                output_level="machine",
+                peak_config=peak_config,
+                audit_evidence_mode="none",
+                heavy_audit_enabled=False,
+                require_discovery_owner_closure=True,
+                owner_backfill_peak_fact_provenance_row_count=1,
+            ),
+            ownership=OwnershipBuildResult(
+                owners=(),
+                assignments=(),
+                ambiguous_records=(),
+            ),
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            production_decisions=decisions,
+        )
+
+        assert outputs.matrix_tsv is not None
+        with outputs.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+            matrix_row = next(csv.DictReader(handle, delimiter="\t"))
+        assert float(matrix_row["RT"]) == pytest.approx(row.family_center_rt)
+
+        assert outputs.matrix_identity_tsv is not None
+        with outputs.matrix_identity_tsv.open(encoding="utf-8", newline="") as handle:
+            identity_row = next(csv.DictReader(handle, delimiter="\t"))
+        assert float(identity_row["RT"]) == pytest.approx(row.family_center_rt)
+        assert identity_row["center_rt_basis"] == row.center_rt_basis
+        assert identity_row["center_weight_basis"] == row.center_weight_basis
+
+        assert outputs.workbook is not None
+        workbook = load_workbook(outputs.workbook, read_only=True, data_only=True)
+        try:
+            workbook_rows = list(workbook["Matrix"].iter_rows(values_only=True))
+        finally:
+            workbook.close()
+        workbook_row = dict(zip(workbook_rows[0], workbook_rows[1], strict=True))
+        assert workbook_row["RT"] == pytest.approx(row.family_center_rt)
+
 
 @pytest.mark.parametrize("exclude_all", (False, True))
 def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
@@ -788,9 +886,7 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
     )
     excluded_source_ids = {
         candidate.candidate_id
-        for candidate in (
-            initial_candidates if exclude_all else initial_candidates[1:]
-        )
+        for candidate in (initial_candidates if exclude_all else initial_candidates[1:])
     }
     candidates = tuple(
         replace(
