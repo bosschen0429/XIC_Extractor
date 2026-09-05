@@ -1,7 +1,7 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Total entry-points:** 110
-**Total files (incl. helpers):** 192 Python files under `tools/diagnostics/`
+**Total entry-points:** 109
+**Total files (incl. helpers):** 191 Python files under `tools/diagnostics/`
 **Count method:** top-level `### *.py` entry headings for entry-points;
 top-level `tools/diagnostics/*.py` files for total files.
 **Governing contracts:** `docs/architecture-contract.md` and
@@ -455,14 +455,6 @@ authority.
 
 ---
 
-### `backfill_scope_probe.py`
-
-**Purpose**: Probe alignment backfill scope size without running owner backfill.
-**Topic group**: `backfill_scope_probe.py` (single-file)
-**Originating doc**: `retired-provenance:8742b42cba88` (recent investigation context)
-
----
-
 ### `backfill_decision_ledger.py`
 
 **Purpose**: Build a deterministic, bounded, no-RAW decision ledger and summary
@@ -484,26 +476,6 @@ not as an independently variable post-owner duplicate counter. Populated IDs
 outside that invariant domain are counted separately. The tool neither accepts
 RAW paths nor changes scientific
 selection, Backfill eligibility, Matrix, writer, or activation behavior.
-
----
-
-### `run_alignment.py --emit-early-loser-shadow`
-
-**Purpose**: Emit the opt-in, owner-only pre-Backfill redundancy-candidate
-proposal and compare it with typed final claim/consolidation authority.
-**Topic group**: `xic_extractor/alignment/early_loser_shadow.py` +
-`early_loser_shadow_writer.py` (in-process Alignment diagnostic; no standalone
-RAW or persisted-projection reader).
-**Originating issues**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
-and [#208](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/208).
-**Status note**: `diagnostic_only`. The shadow does not feed Backfill, Pass B,
-Matrix, writers, or activation. It accepts legal transitive loser chains and
-fails closed on missing/cyclic/non-winner lineage. Projected feature/cell/XIC
-counts come from the existing owner request plan and are not actual savings.
-Counterfactual cell/value/output fields remain named activation gaps. The flag
-requires `full-audit`, rejects activated preconsolidation, and binds its run,
-typed source/config/request universe, and final comparison projection with
-SHA-256 digests; it does not certify Matrix cells or values.
 
 ---
 

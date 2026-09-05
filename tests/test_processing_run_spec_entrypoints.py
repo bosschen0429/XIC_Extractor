@@ -15,6 +15,7 @@ from gui.workers.discovery_worker import (
 from scripts.run_discovery import (
     _compile_processing_run_spec as compile_cli_processing_run_spec,
 )
+from tests.test_discovery_worker import _alignment_outputs
 from tests.test_processing_run_spec import _peak_config, _raws, _settings
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
@@ -88,6 +89,8 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(worker_module, "run_discovery_batch", worker_batch)
+    finished: list[dict[str, object]] = []
+    errors: list[str] = []
     for mode, output_name in (("full", "full"), ("discovery_only", "discovery_only")):
         request = DiscoveryRequest(
             mode=cast(object, mode),  # type: ignore[arg-type]
@@ -100,13 +103,19 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
             discovery_batch_index=None,
         )
         worker = DiscoveryWorker(request)
+        worker.finished.connect(finished.append)
+        worker.error.connect(errors.append)
         if mode == "full":
+            outputs = _alignment_outputs()
             monkeypatch.setattr(
                 worker,
                 "_run_alignment",
-                lambda *_args, **_kwargs: (SimpleNamespace(), None),
+                lambda *_args, **_kwargs: (outputs, outputs.owner_build_route_receipt),
             )
         worker.run()
+
+    assert errors == []
+    assert len(finished) == 2
 
     def cli_batch(*_args, **kwargs):
         captured["cli"] = kwargs["run_spec"]

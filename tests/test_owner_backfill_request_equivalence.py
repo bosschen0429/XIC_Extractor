@@ -14,7 +14,6 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
-from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
 from xic_extractor.alignment.owner_backfill import (
@@ -40,17 +39,12 @@ from xic_extractor.alignment.owner_backfill_runtime_projection import (
     mint_owner_backfill_runtime_feature,
     validate_owner_backfill_runtime_feature,
 )
-from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
-from xic_extractor.alignment.primary_consolidation import (
-    consolidate_primary_family_rows,
-)
 from xic_extractor.alignment.process_backend import (
     OwnerBackfillSampleJob,
     OwnerBackfillSampleResult,
     extract_owner_backfill_sample_job,
 )
 from xic_extractor.alignment.raw_sources import timed_owner_backfill_sources
-from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -902,7 +896,7 @@ def test_serial_backend_wrappers_preserve_owner_acquisition_identity(
         assert validation_sources is None
 
 
-def test_exact_reuse_preserves_cells_candidate_audit_and_final_matrix(
+def test_exact_reuse_preserves_cells_and_candidate_audit(
     tmp_path: Path,
 ) -> None:
     source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
@@ -930,33 +924,6 @@ def test_exact_reuse_preserves_cells_candidate_audit_and_final_matrix(
 
     assert exact.cells == baseline.cells
     assert exact.candidate_audit_rows == baseline.candidate_audit_rows
-    baseline_matrix = build_owner_alignment_matrix(
-        features,
-        sample_order=("sample-a", "sample-b"),
-        ambiguous_by_sample={},
-        rescued_cells=baseline.cells,
-    )
-    exact_matrix = build_owner_alignment_matrix(
-        features,
-        sample_order=("sample-a", "sample-b"),
-        ambiguous_by_sample={},
-        rescued_cells=exact.cells,
-    )
-    baseline_claimed = apply_ms1_peak_claim_registry(baseline_matrix, config)
-    exact_claimed = apply_ms1_peak_claim_registry(exact_matrix, config)
-    assert exact_claimed == baseline_claimed
-    baseline_final = consolidate_primary_family_rows(baseline_claimed, config)
-    exact_final = consolidate_primary_family_rows(exact_claimed, config)
-    assert exact_final == baseline_final
-    baseline_tsv = write_alignment_cells_tsv(
-        tmp_path / "baseline_cells.tsv",
-        baseline_final,
-    )
-    exact_tsv = write_alignment_cells_tsv(
-        tmp_path / "exact_cells.tsv",
-        exact_final,
-    )
-    assert exact_tsv.read_bytes() == baseline_tsv.read_bytes()
 
 
 def test_hybrid_validation_keeps_phases_in_separate_exact_classes(
@@ -1308,7 +1275,9 @@ def test_process_worker_preserves_global_candidate_identity_for_hybrid_rescue(
     prefilter_b = _OwnerBoundBatchSource(source_b_identity, height=120.0)
     validator_a = _OwnerBoundBatchSource(source_a_identity, height=260.0)
     validator_b = _OwnerBoundBatchSource(source_b_identity, height=260.0)
-    raw_session_capability = mint_raw_acquisition_session_capability(source_b_identity)
+    raw_session_capability = mint_raw_acquisition_session_capability(
+        source_b_identity
+    )
     validator_b.raw_open_receipt = _mint_raw_acquisition_session_receipt(
         raw_session_capability
     )

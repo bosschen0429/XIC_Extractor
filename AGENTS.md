@@ -14,7 +14,8 @@ triggered route; its owner carries detail.
 | Semantic owner, Target/Untarget lifecycle, persisted decision, runtime receipt, writer, schema, or public contract | Choose one branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes), then use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
 | Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
 | Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
-| Review communication, PR receipt, handoff, or Obsidian placement | Read [`communication-review.md`](docs/agent/communication-review.md) and [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
+| Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
+| Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
 | Script/diagnostic creation, reuse, rerun, exposure, or retirement | Read [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md), search [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and check [`diagnostic-ledger.md`](docs/diagnostic-ledger.md). |
 | Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
 | Hook, rule, agent config, skill, Git command policy, or long-task state | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md). |

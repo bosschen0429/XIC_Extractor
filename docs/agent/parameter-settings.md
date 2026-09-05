@@ -78,20 +78,11 @@ Output and handoff semantics live in docs/product/alignment.md; preset
 compatibility lives in docs/product/presets.md. Task-specific paths and accepted
 parameter values stay in the Issue or validation owner.
 
-DNA dR Alignment supplies sample-info and targeted-istd-workbook together. The
-optional sample-column-injection-order also affects trajectory rescue and may
-change family partition or Matrix content; it is not a display-only setting.
-
-For 85RAW, use XIC_RAW_ROOT and THERMO_RAWFILE_READER_DLL_DIR, run the exact
-command once with preflight-only, and keep:
-
-- expected sample count 85;
-- validation-minimal output;
-- production-equivalent backfill;
-- no audit-evidence payload unless the owner requires it;
-- validation-fast profile with raw-workers 11 on this machine;
-- super-window backfill strategy;
-- task-local final and live timing outputs.
+Alignment requires a bound pure CID-NL preset. Its retained runtime owns
+acquisition and scheduling; CLI help defines supported execution options.
+For method-authorized RAW validation, resolve the configured local inputs and
+run the current command's preflight before acquisition. Keep final and live
+timing outputs in the task-specific output directory.
 
 The live timing file is the heartbeat for interrupted runs; the final timing
 file is the completed history. Performance interpretation belongs to

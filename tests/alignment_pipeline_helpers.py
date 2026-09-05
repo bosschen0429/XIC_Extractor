@@ -1,17 +1,10 @@
 import csv
 from pathlib import Path
-from types import SimpleNamespace
 
-import xic_extractor.alignment.pipeline as pipeline_module
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    build_owner_backfill_evaluation_coverage,
-    mint_owner_backfill_planning_epoch,
-)
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
-from xic_extractor.alignment.owner_backfill import OwnerBackfillResult
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -21,109 +14,6 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
 from xic_extractor.processing_identity import build_acquisition_source_identity
-
-
-def owner_backfill_result(
-    *,
-    cells=(),
-    candidate_audit_rows=(),
-    evaluation_coverage_context=None,
-) -> OwnerBackfillResult:
-    coverage = None
-    if evaluation_coverage_context is not None:
-        epoch = mint_owner_backfill_planning_epoch(
-            processing_owners=evaluation_coverage_context.processing_owners,
-            group_identities=(),
-            samples=evaluation_coverage_context.samples,
-            raw_sample_stems=evaluation_coverage_context.raw_sample_stems,
-            alignment_config=evaluation_coverage_context.alignment_config,
-            backend=evaluation_coverage_context.backend,
-            window_strategy=evaluation_coverage_context.window_strategy,
-            superwindow_span_factor=(
-                evaluation_coverage_context.superwindow_span_factor
-            ),
-            validation_mode=evaluation_coverage_context.validation_mode,
-            result_semantics=evaluation_coverage_context.result_semantics,
-            scope=evaluation_coverage_context.scope,
-            selected_family_ids=evaluation_coverage_context.selected_family_ids,
-            positions=(),
-        )
-        coverage = build_owner_backfill_evaluation_coverage(epoch, ())
-    return OwnerBackfillResult(
-        cells=tuple(cells),
-        candidate_audit_rows=tuple(candidate_audit_rows),
-        evaluation_coverage=coverage,
-    )
-
-
-def patch_owner_pipeline_to_matrix(monkeypatch) -> None:
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_sample_local_owners",
-        lambda candidates, **kwargs: SimpleNamespace(
-            owners=(),
-            assignments=(),
-            ambiguous_records=(),
-        ),
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "cluster_sample_local_owners",
-        lambda owners, **kwargs: (),
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "review_only_features_from_ambiguous_records",
-        lambda records, *, start_index: (),
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_owner_backfill_result",
-        lambda features, *, sample_order, raw_sources, **kwargs: owner_backfill_result(
-            evaluation_coverage_context=kwargs.get("evaluation_coverage_context"),
-        ),
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_owner_alignment_matrix",
-        lambda features, *, sample_order, **kwargs: matrix(sample_order),
-    )
-
-
-class FakeRawOpener:
-    def __init__(self) -> None:
-        self.calls: list[tuple[Path, Path]] = []
-        self.handles: list[FakeRawContext] = []
-
-    def __call__(
-        self,
-        raw_path: Path,
-        dll_dir: Path,
-        *,
-        expected_acquisition_source=None,
-    ):
-        self.calls.append((raw_path, dll_dir))
-        handle = FakeRawContext(raw_path)
-        self.handles.append(handle)
-        return handle
-
-
-class FakeRawContext:
-    def __init__(self, raw_path: Path) -> None:
-        self.raw_path = raw_path
-        self.entered = False
-        self.closed = False
-
-    def __enter__(self):
-        self.entered = True
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.closed = True
-        return False
-
-    def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
-        raise AssertionError("fake pipeline tests monkeypatch backfill")
 
 
 def write_batch(
@@ -176,54 +66,6 @@ def write_batch(
     return batch_index
 
 
-def write_partial_batch(
-    tmp_path: Path,
-    *,
-    sample_order: tuple[str, ...],
-    candidate_samples: tuple[str, ...],
-    owner_closed: bool = True,
-) -> Path:
-    batch_dir = tmp_path / "batch"
-    batch_dir.mkdir(exist_ok=True)
-    rows = []
-    for sample_stem in sample_order:
-        sample_dir = batch_dir / sample_stem
-        sample_dir.mkdir(exist_ok=True)
-        candidates_csv = sample_dir / "discovery_candidates.csv"
-        candidate_rows = (
-            [candidate_row(sample_stem)] if sample_stem in candidate_samples else []
-        )
-        write_csv(candidates_csv, DISCOVERY_CANDIDATE_COLUMNS, candidate_rows)
-        row = {
-            "sample_stem": sample_stem,
-            "raw_file": f"C:/stale/{sample_stem}.raw",
-            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-            "review_csv": "",
-        }
-        if owner_closed:
-            row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
-        rows.append(row)
-    batch_index = batch_dir / "discovery_batch_index.csv"
-    write_csv(
-        batch_index,
-        (
-            (
-                "schema_version",
-                "sample_stem",
-                "raw_file",
-                "candidate_csv",
-                "review_csv",
-                "candidate_count",
-                *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-            )
-            if owner_closed
-            else ("sample_stem", "raw_file", "candidate_csv", "review_csv")
-        ),
-        rows,
-    )
-    return batch_index
-
-
 def _owner_closed_receipt_fields(
     sample_stem: str,
     candidates_csv: Path,
@@ -249,64 +91,6 @@ def _owner_closed_receipt_fields(
         "candidate_count": str(len(candidates)),
         **discovery_receipt_index_fields(receipt),
     }
-
-
-def write_owner_closed_partial_batch(
-    tmp_path: Path,
-    *,
-    sample_order: tuple[str, ...],
-    candidate_samples: tuple[str, ...],
-    raw_files: dict[str, Path],
-) -> Path:
-    batch_dir = tmp_path / "batch"
-    batch_dir.mkdir(exist_ok=True)
-    rows = []
-    for sample_stem in sample_order:
-        sample_dir = batch_dir / sample_stem
-        sample_dir.mkdir(exist_ok=True)
-        candidates_csv = sample_dir / "discovery_candidates.csv"
-        candidate_rows = (
-            [candidate_row(sample_stem)] if sample_stem in candidate_samples else []
-        )
-        write_csv(candidates_csv, DISCOVERY_CANDIDATE_COLUMNS, candidate_rows)
-        candidates = read_discovery_candidates_csv(candidates_csv)
-        acquisition_source = build_acquisition_source_identity(
-            raw_files[sample_stem],
-            acquisition_format="thermo_raw",
-            observation_namespace="thermo_raw_file_reader:Device.MS:1",
-        )
-        receipt = mint_discovery_candidate_universe_receipt(
-            sample_stem=sample_stem,
-            acquisition_source=acquisition_source,
-            candidate_csv=candidates_csv,
-            candidates=candidates,
-        )
-        rows.append(
-            {
-                "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-                "sample_stem": sample_stem,
-                "raw_file": str(raw_files[sample_stem]),
-                "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-                "review_csv": "",
-                "candidate_count": str(len(candidates)),
-                **discovery_receipt_index_fields(receipt),
-            }
-        )
-    batch_index = batch_dir / "discovery_batch_index.csv"
-    write_csv(
-        batch_index,
-        (
-            "schema_version",
-            "sample_stem",
-            "raw_file",
-            "candidate_csv",
-            "review_csv",
-            "candidate_count",
-            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-        ),
-        rows,
-    )
-    return batch_index
 
 
 def write_csv(

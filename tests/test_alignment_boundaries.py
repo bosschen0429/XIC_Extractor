@@ -36,29 +36,6 @@ def test_alignment_csv_and_tsv_modules_do_not_import_raw_reader():
         assert violations == []
 
 
-def test_alignment_pipeline_raw_reader_import_is_lazy_default_opener_only():
-    path = (
-        Path(__file__).parents[1]
-        / "xic_extractor"
-        / "alignment"
-        / "pipeline.py"
-    )
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    parents = _parent_map(tree)
-    raw_reader_imports = [
-        node
-        for node in ast.walk(tree)
-        if any(
-            imported_name.startswith("xic_extractor.raw_reader")
-            for imported_name in _imported_module_names(node)
-        )
-    ]
-
-    assert raw_reader_imports
-    for node in raw_reader_imports:
-        assert _enclosing_function_name(node, parents) == "_default_raw_opener"
-
-
 def test_alignment_raw_sources_do_not_import_raw_reader():
     path = (
         Path(__file__).parents[1]
@@ -232,20 +209,3 @@ def _alignment_imported_module_names(node):
         f"{resolved_module}.{alias.name}" for alias in node.names
     )
     return imported_names
-
-
-def _parent_map(tree):
-    return {
-        child: parent
-        for parent in ast.walk(tree)
-        for child in ast.iter_child_nodes(parent)
-    }
-
-
-def _enclosing_function_name(node, parents):
-    current = node
-    while current in parents:
-        current = parents[current]
-        if isinstance(current, ast.FunctionDef):
-            return current.name
-    return None

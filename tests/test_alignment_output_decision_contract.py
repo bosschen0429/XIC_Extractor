@@ -6,15 +6,8 @@ from types import SimpleNamespace
 import pytest
 from openpyxl import load_workbook
 
-import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
-from tests.alignment_pipeline_helpers import FakeRawOpener
 from tests.alignment_pipeline_helpers import matrix as _matrix
-from tests.alignment_pipeline_helpers import (
-    patch_owner_pipeline_to_matrix as _patch_owner_pipeline_to_matrix,
-)
-from tests.alignment_pipeline_helpers import peak_config as _peak_config
-from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.html_report import write_alignment_review_html
 from xic_extractor.alignment.pipeline_outputs import output_paths
@@ -212,9 +205,7 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert {row["raw_status"] for row in audit} == {"absent"}
     assert {row["production_status"] for row in audit} == {"detected"}
     assert {row["write_matrix_value"] for row in audit} == {True}
-    assert all(
-        row["primary_matrix_area"] == pytest.approx(987.654) for row in audit
-    )
+    assert all(row["primary_matrix_area"] == pytest.approx(987.654) for row in audit)
     assert {row["primary_matrix_area_source"] for row in audit} == {None}
     assert {row["primary_matrix_area_reason"] for row in audit} == {None}
     assert {row["claim_state"] for row in audit} == {None}
@@ -229,35 +220,6 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
         '<div class="row"><div>absent</div><div class="track">'
         '<div class="bar" style="width:100.0%"></div></div><div>2</div></div>' in html
     )
-
-
-def test_run_alignment_mints_one_decision_set_for_activated_outputs(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    calls = 0
-
-    def counted_build_production_decisions(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return build_production_decisions(*args, **kwargs)
-
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_production_decisions",
-        counted_build_production_decisions,
-    )
-
-    outputs = _run_minimal_alignment(
-        tmp_path,
-        monkeypatch,
-        output_level="machine",
-    )
-
-    assert outputs.workbook is not None
-    assert outputs.review_html is not None
-    assert outputs.matrix_tsv is not None
-    assert calls == 1
 
 
 def _divergent_owner_decisions(
@@ -287,30 +249,4 @@ def _divergent_owner_decisions(
             )
             for key, decision in rebuilt.rows.items()
         },
-    )
-
-
-def _run_minimal_alignment(
-    tmp_path: Path,
-    monkeypatch,
-    *,
-    output_level: str | None = None,
-) -> pipeline_module.AlignmentRunOutputs:
-    batch_index = _write_batch(tmp_path, ("Sample_A",))
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
-    _patch_owner_pipeline_to_matrix(monkeypatch)
-    kwargs = {}
-    if output_level is not None:
-        kwargs["output_level"] = output_level
-    return pipeline_module.run_alignment(
-        discovery_batch_index=batch_index,
-        raw_dir=raw_dir,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(),
-        raw_opener=FakeRawOpener(),
-        **kwargs,
     )

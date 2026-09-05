@@ -8,23 +8,19 @@ operation. The immutable workflow result exists only after cell decision and
 projection completion. Alignment does not use a mutable Matrix as its internal
 transport contract or let writers recompute science.
 
-## Current Problem
+## Execution Boundary
 
-The current `alignment/` tree is functional but shallow at its public seam and
-overloaded internally. `pipeline.py` builds an owner Matrix early, then passes
-that mutable shape through claim registration, consolidation, Backfill,
-production decisions, and output assembly. Group identity, provisional/primary
-inclusion, cell state, Backfill policy, diagnostics, and writer concerns are
-spread across many peer files. Targeted meanwhile owns a partially separate
-cross-sample/rescue path. The result is high coupling, duplicated scientific
-meaning, and a large change surface even when only one decision owner should
-move.
+Targeted and Untargeted CID-NL close through the shared scientific workflow.
+`alignment.pipeline.run_alignment` adapts pure CID-NL inputs to that workflow
+and renders its finalized result. It requires explicit pure CID-NL discovery
+settings; the Alignment CLI supplies them through a bound preset. Unsupported
+discovery settings are rejected before acquisition or output creation.
 
-This is a responsibility/locality problem, not evidence that Targeted and
-Untargeted need different capture algorithms. The frozen direction is to deepen
-the current owners and replace the mixed Matrix pipeline in dependency order.
-Current public output and science remain parity constraints until a separate
-promotion explicitly changes them.
+Matrix and provisional review artifacts are projections of the finalized
+owner result. They do not run a separate Matrix-based scientific lifecycle.
+Delta Mass / Pt pattern retains its Discovery candidate, evidence, and review
+outputs under the Discovery contract; preserving that capability does not
+authorize a separate downstream decision pipeline.
 
 ## Frozen Owner Contract
 
