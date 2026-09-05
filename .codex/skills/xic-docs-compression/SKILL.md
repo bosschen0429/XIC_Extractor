@@ -15,8 +15,7 @@ policy. This skill orders the work without redefining those contracts.
 Run the existing read-only audit before inferring semantic value:
 
 ```powershell
-$env:UV_CACHE_DIR='.uv-cache'
-uv run python tools/diagnostics/docs_management_audit.py --repo-only --json
+.venv\Scripts\python.exe tools/diagnostics/docs_management_audit.py --repo-only --json
 ```
 
 When a reusable review packet helps, add task-specific ignored routing and
@@ -36,7 +35,7 @@ supersession lesson. Compare completed transient docs with that owner and record
 the absorption result defined by the Obsidian handoff contract.
 
 When prior project knowledge could change the classification, use
-`$codex-memory` and the configured Research Vault `_meta/routing.md` contract;
+`$agent-memory` and the configured Research Vault `_meta/routing.md` contract;
 if unavailable, skip this optional branch. Treat private memory as a search
 clue: revalidate any public-action claim with repo-visible evidence and place a
 stable claim in its canonical repo owner before acting on it. Record the
