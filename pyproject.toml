@@ -46,7 +46,7 @@ include = ["gui*", "scripts*", "tools*", "xic_extractor*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"xic_extractor.alignment" = ["data/issue256_quantitative_projection_authority_v1.json"]
+"xic_extractor.alignment" = ["data/quantitative_projection_authority_v1.json"]
 "xic_extractor.presets.data" = ["*.toml"]
 
 [tool.pytest.ini_options]

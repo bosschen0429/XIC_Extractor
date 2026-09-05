@@ -1,7 +1,7 @@
 """End-to-end normal-peak PeakHypothesis backfill activation.
 
 The module keeps matrix mutation owned by product_activation. It only
-orchestrates the existing normal-peak decision, 85RAW transfer, activation
+orchestrates the existing normal-peak decision, FULL COHORT transfer, activation
 bridge, matrix-only application, and post-application acceptance gates.
 """
 
@@ -19,10 +19,10 @@ from xic_extractor.alignment.shared_peak_identity_explanation import (
     product_activation,
 )
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_85raw_activation_transfer,
-    backfill_peakhypothesis_85raw_activation_trial,
     backfill_peakhypothesis_activation_acceptance,
     backfill_peakhypothesis_activation_bridge,
+    backfill_peakhypothesis_activation_transfer,
+    backfill_peakhypothesis_activation_trial,
     backfill_peakhypothesis_normal_peak_decision,
 )
 from xic_extractor.diagnostics.diagnostic_io import (
@@ -82,21 +82,21 @@ def run_normal_peak_activation(
     alignment_matrix_identity_tsv: Path,
     alignment_review_tsv: Path,
     promotion_cells_tsv: Path | None = None,
-    raw85_slice_gate_tsv: Path | None = None,
-    raw85_manual_verdict_tsv: Path | None = None,
+    full_cohort_acceptance_gate_tsv: Path | None = None,
+    full_cohort_manual_verdict_tsv: Path | None = None,
     machine_shape_evidence_tsv: Path | None = None,
     normal_peak_decisions_tsv: Path | None = None,
     activation_trial_tsv: Path | None = None,
-    current_85raw_artifact_dir: Path | None = None,
+    current_full_cohort_artifact_dir: Path | None = None,
     source_run_id: str = "",
-    validation_scope: str = "85raw_current_writer_matrix_diff",
+    validation_scope: str = "full_cohort_current_writer_matrix_diff",
 ) -> NormalPeakActivationOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     decision_rows, decision_path, decision_source = _normal_peak_decisions(
         output_dir=output_dir,
         promotion_cells_tsv=promotion_cells_tsv,
-        raw85_slice_gate_tsv=raw85_slice_gate_tsv,
-        raw85_manual_verdict_tsv=raw85_manual_verdict_tsv,
+        full_cohort_acceptance_gate_tsv=full_cohort_acceptance_gate_tsv,
+        full_cohort_manual_verdict_tsv=full_cohort_manual_verdict_tsv,
         machine_shape_evidence_tsv=machine_shape_evidence_tsv,
         normal_peak_decisions_tsv=normal_peak_decisions_tsv,
         source_run_id=source_run_id,
@@ -133,9 +133,9 @@ def run_normal_peak_activation(
     trial_path = _activation_trial_path(
         output_dir=output_dir,
         activation_trial_tsv=activation_trial_tsv,
-        current_85raw_artifact_dir=current_85raw_artifact_dir,
+        current_full_cohort_artifact_dir=current_full_cohort_artifact_dir,
         normal_peak_decision_rows=decision_rows,
-        raw85_manual_verdict_tsv=raw85_manual_verdict_tsv,
+        full_cohort_manual_verdict_tsv=full_cohort_manual_verdict_tsv,
         source_run_id=source_run_id,
     )
     transfer_outputs, transfer_summary = _activation_transfer(
@@ -159,7 +159,7 @@ def run_normal_peak_activation(
             normal_peak_decisions_tsv=decision_path,
             activation_transfer_tsv=transfer_outputs.transfer_tsv,
             transfer_summary=transfer_summary,
-            next_action="review_85raw_activation_transfer_blockers",
+            next_action="review_full_cohort_activation_transfer_blockers",
         )
         return _write_outputs(output_dir, summary)
 
@@ -175,11 +175,9 @@ def run_normal_peak_activation(
     hard_bridge_reasons = _split_semicolon(
         text_value(bridge_summary.get("hard_fail_reasons")),
     )
-    if (
-        hard_bridge_reasons
-        and hard_bridge_reasons
-        != ["activation_acceptance_requires_matrix_diff_validation"]
-    ):
+    if hard_bridge_reasons and hard_bridge_reasons != [
+        "activation_acceptance_requires_matrix_diff_validation"
+    ]:
         summary = _summary_row(
             source_run_id=source_run_id,
             validation_scope=validation_scope,
@@ -258,12 +256,12 @@ def run_normal_peak_activation(
             validation_scope=validation_scope,
         )
     )
-    acceptance_outputs = (
-        backfill_peakhypothesis_activation_acceptance
-        .write_activation_acceptance_outputs(
-            output_dir / "activation_acceptance",
-            acceptance_index,
-        )
+    write_acceptance = (
+        backfill_peakhypothesis_activation_acceptance.write_activation_acceptance_outputs
+    )
+    acceptance_outputs = write_acceptance(
+        output_dir / "activation_acceptance",
+        acceptance_index,
     )
     acceptance_status = acceptance_index.acceptance_row["acceptance_status"]
     hard_fail_reasons = _split_semicolon(
@@ -297,8 +295,8 @@ def _normal_peak_decisions(
     *,
     output_dir: Path,
     promotion_cells_tsv: Path | None,
-    raw85_slice_gate_tsv: Path | None,
-    raw85_manual_verdict_tsv: Path | None,
+    full_cohort_acceptance_gate_tsv: Path | None,
+    full_cohort_manual_verdict_tsv: Path | None,
     machine_shape_evidence_tsv: Path | None,
     normal_peak_decisions_tsv: Path | None,
     source_run_id: str,
@@ -316,7 +314,7 @@ def _normal_peak_decisions(
         label
         for label, path in (
             ("promotion_cells_tsv", promotion_cells_tsv),
-            ("raw85_slice_gate_tsv", raw85_slice_gate_tsv),
+            ("full_cohort_acceptance_gate_tsv", full_cohort_acceptance_gate_tsv),
             ("machine_shape_evidence_tsv", machine_shape_evidence_tsv),
         )
         if path is None
@@ -326,47 +324,44 @@ def _normal_peak_decisions(
             "normal peak decision generation missing inputs: " + ", ".join(missing),
         )
     assert promotion_cells_tsv is not None
-    assert raw85_slice_gate_tsv is not None
+    assert full_cohort_acceptance_gate_tsv is not None
     assert machine_shape_evidence_tsv is not None
-    index = (
-        backfill_peakhypothesis_normal_peak_decision
-        .build_normal_peak_decision_index(
-            promotion_rows=read_tsv_required(
-                promotion_cells_tsv,
-                backfill_peakhypothesis_normal_peak_decision
-                .PROMOTION_REQUIRED_COLUMNS,
-            ),
-            raw85_slice_gate_rows=read_tsv_required(
-                raw85_slice_gate_tsv,
-                backfill_peakhypothesis_normal_peak_decision
-                .RAW85_SLICE_REQUIRED_COLUMNS,
-            ),
-            manual_verdict_rows=read_tsv_required(
-                raw85_manual_verdict_tsv,
-                backfill_peakhypothesis_normal_peak_decision
-                .MANUAL_VERDICT_REQUIRED_COLUMNS,
-            )
-            if raw85_manual_verdict_tsv is not None
-            else (),
-            machine_shape_rows=read_tsv_required(
-                machine_shape_evidence_tsv,
-                backfill_peakhypothesis_normal_peak_decision
-                .MACHINE_SHAPE_REQUIRED_COLUMNS,
-            ),
-            source_run_id=source_run_id,
+    build_decision_index = (
+        backfill_peakhypothesis_normal_peak_decision.build_normal_peak_decision_index
+    )
+    index = build_decision_index(
+        promotion_rows=read_tsv_required(
+            promotion_cells_tsv,
+            backfill_peakhypothesis_normal_peak_decision.PROMOTION_REQUIRED_COLUMNS,
+        ),
+        full_cohort_acceptance_gate_rows=read_tsv_required(
+            full_cohort_acceptance_gate_tsv,
+            backfill_peakhypothesis_normal_peak_decision.FULL_COHORT_SLICE_REQUIRED_COLUMNS,
+        ),
+        manual_verdict_rows=read_tsv_required(
+            full_cohort_manual_verdict_tsv,
+            backfill_peakhypothesis_normal_peak_decision.MANUAL_VERDICT_REQUIRED_COLUMNS,
         )
+        if full_cohort_manual_verdict_tsv is not None
+        else (),
+        machine_shape_rows=read_tsv_required(
+            machine_shape_evidence_tsv,
+            backfill_peakhypothesis_normal_peak_decision.MACHINE_SHAPE_REQUIRED_COLUMNS,
+        ),
+        source_run_id=source_run_id,
     )
     outputs = (
-        backfill_peakhypothesis_normal_peak_decision
-        .write_normal_peak_decision_outputs(output_dir / "normal_peak_decision", index)
+        backfill_peakhypothesis_normal_peak_decision.write_normal_peak_decision_outputs(
+            output_dir / "normal_peak_decision", index
+        )
     )
     return (
         tuple(dict(row) for row in index.rows),
         outputs.decisions_tsv,
         (
-            "generated_from_promotion_raw85_manual_machine_evidence"
-            if raw85_manual_verdict_tsv is not None
-            else "generated_from_promotion_raw85_machine_evidence"
+            "generated_from_promotion_full_cohort_manual_machine_evidence"
+            if full_cohort_manual_verdict_tsv is not None
+            else "generated_from_promotion_full_cohort_machine_evidence"
         ),
     )
 
@@ -375,35 +370,32 @@ def _activation_trial_path(
     *,
     output_dir: Path,
     activation_trial_tsv: Path | None,
-    current_85raw_artifact_dir: Path | None,
+    current_full_cohort_artifact_dir: Path | None,
     normal_peak_decision_rows: Sequence[Mapping[str, Any]],
-    raw85_manual_verdict_tsv: Path | None,
+    full_cohort_manual_verdict_tsv: Path | None,
     source_run_id: str,
 ) -> Path:
     if activation_trial_tsv is not None:
         return activation_trial_tsv
-    if current_85raw_artifact_dir is None:
+    if current_full_cohort_artifact_dir is None:
         raise ValueError(
             "normal peak activation requires --activation-trial-tsv or "
-            "--current-85raw-artifact-dir",
+            "--current-full_cohort-artifact-dir",
         )
-    index = (
-        backfill_peakhypothesis_85raw_activation_trial
-        .build_activation_trial_index(
-            current_85raw_artifact_dir=current_85raw_artifact_dir,
-            normal_peak_decision_rows=normal_peak_decision_rows,
-            manual_verdict_rows=(
-                backfill_peakhypothesis_85raw_activation_trial
-                .read_manual_verdict_rows(raw85_manual_verdict_tsv)
-                if raw85_manual_verdict_tsv is not None
-                else ()
-            ),
-            source_run_id=source_run_id,
-        )
+    index = backfill_peakhypothesis_activation_trial.build_activation_trial_index(
+        current_full_cohort_artifact_dir=current_full_cohort_artifact_dir,
+        normal_peak_decision_rows=normal_peak_decision_rows,
+        manual_verdict_rows=(
+            backfill_peakhypothesis_activation_trial.read_manual_verdict_rows(
+                full_cohort_manual_verdict_tsv
+            )
+            if full_cohort_manual_verdict_tsv is not None
+            else ()
+        ),
+        source_run_id=source_run_id,
     )
-    outputs = (
-        backfill_peakhypothesis_85raw_activation_trial
-        .write_activation_trial_outputs(output_dir / "activation_trial", index)
+    outputs = backfill_peakhypothesis_activation_trial.write_activation_trial_outputs(
+        output_dir / "activation_trial", index
     )
     return outputs.trial_tsv
 
@@ -416,30 +408,29 @@ def _activation_transfer(
     activation_trial_tsv: Path,
     source_run_id: str,
 ) -> tuple[
-    backfill_peakhypothesis_85raw_activation_transfer.ActivationTransferOutputs,
+    backfill_peakhypothesis_activation_transfer.ActivationTransferOutputs,
     dict[str, Any],
 ]:
     source_artifact_sha256 = (
-        backfill_peakhypothesis_85raw_activation_transfer.input_bundle_sha256(
+        backfill_peakhypothesis_activation_transfer.input_bundle_sha256(
             normal_peak_decisions_tsv,
             activation_trial_tsv,
         )
     )
-    index = (
-        backfill_peakhypothesis_85raw_activation_transfer
-        .build_activation_transfer_index(
-            normal_peak_decision_rows=required_decisions,
-            activation_trial_rows=(
-                backfill_peakhypothesis_85raw_activation_transfer
-                .read_activation_trial_rows(activation_trial_tsv)
-            ),
-            source_artifact_sha256=source_artifact_sha256,
-            source_run_id=source_run_id,
-        )
+    index = backfill_peakhypothesis_activation_transfer.build_activation_transfer_index(
+        normal_peak_decision_rows=required_decisions,
+        activation_trial_rows=(
+            backfill_peakhypothesis_activation_transfer.read_activation_trial_rows(
+                activation_trial_tsv
+            )
+        ),
+        source_artifact_sha256=source_artifact_sha256,
+        source_run_id=source_run_id,
     )
     outputs = (
-        backfill_peakhypothesis_85raw_activation_transfer
-        .write_activation_transfer_outputs(output_dir / "activation_transfer", index)
+        backfill_peakhypothesis_activation_transfer.write_activation_transfer_outputs(
+            output_dir / "activation_transfer", index
+        )
     )
     return outputs, index.summary
 
@@ -462,11 +453,9 @@ def _activation_bridge(
         matrix_identity_rows=_read_tsv_any(alignment_matrix_identity_tsv),
         source_run_id=source_run_id,
     )
-    outputs = (
-        backfill_peakhypothesis_activation_bridge.write_activation_bridge_outputs(
-            output_dir / "activation_bridge",
-            index,
-        )
+    outputs = backfill_peakhypothesis_activation_bridge.write_activation_bridge_outputs(
+        output_dir / "activation_bridge",
+        index,
     )
     # Keep the argument visible in the signature; it documents the provenance
     # TSV used as activation_values.tsv by matrix-only application.

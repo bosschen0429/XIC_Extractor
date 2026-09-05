@@ -11,18 +11,18 @@ from scripts.check_production_acceptance_manifest import (
     check_production_acceptance_manifest,
     production_acceptance_manifest_sha256,
 )
-from tests.issue161_no_raw_fixture import (
-    issue161_evidence,
-    issue161_peak,
-    issue161_support_policy,
-    issue161_unique_support,
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_peak,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
 )
-from tests.issue175_no_raw_fixture import (
+from tests.untargeted_cid_nl_no_raw_fixture import (
     NEUTRAL_LOSS_DA,
     PRECURSOR_MZ,
     PRODUCT_MZ,
-    Issue175NoRawFixture,
-    build_issue175_no_raw_fixture,
+    UntargetedCidNlNoRawFixture,
+    build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlAssessmentInput,
@@ -73,7 +73,9 @@ SOURCE_RELPATH = "validation/untargeted_cid_nl_golden_path_source.json"
 def test_no_raw_golden_path_preserves_evidence_and_terminal_matrix_contract(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
 
     projection = build_untargeted_cid_nl_golden_path(
@@ -173,7 +175,9 @@ def test_no_raw_golden_path_preserves_evidence_and_terminal_matrix_contract(
 def test_golden_path_source_is_invariant_to_per_sample_projection_order(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
     multi_projection = _multi_projection_support_input(fixture, "StudySupport")
     reordered = replace(
@@ -181,9 +185,7 @@ def test_golden_path_source_is_invariant_to_per_sample_projection_order(
         discovery_projections=tuple(reversed(multi_projection.discovery_projections)),
     )
     canonical_inputs = tuple(
-        multi_projection
-        if item.sample.metadata.raw_stem == "StudySupport"
-        else item
+        multi_projection if item.sample.metadata.raw_stem == "StudySupport" else item
         for item in sample_inputs
     )
     reordered_inputs = tuple(
@@ -214,7 +216,9 @@ def test_golden_path_source_is_invariant_to_per_sample_projection_order(
 def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
     support_input = next(
         item
@@ -240,9 +244,7 @@ def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
     manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
     rewritten_without_sha = ({**checked_rows[0], "quant_value": "999"},)
     rewritten_sha = production_acceptance_manifest_sha256(rewritten_without_sha)
-    rewritten = (
-        {**rewritten_without_sha[0], "manifest_sha256": rewritten_sha},
-    )
+    rewritten = ({**rewritten_without_sha[0], "manifest_sha256": rewritten_sha},)
     _write_acceptance_manifest(manifest_path, rewritten)
     with pytest.raises(UntargetedCidNlGoldenPathError, match="rewrites"):
         build_untargeted_cid_nl_quant_matrix_version(
@@ -255,7 +257,9 @@ def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
 def test_terminal_rechecks_manifest_digest_and_source_artifact(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
@@ -266,9 +270,7 @@ def test_terminal_rechecks_manifest_digest_and_source_artifact(
     )
     manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
 
-    forged_digest_rows = (
-        {**checked_rows[0], "manifest_sha256": "F" * 64},
-    )
+    forged_digest_rows = ({**checked_rows[0], "manifest_sha256": "F" * 64},)
     _write_acceptance_manifest(manifest_path, forged_digest_rows)
     with pytest.raises(UntargetedCidNlGoldenPathError, match="manifest_sha256"):
         build_untargeted_cid_nl_quant_matrix_version(
@@ -289,7 +291,9 @@ def test_terminal_rechecks_manifest_digest_and_source_artifact(
 
 
 def test_projection_deep_freezes_every_matrix_authority_row(tmp_path: Path) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
@@ -313,7 +317,9 @@ def test_projection_deep_freezes_every_matrix_authority_row(tmp_path: Path) -> N
 def test_terminal_applies_complete_canonical_manifest_authority_rules(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
     forbidden_source = "validation/LOCKBOX_SHADOW_AUTOMATION/source.json"
     projection = build_untargeted_cid_nl_golden_path(
@@ -353,7 +359,9 @@ def test_terminal_applies_complete_canonical_manifest_authority_rules(
 def test_untargeted_method_subject_must_be_pinned_by_the_processing_request(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     crossed_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=PRECURSOR_MZ,
         precursor_tolerance_ppm=20.0,
@@ -378,7 +386,9 @@ def test_untargeted_method_subject_binding_rejects_json_boolean_numeric_alias(
     tmp_path: Path,
     numeric_field: str,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=1.0,
         precursor_tolerance_ppm=1.0,
@@ -396,7 +406,7 @@ def test_untargeted_method_subject_binding_rejects_json_boolean_numeric_alias(
         processing_algorithm_version=original_request.processing_algorithm_version,
         processing_contract_version=original_request.processing_contract_version,
         scientific_inputs={
-            "fixture": "issue175-no-raw",
+            "fixture": "untargeted-cid-nl-no-raw",
             "cid_nl_method_subject": request_payload,
         },
     )
@@ -412,7 +422,7 @@ def test_untargeted_method_subject_binding_rejects_json_boolean_numeric_alias(
 
 
 def _golden_inputs(
-    fixture: Issue175NoRawFixture,
+    fixture: UntargetedCidNlNoRawFixture,
 ) -> tuple[
     tuple[UntargetedCidNlAssessmentInput, ...],
     UntargetedCidNlRecoveryInput,
@@ -421,21 +431,21 @@ def _golden_inputs(
     qc = _support_input(fixture, "QCSupport", scan_number=42, height=200.0)
     missing = _assessment_input(fixture, "Missing", scanned_event_count=0)
 
-    split_left = issue161_peak(
+    split_left = cid_nl_peak(
         fixture,
         "Split",
         apex_rt=7.9,
         rt_left_min=7.8,
         rt_right_min=8.0,
     )
-    split_right = issue161_peak(
+    split_right = cid_nl_peak(
         fixture,
         "Split",
         apex_rt=8.1,
         rt_left_min=8.0,
         rt_right_min=8.2,
     )
-    split_evidence = issue161_evidence(
+    split_evidence = cid_nl_evidence(
         fixture,
         "Split",
         scan_number=43,
@@ -446,7 +456,7 @@ def _golden_inputs(
         sample=fixture.sample("Split"),
         canonical_evidence=split_evidence,
         candidate_peaks=(split_left, split_right),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
     split_assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
@@ -464,7 +474,7 @@ def _golden_inputs(
         discovery_projections=(_projection(fixture, "Split", split_evidence),),
     )
 
-    reject_evidence = issue161_evidence(
+    reject_evidence = cid_nl_evidence(
         fixture,
         "Reject",
         scan_number=44,
@@ -487,7 +497,7 @@ def _golden_inputs(
     blank = _technical_input(fixture, "Blank")
     mix_std = _technical_input(fixture, "MixSTD")
 
-    recovery_peak = issue161_peak(fixture, "Missing", height=300.0)
+    recovery_peak = cid_nl_peak(fixture, "Missing", height=300.0)
     recovery_assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=fixture.sample("Missing"),
@@ -507,20 +517,20 @@ def _golden_inputs(
 
 
 def _support_input(
-    fixture: Issue175NoRawFixture,
+    fixture: UntargetedCidNlNoRawFixture,
     sample_stem: str,
     *,
     scan_number: int,
     height: float,
 ) -> UntargetedCidNlAssessmentInput:
-    peak = issue161_peak(fixture, sample_stem, height=height)
-    evidence = issue161_evidence(
+    peak = cid_nl_peak(fixture, sample_stem, height=height)
+    evidence = cid_nl_evidence(
         fixture,
         sample_stem,
         scan_number=scan_number,
         scan_rt_min=8.0,
     )
-    support = issue161_unique_support(
+    support = cid_nl_unique_support(
         fixture,
         sample_stem,
         peak=peak,
@@ -544,12 +554,12 @@ def _support_input(
 
 
 def _multi_projection_support_input(
-    fixture: Issue175NoRawFixture,
+    fixture: UntargetedCidNlNoRawFixture,
     sample_stem: str,
 ) -> UntargetedCidNlAssessmentInput:
-    peak = issue161_peak(fixture, sample_stem, height=100.0)
+    peak = cid_nl_peak(fixture, sample_stem, height=100.0)
     evidence_refs = tuple(
-        issue161_evidence(
+        cid_nl_evidence(
             fixture,
             sample_stem,
             scan_number=scan_number,
@@ -558,7 +568,7 @@ def _multi_projection_support_input(
         for scan_number in (141, 142)
     )
     support_refs = tuple(
-        issue161_unique_support(
+        cid_nl_unique_support(
             fixture,
             sample_stem,
             peak=peak,
@@ -580,14 +590,13 @@ def _multi_projection_support_input(
         sample=fixture.sample(sample_stem),
         assessment=assessment,
         discovery_projections=tuple(
-            _projection(fixture, sample_stem, evidence)
-            for evidence in evidence_refs
+            _projection(fixture, sample_stem, evidence) for evidence in evidence_refs
         ),
     )
 
 
 def _assessment_input(
-    fixture: Issue175NoRawFixture,
+    fixture: UntargetedCidNlNoRawFixture,
     sample_stem: str,
     *,
     scanned_event_count: int,
@@ -606,7 +615,7 @@ def _assessment_input(
 
 
 def _technical_input(
-    fixture: Issue175NoRawFixture,
+    fixture: UntargetedCidNlNoRawFixture,
     sample_stem: str,
 ) -> UntargetedCidNlAssessmentInput:
     assessment = mint_cid_nl_method_assessment_ref(
@@ -617,7 +626,7 @@ def _technical_input(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -635,7 +644,7 @@ def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
-        support_policy=issue161_support_policy(),
+        support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=True,
         scanned_event_count=scanned_event_count,
@@ -644,7 +653,7 @@ def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
 
 
 def _projection(
-    fixture: Issue175NoRawFixture,
+    fixture: UntargetedCidNlNoRawFixture,
     sample_stem: str,
     evidence,
 ) -> UntargetedCidNlProjectionRef:

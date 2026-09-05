@@ -9,16 +9,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from tests import mode_track_raw_validation_fixture as gate_c_fixture
+from tests import mode_track_raw_validation_fixture as closed_writer_fixture
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 
 EXPECTED_SAMPLE_COUNT = 85
-MODULE_NAME = "tests.mode_track_85raw_validation_runner"
+MODULE_NAME = "tests.mode_track_closed_writer_validation_runner"
 _CODE_SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 
 @dataclass(frozen=True)
-class GateCLaunchInputs:
+class ClosedWriterLaunchInputs:
     stage: str
     raw_files: tuple[Path, ...]
     sample_metadata: tuple[SampleMetadata, ...]
@@ -49,9 +49,9 @@ def build_launch_inputs(
     review_transfer_receipt_path: Path | None = None,
     checked_manifest_path: Path | None = None,
     final_output_dir: Path | None = None,
-) -> GateCLaunchInputs:
+) -> ClosedWriterLaunchInputs:
     if stage not in {"c1", "c2"}:
-        raise ValueError("Gate C stage must be c1 or c2")
+        raise ValueError("closed-writer stage must be c1 or c2")
     paths = tuple(
         path.resolve()
         for path in (
@@ -84,7 +84,7 @@ def build_launch_inputs(
             )
         ):
             raise ValueError(
-                "Gate C C2 requires proposal, review, transfer, "
+                "closed-writer finalization requires proposal, review, transfer, "
                 "manifest, and final paths"
             )
         assert proposal_dir is not None
@@ -118,7 +118,7 @@ def build_launch_inputs(
                 checked_manifest_path,
             )
         ):
-            raise ValueError("Gate C C2 frozen inputs do not exist")
+            raise ValueError("closed-writer finalization inputs do not exist")
         if final_output_dir.exists():
             raise ValueError(
                 f"final output directory already exists: {final_output_dir}"
@@ -130,32 +130,34 @@ def build_launch_inputs(
         try:
             target.relative_to(manifest_root)
         except ValueError as exc:
-            raise ValueError("Gate C outputs must stay below manifest root") from exc
+            raise ValueError(
+                "closed-writer outputs must stay below manifest root"
+            ) from exc
     if c2_paths is not None:
         for source in c2_paths[:-1]:
             try:
                 source.relative_to(manifest_root)
             except ValueError as exc:
                 raise ValueError(
-                    "Gate C C2 inputs must stay below manifest root"
+                    "closed-writer finalization inputs must stay below manifest root"
                 ) from exc
     executable = _current_executable()
     expected_executable = (manifest_root / ".venv" / "Scripts" / "python.exe").resolve()
     if executable != expected_executable or not expected_executable.is_file():
-        raise ValueError("Gate C must run from the worktree .venv Python")
+        raise ValueError("closed-writer must run from the worktree .venv Python")
     if _checkout_sha(manifest_root) != code_sha:
-        raise ValueError("Gate C code SHA does not match the current checkout")
+        raise ValueError("closed-writer code SHA does not match the current checkout")
     if _worktree_status(manifest_root):
-        raise ValueError("Gate C requires a clean Git worktree")
+        raise ValueError("closed-writer requires a clean Git worktree")
 
     rows = tuple(row for row in load_sample_metadata(metadata_path) if not row.excluded)
     if len(rows) != EXPECTED_SAMPLE_COUNT:
-        raise ValueError("Gate C requires exactly 85 non-excluded metadata rows")
+        raise ValueError("closed-writer requires exactly 85 non-excluded metadata rows")
     orders = tuple(row.injection_order for row in rows)
     if set(orders) != set(range(1, EXPECTED_SAMPLE_COUNT + 1)):
-        raise ValueError("Gate C injection orders must close exactly over 1..85")
+        raise ValueError("closed-writer injection orders must close exactly over 1..85")
     if any(not row.raw_stem for row in rows):
-        raise ValueError("Gate C metadata requires every RAW stem")
+        raise ValueError("closed-writer metadata requires every RAW stem")
 
     raw_paths = tuple(
         sorted(
@@ -170,7 +172,7 @@ def build_launch_inputs(
     raw_by_stem = {path.stem: path for path in raw_paths}
     metadata_stems = {row.raw_stem for row in rows}
     if len(raw_by_stem) != EXPECTED_SAMPLE_COUNT or set(raw_by_stem) != metadata_stems:
-        raise ValueError("Gate C metadata and RAW stem universes differ")
+        raise ValueError("closed-writer metadata and RAW stem universes differ")
     ordered_rows = tuple(sorted(rows, key=lambda row: row.injection_order or 0))
     ordered_raws = tuple(raw_by_stem[row.raw_stem] for row in ordered_rows)
     metadata_sha256 = _sha256(metadata_path)
@@ -231,7 +233,7 @@ def build_launch_inputs(
         proposal_path = proposal_dir / "proposal.json"
         proposal_receipt_path = proposal_dir / "proposal_receipt.json"
         if not proposal_path.is_file() or not proposal_receipt_path.is_file():
-            raise ValueError("Gate C C2 proposal packet is incomplete")
+            raise ValueError("closed-writer finalization proposal packet is incomplete")
         c2_inputs = {
             "proposal_dir": str(proposal_dir),
             "proposal_sha256": _sha256(proposal_path),
@@ -271,9 +273,9 @@ def build_launch_inputs(
             "transaction_receipt": str(final_output_dir / "transaction_receipt.json"),
         }
     manifest: dict[str, object] = {
-        "schema_version": "mode_track_85raw_validation_gate_c_launch_manifest_v2",
+        "schema_version": "mode_track_closed_writer_launch_manifest_v2",
         "stage": stage,
-        "launch_contract": gate_c_fixture.gate_c_launch_contract(),
+        "launch_contract": closed_writer_fixture.closed_writer_launch_contract(),
         "code_sha": code_sha,
         "execution": {
             "executable": str(executable),
@@ -296,7 +298,7 @@ def build_launch_inputs(
         "c2_inputs": c2_inputs,
         "receipt_targets": receipt_targets,
     }
-    return GateCLaunchInputs(
+    return ClosedWriterLaunchInputs(
         stage=stage,
         raw_files=ordered_raws,
         sample_metadata=ordered_rows,
@@ -322,7 +324,7 @@ def freeze_preflight(path: Path, payload: dict[str, object]) -> Path:
 
 def run_frozen_launch(
     *,
-    inputs: GateCLaunchInputs,
+    inputs: ClosedWriterLaunchInputs,
     launch_manifest_path: Path,
     dll_dir: Path,
     manifest_root: Path,
@@ -331,9 +333,9 @@ def run_frozen_launch(
 ) -> Path:
     frozen = json.loads(launch_manifest_path.read_text(encoding="utf-8"))
     if frozen != inputs.launch_manifest:
-        raise ValueError("Gate C launch inputs changed after no-RAW preflight")
+        raise ValueError("closed-writer launch inputs changed after no-RAW preflight")
     if inputs.output_dir != output_dir.resolve():
-        raise ValueError("Gate C output changed after no-RAW preflight")
+        raise ValueError("closed-writer output changed after no-RAW preflight")
     execution = frozen.get("execution")
     if not isinstance(execution, dict) or (
         execution.get("executable") != str(_current_executable())
@@ -341,11 +343,11 @@ def run_frozen_launch(
         or _checkout_sha(manifest_root.resolve()) != code_sha
         or bool(_worktree_status(manifest_root.resolve()))
     ):
-        raise ValueError("Gate C execution identity changed after preflight")
+        raise ValueError("closed-writer execution identity changed after preflight")
     if inputs.stage == "c2":
         _validate_frozen_c2_inputs(inputs, frozen)
     if inputs.stage == "c1":
-        receipt = gate_c_fixture.run_gate_c(
+        receipt = closed_writer_fixture.run_closed_writer_proposal(
             raw_files=inputs.raw_files,
             sample_metadata=inputs.sample_metadata,
             dll_dir=dll_dir.resolve(),
@@ -368,14 +370,16 @@ def run_frozen_launch(
                 inputs.final_output_dir,
             )
         ):
-            raise RuntimeError("Gate C frozen C2 inputs are incomplete")
+            raise RuntimeError(
+                "closed-writer frozen finalization inputs are incomplete"
+            )
         assert inputs.proposal_dir is not None
         assert inputs.manual_review_path is not None
         assert inputs.manual_review_replay_path is not None
         assert inputs.review_transfer_receipt_path is not None
         assert inputs.checked_manifest_path is not None
         assert inputs.final_output_dir is not None
-        receipt = gate_c_fixture.run_gate_c_fresh_finalization(
+        receipt = closed_writer_fixture.run_closed_writer_finalization(
             raw_files=inputs.raw_files,
             sample_metadata=inputs.sample_metadata,
             dll_dir=dll_dir.resolve(),
@@ -394,22 +398,22 @@ def run_frozen_launch(
         terminal_label = "transaction"
     targets = frozen.get("receipt_targets")
     if not isinstance(targets, dict):
-        raise RuntimeError("Gate C frozen receipt targets are missing")
+        raise RuntimeError("closed-writer frozen receipt targets are missing")
     expected_receipt = Path(str(targets.get(terminal_target, ""))).resolve()
     if receipt.resolve() != expected_receipt or not expected_receipt.is_file():
         raise RuntimeError(
-            f"Gate C terminal {terminal_label} receipt is missing or misplaced"
+            f"closed-writer terminal {terminal_label} receipt is missing or misplaced"
         )
     return receipt
 
 
 def _validate_frozen_c2_inputs(
-    inputs: GateCLaunchInputs,
+    inputs: ClosedWriterLaunchInputs,
     frozen: dict[str, object],
 ) -> None:
     c2 = frozen.get("c2_inputs")
     if not isinstance(c2, dict) or inputs.proposal_dir is None:
-        raise ValueError("Gate C frozen C2 inputs are incomplete")
+        raise ValueError("closed-writer frozen finalization inputs are incomplete")
     file_bindings = (
         (inputs.proposal_dir / "proposal.json", "proposal_sha256"),
         (
@@ -418,7 +422,9 @@ def _validate_frozen_c2_inputs(
         ),
     )
     if any(_sha256(path) != c2.get(key) for path, key in file_bindings):
-        raise ValueError("Gate C C2 proposal changed after no-RAW preflight")
+        raise ValueError(
+            "closed-writer finalization proposal changed after no-RAW preflight"
+        )
     for name, path in (
         ("manual_review", inputs.manual_review_path),
         ("manual_review_replay", inputs.manual_review_replay_path),
@@ -432,7 +438,10 @@ def _validate_frozen_c2_inputs(
             or binding.get("path") != str(path)
             or binding.get("sha256") != _sha256(path)
         ):
-            raise ValueError("Gate C C2 reviewed input changed after no-RAW preflight")
+            raise ValueError(
+                "closed-writer finalization reviewed input changed after "
+                "no-RAW preflight"
+            )
 
 
 def _sha256(path: Path) -> str:

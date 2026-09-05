@@ -6,25 +6,25 @@ import json
 from pathlib import Path
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_85raw_activation_transfer as transfer,
+    backfill_peakhypothesis_activation_transfer as transfer,
 )
 from xic_extractor.diagnostics import backfill_peakhypothesis_promotion
 
 
-def test_transfer_emits_raw85_peak_hypothesis_keyed_promotion_row() -> None:
+def test_transfer_emits_full_cohort_peak_hypothesis_keyed_promotion_row() -> None:
     index = transfer.build_activation_transfer_index(
         normal_peak_decision_rows=[
             _normal_decision(
                 "SRC001",
                 "QC1",
-                "RAW85_LOSER",
+                "FULL_COHORT_LOSER",
                 area="42",
                 quantitation_area="84",
                 quantitation_area_source_field="gaussian15_lobe_area",
             ),
         ],
         activation_trial_rows=[
-            _trial_row("SRC001", "QC1", "RAW85_LOSER"),
+            _trial_row("SRC001", "QC1", "FULL_COHORT_LOSER"),
         ],
         source_artifact_sha256="c" * 64,
         source_run_id="transfer-test",
@@ -37,8 +37,8 @@ def test_transfer_emits_raw85_peak_hypothesis_keyed_promotion_row() -> None:
     )
     row = index.promotion_rows[0]
     assert row["schema_version"] == backfill_peakhypothesis_promotion.SCHEMA_VERSION
-    assert row["peak_hypothesis_id"] == "RAW85_LOSER"
-    assert row["feature_family_id"] == "RAW85_LOSER"
+    assert row["peak_hypothesis_id"] == "FULL_COHORT_LOSER"
+    assert row["feature_family_id"] == "FULL_COHORT_LOSER"
     assert row["sample_stem"] == "QC1"
     assert row["projected_matrix_value"] == "84"
     assert row["current_matrix_written"] == "FALSE"
@@ -50,7 +50,7 @@ def test_transfer_emits_raw85_peak_hypothesis_keyed_promotion_row() -> None:
 
     transfer_row = index.transfer_rows[0]
     assert transfer_row["source_peak_hypothesis_id"] == "SRC001"
-    assert transfer_row["activation_peak_hypothesis_id"] == "RAW85_LOSER"
+    assert transfer_row["activation_peak_hypothesis_id"] == "FULL_COHORT_LOSER"
     assert transfer_row["source_id_authority"] == "audit_only_not_activation_key"
     assert transfer_row["transfer_action"] == "emit_promotion_row"
 
@@ -58,13 +58,13 @@ def test_transfer_emits_raw85_peak_hypothesis_keyed_promotion_row() -> None:
 def test_transfer_fails_closed_on_trial_blocker() -> None:
     index = transfer.build_activation_transfer_index(
         normal_peak_decision_rows=[
-            _normal_decision("SRC001", "QC1", "RAW85_LOSER", area="42"),
+            _normal_decision("SRC001", "QC1", "FULL_COHORT_LOSER", area="42"),
         ],
         activation_trial_rows=[
             _trial_row(
                 "SRC001",
                 "QC1",
-                "RAW85_LOSER",
+                "FULL_COHORT_LOSER",
                 trial_action="blocked",
                 blockers="same_peak_conflict",
             ),
@@ -84,11 +84,11 @@ def test_cli_writes_transfer_outputs(tmp_path: Path) -> None:
     normal_tsv = tmp_path / "normal.tsv"
     trial_tsv = tmp_path / "trial.tsv"
     output_dir = tmp_path / "out"
-    _write_tsv(normal_tsv, [_normal_decision("SRC001", "QC1", "RAW85_LOSER")])
-    _write_tsv(trial_tsv, [_trial_row("SRC001", "QC1", "RAW85_LOSER")])
+    _write_tsv(normal_tsv, [_normal_decision("SRC001", "QC1", "FULL_COHORT_LOSER")])
+    _write_tsv(trial_tsv, [_trial_row("SRC001", "QC1", "FULL_COHORT_LOSER")])
 
     from tools.diagnostics import (
-        backfill_peakhypothesis_85raw_activation_transfer as cli,
+        backfill_peakhypothesis_activation_transfer as cli,
     )
 
     assert (
@@ -109,32 +109,32 @@ def test_cli_writes_transfer_outputs(tmp_path: Path) -> None:
 
     promotion_tsv = (
         output_dir
-        / "backfill_peakhypothesis_85raw_transfer_promotion_cells.tsv"
+        / "backfill_peakhypothesis_full_cohort_transfer_promotion_cells.tsv"
     )
     summary_json = (
-        output_dir / "backfill_peakhypothesis_85raw_activation_transfer_summary.json"
+        output_dir / "backfill_peakhypothesis_activation_transfer_summary.json"
     )
     assert promotion_tsv.is_file()
     assert (
-        output_dir / "backfill_peakhypothesis_85raw_activation_transfer.tsv"
+        output_dir / "backfill_peakhypothesis_activation_transfer.tsv"
     ).is_file()
     summary = json.loads(summary_json.read_text(encoding="utf-8"))
     assert summary["source_run_id"] == "cli-transfer"
     assert summary["promotion_row_count"] == 1
     rows = _read_tsv(promotion_tsv)
-    assert rows[0]["peak_hypothesis_id"] == "RAW85_LOSER"
-    assert rows[0]["feature_family_id"] == "RAW85_LOSER"
+    assert rows[0]["peak_hypothesis_id"] == "FULL_COHORT_LOSER"
+    assert rows[0]["feature_family_id"] == "FULL_COHORT_LOSER"
 
 
 def test_cli_source_artifact_hash_tracks_input_tsv_content(tmp_path: Path) -> None:
     normal_tsv = tmp_path / "normal.tsv"
     trial_tsv = tmp_path / "trial.tsv"
     output_dir = tmp_path / "out"
-    _write_tsv(normal_tsv, [_normal_decision("SRC001", "QC1", "RAW85_LOSER")])
-    _write_tsv(trial_tsv, [_trial_row("SRC001", "QC1", "RAW85_LOSER")])
+    _write_tsv(normal_tsv, [_normal_decision("SRC001", "QC1", "FULL_COHORT_LOSER")])
+    _write_tsv(trial_tsv, [_trial_row("SRC001", "QC1", "FULL_COHORT_LOSER")])
 
     from tools.diagnostics import (
-        backfill_peakhypothesis_85raw_activation_transfer as cli,
+        backfill_peakhypothesis_activation_transfer as cli,
     )
 
     assert (
@@ -155,15 +155,15 @@ def test_cli_source_artifact_hash_tracks_input_tsv_content(tmp_path: Path) -> No
 
     expected_hash = _input_bundle_sha256(normal_tsv, trial_tsv)
     promotion_rows = _read_tsv(
-        output_dir / "backfill_peakhypothesis_85raw_transfer_promotion_cells.tsv",
+        output_dir / "backfill_peakhypothesis_full_cohort_transfer_promotion_cells.tsv",
     )
     transfer_rows = _read_tsv(
-        output_dir / "backfill_peakhypothesis_85raw_activation_transfer.tsv",
+        output_dir / "backfill_peakhypothesis_activation_transfer.tsv",
     )
     summary = json.loads(
         (
             output_dir
-            / "backfill_peakhypothesis_85raw_activation_transfer_summary.json"
+            / "backfill_peakhypothesis_activation_transfer_summary.json"
         ).read_text(encoding="utf-8"),
     )
     assert promotion_rows[0]["source_artifact_sha256"] == expected_hash
@@ -175,11 +175,11 @@ def test_cli_source_artifact_hash_tracks_input_tsv_content(tmp_path: Path) -> No
 def _normal_decision(
     source_peak_hypothesis_id: str,
     sample_stem: str,
-    raw85_peak_hypothesis_id: str,
+    full_cohort_peak_hypothesis_id: str,
     *,
     area: str = "42",
     quantitation_area: str | None = None,
-    quantitation_area_source_field: str = "raw85_primary_matrix_area",
+    quantitation_area_source_field: str = "full_cohort_primary_matrix_area",
     decision: str = "require_backfill",
     required: str = "TRUE",
     blockers: str = "",
@@ -196,10 +196,10 @@ def _normal_decision(
         "area_policy": "standard_assessable_area",
         "matrix_quantitative_use": "standard_quantitative_use",
         "promotion_decision": "promote_matrix_write",
-        "raw85_matched_peak_hypothesis_id": raw85_peak_hypothesis_id,
-        "raw85_cell_status": "rescued",
-        "raw85_primary_matrix_area": area,
-        "raw85_primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "full_cohort_matched_peak_hypothesis_id": full_cohort_peak_hypothesis_id,
+        "full_cohort_cell_status": "rescued",
+        "full_cohort_primary_matrix_area": area,
+        "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
         "normal_peak_quantitation_area": quantitation_area,
         "normal_peak_quantitation_area_source": "gaussian15_positive_asls_residual",
         "normal_peak_quantitation_area_source_field": (
@@ -216,8 +216,8 @@ def _normal_decision(
             if quantitation_area_source_field == "gaussian15_lobe_area"
             else ""
         ),
-        "raw85_include_in_primary_matrix": "FALSE",
-        "raw85_consolidation_state": "primary_loser",
+        "full_cohort_include_in_primary_matrix": "FALSE",
+        "full_cohort_consolidation_state": "primary_loser",
         "manual_same_peak_verdict": "same_peak_supported",
         "same_peak_verdict": "same_peak_supported",
         "same_peak_verdict_source": "manual_review",
@@ -238,20 +238,20 @@ def _normal_decision(
 def _trial_row(
     source_peak_hypothesis_id: str,
     sample_stem: str,
-    raw85_peak_hypothesis_id: str,
+    full_cohort_peak_hypothesis_id: str,
     *,
     trial_action: str = "would_write_normal_peak_override",
     blockers: str = "",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_85raw_activation_trial_v1",
+        "schema_version": "backfill_peakhypothesis_activation_trial_v1",
         "source_run_id": "test",
         "policy_id": "same_peak_normal_peak_override",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "sample_stem": sample_stem,
-        "raw85_matched_peak_hypothesis_id": raw85_peak_hypothesis_id,
-        "raw85_include_in_primary_matrix": "FALSE",
-        "raw85_consolidation_state": "primary_loser",
+        "full_cohort_matched_peak_hypothesis_id": full_cohort_peak_hypothesis_id,
+        "full_cohort_include_in_primary_matrix": "FALSE",
+        "full_cohort_consolidation_state": "primary_loser",
         "manual_same_peak_verdict": "same_peak_supported",
         "same_peak_verdict": "same_peak_supported",
         "same_peak_verdict_source": "manual_review",

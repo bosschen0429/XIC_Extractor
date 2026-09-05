@@ -12,7 +12,6 @@ import pytest
 
 import xic_extractor.alignment.projection.untarget.pre_cell as projection_owner
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.test_cell_observations import (
     _coverage_for_groups,
     _receipt_fixture,
@@ -24,6 +23,9 @@ from tests.test_cross_sample_association_lineage import (
 from tests.test_search_scope_capture import _capture_binding, _peak_config
 from tests.test_untargeted_cid_nl_golden_path import (
     _support_input,
+)
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -107,9 +109,7 @@ def _not_evaluated_assessment(fixture, sample):
         processing_owners=fixture.owners,
         sample=sample,
         method_subject=fixture.method_subject,
-        detector_invocation_id=(
-            f"gaussian15:{sample.lookup_token}:not-evaluated"
-        ),
+        detector_invocation_id=(f"gaussian15:{sample.lookup_token}:not-evaluated"),
         evaluation_receipt=receipt,
         technical_state="not_evaluated",
     )
@@ -127,7 +127,7 @@ def _untarget_projection_inputs(
     tmp_path.mkdir(parents=True, exist_ok=True)
     scope_path = tmp_path / "scope"
     scope_path.mkdir()
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         scope_path,
         sample_roles={"sample-b": "qc", "sample-c": "study_sample"},
     )
@@ -144,9 +144,7 @@ def _untarget_projection_inputs(
     spine = build_cid_nl_reference_spine(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
-        sample_assessments=tuple(
-            zip(fixture.samples, assessments, strict=True)
-        ),
+        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     predecessor = validate_cross_sample_peak_group_identity(
         spine.group,
@@ -331,8 +329,7 @@ def test_entry_projects_exact_rows_and_complete_group_sample_subjects(
         for sample in alignment.canonical_samples
     }
     assert all(
-        cell.member_subject is None
-        or cell.member_subject in cell.group.member_subjects
+        cell.member_subject is None or cell.member_subject in cell.group.member_subjects
         for cell in projection.cell_subjects
     )
 
@@ -411,7 +408,9 @@ def test_row_and_subject_contracts_reject_basis_and_crossed_sample(
     alignment = _finalized_alignment(tmp_path, monkeypatch)
     projection = project_untarget_pre_cell(alignment)
     row_key = projection.row_keys[0]
-    subject = projection.cell_subjects[0]
+    subject = next(
+        item for item in projection.cell_subjects if item.member_subject is not None
+    )
 
     with pytest.raises(UntargetProjectionContractError, match="basis"):
         replace(row_key, basis_bytes=b"{}")

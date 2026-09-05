@@ -261,7 +261,7 @@ def _check_rows(
             and packet_payload.get("missing_science_evidence") == []
             and packet_payload.get("validation_tiers")
             == {
-                "85raw_large_cohort": "pass",
+                "full_cohort": "pass",
                 "heldout_oracle": "pass",
                 "downstream_impact_smoke": "pass",
             },
@@ -412,7 +412,7 @@ def _write_summary(
         "read_only": True,
         "write_authority": False,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "default_matrix_files_written": False,
@@ -454,7 +454,7 @@ def _write_summary(
         "residual_risks": [
             "ProductWriter default activation still requires a separate "
             "explicit commit.",
-            "This product-ready closeout ran no scorer and no RAW/85RAW.",
+            "This product-ready closeout ran no scorer and no RAW/full_cohort.",
             "Broad Backfill remains parked.",
         ],
     }
@@ -491,7 +491,7 @@ def _append_expected_field_problems(
         ("read_only", True),
         ("write_authority", False),
         ("scorer_ran", False),
-        ("raw_or_85raw_ran", False),
+        ("raw_or_full_cohort_ran", False),
         ("product_writer_changed", False),
         ("default_quant_matrix_changed", False),
         ("default_matrix_files_written", False),

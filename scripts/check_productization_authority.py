@@ -51,7 +51,7 @@ DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_
 DEPENDENT_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
 DEPENDENT_HOLD_STATUS = "HOLD_PENDING_VALIDATION"
 DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
     "15b74bc79dc9501210acd5f761c86b4a7128db83e74a62bf3e97b7beb1572ed5"

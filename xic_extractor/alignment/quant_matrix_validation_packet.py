@@ -35,17 +35,17 @@ VALIDATION_EVIDENCE_ROW_COLUMNS = (
 )
 
 VALIDATION_EVIDENCE_ALLOWED_TIERS = (
-    "85raw_large_cohort",
+    "full_cohort",
     "large_cohort_validation",
     "heldout_oracle",
     "manual_review_oracle",
     "downstream_impact_smoke",
     "focused_tests",
-    "8raw_smoke",
+    "fixture_cohort_smoke",
 )
 
 REQUIRED_SCIENCE_EVIDENCE = {
-    "large_cohort_validation": ("85raw_large_cohort", "large_cohort_validation"),
+    "large_cohort_validation": ("full_cohort", "large_cohort_validation"),
     "heldout_oracle_or_manual_review": (
         "heldout_oracle",
         "manual_review_oracle",
@@ -54,7 +54,7 @@ REQUIRED_SCIENCE_EVIDENCE = {
 }
 
 TIER_REQUIRED_METADATA = {
-    "85raw_large_cohort": ("cohort_id", "raw_run_count"),
+    "full_cohort": ("cohort_id", "raw_run_count"),
     "large_cohort_validation": ("cohort_id",),
     "heldout_oracle": ("oracle_packet_id",),
     "manual_review_oracle": ("review_packet_id",),
@@ -307,10 +307,10 @@ def _validate_artifact_request(
         value = getattr(artifact, field)
         if value in ("", None):
             raise ValueError(f"{artifact.tier}: missing {field}")
-    if artifact.tier == "85raw_large_cohort" and (
+    if artifact.tier == "full_cohort" and (
         artifact.raw_run_count is None or artifact.raw_run_count < 85
     ):
-        raise ValueError("85raw_large_cohort requires raw_run_count >= 85")
+        raise ValueError("full_cohort requires raw_run_count >= 85")
 
 
 def _copy_artifact(source: Path, artifacts_dir: Path, tier: str) -> Path:

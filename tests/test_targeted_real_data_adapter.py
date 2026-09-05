@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.package2_no_raw_fixture import build_package2_targeted_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_targeted_processing_identity_raw_fixture,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
@@ -47,7 +49,7 @@ PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
 def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -93,7 +95,7 @@ def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
 def test_adapter_preserves_repeated_strict_scans_as_one_support_event(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -131,16 +133,17 @@ def test_adapter_preserves_repeated_strict_scans_as_one_support_event(
     assert support is not None
     assert support.content.strict_nl_scan_count == 2
     assert support.content.chromatographic_support_event_count == 1
-    assert tuple(
-        member.dda_scan_number for member in support.content.scan_supports
-    ) == candidates[0].seed_scan_ids
+    assert (
+        tuple(member.dda_scan_number for member in support.content.scan_supports)
+        == candidates[0].seed_scan_ids
+    )
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
 def test_adapter_reconstructs_each_union_tag_scan_from_its_own_provenance(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -181,16 +184,17 @@ def test_adapter_reconstructs_each_union_tag_scan_from_its_own_provenance(
     support = hypothesis.evidence.cid_nl_chromatographic_support_ref
     assert support is not None
     assert support.content.strict_nl_scan_count == 2
-    assert tuple(
-        member.dda_scan_number for member in support.content.scan_supports
-    ) == candidates[0].seed_scan_ids
+    assert (
+        tuple(member.dda_scan_number for member in support.content.scan_supports)
+        == candidates[0].seed_scan_ids
+    )
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
 def test_adapter_selects_one_seed_when_one_scan_matches_multiple_union_tags(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -245,16 +249,17 @@ def test_adapter_selects_one_seed_when_one_scan_matches_multiple_union_tags(
     support = hypothesis.evidence.cid_nl_chromatographic_support_ref
     assert support is not None
     assert support.content.strict_nl_scan_count == 2
-    assert tuple(
-        member.dda_scan_number for member in support.content.scan_supports
-    ) == candidate.seed_scan_ids
+    assert (
+        tuple(member.dda_scan_number for member in support.content.scan_supports)
+        == candidate.seed_scan_ids
+    )
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
 def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -314,7 +319,7 @@ def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
 
 
 def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -345,9 +350,9 @@ def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None
         raw=raw,
     )
 
-    integration = (
-        result.alignment_input.candidate_set.candidate_hypotheses[0].integration
-    )
+    integration = result.alignment_input.candidate_set.candidate_hypotheses[
+        0
+    ].integration
     assert result.acquisition is not None
     request = result.acquisition.traces[0].coordinate.request
     target_value = fixture.target.definition.target
@@ -366,7 +371,7 @@ def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None
 def test_adapter_preserves_multiple_owner_backed_candidates_as_ambiguous(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -412,7 +417,7 @@ def test_adapter_preserves_multiple_owner_backed_candidates_as_ambiguous(
 def test_adapter_acquires_every_disjoint_candidate_receipt_window(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -469,7 +474,7 @@ def test_adapter_builds_each_observation_from_its_candidate_window(
 ) -> None:
     from xic_extractor.peak_detection import capture as capture_owner
 
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -575,7 +580,7 @@ def test_adapter_builds_each_observation_from_its_candidate_window(
 def test_adapter_rejects_raw_handle_bound_to_another_acquisition_source(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1", "S2"),
         peak_config=_peak_config(tmp_path),
@@ -616,7 +621,7 @@ def test_adapter_rejects_raw_handle_bound_to_another_acquisition_source(
 def test_adapter_rejects_adapter_that_only_claims_the_expected_source(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -652,7 +657,7 @@ def test_adapter_rejects_adapter_that_only_claims_the_expected_source(
 
 
 def test_adapter_rejects_candidate_receipt_drift(tmp_path: Path) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -691,7 +696,7 @@ def test_adapter_rejects_candidate_receipt_drift(tmp_path: Path) -> None:
 
 
 def test_adapter_rejects_inferred_discovery_evidence(tmp_path: Path) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -730,7 +735,7 @@ def test_adapter_rejects_inferred_discovery_evidence(tmp_path: Path) -> None:
 
 
 def test_adapter_rejects_target_without_cid_nl_definition(tmp_path: Path) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -774,7 +779,7 @@ def test_adapter_rejects_target_without_cid_nl_definition(tmp_path: Path) -> Non
 
 
 def test_adapter_rejects_noncanonical_baseline_integration(tmp_path: Path) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -813,7 +818,7 @@ def test_adapter_rejects_noncanonical_baseline_integration(tmp_path: Path) -> No
 def test_adapter_seals_empty_target_universe_without_raw_acquisition(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),

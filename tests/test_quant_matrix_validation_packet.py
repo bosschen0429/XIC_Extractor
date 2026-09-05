@@ -52,7 +52,7 @@ def test_quant_matrix_validation_evidence_schema_matches_builder_contract() -> N
     }
     assert schema["authority_rules"]["write_authority"] is False
     assert schema["authority_rules"]["does_not_run_scorer"] is True
-    assert schema["authority_rules"]["does_not_read_raw_or_85raw"] is True
+    assert schema["authority_rules"]["does_not_read_raw_inputs"] is True
     assert schema["binding_rules"][
         "downstream_impact_smoke_must_validate_artifact_content"
     ]
@@ -69,7 +69,7 @@ def test_build_packet_copies_artifacts_and_records_source_hashes(
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=large,
                 cohort_id="synthetic_85raw",
@@ -98,7 +98,7 @@ def test_build_packet_copies_artifacts_and_records_source_hashes(
     )
 
     rows = evidence["evidence"]
-    assert [row["tier"] for row in rows] == ["85raw_large_cohort", "heldout_oracle"]
+    assert [row["tier"] for row in rows] == ["full_cohort", "heldout_oracle"]
     for row in rows:
         copied = outputs["validation_evidence_json"].parent / row["artifact_path"]
         source = Path(row["source_artifact_path"])
@@ -120,7 +120,7 @@ def test_packet_can_bind_repo_relative_source_artifacts(tmp_path: Path) -> None:
         source_root=tmp_path,
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=source.relative_to(tmp_path),
                 cohort_id="synthetic_85raw",
@@ -149,7 +149,7 @@ def test_packet_check_rejects_top_level_authority_drift(tmp_path: Path) -> None:
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=source,
                 cohort_id="synthetic_85raw",
@@ -182,7 +182,7 @@ def test_packet_check_rejects_copied_artifact_hash_drift(tmp_path: Path) -> None
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=source,
                 cohort_id="synthetic_85raw",
@@ -212,7 +212,7 @@ def test_packet_check_rejects_rows_tsv_drift(tmp_path: Path) -> None:
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=source,
                 cohort_id="synthetic_85raw",
@@ -222,7 +222,7 @@ def test_packet_check_rejects_rows_tsv_drift(tmp_path: Path) -> None:
     )
     rows_text = outputs["validation_evidence_rows_tsv"].read_text(encoding="utf-8")
     outputs["validation_evidence_rows_tsv"].write_text(
-        rows_text.replace("85raw_large_cohort", "large_cohort_validation", 1),
+        rows_text.replace("full_cohort", "large_cohort_validation", 1),
         encoding="utf-8",
     )
 
@@ -240,7 +240,7 @@ def test_packet_check_rejects_summary_hash_drift(tmp_path: Path) -> None:
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=source,
                 cohort_id="synthetic_85raw",
@@ -273,7 +273,7 @@ def test_packet_check_rejects_downstream_contract_fixture(tmp_path: Path) -> Non
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=large,
                 cohort_id="synthetic_85raw",
@@ -304,7 +304,7 @@ def test_packet_check_accepts_real_downstream_bundle(tmp_path: Path) -> None:
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=large,
                 cohort_id="synthetic_85raw",
@@ -357,7 +357,7 @@ def test_readiness_checker_is_inconclusive_when_downstream_evidence_missing(
         packet_id="test-packet",
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=large,
                 cohort_id="synthetic_85raw",
@@ -389,7 +389,7 @@ def test_readiness_checker_is_inconclusive_when_downstream_evidence_missing(
     assert summary["production_ready"] is False
     assert summary["may_promote_default_quant_matrix"] is False
     assert summary["validation_tiers"] == {
-        "85raw_large_cohort": "pass",
+        "full_cohort": "pass",
         "heldout_oracle": "pass",
     }
     assert summary["missing_science_evidence"] == ["downstream_impact_smoke"]

@@ -23,13 +23,13 @@
     "evidence_note"
   ],
   "allowed_tiers": [
-    "85raw_large_cohort",
+    "full_cohort",
     "large_cohort_validation",
     "heldout_oracle",
     "manual_review_oracle",
     "downstream_impact_smoke",
     "focused_tests",
-    "8raw_smoke"
+    "fixture_cohort_smoke"
   ],
   "allowed_status": [
     "pass",
@@ -37,7 +37,7 @@
   ],
   "required_science_evidence": {
     "large_cohort_validation": [
-      "85raw_large_cohort",
+      "full_cohort",
       "large_cohort_validation"
     ],
     "heldout_oracle_or_manual_review": [
@@ -49,7 +49,7 @@
     ]
   },
   "required_tier_metadata": {
-    "85raw_large_cohort": [
+    "full_cohort": [
       "cohort_id",
       "raw_run_count"
     ],
@@ -79,7 +79,7 @@
     "read_only": true,
     "write_authority": false,
     "does_not_run_scorer": true,
-    "does_not_read_raw_or_85raw": true,
+    "does_not_read_raw_inputs": true,
     "does_not_change_product_writer": true,
     "does_not_change_default_quant_matrix": true,
     "does_not_change_workbook_or_gui": true,

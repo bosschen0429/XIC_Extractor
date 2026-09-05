@@ -5,11 +5,11 @@ from pathlib import Path
 import numpy as np
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_raw85_overlay as overlay,
+    backfill_peakhypothesis_overlay as overlay,
 )
 
 
-def test_builds_and_renders_raw85_overlay_gallery(tmp_path: Path) -> None:
+def test_builds_and_renders_full_cohort_overlay_gallery(tmp_path: Path) -> None:
     requests = overlay.build_overlay_requests(
         review_queue_rows=[
             _review_queue_row(
@@ -23,7 +23,7 @@ def test_builds_and_renders_raw85_overlay_gallery(tmp_path: Path) -> None:
                 peak_end_rt="13.12",
             ),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _alignment_review_row("FAM_MATCH", mz="289.116", rt="13.0485"),
             _alignment_review_row("FAM_WIN", mz="289.115", rt="13.328"),
         ],
@@ -48,7 +48,7 @@ def test_builds_and_renders_raw85_overlay_gallery(tmp_path: Path) -> None:
     assert request.rt_min == 12.5
     assert request.rt_max == 13.828
 
-    outputs = overlay.write_raw85_overlay_outputs(
+    outputs = overlay.write_full_cohort_overlay_outputs(
         tmp_path,
         requests,
         trace_provider=_fake_trace_provider,
@@ -103,7 +103,7 @@ def test_machine_shape_uses_local_context_when_peak_bounds_are_too_narrow(
                 peak_end_rt="13.095",
             ),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _alignment_review_row("FAM_MATCH", mz="289.116", rt="13.0485"),
             _alignment_review_row("FAM_WIN", mz="289.115", rt="13.328"),
         ],
@@ -117,7 +117,7 @@ def test_machine_shape_uses_local_context_when_peak_bounds_are_too_narrow(
         ppm_tolerance=20.0,
     )
 
-    outputs = overlay.write_raw85_overlay_outputs(
+    outputs = overlay.write_full_cohort_overlay_outputs(
         tmp_path,
         requests,
         trace_provider=_fake_trace_provider,
@@ -150,7 +150,7 @@ def test_machine_shape_blocks_multiple_peaks_in_local_context(
                 peak_end_rt="13.48",
             ),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _alignment_review_row("FAM_MATCH", mz="289.116", rt="13.0485"),
             _alignment_review_row("FAM_WIN", mz="289.115", rt="13.328"),
         ],
@@ -164,7 +164,7 @@ def test_machine_shape_blocks_multiple_peaks_in_local_context(
         ppm_tolerance=20.0,
     )
 
-    outputs = overlay.write_raw85_overlay_outputs(
+    outputs = overlay.write_full_cohort_overlay_outputs(
         tmp_path,
         requests,
         trace_provider=_two_peak_trace_provider,
@@ -227,22 +227,22 @@ def _review_queue_row(
     peak_end_rt: str,
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_raw85_hypothesis_review_v1",
+        "schema_version": "backfill_peakhypothesis_hypothesis_review_v1",
         "review_item_id": review_item_id,
         "source_feature_family_id": "FAM_SRC",
         "source_peak_hypothesis_id": "FAM_SRC",
         "sample_stem": sample,
-        "raw85_anchor_mz": anchor_mz,
-        "raw85_anchor_rt": anchor_rt,
-        "raw85_matched_feature_family_id": matched_family,
-        "raw85_matched_peak_hypothesis_id": matched_family,
-        "raw85_consolidation_winner_group_hypothesis_id": winner_family,
-        "raw85_peak_start_rt": peak_start_rt,
-        "raw85_peak_end_rt": peak_end_rt,
-        "raw85_cell_status": "rescued",
-        "raw85_primary_matrix_area": "48462.2",
-        "raw85_include_in_primary_matrix": "FALSE",
-        "raw85_consolidation_state": "primary_loser",
+        "full_cohort_anchor_mz": anchor_mz,
+        "full_cohort_anchor_rt": anchor_rt,
+        "full_cohort_matched_feature_family_id": matched_family,
+        "full_cohort_matched_peak_hypothesis_id": matched_family,
+        "full_cohort_consolidation_winner_group_hypothesis_id": winner_family,
+        "full_cohort_peak_start_rt": peak_start_rt,
+        "full_cohort_peak_end_rt": peak_end_rt,
+        "full_cohort_cell_status": "rescued",
+        "full_cohort_primary_matrix_area": "48462.2",
+        "full_cohort_include_in_primary_matrix": "FALSE",
+        "full_cohort_consolidation_state": "primary_loser",
         "review_focus": "non_primary_candidate_needs_consolidation_policy",
     }
 

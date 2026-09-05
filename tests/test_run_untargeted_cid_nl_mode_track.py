@@ -8,7 +8,7 @@ import pytest
 
 from scripts import run_untargeted_cid_nl_mode_track as runner
 from tests.test_alignment_mode_track_conservative_backfill import (
-    _gate_c_proposal,
+    _closed_writer_proposal,
 )
 from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
     ModeTrackWorkflowRun,
@@ -42,7 +42,7 @@ def test_one_command_publishes_reviewed_mode_track_table(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
     output_dir = tmp_path / "operator-output"
@@ -102,7 +102,7 @@ def test_failed_stage_never_publishes_final_output(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
     output_dir = tmp_path / "failed-output"
@@ -206,7 +206,7 @@ def test_preflight_closes_inputs_without_running_raw(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
 
@@ -260,7 +260,7 @@ def test_preflight_preserves_multi_tag_error_class(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
     preset_path = tmp_path / "multi-tag.toml"
@@ -332,7 +332,7 @@ def test_preflight_rejects_invalid_thermo_runtime_before_running_raw(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
     monkeypatch.setattr(
@@ -384,7 +384,7 @@ def test_preflight_rejects_raw_stem_case_mismatch_before_running_raw(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
     metadata_text = metadata_path.read_text(encoding="utf-8")
@@ -436,7 +436,7 @@ def test_preflight_rejects_missing_injection_order_before_running_raw(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(
         tmp_path,
@@ -489,7 +489,7 @@ def test_preflight_rejects_empty_sample_identity_namespace_before_running_raw(
     capsys: pytest.CaptureFixture[str],
     namespace: str,
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
 
@@ -538,7 +538,7 @@ def test_preflight_rejects_review_hash_drift_before_running_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     replay_path = review_bundle / "manual_review_observation_replay_v1.json"
     replay_path.write_bytes(replay_path.read_bytes() + b"\n")
@@ -588,7 +588,7 @@ def test_preflight_rejects_wrong_reviewed_family_distribution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
 
@@ -723,7 +723,7 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                 "row_count": len(replay_rows),
                 "rows": replay_rows,
                 "schema_version": (
-                    "mode_track_85raw_validation_gate_c_observation_replay_v1"
+                    "mode_track_closed_writer_observation_replay_v1"
                 ),
                 "source_artifact_sha256": source_sha,
                 "validation_status": "diagnostic_only",
@@ -743,7 +743,7 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                 ).hexdigest(),
                 "rows": review_rows,
                 "schema_version": (
-                    "mode_track_85raw_validation_gate_c_manual_review_v1"
+                    "mode_track_closed_writer_manual_review_v1"
                 ),
             },
             indent=2,

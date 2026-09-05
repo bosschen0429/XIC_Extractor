@@ -266,16 +266,16 @@ def _manual_row(
 
 def _review_priority(reason: str) -> str:
     priorities = {
-        "hcd_no_ms2_trigger": "P1",
-        "hcd_no_product_match": "P1",
-        "hcd_hcd_partial": "P2",
-        "target_rt_window_mismatch": "P2",
-        "lek_rt_shift": "P2",
-        "mixstds_not_detected": "P2",
-        "hcd_group_unmapped": "P3",
-        "activation_unknown": "P3",
+        "hcd_no_ms2_trigger": "HIGH",
+        "hcd_no_product_match": "HIGH",
+        "hcd_hcd_partial": "MEDIUM",
+        "target_rt_window_mismatch": "MEDIUM",
+        "lek_rt_shift": "MEDIUM",
+        "mixstds_not_detected": "MEDIUM",
+        "hcd_group_unmapped": "LOW",
+        "activation_unknown": "LOW",
     }
-    return priorities.get(reason, "P3")
+    return priorities.get(reason, "LOW")
 
 
 def _review_item_label(reason: str, compound: str) -> str:

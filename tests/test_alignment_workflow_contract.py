@@ -11,7 +11,9 @@ from typing import get_args
 import pytest
 
 import xic_extractor.alignment.workflow as workflow_owner
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 from xic_extractor.alignment.workflow import (
     CancelledWorkflowResult,
     CaptureWorkflowArguments,
@@ -238,7 +240,9 @@ def test_workflow_rejects_capture_binding_subset_of_declared_candidates(
 def test_workflow_runtime_rejects_a_crossed_processing_attempt(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
     crossed_attempt = issue_processing_attempt(
         fixture.request,
         retry_of=fixture.attempt,

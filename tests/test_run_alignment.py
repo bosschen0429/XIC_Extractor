@@ -2630,7 +2630,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Effective owner-build route: <not executed>" in stdout
     assert "Effective route validation: not_executed" in stdout
     assert "owner_validated" not in stdout
-    assert "85RAW canonical contract: not requested" in stdout
+    assert "FULL COHORT canonical contract: not requested" in stdout
     assert "Python executable:" in stdout
     assert "run_alignment module:" in stdout
     assert "Working directory:" in stdout
@@ -2799,7 +2799,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
     assert "S1" in stderr
 
 
-def test_run_alignment_cli_rejects_noncanonical_85raw_contract(
+def test_run_alignment_cli_rejects_noncanonical_full_cohort_contract(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -2829,16 +2829,16 @@ def test_run_alignment_cli_rejects_noncanonical_85raw_contract(
 
     assert code == 2
     stderr = capsys.readouterr().err
-    assert "85RAW canonical launch contract failed" in stderr
+    assert "FULL COHORT canonical launch contract failed" in stderr
     assert "--output-level must be 'validation-minimal'" in stderr
     assert "--timing-live-output is required" in stderr
     assert (
         "--sample-info and --targeted-istd-workbook are required for canonical "
-        "85RAW runs"
+        "FULL COHORT runs"
     ) in stderr
 
 
-def test_run_alignment_cli_rejects_85raw_wrong_python_environment(
+def test_run_alignment_cli_rejects_full_cohort_wrong_python_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

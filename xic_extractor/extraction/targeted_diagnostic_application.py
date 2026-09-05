@@ -47,8 +47,8 @@ from xic_extractor.extraction.targeted_service import (
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
-_ALIGNMENT_WORK_UNIT_KEY = "package2:alignment-method"
-_TARGETED_WORK_UNIT_KEY = "package2:targeted-method"
+_ALIGNMENT_WORK_UNIT_KEY = "processing-identity:alignment-method"
+_TARGETED_WORK_UNIT_KEY = "processing-identity:targeted-method"
 _RUNTIME_CONTRACT = "targeted-diagnostic-application:v1"
 
 

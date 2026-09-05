@@ -1,6 +1,6 @@
-"""Check CID-NL 85RAW-derived Discovery universe closure.
+"""Check CID-NL FULL COHORT-derived Discovery universe closure.
 
-This no-RAW checker binds the current 85RAW-derived successor-authority
+This no-RAW checker binds the current FULL COHORT-derived successor-authority
 artifact to the CID-NL Discovery product claim:
 
 - 511 successor decisions are fully partitioned.
@@ -53,7 +53,7 @@ from xic_extractor.tabular_io import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_VERSION = "cid_nl_85raw_universe_closure_v1"
+SCHEMA_VERSION = "cid_nl_default_activation_universe_closure_v1"
 PRODUCT_LANE = "cid_nl_discovery"
 DEFAULT_GATE_DIR = (
     ROOT
@@ -82,11 +82,22 @@ DEFAULT_FULL_SCOPE_SUMMARY_JSON = (
     DEFAULT_FULL_SCOPE_DOCS_DIR
     / "cid_nl_discovery_full_scope_classification_summary.json"
 )
-DEFAULT_DOCS_DIR = (
+RETAINED_DOCS_DIR = (
     ROOT / "docs/superpowers/validation/cid_nl_85raw_universe_closure_v1"
 )
-EXPECTED_85RAW_FIX3_FRAGMENT = (
+DEFAULT_DOCS_DIR = (
+    ROOT / "docs/superpowers/validation/cid_nl_full_cohort_universe_closure_v1"
+)
+RETAINED_SUMMARY_FILENAME = "cid_nl_85raw_universe_closure_summary.json"
+RETAINED_CHECKS_FILENAME = "cid_nl_85raw_universe_closure_checks.tsv"
+RETAINED_MANIFEST_FILENAME = "cid_nl_85raw_universe_closure_manifest.tsv"
+RETAINED_SCHEMA_VERSION = "cid_nl_85raw_universe_closure_v1"
+RETAINED_CLOSURE_SCOPE = "current_cid_nl_85raw_fix3_successor_universe"
+RETAINED_INPUT_FRAGMENT = (
     "output/discovery/cid_nl_product_ready_alignment_85raw_20260620_fix3"
+)
+EXPECTED_FULL_COHORT_INPUT_FRAGMENT = (
+    "output/discovery/cid_nl_product_ready_alignment_full_cohort_20260620_fix3"
 )
 
 SUCCESSOR_DECISION_COLUMNS = (
@@ -144,7 +155,7 @@ EXPECTED_CHECK_IDS = (
     "existing_successor_preserved_count",
     "omitted_no_target_count",
     "default_matrix_delta_stays_95",
-    "85raw_fix3_input_binding",
+    "full_cohort_input_binding",
     "raw_not_rerun",
     "no_direct_candidate_or_ms2_authority",
 )
@@ -206,7 +217,7 @@ EXPECTED_MANIFEST = {
 }
 
 
-def build_cid_nl_85raw_universe_closure(
+def build_cid_nl_full_cohort_universe_closure(
     *,
     gate_dir: Path = DEFAULT_GATE_DIR,
     successor_summary_json: Path = DEFAULT_SUCCESSOR_AUTHORITY_SUMMARY_JSON,
@@ -243,12 +254,14 @@ def build_cid_nl_85raw_universe_closure(
     checks = _check_rows(closure)
     failed = [row["check_id"] for row in checks if row["status"] != "pass"]
     if failed:
-        raise ValueError("CID-NL 85RAW universe closure failed: " + ";".join(failed))
+        raise ValueError(
+            "CID-NL FULL COHORT universe closure failed: " + ";".join(failed)
+        )
 
     docs_dir.mkdir(parents=True, exist_ok=True)
-    checks_tsv = docs_dir / "cid_nl_85raw_universe_closure_checks.tsv"
-    manifest_tsv = docs_dir / "cid_nl_85raw_universe_closure_manifest.tsv"
-    summary_json = docs_dir / "cid_nl_85raw_universe_closure_summary.json"
+    checks_tsv = docs_dir / "cid_nl_full_cohort_universe_closure_checks.tsv"
+    manifest_tsv = docs_dir / "cid_nl_full_cohort_universe_closure_manifest.tsv"
+    summary_json = docs_dir / "cid_nl_full_cohort_universe_closure_summary.json"
     manifest_rows = _manifest_rows(closure)
     write_tsv(
         checks_tsv,
@@ -283,25 +296,35 @@ def build_cid_nl_85raw_universe_closure(
     return payload
 
 
-def check_cid_nl_85raw_universe_closure(
+def check_cid_nl_default_activation_universe_closure(
     *,
-    summary_json: Path = DEFAULT_DOCS_DIR
-    / "cid_nl_85raw_universe_closure_summary.json",
-    checks_tsv: Path = DEFAULT_DOCS_DIR / "cid_nl_85raw_universe_closure_checks.tsv",
-    manifest_tsv: Path = DEFAULT_DOCS_DIR
-    / "cid_nl_85raw_universe_closure_manifest.tsv",
+    summary_json: Path = RETAINED_DOCS_DIR / RETAINED_SUMMARY_FILENAME,
+    checks_tsv: Path = RETAINED_DOCS_DIR / RETAINED_CHECKS_FILENAME,
+    manifest_tsv: Path = RETAINED_DOCS_DIR / RETAINED_MANIFEST_FILENAME,
 ) -> list[str]:
     problems: list[str] = []
+    retained_artifact = summary_json.parent.resolve() == RETAINED_DOCS_DIR.resolve()
+    expected_schema_version = (
+        RETAINED_SCHEMA_VERSION if retained_artifact else SCHEMA_VERSION
+    )
+    expected_closure_scope = (
+        RETAINED_CLOSURE_SCOPE
+        if retained_artifact
+        else "current_cid_nl_full_cohort_current_candidate_successor_universe"
+    )
+    expected_run_field = (
+        "raw_or_85raw_ran" if retained_artifact else "raw_or_full_cohort_ran"
+    )
     try:
         payload = _read_json_object(summary_json)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return [str(exc)]
 
     expected_fields: tuple[tuple[str, object], ...] = (
-        ("schema_version", SCHEMA_VERSION),
+        ("schema_version", expected_schema_version),
         ("status", "pass"),
         ("product_lane", PRODUCT_LANE),
-        ("closure_scope", "current_cid_nl_85raw_fix3_successor_universe"),
+        ("closure_scope", expected_closure_scope),
         ("successor_decision_count", 511),
         ("successor_authority_write_count", 147),
         ("accepted_discovery_cell_count", 95),
@@ -312,7 +335,7 @@ def check_cid_nl_85raw_universe_closure(
         ("omitted_no_target_cell_count", 27),
         ("default_activation_cell_count", 95),
         ("default_matrix_delta_changed_cell_count", 95),
-        ("raw_or_85raw_ran", False),
+        (expected_run_field, False),
         ("product_writer_changed_by_checker", False),
         ("default_quant_matrix_changed_by_checker", False),
         ("workbook_or_gui_changed", False),
@@ -335,9 +358,29 @@ def check_cid_nl_85raw_universe_closure(
         path=manifest_tsv,
         problems=problems,
     )
-    _check_85raw_summary_binding(payload, problems)
-    _check_checks_tsv(checks_tsv, problems)
-    _check_manifest_tsv(manifest_tsv, problems)
+    _check_full_cohort_summary_binding(
+        payload,
+        problems,
+        expected_fragment=(
+            RETAINED_INPUT_FRAGMENT
+            if retained_artifact
+            else EXPECTED_FULL_COHORT_INPUT_FRAGMENT
+        ),
+    )
+    expected_check_ids = (
+        tuple(
+            "85raw_fix3_input_binding" if item == "full_cohort_input_binding" else item
+            for item in EXPECTED_CHECK_IDS
+        )
+        if retained_artifact
+        else EXPECTED_CHECK_IDS
+    )
+    _check_checks_tsv(checks_tsv, problems, expected_check_ids=expected_check_ids)
+    _check_manifest_tsv(
+        manifest_tsv,
+        problems,
+        expected_schema_version=expected_schema_version,
+    )
     return problems
 
 
@@ -491,7 +534,8 @@ def _closure_facts(
             activation_summary,
             successor_summary,
         ),
-        "raw_or_85raw_ran": activation_summary.get("raw_or_85raw_ran") is True,
+        "raw_or_full_cohort_ran": activation_summary.get("raw_or_full_cohort_ran")
+        is True,
         "direct_authority_problem_count": _direct_authority_problem_count(
             activation_summary,
             full_scope_summary,
@@ -616,16 +660,16 @@ def _check_rows(closure: Mapping[str, Any]) -> list[dict[str, Any]]:
             closure["default_matrix_delta_changed_cell_count"] == 95,
         ),
         _check(
-            "85raw_fix3_input_binding",
+            "full_cohort_input_binding",
             closure["input_binding_problem_count"],
             0,
             closure["input_binding_problem_count"] == 0,
         ),
         _check(
             "raw_not_rerun",
-            closure["raw_or_85raw_ran"],
+            closure["raw_or_full_cohort_ran"],
             False,
-            closure["raw_or_85raw_ran"] is False,
+            closure["raw_or_full_cohort_ran"] is False,
         ),
         _check(
             "no_direct_candidate_or_ms2_authority",
@@ -644,8 +688,7 @@ def _manifest_rows(closure: Mapping[str, Any]) -> list[dict[str, Any]]:
             cell_count=closure["successor_authority_write_count"],
             decision_count=closure["successor_authority_write_count"],
             notes=(
-                "All write-authorized successor cells are accepted, held, or "
-                "blocked."
+                "All write-authorized successor cells are accepted, held, or blocked."
             ),
         ),
         _manifest_row(
@@ -668,8 +711,7 @@ def _manifest_rows(closure: Mapping[str, Any]) -> list[dict[str, Any]]:
             cell_count=closure["blocked_candidate_cell_count"],
             decision_count=closure["blocked_authorized_count"],
             notes=(
-                "Authorized candidate cells blocked by current paired-overlay "
-                "review."
+                "Authorized candidate cells blocked by current paired-overlay review."
             ),
         ),
         _manifest_row(
@@ -688,8 +730,7 @@ def _manifest_rows(closure: Mapping[str, Any]) -> list[dict[str, Any]]:
             cell_count=closure["omitted_no_target_cell_count"],
             decision_count=closure["omitted_no_target_cell_count"],
             notes=(
-                "No safe successor target is available, so the cell remains "
-                "no-write."
+                "No safe successor target is available, so the cell remains no-write."
             ),
         ),
     ]
@@ -735,14 +776,14 @@ def _summary_payload(
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "pass",
-        "validation_label": "no_raw_85raw_universe_closure",
+        "validation_label": "no_raw_full_cohort_universe_closure",
         "product_lane": PRODUCT_LANE,
-        "closure_scope": "current_cid_nl_85raw_fix3_successor_universe",
-        "strongest_evidence_tier": "85RAW-derived artifact parity",
+        "closure_scope": (
+            "current_cid_nl_full_cohort_current_candidate_successor_universe"
+        ),
+        "strongest_evidence_tier": "FULL COHORT-derived artifact parity",
         "successor_decision_count": closure["successor_decision_count"],
-        "successor_authority_write_count": closure[
-            "successor_authority_write_count"
-        ],
+        "successor_authority_write_count": closure["successor_authority_write_count"],
         "candidate_transition_count": closure["candidate_transition_count"],
         "accepted_discovery_cell_count": closure["accepted_discovery_cell_count"],
         "held_candidate_cell_count": closure["held_candidate_cell_count"],
@@ -758,7 +799,7 @@ def _summary_payload(
         "default_matrix_delta_changed_cell_count": closure[
             "default_matrix_delta_changed_cell_count"
         ],
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed_by_checker": False,
         "default_quant_matrix_changed_by_checker": False,
         "workbook_or_gui_changed": False,
@@ -766,13 +807,13 @@ def _summary_payload(
         "candidate_rows_are_matrix_rows": False,
         "cid_nl_ms2_direct_productwriter_authority": False,
         "release_decision": (
-            "The current 85RAW-derived successor universe is closed for this "
+            "The current FULL COHORT-derived successor universe is closed for this "
             "product question: 95 default-active cells, 52 explicitly "
             "non-active authorized candidates, 337 detected-baseline preserved "
             "context cells, and 27 omitted no-target cells."
         ),
         "input_artifact_binding": {
-            "expected_85raw_fragment": EXPECTED_85RAW_FIX3_FRAGMENT,
+            "expected_full_cohort_input_fragment": EXPECTED_FULL_COHORT_INPUT_FRAGMENT,
             "input_quant_matrix_tsv": _mapping_get(
                 _mapping_get(activation_inputs, "input_quant_matrix_tsv"),
                 "path",
@@ -822,28 +863,27 @@ def _summary_payload(
 
 def _write_readme(path: Path, *, payload: Mapping[str, Any]) -> None:
     summary_relpath = _relative_or_absolute(
-        path.parent / "cid_nl_85raw_universe_closure_summary.json",
+        path.parent / "cid_nl_full_cohort_universe_closure_summary.json",
     )
     checks_relpath = _relative_or_absolute(
-        path.parent / "cid_nl_85raw_universe_closure_checks.tsv",
+        path.parent / "cid_nl_full_cohort_universe_closure_checks.tsv",
     )
     manifest_relpath = _relative_or_absolute(
-        path.parent / "cid_nl_85raw_universe_closure_manifest.tsv",
+        path.parent / "cid_nl_full_cohort_universe_closure_manifest.tsv",
     )
     lines = [
-        "# CID-NL 85RAW Universe Closure v1",
+        "# CID-NL FULL COHORT Universe Closure v1",
         "",
         "Status: `pass`.",
         "",
-        "This is a no-RAW closure gate over the current 85RAW-derived CID-NL "
+        "This is a no-RAW closure gate over the current FULL COHORT-derived CID-NL "
         "successor-authority universe. It answers whether the already active "
         "95-cell default activation is the only default-output bucket in the "
-        "current 85RAW artifact set.",
+        "current FULL COHORT artifact set.",
         "",
         "## Closure",
         "",
-        "- Successor decisions: "
-        f"`{payload['successor_decision_count']}` cells.",
+        f"- Successor decisions: `{payload['successor_decision_count']}` cells.",
         "- Write-authorized candidate universe: "
         f"`{payload['successor_authority_write_count']}` cells.",
         "- Default-active accepted cells: "
@@ -858,12 +898,13 @@ def _write_readme(path: Path, *, payload: Mapping[str, Any]) -> None:
         "",
         "The checker compares sample-level accepted keys, transition-level "
         "held/blocked counts, successor-authority decisions, successor authority "
-        "manifest keys, default matrix delta count, and 85RAW fix3 input hashes.",
+        "manifest keys, default matrix delta count, and FULL COHORT current "
+        "candidate input hashes.",
         "",
         "## Boundary",
         "",
         "This gate does not rerun RAW and does not create new matrix authority. "
-        "It only proves the current 85RAW-derived artifacts are internally "
+        "It only proves the current FULL COHORT-derived artifacts are internally "
         "closed for the CID-NL Discovery product question.",
         "",
         "## Files",
@@ -904,9 +945,11 @@ def _check_summary_artifact_hash(
         problems.append(f"summary {artifact_id} sha256 mismatch")
 
 
-def _check_85raw_summary_binding(
+def _check_full_cohort_summary_binding(
     payload: Mapping[str, Any],
     problems: list[str],
+    *,
+    expected_fragment: str = EXPECTED_FULL_COHORT_INPUT_FRAGMENT,
 ) -> None:
     binding = payload.get("input_artifact_binding")
     if not isinstance(binding, Mapping):
@@ -914,21 +957,29 @@ def _check_85raw_summary_binding(
         return
     for field in ("input_quant_matrix_tsv", "input_matrix_identity_tsv"):
         value = text_value(binding.get(field))
-        if EXPECTED_85RAW_FIX3_FRAGMENT not in value:
-            problems.append(f"summary source artifact {field} must bind to 85RAW fix3")
+        if expected_fragment not in value:
+            problems.append(
+                f"summary source artifact {field} must bind to FULL COHORT "
+                "current candidate"
+            )
 
 
-def _check_checks_tsv(path: Path, problems: list[str]) -> None:
+def _check_checks_tsv(
+    path: Path,
+    problems: list[str],
+    *,
+    expected_check_ids: Sequence[str] = EXPECTED_CHECK_IDS,
+) -> None:
     try:
         rows = read_tsv_required(path, CHECK_COLUMNS)
     except (OSError, ValueError) as exc:
         problems.append(f"checks_tsv: {exc}")
         return
     check_ids = [row.get("check_id", "") for row in rows]
-    if len(rows) != len(EXPECTED_CHECK_IDS):
+    if len(rows) != len(expected_check_ids):
         problems.append(f"checks row count mismatch: {len(rows)}")
-    missing = sorted(set(EXPECTED_CHECK_IDS) - set(check_ids))
-    unexpected = sorted(set(check_ids) - set(EXPECTED_CHECK_IDS))
+    missing = sorted(set(expected_check_ids) - set(check_ids))
+    unexpected = sorted(set(check_ids) - set(expected_check_ids))
     duplicate_count = len(check_ids) - len(set(check_ids))
     if missing:
         problems.append("checks missing required ids: " + ";".join(missing))
@@ -941,7 +992,12 @@ def _check_checks_tsv(path: Path, problems: list[str]) -> None:
         problems.append("failed checks: " + ";".join(failed))
 
 
-def _check_manifest_tsv(path: Path, problems: list[str]) -> None:
+def _check_manifest_tsv(
+    path: Path,
+    problems: list[str],
+    *,
+    expected_schema_version: str = SCHEMA_VERSION,
+) -> None:
     try:
         rows = read_tsv_required(path, MANIFEST_COLUMNS)
     except (OSError, ValueError) as exc:
@@ -963,7 +1019,7 @@ def _check_manifest_tsv(path: Path, problems: list[str]) -> None:
         for field, expected_value in expected.items():
             if text_value(row.get(field)) != expected_value:
                 problems.append(f"manifest {bucket_id} {field} mismatch")
-        if text_value(row.get("schema_version")) != SCHEMA_VERSION:
+        if text_value(row.get("schema_version")) != expected_schema_version:
             problems.append(f"manifest {bucket_id} schema_version mismatch")
 
 
@@ -978,9 +1034,7 @@ def _decision_rows(
     decision: str,
 ) -> tuple[Mapping[str, str], ...]:
     return tuple(
-        row
-        for row in rows
-        if text_value(row.get("successor_decision")) == decision
+        row for row in rows if text_value(row.get("successor_decision")) == decision
     )
 
 
@@ -1021,9 +1075,9 @@ def _input_binding_problem_count(
         successor_path = text_value(_mapping_get(successor_artifact, "path"))
         activation_sha = text_value(_mapping_get(activation_artifact, "sha256"))
         successor_sha = text_value(_mapping_get(successor_artifact, "sha256"))
-        if EXPECTED_85RAW_FIX3_FRAGMENT not in activation_path:
+        if EXPECTED_FULL_COHORT_INPUT_FRAGMENT not in activation_path:
             problems += 1
-        if EXPECTED_85RAW_FIX3_FRAGMENT not in successor_path:
+        if EXPECTED_FULL_COHORT_INPUT_FRAGMENT not in successor_path:
             problems += 1
         if activation_path != successor_path or activation_sha != successor_sha:
             problems += 1
@@ -1185,7 +1239,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_FULL_SCOPE_SUMMARY_JSON,
     )
-    parser.add_argument("--docs-dir", type=Path, default=DEFAULT_DOCS_DIR)
+    parser.add_argument("--docs-dir", type=Path)
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--summary-json", type=Path)
     parser.add_argument("--checks-tsv", type=Path)
@@ -1196,45 +1250,63 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    docs_dir = args.docs_dir or (
+        RETAINED_DOCS_DIR if args.check_only else DEFAULT_DOCS_DIR
+    )
     if args.check_only:
         summary_json = args.summary_json or (
-            args.docs_dir / "cid_nl_85raw_universe_closure_summary.json"
+            docs_dir
+            / (
+                RETAINED_SUMMARY_FILENAME
+                if docs_dir == RETAINED_DOCS_DIR
+                else "cid_nl_full_cohort_universe_closure_summary.json"
+            )
         )
         checks_tsv = args.checks_tsv or (
-            args.docs_dir / "cid_nl_85raw_universe_closure_checks.tsv"
+            docs_dir
+            / (
+                RETAINED_CHECKS_FILENAME
+                if docs_dir == RETAINED_DOCS_DIR
+                else "cid_nl_full_cohort_universe_closure_checks.tsv"
+            )
         )
         manifest_tsv = args.manifest_tsv or (
-            args.docs_dir / "cid_nl_85raw_universe_closure_manifest.tsv"
+            docs_dir
+            / (
+                RETAINED_MANIFEST_FILENAME
+                if docs_dir == RETAINED_DOCS_DIR
+                else "cid_nl_full_cohort_universe_closure_manifest.tsv"
+            )
         )
-        problems = check_cid_nl_85raw_universe_closure(
+        problems = check_cid_nl_default_activation_universe_closure(
             summary_json=summary_json,
             checks_tsv=checks_tsv,
             manifest_tsv=manifest_tsv,
         )
         for problem in problems:
-            print(f"cid_nl_85raw_universe_closure_problem: {problem}")
+            print(f"cid_nl_full_cohort_universe_closure_problem: {problem}")
         return 2 if problems else 0
 
     try:
-        payload = build_cid_nl_85raw_universe_closure(
+        payload = build_cid_nl_full_cohort_universe_closure(
             gate_dir=args.gate_dir,
             successor_summary_json=args.successor_summary_json,
             successor_decisions_tsv=args.successor_decisions_tsv,
             successor_manifest_tsv=args.successor_manifest_tsv,
             activation_summary_json=args.activation_summary_json,
             full_scope_summary_json=args.full_scope_summary_json,
-            docs_dir=args.docs_dir,
+            docs_dir=docs_dir,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(
-        "cid_nl_85raw_universe_closure_summary: "
-        f"{args.docs_dir / 'cid_nl_85raw_universe_closure_summary.json'}"
+        "cid_nl_full_cohort_universe_closure_summary: "
+        f"{docs_dir / 'cid_nl_full_cohort_universe_closure_summary.json'}"
     )
-    print(f"cid_nl_85raw_universe_closure_status: {payload['status']}")
+    print(f"cid_nl_full_cohort_universe_closure_status: {payload['status']}")
     print(
-        "cid_nl_85raw_universe_closure_accepted_default_cells: "
+        "cid_nl_full_cohort_universe_closure_accepted_default_cells: "
         f"{payload['accepted_discovery_cell_count']}"
     )
     if args.require_pass and payload.get("status") != "pass":

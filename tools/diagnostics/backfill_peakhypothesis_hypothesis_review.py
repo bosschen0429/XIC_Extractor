@@ -1,4 +1,4 @@
-"""Build a review queue for anchored 85RAW PeakHypothesis candidates."""
+"""Build a review queue for anchored FULL COHORT PeakHypothesis candidates."""
 
 from __future__ import annotations
 
@@ -11,34 +11,34 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from xic_extractor.diagnostics import backfill_peakhypothesis_raw85_hypothesis_review
+from xic_extractor.diagnostics import backfill_peakhypothesis_hypothesis_review
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         index = (
-            backfill_peakhypothesis_raw85_hypothesis_review
-            .build_raw85_hypothesis_review_queue(
-                raw85_slice_gate_rows=_read_tsv(args.raw85_slice_gate_tsv),
+            backfill_peakhypothesis_hypothesis_review
+            .build_full_cohort_hypothesis_review_queue(
+                full_cohort_acceptance_gate_rows=_read_tsv(args.full_cohort_acceptance_gate_tsv),
                 source_run_id=args.source_run_id,
             )
         )
         outputs = (
-            backfill_peakhypothesis_raw85_hypothesis_review
-            .write_raw85_hypothesis_review_outputs(args.output_dir, index)
+            backfill_peakhypothesis_hypothesis_review
+            .write_full_cohort_hypothesis_review_outputs(args.output_dir, index)
         )
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(f"85RAW hypothesis review queue TSV: {outputs.review_queue_tsv}")
-    print(f"85RAW hypothesis review summary JSON: {outputs.summary_json}")
+    print(f"FULL COHORT hypothesis review queue TSV: {outputs.review_queue_tsv}")
+    print(f"FULL COHORT hypothesis review summary JSON: {outputs.summary_json}")
     return 1 if index.summary["review_queue_status"] == "manual_review_required" else 0
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raw85-slice-gate-tsv", type=Path, required=True)
+    parser.add_argument("--full-cohort-acceptance-gate-tsv", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-run-id", default="")
     return parser.parse_args(argv)

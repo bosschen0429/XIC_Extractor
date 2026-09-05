@@ -68,15 +68,15 @@ def test_release_slice_propagates_bounded_lane_problems(monkeypatch) -> None:
     assert "bounded_product_lanes: lane drift" in problems
 
 
-def test_release_slice_propagates_85raw_universe_closure_problems(
+def test_release_slice_propagates_full_cohort_universe_closure_problems(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
         release_slice,
-        "check_cid_nl_85raw_universe_closure",
+        "check_cid_nl_default_activation_universe_closure",
         lambda: ["closure drift"],
     )
 
     problems = release_slice.check_cid_nl_discovery_release_slice()
 
-    assert "85raw_universe_closure: closure drift" in problems
+    assert "full_cohort_universe_closure: closure drift" in problems

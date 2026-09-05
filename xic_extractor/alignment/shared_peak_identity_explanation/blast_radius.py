@@ -41,19 +41,19 @@ CELLS_REQUIRED_FIELDS = frozenset(
 
 OPTIONAL_ARTIFACT_ROLES = frozenset(
     {
-        "candidate_gate_8raw",
-        "candidate_gate_85raw",
-        "tier2_trace_8raw",
-        "tier2_coherence_8raw",
+        "candidate_gate_fixture_cohort",
+        "candidate_gate_full_cohort",
+        "tier2_trace_fixture_cohort",
+        "tier2_coherence_fixture_cohort",
         "identity_diagnostic_context",
     }
 )
 
 OPTIONAL_ARTIFACT_ROLE_TO_MANIFEST_ROLE = {
-    "candidate_gate_8raw": "blast_radius_context",
-    "candidate_gate_85raw": "blast_radius_context",
-    "tier2_trace_8raw": "tier2_trace_sidecar",
-    "tier2_coherence_8raw": "blast_radius_context",
+    "candidate_gate_fixture_cohort": "blast_radius_context",
+    "candidate_gate_full_cohort": "blast_radius_context",
+    "tier2_trace_fixture_cohort": "tier2_trace_sidecar",
+    "tier2_coherence_fixture_cohort": "blast_radius_context",
     "identity_diagnostic_context": "identity_diagnostic",
 }
 
@@ -81,10 +81,10 @@ ABSENT_MACHINE_LABELS = frozenset(
 AMBIGUOUS_MACHINE_LABELS = frozenset({"duplicate_assigned", "ambiguous_ms1_owner"})
 
 REQUIRED_BLAST_RADIUS_SURFACE_IDS = (
-    "8raw_alignment_review",
-    "8raw_alignment_cells",
-    "85raw_alignment_review",
-    "85raw_alignment_cells",
+    "fixture_cohort_alignment_review",
+    "fixture_cohort_alignment_cells",
+    "full_cohort_alignment_review",
+    "full_cohort_alignment_cells",
 )
 
 
@@ -104,8 +104,8 @@ def build_blast_radius_manifest(
     manual_oracle_tsv: Path,
     slice0_explanations_tsv: Path,
     slice0_evidence_vectors_tsv: Path,
-    eight_raw_run_dir: Path,
-    eightyfive_raw_run_dir: Path,
+    fixture_cohort_run_dir: Path,
+    full_cohort_run_dir: Path,
     expected_manifest_tsv: Path | None = None,
     optional_artifacts: Mapping[str, Path] | None = None,
 ) -> tuple[dict[str, str], ...]:
@@ -138,33 +138,32 @@ def build_blast_radius_manifest(
             required_fields=frozenset(),
         ),
         _ArtifactSpec(
-            artifact_id="8raw_alignment_review",
+            artifact_id="fixture_cohort_alignment_review",
             artifact_role="alignment_review",
-            path=eight_raw_run_dir / "alignment_review.tsv",
+            path=fixture_cohort_run_dir / "alignment_review.tsv",
             required_fields=REVIEW_REQUIRED_FIELDS,
         ),
         _ArtifactSpec(
-            artifact_id="8raw_alignment_cells",
+            artifact_id="fixture_cohort_alignment_cells",
             artifact_role="alignment_cells",
-            path=eight_raw_run_dir / "alignment_cells.tsv",
+            path=fixture_cohort_run_dir / "alignment_cells.tsv",
             required_fields=CELLS_REQUIRED_FIELDS,
         ),
         _ArtifactSpec(
-            artifact_id="85raw_alignment_review",
+            artifact_id="full_cohort_alignment_review",
             artifact_role="alignment_review",
-            path=eightyfive_raw_run_dir / "alignment_review.tsv",
+            path=full_cohort_run_dir / "alignment_review.tsv",
             required_fields=REVIEW_REQUIRED_FIELDS,
         ),
         _ArtifactSpec(
-            artifact_id="85raw_alignment_cells",
+            artifact_id="full_cohort_alignment_cells",
             artifact_role="alignment_cells",
-            path=eightyfive_raw_run_dir / "alignment_cells.tsv",
+            path=full_cohort_run_dir / "alignment_cells.tsv",
             required_fields=CELLS_REQUIRED_FIELDS,
         ),
     )
     rows = [
-        _manifest_row(spec, expected_hashes=expected_hashes)
-        for spec in artifact_specs
+        _manifest_row(spec, expected_hashes=expected_hashes) for spec in artifact_specs
     ]
 
     for role, path in (optional_artifacts or {}).items():
@@ -237,14 +236,14 @@ def build_blast_radius_summary(
     *,
     class_profiles: Mapping[str, BlastRadiusClassProfile],
     manifest_rows: Sequence[Mapping[str, str]],
-    eight_raw_run_dir: Path,
-    eightyfive_raw_run_dir: Path,
+    fixture_cohort_run_dir: Path,
+    full_cohort_run_dir: Path,
 ) -> tuple[dict[str, str], ...]:
     manifest_by_id = {row.get("artifact_id", ""): row for row in manifest_rows}
     _validate_required_manifest_paths(
         manifest_by_id,
-        eight_raw_run_dir=eight_raw_run_dir,
-        eightyfive_raw_run_dir=eightyfive_raw_run_dir,
+        fixture_cohort_run_dir=fixture_cohort_run_dir,
+        full_cohort_run_dir=full_cohort_run_dir,
     )
     required_surfaces_current = _required_cell_surfaces_current(manifest_by_id)
     global_seed_sample_keys = {
@@ -258,8 +257,8 @@ def build_blast_radius_summary(
         for scope in (
             "seed",
             "non_seed_same_family",
-            "all_available_8raw",
-            "all_available_85raw",
+            "all_available_fixture_cohort",
+            "all_available_full_cohort",
             "overall",
         )
     }
@@ -273,15 +272,15 @@ def build_blast_radius_summary(
             seed_stats.compatible_row_count = seed_count
 
     _scan_alignment_cells(
-        eight_raw_run_dir / "alignment_cells.tsv",
-        dataset_scope="all_available_8raw",
+        fixture_cohort_run_dir / "alignment_cells.tsv",
+        dataset_scope="all_available_fixture_cohort",
         class_profiles=class_profiles,
         global_seed_sample_keys=global_seed_sample_keys,
         stats=stats,
     )
     _scan_alignment_cells(
-        eightyfive_raw_run_dir / "alignment_cells.tsv",
-        dataset_scope="all_available_85raw",
+        full_cohort_run_dir / "alignment_cells.tsv",
+        dataset_scope="all_available_full_cohort",
         class_profiles=class_profiles,
         global_seed_sample_keys=global_seed_sample_keys,
         stats=stats,
@@ -292,8 +291,8 @@ def build_blast_radius_summary(
         for scope in (
             "seed",
             "non_seed_same_family",
-            "all_available_8raw",
-            "all_available_85raw",
+            "all_available_fixture_cohort",
+            "all_available_full_cohort",
             "overall",
         ):
             artifact_id = _artifact_id_for_scope(scope)
@@ -380,8 +379,7 @@ class _CellFacts:
 def _is_context_explanation(row: Mapping[str, str]) -> bool:
     sample_id = row.get("sample_id", "")
     return (
-        row.get("manual_label") == "not_applicable"
-        or sample_id in RESERVED_SAMPLE_IDS
+        row.get("manual_label") == "not_applicable" or sample_id in RESERVED_SAMPLE_IDS
     )
 
 
@@ -417,8 +415,7 @@ def _machine_prerequisites(
     if _is_absent_label(label):
         prerequisites.append("absent_machine_cell")
     if (
-        row.get("machine_match_status")
-        or explanation.get("machine_match_status")
+        row.get("machine_match_status") or explanation.get("machine_match_status")
     ) == "ambiguous_multiple_matches":
         prerequisites.append("ambiguous_machine_match")
     tokens = _row_text_tokens(row, explanation)
@@ -432,8 +429,7 @@ def _machine_prerequisites(
         prerequisites.append("rt_pattern_conflict")
     if (
         row.get("intensity_status") in {"low_but_visible", "too_low_to_assess"}
-        or row.get("dda_opportunity_status")
-        == "low_intensity_stochastic_not_observed"
+        or row.get("dda_opportunity_status") == "low_intensity_stochastic_not_observed"
         or "no_local_ms1_owner" in tokens
         or "weak_scan_support" in tokens
     ):
@@ -778,14 +774,16 @@ def _required_cell_surfaces_current(
 def _validate_required_manifest_paths(
     manifest_by_id: Mapping[str, Mapping[str, str]],
     *,
-    eight_raw_run_dir: Path,
-    eightyfive_raw_run_dir: Path,
+    fixture_cohort_run_dir: Path,
+    full_cohort_run_dir: Path,
 ) -> None:
     expected_paths = {
-        "8raw_alignment_review": eight_raw_run_dir / "alignment_review.tsv",
-        "8raw_alignment_cells": eight_raw_run_dir / "alignment_cells.tsv",
-        "85raw_alignment_review": eightyfive_raw_run_dir / "alignment_review.tsv",
-        "85raw_alignment_cells": eightyfive_raw_run_dir / "alignment_cells.tsv",
+        "fixture_cohort_alignment_review": fixture_cohort_run_dir
+        / "alignment_review.tsv",
+        "fixture_cohort_alignment_cells": fixture_cohort_run_dir
+        / "alignment_cells.tsv",
+        "full_cohort_alignment_review": full_cohort_run_dir / "alignment_review.tsv",
+        "full_cohort_alignment_cells": full_cohort_run_dir / "alignment_cells.tsv",
     }
     for artifact_id, actual_path in expected_paths.items():
         row = manifest_by_id.get(artifact_id)
@@ -809,8 +807,8 @@ def _artifact_id_for_scope(scope: str) -> str:
     return {
         "seed": "slice0_explanations",
         "non_seed_same_family": "combined_alignment_cells",
-        "all_available_8raw": "8raw_alignment_cells",
-        "all_available_85raw": "85raw_alignment_cells",
+        "all_available_fixture_cohort": "fixture_cohort_alignment_cells",
+        "all_available_full_cohort": "full_cohort_alignment_cells",
         "overall": "combined_alignment_cells",
     }[scope]
 
@@ -843,10 +841,7 @@ def _row_text_tokens(*rows: Mapping[str, str]) -> set[str]:
         ):
             value = row.get(field, "")
             normalized = (
-                value.lower()
-                .replace(" ", "_")
-                .replace(";", "_")
-                .replace("-", "_")
+                value.lower().replace(" ", "_").replace(";", "_").replace("-", "_")
             )
             tokens.add(normalized)
             tokens.update(part for part in normalized.split("_") if part)
@@ -1069,9 +1064,10 @@ def _expected_hashes_from_manifest(
             artifact_hash = (row.get("expected_artifact_sha256") or "").strip().upper()
             if not artifact_hash:
                 continue
-            if not (row.get("artifact_id") or "").strip() and not (
-                row.get("artifact_path") or ""
-            ).strip():
+            if (
+                not (row.get("artifact_id") or "").strip()
+                and not (row.get("artifact_path") or "").strip()
+            ):
                 raise ValueError(
                     f"{manifest_tsv}: expected_artifact_sha256 requires "
                     "artifact_id or artifact_path"

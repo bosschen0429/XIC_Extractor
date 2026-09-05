@@ -339,7 +339,7 @@ def _rehydrate_mode_track_review_set(
     replay = _read_json_bytes(replay_bytes)
     replay_sha = hashlib.sha256(replay_bytes).hexdigest()
     if review.get("schema_version") not in {
-        "mode_track_85raw_validation_gate_c_manual_review_v1",
+        "mode_track_closed_writer_manual_review_v1",
         "issue180_m9_gate_c_manual_review_v1",
     }:
         raise ValueError("manual review schema changed")
@@ -351,7 +351,7 @@ def _rehydrate_mode_track_review_set(
     if (
         replay.get("schema_version")
         not in {
-            "mode_track_85raw_validation_gate_c_observation_replay_v1",
+            "mode_track_closed_writer_observation_replay_v1",
             "issue180_m9_gate_c_observation_replay_v1",
         }
         or replay.get("validation_status") != VALIDATION_STATUS

@@ -38,7 +38,7 @@ def test_quant_matrix_promotion_schema_matches_public_outputs() -> None:
         schema["authority_rules"]["required_science_pass_rows_must_be_artifact_bound"]
     )
     assert schema["authority_rules"]["duplicate_validation_tiers_fail_closed"]
-    assert schema["required_science_tier_provenance"]["85raw_large_cohort"] == [
+    assert schema["required_science_tier_provenance"]["full_cohort"] == [
         "artifact_path",
         "artifact_sha256",
         "cohort_id",
@@ -83,7 +83,7 @@ def test_promotion_readiness_is_inconclusive_without_science_evidence(
     )
 
 
-def test_focused_or_8raw_only_validation_cannot_claim_production_ready(
+def test_focused_or_fixture_cohort_only_validation_cannot_claim_production_ready(
     tmp_path: Path,
 ) -> None:
     inputs = _write_contract_ready_inputs(tmp_path)
@@ -95,7 +95,7 @@ def test_focused_or_8raw_only_validation_cannot_claim_production_ready(
                 "requested_readiness_label": "production_ready",
                 "evidence": [
                     {"tier": "focused_tests", "status": "pass"},
-                    {"tier": "8raw_smoke", "status": "pass"},
+                    {"tier": "fixture_cohort_smoke", "status": "pass"},
                 ],
             }
         ),
@@ -128,7 +128,7 @@ def test_required_science_strings_without_artifact_binding_cannot_promote(
                 "schema_version": "quant_matrix_validation_evidence_v1",
                 "requested_readiness_label": "production_ready",
                 "evidence": [
-                    {"tier": "85raw_large_cohort", "status": "pass"},
+                    {"tier": "full_cohort", "status": "pass"},
                     {"tier": "heldout_oracle", "status": "pass"},
                     {"tier": "downstream_impact_smoke", "status": "pass"},
                 ],
@@ -453,16 +453,16 @@ def _read_tsv(path: Path) -> list[dict[str, str]]:
 
 
 def _science_ready_evidence_rows(root: Path) -> list[dict[str, str]]:
-    cohort = _write_evidence_artifact(root, "85raw_large_cohort.json")
+    cohort = _write_evidence_artifact(root, "full_cohort.json")
     oracle = _write_evidence_artifact(root, "heldout_oracle.json")
     downstream = _write_downstream_impact_artifact(root)
     return [
         {
-            "tier": "85raw_large_cohort",
+            "tier": "full_cohort",
             "status": "pass",
             "artifact_path": cohort.relative_to(root).as_posix(),
             "artifact_sha256": file_sha256(cohort),
-            "cohort_id": "synthetic_85raw_gate_fixture",
+            "cohort_id": "synthetic_full_cohort_gate_fixture",
             "raw_run_count": "85",
         },
         {

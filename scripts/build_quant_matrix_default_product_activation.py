@@ -2,7 +2,7 @@
 
 This activation gate writes the default numeric quant matrix from the validated
 ProductionAcceptanceManifest and expected-diff contract. It does not run a
-scorer, read RAW/85RAW, change workbooks/GUI behavior, or alter selected
+scorer, read RAW/full_cohort, change workbooks/GUI behavior, or alter selected
 peaks/areas/counting.
 """
 
@@ -829,7 +829,7 @@ def _write_summary(
         "write_authority": True,
         "product_authority_scope": PRODUCT_AUTHORITY_SCOPE,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": True,
         "default_quant_matrix_changed": True,
         "default_matrix_files_written": True,
@@ -934,7 +934,7 @@ def _append_expected_field_problems(
         ("read_only", False),
         ("write_authority", True),
         ("scorer_ran", False),
-        ("raw_or_85raw_ran", False),
+        ("raw_or_full_cohort_ran", False),
         ("product_writer_changed", True),
         ("default_quant_matrix_changed", True),
         ("default_matrix_files_written", True),

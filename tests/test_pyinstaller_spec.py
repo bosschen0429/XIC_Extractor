@@ -19,7 +19,7 @@ AUTHORITY_RESOURCE_RELATIVE = (
     Path("xic_extractor")
     / "alignment"
     / "data"
-    / "issue256_quantitative_projection_authority_v1.json"
+    / "quantitative_projection_authority_v1.json"
 )
 AUTHORITY_RESOURCE_ARCHIVE_PATH = PurePosixPath(*AUTHORITY_RESOURCE_RELATIVE.parts)
 AUTHORITY_RESOURCE_SHA256 = (
@@ -47,7 +47,7 @@ if not module_file.is_relative_to(target):
     )
     raise RuntimeError(message)
 resource = files("xic_extractor.alignment").joinpath(
-    "data", "issue256_quantitative_projection_authority_v1.json"
+    "data", "quantitative_projection_authority_v1.json"
 )
 resource_output.write_bytes(resource.read_bytes())
 metadata_output.write_text(
@@ -60,7 +60,7 @@ metadata_output.write_text(
     encoding="utf-8",
 )
 """
-ISSUE367_INSTALLED_WHEEL_PROBE = """
+PUBLIC_ACTIVATION_INSTALLED_WHEEL_PROBE = """
 import json
 import sys
 from pathlib import Path
@@ -129,11 +129,12 @@ PACKAGING_SOURCE_DIRECTORIES = (
 
 
 @pytest.fixture(scope="module")
-def issue256_packaging_source() -> Iterator[Path]:
+def authority_packaging_source() -> Iterator[Path]:
     task_output_root = PROJECT_ROOT / "output"
     task_output_root.mkdir(exist_ok=True)
     temp_root = (
-        task_output_root / f"xic-issue256-packaging-artifacts-{uuid.uuid4().hex}"
+        task_output_root
+        / f"xic-quantitative-projection-packaging-artifacts-{uuid.uuid4().hex}"
     )
     temp_root.mkdir()
     try:
@@ -153,7 +154,9 @@ def issue256_packaging_source() -> Iterator[Path]:
     finally:
         resolved_temp_root = temp_root.resolve()
         assert resolved_temp_root.parent == task_output_root.resolve()
-        assert resolved_temp_root.name.startswith("xic-issue256-packaging-artifacts-")
+        assert resolved_temp_root.name.startswith(
+            "xic-quantitative-projection-packaging-artifacts-"
+        )
         shutil.rmtree(resolved_temp_root)
 
 
@@ -230,17 +233,14 @@ def test_pyinstaller_spec_includes_quantitative_projection_authority() -> None:
 
     assert "authority_datas = collect_data_files(" in spec_text
     assert '"xic_extractor.alignment"' in spec_text
-    assert (
-        'includes=["data/issue256_quantitative_projection_authority_v1.json"]'
-        in spec_text
-    )
+    assert 'includes=["data/quantitative_projection_authority_v1.json"]' in spec_text
     assert "+ authority_datas" in spec_text
 
 
 def test_pyinstaller_collects_quantitative_projection_authority() -> None:
     datas = collect_data_files(
         "xic_extractor.alignment",
-        includes=["data/issue256_quantitative_projection_authority_v1.json"],
+        includes=["data/quantitative_projection_authority_v1.json"],
     )
     collected = {
         (Path(source).name, Path(destination).as_posix())
@@ -249,7 +249,7 @@ def test_pyinstaller_collects_quantitative_projection_authority() -> None:
 
     assert collected == {
         (
-            "issue256_quantitative_projection_authority_v1.json",
+            "quantitative_projection_authority_v1.json",
             "xic_extractor/alignment/data",
         )
     }
@@ -258,10 +258,10 @@ def test_pyinstaller_collects_quantitative_projection_authority() -> None:
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
 def test_built_wheel_contains_one_byte_identical_quantitative_authority(
-    issue256_packaging_source: Path,
+    authority_packaging_source: Path,
 ) -> None:
-    artifact_root = issue256_packaging_source.parent / "wheel-artifacts"
-    uv_cache_root = issue256_packaging_source.parent / "uv-cache"
+    artifact_root = authority_packaging_source.parent / "wheel-artifacts"
+    uv_cache_root = authority_packaging_source.parent / "uv-cache"
     artifact_root.mkdir()
     _run_packaging_command(
         (
@@ -275,9 +275,9 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             str(artifact_root),
             "--python",
             sys.executable,
-            str(issue256_packaging_source),
+            str(authority_packaging_source),
         ),
-        cwd=issue256_packaging_source.parent,
+        cwd=authority_packaging_source.parent,
         timeout_seconds=300,
     )
 
@@ -295,7 +295,7 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
 
     _assert_resource_bytes_match_source(resource_bytes)
 
-    install_target = issue256_packaging_source.parent / "installed-wheel"
+    install_target = authority_packaging_source.parent / "installed-wheel"
     _run_packaging_command(
         (
             "uv",
@@ -310,11 +310,11 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             "--no-deps",
             str(wheels[0]),
         ),
-        cwd=issue256_packaging_source.parent,
+        cwd=authority_packaging_source.parent,
         timeout_seconds=300,
     )
-    installed_resource = issue256_packaging_source.parent / "installed-resource.json"
-    probe_metadata = issue256_packaging_source.parent / "installed-probe.json"
+    installed_resource = authority_packaging_source.parent / "installed-resource.json"
+    probe_metadata = authority_packaging_source.parent / "installed-probe.json"
     _run_packaging_command(
         (
             sys.executable,
@@ -325,7 +325,7 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             str(installed_resource),
             str(probe_metadata),
         ),
-        cwd=issue256_packaging_source.parent,
+        cwd=authority_packaging_source.parent,
         timeout_seconds=60,
     )
 
@@ -341,11 +341,13 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
 
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
-def test_built_wheel_exposes_issue367_public_activation_surface(
-    issue256_packaging_source: Path,
+def test_built_wheel_exposes_public_cid_nl_activation_surface(
+    authority_packaging_source: Path,
 ) -> None:
-    artifact_root = issue256_packaging_source.parent / "issue367-wheel-artifacts"
-    uv_cache_root = issue256_packaging_source.parent / "issue367-uv-cache"
+    artifact_root = (
+        authority_packaging_source.parent / "public-activation-wheel-artifacts"
+    )
+    uv_cache_root = authority_packaging_source.parent / "public-activation-uv-cache"
     artifact_root.mkdir()
     _run_packaging_command(
         (
@@ -359,15 +361,17 @@ def test_built_wheel_exposes_issue367_public_activation_surface(
             str(artifact_root),
             "--python",
             sys.executable,
-            str(issue256_packaging_source),
+            str(authority_packaging_source),
         ),
-        cwd=issue256_packaging_source.parent,
+        cwd=authority_packaging_source.parent,
         timeout_seconds=300,
     )
 
     wheels = list(artifact_root.glob("*.whl"))
     assert len(wheels) == 1
-    install_target = issue256_packaging_source.parent / "issue367-installed-wheel"
+    install_target = (
+        authority_packaging_source.parent / "public-activation-installed-wheel"
+    )
     _run_packaging_command(
         (
             "uv",
@@ -382,21 +386,23 @@ def test_built_wheel_exposes_issue367_public_activation_surface(
             "--no-deps",
             str(wheels[0]),
         ),
-        cwd=issue256_packaging_source.parent,
+        cwd=authority_packaging_source.parent,
         timeout_seconds=300,
     )
 
-    probe_metadata = issue256_packaging_source.parent / "issue367-installed-probe.json"
+    probe_metadata = (
+        authority_packaging_source.parent / "public-activation-installed-probe.json"
+    )
     _run_packaging_command(
         (
             sys.executable,
             "-I",
             "-c",
-            ISSUE367_INSTALLED_WHEEL_PROBE,
+            PUBLIC_ACTIVATION_INSTALLED_WHEEL_PROBE,
             str(install_target),
             str(probe_metadata),
         ),
-        cwd=issue256_packaging_source.parent,
+        cwd=authority_packaging_source.parent,
         timeout_seconds=60,
     )
 
@@ -418,9 +424,9 @@ def test_built_wheel_exposes_issue367_public_activation_surface(
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
 def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority(
-    issue256_packaging_source: Path,
+    authority_packaging_source: Path,
 ) -> None:
-    artifact_root = issue256_packaging_source.parent / "pyinstaller-artifacts"
+    artifact_root = authority_packaging_source.parent / "pyinstaller-artifacts"
     dist_root = artifact_root / "dist"
     work_root = artifact_root / "work"
     dist_root.mkdir(parents=True)
@@ -437,9 +443,9 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
             str(dist_root),
             "--workpath",
             str(work_root),
-            str(issue256_packaging_source / "xic_extractor.spec"),
+            str(authority_packaging_source / "xic_extractor.spec"),
         ),
-        cwd=issue256_packaging_source,
+        cwd=authority_packaging_source,
         timeout_seconds=900,
     )
 

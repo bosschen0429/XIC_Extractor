@@ -1,4 +1,4 @@
-"""Render RAW XIC overlays for anchored 85RAW hypothesis review candidates."""
+"""Render RAW XIC overlays for anchored FULL COHORT hypothesis review candidates."""
 
 from __future__ import annotations
 
@@ -11,21 +11,21 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from xic_extractor.diagnostics import backfill_peakhypothesis_raw85_overlay
+from xic_extractor.diagnostics import backfill_peakhypothesis_overlay
 from xic_extractor.raw_reader import open_raw
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        requests = backfill_peakhypothesis_raw85_overlay.build_overlay_requests(
+        requests = backfill_peakhypothesis_overlay.build_overlay_requests(
             review_queue_rows=_read_tsv(args.review_queue_tsv),
-            raw85_review_rows=_read_tsv(args.raw85_alignment_review_tsv),
+            full_cohort_review_rows=_read_tsv(args.full_cohort_alignment_review_tsv),
             discovery_batch_rows=_read_csv(args.discovery_batch_index_csv),
             rt_padding_min=args.rt_padding_min,
             ppm_tolerance=args.ppm_tolerance,
         )
-        outputs = backfill_peakhypothesis_raw85_overlay.write_raw85_overlay_outputs(
+        outputs = backfill_peakhypothesis_overlay.write_full_cohort_overlay_outputs(
             args.output_dir,
             requests,
             trace_provider=_raw_trace_provider(args.dll_dir),
@@ -34,16 +34,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(f"85RAW overlay index TSV: {outputs.index_tsv}")
-    print(f"85RAW overlay gallery HTML: {outputs.gallery_html}")
-    print(f"85RAW overlay plot directory: {outputs.plot_dir}")
+    print(f"FULL COHORT overlay index TSV: {outputs.index_tsv}")
+    print(f"FULL COHORT overlay gallery HTML: {outputs.gallery_html}")
+    print(f"FULL COHORT overlay plot directory: {outputs.plot_dir}")
     return 0
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--review-queue-tsv", type=Path, required=True)
-    parser.add_argument("--raw85-alignment-review-tsv", type=Path, required=True)
+    parser.add_argument("--full_cohort-alignment-review-tsv", type=Path, required=True)
     parser.add_argument("--discovery-batch-index-csv", type=Path, required=True)
     parser.add_argument("--dll-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)

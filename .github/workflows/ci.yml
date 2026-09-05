@@ -94,7 +94,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $packagingRelevant = @(
               $changedPaths | Where-Object {
-                $_ -match '^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py|assets/|config/(settings|targets)\.example\.csv|gui/main\.py|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py|data/issue256_quantitative_projection_authority_v1\.json))'
+                $_ -match '^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py|assets/|config/(settings|targets)\.example\.csv|gui/main\.py|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py|data/quantitative_projection_authority_v1\.json))'
               }
             )
             if ($packagingRelevant.Count -eq 0) {
@@ -124,7 +124,7 @@ jobs:
           if ($runPackagingBuild) {
             $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_one_byte_identical_quantitative_authority"
             $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority"
-            $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_exposes_issue367_public_activation_surface"
+            $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_exposes_public_cid_nl_activation_surface"
           }
           $serialStarted = Get-Date
           & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short -x --durations=10

@@ -885,8 +885,8 @@ ALLOWED_BY_FIELD: dict[str, frozenset[str]] = {
     "blast_radius_assessed": frozenset(
         {
             "present_current",
-            "8raw_not_assessed",
-            "85raw_not_assessed",
+            "fixture_cohort_not_assessed",
+            "full_cohort_not_assessed",
             "stale_hash_mismatch",
             "manifest_missing",
             "not_run_slice0",
@@ -909,8 +909,8 @@ ALLOWED_BY_FIELD: dict[str, frozenset[str]] = {
         {
             "seed",
             "non_seed_same_family",
-            "all_available_8raw",
-            "all_available_85raw",
+            "all_available_fixture_cohort",
+            "all_available_full_cohort",
             "manual_label",
             "overall",
             "full_matrix",
@@ -1227,7 +1227,7 @@ ALLOWED_BY_FIELD: dict[str, frozenset[str]] = {
         {
             "activation_decision_rows_fallback",
             "backfill_peakhypothesis_promotion_cells",
-            "blast_radius_summary:all_available_85raw:assessed_row_count",
+            "blast_radius_summary:all_available_full_cohort:assessed_row_count",
         }
     ),
     "product_affecting_rows_basis": frozenset({"activation_decision_rows"}),

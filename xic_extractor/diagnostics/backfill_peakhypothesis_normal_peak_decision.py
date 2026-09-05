@@ -1,6 +1,6 @@
 """PeakHypothesis normal-peak backfill decision surface.
 
-This diagnostic turns reviewed PeakHypothesis promotion rows plus 85RAW
+This diagnostic turns reviewed PeakHypothesis promotion rows plus FULL COHORT
 same-peak review evidence into an explicit normal-peak decision. It does not
 write matrices or mutate alignment artifacts.
 """
@@ -38,18 +38,18 @@ DECISION_COLUMNS = (
     "area_policy",
     "matrix_quantitative_use",
     "promotion_decision",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_cell_status",
-    "raw85_primary_matrix_area",
-    "raw85_primary_matrix_area_source",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_cell_status",
+    "full_cohort_primary_matrix_area",
+    "full_cohort_primary_matrix_area_source",
     "normal_peak_quantitation_area",
     "normal_peak_quantitation_area_source",
     "normal_peak_quantitation_area_source_field",
     "normal_peak_quantitation_boundary_start_rt",
     "normal_peak_quantitation_boundary_end_rt",
     "normal_peak_quantitation_boundary_source",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
     "manual_same_peak_verdict",
     "same_peak_verdict",
     "same_peak_verdict_source",
@@ -74,32 +74,32 @@ PROMOTION_REQUIRED_COLUMNS = (
     "projected_matrix_value",
 )
 
-RAW85_SLICE_REQUIRED_COLUMNS = (
+FULL_COHORT_SLICE_REQUIRED_COLUMNS = (
     "peak_hypothesis_id",
     "feature_family_id",
     "seed_group_id",
     "sample_stem",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_cell_status",
-    "raw85_primary_matrix_area",
-    "raw85_primary_matrix_area_source",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
-    "raw85_slice_gate_status",
-    "raw85_slice_blockers",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_cell_status",
+    "full_cohort_primary_matrix_area",
+    "full_cohort_primary_matrix_area_source",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
+    "full_cohort_acceptance_gate_status",
+    "full_cohort_slice_blockers",
 )
 
 MANUAL_VERDICT_REQUIRED_COLUMNS = (
     "source_peak_hypothesis_id",
     "sample_stem",
-    "raw85_matched_peak_hypothesis_id",
+    "full_cohort_matched_peak_hypothesis_id",
     "reviewer_verdict",
 )
 
 MACHINE_SHAPE_REQUIRED_COLUMNS = (
     "source_peak_hypothesis_id",
     "sample_stem",
-    "raw85_matched_peak_hypothesis_id",
+    "full_cohort_matched_peak_hypothesis_id",
     "machine_shape_decision",
     "machine_shape_reasons",
     "machine_shape_blockers",
@@ -115,8 +115,8 @@ MACHINE_SHAPE_REQUIRED_COLUMNS = (
 )
 
 _ALLOWED_CONSOLIDATION_BLOCKERS = {
-    "raw85_candidate_not_primary_matrix_row",
-    "raw85_candidate_family_consolidation_review_required",
+    "full_cohort_candidate_not_primary_matrix_row",
+    "full_cohort_candidate_family_consolidation_review_required",
 }
 _GAUSSIAN15_AREA_SOURCE = "gaussian15_positive_asls_residual"
 
@@ -136,18 +136,20 @@ class NormalPeakDecisionOutputs:
 def build_normal_peak_decision_index(
     *,
     promotion_rows: Sequence[Mapping[str, Any]],
-    raw85_slice_gate_rows: Sequence[Mapping[str, Any]],
+    full_cohort_acceptance_gate_rows: Sequence[Mapping[str, Any]],
     manual_verdict_rows: Sequence[Mapping[str, Any]],
     machine_shape_rows: Sequence[Mapping[str, Any]] = (),
     source_run_id: str = "",
 ) -> NormalPeakDecisionIndex:
-    raw85_by_key = {_promotion_key(row): row for row in raw85_slice_gate_rows}
+    full_cohort_by_key = {
+        _promotion_key(row): row for row in full_cohort_acceptance_gate_rows
+    }
     manual_by_key = {_manual_key(row): row for row in manual_verdict_rows}
     shape_by_key = {_machine_shape_key(row): row for row in machine_shape_rows}
     rows = tuple(
         _decision_row(
             promotion_row=promotion_row,
-            raw85_row=raw85_by_key.get(_promotion_key(promotion_row), {}),
+            full_cohort_row=full_cohort_by_key.get(_promotion_key(promotion_row), {}),
             manual_by_key=manual_by_key,
             machine_shape_by_key=shape_by_key,
             machine_shape_required=bool(machine_shape_rows),
@@ -190,18 +192,18 @@ def write_normal_peak_decision_outputs(
 def _decision_row(
     *,
     promotion_row: Mapping[str, Any],
-    raw85_row: Mapping[str, Any],
+    full_cohort_row: Mapping[str, Any],
     manual_by_key: Mapping[tuple[str, str, str], Mapping[str, Any]],
     machine_shape_by_key: Mapping[tuple[str, str, str], Mapping[str, Any]],
     machine_shape_required: bool,
     source_run_id: str,
 ) -> dict[str, Any]:
-    raw85_id = _value(raw85_row, "raw85_matched_peak_hypothesis_id")
+    full_cohort_id = _value(full_cohort_row, "full_cohort_matched_peak_hypothesis_id")
     manual = manual_by_key.get(
         (
             _value(promotion_row, "peak_hypothesis_id"),
             _value(promotion_row, "sample_stem"),
-            raw85_id,
+            full_cohort_id,
         ),
         {},
     )
@@ -209,20 +211,20 @@ def _decision_row(
         (
             _value(promotion_row, "peak_hypothesis_id"),
             _value(promotion_row, "sample_stem"),
-            raw85_id,
+            full_cohort_id,
         ),
         {},
     )
     decision, required, reasons, blockers, consolidation_effect = _classify(
         promotion_row=promotion_row,
-        raw85_row=raw85_row,
+        full_cohort_row=full_cohort_row,
         manual_row=manual,
         machine_shape_row=machine_shape,
         machine_shape_required=machine_shape_required,
     )
     resolved_area_policy = _resolved_area_policy(promotion_row, machine_shape)
     quantitation_area = _normal_peak_quantitation_area(
-        raw85_row,
+        full_cohort_row,
         machine_shape,
         machine_shape_required=machine_shape_required,
     )
@@ -245,15 +247,15 @@ def _decision_row(
             "matrix_quantitative_use",
         ),
         "promotion_decision": _value(promotion_row, "promotion_decision"),
-        "raw85_matched_peak_hypothesis_id": raw85_id,
-        "raw85_cell_status": _value(raw85_row, "raw85_cell_status"),
-        "raw85_primary_matrix_area": _value(
-            raw85_row,
-            "raw85_primary_matrix_area",
+        "full_cohort_matched_peak_hypothesis_id": full_cohort_id,
+        "full_cohort_cell_status": _value(full_cohort_row, "full_cohort_cell_status"),
+        "full_cohort_primary_matrix_area": _value(
+            full_cohort_row,
+            "full_cohort_primary_matrix_area",
         ),
-        "raw85_primary_matrix_area_source": _value(
-            raw85_row,
-            "raw85_primary_matrix_area_source",
+        "full_cohort_primary_matrix_area_source": _value(
+            full_cohort_row,
+            "full_cohort_primary_matrix_area_source",
         ),
         "normal_peak_quantitation_area": quantitation_area["area"],
         "normal_peak_quantitation_area_source": quantitation_area["area_source"],
@@ -269,13 +271,13 @@ def _decision_row(
         "normal_peak_quantitation_boundary_source": quantitation_area[
             "boundary_source"
         ],
-        "raw85_include_in_primary_matrix": _value(
-            raw85_row,
-            "raw85_include_in_primary_matrix",
+        "full_cohort_include_in_primary_matrix": _value(
+            full_cohort_row,
+            "full_cohort_include_in_primary_matrix",
         ),
-        "raw85_consolidation_state": _value(
-            raw85_row,
-            "raw85_consolidation_state",
+        "full_cohort_consolidation_state": _value(
+            full_cohort_row,
+            "full_cohort_consolidation_state",
         ),
         "manual_same_peak_verdict": _value(manual, "reviewer_verdict"),
         "same_peak_verdict": same_peak["verdict"],
@@ -292,7 +294,7 @@ def _decision_row(
 def _classify(
     *,
     promotion_row: Mapping[str, Any],
-    raw85_row: Mapping[str, Any],
+    full_cohort_row: Mapping[str, Any],
     manual_row: Mapping[str, Any],
     machine_shape_row: Mapping[str, Any],
     machine_shape_required: bool,
@@ -308,14 +310,14 @@ def _classify(
         )
     blockers = _normal_peak_blockers(
         promotion_row,
-        raw85_row,
+        full_cohort_row,
         manual_row,
         machine_shape_row,
         machine_shape_required=machine_shape_required,
     )
     if blockers:
         return ("blocked", False, (), tuple(blockers), "")
-    consolidation_override = _has_only_allowed_consolidation_blockers(raw85_row)
+    consolidation_override = _has_only_allowed_consolidation_blockers(full_cohort_row)
     reasons = [
         "standard_peak_same_peak_supported",
         "positive_gaussian15_area",
@@ -339,7 +341,7 @@ def _classify(
 
 def _normal_peak_blockers(
     promotion_row: Mapping[str, Any],
-    raw85_row: Mapping[str, Any],
+    full_cohort_row: Mapping[str, Any],
     manual_row: Mapping[str, Any],
     machine_shape_row: Mapping[str, Any],
     *,
@@ -357,10 +359,13 @@ def _normal_peak_blockers(
         blockers.append("promotion_not_marked_for_matrix_write")
     if _value(promotion_row, "promotion_blockers"):
         blockers.append("promotion_blockers_present")
-    if not raw85_row:
-        blockers.append("missing_raw85_slice_gate_row")
-    if _value(raw85_row, "raw85_cell_status") not in {"detected", "rescued"}:
-        blockers.append("raw85_cell_not_detected_or_rescued")
+    if not full_cohort_row:
+        blockers.append("missing_full_cohort_acceptance_gate_row")
+    if _value(full_cohort_row, "full_cohort_cell_status") not in {
+        "detected",
+        "rescued",
+    }:
+        blockers.append("full_cohort_cell_not_detected_or_rescued")
     if (
         machine_shape_required
         and _value(machine_shape_row, "machine_shape_decision")
@@ -376,12 +381,14 @@ def _normal_peak_blockers(
         if boundary_source and boundary_source != "baseline_return":
             blockers.append("machine_gaussian15_lobe_boundary_not_baseline_return")
     else:
-        if _value(raw85_row, "raw85_primary_matrix_area_source") != (
+        if _value(full_cohort_row, "full_cohort_primary_matrix_area_source") != (
             _GAUSSIAN15_AREA_SOURCE
         ):
-            blockers.append("raw85_area_source_not_gaussian15")
-        if not _positive_number(_value(raw85_row, "raw85_primary_matrix_area")):
-            blockers.append("raw85_area_not_positive")
+            blockers.append("full_cohort_area_source_not_gaussian15")
+        if not _positive_number(
+            _value(full_cohort_row, "full_cohort_primary_matrix_area")
+        ):
+            blockers.append("full_cohort_area_not_positive")
     same_peak = _same_peak_verdict(
         manual_row=manual_row,
         machine_shape_row=machine_shape_row,
@@ -402,10 +409,12 @@ def _normal_peak_blockers(
             blockers.append("machine_standard_peak_shape_not_supported")
         if _value(machine_shape_row, "machine_shape_blockers"):
             blockers.append("machine_shape_blockers_present")
-    disallowed = set(_semicolon_values(_value(raw85_row, "raw85_slice_blockers")))
+    disallowed = set(
+        _semicolon_values(_value(full_cohort_row, "full_cohort_slice_blockers"))
+    )
     disallowed -= _ALLOWED_CONSOLIDATION_BLOCKERS
     if disallowed:
-        blockers.append("raw85_disallowed_slice_blockers_present")
+        blockers.append("full_cohort_disallowed_slice_blockers_present")
     return blockers
 
 
@@ -479,7 +488,7 @@ def _manual_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         _value(row, "source_peak_hypothesis_id"),
         _value(row, "sample_stem"),
-        _value(row, "raw85_matched_peak_hypothesis_id"),
+        _value(row, "full_cohort_matched_peak_hypothesis_id"),
     )
 
 
@@ -487,7 +496,7 @@ def _machine_shape_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         _value(row, "source_peak_hypothesis_id"),
         _value(row, "sample_stem"),
-        _value(row, "raw85_matched_peak_hypothesis_id"),
+        _value(row, "full_cohort_matched_peak_hypothesis_id"),
     )
 
 
@@ -522,7 +531,7 @@ def _same_peak_verdict(
 
 
 def _normal_peak_quantitation_area(
-    raw85_row: Mapping[str, Any],
+    full_cohort_row: Mapping[str, Any],
     machine_shape_row: Mapping[str, Any],
     *,
     machine_shape_required: bool,
@@ -544,9 +553,11 @@ def _normal_peak_quantitation_area(
             ),
         }
     return {
-        "area": _value(raw85_row, "raw85_primary_matrix_area"),
-        "area_source": _value(raw85_row, "raw85_primary_matrix_area_source"),
-        "area_source_field": "raw85_primary_matrix_area",
+        "area": _value(full_cohort_row, "full_cohort_primary_matrix_area"),
+        "area_source": _value(
+            full_cohort_row, "full_cohort_primary_matrix_area_source"
+        ),
+        "area_source_field": "full_cohort_primary_matrix_area",
         "boundary_start_rt": "",
         "boundary_end_rt": "",
         "boundary_source": "",
@@ -554,7 +565,7 @@ def _normal_peak_quantitation_area(
 
 
 def _has_only_allowed_consolidation_blockers(row: Mapping[str, Any]) -> bool:
-    blockers = set(_semicolon_values(_value(row, "raw85_slice_blockers")))
+    blockers = set(_semicolon_values(_value(row, "full_cohort_slice_blockers")))
     return bool(blockers) and blockers <= _ALLOWED_CONSOLIDATION_BLOCKERS
 
 

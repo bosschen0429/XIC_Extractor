@@ -310,7 +310,7 @@ def _candidate_artifact_path(
     if declared_path.is_file():
         return declared_path
 
-    # The retained Issue #195 bundle was atomically renamed from its exact
+    # The retained Backfill bundle was atomically renamed from its exact
     # ``<artifact>.attempt`` staging directory after the batch index was
     # written. Relocate only that mechanically exact stale locator; the
     # Discovery receipt still closes the candidate bytes and typed payload.

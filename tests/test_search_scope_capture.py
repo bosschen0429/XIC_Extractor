@@ -5,13 +5,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.issue161_no_raw_fixture import (
-    issue161_evidence,
-    issue161_support_policy,
-    issue161_unique_support,
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
 )
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
 )
@@ -53,11 +57,11 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
 ) -> None:
     (tmp_path / "targeted").mkdir()
     (tmp_path / "untargeted").mkdir()
-    targeted_fixture = build_package2_no_raw_fixture(
+    targeted_fixture = build_processing_identity_no_raw_fixture(
         tmp_path / "targeted",
         sample_stems=("S1",),
     )
-    untargeted_fixture = build_issue175_no_raw_fixture(
+    untargeted_fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path / "untargeted",
         sample_roles={"S1": "qc"},
     )
@@ -235,11 +239,11 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
 ) -> None:
     (tmp_path / "targeted").mkdir()
     (tmp_path / "untargeted").mkdir()
-    targeted_fixture = build_package2_no_raw_fixture(
+    targeted_fixture = build_processing_identity_no_raw_fixture(
         tmp_path / "targeted",
         sample_stems=("S1",),
     )
-    untargeted_fixture = build_issue175_no_raw_fixture(
+    untargeted_fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path / "untargeted",
         sample_roles={"S1": "qc"},
     )
@@ -258,8 +262,7 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
     rt = np.linspace(7.7, 8.3, 61)
     intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
     half_tolerance_mz = untargeted_fixture.method_subject.precursor_mz * (
-        1.0
-        + untargeted_fixture.method_subject.precursor_tolerance_ppm / 2_000_000.0
+        1.0 + untargeted_fixture.method_subject.precursor_tolerance_ppm / 2_000_000.0
     )
     targeted_binding = _capture_binding(
         candidate_id="candidate-a",
@@ -407,11 +410,11 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
 def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> None:
     (tmp_path / "targeted").mkdir()
     (tmp_path / "untargeted").mkdir()
-    targeted_fixture = build_package2_no_raw_fixture(
+    targeted_fixture = build_processing_identity_no_raw_fixture(
         tmp_path / "targeted",
         sample_stems=("S1",),
     )
-    untargeted_fixture = build_issue175_no_raw_fixture(
+    untargeted_fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path / "untargeted",
         sample_roles={"S1": "qc"},
     )
@@ -482,7 +485,7 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
 def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "qc"},
     )
@@ -533,9 +536,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
             sample=sample,
             acquisition_source_id=source.acquisition_source_id,
             mz=batch.subject_for_candidate(candidate_id).precursor_mz,
-            ppm_tol=batch.subject_for_candidate(
-                candidate_id
-            ).precursor_tolerance_ppm,
+            ppm_tol=batch.subject_for_candidate(candidate_id).precursor_tolerance_ppm,
             rt_min=7.7,
             rt_max=8.3,
         )
@@ -570,8 +571,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
             next(
                 candidate_id
                 for candidate_id, method_subject_id in memberships
-                if method_subject_id
-                == scope.evidence_providers[0].method_subject_id
+                if method_subject_id == scope.evidence_providers[0].method_subject_id
             ),
         ),
         capture_bindings=tuple(
@@ -621,7 +621,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
 def test_scope_rejects_provider_not_bound_to_variant_definition(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("S1",))
     method_subject = cid_nl_method_subject_from_target(fixture.target)
 
     with pytest.raises(SearchScopeContractError, match="evidence provider"):
@@ -649,7 +649,7 @@ def test_scope_rejects_provider_not_bound_to_variant_definition(
 def test_owner_binding_rejects_observation_from_other_capture_trace(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("S1",))
     sample = fixture.sample("S1")
     method_subject = cid_nl_method_subject_from_target(fixture.target)
     source = resolve_request_acquisition_source(
@@ -712,13 +712,13 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
         processing_owners=fixture.owners,
         sample=sample,
     )
-    evidence = issue161_evidence(
+    evidence = cid_nl_evidence(
         fixture,
         "S1",
         scan_number=101,
         scan_rt_min=observation.content.integration.rt_apex_min,
     )
-    support = issue161_unique_support(
+    support = cid_nl_unique_support(
         fixture,
         "S1",
         peak=observation,
@@ -732,7 +732,7 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.5,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
             scanned_event_count=1,
@@ -765,7 +765,7 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
 
 
 def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("S1",))
     method_subject = cid_nl_method_subject_from_target(fixture.target)
 
     with pytest.raises(SearchScopeContractError, match="Untargeted"):

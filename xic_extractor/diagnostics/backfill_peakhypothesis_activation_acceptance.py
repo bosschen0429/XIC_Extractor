@@ -100,7 +100,7 @@ def build_activation_acceptance(
     output_matrix_rows: Sequence[Mapping[str, Any]],
     output_identity_rows: Sequence[Mapping[str, Any]],
     source_run_id: str = "",
-    validation_scope: str = "8raw_current_writer_matrix_diff",
+    validation_scope: str = "fixture_cohort_current_writer_matrix_diff",
 ) -> ActivationAcceptanceIndex:
     _validate_input_schemas(
         promotion_rows=promotion_rows,

@@ -11,10 +11,10 @@ import xic_extractor.alignment.backfill.observation_repair as repair_owner
 import xic_extractor.alignment.cross_sample_reconciliation as reconciliation_owner
 import xic_extractor.alignment.projection.target.pre_cell as target_projection_owner
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
-from tests.issue161_no_raw_fixture import issue161_peak
-from tests.package2_no_raw_fixture import (
-    Package2NoRawFixture,
-    build_package2_no_raw_fixture,
+from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
+from tests.processing_identity_no_raw_fixture import (
+    ProcessingIdentityNoRawFixture,
+    build_processing_identity_no_raw_fixture,
 )
 from tests.test_cell_observations import (
     _coverage_for_groups,
@@ -84,12 +84,19 @@ def test_public_target_projection_entry_point_exists() -> None:
     ("observed", "group_specs", "variant"),
     [
         ((), (((), "provisional"),), "unbound"),
-        (("sample-a", "sample-b"),
-         ((("sample-a", "sample-b"), "established"),), "bound"),
-        (("sample-a", "sample-b", "sample-c", "sample-d"),
-         ((("sample-a", "sample-b"), "established"),
-          (("sample-c", "sample-d"), "established")),
-         "bound"),
+        (
+            ("sample-a", "sample-b"),
+            ((("sample-a", "sample-b"), "established"),),
+            "bound",
+        ),
+        (
+            ("sample-a", "sample-b", "sample-c", "sample-d"),
+            (
+                (("sample-a", "sample-b"), "established"),
+                (("sample-c", "sample-d"), "established"),
+            ),
+            "bound",
+        ),
     ],
 )
 def test_projects_closed_row_binding_and_complete_cell_population(
@@ -100,9 +107,7 @@ def test_projects_closed_row_binding_and_complete_cell_population(
 ) -> None:
     stems = tuple(
         sorted(
-            set(observed).union(
-                stem for members, _ in group_specs for stem in members
-            )
+            set(observed).union(stem for members, _ in group_specs for stem in members)
             or {"sample-a", "sample-b"}
         )
     )
@@ -120,8 +125,7 @@ def test_projects_closed_row_binding_and_complete_cell_population(
         group.group_hypothesis_id for group in projection.binding.eligible_groups
     ) == tuple(
         sorted(
-            group.group_hypothesis_id
-            for group in projection.binding.eligible_groups
+            group.group_hypothesis_id for group in projection.binding.eligible_groups
         )
     )
     assert len(projection.subjects) == len(scope.samples)
@@ -181,7 +185,8 @@ def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
             for subject in result.terminal_subjects
             if isinstance(subject, ObservedSearchSubject)
             and subject.canonical_sample_identity_id
-            == hypotheses[stem].peak_observation_refs[0]
+            == hypotheses[stem]
+            .peak_observation_refs[0]
             .content.canonical_sample_identity_id
         )
         object.__setattr__(observed, "hypothesis", altered)
@@ -198,20 +203,27 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
         tmp_path,
         sample_stems=("sample-a", "sample-b"),
         observed_stems=("sample-a",),
-        group_specs=(( ("sample-a", "sample-b"), "provisional"),),
+        group_specs=((("sample-a", "sample-b"), "provisional"),),
         reverse_scope_samples=True,
     )
 
     projection = project_target_pre_cell(result)
 
     assert projection.binding.variant == "bound"
-    assert tuple(subject.sample.lookup_token for subject in projection.subjects) == (
-        "sample-a",
-        "sample-b",
+    assert tuple(
+        subject.sample.identity.sample_identity_id for subject in projection.subjects
+    ) == tuple(
+        sample.identity.sample_identity_id for sample in result.canonical_samples
     )
-    assert isinstance(projection.subjects[0].terminal_subject, ObservedSearchSubject)
+    subjects_by_sample = {
+        subject.sample.lookup_token: subject for subject in projection.subjects
+    }
     assert isinstance(
-        projection.subjects[1].terminal_subject,
+        subjects_by_sample["sample-a"].terminal_subject,
+        ObservedSearchSubject,
+    )
+    assert isinstance(
+        subjects_by_sample["sample-b"].terminal_subject,
         SearchedNoObservationSubject,
     )
     assert scope.samples[0].lookup_token == "sample-b"
@@ -291,7 +303,8 @@ def test_projector_rejects_observed_trace_group_crossing(tmp_path: Path) -> None
         group_specs=(((), "provisional"),),
     )
     observed = next(
-        subject for subject in result.terminal_subjects
+        subject
+        for subject in result.terminal_subjects
         if isinstance(subject, ObservedSearchSubject)
     )
     object.__setattr__(observed, "trace_group_id", "trace-crossed")
@@ -310,7 +323,8 @@ def test_non_owner_and_cross_request_observed_hypotheses_fail_closed(
         group_specs=(((), "provisional"),),
     )
     observed = next(
-        subject for subject in result.terminal_subjects
+        subject
+        for subject in result.terminal_subjects
         if isinstance(subject, ObservedSearchSubject)
     )
     raw = copy(hypotheses["sample-a"])
@@ -321,7 +335,7 @@ def test_non_owner_and_cross_request_observed_hypotheses_fail_closed(
 
     crossed_path = tmp_path / "crossed"
     crossed_path.mkdir()
-    crossed = build_package2_no_raw_fixture(
+    crossed = build_processing_identity_no_raw_fixture(
         crossed_path,
         sample_stems=("sample-a", "sample-c"),
     )
@@ -341,7 +355,8 @@ def test_cross_sample_observed_hypothesis_fails_closed(tmp_path: Path) -> None:
         group_specs=(((), "provisional"),),
     )
     observed = next(
-        subject for subject in result.terminal_subjects
+        subject
+        for subject in result.terminal_subjects
         if isinstance(subject, ObservedSearchSubject)
     )
     crossed_hypothesis = _owner_hypothesis(fixture, "sample-b", 8.0)
@@ -441,11 +456,13 @@ def test_projection_revalidates_each_consumed_owner_ingress(
         group_specs=(((), "provisional"),),
     )
     observed = next(
-        subject for subject in result.terminal_subjects
+        subject
+        for subject in result.terminal_subjects
         if isinstance(subject, ObservedSearchSubject)
     )
     negative = next(
-        subject for subject in result.terminal_subjects
+        subject
+        for subject in result.terminal_subjects
         if isinstance(subject, SearchedNoObservationSubject)
     )
     group = result.final_population[0]
@@ -487,6 +504,7 @@ def test_projection_revalidates_each_consumed_owner_ingress(
             b"crossed-member-basis",
         )
     else:
+
         def fail_owner_constructor(**_: object) -> object:
             raise RuntimeError("owner constructor failed")
 
@@ -508,16 +526,16 @@ def _finalized_case(
     group_specs: tuple[tuple[tuple[str, ...], str], ...],
     reverse_scope_samples: bool = False,
 ) -> tuple[
-    Package2NoRawFixture,
+    ProcessingIdentityNoRawFixture,
     TargetSearchScope,
     FinalizedScientificAlignment,
     dict[str, object],
 ]:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=sample_stems)
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=sample_stems
+    )
     scope_samples = (
-        tuple(reversed(fixture.samples))
-        if reverse_scope_samples
-        else fixture.samples
+        tuple(reversed(fixture.samples)) if reverse_scope_samples else fixture.samples
     )
     target_value = fixture.target.definition.target
     method_subject = cid_nl_method_subject_from_target(fixture.target)
@@ -570,9 +588,7 @@ def _finalized_case(
     spine = build_cid_nl_reference_spine(
         processing_owners=fixture.owners,
         target=fixture.target,
-        sample_assessments=tuple(
-            zip(fixture.samples, assessments, strict=True)
-        ),
+        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     predecessor = validate_cross_sample_peak_group_identity(
         spine.group,
@@ -582,8 +598,7 @@ def _finalized_case(
         sample.lookup_token: next(
             member
             for member in predecessor.member_subjects
-            if member.canonical_sample_identity_id
-            == sample.identity.sample_identity_id
+            if member.canonical_sample_identity_id == sample.identity.sample_identity_id
         )
         for sample in fixture.samples
     }
@@ -637,9 +652,7 @@ def _finalized_case(
             terminals.append(
                 ObservedSearchSubject(
                     candidate_id=candidate_id,
-                    canonical_sample_identity_id=(
-                        sample.identity.sample_identity_id
-                    ),
+                    canonical_sample_identity_id=(sample.identity.sample_identity_id),
                     trace_group_id=hypothesis.trace_group_id,
                     hypothesis=hypothesis,
                     _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
@@ -649,9 +662,7 @@ def _finalized_case(
             terminals.append(
                 SearchedNoObservationSubject(
                     candidate_id=candidate_id,
-                    canonical_sample_identity_id=(
-                        sample.identity.sample_identity_id
-                    ),
+                    canonical_sample_identity_id=(sample.identity.sample_identity_id),
                     trace_group_id=f"trace-{sample.lookup_token}",
                     detection_status="not_detected",
                     _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
@@ -682,11 +693,11 @@ def _finalized_case(
 
 
 def _owner_hypothesis(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     offset: float,
 ) -> object:
-    observation = issue161_peak(
+    observation = cid_nl_peak(
         fixture,
         sample_stem,
         apex_rt=8.0 + offset,
@@ -703,7 +714,7 @@ def _owner_hypothesis(
 
 
 def _final_receipt(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     groups: tuple[CrossSampleGroupIdentity, ...],
 ) -> CrossSampleFinalReceipt:
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))

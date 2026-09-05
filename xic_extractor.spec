@@ -11,7 +11,7 @@ preset_datas = collect_data_files(
 )
 authority_datas = collect_data_files(
     "xic_extractor.alignment",
-    includes=["data/issue256_quantitative_projection_authority_v1.json"],
+    includes=["data/quantitative_projection_authority_v1.json"],
 )
 
 a = Analysis(

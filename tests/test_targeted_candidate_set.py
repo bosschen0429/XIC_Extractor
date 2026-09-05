@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.package2_no_raw_fixture import (
-    build_package2_no_raw_fixture,
-    package2_candidate_member,
-    package2_candidate_set,
-    package2_hypothesis,
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+    processing_identity_candidate_member,
+    processing_identity_candidate_set,
+    processing_identity_hypothesis,
 )
 from xic_extractor.discovery.targeted_candidate_set import (
     TargetedCandidateSetError,
@@ -22,15 +22,19 @@ from xic_extractor.discovery.targeted_candidate_set import (
 def test_complete_candidate_set_is_canonical_and_closes_all_lineage(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("sample-a",),
     )
-    first = package2_hypothesis(fixture, "sample-a", apex_rt=8.0, scan_number=42)
-    second = package2_hypothesis(fixture, "sample-a", apex_rt=8.3, scan_number=52)
+    first = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.0, scan_number=42
+    )
+    second = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.3, scan_number=52
+    )
 
-    forward = package2_candidate_set(fixture, "sample-a", (first, second))
-    reverse = package2_candidate_set(fixture, "sample-a", (second, first))
+    forward = processing_identity_candidate_set(fixture, "sample-a", (first, second))
+    reverse = processing_identity_candidate_set(fixture, "sample-a", (second, first))
 
     assert forward == reverse
     assert forward.status == "complete"
@@ -57,10 +61,12 @@ def test_complete_candidate_set_is_canonical_and_closes_all_lineage(
 def test_successful_empty_and_failed_candidate_sets_are_distinct(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
 
-    complete = package2_candidate_set(fixture, "sample-a", ())
-    failed = package2_candidate_set(
+    complete = processing_identity_candidate_set(fixture, "sample-a", ())
+    failed = processing_identity_candidate_set(
         fixture,
         "sample-a",
         (),
@@ -78,14 +84,18 @@ def test_successful_empty_and_failed_candidate_sets_are_distinct(
 def test_duplicate_projection_swap_and_missing_ancestor_fail_closed(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("sample-a",),
     )
-    first = package2_hypothesis(fixture, "sample-a", apex_rt=8.0, scan_number=42)
-    second = package2_hypothesis(fixture, "sample-a", apex_rt=8.3, scan_number=52)
-    first_member = package2_candidate_member(fixture, first)
-    second_member = package2_candidate_member(fixture, second)
+    first = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.0, scan_number=42
+    )
+    second = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.3, scan_number=52
+    )
+    first_member = processing_identity_candidate_member(fixture, first)
+    second_member = processing_identity_candidate_member(fixture, second)
 
     with pytest.raises(TargetedCandidateSetError, match="duplicate"):
         complete_targeted_candidate_discovery(
@@ -109,9 +119,7 @@ def test_duplicate_projection_swap_and_missing_ancestor_fail_closed(
             sample=fixture.sample("sample-a"),
             target=fixture.target,
             hypotheses=(first,),
-            targeted_cid_nl_projections=(
-                swapped_member.targeted_cid_nl_projection,
-            ),
+            targeted_cid_nl_projections=(swapped_member.targeted_cid_nl_projection,),
             lineage_artifacts=fixture.lineage_for((swapped_member,)),
         )
     assert first.artifact is not None
@@ -121,27 +129,27 @@ def test_duplicate_projection_swap_and_missing_ancestor_fail_closed(
             sample=fixture.sample("sample-a"),
             target=fixture.target,
             hypotheses=(first,),
-            targeted_cid_nl_projections=(
-                first_member.targeted_cid_nl_projection,
-            ),
+            targeted_cid_nl_projections=(first_member.targeted_cid_nl_projection,),
             lineage_artifacts=(first.artifact,),
         )
 
 
 def test_mixed_sample_target_attempt_and_tamper_fail_closed(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("sample-a", "sample-b"),
     )
-    first = package2_hypothesis(fixture, "sample-a", apex_rt=8.0, scan_number=42)
-    foreign_sample = package2_hypothesis(
+    first = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.0, scan_number=42
+    )
+    foreign_sample = processing_identity_hypothesis(
         fixture,
         "sample-b",
         apex_rt=8.0,
         scan_number=52,
     )
-    first_member = package2_candidate_member(fixture, first)
-    foreign_member = package2_candidate_member(fixture, foreign_sample)
+    first_member = processing_identity_candidate_member(fixture, first)
+    foreign_member = processing_identity_candidate_member(fixture, foreign_sample)
 
     with pytest.raises(TargetedCandidateSetError, match="different canonical sample"):
         complete_targeted_candidate_discovery(
@@ -149,9 +157,7 @@ def test_mixed_sample_target_attempt_and_tamper_fail_closed(tmp_path: Path) -> N
             sample=fixture.sample("sample-a"),
             target=fixture.target,
             hypotheses=(foreign_sample,),
-            targeted_cid_nl_projections=(
-                foreign_member.targeted_cid_nl_projection,
-            ),
+            targeted_cid_nl_projections=(foreign_member.targeted_cid_nl_projection,),
             lineage_artifacts=fixture.lineage_for((foreign_member,)),
         )
 
@@ -162,33 +168,29 @@ def test_mixed_sample_target_attempt_and_tamper_fail_closed(tmp_path: Path) -> N
             sample=fixture.sample("sample-a"),
             target=wrong_target,
             hypotheses=(first,),
-            targeted_cid_nl_projections=(
-                first_member.targeted_cid_nl_projection,
-            ),
+            targeted_cid_nl_projections=(first_member.targeted_cid_nl_projection,),
             lineage_artifacts=fixture.lineage_for((first_member,)),
         )
 
     retry_fixture = fixture.retry()
-    retry_hypothesis = package2_hypothesis(
+    retry_hypothesis = processing_identity_hypothesis(
         retry_fixture,
         "sample-a",
         apex_rt=8.0,
         scan_number=42,
     )
-    retry_member = package2_candidate_member(retry_fixture, retry_hypothesis)
+    retry_member = processing_identity_candidate_member(retry_fixture, retry_hypothesis)
     with pytest.raises(TargetedCandidateSetError, match="different processing attempt"):
         complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=fixture.target,
             hypotheses=(retry_hypothesis,),
-            targeted_cid_nl_projections=(
-                retry_member.targeted_cid_nl_projection,
-            ),
+            targeted_cid_nl_projections=(retry_member.targeted_cid_nl_projection,),
             lineage_artifacts=retry_fixture.lineage_for((retry_member,)),
         )
 
-    receipt = package2_candidate_set(fixture, "sample-a", (first,))
+    receipt = processing_identity_candidate_set(fixture, "sample-a", (first,))
     with pytest.raises(TargetedCandidateSetError, match="failure_reason"):
         replace(receipt, failure_reason="caller_tamper")
 
@@ -196,11 +198,17 @@ def test_mixed_sample_target_attempt_and_tamper_fail_closed(tmp_path: Path) -> N
 def test_two_discovered_candidates_cannot_be_recast_as_one_complete_candidate(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
-    first = package2_hypothesis(fixture, "sample-a", apex_rt=8.0, scan_number=42)
-    second = package2_hypothesis(fixture, "sample-a", apex_rt=8.3, scan_number=52)
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
+    first = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.0, scan_number=42
+    )
+    second = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.3, scan_number=52
+    )
     members = tuple(
-        package2_candidate_member(fixture, hypothesis)
+        processing_identity_candidate_member(fixture, hypothesis)
         for hypothesis in (first, second)
     )
     completion = complete_targeted_candidate_discovery(

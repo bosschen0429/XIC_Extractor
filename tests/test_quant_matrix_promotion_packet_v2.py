@@ -35,7 +35,7 @@ def test_promotion_packet_v2_schema_matches_builder_contract() -> None:
     assert schema["authority_rules"]["read_only"] is True
     assert schema["authority_rules"]["write_authority"] is False
     assert schema["authority_rules"]["scorer_ran"] is False
-    assert schema["authority_rules"]["raw_or_85raw_ran"] is False
+    assert schema["authority_rules"]["raw_or_full_cohort_ran"] is False
     assert schema["authority_rules"]["product_writer_changed"] is False
     assert schema["authority_rules"]["default_quant_matrix_changed"] is False
 
@@ -81,9 +81,9 @@ def test_promotion_packet_v2_builds_real_bundle_ready_candidate(
     assert summary["may_promote_default_quant_matrix"] is True
     assert summary["write_authority"] is False
     assert summary["default_quant_matrix_changed"] is False
-    assert summary["raw_or_85raw_ran"] is False
+    assert summary["raw_or_full_cohort_ran"] is False
     assert summary["validation_tiers"] == {
-        "85raw_large_cohort": "pass",
+        "full_cohort": "pass",
         "heldout_oracle": "pass",
         "downstream_impact_smoke": "pass",
     }

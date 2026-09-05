@@ -71,7 +71,7 @@ PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
 
 
 @dataclass(frozen=True)
-class Package2NoRawFixture:
+class ProcessingIdentityNoRawFixture:
     request: ProcessingRequestIdentity
     attempt: ProcessingAttemptIdentity
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
@@ -111,11 +111,10 @@ class Package2NoRawFixture:
             visit(hypothesis_artifact.evidence_artifact_id)
             visit(member.targeted_cid_nl_projection.artifact.evidence_artifact_id)
         return tuple(
-            self.artifact_registry[artifact_id]
-            for artifact_id in sorted(reachable)
+            self.artifact_registry[artifact_id] for artifact_id in sorted(reachable)
         )
 
-    def retry(self) -> Package2NoRawFixture:
+    def retry(self) -> ProcessingIdentityNoRawFixture:
         retry_attempt = issue_processing_attempt(self.request, retry_of=self.attempt)
         retry_owners = compose_processing_owner_references(
             request=self.request,
@@ -124,7 +123,7 @@ class Package2NoRawFixture:
             sample_resolutions=self.samples,
             target_snapshot=self.target.snapshot,
         )
-        return Package2NoRawFixture(
+        return ProcessingIdentityNoRawFixture(
             request=self.request,
             attempt=retry_attempt,
             samples=self.samples,
@@ -134,13 +133,13 @@ class Package2NoRawFixture:
         )
 
 
-def build_package2_no_raw_fixture(
+def build_processing_identity_no_raw_fixture(
     tmp_path: Path,
     *,
     sample_stems: tuple[str, ...],
     sample_roles: Mapping[str, SampleRole] | None = None,
     excluded_samples: frozenset[str] = frozenset(),
-) -> Package2NoRawFixture:
+) -> ProcessingIdentityNoRawFixture:
     declared_roles = dict(sample_roles or {})
     unknown_role_samples = set(declared_roles).difference(sample_stems)
     if unknown_role_samples:
@@ -159,7 +158,9 @@ def build_package2_no_raw_fixture(
     metadata = []
     for injection_order, sample_stem in enumerate(sample_stems, start=1):
         source_path = tmp_path / f"{sample_stem}.synthetic"
-        source_path.write_bytes(f"package2-no-raw:{sample_stem}".encode("utf-8"))
+        source_path.write_bytes(
+            f"processing-identity-no-raw:{sample_stem}".encode("utf-8")
+        )
         source = build_acquisition_source_identity(
             source_path,
             acquisition_format="synthetic_no_raw",
@@ -213,22 +214,22 @@ def build_package2_no_raw_fixture(
     )
     target_snapshot = mint_target_list_snapshot(
         (target_value, other_target_value),
-        identity_namespace="target-list:package2-no-raw",
+        identity_namespace="target-list:processing-identity-no-raw",
     )
     request = build_processing_request_identity(
         acquisition_sources=tuple(sources),
         acquisition_bindings=tuple(bindings),
-        scientific_input_schema_version="package2-targeted-input-v1",
-        processing_algorithm_version="package2-targeted-algorithm-v1",
-        processing_contract_version="package2-targeted-contract-v1",
+        scientific_input_schema_version="processing-identity-targeted-input-v1",
+        processing_algorithm_version="processing-identity-targeted-algorithm-v1",
+        processing_contract_version="processing-identity-targeted-contract-v1",
         scientific_inputs={
-            "fixture": "package2-no-raw-multi-sample",
+            "fixture": "processing-identity-no-raw-multi-sample",
             "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
         },
     )
     sample_snapshot = mint_sample_metadata_snapshot(
         tuple(metadata),
-        identity_namespace="study:package2-no-raw",
+        identity_namespace="study:processing-identity-no-raw",
     )
     samples = tuple(
         resolve_canonical_sample_identity(sample_snapshot, stem)
@@ -244,7 +245,7 @@ def build_package2_no_raw_fixture(
         sample_resolutions=samples,
         target_snapshot=target_snapshot,
     )
-    return Package2NoRawFixture(
+    return ProcessingIdentityNoRawFixture(
         request=request,
         attempt=attempt,
         samples=samples,
@@ -254,7 +255,7 @@ def build_package2_no_raw_fixture(
     )
 
 
-def build_package2_targeted_raw_fixture(
+def build_targeted_processing_identity_raw_fixture(
     tmp_path: Path,
     *,
     sample_stems: tuple[str, ...],
@@ -263,10 +264,10 @@ def build_package2_targeted_raw_fixture(
     current_discovery_candidates_by_sample: (
         Mapping[str, tuple[DiscoveryCandidate, ...]] | None
     ) = None,
-) -> Package2NoRawFixture:
-    """Rebind the Package 2 fixture to the real Targeted RAW request owner."""
+) -> ProcessingIdentityNoRawFixture:
+    """Rebind the processing-identity fixture to the real Targeted RAW request owner."""
 
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=sample_stems,
     )
@@ -282,9 +283,7 @@ def build_package2_targeted_raw_fixture(
             model_selection_expected_diff_approvals=None,
         ),
         current_discovery_settings=current_discovery_settings,
-        current_discovery_candidates_by_sample=(
-            current_discovery_candidates_by_sample
-        ),
+        current_discovery_candidates_by_sample=(current_discovery_candidates_by_sample),
     )
     attempt = issue_processing_attempt(request)
     owners = compose_processing_owner_references(
@@ -302,8 +301,8 @@ def build_package2_targeted_raw_fixture(
     )
 
 
-def package2_hypothesis(
-    fixture: Package2NoRawFixture,
+def processing_identity_hypothesis(
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     apex_rt: float,
@@ -416,8 +415,8 @@ def package2_hypothesis(
     return hypothesis
 
 
-def package2_candidate_member(
-    fixture: Package2NoRawFixture,
+def processing_identity_candidate_member(
+    fixture: ProcessingIdentityNoRawFixture,
     hypothesis: PeakHypothesis,
 ) -> TargetedCandidateSetMember:
     return TargetedCandidateSetMember(
@@ -428,14 +427,16 @@ def package2_candidate_member(
     )
 
 
-def package2_candidate_set(
-    fixture: Package2NoRawFixture,
+def processing_identity_candidate_set(
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     hypotheses: tuple[PeakHypothesis, ...],
     *,
     failure_reason: str | None = None,
 ) -> TargetedCandidateSetRef:
-    members = tuple(package2_candidate_member(fixture, item) for item in hypotheses)
+    members = tuple(
+        processing_identity_candidate_member(fixture, item) for item in hypotheses
+    )
     kwargs = {}
     if failure_reason is not None:
         kwargs["failure_reason"] = failure_reason
@@ -458,8 +459,8 @@ def package2_candidate_set(
     )
 
 
-def package2_selection(
-    fixture: Package2NoRawFixture,
+def processing_identity_selection(
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     hypotheses: tuple[PeakHypothesis, ...],
     *,
@@ -468,7 +469,7 @@ def package2_selection(
 ) -> DiagnosticPeakHypothesisSelectionRef:
     return mint_diagnostic_peak_hypothesis_selection_ref(
         candidate_set=(
-            package2_candidate_set(
+            processing_identity_candidate_set(
                 fixture,
                 sample_stem,
                 hypotheses,
@@ -481,7 +482,7 @@ def package2_selection(
 
 
 def _remember_artifact(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     artifact: EvidenceArtifactRef | None,
 ) -> None:
     assert artifact is not None

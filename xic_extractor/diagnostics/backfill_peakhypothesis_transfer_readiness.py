@@ -29,28 +29,28 @@ READINESS_COLUMNS = (
     "activation_missing_matrix_diff_count",
     "activation_value_mismatch_count",
     "eight_raw_gate_status",
-    "raw85_artifact_status",
-    "raw85_metadata_contract_status",
-    "raw85_matrix_row_count",
-    "raw85_sample_column_count",
-    "raw85_review_row_count",
-    "raw85_cell_row_count",
-    "raw85_skipped_evidence_row_count",
-    "raw85_slice_gate_status",
-    "raw85_slice_gate_candidate_no_regression_count",
-    "raw85_slice_gate_hypothesis_candidate_review_count",
-    "raw85_slice_gate_blocked_count",
-    "raw85_slice_gate_primary_loser_count",
-    "raw85_slice_gate_duplicate_assigned_count",
-    "raw85_slice_gate_absent_count",
-    "raw85_winner_remap_status",
-    "raw85_winner_remap_candidate_count",
-    "raw85_winner_remap_blocked_count",
-    "raw85_winner_remap_winner_detected_count",
-    "raw85_winner_remap_winner_rescued_count",
-    "raw85_winner_remap_missing_winner_count",
+    "full_cohort_artifact_status",
+    "full_cohort_metadata_contract_status",
+    "full_cohort_matrix_row_count",
+    "full_cohort_sample_column_count",
+    "full_cohort_review_row_count",
+    "full_cohort_cell_row_count",
+    "full_cohort_skipped_evidence_row_count",
+    "full_cohort_acceptance_gate_status",
+    "full_cohort_acceptance_gate_candidate_no_regression_count",
+    "full_cohort_acceptance_gate_hypothesis_candidate_review_count",
+    "full_cohort_acceptance_gate_blocked_count",
+    "full_cohort_acceptance_gate_primary_loser_count",
+    "full_cohort_acceptance_gate_duplicate_assigned_count",
+    "full_cohort_acceptance_gate_absent_count",
+    "full_cohort_winner_remap_status",
+    "full_cohort_winner_remap_candidate_count",
+    "full_cohort_winner_remap_blocked_count",
+    "full_cohort_winner_remap_winner_detected_count",
+    "full_cohort_winner_remap_winner_rescued_count",
+    "full_cohort_winner_remap_missing_winner_count",
     "manual_review_scope",
-    "raw85_peak_shape_review_status",
+    "full_cohort_peak_shape_review_status",
     "area_generalization_status",
     "readiness_label",
     "production_ready",
@@ -59,7 +59,7 @@ READINESS_COLUMNS = (
     "next_action",
 )
 
-_CANONICAL_RAW85_BASE_METADATA = {
+_CANONICAL_FULL_COHORT_BASE_METADATA = {
     "output_level": "validation-minimal",
     "backfill_scope": "production-equivalent",
     "audit_evidence_mode": "none",
@@ -102,13 +102,13 @@ def build_transfer_readiness(
     *,
     promotion_summary: dict[str, Any],
     activation_acceptance_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
-    raw85_metadata: dict[str, Any],
-    raw85_counts: dict[str, int],
-    raw85_slice_gate_summary: dict[str, Any] | None = None,
-    raw85_winner_remap_summary: dict[str, Any] | None = None,
-    raw85_hypothesis_review_summary: dict[str, Any] | None = None,
+    full_cohort_metadata: dict[str, Any],
+    full_cohort_counts: dict[str, int],
+    full_cohort_acceptance_gate_summary: dict[str, Any] | None = None,
+    full_cohort_winner_remap_summary: dict[str, Any] | None = None,
+    full_cohort_hypothesis_review_summary: dict[str, Any] | None = None,
     source_run_id: str = "",
-    expected_raw85_sample_columns: int = 85,
+    expected_full_cohort_sample_columns: int = 85,
 ) -> TransferReadinessIndex:
     if len(activation_acceptance_rows) != 1:
         raise ValueError("activation acceptance must contain exactly one row")
@@ -116,24 +116,30 @@ def build_transfer_readiness(
     promotion_count = _promotion_row_count(promotion_summary)
     matrix_write_count = _promotion_matrix_write_count(promotion_summary)
     eight_raw_failures = _eight_raw_failures(acceptance, matrix_write_count)
-    raw85_failures = _raw85_failures(
-        raw85_metadata,
-        raw85_counts,
-        expected_sample_columns=expected_raw85_sample_columns,
+    full_cohort_failures = _full_cohort_failures(
+        full_cohort_metadata,
+        full_cohort_counts,
+        expected_sample_columns=expected_full_cohort_sample_columns,
     )
-    slice_gate_failures = _raw85_slice_gate_failures(
-        raw85_slice_gate_summary,
+    slice_gate_failures = _full_cohort_acceptance_gate_failures(
+        full_cohort_acceptance_gate_summary,
         matrix_write_count=matrix_write_count,
         manual_same_peak_covers_review=_manual_same_peak_covers_review(
-            raw85_hypothesis_review_summary,
-            raw85_slice_gate_summary,
+            full_cohort_hypothesis_review_summary,
+            full_cohort_acceptance_gate_summary,
         ),
     )
-    hard_fail_reasons = (*eight_raw_failures, *raw85_failures, *slice_gate_failures)
-    slice_gate_status = _raw85_slice_gate_status(raw85_slice_gate_summary)
-    peak_shape_review_status = _raw85_peak_shape_review_status(
-        raw85_hypothesis_review_summary,
-        raw85_slice_gate_summary,
+    hard_fail_reasons = (
+        *eight_raw_failures,
+        *full_cohort_failures,
+        *slice_gate_failures,
+    )
+    slice_gate_status = _full_cohort_acceptance_gate_status(
+        full_cohort_acceptance_gate_summary
+    )
+    peak_shape_review_status = _full_cohort_peak_shape_review_status(
+        full_cohort_hypothesis_review_summary,
+        full_cohort_acceptance_gate_summary,
     )
 
     readiness_label = "blocked" if hard_fail_reasons else "production_candidate"
@@ -145,8 +151,8 @@ def build_transfer_readiness(
     )
     next_action = (
         _hard_fail_next_action(
-            raw85_slice_gate_summary,
-            raw85_winner_remap_summary,
+            full_cohort_acceptance_gate_summary,
+            full_cohort_winner_remap_summary,
         )
         if hard_fail_reasons
         else _next_action(
@@ -179,69 +185,83 @@ def build_transfer_readiness(
             "value_mismatch_count",
         ),
         "eight_raw_gate_status": "fail" if eight_raw_failures else "pass",
-        "raw85_artifact_status": "fail" if raw85_failures else "pass",
-        "raw85_metadata_contract_status": (
+        "full_cohort_artifact_status": "fail" if full_cohort_failures else "pass",
+        "full_cohort_metadata_contract_status": (
             "fail"
-            if "85raw_metadata_contract_not_canonical" in raw85_failures
+            if "full_cohort_metadata_contract_not_canonical" in full_cohort_failures
             else "pass"
         ),
-        "raw85_matrix_row_count": str(raw85_counts.get("matrix_row_count", 0)),
-        "raw85_sample_column_count": str(
-            raw85_counts.get("sample_column_count", 0),
+        "full_cohort_matrix_row_count": str(
+            full_cohort_counts.get("matrix_row_count", 0)
         ),
-        "raw85_review_row_count": str(raw85_counts.get("review_row_count", 0)),
-        "raw85_cell_row_count": str(raw85_counts.get("cell_row_count", 0)),
-        "raw85_skipped_evidence_row_count": str(
-            raw85_counts.get("skipped_evidence_row_count", 0),
+        "full_cohort_sample_column_count": str(
+            full_cohort_counts.get("sample_column_count", 0),
         ),
-        "raw85_slice_gate_status": slice_gate_status,
-        "raw85_slice_gate_candidate_no_regression_count": str(
+        "full_cohort_review_row_count": str(
+            full_cohort_counts.get("review_row_count", 0)
+        ),
+        "full_cohort_cell_row_count": str(full_cohort_counts.get("cell_row_count", 0)),
+        "full_cohort_skipped_evidence_row_count": str(
+            full_cohort_counts.get("skipped_evidence_row_count", 0),
+        ),
+        "full_cohort_acceptance_gate_status": slice_gate_status,
+        "full_cohort_acceptance_gate_candidate_no_regression_count": str(
             _slice_gate_count(
-                raw85_slice_gate_summary,
+                full_cohort_acceptance_gate_summary,
                 "candidate_no_regression_count",
             ),
         ),
-        "raw85_slice_gate_hypothesis_candidate_review_count": str(
+        "full_cohort_acceptance_gate_hypothesis_candidate_review_count": str(
             _slice_gate_count(
-                raw85_slice_gate_summary,
+                full_cohort_acceptance_gate_summary,
                 "hypothesis_candidate_review_count",
             ),
         ),
-        "raw85_slice_gate_blocked_count": str(
-            _slice_gate_count(raw85_slice_gate_summary, "blocked_count"),
+        "full_cohort_acceptance_gate_blocked_count": str(
+            _slice_gate_count(full_cohort_acceptance_gate_summary, "blocked_count"),
         ),
-        "raw85_slice_gate_primary_loser_count": str(
-            _slice_gate_count(raw85_slice_gate_summary, "primary_loser_count"),
+        "full_cohort_acceptance_gate_primary_loser_count": str(
+            _slice_gate_count(
+                full_cohort_acceptance_gate_summary, "primary_loser_count"
+            ),
         ),
-        "raw85_slice_gate_duplicate_assigned_count": str(
-            _slice_gate_count(raw85_slice_gate_summary, "duplicate_assigned_count"),
+        "full_cohort_acceptance_gate_duplicate_assigned_count": str(
+            _slice_gate_count(
+                full_cohort_acceptance_gate_summary, "duplicate_assigned_count"
+            ),
         ),
-        "raw85_slice_gate_absent_count": str(
-            _slice_gate_count(raw85_slice_gate_summary, "absent_count"),
+        "full_cohort_acceptance_gate_absent_count": str(
+            _slice_gate_count(full_cohort_acceptance_gate_summary, "absent_count"),
         ),
-        "raw85_winner_remap_status": _winner_remap_status(
-            raw85_winner_remap_summary,
+        "full_cohort_winner_remap_status": _winner_remap_status(
+            full_cohort_winner_remap_summary,
         ),
-        "raw85_winner_remap_candidate_count": str(
+        "full_cohort_winner_remap_candidate_count": str(
             _winner_remap_count(
-                raw85_winner_remap_summary,
+                full_cohort_winner_remap_summary,
                 "remap_candidate_review_count",
             ),
         ),
-        "raw85_winner_remap_blocked_count": str(
-            _winner_remap_count(raw85_winner_remap_summary, "blocked_count"),
+        "full_cohort_winner_remap_blocked_count": str(
+            _winner_remap_count(full_cohort_winner_remap_summary, "blocked_count"),
         ),
-        "raw85_winner_remap_winner_detected_count": str(
-            _winner_remap_count(raw85_winner_remap_summary, "winner_detected_count"),
+        "full_cohort_winner_remap_winner_detected_count": str(
+            _winner_remap_count(
+                full_cohort_winner_remap_summary, "winner_detected_count"
+            ),
         ),
-        "raw85_winner_remap_winner_rescued_count": str(
-            _winner_remap_count(raw85_winner_remap_summary, "winner_rescued_count"),
+        "full_cohort_winner_remap_winner_rescued_count": str(
+            _winner_remap_count(
+                full_cohort_winner_remap_summary, "winner_rescued_count"
+            ),
         ),
-        "raw85_winner_remap_missing_winner_count": str(
-            _winner_remap_count(raw85_winner_remap_summary, "missing_winner_count"),
+        "full_cohort_winner_remap_missing_winner_count": str(
+            _winner_remap_count(
+                full_cohort_winner_remap_summary, "missing_winner_count"
+            ),
         ),
-        "manual_review_scope": "observed_8raw_top14_standard_cells",
-        "raw85_peak_shape_review_status": peak_shape_review_status,
+        "manual_review_scope": "observed_fixture_cohort_top14_standard_cells",
+        "full_cohort_peak_shape_review_status": peak_shape_review_status,
         "area_generalization_status": _area_generalization_status(
             peak_shape_review_status,
         ),
@@ -300,25 +320,30 @@ def _eight_raw_failures(
 ) -> tuple[str, ...]:
     failures: list[str] = []
     if _value(acceptance, "acceptance_status") != "pass":
-        failures.append("8raw_activation_acceptance_not_passed")
-    if _value(acceptance, "validation_scope") != "8raw_current_writer_matrix_diff":
-        failures.append("8raw_activation_scope_not_current_writer_matrix_diff")
+        failures.append("fixture_cohort_activation_acceptance_not_passed")
+    if (
+        _value(acceptance, "validation_scope")
+        != "fixture_cohort_current_writer_matrix_diff"
+    ):
+        failures.append(
+            "fixture_cohort_activation_scope_not_current_writer_matrix_diff"
+        )
     if bool_value(acceptance.get("canonical_row_identity_ready")) is not True:
-        failures.append("8raw_canonical_row_identity_not_ready")
+        failures.append("fixture_cohort_canonical_row_identity_not_ready")
     activation_decision_count = _int_value(
         acceptance.get("activation_decision_row_count"),
     )
     if activation_decision_count != matrix_write_count:
-        failures.append("8raw_activation_decision_count_mismatch")
+        failures.append("fixture_cohort_activation_decision_count_mismatch")
     if _int_value(acceptance.get("changed_matrix_cell_count")) != matrix_write_count:
-        failures.append("8raw_changed_matrix_cell_count_mismatch")
+        failures.append("fixture_cohort_changed_matrix_cell_count_mismatch")
     for field in _ZERO_MISMATCH_FIELDS:
         if _int_value(acceptance.get(field)) != 0:
-            failures.append(f"8raw_{field}_not_zero")
+            failures.append(f"fixture_cohort_{field}_not_zero")
     return tuple(failures)
 
 
-def _raw85_failures(
+def _full_cohort_failures(
     metadata: dict[str, Any],
     counts: dict[str, int],
     *,
@@ -327,7 +352,7 @@ def _raw85_failures(
     failures: list[str] = []
     metadata_contract_invalid = any(
         text_value(metadata.get(key)) != expected
-        for key, expected in _CANONICAL_RAW85_BASE_METADATA.items()
+        for key, expected in _CANONICAL_FULL_COHORT_BASE_METADATA.items()
     )
     schema_version = text_value(metadata.get("schema_version"))
     has_targeted_istd_anchor = bool(
@@ -355,16 +380,16 @@ def _raw85_failures(
     else:
         metadata_contract_invalid = True
     if metadata_contract_invalid:
-        failures.append("85raw_metadata_contract_not_canonical")
+        failures.append("full_cohort_metadata_contract_not_canonical")
     if counts.get("sample_column_count", 0) != expected_sample_columns:
-        failures.append("85raw_sample_column_count_unexpected")
+        failures.append("full_cohort_sample_column_count_unexpected")
     for key in ("matrix_row_count", "review_row_count", "cell_row_count"):
         if counts.get(key, 0) <= 0:
-            failures.append(f"85raw_{key}_missing")
+            failures.append(f"full_cohort_{key}_missing")
     return tuple(failures)
 
 
-def _raw85_slice_gate_failures(
+def _full_cohort_acceptance_gate_failures(
     summary: dict[str, Any] | None,
     *,
     matrix_write_count: int,
@@ -374,11 +399,11 @@ def _raw85_slice_gate_failures(
         return ()
     failures: list[str] = []
     if _text(summary.get("schema_version")) != (
-        "backfill_peakhypothesis_raw85_slice_gate_v1"
+        "backfill_peakhypothesis_acceptance_gate_v1"
     ):
-        failures.append("85raw_slice_gate_schema_mismatch")
+        failures.append("full_cohort_acceptance_gate_schema_mismatch")
     if _int_value(summary.get("promotion_row_count")) != matrix_write_count:
-        failures.append("85raw_slice_gate_promotion_count_mismatch")
+        failures.append("full_cohort_acceptance_gate_promotion_count_mismatch")
     gate_status = _text(summary.get("gate_status"))
     review_count = _int_value(summary.get("hypothesis_candidate_review_count"))
     candidate_count = _int_value(summary.get("candidate_no_regression_count"))
@@ -389,17 +414,17 @@ def _raw85_slice_gate_failures(
         and candidate_count + review_count == matrix_write_count
     )
     if gate_status != "pass" and not manual_review_closes_partial:
-        failures.append("85raw_slice_specific_no_regression_failed")
+        failures.append("full_cohort_slice_specific_no_regression_failed")
     if _int_value(summary.get("blocked_count")) != 0:
-        failures.append("85raw_slice_gate_blocked_rows_present")
+        failures.append("full_cohort_acceptance_gate_blocked_rows_present")
     if gate_status == "pass" and (
         _int_value(summary.get("candidate_no_regression_count")) != matrix_write_count
     ):
-        failures.append("85raw_slice_gate_candidate_count_mismatch")
+        failures.append("full_cohort_acceptance_gate_candidate_count_mismatch")
     return tuple(failures)
 
 
-def _raw85_slice_gate_status(summary: dict[str, Any] | None) -> str:
+def _full_cohort_acceptance_gate_status(summary: dict[str, Any] | None) -> str:
     if summary is None:
         return "not_assessed"
     return _text(summary.get("gate_status")) or "unknown"
@@ -415,12 +440,12 @@ def _remaining_blockers(
         return ""
     blockers = ["explicit_product_transfer_decision_required"]
     if slice_gate_status == "not_assessed":
-        blockers.append("85raw_slice_specific_no_regression_not_assessed")
+        blockers.append("full_cohort_slice_specific_no_regression_not_assessed")
     if peak_shape_review_status == "manual_same_peak_supported_all_review_candidates":
         if slice_gate_status == "partial":
-            blockers.append("raw85_consolidation_policy_not_productized")
+            blockers.append("full_cohort_consolidation_policy_not_productized")
     else:
-        blockers.append("85raw_peak_shape_not_manually_confirmed")
+        blockers.append("full_cohort_peak_shape_not_manually_confirmed")
     return ";".join(blockers)
 
 
@@ -430,13 +455,21 @@ def _next_action(slice_gate_status: str, *, peak_shape_review_status: str) -> st
         and peak_shape_review_status
         == "manual_same_peak_supported_all_review_candidates"
     ):
-        return "define_raw85_consolidation_policy_for_same_peak_non_primary_candidates"
+        return (
+            "define_full_cohort_consolidation_policy_for_same_peak_"
+            "non_primary_candidates"
+        )
     if slice_gate_status == "not_assessed":
-        return "request_explicit_product_transfer_decision_or_build_85raw_slice_gate"
-    return "request_explicit_product_transfer_decision_or_manual_85raw_shape_review"
+        return (
+            "request_explicit_product_transfer_decision_or_build_"
+            "full_cohort_acceptance_gate"
+        )
+    return (
+        "request_explicit_product_transfer_decision_or_manual_full_cohort_shape_review"
+    )
 
 
-def _raw85_peak_shape_review_status(
+def _full_cohort_peak_shape_review_status(
     manual_review_summary: dict[str, Any] | None,
     slice_gate_summary: dict[str, Any] | None,
 ) -> str:
@@ -450,7 +483,7 @@ def _raw85_peak_shape_review_status(
 def _area_generalization_status(peak_shape_review_status: str) -> str:
     if peak_shape_review_status == "manual_same_peak_supported_all_review_candidates":
         return "manual_same_peak_reviewed_area_policy_pending"
-    return "not_generalized_to_85raw"
+    return "not_generalized_to_full_cohort"
 
 
 def _manual_same_peak_covers_review(
@@ -460,7 +493,7 @@ def _manual_same_peak_covers_review(
     if manual_review_summary is None or slice_gate_summary is None:
         return False
     if _text(manual_review_summary.get("schema_version")) != (
-        "backfill_peakhypothesis_raw85_manual_verdict_v1"
+        "backfill_peakhypothesis_full_cohort_manual_verdict_v1"
     ):
         return False
     review_count = _int_value(
@@ -478,19 +511,19 @@ def _manual_same_peak_covers_review(
 
 
 def _hard_fail_next_action(
-    raw85_slice_gate_summary: dict[str, Any] | None,
+    full_cohort_acceptance_gate_summary: dict[str, Any] | None,
     winner_remap_summary: dict[str, Any] | None,
 ) -> str:
     if (
         _slice_gate_count(
-            raw85_slice_gate_summary,
+            full_cohort_acceptance_gate_summary,
             "hypothesis_candidate_review_count",
         )
         > 0
     ):
-        return "review_85raw_hypothesis_candidates_before_product_transfer"
+        return "review_full_cohort_hypothesis_candidates_before_product_transfer"
     if _winner_remap_count(winner_remap_summary, "remap_candidate_review_count") > 0:
-        return "review_raw85_winner_remap_candidates"
+        return "review_full_cohort_winner_remap_candidates"
     return "review_transfer_readiness_failures"
 
 

@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from tests import mode_track_raw_validation_fixture as gate_c_fixture
+from tests import mode_track_raw_validation_fixture as closed_writer_fixture
 from tests.test_alignment_mode_track_conservative_backfill import (
-    _gate_c_proposal,
-    _gate_c_review,
-    _gate_c_run_context,
+    _closed_writer_proposal,
+    _closed_writer_review,
+    _closed_writer_run_context,
 )
 from xic_extractor.alignment import mode_track_table_finalization as finalization
 from xic_extractor.alignment.matrix_output_contract import (
@@ -54,14 +54,14 @@ def test_committed_review_bundle_preserves_hash_and_reviewed_census() -> None:
 def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
     tmp_path: Path,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
 
     result = finalization.finalize_reviewed_mode_track_projection(
@@ -132,7 +132,7 @@ def test_mode_track_projection_preserves_mz_across_a_rounding_boundary(
     exact_mz = "260.8915500004078"
     monkeypatch.setattr(golden_path, "canonical_mz_text", lambda _value: exact_mz)
 
-    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    projection, _proposal_dir = _closed_writer_proposal(tmp_path)
 
     assert {row["Mz"] for row in projection.input_quant_matrix_rows} == {exact_mz}
     assert {row["Mz"] for row in projection.input_matrix_identity_rows} == {exact_mz}
@@ -147,14 +147,14 @@ def test_mode_track_projection_preserves_mz_across_a_rounding_boundary(
 def test_mode_track_publication_receipt_survives_copy_and_rejects_mutation(
     tmp_path: Path,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     result = finalization.finalize_reviewed_mode_track_projection(
         projection=projection,
@@ -182,14 +182,14 @@ def test_mode_track_publication_receipt_survives_copy_and_rejects_mutation(
 def test_reviewed_mode_track_projection_rejects_changed_physical_area(
     tmp_path: Path,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     replay = json.loads(replay_path.read_text(encoding="utf-8"))
     replay["rows"][0]["proposal_quant_value"] = "999"
@@ -220,14 +220,14 @@ def test_reviewed_mode_track_projection_rejects_changed_physical_area(
 def test_reviewed_mode_track_projection_rejects_resealed_cross_key_subjects(
     tmp_path: Path,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     review = json.loads(review_path.read_text(encoding="utf-8"))
     replay = json.loads(replay_path.read_text(encoding="utf-8"))
@@ -277,14 +277,14 @@ def test_reviewed_mode_track_projection_rejects_resealed_cross_key_subjects(
 def test_resealed_audit_digests_cannot_change_mode_track_writer_cells(
     tmp_path: Path,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     baseline = finalization.finalize_reviewed_mode_track_projection(
         projection=projection,
@@ -336,14 +336,14 @@ def test_reviewed_mode_track_projection_does_not_publish_partial_table(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
 
     def fail_workbook(*_args: object, **_kwargs: object) -> None:
@@ -367,14 +367,14 @@ def test_reviewed_mode_track_projection_retries_transient_windows_publish_denial
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    projection, proposal_dir = _gate_c_proposal(tmp_path)
-    gate_c_fixture.freeze_gate_c_proposal(
+    projection, proposal_dir = _closed_writer_proposal(tmp_path)
+    closed_writer_fixture.freeze_closed_writer_proposal(
         projection=projection,
         manifest_root=tmp_path,
         output_dir=proposal_dir,
-        run_context=_gate_c_run_context(projection),
+        run_context=_closed_writer_run_context(projection),
     )
-    review_path = _gate_c_review(tmp_path, projection)
+    review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     original_replace = Path.replace
     attempts = 0

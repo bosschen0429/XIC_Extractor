@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.alignment.backfill.observation_repair as observation_repair_owner
-from tests.issue161_no_raw_fixture import issue161_peak
+from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
 from tests.test_alignment_owner_backfill import _peak_config
 from tests.test_backfill_observation_repair_authorization import (
     _authorization_population,
@@ -135,11 +135,9 @@ def test_old_authorization_cannot_close_alternate_candidate(tmp_path: Path) -> N
         tmp_path / "first",
         hold_samples=("s2",),
     )
-    second_fixture, _spine, second_coverage, second_cells = (
-        _authorization_population(
-            tmp_path / "second",
-            hold_samples=("s4",),
-        )
+    second_fixture, _spine, second_coverage, second_cells = _authorization_population(
+        tmp_path / "second",
+        hold_samples=("s4",),
     )
     first = authorize_observation_repair(
         processing_owners=first_fixture.owners,
@@ -288,12 +286,10 @@ def test_repaired_terminal_result_binds_exact_receipt_content(
     assert terminal.receipt.subject is terminal.authorization.candidate
     assert terminal.receipt.authorization_id == terminal.authorization.authorization_id
     assert (
-        terminal.receipt.candidate_id
-        == terminal.authorization.candidate.candidate_id
+        terminal.receipt.candidate_id == terminal.authorization.candidate.candidate_id
     )
     assert (
-        terminal.receipt.repair_epoch
-        == terminal.authorization.candidate.repair_epoch
+        terminal.receipt.repair_epoch == terminal.authorization.candidate.repair_epoch
     )
     assert terminal.receipt.evidence is not None
     assert terminal.receipt.evidence.work_unit_key
@@ -440,7 +436,7 @@ def _retry_population_cells(
 
 def _hold_assessment(fixture: object, sample_stem: str):
     sample = fixture.sample(sample_stem)
-    peak = issue161_peak(fixture, sample_stem)
+    peak = cid_nl_peak(fixture, sample_stem)
     return mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=sample,

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from tests import mode_track_85raw_validation_runner as runner
-from tests import mode_track_raw_validation_fixture as gate_c_fixture
+from tests import mode_track_closed_writer_validation_runner as runner
+from tests import mode_track_raw_validation_fixture as closed_writer_fixture
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 from xic_extractor.tabular_io import render_delimited_rows
 
@@ -16,7 +16,7 @@ def test_preflight_closes_85_inputs_without_opening_raw(
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "a" * 40)
-    output_dir = tmp_path / "gate-c"
+    output_dir = tmp_path / "closed-writer"
     launch_path = tmp_path / "launch.json"
     path_read_bytes = Path.read_bytes
 
@@ -45,18 +45,18 @@ def test_preflight_closes_85_inputs_without_opening_raw(
     assert not output_dir.exists()
 
 
-def test_gate_c_budget_counts_discovery_and_runtime_raw_opens_separately() -> None:
-    contract = gate_c_fixture.gate_c_launch_contract()
-    assert contract["schema_version"] == (
-        "mode_track_85raw_validation_gate_c_launch_contract_v2"
-    )
+def test_closed_writer_budget_counts_discovery_and_runtime_raw_opens_separately() -> (
+    None
+):
+    contract = closed_writer_fixture.closed_writer_launch_contract()
+    assert contract["schema_version"] == ("mode_track_closed_writer_launch_contract_v2")
     assert contract["call_budget"] == {
         "discovery_raw_open_count_max": 85,
         "runtime_raw_open_count_max": 85,
         "total_raw_open_count_max": 170,
         "runtime_xic_batch_count_max": 85,
     }
-    assert gate_c_fixture._gate_c_workload_call_cost(
+    assert closed_writer_fixture._closed_writer_workload_call_cost(
         discovery_raw_open_count=85,
         runtime_call_cost={
             "raw_open_count": 83,
@@ -76,16 +76,19 @@ def test_gate_c_budget_counts_discovery_and_runtime_raw_opens_separately() -> No
     }
 
 
-def test_shared_validation_artifact_labels_are_gate_neutral() -> None:
-    heartbeat = gate_c_fixture._heartbeat("started", 0.0)
+def test_shared_validation_artifact_labels_are_role_neutral() -> None:
+    heartbeat = closed_writer_fixture._heartbeat("started", 0.0)
 
-    assert heartbeat["schema_version"] == "mode_track_85raw_validation_heartbeat_v1"
+    assert heartbeat["schema_version"] == "mode_track_validation_heartbeat_v1"
     assert (
-        gate_c_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
-        == "not_collected_by_mode_track_85raw_validation"
+        closed_writer_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
+        == "not_collected_by_mode_track_validation"
     )
-    assert "gate_b" not in str(heartbeat)
-    assert "gate_b" not in gate_c_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
+    assert "single_sample_canary" not in str(heartbeat)
+    assert (
+        "single_sample_canary"
+        not in closed_writer_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
+    )
 
 
 def test_atomic_directory_publication_retries_transient_windows_lock(
@@ -108,9 +111,9 @@ def test_atomic_directory_publication_retries_transient_windows_lock(
         return original_replace(path, target)
 
     monkeypatch.setattr(Path, "replace", replace_after_transient_lock)
-    monkeypatch.setattr(gate_c_fixture.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(closed_writer_fixture.time, "sleep", lambda _seconds: None)
 
-    gate_c_fixture._publish_directory_atomic(staging, output_dir)
+    closed_writer_fixture._publish_directory_atomic(staging, output_dir)
 
     # The injected first lock requires a retry; Windows may independently hold
     # the directory for another attempt under full-suite load.
@@ -125,7 +128,7 @@ def test_frozen_launch_calls_shared_core_once(
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "b" * 40)
-    output_dir = tmp_path / "gate-c"
+    output_dir = tmp_path / "closed-writer"
     launch_path = tmp_path / "launch.json"
     inputs = runner.build_launch_inputs(
         metadata_path=metadata_path,
@@ -139,14 +142,18 @@ def test_frozen_launch_calls_shared_core_once(
     runner.freeze_preflight(launch_path, inputs.launch_manifest)
     calls = []
 
-    def fake_run_gate_c(**kwargs) -> Path:
+    def fake_run_closed_writer_proposal(**kwargs) -> Path:
         calls.append(kwargs)
         receipt = output_dir / "proposal" / "proposal_receipt.json"
         receipt.parent.mkdir(parents=True)
         receipt.write_text("{}\n", encoding="utf-8")
         return receipt
 
-    monkeypatch.setattr(runner.gate_c_fixture, "run_gate_c", fake_run_gate_c)
+    monkeypatch.setattr(
+        runner.closed_writer_fixture,
+        "run_closed_writer_proposal",
+        fake_run_closed_writer_proposal,
+    )
     receipt = runner.run_frozen_launch(
         inputs=inputs,
         launch_manifest_path=launch_path,
@@ -168,7 +175,7 @@ def test_frozen_c2_launch_calls_fresh_owner_finalization_once(
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
     proposal_dir, review, replay, transfer, checked, final_output = _c2_inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "9" * 40)
-    replay_output = tmp_path / "gate-c-c2-replay"
+    replay_output = tmp_path / "closed-writer-finalization-replay"
     launch_path = tmp_path / "launch-c2.json"
     inputs = runner.build_launch_inputs(
         metadata_path=metadata_path,
@@ -189,7 +196,7 @@ def test_frozen_c2_launch_calls_fresh_owner_finalization_once(
     runner.freeze_preflight(launch_path, inputs.launch_manifest)
     calls = []
 
-    def fake_run_gate_c_fresh_finalization(**kwargs) -> Path:
+    def fake_run_closed_writer_finalization(**kwargs) -> Path:
         calls.append(kwargs)
         receipt = final_output / "transaction_receipt.json"
         receipt.parent.mkdir(parents=True)
@@ -197,9 +204,9 @@ def test_frozen_c2_launch_calls_fresh_owner_finalization_once(
         return receipt
 
     monkeypatch.setattr(
-        runner.gate_c_fixture,
-        "run_gate_c_fresh_finalization",
-        fake_run_gate_c_fresh_finalization,
+        runner.closed_writer_fixture,
+        "run_closed_writer_finalization",
+        fake_run_closed_writer_finalization,
     )
     receipt = runner.run_frozen_launch(
         inputs=inputs,
@@ -265,7 +272,7 @@ def test_frozen_c2_launch_rejects_review_mutation_after_preflight(
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
     proposal_dir, review, replay, transfer, checked, final_output = _c2_inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "7" * 40)
-    replay_output = tmp_path / "gate-c-c2-replay"
+    replay_output = tmp_path / "closed-writer-finalization-replay"
     launch_path = tmp_path / "launch-c2.json"
     inputs = runner.build_launch_inputs(
         metadata_path=metadata_path,
@@ -317,7 +324,7 @@ def test_preflight_rejects_unclosed_universe_before_core(
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             manifest_root=tmp_path,
-            output_dir=tmp_path / "gate-c",
+            output_dir=tmp_path / "closed-writer",
             launch_manifest_path=tmp_path / "launch.json",
             code_sha="c" * 40,
         )
@@ -337,7 +344,7 @@ def test_preflight_rejects_dirty_checkout(
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             manifest_root=tmp_path,
-            output_dir=tmp_path / "gate-c",
+            output_dir=tmp_path / "closed-writer",
             launch_manifest_path=tmp_path / "launch.json",
             code_sha="e" * 40,
         )
@@ -349,7 +356,7 @@ def test_frozen_launch_rejects_checkout_dirtied_after_preflight(
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "f" * 40)
-    output_dir = tmp_path / "gate-c"
+    output_dir = tmp_path / "closed-writer"
     launch_path = tmp_path / "launch.json"
     inputs = runner.build_launch_inputs(
         metadata_path=metadata_path,
@@ -380,7 +387,7 @@ def test_frozen_launch_rejects_missing_terminal_receipt(
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "d" * 40)
-    output_dir = tmp_path / "gate-c"
+    output_dir = tmp_path / "closed-writer"
     launch_path = tmp_path / "launch.json"
     inputs = runner.build_launch_inputs(
         metadata_path=metadata_path,
@@ -393,8 +400,8 @@ def test_frozen_launch_rejects_missing_terminal_receipt(
     )
     runner.freeze_preflight(launch_path, inputs.launch_manifest)
     monkeypatch.setattr(
-        runner.gate_c_fixture,
-        "run_gate_c",
+        runner.closed_writer_fixture,
+        "run_closed_writer_proposal",
         lambda **kwargs: output_dir / "proposal" / "proposal_receipt.json",
     )
 
@@ -430,7 +437,7 @@ def _inputs(
                 "raw_stem": stem,
                 "injection_order": 1 if duplicate_order and index == 2 else index,
                 "sample_role": "study_sample",
-                "batch_id": "mode-track-85raw-validation-gate-c",
+                "batch_id": "mode-track-closed-writer-full-cohort",
                 "prep_batch_id": "",
                 "matrix_type": "breast_tissue",
                 "group": "tumor",
@@ -453,7 +460,7 @@ def _inputs(
 
 
 def _c2_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
-    proposal_dir = tmp_path / "gate-c-c1" / "proposal"
+    proposal_dir = tmp_path / "closed-writer-proposal" / "proposal"
     proposal_dir.mkdir(parents=True)
     (proposal_dir / "proposal.json").write_text("{}\n", encoding="utf-8")
     (proposal_dir / "proposal_receipt.json").write_text("{}\n", encoding="utf-8")
@@ -463,7 +470,14 @@ def _c2_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     checked = tmp_path / "checked_manifest.json"
     for path in (review, replay, transfer, checked):
         path.write_text("{}\n", encoding="utf-8")
-    return proposal_dir, review, replay, transfer, checked, tmp_path / "gate-c-final"
+    return (
+        proposal_dir,
+        review,
+        replay,
+        transfer,
+        checked,
+        tmp_path / "closed-writer-final",
+    )
 
 
 def _patch_launch_identity(

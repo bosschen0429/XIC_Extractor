@@ -48,10 +48,10 @@ DEFAULT_HELDOUT_ORACLE_ARTIFACT = Path(
     "heldout_trace_reintegration_oracle_low_height_low_scan_clean_probe_smoke/"
     "summary.json",
 )
-DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v1-20260619"
-DEFAULT_COHORT_ID = "seed-guard-realdata-85raw-consolidated-20260617"
+DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v1"
+DEFAULT_COHORT_ID = "seed-guard-realdata-full_cohort-consolidated-20260617"
 DEFAULT_ORACLE_PACKET_ID = (
-    "seed-guard-realdata-85raw-low-height-low-scan-clean-smoke-20260617"
+    "seed-guard-realdata-full_cohort-low-height-low-scan-clean-smoke-20260617"
 )
 
 
@@ -145,13 +145,13 @@ def _evidence_artifacts_from_args(
 ) -> list[ValidationEvidenceArtifact]:
     artifacts = [
         ValidationEvidenceArtifact(
-            tier="85raw_large_cohort",
+            tier="full_cohort",
             status="pass",
             source_artifact=args.large_cohort_artifact,
             cohort_id=args.cohort_id,
             raw_run_count=args.raw_run_count,
             evidence_note=(
-                "Existing no-RAW 85RAW consolidated standard-peak activation "
+                "Existing no-RAW FULL_COHORT consolidated standard-peak activation "
                 "input summary; large-cohort evidence only, not matrix authority."
             ),
         ),

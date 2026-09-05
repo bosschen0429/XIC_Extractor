@@ -136,7 +136,9 @@ def test_candidate_mismatch_is_not_compared_to_manual_oracle() -> None:
         compare_selected_envelope_to_oracle(evaluation, oracle)
 
 
-def test_oracle_manifest_allows_8raw_only_after_expert_oracle_support() -> None:
+def test_oracle_manifest_allows_fixture_cohort_only_after_expert_oracle_support() -> (
+    None
+):
     evaluation = _evaluation()
     oracle = BoundaryOracle(
         oracle_row_id="oracle-001",

@@ -80,7 +80,7 @@ DEFAULT_RENDERED_REVIEW_DIR = (
 )
 DEFAULT_DOWNSTREAM_SCOPE = "current_511_authority_replay"
 DEFAULT_SOURCE_RUN_ID = (
-    "seed-guard-realdata-85raw-generated-policy-policy-observed-oracle-20260617"
+    "seed-guard-realdata-full_cohort-generated-policy-policy-observed-oracle-20260617"
 )
 DEFAULT_ACCEPTED_BACKFILL_COUNT = 511
 EXTERNALIZED_ARTIFACT_SUMMARY_SCHEMA = "externalized_validation_artifact_summary_v1"
@@ -444,7 +444,7 @@ def validate_quant_matrix_real_bundle(
     for field in (
         "read_only",
         "scorer_ran",
-        "raw_or_85raw_ran",
+        "raw_or_full_cohort_ran",
         "product_writer_changed",
         "default_quant_matrix_changed",
         "broad_backfill_unparked",
@@ -909,7 +909,7 @@ def _summary_payload(
         "downstream_scope": downstream_scope,
         "read_only": True,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "broad_backfill_unparked": False,

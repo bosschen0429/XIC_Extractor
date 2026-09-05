@@ -364,7 +364,9 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
 def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
     tmp_path: Path,
 ) -> None:
-    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
     from tests.test_alignment_multi_hypothesis_support import (
         _assessment_with_observation_only_peak,
     )
@@ -372,7 +374,9 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         bootstrap_mode_track_refinement_from_cid_nl_support,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("early",)
+    )
     assessment = _assessment_with_observation_only_peak(
         fixture,
         sample_stem="early",

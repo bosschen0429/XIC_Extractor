@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.package2_no_raw_fixture import Package2NoRawFixture
+from tests.processing_identity_no_raw_fixture import ProcessingIdentityNoRawFixture
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -73,25 +73,25 @@ _FROZEN_DIFFERENCE_MANIFEST_SHA256 = (
 _FROZEN_TRACE_ORACLE = {
     "observed-a": (
         "xic.peak-observation-content.v1:"
-        "7f4d0a7d42744145df0548360c287f3216e2048115b30a160eba8401d4572b01",
-        "d2231dd5dfa0fc8bffaef64012e348659e8fea7a23f3eaa5912c9b77e789ff70",
+        "f7fe6efc41563f0bee64a0e091f7b89f4d310b45a9e8a48b357f294c4eb97919",
+        "01b30f4fbec56104676771bf30cffc16f5140638139533e4886bced20d2a9cae",
         "191de630bb7e9817ced1934ea374671a075e9426c5b32973752db7b0294b9145",
     ),
     "observed-b": (
         "xic.peak-observation-content.v1:"
-        "3409c591788409f9c20ea74e733cf34cfc12a660d62638e83e3d0a990b631a98",
-        "46c4378c16bf340417a72c2e93afd816534244e428416573806af80f39932777",
+        "4ebad55d65c3289f3a75ae44b0f90e1f47fd7c9405c015d4364735d5c872c795",
+        "13d44f691034f0a472765817ea0a004fc2c98b7679b0cb471319a98e5d0e8c51",
         "6b7a814a0149b4d23ddc66e1563fa8b3720cccf6d69298f19ec3c200cf47da9b",
     ),
 }
 _FROZEN_HYPOTHESIS_ORACLE = {
     "observed-a": (
         "xic.peak-hypothesis.v1:"
-        "87675a5a6d51d22519a8fabbe877b0c26d060672ec2a7ea542c0e71059ad3d7b"
+        "ed34d478098de9fa8a81c8b3dfa981515caeb3a090a29fc156d410dd2b545d67"
     ),
     "observed-b": (
         "xic.peak-hypothesis.v1:"
-        "30779caaa6d08f18c0dc72ec7d80ec293767cb7a59abaceb7b0fac0c21b60a5b"
+        "8309ef89dc366e418d42027850fa940d12003307f6468cb648766356033798b0"
     ),
 }
 
@@ -225,12 +225,10 @@ def test_complete_method_projection_is_serial_reorder_exact(
         if projection.status == "observed"
     } == {
         "observed-a": (
-            "decision: accepted; evidence: ms1_coherent; "
-            "candidate_aligned_ms2_nl"
+            "decision: accepted; evidence: ms1_coherent; candidate_aligned_ms2_nl"
         ),
         "observed-b": (
-            "decision: accepted; evidence: ms1_coherent; "
-            "candidate_aligned_ms2_nl"
+            "decision: accepted; evidence: ms1_coherent; candidate_aligned_ms2_nl"
         ),
     }
     backfilled = next(cell for cell in result.cells if cell.status == "backfilled")
@@ -250,14 +248,14 @@ def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
     payload = canonical_targeted_diagnostic_method_bytes(result)
     targeted_job = _MethodProcessJob(
         fixture.attempt,
-        "package2:targeted-method",
-        "process:package2:targeted-method",
+        "processing_identity:targeted-method",
+        "process:processing_identity:targeted-method",
         payload,
     )
     alignment_job = _MethodProcessJob(
         fixture.attempt,
-        "package2:alignment-method",
-        "process:package2:alignment-method",
+        "processing_identity:alignment-method",
+        "process:processing_identity:alignment-method",
         payload,
     )
 
@@ -281,7 +279,7 @@ def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
         runtime_lifecycle_runner=lifecycle_runner,
         runtime_recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "targeted-runtime-marker.json",
-            "package2-targeted-method:test",
+            "processing-identity-targeted-method:test",
         ),
         diagnostic_method_runner=run_targeted_diagnostic_method,
     )
@@ -301,7 +299,7 @@ def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-runtime-marker.json",
-            "package2-alignment-method:test",
+            "processing-identity-alignment-method:test",
         ),
     )
 
@@ -460,9 +458,7 @@ def test_legacy_writer_target_must_match_exact_owner_definition(
         ValueError,
         match="exact owner-resolved definition",
     ):
-        run_targeted_diagnostic_method(
-            replace(request, targets=(changed_target,))
-        )
+        run_targeted_diagnostic_method(replace(request, targets=(changed_target,)))
 
 
 def test_successor_reason_difference_stops_before_projection(
@@ -495,7 +491,7 @@ def test_successor_reason_difference_stops_before_projection(
         run_targeted_diagnostic_method(request)
 
 
-def test_package2_validation_packet_is_exact_zero_and_complete() -> None:
+def test_processing_identity_validation_packet_is_exact_zero_and_complete() -> None:
     manifest_path = _VALIDATION_PACKET / "difference_manifest.tsv"
     manifest_bytes = manifest_path.read_bytes()
     assert hashlib.sha256(manifest_bytes).hexdigest() == (
@@ -531,7 +527,7 @@ def test_package2_validation_packet_is_exact_zero_and_complete() -> None:
 
 def _method_request(
     tmp_path: Path,
-) -> tuple[TargetedDiagnosticMethodRequest, Package2NoRawFixture]:
+) -> tuple[TargetedDiagnosticMethodRequest, ProcessingIdentityNoRawFixture]:
     fixture, inputs = _complete_inputs(tmp_path)
     target = fixture.target.definition.target
     request = TargetedDiagnosticMethodRequest(
@@ -646,8 +642,7 @@ def _selected_file(
         reported_peak_width=width,
         confidence=confidence,
         reason=(
-            "decision: accepted; evidence: ms1_coherent; "
-            "candidate_aligned_ms2_nl"
+            "decision: accepted; evidence: ms1_coherent; candidate_aligned_ms2_nl"
             if confidence == "HIGH"
             else "legacy authoritative selected result"
         ),
@@ -685,16 +680,16 @@ def _projection(*, counted: bool) -> TargetedProductProjection:
     )
 
 
-def _runtime(fixture: Package2NoRawFixture, work_unit_key: str):
+def _runtime(fixture: ProcessingIdentityNoRawFixture, work_unit_key: str):
     return start_runtime_attempt(
         attempt=fixture.attempt,
         work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="package2-targeted-method:v1",
+        owner_completeness_attestation="processing_identity-targeted-method:v1",
     )
 
 
 def _reservation(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     job: _MethodProcessJob,
 ) -> RuntimeResourceReservation:
     return RuntimeResourceReservation(
@@ -703,7 +698,7 @@ def _reservation(
         resource_key=job.resource_key,
         worker_key=f"worker:{job.work_unit_key}",
         source_reference=f"synthetic-no-raw:{job.work_unit_key}",
-        compatibility_token="package2-targeted-method:v1",
+        compatibility_token="processing_identity-targeted-method:v1",
     )
 
 

@@ -3,33 +3,33 @@ import json
 from pathlib import Path
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_raw85_slice_gate as slice_gate,
+    backfill_peakhypothesis_acceptance_gate as slice_gate,
 )
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_raw85_winner_remap as winner_remap,
+    backfill_peakhypothesis_winner_remap as winner_remap,
 )
 
 
 def test_winner_remap_marks_primary_winner_cell_as_review_candidate(
     tmp_path: Path,
 ) -> None:
-    index = winner_remap.build_raw85_winner_remap(
-        raw85_slice_gate_rows=[
+    index = winner_remap.build_full_cohort_winner_remap(
+        full_cohort_acceptance_gate_rows=[
             _slice_gate_row(
                 "FAM_SRC",
                 "Sample_A",
                 winner="FAM_WIN",
                 blockers=(
-                    "raw85_candidate_not_primary_matrix_row;"
-                    "raw85_candidate_family_consolidation_review_required;"
-                    "raw85_cell_status_duplicate_assigned"
+                    "full_cohort_candidate_not_primary_matrix_row;"
+                    "full_cohort_candidate_family_consolidation_review_required;"
+                    "full_cohort_cell_status_duplicate_assigned"
                 ),
             ),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _review_row("FAM_WIN", include_primary="TRUE"),
         ],
-        raw85_cell_rows=[
+        full_cohort_cell_rows=[
             _cell_row(
                 "FAM_WIN",
                 "Sample_A",
@@ -39,7 +39,7 @@ def test_winner_remap_marks_primary_winner_cell_as_review_candidate(
         ],
         source_run_id="unit-pass",
     )
-    outputs = winner_remap.write_raw85_winner_remap_outputs(tmp_path, index)
+    outputs = winner_remap.write_full_cohort_winner_remap_outputs(tmp_path, index)
 
     row = index.rows[0]
     assert row["remap_status"] == "remap_candidate_review"
@@ -48,7 +48,7 @@ def test_winner_remap_marks_primary_winner_cell_as_review_candidate(
     assert row["winner_include_in_primary_matrix"] == "TRUE"
     assert row["winner_cell_status"] == "detected"
     assert row["winner_primary_matrix_area"] == "456.7"
-    assert row["matrix_value_source"] == "raw85_winner_primary_matrix_area"
+    assert row["matrix_value_source"] == "full_cohort_winner_primary_matrix_area"
     assert row["recommended_action"] == (
         "review_remapped_winner_peak_shape_before_activation"
     )
@@ -62,39 +62,39 @@ def test_winner_remap_marks_primary_winner_cell_as_review_candidate(
 
 
 def test_winner_remap_blocks_missing_winner_id() -> None:
-    index = winner_remap.build_raw85_winner_remap(
-        raw85_slice_gate_rows=[
+    index = winner_remap.build_full_cohort_winner_remap(
+        full_cohort_acceptance_gate_rows=[
             _slice_gate_row(
                 "FAM_SRC",
                 "Sample_A",
                 winner="",
-                blockers="raw85_cell_status_absent",
+                blockers="full_cohort_cell_status_absent",
             ),
         ],
-        raw85_review_rows=[],
-        raw85_cell_rows=[],
+        full_cohort_review_rows=[],
+        full_cohort_cell_rows=[],
     )
 
     row = index.rows[0]
     assert row["remap_status"] == "blocked"
     assert row["remap_blockers"] == "missing_winner_peak_hypothesis_id"
-    assert row["recommended_action"] == "manual_85raw_review_required"
+    assert row["recommended_action"] == "manual_full_cohort_review_required"
     assert index.summary["remap_gate_status"] == "fail"
 
 
 def test_winner_remap_blocks_non_primary_or_missing_area_winner() -> None:
-    index = winner_remap.build_raw85_winner_remap(
-        raw85_slice_gate_rows=[
+    index = winner_remap.build_full_cohort_winner_remap(
+        full_cohort_acceptance_gate_rows=[
             _slice_gate_row("FAM_SRC", "Sample_B", winner="FAM_WIN"),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _review_row(
                 "FAM_WIN",
                 include_primary="FALSE",
                 consolidation_state="primary_loser",
             ),
         ],
-        raw85_cell_rows=[
+        full_cohort_cell_rows=[
             _cell_row(
                 "FAM_WIN",
                 "Sample_B",
@@ -127,16 +127,16 @@ def test_winner_remap_cli_returns_nonzero_when_any_row_blocked(
     _write_tsv(review_tsv, [_review_row("FAM_WIN", include_primary="TRUE")])
     _write_tsv(cells_tsv, [_cell_row("FAM_WIN", "Sample_C", status="detected")])
 
-    from tools.diagnostics import backfill_peakhypothesis_raw85_winner_remap as cli
+    from tools.diagnostics import backfill_peakhypothesis_winner_remap as cli
 
     output_dir = tmp_path / "out"
     assert cli.main(
         [
-            "--raw85-slice-gate-tsv",
+            "--full-cohort-acceptance-gate-tsv",
             str(slice_tsv),
-            "--raw85-alignment-review-tsv",
+            "--full_cohort-alignment-review-tsv",
             str(review_tsv),
-            "--raw85-alignment-cells-tsv",
+            "--full_cohort-alignment-cells-tsv",
             str(cells_tsv),
             "--output-dir",
             str(output_dir),
@@ -144,7 +144,7 @@ def test_winner_remap_cli_returns_nonzero_when_any_row_blocked(
             "unit-cli",
         ],
     ) == 1
-    row = _read_tsv(output_dir / "backfill_peakhypothesis_raw85_winner_remap.tsv")[0]
+    row = _read_tsv(output_dir / "backfill_peakhypothesis_winner_remap.tsv")[0]
     assert row["remap_status"] == "blocked"
 
 
@@ -153,7 +153,7 @@ def _slice_gate_row(
     sample: str,
     *,
     winner: str,
-    blockers: str = "raw85_candidate_family_consolidation_review_required",
+    blockers: str = "full_cohort_candidate_family_consolidation_review_required",
 ) -> dict[str, str]:
     return {
         "schema_version": slice_gate.SCHEMA_VERSION,
@@ -164,10 +164,10 @@ def _slice_gate_row(
         "sample_stem": sample,
         "promotion_decision": "promote_matrix_write",
         "projected_matrix_value": "123",
-        "raw85_cell_status": "duplicate_assigned",
-        "raw85_consolidation_winner_group_hypothesis_id": winner,
-        "raw85_slice_gate_status": "blocked",
-        "raw85_slice_blockers": blockers,
+        "full_cohort_cell_status": "duplicate_assigned",
+        "full_cohort_consolidation_winner_group_hypothesis_id": winner,
+        "full_cohort_acceptance_gate_status": "blocked",
+        "full_cohort_slice_blockers": blockers,
     }
 
 

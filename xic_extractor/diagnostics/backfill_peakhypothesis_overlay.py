@@ -1,4 +1,4 @@
-"""Overlay plots for anchored 85RAW PeakHypothesis review candidates."""
+"""Overlay plots for anchored FULL COHORT PeakHypothesis review candidates."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_morphology_trace,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_raw85_overlay_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_overlay_v1"
 SMOOTH_METHOD = "gaussian15_asls_residual"
 SMOOTH_WINDOW_POINTS = DEFAULT_GAUSSIAN15_WINDOW_POINTS
 MIN_MACHINE_SHAPE_CONTEXT_WIDTH_MIN = 0.60
@@ -42,8 +42,8 @@ OVERLAY_INDEX_COLUMNS = (
     "sample_stem",
     "source_peak_hypothesis_id",
     "source_feature_family_id",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_consolidation_winner_group_hypothesis_id",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_consolidation_winner_group_hypothesis_id",
     "candidate_mz",
     "candidate_anchor_rt",
     "candidate_peak_start_rt",
@@ -95,13 +95,13 @@ TraceProvider = Callable[
 
 
 @dataclass(frozen=True)
-class Raw85OverlayRequest:
+class FullCohortOverlayRequest:
     review_item_id: str
     sample_stem: str
     source_peak_hypothesis_id: str
     source_feature_family_id: str
-    raw85_matched_peak_hypothesis_id: str
-    raw85_consolidation_winner_group_hypothesis_id: str
+    full_cohort_matched_peak_hypothesis_id: str
+    full_cohort_consolidation_winner_group_hypothesis_id: str
     raw_file: Path
     candidate_mz: float
     candidate_anchor_rt: float
@@ -112,15 +112,15 @@ class Raw85OverlayRequest:
     rt_min: float
     rt_max: float
     ppm_tolerance: float
-    raw85_cell_status: str
-    raw85_primary_matrix_area: str
-    raw85_include_in_primary_matrix: str
-    raw85_consolidation_state: str
+    full_cohort_cell_status: str
+    full_cohort_primary_matrix_area: str
+    full_cohort_include_in_primary_matrix: str
+    full_cohort_consolidation_state: str
     review_focus: str
 
 
 @dataclass(frozen=True)
-class Raw85OverlayOutputs:
+class FullCohortOverlayOutputs:
     index_tsv: Path
     summary_json: Path
     gallery_html: Path
@@ -130,14 +130,14 @@ class Raw85OverlayOutputs:
 def build_overlay_requests(
     *,
     review_queue_rows: Sequence[dict[str, str]],
-    raw85_review_rows: Sequence[dict[str, str]],
+    full_cohort_review_rows: Sequence[dict[str, str]],
     discovery_batch_rows: Sequence[dict[str, str]],
     rt_padding_min: float = 0.75,
     ppm_tolerance: float = 20.0,
-) -> tuple[Raw85OverlayRequest, ...]:
+) -> tuple[FullCohortOverlayRequest, ...]:
     review_by_family = {
         _value(row, "feature_family_id"): row
-        for row in raw85_review_rows
+        for row in full_cohort_review_rows
         if _value(row, "feature_family_id")
     }
     raw_by_sample = {
@@ -145,30 +145,28 @@ def build_overlay_requests(
         for row in discovery_batch_rows
         if _value(row, "sample_stem") and _value(row, "raw_file")
     }
-    requests: list[Raw85OverlayRequest] = []
+    requests: list[FullCohortOverlayRequest] = []
     for row in review_queue_rows:
         sample = _value(row, "sample_stem")
         raw_file = raw_by_sample.get(sample)
         if raw_file is None:
             raise ValueError(f"{sample}: missing RAW path in discovery batch index")
-        matched_id = _value(row, "raw85_matched_peak_hypothesis_id")
+        matched_id = _value(row, "full_cohort_matched_peak_hypothesis_id")
         matched_review = review_by_family.get(matched_id, {})
-        winner_id = _value(row, "raw85_consolidation_winner_group_hypothesis_id")
+        winner_id = _value(row, "full_cohort_consolidation_winner_group_hypothesis_id")
         winner_review = review_by_family.get(winner_id, {})
         candidate_mz = _required_float(
-            row.get("raw85_anchor_mz")
-            or matched_review.get("family_center_mz"),
+            row.get("full_cohort_anchor_mz") or matched_review.get("family_center_mz"),
             "candidate m/z",
             row,
         )
         candidate_rt = _required_float(
-            row.get("raw85_anchor_rt")
-            or matched_review.get("family_center_rt"),
+            row.get("full_cohort_anchor_rt") or matched_review.get("family_center_rt"),
             "candidate RT",
             row,
         )
-        peak_start = optional_float(row.get("raw85_peak_start_rt"))
-        peak_end = optional_float(row.get("raw85_peak_end_rt"))
+        peak_start = optional_float(row.get("full_cohort_peak_start_rt"))
+        peak_end = optional_float(row.get("full_cohort_peak_end_rt"))
         winner_mz = optional_float(winner_review.get("family_center_mz"))
         winner_rt = optional_float(winner_review.get("family_center_rt"))
         rt_min, rt_max = _rt_window(
@@ -179,13 +177,13 @@ def build_overlay_requests(
             rt_padding_min=rt_padding_min,
         )
         requests.append(
-            Raw85OverlayRequest(
+            FullCohortOverlayRequest(
                 review_item_id=_value(row, "review_item_id"),
                 sample_stem=sample,
                 source_peak_hypothesis_id=_value(row, "source_peak_hypothesis_id"),
                 source_feature_family_id=_value(row, "source_feature_family_id"),
-                raw85_matched_peak_hypothesis_id=matched_id,
-                raw85_consolidation_winner_group_hypothesis_id=winner_id,
+                full_cohort_matched_peak_hypothesis_id=matched_id,
+                full_cohort_consolidation_winner_group_hypothesis_id=winner_id,
                 raw_file=raw_file,
                 candidate_mz=candidate_mz,
                 candidate_anchor_rt=candidate_rt,
@@ -196,26 +194,30 @@ def build_overlay_requests(
                 rt_min=rt_min,
                 rt_max=rt_max,
                 ppm_tolerance=ppm_tolerance,
-                raw85_cell_status=_value(row, "raw85_cell_status"),
-                raw85_primary_matrix_area=_value(row, "raw85_primary_matrix_area"),
-                raw85_include_in_primary_matrix=_value(
-                    row,
-                    "raw85_include_in_primary_matrix",
+                full_cohort_cell_status=_value(row, "full_cohort_cell_status"),
+                full_cohort_primary_matrix_area=_value(
+                    row, "full_cohort_primary_matrix_area"
                 ),
-                raw85_consolidation_state=_value(row, "raw85_consolidation_state"),
+                full_cohort_include_in_primary_matrix=_value(
+                    row,
+                    "full_cohort_include_in_primary_matrix",
+                ),
+                full_cohort_consolidation_state=_value(
+                    row, "full_cohort_consolidation_state"
+                ),
                 review_focus=_value(row, "review_focus"),
             )
         )
     return tuple(requests)
 
 
-def write_raw85_overlay_outputs(
+def write_full_cohort_overlay_outputs(
     output_dir: Path,
-    requests: Sequence[Raw85OverlayRequest],
+    requests: Sequence[FullCohortOverlayRequest],
     *,
     trace_provider: TraceProvider,
     source_run_id: str = "",
-) -> Raw85OverlayOutputs:
+) -> FullCohortOverlayOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     plot_dir = output_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
@@ -267,9 +269,9 @@ def write_raw85_overlay_outputs(
             )
         )
 
-    index_tsv = output_dir / "backfill_peakhypothesis_raw85_overlay_index.tsv"
-    summary_json = output_dir / "backfill_peakhypothesis_raw85_overlay_summary.json"
-    gallery_html = output_dir / "backfill_peakhypothesis_raw85_overlay_gallery.html"
+    index_tsv = output_dir / "backfill_peakhypothesis_overlay_index.tsv"
+    summary_json = output_dir / "backfill_peakhypothesis_overlay_summary.json"
+    gallery_html = output_dir / "backfill_peakhypothesis_overlay_gallery.html"
     write_tsv(
         index_tsv,
         index_rows,
@@ -292,7 +294,7 @@ def write_raw85_overlay_outputs(
         encoding="utf-8",
     )
     gallery_html.write_text(_gallery_html(index_rows), encoding="utf-8")
-    return Raw85OverlayOutputs(
+    return FullCohortOverlayOutputs(
         index_tsv=index_tsv,
         summary_json=summary_json,
         gallery_html=gallery_html,
@@ -302,7 +304,7 @@ def write_raw85_overlay_outputs(
 
 def _write_overlay_plot(
     *,
-    request: Raw85OverlayRequest,
+    request: FullCohortOverlayRequest,
     candidate_rt: np.ndarray,
     candidate_intensity: np.ndarray,
     winner_rt: np.ndarray,
@@ -349,8 +351,9 @@ def _write_overlay_plot(
             linewidth=0.8,
             alpha=0.30,
             label=(
-                "winner raw m/z "
-                f"{request.winner_mz:.5g}" if request.winner_mz else "winner"
+                f"winner raw m/z {request.winner_mz:.5g}"
+                if request.winner_mz
+                else "winner"
             ),
         )
         raw_ax.plot(
@@ -385,14 +388,15 @@ def _write_overlay_plot(
     title = (
         f"{request.review_item_id}  {request.sample_stem}  "
         f"{request.source_feature_family_id} -> "
-        f"{request.raw85_matched_peak_hypothesis_id}"
+        f"{request.full_cohort_matched_peak_hypothesis_id}"
     )
     subtitle = (
-        f"status={request.raw85_cell_status}; "
-        f"area={request.raw85_primary_matrix_area}; "
-        f"include_primary={request.raw85_include_in_primary_matrix}; "
-        f"state={request.raw85_consolidation_state}; "
-        f"winner={request.raw85_consolidation_winner_group_hypothesis_id or 'none'}"
+        f"status={request.full_cohort_cell_status}; "
+        f"area={request.full_cohort_primary_matrix_area}; "
+        f"include_primary={request.full_cohort_include_in_primary_matrix}; "
+        f"state={request.full_cohort_consolidation_state}; "
+        "winner="
+        f"{request.full_cohort_consolidation_winner_group_hypothesis_id or 'none'}"
     )
     raw_ax.set_title(f"{title}\n{subtitle}", loc="left", fontsize=10.2)
     handles, labels = raw_ax.get_legend_handles_labels()
@@ -409,7 +413,7 @@ def _write_overlay_plot(
     plt.close(fig)
 
 
-def _draw_review_marks(ax: Any, request: Raw85OverlayRequest) -> None:
+def _draw_review_marks(ax: Any, request: FullCohortOverlayRequest) -> None:
     if (
         request.candidate_peak_start_rt is not None
         and request.candidate_peak_end_rt is not None
@@ -440,7 +444,7 @@ def _draw_review_marks(ax: Any, request: Raw85OverlayRequest) -> None:
 
 def _index_row(
     *,
-    request: Raw85OverlayRequest,
+    request: FullCohortOverlayRequest,
     source_run_id: str,
     candidate_rt: np.ndarray,
     candidate_intensity: np.ndarray,
@@ -461,11 +465,11 @@ def _index_row(
         "sample_stem": request.sample_stem,
         "source_peak_hypothesis_id": request.source_peak_hypothesis_id,
         "source_feature_family_id": request.source_feature_family_id,
-        "raw85_matched_peak_hypothesis_id": (
-            request.raw85_matched_peak_hypothesis_id
+        "full_cohort_matched_peak_hypothesis_id": (
+            request.full_cohort_matched_peak_hypothesis_id
         ),
-        "raw85_consolidation_winner_group_hypothesis_id": (
-            request.raw85_consolidation_winner_group_hypothesis_id
+        "full_cohort_consolidation_winner_group_hypothesis_id": (
+            request.full_cohort_consolidation_winner_group_hypothesis_id
         ),
         "candidate_mz": request.candidate_mz,
         "candidate_anchor_rt": request.candidate_anchor_rt,
@@ -513,7 +517,7 @@ def _index_row(
 
 def _machine_shape_evidence(
     *,
-    request: Raw85OverlayRequest,
+    request: FullCohortOverlayRequest,
     candidate_rt: np.ndarray,
     candidate_intensity: np.ndarray,
 ) -> dict[str, str]:
@@ -639,19 +643,19 @@ def _machine_shape_context_bounds(
 
 def _machine_same_peak_evidence(
     *,
-    request: Raw85OverlayRequest,
+    request: FullCohortOverlayRequest,
     shape: dict[str, str],
 ) -> dict[str, str]:
     blockers: list[str] = []
     reasons: list[str] = []
-    if not request.raw85_matched_peak_hypothesis_id:
-        blockers.append("raw85_peak_hypothesis_missing")
+    if not request.full_cohort_matched_peak_hypothesis_id:
+        blockers.append("full_cohort_peak_hypothesis_missing")
     else:
         reasons.append("slice_gate_hypothesis_anchor_match")
-    if request.raw85_cell_status not in {"detected", "rescued"}:
-        blockers.append("raw85_cell_not_detected_or_rescued")
+    if request.full_cohort_cell_status not in {"detected", "rescued"}:
+        blockers.append("full_cohort_cell_not_detected_or_rescued")
     else:
-        reasons.append(f"raw85_cell_status:{request.raw85_cell_status}")
+        reasons.append(f"full_cohort_cell_status:{request.full_cohort_cell_status}")
     if shape.get("machine_shape_decision") != "standard_peak_shape_supported":
         blockers.append("machine_standard_peak_shape_not_supported")
     else:
@@ -660,11 +664,11 @@ def _machine_same_peak_evidence(
         blockers.append("machine_gaussian15_lobe_area_not_positive")
     else:
         reasons.append("machine_gaussian15_lobe_area_positive")
-    if request.raw85_include_in_primary_matrix != "TRUE":
+    if request.full_cohort_include_in_primary_matrix != "TRUE":
         reasons.append("non_primary_candidate_not_same_peak_blocker")
-    if request.raw85_consolidation_state:
+    if request.full_cohort_consolidation_state:
         reasons.append(
-            f"raw85_consolidation_state:{request.raw85_consolidation_state}",
+            f"full_cohort_consolidation_state:{request.full_cohort_consolidation_state}",
         )
     verdict = "same_peak_supported" if not blockers else "same_peak_not_supported"
     return {
@@ -726,7 +730,7 @@ def _gallery_html(index_rows: Sequence[dict[str, Any]]) -> str:
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<title>85RAW Hypothesis Overlay Review</title>
+<title>FULL COHORT Hypothesis Overlay Review</title>
 <style>
 body {{ font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #111827; }}
 h1 {{ font-size: 22px; margin-bottom: 4px; }}
@@ -748,7 +752,7 @@ a {{ color: #0f766e; }}
 </style>
 </head>
 <body>
-<h1>85RAW Hypothesis Overlay Review</h1>
+<h1>FULL COHORT Hypothesis Overlay Review</h1>
 <div class="note">
 Review-only overlay gallery. Plots show raw XIC plus Gaussian15 smoothed XIC;
 they do not change product matrices.
@@ -766,11 +770,11 @@ def _gallery_card(row: dict[str, Any]) -> str:
     pdf_path = html.escape(str(row["pdf_path"]))
     title = html.escape(
         f"{row['review_item_id']} {row['source_feature_family_id']} -> "
-        f"{row['raw85_matched_peak_hypothesis_id']}"
+        f"{row['full_cohort_matched_peak_hypothesis_id']}"
     )
     meta = html.escape(
         f"sample={row['sample_stem']}; winner="
-        f"{row['raw85_consolidation_winner_group_hypothesis_id']}; "
+        f"{row['full_cohort_consolidation_winner_group_hypothesis_id']}; "
         f"focus={row['review_focus']}; "
         f"anchor_rt={row['candidate_anchor_rt']}; winner_rt={row['winner_rt']}"
     )
@@ -781,11 +785,11 @@ def _gallery_card(row: dict[str, Any]) -> str:
 </section>"""
 
 
-def _plot_stem(rank: int, request: Raw85OverlayRequest) -> str:
+def _plot_stem(rank: int, request: FullCohortOverlayRequest) -> str:
     return (
         f"{rank:02d}_{_safe_token(request.review_item_id)}_"
         f"{_safe_token(request.source_feature_family_id)}_"
-        f"{_safe_token(request.raw85_matched_peak_hypothesis_id)}_"
+        f"{_safe_token(request.full_cohort_matched_peak_hypothesis_id)}_"
         f"{_safe_token(request.sample_stem)}"
     )
 

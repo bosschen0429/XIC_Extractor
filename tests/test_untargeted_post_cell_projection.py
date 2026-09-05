@@ -35,7 +35,7 @@ def _completed_projection(
 ):
     if numeric:
         monkeypatch.setattr(
-            "tests.test_untargeted_cid_nl_golden_path.issue161_peak",
+            "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak",
             _numeric_peak,
         )
     _scope, _captures, _receipt, alignment = _untarget_projection_inputs(

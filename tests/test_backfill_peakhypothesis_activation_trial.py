@@ -8,7 +8,7 @@ import pytest
 
 from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_85raw_activation_trial as trial,
+    backfill_peakhypothesis_activation_trial as trial,
 )
 
 
@@ -17,14 +17,22 @@ def test_trial_counts_primary_loser_override_without_loading_cells(
 ) -> None:
     artifact_dir = _write_artifact_dir(tmp_path)
     index = trial.build_activation_trial_index(
-        current_85raw_artifact_dir=artifact_dir,
+        current_full_cohort_artifact_dir=artifact_dir,
         normal_peak_decision_rows=[
-            _normal_decision("SRC001", "QC1", "RAW85_LOSER", "FALSE", "primary_loser"),
-            _normal_decision("SRC002", "QC2", "RAW85_WINNER", "TRUE", "primary_winner"),
+            _normal_decision(
+                "SRC001", "QC1", "FULL_COHORT_LOSER", "FALSE", "primary_loser"
+            ),
+            _normal_decision(
+                "SRC002", "QC2", "FULL_COHORT_WINNER", "TRUE", "primary_winner"
+            ),
         ],
         manual_verdict_rows=[
-            _manual_verdict("SRC001", "QC1", "RAW85_LOSER", "FALSE", "primary_loser"),
-            _manual_verdict("SRC002", "QC2", "RAW85_WINNER", "TRUE", "primary_winner"),
+            _manual_verdict(
+                "SRC001", "QC1", "FULL_COHORT_LOSER", "FALSE", "primary_loser"
+            ),
+            _manual_verdict(
+                "SRC002", "QC2", "FULL_COHORT_WINNER", "TRUE", "primary_winner"
+            ),
         ],
         source_run_id="trial",
     )
@@ -52,15 +60,17 @@ def test_trial_counts_primary_loser_override_without_loading_cells(
 def test_trial_fails_closed_on_same_peak_conflict(tmp_path: Path) -> None:
     artifact_dir = _write_artifact_dir(tmp_path)
     index = trial.build_activation_trial_index(
-        current_85raw_artifact_dir=artifact_dir,
+        current_full_cohort_artifact_dir=artifact_dir,
         normal_peak_decision_rows=[
-            _normal_decision("SRC001", "QC1", "RAW85_LOSER", "FALSE", "primary_loser"),
+            _normal_decision(
+                "SRC001", "QC1", "FULL_COHORT_LOSER", "FALSE", "primary_loser"
+            ),
         ],
         manual_verdict_rows=[
             _manual_verdict(
                 "SRC001",
                 "QC1",
-                "RAW85_LOSER",
+                "FULL_COHORT_LOSER",
                 "FALSE",
                 "primary_loser",
                 verdict="same_peak_conflict",
@@ -81,12 +91,12 @@ def test_trial_uses_machine_same_peak_verdict_when_manual_rows_absent(
 ) -> None:
     artifact_dir = _write_artifact_dir(tmp_path)
     index = trial.build_activation_trial_index(
-        current_85raw_artifact_dir=artifact_dir,
+        current_full_cohort_artifact_dir=artifact_dir,
         normal_peak_decision_rows=[
             _normal_decision(
                 "SRC001",
                 "QC1",
-                "RAW85_LOSER",
+                "FULL_COHORT_LOSER",
                 "FALSE",
                 "primary_loser",
                 same_peak_verdict="same_peak_supported",
@@ -115,23 +125,31 @@ def test_cli_writes_summary_and_trial_rows(tmp_path: Path) -> None:
     output_dir = tmp_path / "out"
     _write_tsv(
         normal_tsv,
-        [_normal_decision("SRC001", "QC1", "RAW85_LOSER", "FALSE", "primary_loser")],
+        [
+            _normal_decision(
+                "SRC001", "QC1", "FULL_COHORT_LOSER", "FALSE", "primary_loser"
+            )
+        ],
     )
     _write_tsv(
         manual_tsv,
-        [_manual_verdict("SRC001", "QC1", "RAW85_LOSER", "FALSE", "primary_loser")],
+        [
+            _manual_verdict(
+                "SRC001", "QC1", "FULL_COHORT_LOSER", "FALSE", "primary_loser"
+            )
+        ],
     )
 
-    from tools.diagnostics import backfill_peakhypothesis_85raw_activation_trial as cli
+    from tools.diagnostics import backfill_peakhypothesis_activation_trial as cli
 
     assert (
         cli.main(
             [
-                "--current-85raw-artifact-dir",
+                "--current-full_cohort-artifact-dir",
                 str(artifact_dir),
                 "--normal-peak-decisions-tsv",
                 str(normal_tsv),
-                "--raw85-manual-verdicts-tsv",
+                "--full_cohort-manual-verdicts-tsv",
                 str(manual_tsv),
                 "--output-dir",
                 str(output_dir),
@@ -141,11 +159,10 @@ def test_cli_writes_summary_and_trial_rows(tmp_path: Path) -> None:
         )
         == 0
     )
-    assert (output_dir / "backfill_peakhypothesis_85raw_activation_trial.tsv").is_file()
+    assert (output_dir / "backfill_peakhypothesis_activation_trial.tsv").is_file()
     summary = json.loads(
         (
-            output_dir
-            / "backfill_peakhypothesis_85raw_activation_trial_summary.json"
+            output_dir / "backfill_peakhypothesis_activation_trial_summary.json"
         ).read_text(encoding="utf-8")
     )
     assert summary["source_run_id"] == "cli-trial"
@@ -164,7 +181,7 @@ def test_cli_accepts_machine_same_peak_without_manual_verdict_tsv(
             _normal_decision(
                 "SRC001",
                 "QC1",
-                "RAW85_LOSER",
+                "FULL_COHORT_LOSER",
                 "FALSE",
                 "primary_loser",
                 same_peak_verdict="same_peak_supported",
@@ -173,12 +190,12 @@ def test_cli_accepts_machine_same_peak_without_manual_verdict_tsv(
         ],
     )
 
-    from tools.diagnostics import backfill_peakhypothesis_85raw_activation_trial as cli
+    from tools.diagnostics import backfill_peakhypothesis_activation_trial as cli
 
     assert (
         cli.main(
             [
-                "--current-85raw-artifact-dir",
+                "--current-full_cohort-artifact-dir",
                 str(artifact_dir),
                 "--normal-peak-decisions-tsv",
                 str(normal_tsv),
@@ -192,8 +209,7 @@ def test_cli_accepts_machine_same_peak_without_manual_verdict_tsv(
     )
     summary = json.loads(
         (
-            output_dir
-            / "backfill_peakhypothesis_85raw_activation_trial_summary.json"
+            output_dir / "backfill_peakhypothesis_activation_trial_summary.json"
         ).read_text(encoding="utf-8")
     )
     assert summary["manual_verdict_row_count"] == 0
@@ -214,7 +230,7 @@ def _write_artifact_dir(tmp_path: Path) -> Path:
                 index=1,
                 mz="100",
                 rt="10.0",
-                peak_hypothesis_id="RAW85_WINNER",
+                peak_hypothesis_id="FULL_COHORT_WINNER",
                 row_identity_basis="peak_hypothesis",
             ),
         ],
@@ -258,7 +274,7 @@ def _write_artifact_dir(tmp_path: Path) -> Path:
 def _normal_decision(
     source_peak_hypothesis_id: str,
     sample_stem: str,
-    raw85_peak_hypothesis_id: str,
+    full_cohort_peak_hypothesis_id: str,
     include_primary: str,
     consolidation_state: str,
     *,
@@ -279,12 +295,12 @@ def _normal_decision(
         "area_policy": "standard_assessable_area",
         "matrix_quantitative_use": "standard_quantitative_use",
         "promotion_decision": "promote_matrix_write",
-        "raw85_matched_peak_hypothesis_id": raw85_peak_hypothesis_id,
-        "raw85_cell_status": "rescued",
-        "raw85_primary_matrix_area": "42",
-        "raw85_primary_matrix_area_source": "gaussian15_positive_asls_residual",
-        "raw85_include_in_primary_matrix": include_primary,
-        "raw85_consolidation_state": consolidation_state,
+        "full_cohort_matched_peak_hypothesis_id": full_cohort_peak_hypothesis_id,
+        "full_cohort_cell_status": "rescued",
+        "full_cohort_primary_matrix_area": "42",
+        "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "full_cohort_include_in_primary_matrix": include_primary,
+        "full_cohort_consolidation_state": consolidation_state,
         "manual_same_peak_verdict": (
             same_peak_verdict if same_peak_source == "manual_review" else ""
         ),
@@ -307,25 +323,25 @@ def _normal_decision(
 def _manual_verdict(
     source_peak_hypothesis_id: str,
     sample_stem: str,
-    raw85_peak_hypothesis_id: str,
+    full_cohort_peak_hypothesis_id: str,
     include_primary: str,
     consolidation_state: str,
     *,
     verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_raw85_manual_verdict_v1",
+        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict_v1",
         "source_run_id": "test",
         "review_item_id": "HYPREV0001",
         "sample_stem": sample_stem,
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "source_feature_family_id": source_peak_hypothesis_id,
-        "raw85_anchor_mz": "100.0",
-        "raw85_anchor_rt": "10.0",
-        "raw85_matched_peak_hypothesis_id": raw85_peak_hypothesis_id,
-        "raw85_consolidation_winner_group_hypothesis_id": "WINNER",
-        "raw85_include_in_primary_matrix": include_primary,
-        "raw85_consolidation_state": consolidation_state,
+        "full_cohort_anchor_mz": "100.0",
+        "full_cohort_anchor_rt": "10.0",
+        "full_cohort_matched_peak_hypothesis_id": full_cohort_peak_hypothesis_id,
+        "full_cohort_consolidation_winner_group_hypothesis_id": "WINNER",
+        "full_cohort_include_in_primary_matrix": include_primary,
+        "full_cohort_consolidation_state": consolidation_state,
         "reviewer_verdict": verdict,
         "reviewer_note": "",
         "review_basis": "test",

@@ -73,10 +73,8 @@ SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
 NEUTRAL_LOSS_DA = 116.0474
 VALIDATION_STATUS = "diagnostic_only"
-_HEARTBEAT_SCHEMA_VERSION = "mode_track_85raw_validation_heartbeat_v1"
-_RUNTIME_TELEMETRY_UNAVAILABLE_REASON = (
-    "not_collected_by_mode_track_85raw_validation"
-)
+_HEARTBEAT_SCHEMA_VERSION = "mode_track_validation_heartbeat_v1"
+_RUNTIME_TELEMETRY_UNAVAILABLE_REASON = "not_collected_by_mode_track_validation"
 RUN_CONTEXT_FIELDS = frozenset(
     (
         "code_sha processing_request_id processing_attempt_id call_cost "
@@ -97,7 +95,7 @@ class ModeTrackValidationRun:
 
 
 @dataclass(frozen=True, slots=True, order=True)
-class _GateCReviewSubject:
+class _ClosedWriterReviewSubject:
     group_hypothesis_id: str
     sample_stem: str
     sample_identity_id: str
@@ -105,25 +103,27 @@ class _GateCReviewSubject:
     raw_area: str
 
 
-_VALIDATED_GATE_C_REVIEW_MINT_TOKEN = object()
+_VALIDATED_CLOSED_WRITER_REVIEW_MINT_TOKEN = object()
 
 
 @final
 @dataclass(frozen=True, slots=True)
-class _ValidatedGateCReviewSet:
-    subjects: tuple[_GateCReviewSubject, ...]
+class _ValidatedClosedWriterReviewSet:
+    subjects: tuple[_ClosedWriterReviewSubject, ...]
     manual_review_sha256: str
     manual_review_replay_sha256: str
     _mint_token: InitVar[object]
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("_ValidatedGateCReviewSet is final")
+        raise TypeError("_ValidatedClosedWriterReviewSet is final")
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _VALIDATED_GATE_C_REVIEW_MINT_TOKEN:
-            raise ValueError("Gate C review set must be minted by its validator")
+        if _mint_token is not _VALIDATED_CLOSED_WRITER_REVIEW_MINT_TOKEN:
+            raise ValueError("closed-writer review set must be minted by its validator")
         if not self.subjects or len(self.subjects) != len(set(self.subjects)):
-            raise ValueError("Gate C validated review subject census is malformed")
+            raise ValueError(
+                "closed-writer validated review subject census is malformed"
+            )
         for value in (
             self.manual_review_sha256,
             self.manual_review_replay_sha256,
@@ -131,12 +131,12 @@ class _ValidatedGateCReviewSet:
             if len(value) != 64 or any(
                 character not in "0123456789abcdef" for character in value
             ):
-                raise ValueError("Gate C validated review digest is malformed")
+                raise ValueError("closed-writer validated review digest is malformed")
 
 
-def gate_c_launch_contract() -> dict[str, object]:
+def closed_writer_launch_contract() -> dict[str, object]:
     return {
-        "schema_version": "mode_track_85raw_validation_gate_c_launch_contract_v2",
+        "schema_version": "mode_track_closed_writer_launch_contract_v2",
         "validation_status": VALIDATION_STATUS,
         "precursor_mz": PRECURSOR_MZ,
         "neutral_loss_da": NEUTRAL_LOSS_DA,
@@ -152,7 +152,9 @@ def gate_c_launch_contract() -> dict[str, object]:
     }
 
 
-def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
+def run_single_sample_canary(
+    *, raw_file: Path, dll_dir: Path, output_dir: Path
+) -> Path:
     if raw_file.stem != SAMPLE_STEM:
         raise ValueError(f"expected the existing {SAMPLE_STEM}.raw canary")
     metadata = SampleMetadata(
@@ -160,7 +162,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         raw_stem=SAMPLE_STEM,
         injection_order=1,
         sample_role="study_sample",
-        batch_id="mode-track-85raw-validation-gate-b",
+        batch_id="mode-track-single-sample-canary",
         matrix_type="breast_tissue",
         group="tumor",
     )
@@ -170,7 +172,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         dll_dir=dll_dir,
         output_dir=output_dir,
         source_relpath=f"output/{output_dir.name}/mode_track_source.json",
-        identity_namespace="mode-track-85raw-validation-gate-b",
+        identity_namespace="mode-track-single-sample-canary",
     )
     (output_dir / "mode_track_source.json").write_bytes(
         run.projection.source_artifact_bytes
@@ -179,7 +181,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     if len(rts) != 2 or any(
         abs(a - b) > 0.1 for a, b in zip(rts, (12.4123, 13.0354), strict=True)
     ):
-        raise RuntimeError("Gate B two-track census changed")
+        raise RuntimeError("single-sample canary two-track census changed")
     if (
         sum(f.direct_support_count_s for f in run.facts) != 1
         or sum(len(f.exact_owner_candidate_assignments) for f in run.facts) != 1
@@ -189,12 +191,14 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         or run.projection.pending_acceptance_rows
         or run.projection.expected_diff_rows
     ):
-        raise RuntimeError("Gate B support/candidate/write census changed")
-    receipt = output_dir / "gate_b_receipt.json"
+        raise RuntimeError(
+            "single-sample canary support/candidate/write census changed"
+        )
+    receipt = output_dir / "single_sample_canary_receipt.json"
     _write_json(
         receipt,
         {
-            "schema_version": "mode_track_85raw_validation_gate_b_receipt_v1",
+            "schema_version": "mode_track_single_sample_canary_receipt_v1",
             "validation_status": VALIDATION_STATUS,
             "sample_stem": SAMPLE_STEM,
             "precursor_mz": PRECURSOR_MZ,
@@ -215,7 +219,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     return receipt
 
 
-def run_gate_c(
+def run_closed_writer_proposal(
     *,
     raw_files: tuple[Path, ...],
     sample_metadata: tuple[SampleMetadata, ...],
@@ -226,7 +230,7 @@ def run_gate_c(
     metadata_sha256: str,
 ) -> Path:
     if len(raw_files) != 85 or len(sample_metadata) != 85:
-        raise ValueError("Gate C requires exactly 85 RAW and metadata rows")
+        raise ValueError("closed-writer requires exactly 85 RAW and metadata rows")
     proposal_dir = output_dir / "proposal"
     source_relpath = (
         proposal_dir.resolve().relative_to(manifest_root.resolve())
@@ -238,9 +242,9 @@ def run_gate_c(
         dll_dir=dll_dir,
         output_dir=output_dir,
         source_relpath=source_relpath,
-        identity_namespace="mode-track-85raw-validation-gate-c",
+        identity_namespace="mode-track-closed-writer-full-cohort",
     )
-    _validate_gate_c_call_budget(run.call_cost)
+    _validate_closed_writer_call_budget(run.call_cost)
     context = {
         "code_sha": code_sha,
         "processing_request_id": run.owners.request.processing_request_id,
@@ -253,7 +257,7 @@ def run_gate_c(
             "pending": len(run.projection.pending_acceptance_rows),
         },
     }
-    receipt = freeze_gate_c_proposal(
+    receipt = freeze_closed_writer_proposal(
         projection=run.projection,
         manifest_root=manifest_root,
         output_dir=proposal_dir,
@@ -263,7 +267,7 @@ def run_gate_c(
     return receipt
 
 
-def run_gate_c_fresh_finalization(
+def run_closed_writer_finalization(
     *,
     raw_files: tuple[Path, ...],
     sample_metadata: tuple[SampleMetadata, ...],
@@ -279,23 +283,23 @@ def run_gate_c_fresh_finalization(
     code_sha: str,
     metadata_sha256: str,
 ) -> Path:
-    """Recompute Backfill through its owner and close Gate C in the same process."""
+    """Recompute Backfill through its owner and close the full cohort."""
 
     if len(raw_files) != 85 or len(sample_metadata) != 85:
-        raise ValueError("Gate C requires exactly 85 RAW and metadata rows")
+        raise ValueError("closed-writer requires exactly 85 RAW and metadata rows")
     manifest_root = manifest_root.resolve()
     replay_output_dir = replay_output_dir.resolve()
     final_output_dir = final_output_dir.resolve()
-    transaction_staging_dir = _gate_c_transaction_staging_dir(final_output_dir)
+    transaction_staging_dir = _closed_writer_transaction_staging_dir(final_output_dir)
     if (
         replay_output_dir.exists()
         or final_output_dir.exists()
         or transaction_staging_dir.exists()
     ):
-        raise ValueError("Gate C C2 replay or final output already exists")
+        raise ValueError("closed-writer replay or final output already exists")
     for target in (replay_output_dir, final_output_dir):
         if not target.is_relative_to(manifest_root):
-            raise ValueError("Gate C C2 outputs must stay under manifest root")
+            raise ValueError("closed-writer outputs must stay under manifest root")
 
     _validate_review_transfer_receipt(
         receipt_path=review_transfer_receipt_path,
@@ -314,9 +318,9 @@ def run_gate_c_fresh_finalization(
         dll_dir=dll_dir,
         output_dir=replay_output_dir,
         source_relpath=source_path.relative_to(manifest_root).as_posix(),
-        identity_namespace="mode-track-85raw-validation-gate-c",
+        identity_namespace="mode-track-closed-writer-full-cohort",
     )
-    _validate_gate_c_call_budget(run.call_cost)
+    _validate_closed_writer_call_budget(run.call_cost)
     source_path.write_bytes(run.projection.source_artifact_bytes)
     scientific_rows = _mode_track_scientific_projection_rows(run.facts)
     proposal_path = proposal_dir / "proposal.json"
@@ -325,9 +329,7 @@ def run_gate_c_fresh_finalization(
     _write_json(
         fresh_receipt_path,
         {
-            "schema_version": (
-                "mode_track_85raw_validation_gate_c_fresh_owner_receipt_v1"
-            ),
+            "schema_version": ("mode_track_closed_writer_fresh_owner_receipt_v1"),
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
@@ -342,20 +344,18 @@ def run_gate_c_fresh_finalization(
             "audit_review_transfer_receipt_sha256": _sha256(
                 review_transfer_receipt_path
             ),
-            "eligibility_authority": (
-                "live_typed_backfill_facts_same_process_only"
-            ),
+            "eligibility_authority": ("live_typed_backfill_facts_same_process_only"),
             "writer_input_authority": "fresh_projection_only",
         },
     )
-    validated_review = _rehydrate_gate_c_review_set(
+    validated_review = _rehydrate_closed_writer_review_set(
         proposal_dir=proposal_dir,
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
         manifest_root=manifest_root,
         fresh_projection=run.projection,
     )
-    transaction_receipt_path = _finalize_gate_c_transaction(
+    transaction_receipt_path = _finalize_closed_writer_transaction(
         projection=run.projection,
         validated_review=validated_review,
         manifest_root=manifest_root,
@@ -372,14 +372,14 @@ def run_gate_c_fresh_finalization(
     return transaction_receipt_path
 
 
-def _gate_c_transaction_staging_dir(final_output_dir: Path) -> Path:
+def _closed_writer_transaction_staging_dir(final_output_dir: Path) -> Path:
     return final_output_dir.with_name(f"{final_output_dir.name}.transaction-staging")
 
 
-def _finalize_gate_c_transaction(
+def _finalize_closed_writer_transaction(
     *,
     projection: UntargetedCidNlModeTrackProjection,
-    validated_review: _ValidatedGateCReviewSet,
+    validated_review: _ValidatedClosedWriterReviewSet,
     manifest_root: Path,
     final_output_dir: Path,
     code_sha: str,
@@ -389,10 +389,12 @@ def _finalize_gate_c_transaction(
 ) -> Path:
     """Publish the QMV, final receipt, and transaction receipt in one rename."""
 
-    transaction_staging_dir = _gate_c_transaction_staging_dir(final_output_dir)
+    transaction_staging_dir = _closed_writer_transaction_staging_dir(final_output_dir)
     if final_output_dir.exists() or transaction_staging_dir.exists():
-        raise ValueError("Gate C final or transaction staging output already exists")
-    final_receipt_path = finalize_gate_c_fresh_projection(
+        raise ValueError(
+            "closed-writer final or transaction staging output already exists"
+        )
+    final_receipt_path = finalize_closed_writer_fresh_projection(
         projection=projection,
         validated_review=validated_review,
         manifest_root=manifest_root,
@@ -402,9 +404,7 @@ def _finalize_gate_c_transaction(
     _write_json(
         transaction_receipt_path,
         {
-            "schema_version": (
-                "mode_track_85raw_validation_gate_c_transaction_receipt_v2"
-            ),
+            "schema_version": ("mode_track_closed_writer_transaction_receipt_v2"),
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
@@ -516,14 +516,12 @@ def _run_mode_track_batch(
         raise RuntimeError(
             "Real-data runtime validation batch did not complete atomically"
         )
-    runtime_call_cost = untargeted_cid_nl_runtime_call_cost(
-        runtime_result.finalization
-    )
+    runtime_call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
     if runtime_call_cost["raw_open_count"] > len(raw_files):
         raise RuntimeError(
             "Real-data runtime validation batch exceeded one RAW open per sample"
         )
-    call_cost = _gate_c_workload_call_cost(
+    call_cost = _closed_writer_workload_call_cost(
         discovery_raw_open_count=len(raw_files),
         runtime_call_cost=runtime_call_cost,
     )
@@ -562,7 +560,7 @@ def _run_mode_track_batch(
     )
 
 
-def _gate_c_workload_call_cost(
+def _closed_writer_workload_call_cost(
     *,
     discovery_raw_open_count: int,
     runtime_call_cost: Mapping[str, int],
@@ -585,14 +583,14 @@ def _gate_c_workload_call_cost(
     }
 
 
-def _validate_gate_c_call_budget(call_cost: Mapping[str, int]) -> None:
+def _validate_closed_writer_call_budget(call_cost: Mapping[str, int]) -> None:
     if (
         call_cost["discovery_raw_open_count"] > 85
         or call_cost["runtime_raw_open_count"] > 85
         or call_cost["total_raw_open_count"] > 170
         or call_cost["runtime_xic_batch_count"] > 85
     ):
-        raise RuntimeError("Gate C exceeded the sample-batched RAW call budget")
+        raise RuntimeError("closed-writer exceeded the sample-batched RAW call budget")
 
 
 def _mode_track_trajectory_policy() -> ModeTrackTrajectoryPolicy:
@@ -675,7 +673,9 @@ def _validate_fresh_mode_track_projection(
     expected = _mode_track_scientific_projection_rows(fresh_facts)
     loaded = [dict(row) for row in persisted_rows]
     if loaded != expected:
-        raise ValueError("Gate C fresh Backfill scientific projection differs from C1")
+        raise ValueError(
+            "closed-writer fresh Backfill scientific projection differs from proposal"
+        )
     return expected
 
 
@@ -712,11 +712,11 @@ def _validate_fresh_proposed_keys(
             row.get("peak_observation_content_id"),
         )
         if persisted_key in observed:
-            raise ValueError("Gate C persisted candidate decision is duplicate")
+            raise ValueError("closed-writer persisted candidate decision is duplicate")
         observed[persisted_key] = (row.get("decision"), row.get("reason_code"))
     if observed != expected:
         raise ValueError(
-            "Gate C persisted candidate decisions differ from fresh Backfill"
+            "closed-writer persisted candidate decisions differ from fresh Backfill"
         )
 
 
@@ -749,7 +749,7 @@ def _candidate_decision_rows(
     return rows
 
 
-def freeze_gate_c_proposal(
+def freeze_closed_writer_proposal(
     *,
     projection: UntargetedCidNlModeTrackProjection,
     manifest_root: Path,
@@ -757,7 +757,7 @@ def freeze_gate_c_proposal(
     run_context: Mapping[str, object],
 ) -> Path:
     if set(run_context) != RUN_CONTEXT_FIELDS:
-        raise ValueError("Gate C run context fields changed")
+        raise ValueError("closed-writer run context fields changed")
     manifest_root, output_dir = manifest_root.resolve(), output_dir.resolve()
     if not output_dir.is_relative_to(manifest_root):
         raise ValueError("proposal output must stay under manifest root")
@@ -765,10 +765,10 @@ def freeze_gate_c_proposal(
     if source_path.parent.resolve() != output_dir:
         raise ValueError("projection source path must be inside final proposal output")
     if not projection.pending_acceptance_rows:
-        raise ValueError("Gate C proposal must contain at least one pending row")
+        raise ValueError("closed-writer proposal must contain at least one pending row")
     staging = output_dir.with_name(f"{output_dir.name}.staging")
     if output_dir.exists() or staging.exists():
-        raise ValueError("Gate C proposal or staging output already exists")
+        raise ValueError("closed-writer proposal or staging output already exists")
     staging.mkdir(parents=True)
     staged_source = staging / source_path.name
     staged_source.write_bytes(projection.source_artifact_bytes)
@@ -778,7 +778,7 @@ def freeze_gate_c_proposal(
         projection.mode_track_facts
     )
     proposal = {
-        "schema_version": "mode_track_85raw_validation_gate_c_proposal_v2",
+        "schema_version": "mode_track_closed_writer_proposal_v2",
         "matrix_header": list(projection.matrix_header),
         "input_quant_matrix_rows": list(map(dict, projection.input_quant_matrix_rows)),
         "input_matrix_identity_rows": list(
@@ -797,7 +797,7 @@ def freeze_gate_c_proposal(
     context = dict(run_context)
     supplied_census = context.get("candidate_census")
     if not isinstance(supplied_census, dict):
-        raise ValueError("Gate C run context candidate census is missing")
+        raise ValueError("closed-writer run context candidate census is missing")
     proposed_count = sum(row["decision"] == "proposed" for row in decision_rows)
     expected_supplied = {
         "track_count": len(fact_rows),
@@ -807,7 +807,7 @@ def freeze_gate_c_proposal(
         key in supplied_census and supplied_census[key] != value
         for key, value in expected_supplied.items()
     ):
-        raise ValueError("Gate C run context candidate census changed")
+        raise ValueError("closed-writer run context candidate census changed")
     supplied_census.update(
         {
             **expected_supplied,
@@ -819,9 +819,7 @@ def freeze_gate_c_proposal(
     )
     context["candidate_census"] = supplied_census
     receipt = {
-        "schema_version": (
-            "mode_track_85raw_validation_gate_c_proposal_receipt_v2"
-        ),
+        "schema_version": ("mode_track_closed_writer_proposal_receipt_v2"),
         "proposal_sha256": _sha256(proposal_path),
         "source_file_sha256": _sha256(staged_source),
         "run_context": context,
@@ -832,7 +830,7 @@ def freeze_gate_c_proposal(
     return output_dir / "proposal_receipt.json"
 
 
-def transfer_gate_c_review(
+def transfer_closed_writer_review(
     *,
     reviewed_packet_dir: Path,
     proposal_dir: Path,
@@ -848,9 +846,11 @@ def transfer_gate_c_review(
     output_dir = output_dir.resolve()
     for source in (reviewed_packet_dir, proposal_dir):
         if not source.is_relative_to(manifest_root):
-            raise ValueError("Gate C review-transfer input escapes manifest root")
+            raise ValueError(
+                "closed-writer review-transfer input escapes manifest root"
+            )
     if not output_dir.is_relative_to(manifest_root) or output_dir.exists():
-        raise ValueError("Gate C review-transfer output is invalid")
+        raise ValueError("closed-writer review-transfer output is invalid")
 
     old_proposal_dir = reviewed_packet_dir / "proposal"
     old_proposal_path = old_proposal_dir / "proposal.json"
@@ -877,21 +877,24 @@ def transfer_gate_c_review(
         manifest_root=manifest_root,
     )
     if new_receipt.get("proposal_sha256") != _sha256(new_proposal_path):
-        raise ValueError("Gate C new proposal hash changed")
+        raise ValueError("closed-writer new proposal hash changed")
     _validate_proposal_payload(new_proposal, new_receipt, new_source)
 
     old_subjects = _review_subject_rows(old_proposal, old_source)
     new_subjects = _review_subject_rows(new_proposal, new_source)
     if old_subjects != new_subjects:
-        raise ValueError("Gate C review subjects differ; fresh review is required")
+        raise ValueError(
+            "closed-writer review subjects differ; fresh review is required"
+        )
 
     staging = output_dir.with_name(f"{output_dir.name}.staging")
     if staging.exists():
-        raise ValueError("Gate C review-transfer staging output already exists")
+        raise ValueError("closed-writer review-transfer staging output already exists")
     staging.mkdir(parents=True)
     old_replay = _read_json_object(old_replay_path)
     transferred_replay = {
         **old_replay,
+        "schema_version": "mode_track_closed_writer_observation_replay_v1",
         "proposal_sha256": new_receipt["proposal_sha256"],
         "source_artifact_sha256": new_proposal["source_artifact_sha256"],
         "rows": _required_mapping_rows(old_replay, "rows"),
@@ -922,7 +925,7 @@ def transfer_gate_c_review(
     final_replay_path = output_dir / replay_path.name
     final_replay_relpath = final_replay_path.relative_to(manifest_root).as_posix()
     transferred_review: dict[str, object] = {
-        "schema_version": "mode_track_85raw_validation_gate_c_manual_review_v1",
+        "schema_version": "mode_track_closed_writer_manual_review_v1",
         "observation_replay_relpath": final_replay_relpath,
         "observation_replay_sha256": _sha256(replay_path),
         "rows": transferred_review_rows,
@@ -962,9 +965,7 @@ def transfer_gate_c_review(
     )
     _validate_pending_manifest_equality(pending, checked.rows)
     transfer_receipt = {
-        "schema_version": (
-            "mode_track_85raw_validation_gate_c_review_transfer_receipt_v1"
-        ),
+        "schema_version": ("mode_track_closed_writer_review_transfer_receipt_v1"),
         "validation_status": VALIDATION_STATUS,
         "code_sha": code_sha,
         "review_subject_count": len(new_subjects),
@@ -1003,7 +1004,9 @@ def _validate_review_transfer_receipt(
         manifest_path.resolve(),
     )
     if any(not path.is_relative_to(manifest_root) for path in paths):
-        raise ValueError("Gate C review-transfer inputs must stay under manifest root")
+        raise ValueError(
+            "closed-writer review-transfer inputs must stay under manifest root"
+        )
 
     receipt = _read_json_object(receipt_path)
     required_fields = {
@@ -1024,14 +1027,14 @@ def _validate_review_transfer_receipt(
     }
     if set(receipt) != required_fields or (
         receipt.get("schema_version")
-        != "mode_track_85raw_validation_gate_c_review_transfer_receipt_v1"
+        != "mode_track_closed_writer_review_transfer_receipt_v1"
         or receipt.get("validation_status") != VALIDATION_STATUS
         or receipt.get("code_sha") != code_sha
         or receipt.get("transfer_rule")
         != "exact_group_sample_identity_observation_content_area"
         or receipt.get("product_authority") != "none_review_input_only"
     ):
-        raise ValueError("Gate C review-transfer receipt contract changed")
+        raise ValueError("closed-writer review-transfer receipt contract changed")
 
     proposal_path = proposal_dir / "proposal.json"
     proposal_receipt_path = proposal_dir / "proposal_receipt.json"
@@ -1049,17 +1052,19 @@ def _validate_review_transfer_receipt(
         "checked_manifest_sha256": _sha256(manifest_path),
     }
     if any(receipt.get(key) != value for key, value in expected_bindings.items()):
-        raise ValueError("Gate C review-transfer receipt bindings changed")
+        raise ValueError("closed-writer review-transfer receipt bindings changed")
     for key in (
         "reviewed_proposal_receipt_sha256",
         "reviewed_manual_review_sha256",
         "reviewed_replay_sha256",
     ):
         value = receipt.get(key)
-        if not isinstance(value, str) or len(value) != 64 or any(
-            character not in "0123456789abcdef" for character in value
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
         ):
-            raise ValueError("Gate C reviewed packet digest is malformed")
+            raise ValueError("closed-writer reviewed packet digest is malformed")
     return receipt
 
 
@@ -1077,24 +1082,24 @@ def _validate_reviewed_packet_for_transfer(
     proposal_schema = proposal.get("schema_version")
     receipt_schema = receipt.get("schema_version")
     if proposal_schema not in {
-        "mode_track_85raw_validation_gate_c_proposal_v1",
-        "mode_track_85raw_validation_gate_c_proposal_v2",
+        "mode_track_closed_writer_proposal_v1",
+        "mode_track_closed_writer_proposal_v2",
     } or receipt_schema not in {
-        "mode_track_85raw_validation_gate_c_proposal_receipt_v1",
-        "mode_track_85raw_validation_gate_c_proposal_receipt_v2",
+        "mode_track_closed_writer_proposal_receipt_v1",
+        "mode_track_closed_writer_proposal_receipt_v2",
     }:
-        raise ValueError("Gate C reviewed packet schema is unsupported")
+        raise ValueError("closed-writer reviewed packet schema is unsupported")
     if receipt.get("proposal_sha256") != _sha256(proposal_path) or receipt.get(
         "source_file_sha256"
     ) != _sha256(source_path):
-        raise ValueError("Gate C reviewed packet hash changed")
-    if proposal_schema == "mode_track_85raw_validation_gate_c_proposal_v2":
+        raise ValueError("closed-writer reviewed packet hash changed")
+    if proposal_schema == "mode_track_closed_writer_proposal_v2":
         _validate_proposal_payload(proposal, receipt, source_path)
     elif (
         str(proposal.get("source_artifact_sha256", "")).upper()
         != hashlib.sha256(source_path.read_bytes()).hexdigest().upper()
     ):
-        raise ValueError("Gate C reviewed source SHA changed")
+        raise ValueError("closed-writer reviewed source SHA changed")
     pending = _required_rows(proposal, "pending_acceptance_rows")
     review = _read_json_object(review_path)
     replay = _read_json_object(replay_path)
@@ -1133,7 +1138,7 @@ def _projection_review_subject_rows(
         object_pairs_hook=_unique_json_mapping,
     )
     if not isinstance(source, dict):
-        raise ValueError("Gate C fresh source must be a JSON object")
+        raise ValueError("closed-writer fresh source must be a JSON object")
     return _review_subject_rows_from_payload(
         pending=projection.pending_acceptance_rows,
         source=source,
@@ -1145,10 +1150,7 @@ def _review_subject_rows_from_payload(
     pending: Sequence[Mapping[str, str]],
     source: Mapping[str, object],
 ) -> list[dict[str, object]]:
-    pending_keys = {
-        (row["peak_hypothesis_id"], row["sample_stem"])
-        for row in pending
-    }
+    pending_keys = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
     source_rows = _required_mapping_rows(source, "rows")
     subjects: list[dict[str, object]] = []
     seen: set[tuple[object, object]] = set()
@@ -1165,7 +1167,7 @@ def _review_subject_rows_from_payload(
             or not physical_ids[2]
             or row.get("quant_value") is None
         ):
-            raise ValueError("Gate C review subject is malformed")
+            raise ValueError("closed-writer review subject is malformed")
         seen.add(key)
         subjects.append(
             {
@@ -1177,30 +1179,30 @@ def _review_subject_rows_from_payload(
             }
         )
     if seen != pending_keys:
-        raise ValueError("Gate C review subject census is incomplete")
+        raise ValueError("closed-writer review subject census is incomplete")
     return sorted(
         subjects,
         key=lambda row: (str(row["group_hypothesis_id"]), str(row["sample_stem"])),
     )
 
 
-def _rehydrate_gate_c_review_set(
+def _rehydrate_closed_writer_review_set(
     *,
     proposal_dir: Path,
     manual_review_path: Path,
     manual_review_replay_path: Path,
     manifest_root: Path,
     fresh_projection: UntargetedCidNlModeTrackProjection,
-) -> _ValidatedGateCReviewSet:
+) -> _ValidatedClosedWriterReviewSet:
     proposal_path = proposal_dir / "proposal.json"
     receipt_path = proposal_dir / "proposal_receipt.json"
     proposal = _read_json_object(proposal_path)
     receipt = _read_json_object(receipt_path)
     source_path = manifest_root / str(proposal.get("source_artifact_relpath", ""))
     if receipt.get("proposal_sha256") != _sha256(proposal_path):
-        raise ValueError("Gate C proposal hash changed")
+        raise ValueError("closed-writer proposal hash changed")
     if receipt.get("source_file_sha256") != _sha256(source_path):
-        raise ValueError("Gate C source file hash changed")
+        raise ValueError("closed-writer source file hash changed")
     _validate_proposal_payload(proposal, receipt, source_path)
     _validate_fresh_mode_track_projection(
         persisted_rows=_required_mapping_rows(
@@ -1229,9 +1231,9 @@ def _rehydrate_gate_c_review_set(
     persisted_subjects = _review_subject_rows(proposal, source_path)
     fresh_subjects = _projection_review_subject_rows(fresh_projection)
     if persisted_subjects != fresh_subjects:
-        raise ValueError("Gate C reviewed subjects differ from fresh C2 owner")
+        raise ValueError("closed-writer reviewed subjects differ from fresh owner")
     subjects = tuple(
-        _GateCReviewSubject(
+        _ClosedWriterReviewSubject(
             group_hypothesis_id=str(row["group_hypothesis_id"]),
             sample_stem=str(row["sample_stem"]),
             sample_identity_id=str(row["sample_identity_id"]),
@@ -1240,39 +1242,41 @@ def _rehydrate_gate_c_review_set(
         )
         for row in fresh_subjects
     )
-    return _ValidatedGateCReviewSet(
+    return _ValidatedClosedWriterReviewSet(
         subjects=subjects,
         manual_review_sha256=_sha256(manual_review_path),
         manual_review_replay_sha256=_sha256(manual_review_replay_path),
-        _mint_token=_VALIDATED_GATE_C_REVIEW_MINT_TOKEN,
+        _mint_token=_VALIDATED_CLOSED_WRITER_REVIEW_MINT_TOKEN,
     )
 
 
-def finalize_gate_c_fresh_projection(
+def finalize_closed_writer_fresh_projection(
     *,
     projection: UntargetedCidNlModeTrackProjection,
-    validated_review: _ValidatedGateCReviewSet,
+    validated_review: _ValidatedClosedWriterReviewSet,
     manifest_root: Path,
     output_dir: Path,
 ) -> Path:
     if not isinstance(projection, UntargetedCidNlModeTrackProjection) or not isinstance(
-        validated_review, _ValidatedGateCReviewSet
+        validated_review, _ValidatedClosedWriterReviewSet
     ):
-        raise TypeError("Gate C finalization requires fresh typed owner authority")
+        raise TypeError(
+            "closed-writer finalization requires fresh typed owner authority"
+        )
     manifest_root = manifest_root.resolve()
     output_dir = output_dir.resolve()
     if not output_dir.is_relative_to(manifest_root):
-        raise ValueError("Gate C final output must stay under manifest root")
+        raise ValueError("closed-writer final output must stay under manifest root")
     source_path = manifest_root / projection.source_artifact_relpath
     if (
         not source_path.resolve().is_relative_to(manifest_root)
         or not source_path.is_file()
         or _sha256(source_path).upper() != projection.source_artifact_sha256.upper()
     ):
-        raise ValueError("Gate C fresh projection source binding changed")
+        raise ValueError("closed-writer fresh projection source binding changed")
 
     fresh_subjects = tuple(
-        _GateCReviewSubject(
+        _ClosedWriterReviewSubject(
             group_hypothesis_id=str(row["group_hypothesis_id"]),
             sample_stem=str(row["sample_stem"]),
             sample_identity_id=str(row["sample_identity_id"]),
@@ -1282,14 +1286,16 @@ def finalize_gate_c_fresh_projection(
         for row in _projection_review_subject_rows(projection)
     )
     if validated_review.subjects != fresh_subjects:
-        raise ValueError("Gate C validated review differs from fresh C2 subjects")
+        raise ValueError(
+            "closed-writer validated review differs from fresh owner subjects"
+        )
 
     pending = list(map(dict, projection.pending_acceptance_rows))
     manifest_sha = quant_matrix.production_acceptance_manifest_sha256(pending)
     checked_rows = [{**row, "manifest_sha256": manifest_sha} for row in pending]
     staging = output_dir.with_name(f"{output_dir.name}.staging")
     if output_dir.exists() or staging.exists():
-        raise ValueError("Gate C final or staging output already exists")
+        raise ValueError("closed-writer final or staging output already exists")
     staging.mkdir(parents=True)
     manifest_path = staging / "checked_manifest_v1.tsv"
     manifest_path.write_text(
@@ -1314,7 +1320,7 @@ def finalize_gate_c_fresh_projection(
         checked_manifest=checked,
         expected_diff_rows=projection.expected_diff_rows,
     )
-    rollback_status, rollback_rows = _validate_gate_c_fresh_terminal(
+    rollback_status, rollback_rows = _validate_closed_writer_fresh_terminal(
         projection, pending, result
     )
     result_payload = {
@@ -1324,15 +1330,13 @@ def finalize_gate_c_fresh_projection(
         projection.mode_track_facts
     )
     final_receipt = {
-        "schema_version": "mode_track_85raw_validation_gate_c_final_receipt_v3",
+        "schema_version": "mode_track_closed_writer_final_receipt_v3",
         "validation_status": VALIDATION_STATUS,
         "validated_review_subjects_sha256": _json_sha256(
             [asdict(subject) for subject in validated_review.subjects]
         ),
         "manual_review_sha256": validated_review.manual_review_sha256,
-        "manual_review_replay_sha256": (
-            validated_review.manual_review_replay_sha256
-        ),
+        "manual_review_replay_sha256": (validated_review.manual_review_replay_sha256),
         "checked_manifest_file_sha256": checked.manifest_file_sha256,
         "result_qmv_sha256": _json_sha256(result_payload),
         "baseline_qmv_sha256": _json_sha256(
@@ -1356,37 +1360,31 @@ def _validate_proposal_payload(
     receipt: Mapping[str, object],
     source_path: Path,
 ) -> None:
-    if (
-        proposal.get("schema_version")
-        != "mode_track_85raw_validation_gate_c_proposal_v2"
-    ):
-        raise ValueError("Gate C proposal schema changed")
-    if (
-        receipt.get("schema_version")
-        != "mode_track_85raw_validation_gate_c_proposal_receipt_v2"
-    ):
-        raise ValueError("Gate C proposal receipt schema changed")
+    if proposal.get("schema_version") != "mode_track_closed_writer_proposal_v2":
+        raise ValueError("closed-writer proposal schema changed")
+    if receipt.get("schema_version") != "mode_track_closed_writer_proposal_receipt_v2":
+        raise ValueError("closed-writer proposal receipt schema changed")
     source_bytes = source_path.read_bytes()
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
     if proposal.get("source_artifact_sha256") != source_sha:
-        raise ValueError("Gate C owner source SHA changed")
+        raise ValueError("closed-writer owner source SHA changed")
     source = _read_json_object(source_path)
     pending = _required_rows(proposal, "pending_acceptance_rows")
     expected = _required_rows(proposal, "expected_diff_rows")
     fact_rows = _required_rows(proposal, "mode_track_fact_rows")
     decision_rows = _required_rows(proposal, "candidate_decision_rows")
     if len(pending) != len(expected) or not pending:
-        raise ValueError("Gate C proposal candidate/diff census changed")
+        raise ValueError("closed-writer proposal candidate/diff census changed")
     source_rows = _required_rows(source, "rows")
     source_keys = {
         (row["group_hypothesis_id"], row["sample_stem"]) for row in source_rows
     }
     pending_keys = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
     if source_keys != pending_keys:
-        raise ValueError("Gate C source and pending product keys differ")
+        raise ValueError("closed-writer source and pending product keys differ")
     fact_group_ids = [row.get("group_hypothesis_id") for row in fact_rows]
     if not fact_group_ids or len(fact_group_ids) != len(set(fact_group_ids)):
-        raise ValueError("Gate C ModeTrack fact census is incomplete")
+        raise ValueError("closed-writer ModeTrack fact census is incomplete")
     decision_keys = [
         (
             row.get("group_hypothesis_id"),
@@ -1398,18 +1396,18 @@ def _validate_proposal_payload(
     if len(decision_keys) != len(set(decision_keys)) or any(
         row.get("decision") not in {"proposed", "rejected"} for row in decision_rows
     ):
-        raise ValueError("Gate C exact-owner decision census is malformed")
+        raise ValueError("closed-writer exact-owner decision census is malformed")
     proposed_keys = {
         (row["group_hypothesis_id"], row["sample_stem"])
         for row in decision_rows
         if row["decision"] == "proposed"
     }
     if proposed_keys != pending_keys:
-        raise ValueError("Gate C proposed decision and pending keys differ")
+        raise ValueError("closed-writer proposed decision and pending keys differ")
     context = receipt.get("run_context")
     owner_keys = ("code_sha", "processing_request_id", "processing_attempt_id")
     if not isinstance(context, dict) or not all(context.get(key) for key in owner_keys):
-        raise ValueError("Gate C proposal receipt owner context is incomplete")
+        raise ValueError("closed-writer proposal receipt owner context is incomplete")
     census = context.get("candidate_census")
     expected_census = {
         "track_count": len(fact_rows),
@@ -1422,7 +1420,7 @@ def _validate_proposal_payload(
     if not isinstance(census, dict) or any(
         census.get(key) != value for key, value in expected_census.items()
     ):
-        raise ValueError("Gate C receipt census does not bind proposal evidence")
+        raise ValueError("closed-writer receipt census does not bind proposal evidence")
 
 
 def _validate_manual_review(
@@ -1435,19 +1433,16 @@ def _validate_manual_review(
     replay_relpath: str,
     replay_sha256: str,
 ) -> None:
-    if (
-        review.get("schema_version")
-        != "mode_track_85raw_validation_gate_c_manual_review_v1"
-    ):
-        raise ValueError("Gate C manual review schema changed")
+    if review.get("schema_version") != "mode_track_closed_writer_manual_review_v1":
+        raise ValueError("closed-writer manual review schema changed")
     rows = review.get("rows")
     if not isinstance(rows, list):
-        raise ValueError("Gate C manual review rows are missing")
+        raise ValueError("closed-writer manual review rows are missing")
     if (
         review.get("observation_replay_relpath") != replay_relpath
         or review.get("observation_replay_sha256") != replay_sha256
     ):
-        raise ValueError("Gate C manual review replay binding changed")
+        raise ValueError("closed-writer manual review replay binding changed")
     source_rows = _required_rows(_read_json_object(source_path), "rows")
     candidate_hashes = {
         (row["group_hypothesis_id"], row["sample_stem"]): _json_sha256(row)
@@ -1458,10 +1453,10 @@ def _validate_manual_review(
     seen: set[tuple[str, str]] = set()
     for row in rows:
         if not isinstance(row, dict):
-            raise ValueError("Gate C manual review row is malformed")
+            raise ValueError("closed-writer manual review row is malformed")
         key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
         if key in seen or key not in expected:
-            raise ValueError("Gate C manual review key is duplicate or foreign")
+            raise ValueError("closed-writer manual review key is duplicate or foreign")
         seen.add(key)
         bound = {
             "proposal_sha256": receipt["proposal_sha256"],
@@ -1475,9 +1470,9 @@ def _validate_manual_review(
             not row.get(name)
             for name in ("reviewer_id", "reviewed_at", "evidence_locator")
         ):
-            raise ValueError("Gate C manual review is unbound or not passing")
+            raise ValueError("closed-writer manual review is unbound or not passing")
     if seen != expected:
-        raise ValueError("Gate C manual review does not cover every pending row")
+        raise ValueError("closed-writer manual review does not cover every pending row")
 
 
 def _validate_manual_review_replay(
@@ -1488,17 +1483,16 @@ def _validate_manual_review_replay(
     source_path: Path,
 ) -> None:
     if (
-        replay.get("schema_version")
-        != "mode_track_85raw_validation_gate_c_observation_replay_v1"
+        replay.get("schema_version") != "mode_track_closed_writer_observation_replay_v1"
         or replay.get("validation_status") != VALIDATION_STATUS
         or replay.get("proposal_sha256") != receipt["proposal_sha256"]
         or str(replay.get("source_artifact_sha256", "")).upper()
         != str(proposal["source_artifact_sha256"]).upper()
     ):
-        raise ValueError("Gate C physical replay authority binding changed")
+        raise ValueError("closed-writer physical replay authority binding changed")
     rows = replay.get("rows")
     if not isinstance(rows, list) or replay.get("row_count") != len(rows):
-        raise ValueError("Gate C physical replay row census is malformed")
+        raise ValueError("closed-writer physical replay row census is malformed")
     source_rows = _required_rows(_read_json_object(source_path), "rows")
     source_by_key = {
         (row["group_hypothesis_id"], row["sample_stem"]): row for row in source_rows
@@ -1509,24 +1503,26 @@ def _validate_manual_review_replay(
     seen: set[tuple[str, str]] = set()
     for row in rows:
         if not isinstance(row, dict):
-            raise ValueError("Gate C physical replay row is malformed")
+            raise ValueError("closed-writer physical replay row is malformed")
         key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
         source = source_by_key.get(key)
         accepted = pending_by_key.get(key)
         if key in seen or source is None or accepted is None:
-            raise ValueError("Gate C physical replay key is duplicate or foreign")
+            raise ValueError(
+                "closed-writer physical replay key is duplicate or foreign"
+            )
         seen.add(key)
         observation = row.get("observation_content")
         physical_ids = source.get("physical_ids")
         if not isinstance(observation, dict):
-            raise ValueError("Gate C physical replay observation content is malformed")
-        try:
-            verified_observation = verify_persisted_peak_observation_claims(
-                observation
+            raise ValueError(
+                "closed-writer physical replay observation content is malformed"
             )
+        try:
+            verified_observation = verify_persisted_peak_observation_claims(observation)
         except PeakObservationContractError as exc:
             raise ValueError(
-                "Gate C physical replay observation content is owner-invalid"
+                "closed-writer physical replay observation content is owner-invalid"
             ) from exc
         if (
             not isinstance(physical_ids, list)
@@ -1540,19 +1536,23 @@ def _validate_manual_review_replay(
             or source.get("quant_value") != accepted.get("quant_value")
             or row.get("area_parity") != "pass"
         ):
-            raise ValueError("Gate C physical replay candidate binding changed")
+            raise ValueError("closed-writer physical replay candidate binding changed")
         if not numeric_equal(
             verified_observation.area_raw_counts_seconds,
             accepted.get("quant_value"),
         ):
-            raise ValueError("Gate C physical replay raw-area parity changed")
+            raise ValueError("closed-writer physical replay raw-area parity changed")
         source_observation = source.get("peak_observation")
         if isinstance(source_observation, dict) and (
             source_observation.get("content") != observation
         ):
-            raise ValueError("Gate C physical replay observation payload changed")
+            raise ValueError(
+                "closed-writer physical replay observation payload changed"
+            )
     if seen != set(pending_by_key):
-        raise ValueError("Gate C physical replay does not cover every pending row")
+        raise ValueError(
+            "closed-writer physical replay does not cover every pending row"
+        )
 
 
 def _validate_pending_manifest_equality(
@@ -1571,7 +1571,7 @@ def _validate_pending_manifest_equality(
         raise ValueError("checked manifest differs from fresh C2 projection")
 
 
-def _validate_gate_c_fresh_terminal(
+def _validate_closed_writer_fresh_terminal(
     projection: UntargetedCidNlModeTrackProjection,
     pending: Sequence[Mapping[str, str]],
     result: quant_matrix.QuantMatrixVersionRows,
@@ -1579,7 +1579,7 @@ def _validate_gate_c_fresh_terminal(
     header = projection.matrix_header
     baseline = list(map(dict, projection.input_quant_matrix_rows))
     identities = projection.input_matrix_identity_rows
-    return _validate_gate_c_terminal_rows(
+    return _validate_closed_writer_terminal_rows(
         header=header,
         baseline=baseline,
         identities=identities,
@@ -1588,7 +1588,7 @@ def _validate_gate_c_fresh_terminal(
     )
 
 
-def _validate_gate_c_terminal_rows(
+def _validate_closed_writer_terminal_rows(
     *,
     header: Sequence[str],
     baseline: Sequence[Mapping[str, str]],
@@ -1598,14 +1598,14 @@ def _validate_gate_c_terminal_rows(
 ) -> tuple[str, list[dict[str, str]]]:
     accepted = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
     if len(result.quant_matrix_rows) != len(baseline):
-        raise ValueError("Gate C Matrix row count changed")
+        raise ValueError("closed-writer Matrix row count changed")
     for identity, before, after in zip(
         identities, baseline, result.quant_matrix_rows, strict=True
     ):
         if any(
             after.get(column, "") != before.get(column, "") for column in ("Mz", "RT")
         ):
-            raise ValueError("Gate C terminal Matrix row identity changed")
+            raise ValueError("closed-writer terminal Matrix row identity changed")
         group_id = identity["peak_hypothesis_id"]
         expected = {
             sample
@@ -1614,7 +1614,9 @@ def _validate_gate_c_terminal_rows(
         }
         actual = {sample for sample in header[2:] if after.get(sample, "")}
         if actual != expected:
-            raise ValueError("Gate C terminal Matrix contains an unauthorized value")
+            raise ValueError(
+                "closed-writer terminal Matrix contains an unauthorized value"
+            )
     detected_only_rows = quant_matrix.detected_only_matrix_rows_from_quant_version(
         quant_matrix_rows=result.quant_matrix_rows,
         cell_provenance_rows=result.cell_provenance_rows,
@@ -1627,7 +1629,7 @@ def _validate_gate_c_terminal_rows(
         row for row in baseline if any(row.get(sample, "") for sample in header[2:])
     ]
     if rollback_rows != baseline_detected_rows:
-        raise ValueError("Gate C result-derived rollback differs from baseline")
+        raise ValueError("closed-writer result-derived rollback differs from baseline")
     return "baseline_exact", list(map(dict, baseline))
 
 
@@ -1636,9 +1638,9 @@ def _manifest_relative_path(path: Path, *, manifest_root: Path) -> str:
         resolved = path.resolve(strict=True)
         relative = resolved.relative_to(manifest_root.resolve(strict=True))
     except (FileNotFoundError, ValueError) as exc:
-        raise ValueError("Gate C physical replay escapes manifest root") from exc
+        raise ValueError("closed-writer physical replay escapes manifest root") from exc
     if not resolved.is_file():
-        raise ValueError("Gate C physical replay must be a file")
+        raise ValueError("closed-writer physical replay must be a file")
     return relative.as_posix()
 
 
@@ -1658,7 +1660,7 @@ def _unique_json_mapping(
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"Gate C JSON contains duplicate key: {key}")
+            raise ValueError(f"closed-writer JSON contains duplicate key: {key}")
         result[key] = value
     return result
 
@@ -1690,7 +1692,7 @@ def _publish_directory_atomic(staging: Path, output_dir: Path) -> None:
 def _required_rows(value: Mapping[str, object], key: str) -> list[dict[str, str]]:
     rows = value.get(key)
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-        raise ValueError(f"Gate C {key} rows are malformed")
+        raise ValueError(f"closed-writer {key} rows are malformed")
     return rows
 
 
@@ -1699,14 +1701,14 @@ def _required_mapping_rows(
 ) -> list[dict[str, object]]:
     rows = value.get(key)
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-        raise ValueError(f"Gate C {key} rows are malformed")
+        raise ValueError(f"closed-writer {key} rows are malformed")
     return rows
 
 
 def _required_strings(value: Mapping[str, object], key: str) -> list[str]:
     items = value.get(key)
     if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
-        raise ValueError(f"Gate C {key} must contain strings")
+        raise ValueError(f"closed-writer {key} must contain strings")
     return items
 
 
@@ -1791,7 +1793,7 @@ def main() -> int:
     parser.add_argument("--dll-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
-    receipt_path = run_gate_b(
+    receipt_path = run_single_sample_canary(
         raw_file=args.raw_file.resolve(),
         dll_dir=args.dll_dir.resolve(),
         output_dir=args.output_dir.resolve(),

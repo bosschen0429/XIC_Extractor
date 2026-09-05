@@ -1,6 +1,6 @@
-"""85RAW family-consolidation context for backfill PeakHypothesis cells.
+"""FULL COHORT family-consolidation context for backfill PeakHypothesis cells.
 
-This diagnostic maps source PeakHypothesis/sample cells that became 85RAW
+This diagnostic maps source PeakHypothesis/sample cells that became FULL COHORT
 primary losers to their current primary winner rows. It writes proposal evidence
 only and does not mutate matrices, apply activation, or establish hypothesis
 identity authority.
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.diagnostics import backfill_peakhypothesis_raw85_slice_gate
+from xic_extractor.diagnostics import backfill_peakhypothesis_acceptance_gate
 from xic_extractor.diagnostics.diagnostic_io import (
     format_diagnostic_value,
     optional_float,
@@ -22,7 +22,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_raw85_winner_remap_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_winner_remap_v1"
 
 WINNER_REMAP_COLUMNS = (
     "schema_version",
@@ -32,8 +32,8 @@ WINNER_REMAP_COLUMNS = (
     "source_seed_group_id",
     "sample_stem",
     "source_projected_matrix_value",
-    "source_raw85_cell_status",
-    "source_raw85_slice_blockers",
+    "source_full_cohort_cell_status",
+    "source_full_cohort_slice_blockers",
     "winner_peak_hypothesis_id",
     "winner_feature_family_id",
     "winner_review_found",
@@ -60,27 +60,27 @@ _GAUSSIAN15_AREA_SOURCE = "gaussian15_positive_asls_residual"
 
 
 @dataclass(frozen=True)
-class Raw85WinnerRemapIndex:
+class FullCohortWinnerRemapIndex:
     rows: tuple[dict[str, str], ...]
     summary: dict[str, Any]
 
 
 @dataclass(frozen=True)
-class Raw85WinnerRemapOutputs:
+class FullCohortWinnerRemapOutputs:
     rows_tsv: Path
     summary_json: Path
 
 
-def build_raw85_winner_remap(
+def build_full_cohort_winner_remap(
     *,
-    raw85_slice_gate_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
-    raw85_review_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
-    raw85_cell_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_acceptance_gate_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_review_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_cell_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
     source_run_id: str = "",
-) -> Raw85WinnerRemapIndex:
-    _validate_slice_gate_schema(raw85_slice_gate_rows)
-    review_by_family = _index_review_rows(raw85_review_rows)
-    cells_by_key = _index_cell_rows(raw85_cell_rows)
+) -> FullCohortWinnerRemapIndex:
+    _validate_slice_gate_schema(full_cohort_acceptance_gate_rows)
+    review_by_family = _index_review_rows(full_cohort_review_rows)
+    cells_by_key = _index_cell_rows(full_cohort_cell_rows)
     rows = tuple(
         _build_remap_row(
             source_row=row,
@@ -90,22 +90,22 @@ def build_raw85_winner_remap(
             ),
             source_run_id=source_run_id,
         )
-        for row in raw85_slice_gate_rows
+        for row in full_cohort_acceptance_gate_rows
     )
-    return Raw85WinnerRemapIndex(
+    return FullCohortWinnerRemapIndex(
         rows=rows,
         summary=_summary(rows, source_run_id=source_run_id),
     )
 
 
-def write_raw85_winner_remap_outputs(
+def write_full_cohort_winner_remap_outputs(
     output_dir: Path,
-    index: Raw85WinnerRemapIndex,
-) -> Raw85WinnerRemapOutputs:
+    index: FullCohortWinnerRemapIndex,
+) -> FullCohortWinnerRemapOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
-    rows_tsv = output_dir / "backfill_peakhypothesis_raw85_winner_remap.tsv"
+    rows_tsv = output_dir / "backfill_peakhypothesis_winner_remap.tsv"
     summary_json = (
-        output_dir / "backfill_peakhypothesis_raw85_winner_remap_summary.json"
+        output_dir / "backfill_peakhypothesis_winner_remap_summary.json"
     )
     write_tsv(
         rows_tsv,
@@ -118,7 +118,7 @@ def write_raw85_winner_remap_outputs(
         json.dumps(index.summary, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    return Raw85WinnerRemapOutputs(rows_tsv=rows_tsv, summary_json=summary_json)
+    return FullCohortWinnerRemapOutputs(rows_tsv=rows_tsv, summary_json=summary_json)
 
 
 def _build_remap_row(
@@ -148,10 +148,10 @@ def _build_remap_row(
             source_row,
             "projected_matrix_value",
         ),
-        "source_raw85_cell_status": _value(source_row, "raw85_cell_status"),
-        "source_raw85_slice_blockers": _value(
+        "source_full_cohort_cell_status": _value(source_row, "full_cohort_cell_status"),
+        "source_full_cohort_slice_blockers": _value(
             source_row,
-            "raw85_slice_blockers",
+            "full_cohort_slice_blockers",
         ),
         "winner_peak_hypothesis_id": winner_id,
         "winner_feature_family_id": winner_id,
@@ -178,7 +178,7 @@ def _build_remap_row(
         "winner_peak_end_rt": _value(cell, "peak_end_rt"),
         "winner_trace_quality": _value(cell, "trace_quality"),
         "matrix_value_source": (
-            "raw85_winner_primary_matrix_area" if not blockers else ""
+            "full_cohort_winner_primary_matrix_area" if not blockers else ""
         ),
         "remap_status": status,
         "remap_blockers": ";".join(blockers),
@@ -224,7 +224,7 @@ def _recommended_action(blockers: tuple[str, ...]) -> str:
     if not blockers:
         return "review_remapped_winner_peak_shape_before_activation"
     if "missing_winner_peak_hypothesis_id" in blockers:
-        return "manual_85raw_review_required"
+        return "manual_full_cohort_review_required"
     return "review_winner_remap_blockers"
 
 
@@ -269,7 +269,7 @@ def _summary(
         "next_action": (
             "review_remapped_winner_peak_shapes"
             if candidate_count
-            else "manual_85raw_review_required"
+            else "manual_full_cohort_review_required"
         ),
         "blocker_counts": dict(sorted(blocker_counts.items())),
     }
@@ -280,11 +280,11 @@ def _validate_slice_gate_schema(
 ) -> None:
     for index, row in enumerate(rows, start=1):
         actual = _value(row, "schema_version")
-        if actual != backfill_peakhypothesis_raw85_slice_gate.SCHEMA_VERSION:
+        if actual != backfill_peakhypothesis_acceptance_gate.SCHEMA_VERSION:
             raise ValueError(
-                "raw85 slice gate schema_version mismatch at row "
+                "full_cohort slice gate schema_version mismatch at row "
                 f"{index}: expected "
-                f"{backfill_peakhypothesis_raw85_slice_gate.SCHEMA_VERSION!r}, "
+                f"{backfill_peakhypothesis_acceptance_gate.SCHEMA_VERSION!r}, "
                 f"got {actual!r}",
             )
 
@@ -298,7 +298,7 @@ def _index_review_rows(
         if not family_id:
             continue
         if family_id in by_family:
-            raise ValueError(f"duplicate raw85 review row: {family_id}")
+            raise ValueError(f"duplicate full_cohort review row: {family_id}")
         by_family[family_id] = row
     return by_family
 
@@ -314,13 +314,13 @@ def _index_cell_rows(
             continue
         key = (family_id, sample)
         if key in by_key:
-            raise ValueError(f"duplicate raw85 cell row: {family_id}|{sample}")
+            raise ValueError(f"duplicate full_cohort cell row: {family_id}|{sample}")
         by_key[key] = row
     return by_key
 
 
 def _winner_id(row: dict[str, str]) -> str:
-    return _value(row, "raw85_consolidation_winner_group_hypothesis_id")
+    return _value(row, "full_cohort_consolidation_winner_group_hypothesis_id")
 
 
 def _semicolon_values(value: object) -> tuple[str, ...]:

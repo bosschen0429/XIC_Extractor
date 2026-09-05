@@ -3,15 +3,17 @@ import json
 from pathlib import Path
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_promotion as promotion,
+    backfill_peakhypothesis_acceptance_gate as full_cohort_acceptance_gate,
 )
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_raw85_slice_gate as raw85_slice_gate,
+    backfill_peakhypothesis_promotion as promotion,
 )
 
 
-def test_raw85_slice_gate_uses_hypothesis_anchor_not_cross_run_fam_id() -> None:
-    index = raw85_slice_gate.build_raw85_slice_gate(
+def test_full_cohort_acceptance_gate_uses_hypothesis_anchor_not_cross_run_fam_id() -> (
+    None
+):
+    index = full_cohort_acceptance_gate.build_full_cohort_acceptance_gate(
         promotion_rows=[
             _promotion_row(
                 "FAM000572",
@@ -23,7 +25,7 @@ def test_raw85_slice_gate_uses_hypothesis_anchor_not_cross_run_fam_id() -> None:
                 ),
             ),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _review_row(
                 "FAM000572",
                 include_primary="FALSE",
@@ -42,7 +44,7 @@ def test_raw85_slice_gate_uses_hypothesis_anchor_not_cross_run_fam_id() -> None:
                 row_flags="family_consolidation_loser;duplicate_claim_pressure",
             ),
         ],
-        raw85_cell_rows=[
+        full_cohort_cell_rows=[
             _cell_row(
                 "FAM000572",
                 "Breast_Cancer_Tissue_pooled_QC5",
@@ -64,15 +66,15 @@ def test_raw85_slice_gate_uses_hypothesis_anchor_not_cross_run_fam_id() -> None:
     )
 
     row = index.rows[0]
-    assert row["raw85_match_strategy"] == "hypothesis_anchor_mz_rt_sample"
-    assert row["raw85_matched_feature_family_id"] == "FAM005540"
-    assert row["raw85_matched_peak_hypothesis_id"] == "FAM005540"
-    assert row["raw85_cell_status"] == "rescued"
-    assert row["raw85_primary_matrix_area"] == "48462.2"
-    assert row["raw85_slice_gate_status"] == "hypothesis_candidate_review"
-    assert row["raw85_slice_blockers"].split(";") == [
-        "raw85_candidate_not_primary_matrix_row",
-        "raw85_candidate_family_consolidation_review_required",
+    assert row["full_cohort_match_strategy"] == "hypothesis_anchor_mz_rt_sample"
+    assert row["full_cohort_matched_feature_family_id"] == "FAM005540"
+    assert row["full_cohort_matched_peak_hypothesis_id"] == "FAM005540"
+    assert row["full_cohort_cell_status"] == "rescued"
+    assert row["full_cohort_primary_matrix_area"] == "48462.2"
+    assert row["full_cohort_acceptance_gate_status"] == "hypothesis_candidate_review"
+    assert row["full_cohort_slice_blockers"].split(";") == [
+        "full_cohort_candidate_not_primary_matrix_row",
+        "full_cohort_candidate_family_consolidation_review_required",
     ]
     assert row["recommended_action"] == (
         "review_hypothesis_anchor_candidate_before_activation"
@@ -82,15 +84,17 @@ def test_raw85_slice_gate_uses_hypothesis_anchor_not_cross_run_fam_id() -> None:
     assert index.summary["blocked_count"] == 0
 
 
-def test_raw85_slice_gate_passes_direct_primary_rescue(tmp_path: Path) -> None:
-    index = raw85_slice_gate.build_raw85_slice_gate(
+def test_full_cohort_acceptance_gate_passes_direct_primary_rescue(
+    tmp_path: Path,
+) -> None:
+    index = full_cohort_acceptance_gate.build_full_cohort_acceptance_gate(
         promotion_rows=[
             _promotion_row("FAM001", "Sample_A", projected_value="1234.5"),
         ],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _review_row("FAM001", include_primary="TRUE"),
         ],
-        raw85_cell_rows=[
+        full_cohort_cell_rows=[
             _cell_row(
                 "FAM001",
                 "Sample_A",
@@ -101,15 +105,19 @@ def test_raw85_slice_gate_passes_direct_primary_rescue(tmp_path: Path) -> None:
         ],
         source_run_id="unit-pass",
     )
-    outputs = raw85_slice_gate.write_raw85_slice_gate_outputs(tmp_path, index)
+    outputs = full_cohort_acceptance_gate.write_full_cohort_acceptance_gate_outputs(
+        tmp_path, index
+    )
 
     assert index.summary["gate_status"] == "pass"
     assert index.summary["candidate_no_regression_count"] == 1
     row = index.rows[0]
-    assert row["raw85_slice_gate_status"] == "candidate_no_regression"
-    assert row["raw85_slice_blockers"] == ""
-    assert row["raw85_match_strategy"] == "feature_family_exact_fallback"
-    assert row["recommended_action"] == "eligible_for_direct_85raw_activation_trial"
+    assert row["full_cohort_acceptance_gate_status"] == "candidate_no_regression"
+    assert row["full_cohort_slice_blockers"] == ""
+    assert row["full_cohort_match_strategy"] == "feature_family_exact_fallback"
+    assert (
+        row["recommended_action"] == "eligible_for_direct_full_cohort_activation_trial"
+    )
 
     written_rows = _read_tsv(outputs.cells_tsv)
     assert written_rows[0]["source_run_id"] == "unit-pass"
@@ -117,10 +125,10 @@ def test_raw85_slice_gate_passes_direct_primary_rescue(tmp_path: Path) -> None:
     assert summary["gate_status"] == "pass"
 
 
-def test_raw85_slice_gate_blocks_primary_loser_duplicate_claim() -> None:
-    index = raw85_slice_gate.build_raw85_slice_gate(
+def test_full_cohort_acceptance_gate_blocks_primary_loser_duplicate_claim() -> None:
+    index = full_cohort_acceptance_gate.build_full_cohort_acceptance_gate(
         promotion_rows=[_promotion_row("FAM002", "Sample_B")],
-        raw85_review_rows=[
+        full_cohort_review_rows=[
             _review_row(
                 "FAM002",
                 include_primary="FALSE",
@@ -130,7 +138,7 @@ def test_raw85_slice_gate_blocks_primary_loser_duplicate_claim() -> None:
                 row_flags="family_consolidation_loser;duplicate_claim_pressure",
             ),
         ],
-        raw85_cell_rows=[
+        full_cohort_cell_rows=[
             _cell_row(
                 "FAM002",
                 "Sample_B",
@@ -146,33 +154,36 @@ def test_raw85_slice_gate_blocks_primary_loser_duplicate_claim() -> None:
 
     row = index.rows[0]
     assert index.summary["gate_status"] == "fail"
-    assert row["raw85_slice_gate_status"] == "blocked"
-    assert row["raw85_consolidation_winner_group_hypothesis_id"] == "FAM_WIN"
-    assert row["raw85_slice_blockers"].split(";") == [
-        "raw85_candidate_not_primary_matrix_row",
-        "raw85_candidate_family_consolidation_review_required",
-        "raw85_cell_status_duplicate_assigned",
+    assert row["full_cohort_acceptance_gate_status"] == "blocked"
+    assert row["full_cohort_consolidation_winner_group_hypothesis_id"] == "FAM_WIN"
+    assert row["full_cohort_slice_blockers"].split(";") == [
+        "full_cohort_candidate_not_primary_matrix_row",
+        "full_cohort_candidate_family_consolidation_review_required",
+        "full_cohort_cell_status_duplicate_assigned",
     ]
     assert row["recommended_action"] == (
         "review_hypothesis_anchor_candidate_before_activation"
     )
 
 
-def test_raw85_slice_gate_blocks_missing_exact_cell() -> None:
-    index = raw85_slice_gate.build_raw85_slice_gate(
+def test_full_cohort_acceptance_gate_blocks_missing_exact_cell() -> None:
+    index = full_cohort_acceptance_gate.build_full_cohort_acceptance_gate(
         promotion_rows=[_promotion_row("FAM003", "Sample_C")],
-        raw85_review_rows=[_review_row("FAM003", include_primary="TRUE")],
-        raw85_cell_rows=[],
+        full_cohort_review_rows=[_review_row("FAM003", include_primary="TRUE")],
+        full_cohort_cell_rows=[],
     )
 
     row = index.rows[0]
     assert index.summary["gate_status"] == "fail"
-    assert row["raw85_exact_cell_found"] == "FALSE"
-    assert row["raw85_slice_blockers"] == "raw85_hypothesis_candidate_cell_missing"
-    assert row["recommended_action"] == "manual_85raw_review_required"
+    assert row["full_cohort_exact_cell_found"] == "FALSE"
+    assert (
+        row["full_cohort_slice_blockers"]
+        == "full_cohort_hypothesis_candidate_cell_missing"
+    )
+    assert row["recommended_action"] == "manual_full_cohort_review_required"
 
 
-def test_raw85_slice_gate_cli_returns_nonzero_on_gate_failure(
+def test_full_cohort_acceptance_gate_cli_returns_nonzero_on_gate_failure(
     tmp_path: Path,
 ) -> None:
     promotion_tsv = tmp_path / "promotion.tsv"
@@ -185,25 +196,28 @@ def test_raw85_slice_gate_cli_returns_nonzero_on_gate_failure(
         [_cell_row("FAM004", "Sample_D", status="duplicate_assigned")],
     )
 
-    from tools.diagnostics import backfill_peakhypothesis_raw85_slice_gate as cli
+    from tools.diagnostics import backfill_peakhypothesis_acceptance_gate as cli
 
     output_dir = tmp_path / "out"
-    assert cli.main(
-        [
-            "--promotion-cells-tsv",
-            str(promotion_tsv),
-            "--raw85-alignment-review-tsv",
-            str(review_tsv),
-            "--raw85-alignment-cells-tsv",
-            str(cells_tsv),
-            "--output-dir",
-            str(output_dir),
-            "--source-run-id",
-            "unit-cli",
-        ],
-    ) == 1
-    row = _read_tsv(output_dir / "backfill_peakhypothesis_raw85_slice_gate.tsv")[0]
-    assert row["raw85_slice_gate_status"] == "blocked"
+    assert (
+        cli.main(
+            [
+                "--promotion-cells-tsv",
+                str(promotion_tsv),
+                "--full_cohort-alignment-review-tsv",
+                str(review_tsv),
+                "--full_cohort-alignment-cells-tsv",
+                str(cells_tsv),
+                "--output-dir",
+                str(output_dir),
+                "--source-run-id",
+                "unit-cli",
+            ],
+        )
+        == 1
+    )
+    row = _read_tsv(output_dir / "backfill_peakhypothesis_acceptance_gate.tsv")[0]
+    assert row["full_cohort_acceptance_gate_status"] == "blocked"
 
 
 def _promotion_row(

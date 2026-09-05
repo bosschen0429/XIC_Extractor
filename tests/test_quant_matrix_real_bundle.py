@@ -28,7 +28,7 @@ def test_real_bundle_schema_matches_builder_contract() -> None:
     assert schema["real_bundle_schema"] == REAL_BUNDLE_SCHEMA
     assert schema["authority_rules"]["read_only"] is True
     assert schema["authority_rules"]["scorer_ran"] is False
-    assert schema["authority_rules"]["raw_or_85raw_ran"] is False
+    assert schema["authority_rules"]["raw_or_full_cohort_ran"] is False
     assert schema["authority_rules"]["product_writer_changed"] is False
     assert schema["authority_rules"]["default_quant_matrix_changed"] is False
     assert schema["binding_rules"]["downstream_impact_smoke_must_validate"] is True

@@ -1,4 +1,4 @@
-"""Run normal-peak 85RAW activation transfer bridge."""
+"""Run normal-peak FULL COHORT activation transfer bridge."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_85raw_activation_transfer,
+    backfill_peakhypothesis_activation_transfer,
 )
 
 
@@ -19,18 +19,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         index = (
-            backfill_peakhypothesis_85raw_activation_transfer
+            backfill_peakhypothesis_activation_transfer
             .build_activation_transfer_index(
                 normal_peak_decision_rows=(
-                    backfill_peakhypothesis_85raw_activation_transfer
+                    backfill_peakhypothesis_activation_transfer
                     .read_normal_peak_decision_rows(args.normal_peak_decisions_tsv)
                 ),
                 activation_trial_rows=(
-                    backfill_peakhypothesis_85raw_activation_transfer
+                    backfill_peakhypothesis_activation_transfer
                     .read_activation_trial_rows(args.activation_trial_tsv)
                 ),
                 source_artifact_sha256=(
-                    backfill_peakhypothesis_85raw_activation_transfer
+                    backfill_peakhypothesis_activation_transfer
                     .input_bundle_sha256(
                         args.normal_peak_decisions_tsv,
                         args.activation_trial_tsv,
@@ -40,15 +40,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         outputs = (
-            backfill_peakhypothesis_85raw_activation_transfer
+            backfill_peakhypothesis_activation_transfer
             .write_activation_transfer_outputs(args.output_dir, index)
         )
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(f"85RAW transfer promotion cells TSV: {outputs.promotion_cells_tsv}")
-    print(f"85RAW activation transfer TSV: {outputs.transfer_tsv}")
-    print(f"85RAW activation transfer summary JSON: {outputs.summary_json}")
+    print(f"FULL COHORT transfer promotion cells TSV: {outputs.promotion_cells_tsv}")
+    print(f"FULL COHORT activation transfer TSV: {outputs.transfer_tsv}")
+    print(f"FULL COHORT activation transfer summary JSON: {outputs.summary_json}")
     return 0 if index.summary.get("transfer_status") == "pass" else 1
 
 

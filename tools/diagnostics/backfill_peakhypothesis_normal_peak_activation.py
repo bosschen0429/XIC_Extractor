@@ -26,12 +26,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 alignment_matrix_identity_tsv=args.alignment_matrix_identity_tsv,
                 alignment_review_tsv=args.alignment_review_tsv,
                 promotion_cells_tsv=args.promotion_cells_tsv,
-                raw85_slice_gate_tsv=args.raw85_slice_gate_tsv,
-                raw85_manual_verdict_tsv=args.raw85_manual_verdict_tsv,
+                full_cohort_acceptance_gate_tsv=args.full_cohort_acceptance_gate_tsv,
+                full_cohort_manual_verdict_tsv=args.full_cohort_manual_verdict_tsv,
                 machine_shape_evidence_tsv=args.machine_shape_evidence_tsv,
                 normal_peak_decisions_tsv=args.normal_peak_decisions_tsv,
                 activation_trial_tsv=args.activation_trial_tsv,
-                current_85raw_artifact_dir=args.current_85raw_artifact_dir,
+                current_full_cohort_artifact_dir=args.current_full_cohort_artifact_dir,
                 source_run_id=args.source_run_id,
                 validation_scope=args.validation_scope,
             )
@@ -55,12 +55,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--promotion-cells-tsv", type=Path)
-    parser.add_argument("--raw85-slice-gate-tsv", type=Path)
-    parser.add_argument("--raw85-manual-verdict-tsv", type=Path)
+    parser.add_argument("--full-cohort-acceptance-gate-tsv", type=Path)
+    parser.add_argument("--full_cohort-manual-verdict-tsv", type=Path)
     parser.add_argument("--machine-shape-evidence-tsv", type=Path)
     parser.add_argument("--normal-peak-decisions-tsv", type=Path)
     parser.add_argument("--activation-trial-tsv", type=Path)
-    parser.add_argument("--current-85raw-artifact-dir", type=Path)
+    parser.add_argument("--current-full_cohort-artifact-dir", type=Path)
     parser.add_argument("--alignment-matrix-tsv", type=Path, required=True)
     parser.add_argument(
         "--alignment-matrix-identity-tsv",
@@ -72,7 +72,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--source-run-id", default="")
     parser.add_argument(
         "--validation-scope",
-        default="85raw_current_writer_matrix_diff",
+        default="full_cohort_current_writer_matrix_diff",
     )
     return parser.parse_args(argv)
 

@@ -36,7 +36,7 @@ PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
 
 
 @dataclass(frozen=True, slots=True)
-class Issue175NoRawFixture:
+class UntargetedCidNlNoRawFixture:
     owners: ProcessingOwnerReferences
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     method_subject: CidNlMethodSubject
@@ -51,12 +51,12 @@ class Issue175NoRawFixture:
         return matches[0]
 
 
-def build_issue175_no_raw_fixture(
+def build_untargeted_cid_nl_no_raw_fixture(
     tmp_path: Path,
     *,
     sample_roles: Mapping[str, SampleRole],
     thermo_raw_sources: bool = False,
-) -> Issue175NoRawFixture:
+) -> UntargetedCidNlNoRawFixture:
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=PRECURSOR_MZ,
         precursor_tolerance_ppm=PRECURSOR_TOLERANCE_PPM,
@@ -71,7 +71,7 @@ def build_issue175_no_raw_fixture(
         start=1,
     ):
         source_path = tmp_path / f"{sample_stem}.synthetic"
-        source_path.write_bytes(f"issue175-no-raw:{sample_stem}".encode())
+        source_path.write_bytes(f"untargeted-cid-nl-no-raw:{sample_stem}".encode())
         source = build_acquisition_source_identity(
             source_path,
             acquisition_format=(
@@ -82,7 +82,7 @@ def build_issue175_no_raw_fixture(
             observation_namespace=(
                 THERMO_RAW_OBSERVATION_NAMESPACE
                 if thermo_raw_sources
-                else f"issue175:{sample_stem}"
+                else f"untargeted-cid-nl:{sample_stem}"
             ),
         )
         sources.append(source)
@@ -110,13 +110,13 @@ def build_issue175_no_raw_fixture(
         processing_algorithm_version="untargeted-cid-nl-golden-path-v1",
         processing_contract_version="untargeted-cid-nl-golden-path-v1",
         scientific_inputs={
-            "fixture": "issue175-no-raw",
+            "fixture": "untargeted-cid-nl-no-raw",
             REQUEST_INPUT_KEY: method_subject.request_payload(),
         },
     )
     sample_snapshot = mint_sample_metadata_snapshot(
         tuple(metadata),
-        identity_namespace="study:issue175-no-raw",
+        identity_namespace="study:untargeted-cid-nl-no-raw",
     )
     samples = tuple(
         resolve_canonical_sample_identity(sample_snapshot, sample_stem)
@@ -129,7 +129,7 @@ def build_issue175_no_raw_fixture(
         sample_snapshot=sample_snapshot,
         sample_resolutions=samples,
     )
-    return Issue175NoRawFixture(
+    return UntargetedCidNlNoRawFixture(
         owners=owners,
         samples=samples,
         method_subject=method_subject,

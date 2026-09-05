@@ -1,4 +1,4 @@
-"""No-RAW 85RAW trial counters for normal-peak backfill activation."""
+"""No-RAW FULL COHORT trial counters for normal-peak backfill activation."""
 
 from __future__ import annotations
 
@@ -19,15 +19,15 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_85raw_activation_trial_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_activation_trial_v1"
 POLICY_ID = "same_peak_normal_peak_override"
 
 NORMAL_DECISION_REQUIRED_COLUMNS = (
     "peak_hypothesis_id",
     "sample_stem",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
     "manual_same_peak_verdict",
     "same_peak_verdict",
     "same_peak_verdict_source",
@@ -39,9 +39,9 @@ NORMAL_DECISION_REQUIRED_COLUMNS = (
 MANUAL_VERDICT_REQUIRED_COLUMNS = (
     "sample_stem",
     "source_peak_hypothesis_id",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
     "reviewer_verdict",
 )
 
@@ -51,9 +51,9 @@ TRIAL_COLUMNS = (
     "policy_id",
     "source_peak_hypothesis_id",
     "sample_stem",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
     "manual_same_peak_verdict",
     "same_peak_verdict",
     "same_peak_verdict_source",
@@ -89,18 +89,18 @@ def read_manual_verdict_rows(path: Path) -> tuple[dict[str, str], ...]:
 
 def build_activation_trial_index(
     *,
-    current_85raw_artifact_dir: Path,
+    current_full_cohort_artifact_dir: Path,
     normal_peak_decision_rows: Sequence[Mapping[str, Any]],
     manual_verdict_rows: Sequence[Mapping[str, Any]],
     source_run_id: str = "",
 ) -> ActivationTrialIndex:
-    artifact_paths = _artifact_paths(current_85raw_artifact_dir)
+    artifact_paths = _artifact_paths(current_full_cohort_artifact_dir)
     metadata = _read_json(artifact_paths["metadata"])
     timing = _read_json(artifact_paths["timing"])
     matrix_lookup = _public_matrix_values_for_targets(
         matrix_tsv=artifact_paths["matrix"],
         matrix_identity_tsv=artifact_paths["identity"],
-        targets=_raw85_targets(normal_peak_decision_rows),
+        targets=_full_cohort_targets(normal_peak_decision_rows),
     )
     manual_by_key = _manual_by_source_key(manual_verdict_rows)
     trial_rows = tuple(
@@ -129,10 +129,8 @@ def write_activation_trial_outputs(
     index: ActivationTrialIndex,
 ) -> ActivationTrialOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
-    trial_tsv = output_dir / "backfill_peakhypothesis_85raw_activation_trial.tsv"
-    summary_json = (
-        output_dir / "backfill_peakhypothesis_85raw_activation_trial_summary.json"
-    )
+    trial_tsv = output_dir / "backfill_peakhypothesis_activation_trial.tsv"
+    summary_json = output_dir / "backfill_peakhypothesis_activation_trial_summary.json"
     write_tsv(
         trial_tsv,
         index.trial_rows,
@@ -190,16 +188,16 @@ def _manual_by_source_key(
     return keyed
 
 
-def _raw85_targets(
+def _full_cohort_targets(
     normal_peak_decision_rows: Sequence[Mapping[str, Any]],
 ) -> set[tuple[str, str]]:
     return {
         (
-            text_value(row.get("raw85_matched_peak_hypothesis_id")),
+            text_value(row.get("full_cohort_matched_peak_hypothesis_id")),
             text_value(row.get("sample_stem")),
         )
         for row in normal_peak_decision_rows
-        if text_value(row.get("raw85_matched_peak_hypothesis_id"))
+        if text_value(row.get("full_cohort_matched_peak_hypothesis_id"))
         and text_value(row.get("sample_stem"))
     }
 
@@ -259,10 +257,12 @@ def _trial_row(
     matrix_lookup: Mapping[str, Any],
     source_run_id: str,
 ) -> dict[str, Any]:
-    raw85_peak_hypothesis_id = text_value(row.get("raw85_matched_peak_hypothesis_id"))
+    full_cohort_peak_hypothesis_id = text_value(
+        row.get("full_cohort_matched_peak_hypothesis_id")
+    )
     sample_stem = text_value(row.get("sample_stem"))
     matrix_values = matrix_lookup["values"]
-    current_value = matrix_values.get((raw85_peak_hypothesis_id, sample_stem), "")
+    current_value = matrix_values.get((full_cohort_peak_hypothesis_id, sample_stem), "")
     current_written = bool(current_value)
     blockers = _trial_blockers(row, manual_row)
     required = _required_backfill(row)
@@ -281,11 +281,11 @@ def _trial_row(
         "policy_id": POLICY_ID,
         "source_peak_hypothesis_id": text_value(row.get("peak_hypothesis_id")),
         "sample_stem": sample_stem,
-        "raw85_matched_peak_hypothesis_id": raw85_peak_hypothesis_id,
-        "raw85_include_in_primary_matrix": _bool_text(
-            row.get("raw85_include_in_primary_matrix")
+        "full_cohort_matched_peak_hypothesis_id": full_cohort_peak_hypothesis_id,
+        "full_cohort_include_in_primary_matrix": _bool_text(
+            row.get("full_cohort_include_in_primary_matrix")
         ),
-        "raw85_consolidation_state": _state(row, manual_row),
+        "full_cohort_consolidation_state": _state(row, manual_row),
         "manual_same_peak_verdict": _manual_verdict(row, manual_row),
         "same_peak_verdict": _same_peak_verdict(row, manual_row),
         "same_peak_verdict_source": _same_peak_verdict_source(row, manual_row),
@@ -312,15 +312,14 @@ def _trial_blockers(
         blockers.append("normal_peak_backfill_not_required")
     if _same_peak_verdict(row, manual_row) != "same_peak_supported":
         blockers.append("same_peak_conflict")
-    if not text_value(row.get("raw85_matched_peak_hypothesis_id")):
-        blockers.append("missing_raw85_peak_hypothesis_id")
+    if not text_value(row.get("full_cohort_matched_peak_hypothesis_id")):
+        blockers.append("missing_full_cohort_peak_hypothesis_id")
     return tuple(blockers)
 
 
 def _manual_verdict(row: Mapping[str, Any], manual_row: Mapping[str, Any]) -> str:
     return text_value(
-        manual_row.get("reviewer_verdict")
-        or row.get("manual_same_peak_verdict")
+        manual_row.get("reviewer_verdict") or row.get("manual_same_peak_verdict")
     )
 
 
@@ -347,8 +346,8 @@ def _same_peak_verdict_source(
 
 def _state(row: Mapping[str, Any], manual_row: Mapping[str, Any]) -> str:
     return text_value(
-        manual_row.get("raw85_consolidation_state")
-        or row.get("raw85_consolidation_state")
+        manual_row.get("full_cohort_consolidation_state")
+        or row.get("full_cohort_consolidation_state")
     )
 
 
@@ -371,7 +370,7 @@ def _summary(
 ) -> dict[str, Any]:
     actions = Counter(text_value(row.get("trial_action")) for row in trial_rows)
     states = Counter(
-        text_value(row.get("raw85_consolidation_state")) for row in trial_rows
+        text_value(row.get("full_cohort_consolidation_state")) for row in trial_rows
     )
     same_peak = Counter(
         _same_peak_verdict(row, {}) for row in normal_peak_decision_rows
@@ -444,7 +443,7 @@ def _summary(
         "next_action": (
             "implement_normal_peak_override_activation_transfer"
             if not hard_fail_reasons
-            else "review_85raw_activation_trial_blockers"
+            else "review_full_cohort_activation_trial_blockers"
         ),
     }
     return summary

@@ -15,7 +15,7 @@ from xic_extractor.tabular_io import write_tsv
 
 
 @dataclass(frozen=True)
-class P7EvidenceCostSummaryResult:
+class BackfillEvidenceCostSummaryResult:
     status: str
     correctness_status: str
     operations_status: str
@@ -26,7 +26,7 @@ class P7EvidenceCostSummaryResult:
     rows: tuple[dict[str, str], ...]
 
 
-def run_p7_evidence_cost_summary(
+def run_backfill_evidence_cost_summary(
     *,
     baseline_timing_json: Path,
     optimized_timing_json: Path,
@@ -37,7 +37,7 @@ def run_p7_evidence_cost_summary(
     baseline_owner_backfill_economics_json: Path | None = None,
     optimized_owner_backfill_economics_json: Path | None = None,
     correctness_status: str = "not_evaluated",
-) -> P7EvidenceCostSummaryResult:
+) -> BackfillEvidenceCostSummaryResult:
     baseline_economics_json = (
         baseline_owner_backfill_economics_json or baseline_economics_json
     )
@@ -80,7 +80,7 @@ def run_p7_evidence_cost_summary(
         {"metric": key, "value": _format_value(value)}
         for key, value in sorted(metrics.items())
     )
-    result = P7EvidenceCostSummaryResult(
+    result = BackfillEvidenceCostSummaryResult(
         status=status,
         correctness_status=canonical_correctness_status,
         operations_status=operations_status,
@@ -103,39 +103,39 @@ def run_p7_evidence_cost_summary(
 
 def write_outputs(
     output_dir: Path,
-    result: P7EvidenceCostSummaryResult,
+    result: BackfillEvidenceCostSummaryResult,
     *,
     baseline_economics_json: Path | None = None,
     optimized_economics_json: Path | None = None,
     skipped_evidence_ledger_tsv: Path | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "p7_evidence_cost_summary.json").write_text(
+    (output_dir / "backfill_evidence_cost_summary.json").write_text(
         json.dumps(asdict(result), indent=2, sort_keys=True),
         encoding="utf-8",
     )
     write_tsv(
-        output_dir / "p7_evidence_cost_summary.tsv",
+        output_dir / "backfill_evidence_cost_summary.tsv",
         result.rows,
         ("metric", "value"),
     )
-    _write_markdown(output_dir / "p7_evidence_cost_summary.md", result)
+    _write_markdown(output_dir / "backfill_evidence_cost_summary.md", result)
     if baseline_economics_json is not None:
         shutil.copyfile(
             baseline_economics_json,
-            output_dir / "owner_backfill_economics_8raw_full_audit.json",
+            output_dir / "owner_backfill_economics_full_audit.json",
         )
     if optimized_economics_json is not None:
         shutil.copyfile(
             optimized_economics_json,
-            output_dir / "owner_backfill_economics_8raw_production_equivalent.json",
+            output_dir / "owner_backfill_economics_production_equivalent.json",
         )
     if skipped_evidence_ledger_tsv is not None:
         shutil.copyfile(
             skipped_evidence_ledger_tsv,
-            output_dir / "skipped_evidence_ledger_8raw.tsv",
+            output_dir / "skipped_evidence_ledger.tsv",
         )
-        (output_dir / "skipped_evidence_summary_8raw.json").write_text(
+        (output_dir / "skipped_evidence_summary.json").write_text(
             json.dumps(
                 {
                     key: value
@@ -149,9 +149,9 @@ def write_outputs(
         )
 
 
-def _write_markdown(path: Path, result: P7EvidenceCostSummaryResult) -> None:
+def _write_markdown(path: Path, result: BackfillEvidenceCostSummaryResult) -> None:
     lines = [
-        "# P7 Evidence Cost Summary",
+        "# Backfill Evidence Cost Summary",
         "",
         f"Status: {result.status}",
         f"Correctness status: {result.correctness_status}",
@@ -403,7 +403,7 @@ def _format_value(value: float | int | str) -> str:
     return str(value)
 
 
-def _error_result(error: Exception) -> P7EvidenceCostSummaryResult:
+def _error_result(error: Exception) -> BackfillEvidenceCostSummaryResult:
     metrics: dict[str, float | int | str] = {
         "status": "inconclusive",
         "correctness_status": "not_evaluated",
@@ -416,7 +416,7 @@ def _error_result(error: Exception) -> P7EvidenceCostSummaryResult:
         {"metric": key, "value": _format_value(value)}
         for key, value in sorted(metrics.items())
     )
-    return P7EvidenceCostSummaryResult(
+    return BackfillEvidenceCostSummaryResult(
         status="inconclusive",
         correctness_status="not_evaluated",
         operations_status="fail",
@@ -429,7 +429,9 @@ def _error_result(error: Exception) -> P7EvidenceCostSummaryResult:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Summarize P7 evidence cost savings.")
+    parser = argparse.ArgumentParser(
+        description="Summarize backfill evidence cost savings."
+    )
     parser.add_argument("--baseline-timing-json", type=Path, required=True)
     parser.add_argument("--optimized-timing-json", type=Path, required=True)
     parser.add_argument("--skipped-evidence-ledger-tsv", type=Path, required=True)
@@ -449,7 +451,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        result = run_p7_evidence_cost_summary(
+        result = run_backfill_evidence_cost_summary(
             baseline_timing_json=args.baseline_timing_json,
             optimized_timing_json=args.optimized_timing_json,
             skipped_evidence_ledger_tsv=args.skipped_evidence_ledger_tsv,
@@ -470,7 +472,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return _exit_code(result)
 
 
-def _exit_code(result: P7EvidenceCostSummaryResult) -> int:
+def _exit_code(result: BackfillEvidenceCostSummaryResult) -> int:
     if result.outcome_status == "diagnostic_only":
         return 1
     return 0 if result.operations_status == "PASS" else 1

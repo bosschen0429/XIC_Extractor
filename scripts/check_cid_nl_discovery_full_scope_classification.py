@@ -874,7 +874,7 @@ def _summary_payload(
         "selected_peak_area_or_counting_changed": False,
         "candidate_rows_are_matrix_rows": False,
         "cid_nl_ms2_direct_productwriter_authority": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "artifacts": {
             "summary_json": {
                 "path": (

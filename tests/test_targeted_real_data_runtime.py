@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.package2_no_raw_fixture import build_package2_targeted_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_targeted_processing_identity_raw_fixture,
+)
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -141,15 +143,18 @@ def test_real_data_runtime_accounts_successful_raw_and_xic_work(
         )
     )
     assert registered_artifact_ids == expected_artifact_ids
-    assert tuple(
-        sorted(
-            artifact_id
-            for artifact_id, disposition in (
-                result.finalization.supervisor.artifact_dispositions
+    assert (
+        tuple(
+            sorted(
+                artifact_id
+                for artifact_id, disposition in (
+                    result.finalization.supervisor.artifact_dispositions
+                )
+                if disposition is RuntimeArtifactDisposition.OFFERED_TO_OWNER
             )
-            if disposition is RuntimeArtifactDisposition.OFFERED_TO_OWNER
         )
-    ) == expected_artifact_ids
+        == expected_artifact_ids
+    )
 
 
 def test_real_data_runtime_terminalizes_adapter_failure(
@@ -339,7 +344,7 @@ def test_real_data_runtime_preflight_failure_skips_raw_and_finalizes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -409,9 +414,7 @@ def test_real_data_runtime_cancellation_skips_raw_dispatch(
         attempt=fixture.owners.attempt,
         work_unit_keys=(job.work_unit_key,),
         owner_completeness_attestation="targeted-real-data-runtime-test:v1",
-        cancellation_request=RuntimeCancellationRequest(
-            attempt=fixture.owners.attempt
-        ),
+        cancellation_request=RuntimeCancellationRequest(attempt=fixture.owners.attempt),
     )
 
     def _unexpected_open(*_args: object, **_kwargs: object):
@@ -487,7 +490,7 @@ def test_real_data_runtime_keeps_empty_universe_inside_atomic_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
@@ -543,7 +546,7 @@ def test_real_data_runtime_job_rejects_unbound_peak_config(
 ) -> None:
     settings = _settings()
     peak_config = _peak_config(tmp_path)
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=peak_config,
@@ -568,7 +571,7 @@ def test_real_data_runtime_job_rejects_unbound_discovery_settings(
 ) -> None:
     settings = _settings()
     peak_config = _peak_config(tmp_path)
-    fixture = build_package2_targeted_raw_fixture(
+    fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=peak_config,
@@ -697,6 +700,7 @@ def test_candidate_universe_replay_rejects_wrong_schema_partial_and_duplicate_ro
                 expected_sample_stems=("S1",),
             )
 
+
 def _job(
     fixture,
     *,
@@ -725,7 +729,7 @@ def _bound_fixture(
     settings,
     peak_config,
 ):
-    return build_package2_targeted_raw_fixture(
+    return build_targeted_processing_identity_raw_fixture(
         tmp_path,
         sample_stems=("S1",),
         peak_config=peak_config,

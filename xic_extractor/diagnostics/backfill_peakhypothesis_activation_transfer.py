@@ -1,8 +1,8 @@
-"""Transfer normal-peak 85RAW backfill decisions into promotion rows.
+"""Transfer normal-peak FULL COHORT backfill decisions into promotion rows.
 
 This module is intentionally a bridge artifact. It does not apply activation or
 write matrices; it rewrites the activation key from the reviewed source
-PeakHypothesis id to the matched 85RAW PeakHypothesis id, then emits rows that
+PeakHypothesis id to the matched FULL COHORT PeakHypothesis id, then emits rows that
 the existing activation bridge can consume.
 """
 
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_85raw_activation_trial,
+    backfill_peakhypothesis_activation_trial,
     backfill_peakhypothesis_normal_peak_decision,
     backfill_peakhypothesis_promotion,
 )
@@ -30,11 +30,11 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_85raw_activation_transfer_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_activation_transfer_v1"
 _GAUSSIAN15_AREA_SOURCE = "gaussian15_positive_asls_residual"
 _TRANSFER_REASON = "normal_peak_same_peak_transfer_activation"
 _SOURCE_ID_AUTHORITY = "audit_only_not_activation_key"
-_ACTIVATION_KEY_AUTHORITY = "raw85_matched_peak_hypothesis_id"
+_ACTIVATION_KEY_AUTHORITY = "full_cohort_matched_peak_hypothesis_id"
 
 TRANSFER_COLUMNS = (
     "schema_version",
@@ -44,8 +44,8 @@ TRANSFER_COLUMNS = (
     "sample_stem",
     "source_id_authority",
     "activation_key_authority",
-    "raw85_cell_status",
-    "raw85_consolidation_state",
+    "full_cohort_cell_status",
+    "full_cohort_consolidation_state",
     "manual_same_peak_verdict",
     "same_peak_verdict",
     "same_peak_verdict_source",
@@ -90,7 +90,7 @@ def read_normal_peak_decision_rows(path: Path) -> tuple[dict[str, str], ...]:
 def read_activation_trial_rows(path: Path) -> tuple[dict[str, str], ...]:
     return read_tsv_required(
         path,
-        backfill_peakhypothesis_85raw_activation_trial.TRIAL_COLUMNS,
+        backfill_peakhypothesis_activation_trial.TRIAL_COLUMNS,
     )
 
 
@@ -146,11 +146,11 @@ def write_activation_transfer_outputs(
 ) -> ActivationTransferOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     promotion_tsv = (
-        output_dir / "backfill_peakhypothesis_85raw_transfer_promotion_cells.tsv"
+        output_dir / "backfill_peakhypothesis_full_cohort_transfer_promotion_cells.tsv"
     )
-    transfer_tsv = output_dir / "backfill_peakhypothesis_85raw_activation_transfer.tsv"
+    transfer_tsv = output_dir / "backfill_peakhypothesis_activation_transfer.tsv"
     summary_json = (
-        output_dir / "backfill_peakhypothesis_85raw_activation_transfer_summary.json"
+        output_dir / "backfill_peakhypothesis_activation_transfer_summary.json"
     )
     write_tsv(
         promotion_tsv,
@@ -185,7 +185,7 @@ def _trial_by_key(
         key = (
             _value(row, "source_peak_hypothesis_id"),
             _value(row, "sample_stem"),
-            _value(row, "raw85_matched_peak_hypothesis_id"),
+            _value(row, "full_cohort_matched_peak_hypothesis_id"),
         )
         if key in keyed:
             raise ValueError(f"duplicate activation trial key: {key}")
@@ -197,7 +197,7 @@ def _transfer_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         _value(row, "peak_hypothesis_id"),
         _value(row, "sample_stem"),
-        _value(row, "raw85_matched_peak_hypothesis_id"),
+        _value(row, "full_cohort_matched_peak_hypothesis_id"),
     )
 
 
@@ -214,10 +214,10 @@ def _transfer_blockers(
         blockers.append("normal_peak_decision_blockers_present")
     if _same_peak_verdict(normal_row) != "same_peak_supported":
         blockers.append("same_peak_conflict")
-    if not _value(normal_row, "raw85_matched_peak_hypothesis_id"):
-        blockers.append("missing_raw85_peak_hypothesis_id")
-    if _value(normal_row, "raw85_cell_status") not in {"detected", "rescued"}:
-        blockers.append("raw85_cell_status_not_detected_or_rescued")
+    if not _value(normal_row, "full_cohort_matched_peak_hypothesis_id"):
+        blockers.append("missing_full_cohort_peak_hypothesis_id")
+    if _value(normal_row, "full_cohort_cell_status") not in {"detected", "rescued"}:
+        blockers.append("full_cohort_cell_status_not_detected_or_rescued")
     area_source = _projected_matrix_value_source(normal_row)
     if area_source != _GAUSSIAN15_AREA_SOURCE:
         blockers.append("normal_peak_quantitation_area_source_not_gaussian15")
@@ -253,7 +253,7 @@ def _promotion_row(
     source_run_id: str,
 ) -> dict[str, str]:
     source_peak_id = _value(normal_row, "peak_hypothesis_id")
-    activation_peak_id = _value(normal_row, "raw85_matched_peak_hypothesis_id")
+    activation_peak_id = _value(normal_row, "full_cohort_matched_peak_hypothesis_id")
     sample = _value(normal_row, "sample_stem")
     current_written = _bool_text(trial_row.get("current_public_matrix_written"))
     row_hash = _row_sha256(
@@ -279,8 +279,8 @@ def _promotion_row(
             ),
         ),
         "promotion_blockers": "",
-        "current_production_status": _value(normal_row, "raw85_cell_status"),
-        "current_raw_status": _value(normal_row, "raw85_cell_status"),
+        "current_production_status": _value(normal_row, "full_cohort_cell_status"),
+        "current_raw_status": _value(normal_row, "full_cohort_cell_status"),
         "current_matrix_written": current_written,
         "shadow_reasons": _shadow_reasons(normal_row),
         "projected_matrix_written": "TRUE",
@@ -299,12 +299,12 @@ def _promotion_row(
             "normal_peak_same_peak_manual_overlay;"
             f"{_projected_matrix_value_source(normal_row)}"
         ),
-        "authority_source": "raw85_normal_peak_transfer_activation",
+        "authority_source": "full_cohort_normal_peak_transfer_activation",
         "source_artifact_schema_version": SCHEMA_VERSION,
         "source_artifact_sha256": source_artifact_sha256,
         "source_row_sha256": row_hash,
         "source_provenance_detail": (
-            "raw85_normal_peak_transfer_activation;"
+            "full_cohort_normal_peak_transfer_activation;"
             "source_bundle=normal_peak_decisions_tsv+activation_trial_tsv;"
             "normal_peak_quantitation_area_source_field:"
             f"{_projected_matrix_value_source_field(normal_row)}"
@@ -328,15 +328,15 @@ def _transfer_row(
         "source_peak_hypothesis_id": _value(normal_row, "peak_hypothesis_id"),
         "activation_peak_hypothesis_id": _value(
             normal_row,
-            "raw85_matched_peak_hypothesis_id",
+            "full_cohort_matched_peak_hypothesis_id",
         ),
         "sample_stem": _value(normal_row, "sample_stem"),
         "source_id_authority": _SOURCE_ID_AUTHORITY,
         "activation_key_authority": _ACTIVATION_KEY_AUTHORITY,
-        "raw85_cell_status": _value(normal_row, "raw85_cell_status"),
-        "raw85_consolidation_state": _value(
+        "full_cohort_cell_status": _value(normal_row, "full_cohort_cell_status"),
+        "full_cohort_consolidation_state": _value(
             normal_row,
-            "raw85_consolidation_state",
+            "full_cohort_consolidation_state",
         ),
         "manual_same_peak_verdict": _value(normal_row, "manual_same_peak_verdict"),
         "same_peak_verdict": _same_peak_verdict(normal_row),
@@ -359,13 +359,13 @@ def _transfer_row(
         "source_artifact_sha256": source_artifact_sha256,
         "source_row_sha256": _row_sha256(
             _value(normal_row, "peak_hypothesis_id"),
-            _value(normal_row, "raw85_matched_peak_hypothesis_id"),
+            _value(normal_row, "full_cohort_matched_peak_hypothesis_id"),
             _value(normal_row, "sample_stem"),
             _projected_matrix_value(normal_row),
             _projected_matrix_value_source_field(normal_row),
         ),
         "source_provenance_detail": (
-            "raw85_normal_peak_transfer_activation;"
+            "full_cohort_normal_peak_transfer_activation;"
             "source_bundle=normal_peak_decisions_tsv+activation_trial_tsv"
         ),
         "transfer_action": "blocked" if blockers else "emit_promotion_row",
@@ -416,7 +416,7 @@ def _summary(
         "next_action": (
             "bridge_transfer_promotions_into_activation_sidecar"
             if not hard_fail_reasons
-            else "review_85raw_activation_transfer_blockers"
+            else "review_full_cohort_activation_transfer_blockers"
         ),
     }
 
@@ -430,20 +430,20 @@ def _shadow_reasons(row: Mapping[str, Any]) -> str:
 def _projected_matrix_value(row: Mapping[str, Any]) -> str:
     return _value(row, "normal_peak_quantitation_area") or _value(
         row,
-        "raw85_primary_matrix_area",
+        "full_cohort_primary_matrix_area",
     )
 
 
 def _projected_matrix_value_source(row: Mapping[str, Any]) -> str:
     return _value(row, "normal_peak_quantitation_area_source") or _value(
         row,
-        "raw85_primary_matrix_area_source",
+        "full_cohort_primary_matrix_area_source",
     )
 
 
 def _projected_matrix_value_source_field(row: Mapping[str, Any]) -> str:
     return _value(row, "normal_peak_quantitation_area_source_field") or (
-        "raw85_primary_matrix_area"
+        "full_cohort_primary_matrix_area"
     )
 
 

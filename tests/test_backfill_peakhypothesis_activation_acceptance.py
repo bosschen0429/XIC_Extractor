@@ -41,7 +41,7 @@ def test_acceptance_passes_exact_activation_matrix_diff(tmp_path: Path) -> None:
     assert index.acceptance_row["missing_matrix_diff_count"] == "0"
     assert index.acceptance_row["value_mismatch_count"] == "0"
     assert index.acceptance_row["next_action"] == (
-        "ready_for_8raw_reviewed_activation_acceptance"
+        "ready_for_fixture_cohort_reviewed_activation_acceptance"
     )
     diff_rows = _read_tsv(outputs.matrix_diff_tsv)
     assert [(row["peak_hypothesis_id"], row["sample_stem"]) for row in diff_rows] == [
@@ -108,16 +108,16 @@ def test_acceptance_uses_requested_validation_scope(tmp_path: Path) -> None:
         input_identity_rows=_read_tsv(inputs["input_identity"]),
         output_matrix_rows=_read_tsv(inputs["output_matrix"]),
         output_identity_rows=_read_tsv(inputs["output_identity"]),
-        validation_scope="85raw_current_writer_matrix_diff",
+        validation_scope="full_cohort_current_writer_matrix_diff",
     )
 
     assert index.acceptance_row["acceptance_status"] == "pass"
     assert (
         index.acceptance_row["validation_scope"]
-        == "85raw_current_writer_matrix_diff"
+        == "full_cohort_current_writer_matrix_diff"
     )
     assert index.acceptance_row["next_action"] == (
-        "ready_for_85raw_reviewed_activation_acceptance"
+        "ready_for_full_cohort_reviewed_activation_acceptance"
     )
 
 

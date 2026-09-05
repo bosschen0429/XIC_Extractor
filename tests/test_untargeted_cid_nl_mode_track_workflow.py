@@ -73,7 +73,9 @@ def test_runtime_jobs_bind_raw_by_stem_after_injection_order_sort(
 def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
     tmp_path: Path,
 ) -> None:
-    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
     from tests.test_alignment_mode_track_assignment import (
         _different_request_same_sources,
     )
@@ -93,7 +95,9 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
         _workflow_call_cost,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("early",)
+    )
     assessment = _assessment_with_observation_only_peak(
         fixture,
         sample_stem="early",
@@ -118,25 +122,25 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
     assert applications
     assert all(
         application.reason == "unchanged_membership_no_lineage"
-        and tuple(
-            group.group_hypothesis_id for group in application.predecessors
-        )
+        and tuple(group.group_hypothesis_id for group in application.predecessors)
         == tuple(group.group_hypothesis_id for group in application.successors)
         and application.lineage == ()
         for application in applications
     )
 
-
-    assert _workflow_call_cost(
-        discovery_raw_open_count=1,
-        runtime_call_cost={
-            "raw_open_count": 1,
-            "xic_batch_count": 1,
-            "logical_xic_request_count": 2,
-            "adapter_chromatogram_call_count": 1,
-            "trace_point_count": 3,
-        },
-    )["total_raw_open_count"] == 2
+    assert (
+        _workflow_call_cost(
+            discovery_raw_open_count=1,
+            runtime_call_cost={
+                "raw_open_count": 1,
+                "xic_batch_count": 1,
+                "logical_xic_request_count": 2,
+                "adapter_chromatogram_call_count": 1,
+                "trace_point_count": 3,
+            },
+        )["total_raw_open_count"]
+        == 2
+    )
     insufficient = tuple(
         transaction.proposal
         for transaction in result.transactions
@@ -173,9 +177,7 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
     )
     crossed_result = bootstrap_mode_track_refinement_from_cid_nl_support(
         processing_owners=crossed_fixture.owners,
-        sample_assessments=(
-            (crossed_fixture.sample("early"), crossed_assessment),
-        ),
+        sample_assessments=((crossed_fixture.sample("early"), crossed_assessment),),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
             trajectory_policy_version="anchor-trajectory-v1",
@@ -191,9 +193,7 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
         if transaction.trajectory_input.anchor_ids
     )
     foreign_anchor = next(
-        anchor
-        for track in crossed_result.model_set.tracks
-        for anchor in track.anchors
+        anchor for track in crossed_result.model_set.tracks for anchor in track.anchors
     )
     predecessor_ids = {
         group.group_hypothesis_id
@@ -213,9 +213,7 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
                 anchored_transaction.application_context.classified_edges
             ),
             anchors=(foreign_anchor,),
-            injection_order=dict(
-                anchored_transaction.trajectory_input.injection_order
-            ),
+            injection_order=dict(anchored_transaction.trajectory_input.injection_order),
             evidence_profile=anchored_transaction.trajectory_input.evidence_profile,
             budget=anchored_transaction.application_context.budget,
         )
@@ -226,7 +224,9 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import xic_extractor.alignment.mode_track.refinement as refinement_owner
-    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
     from tests.test_alignment_multi_hypothesis_support import (
         _assessment_with_observation_only_peak,
     )
@@ -236,7 +236,9 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
         bootstrap_mode_track_refinement_from_cid_nl_support,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("early",)
+    )
     assessment = _assessment_with_observation_only_peak(
         fixture,
         sample_stem="early",
@@ -288,7 +290,9 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
 def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
     tmp_path: Path,
 ) -> None:
-    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
     from tests.test_alignment_multi_hypothesis_support import (
         _assessment_with_observation_only_peak,
     )
@@ -298,7 +302,7 @@ def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
         bootstrap_mode_track_refinement_from_cid_nl_support,
     )
 
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("early", "late"),
     )
@@ -342,8 +346,7 @@ def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
     direct_member_ids = {
         owner.cross_sample_member_subject.member_subject_id
         for owner in run.owners
-        if owner.owner_apex_rt == 7.80
-        and owner.cross_sample_member_subject is not None
+        if owner.owner_apex_rt == 7.80 and owner.cross_sample_member_subject is not None
     }
     assert len(direct_member_ids) == 2
     assert not any(
@@ -358,7 +361,9 @@ def test_public_workflow_returns_cross_sample_application_receipts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
     from tests.test_alignment_multi_hypothesis_support import (
         _assessment_with_observation_only_peak,
     )
@@ -371,7 +376,9 @@ def test_public_workflow_returns_cross_sample_application_receipts(
         untargeted_cid_nl_mode_track_workflow as workflow,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("early",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("early",)
+    )
     assessment = _assessment_with_observation_only_peak(
         fixture,
         sample_stem="early",

@@ -31,7 +31,7 @@
     "read_only",
     "write_authority",
     "scorer_ran",
-    "raw_or_85raw_ran",
+    "raw_or_full_cohort_ran",
     "product_writer_changed",
     "default_quant_matrix_changed",
     "broad_backfill_unparked",
@@ -47,7 +47,7 @@
     "readiness_must_rerun_cleanly_against_real_bundle": true,
     "readiness_must_be_production_ready_candidate_packet": true,
     "required_science_tiers_must_pass": [
-      "85raw_large_cohort",
+      "full_cohort",
       "heldout_oracle",
       "downstream_impact_smoke"
     ],
@@ -57,7 +57,7 @@
     "read_only": true,
     "write_authority": false,
     "scorer_ran": false,
-    "raw_or_85raw_ran": false,
+    "raw_or_full_cohort_ran": false,
     "product_writer_changed": false,
     "default_quant_matrix_changed": false,
     "broad_backfill_unparked": false,

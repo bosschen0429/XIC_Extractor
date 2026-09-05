@@ -1,4 +1,4 @@
-"""Review queue for anchored 85RAW PeakHypothesis backfill candidates.
+"""Review queue for anchored FULL COHORT PeakHypothesis backfill candidates.
 
 This diagnostic packages existing slice-gate rows for human review. It does not
 read RAW files, choose S/N, apply activation, or mutate matrix artifacts.
@@ -12,14 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.diagnostics import backfill_peakhypothesis_raw85_slice_gate
+from xic_extractor.diagnostics import backfill_peakhypothesis_acceptance_gate
 from xic_extractor.diagnostics.diagnostic_io import (
     format_diagnostic_value,
     text_value,
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_raw85_hypothesis_review_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_hypothesis_review_v1"
 
 REVIEW_QUEUE_COLUMNS = (
     "schema_version",
@@ -29,24 +29,24 @@ REVIEW_QUEUE_COLUMNS = (
     "source_feature_family_id",
     "source_seed_group_id",
     "sample_stem",
-    "raw85_match_strategy",
-    "raw85_anchor_mz",
-    "raw85_anchor_rt",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_matched_feature_family_id",
-    "raw85_match_mz_delta_ppm",
-    "raw85_match_rt_delta_min",
-    "raw85_candidate_count",
-    "raw85_cell_status",
-    "raw85_primary_matrix_area",
-    "raw85_primary_matrix_area_source",
-    "raw85_peak_start_rt",
-    "raw85_peak_end_rt",
-    "raw85_trace_quality",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
-    "raw85_consolidation_winner_group_hypothesis_id",
-    "raw85_slice_blockers",
+    "full_cohort_match_strategy",
+    "full_cohort_anchor_mz",
+    "full_cohort_anchor_rt",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_matched_feature_family_id",
+    "full_cohort_match_mz_delta_ppm",
+    "full_cohort_match_rt_delta_min",
+    "full_cohort_candidate_count",
+    "full_cohort_cell_status",
+    "full_cohort_primary_matrix_area",
+    "full_cohort_primary_matrix_area_source",
+    "full_cohort_peak_start_rt",
+    "full_cohort_peak_end_rt",
+    "full_cohort_trace_quality",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
+    "full_cohort_consolidation_winner_group_hypothesis_id",
+    "full_cohort_slice_blockers",
     "review_focus",
     "review_question",
     "proposed_product_transfer_status",
@@ -58,59 +58,58 @@ REVIEW_QUEUE_COLUMNS = (
 _HYPOTHESIS_CANDIDATE_REVIEW = "hypothesis_candidate_review"
 _CANDIDATE_NO_REGRESSION = "candidate_no_regression"
 _FAMILY_CONSOLIDATION_BLOCKER = (
-    "raw85_candidate_family_consolidation_review_required"
+    "full_cohort_candidate_family_consolidation_review_required"
 )
-_NON_PRIMARY_BLOCKER = "raw85_candidate_not_primary_matrix_row"
+_NON_PRIMARY_BLOCKER = "full_cohort_candidate_not_primary_matrix_row"
 
 
 @dataclass(frozen=True)
-class Raw85HypothesisReviewIndex:
+class FullCohortHypothesisReviewIndex:
     rows: tuple[dict[str, str], ...]
     summary: dict[str, Any]
 
 
 @dataclass(frozen=True)
-class Raw85HypothesisReviewOutputs:
+class FullCohortHypothesisReviewOutputs:
     review_queue_tsv: Path
     summary_json: Path
 
 
-def build_raw85_hypothesis_review_queue(
+def build_full_cohort_hypothesis_review_queue(
     *,
-    raw85_slice_gate_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_acceptance_gate_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
     source_run_id: str = "",
-) -> Raw85HypothesisReviewIndex:
-    _validate_slice_gate_schema(raw85_slice_gate_rows)
+) -> FullCohortHypothesisReviewIndex:
+    _validate_slice_gate_schema(full_cohort_acceptance_gate_rows)
     queue_source_rows = tuple(
         row
-        for row in raw85_slice_gate_rows
-        if _value(row, "raw85_slice_gate_status") == _HYPOTHESIS_CANDIDATE_REVIEW
+        for row in full_cohort_acceptance_gate_rows
+        if _value(row, "full_cohort_acceptance_gate_status")
+        == _HYPOTHESIS_CANDIDATE_REVIEW
     )
     rows = tuple(
         _build_review_row(row, index=index, source_run_id=source_run_id)
         for index, row in enumerate(queue_source_rows, start=1)
     )
-    return Raw85HypothesisReviewIndex(
+    return FullCohortHypothesisReviewIndex(
         rows=rows,
         summary=_summary(
             rows,
-            raw85_slice_gate_rows=raw85_slice_gate_rows,
+            full_cohort_acceptance_gate_rows=full_cohort_acceptance_gate_rows,
             source_run_id=source_run_id,
         ),
     )
 
 
-def write_raw85_hypothesis_review_outputs(
+def write_full_cohort_hypothesis_review_outputs(
     output_dir: Path,
-    index: Raw85HypothesisReviewIndex,
-) -> Raw85HypothesisReviewOutputs:
+    index: FullCohortHypothesisReviewIndex,
+) -> FullCohortHypothesisReviewOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     review_queue_tsv = (
-        output_dir / "backfill_peakhypothesis_raw85_hypothesis_review_queue.tsv"
+        output_dir / "backfill_peakhypothesis_hypothesis_review_queue.tsv"
     )
-    summary_json = (
-        output_dir / "backfill_peakhypothesis_raw85_hypothesis_review_summary.json"
-    )
+    summary_json = output_dir / "backfill_peakhypothesis_hypothesis_review_summary.json"
     write_tsv(
         review_queue_tsv,
         index.rows,
@@ -122,7 +121,7 @@ def write_raw85_hypothesis_review_outputs(
         json.dumps(index.summary, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    return Raw85HypothesisReviewOutputs(
+    return FullCohortHypothesisReviewOutputs(
         review_queue_tsv=review_queue_tsv,
         summary_json=summary_json,
     )
@@ -143,39 +142,43 @@ def _build_review_row(
         "source_feature_family_id": _value(row, "feature_family_id"),
         "source_seed_group_id": _value(row, "seed_group_id"),
         "sample_stem": _value(row, "sample_stem"),
-        "raw85_match_strategy": _value(row, "raw85_match_strategy"),
-        "raw85_anchor_mz": _value(row, "raw85_anchor_mz"),
-        "raw85_anchor_rt": _value(row, "raw85_anchor_rt"),
-        "raw85_matched_peak_hypothesis_id": _value(
+        "full_cohort_match_strategy": _value(row, "full_cohort_match_strategy"),
+        "full_cohort_anchor_mz": _value(row, "full_cohort_anchor_mz"),
+        "full_cohort_anchor_rt": _value(row, "full_cohort_anchor_rt"),
+        "full_cohort_matched_peak_hypothesis_id": _value(
             row,
-            "raw85_matched_peak_hypothesis_id",
+            "full_cohort_matched_peak_hypothesis_id",
         ),
-        "raw85_matched_feature_family_id": _value(
+        "full_cohort_matched_feature_family_id": _value(
             row,
-            "raw85_matched_feature_family_id",
+            "full_cohort_matched_feature_family_id",
         ),
-        "raw85_match_mz_delta_ppm": _value(row, "raw85_match_mz_delta_ppm"),
-        "raw85_match_rt_delta_min": _value(row, "raw85_match_rt_delta_min"),
-        "raw85_candidate_count": _value(row, "raw85_candidate_count"),
-        "raw85_cell_status": _value(row, "raw85_cell_status"),
-        "raw85_primary_matrix_area": _value(row, "raw85_primary_matrix_area"),
-        "raw85_primary_matrix_area_source": _value(
+        "full_cohort_match_mz_delta_ppm": _value(row, "full_cohort_match_mz_delta_ppm"),
+        "full_cohort_match_rt_delta_min": _value(row, "full_cohort_match_rt_delta_min"),
+        "full_cohort_candidate_count": _value(row, "full_cohort_candidate_count"),
+        "full_cohort_cell_status": _value(row, "full_cohort_cell_status"),
+        "full_cohort_primary_matrix_area": _value(
+            row, "full_cohort_primary_matrix_area"
+        ),
+        "full_cohort_primary_matrix_area_source": _value(
             row,
-            "raw85_primary_matrix_area_source",
+            "full_cohort_primary_matrix_area_source",
         ),
-        "raw85_peak_start_rt": _value(row, "raw85_peak_start_rt"),
-        "raw85_peak_end_rt": _value(row, "raw85_peak_end_rt"),
-        "raw85_trace_quality": _value(row, "raw85_trace_quality"),
-        "raw85_include_in_primary_matrix": _value(
+        "full_cohort_peak_start_rt": _value(row, "full_cohort_peak_start_rt"),
+        "full_cohort_peak_end_rt": _value(row, "full_cohort_peak_end_rt"),
+        "full_cohort_trace_quality": _value(row, "full_cohort_trace_quality"),
+        "full_cohort_include_in_primary_matrix": _value(
             row,
-            "raw85_include_in_primary_matrix",
+            "full_cohort_include_in_primary_matrix",
         ),
-        "raw85_consolidation_state": _value(row, "raw85_consolidation_state"),
-        "raw85_consolidation_winner_group_hypothesis_id": _value(
+        "full_cohort_consolidation_state": _value(
+            row, "full_cohort_consolidation_state"
+        ),
+        "full_cohort_consolidation_winner_group_hypothesis_id": _value(
             row,
-            "raw85_consolidation_winner_group_hypothesis_id",
+            "full_cohort_consolidation_winner_group_hypothesis_id",
         ),
-        "raw85_slice_blockers": _value(row, "raw85_slice_blockers"),
+        "full_cohort_slice_blockers": _value(row, "full_cohort_slice_blockers"),
         "review_focus": review_focus,
         "review_question": _review_question(review_focus),
         "proposed_product_transfer_status": (
@@ -190,20 +193,19 @@ def _build_review_row(
 def _summary(
     rows: tuple[dict[str, str], ...],
     *,
-    raw85_slice_gate_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_acceptance_gate_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
     source_run_id: str,
 ) -> dict[str, Any]:
     input_status_counts = Counter(
-        _value(row, "raw85_slice_gate_status") for row in raw85_slice_gate_rows
+        _value(row, "full_cohort_acceptance_gate_status")
+        for row in full_cohort_acceptance_gate_rows
     )
     focus_counts = Counter(_value(row, "review_focus") for row in rows)
     return {
         "schema_version": SCHEMA_VERSION,
         "source_run_id": source_run_id,
-        "review_queue_status": (
-            "manual_review_required" if rows else "empty"
-        ),
-        "input_row_count": len(raw85_slice_gate_rows),
+        "review_queue_status": ("manual_review_required" if rows else "empty"),
+        "input_row_count": len(full_cohort_acceptance_gate_rows),
         "candidate_queue_count": len(rows),
         "direct_candidate_count": input_status_counts.get(_CANDIDATE_NO_REGRESSION, 0),
         "blocked_input_count": input_status_counts.get("blocked", 0),
@@ -218,9 +220,9 @@ def _summary(
         "matrix_contract_changed": False,
         "product_behavior_changed": False,
         "next_action": (
-            "manual_review_85raw_hypothesis_candidates"
+            "manual_review_full_cohort_hypothesis_candidates"
             if rows
-            else "no_85raw_hypothesis_candidate_review_rows"
+            else "no_full_cohort_hypothesis_candidate_review_rows"
         ),
         "review_focus_counts": dict(sorted(focus_counts.items())),
         "input_status_counts": dict(sorted(input_status_counts.items())),
@@ -228,7 +230,7 @@ def _summary(
 
 
 def _review_focus(row: dict[str, str]) -> str:
-    blockers = set(_semicolon_values(_value(row, "raw85_slice_blockers")))
+    blockers = set(_semicolon_values(_value(row, "full_cohort_slice_blockers")))
     if _NON_PRIMARY_BLOCKER in blockers:
         return "non_primary_candidate_needs_consolidation_policy"
     if _FAMILY_CONSOLIDATION_BLOCKER in blockers:
@@ -249,11 +251,11 @@ def _validate_slice_gate_schema(
 ) -> None:
     for index, row in enumerate(rows, start=1):
         actual = _value(row, "schema_version")
-        if actual != backfill_peakhypothesis_raw85_slice_gate.SCHEMA_VERSION:
+        if actual != backfill_peakhypothesis_acceptance_gate.SCHEMA_VERSION:
             raise ValueError(
-                "raw85 slice gate schema_version mismatch at row "
+                "full_cohort slice gate schema_version mismatch at row "
                 f"{index}: expected "
-                f"{backfill_peakhypothesis_raw85_slice_gate.SCHEMA_VERSION!r}, "
+                f"{backfill_peakhypothesis_acceptance_gate.SCHEMA_VERSION!r}, "
                 f"got {actual!r}",
             )
 

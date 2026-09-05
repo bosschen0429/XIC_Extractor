@@ -169,6 +169,11 @@ owner、consumer 與 retirement rule，不能只因單次施工方便而建立�
 | Diagnostic | `tools/diagnostics/<purpose>.py` |
 | Product owner | `docs/product/<topic>.md` |
 
+`<purpose>` 與 `<contract>` 必須描述長期 owner、行為或 artifact role；Issue／PR
+編號、施工 package／phase、`P7`／`M7`、Gate B/C、日期與第一批驗證資料量
+不得充當 current path 或 schema identity。凍結 provenance path、真正 schema
+version、科學名稱與輸入 cardinality 不受此限制。
+
 只有在第一層目錄、placement policy、package/bundle path constraint、ignored
 storage semantics 或命名規則改變時更新本檔。內部 module 拆分與待辦不寫在這裡；
 由 architecture owner 與 GitHub Issues 管理。

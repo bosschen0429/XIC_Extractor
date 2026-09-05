@@ -58,7 +58,7 @@ PROMOTION_PACKET_V2_SUMMARY_SCHEMA = "quant_matrix_promotion_packet_v2_summary_v
 DEFAULT_OUTPUT_DIR = Path(
     "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2",
 )
-DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v2-20260619"
+DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v2"
 
 
 def build_quant_matrix_promotion_packet_v2(
@@ -102,13 +102,13 @@ def build_quant_matrix_promotion_packet_v2(
         output_dir=output_dir,
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=large_cohort_artifact,
                 cohort_id=cohort_id,
                 raw_run_count=raw_run_count,
                 evidence_note=(
-                    "Existing no-RAW 85RAW consolidated standard-peak activation "
+                    "Existing no-RAW FULL_COHORT consolidated standard-peak activation "
                     "input summary; large-cohort evidence only, not matrix "
                     "authority."
                 ),
@@ -229,7 +229,7 @@ def validate_quant_matrix_promotion_packet_v2(
         ("read_only", True),
         ("write_authority", False),
         ("scorer_ran", False),
-        ("raw_or_85raw_ran", False),
+        ("raw_or_full_cohort_ran", False),
         ("product_writer_changed", False),
         ("default_quant_matrix_changed", False),
         ("broad_backfill_unparked", False),
@@ -350,7 +350,7 @@ def _write_summary(
         "read_only": True,
         "write_authority": False,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "broad_backfill_unparked": False,
@@ -447,7 +447,7 @@ def _append_readiness_candidate_problems(
     if summary.get("missing_science_evidence") != []:
         problems.append("promotion packet v2 readiness missing_science_evidence")
     expected_tiers = {
-        "85raw_large_cohort": "pass",
+        "full_cohort": "pass",
         "heldout_oracle": "pass",
         "downstream_impact_smoke": "pass",
     }

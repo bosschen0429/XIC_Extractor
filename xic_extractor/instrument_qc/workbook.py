@@ -244,9 +244,9 @@ def _escape_excel_formula(value: str) -> str:
 
 def _priority_fill(priority: str) -> PatternFill:
     colors = {
-        "P1": "F4CCCC",
-        "P2": "FFF2CC",
-        "P3": "D9EAD3",
+        "HIGH": "F4CCCC",
+        "MEDIUM": "FFF2CC",
+        "LOW": "D9EAD3",
     }
     return PatternFill("solid", fgColor=colors.get(priority, "FFFFFF"))
 

@@ -2,10 +2,12 @@ import csv
 import json
 from pathlib import Path
 
-from tools.diagnostics import p1_resolver_default_gate as gate
+from tools.diagnostics import targeted_resolver_comparison as gate
 
 
-def test_p1_gate_passes_stable_istd_area_and_rt(tmp_path: Path) -> None:
+def test_targeted_resolver_comparison_passes_stable_istd_area_and_rt(
+    tmp_path: Path,
+) -> None:
     targets = tmp_path / "targets.csv"
     _write_targets(targets)
     baseline = tmp_path / "baseline.csv"
@@ -27,7 +29,7 @@ def test_p1_gate_passes_stable_istd_area_and_rt(tmp_path: Path) -> None:
         ],
     )
 
-    outputs, result = gate.run_p1_resolver_default_gate(
+    outputs, result = gate.run_targeted_resolver_comparison(
         baseline_results_csv=baseline,
         candidate_results_csv=candidate,
         targets_csv=targets,
@@ -41,7 +43,9 @@ def test_p1_gate_passes_stable_istd_area_and_rt(tmp_path: Path) -> None:
     assert payload["overall_status"] == "PASS"
 
 
-def test_p1_gate_fails_when_istd_rsd_regresses(tmp_path: Path) -> None:
+def test_targeted_resolver_comparison_fails_when_istd_rsd_regresses(
+    tmp_path: Path,
+) -> None:
     targets = tmp_path / "targets.csv"
     _write_targets(targets)
     baseline = tmp_path / "baseline.csv"
@@ -63,7 +67,7 @@ def test_p1_gate_fails_when_istd_rsd_regresses(tmp_path: Path) -> None:
         ],
     )
 
-    _outputs, result = gate.run_p1_resolver_default_gate(
+    _outputs, result = gate.run_targeted_resolver_comparison(
         baseline_results_csv=baseline,
         candidate_results_csv=candidate,
         targets_csv=targets,
@@ -105,13 +109,13 @@ def test_main_writes_outputs_and_returns_failure_code(tmp_path: Path) -> None:
     )
 
     assert code == 1
-    assert (output_dir / "p1_resolver_default_gate_rows.tsv").is_file()
-    assert (output_dir / "p1_resolver_default_gate_summary.tsv").is_file()
-    assert (output_dir / "p1_resolver_default_gate.json").is_file()
-    assert (output_dir / "p1_resolver_default_gate.md").is_file()
+    assert (output_dir / "targeted_resolver_comparison_rows.tsv").is_file()
+    assert (output_dir / "targeted_resolver_comparison_summary.tsv").is_file()
+    assert (output_dir / "targeted_resolver_comparison.json").is_file()
+    assert (output_dir / "targeted_resolver_comparison.md").is_file()
 
-    rows_tsv = output_dir / "p1_resolver_default_gate_rows.tsv"
-    summary_tsv = output_dir / "p1_resolver_default_gate_summary.tsv"
+    rows_tsv = output_dir / "targeted_resolver_comparison_rows.tsv"
+    summary_tsv = output_dir / "targeted_resolver_comparison_summary.tsv"
     assert b"\r\n" not in rows_tsv.read_bytes()
     assert b"\r\n" not in summary_tsv.read_bytes()
     assert rows_tsv.read_text(encoding="utf-8").splitlines()[0].split("\t") == [

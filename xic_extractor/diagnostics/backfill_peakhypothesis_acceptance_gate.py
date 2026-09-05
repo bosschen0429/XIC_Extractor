@@ -1,4 +1,4 @@
-"""85RAW slice gate for reviewed PeakHypothesis backfill promotions.
+"""FULL COHORT slice gate for reviewed PeakHypothesis backfill promotions.
 
 This diagnostic reads existing alignment artifacts only. It does not read RAW
 files, mutate matrices, or remap primary-loser rows.
@@ -22,9 +22,9 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_raw85_slice_gate_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_acceptance_gate_v1"
 
-RAW85_SLICE_GATE_COLUMNS = (
+FULL_COHORT_ACCEPTANCE_GATE_COLUMNS = (
     "schema_version",
     "source_run_id",
     "peak_hypothesis_id",
@@ -33,29 +33,29 @@ RAW85_SLICE_GATE_COLUMNS = (
     "sample_stem",
     "promotion_decision",
     "projected_matrix_value",
-    "raw85_match_strategy",
-    "raw85_anchor_mz",
-    "raw85_anchor_rt",
-    "raw85_matched_feature_family_id",
-    "raw85_matched_peak_hypothesis_id",
-    "raw85_match_mz_delta_ppm",
-    "raw85_match_rt_delta_min",
-    "raw85_candidate_count",
-    "raw85_exact_cell_found",
-    "raw85_cell_status",
-    "raw85_primary_matrix_area",
-    "raw85_primary_matrix_area_source",
-    "raw85_primary_matrix_area_reason",
-    "raw85_peak_start_rt",
-    "raw85_peak_end_rt",
-    "raw85_trace_quality",
-    "raw85_review_identity_decision",
-    "raw85_include_in_primary_matrix",
-    "raw85_consolidation_state",
-    "raw85_consolidation_winner_group_hypothesis_id",
-    "raw85_row_flags",
-    "raw85_slice_gate_status",
-    "raw85_slice_blockers",
+    "full_cohort_match_strategy",
+    "full_cohort_anchor_mz",
+    "full_cohort_anchor_rt",
+    "full_cohort_matched_feature_family_id",
+    "full_cohort_matched_peak_hypothesis_id",
+    "full_cohort_match_mz_delta_ppm",
+    "full_cohort_match_rt_delta_min",
+    "full_cohort_candidate_count",
+    "full_cohort_exact_cell_found",
+    "full_cohort_cell_status",
+    "full_cohort_primary_matrix_area",
+    "full_cohort_primary_matrix_area_source",
+    "full_cohort_primary_matrix_area_reason",
+    "full_cohort_peak_start_rt",
+    "full_cohort_peak_end_rt",
+    "full_cohort_trace_quality",
+    "full_cohort_review_identity_decision",
+    "full_cohort_include_in_primary_matrix",
+    "full_cohort_consolidation_state",
+    "full_cohort_consolidation_winner_group_hypothesis_id",
+    "full_cohort_row_flags",
+    "full_cohort_acceptance_gate_status",
+    "full_cohort_slice_blockers",
     "recommended_action",
 )
 
@@ -68,13 +68,13 @@ _SEED_RT_RE = re.compile(r"(?:^|::)rt=([0-9.+\-eE]+)")
 
 
 @dataclass(frozen=True)
-class Raw85SliceGateIndex:
+class FullCohortAcceptanceGateIndex:
     rows: tuple[dict[str, str], ...]
     summary: dict[str, Any]
 
 
 @dataclass(frozen=True)
-class Raw85SliceGateOutputs:
+class FullCohortAcceptanceGateOutputs:
     cells_tsv: Path
     summary_json: Path
 
@@ -91,18 +91,18 @@ class _CandidateMatch:
     candidate_count: int
 
 
-def build_raw85_slice_gate(
+def build_full_cohort_acceptance_gate(
     *,
     promotion_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
-    raw85_review_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
-    raw85_cell_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_review_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_cell_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
     source_run_id: str = "",
     anchor_mz_tolerance_ppm: float = _DEFAULT_ANCHOR_MZ_TOLERANCE_PPM,
     anchor_rt_tolerance_min: float = _DEFAULT_ANCHOR_RT_TOLERANCE_MIN,
-) -> Raw85SliceGateIndex:
+) -> FullCohortAcceptanceGateIndex:
     _validate_promotion_schema(promotion_rows)
-    review_by_family = _index_review_rows(raw85_review_rows)
-    cells_by_key = _index_cell_rows(raw85_cell_rows)
+    review_by_family = _index_review_rows(full_cohort_review_rows)
+    cells_by_key = _index_cell_rows(full_cohort_cell_rows)
     promoted_rows = tuple(
         row
         for row in promotion_rows
@@ -113,7 +113,7 @@ def build_raw85_slice_gate(
             promotion_row=row,
             candidate_match=_select_candidate_match(
                 promotion_row=row,
-                raw85_review_rows=raw85_review_rows,
+                full_cohort_review_rows=full_cohort_review_rows,
                 review_by_family=review_by_family,
                 cells_by_key=cells_by_key,
                 anchor_mz_tolerance_ppm=anchor_mz_tolerance_ppm,
@@ -124,20 +124,20 @@ def build_raw85_slice_gate(
         for row in promoted_rows
     )
     summary = _summary(rows, source_run_id=source_run_id)
-    return Raw85SliceGateIndex(rows=rows, summary=summary)
+    return FullCohortAcceptanceGateIndex(rows=rows, summary=summary)
 
 
-def write_raw85_slice_gate_outputs(
+def write_full_cohort_acceptance_gate_outputs(
     output_dir: Path,
-    index: Raw85SliceGateIndex,
-) -> Raw85SliceGateOutputs:
+    index: FullCohortAcceptanceGateIndex,
+) -> FullCohortAcceptanceGateOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
-    cells_tsv = output_dir / "backfill_peakhypothesis_raw85_slice_gate.tsv"
-    summary_json = output_dir / "backfill_peakhypothesis_raw85_slice_gate_summary.json"
+    cells_tsv = output_dir / "backfill_peakhypothesis_acceptance_gate.tsv"
+    summary_json = output_dir / "backfill_peakhypothesis_acceptance_gate_summary.json"
     write_tsv(
         cells_tsv,
         index.rows,
-        RAW85_SLICE_GATE_COLUMNS,
+        FULL_COHORT_ACCEPTANCE_GATE_COLUMNS,
         formatter=format_diagnostic_value,
         lineterminator="\n",
     )
@@ -145,7 +145,9 @@ def write_raw85_slice_gate_outputs(
         json.dumps(index.summary, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    return Raw85SliceGateOutputs(cells_tsv=cells_tsv, summary_json=summary_json)
+    return FullCohortAcceptanceGateOutputs(
+        cells_tsv=cells_tsv, summary_json=summary_json
+    )
 
 
 def _build_gate_row(
@@ -160,14 +162,12 @@ def _build_gate_row(
     gate_status = _gate_status(blockers, candidate_match)
     review = candidate_match.review_row or {}
     cell = candidate_match.cell_row or {}
-    consolidation_state = (
-        _value(review, "consolidation_state")
-        or _value(cell, "consolidation_state")
+    consolidation_state = _value(review, "consolidation_state") or _value(
+        cell, "consolidation_state"
     )
-    consolidation_winner = (
-        _value(review, "consolidation_winner_group_hypothesis_id")
-        or _value(cell, "consolidation_winner_group_hypothesis_id")
-    )
+    consolidation_winner = _value(
+        review, "consolidation_winner_group_hypothesis_id"
+    ) or _value(cell, "consolidation_winner_group_hypothesis_id")
     return {
         "schema_version": SCHEMA_VERSION,
         "source_run_id": source_run_id,
@@ -177,43 +177,42 @@ def _build_gate_row(
         "sample_stem": _value(promotion_row, "sample_stem"),
         "promotion_decision": _value(promotion_row, "promotion_decision"),
         "projected_matrix_value": _value(promotion_row, "projected_matrix_value"),
-        "raw85_match_strategy": candidate_match.strategy,
-        "raw85_anchor_mz": _float_text(candidate_match.anchor_mz),
-        "raw85_anchor_rt": _float_text(candidate_match.anchor_rt),
-        "raw85_matched_feature_family_id": _value(review, "feature_family_id"),
-        "raw85_matched_peak_hypothesis_id": (
-            _value(review, "group_hypothesis_id")
-            or _value(review, "feature_family_id")
+        "full_cohort_match_strategy": candidate_match.strategy,
+        "full_cohort_anchor_mz": _float_text(candidate_match.anchor_mz),
+        "full_cohort_anchor_rt": _float_text(candidate_match.anchor_rt),
+        "full_cohort_matched_feature_family_id": _value(review, "feature_family_id"),
+        "full_cohort_matched_peak_hypothesis_id": (
+            _value(review, "group_hypothesis_id") or _value(review, "feature_family_id")
         ),
-        "raw85_match_mz_delta_ppm": _float_text(candidate_match.mz_delta_ppm),
-        "raw85_match_rt_delta_min": _float_text(candidate_match.rt_delta_min),
-        "raw85_candidate_count": str(candidate_match.candidate_count),
-        "raw85_exact_cell_found": (
+        "full_cohort_match_mz_delta_ppm": _float_text(candidate_match.mz_delta_ppm),
+        "full_cohort_match_rt_delta_min": _float_text(candidate_match.rt_delta_min),
+        "full_cohort_candidate_count": str(candidate_match.candidate_count),
+        "full_cohort_exact_cell_found": (
             "TRUE" if candidate_match.cell_row is not None else "FALSE"
         ),
-        "raw85_cell_status": _value(cell, "status"),
-        "raw85_primary_matrix_area": _value(cell, "primary_matrix_area"),
-        "raw85_primary_matrix_area_source": _value(
+        "full_cohort_cell_status": _value(cell, "status"),
+        "full_cohort_primary_matrix_area": _value(cell, "primary_matrix_area"),
+        "full_cohort_primary_matrix_area_source": _value(
             cell,
             "primary_matrix_area_source",
         ),
-        "raw85_primary_matrix_area_reason": _value(
+        "full_cohort_primary_matrix_area_reason": _value(
             cell,
             "primary_matrix_area_reason",
         ),
-        "raw85_peak_start_rt": _value(cell, "peak_start_rt"),
-        "raw85_peak_end_rt": _value(cell, "peak_end_rt"),
-        "raw85_trace_quality": _value(cell, "trace_quality"),
-        "raw85_review_identity_decision": _value(review, "identity_decision"),
-        "raw85_include_in_primary_matrix": _value(
+        "full_cohort_peak_start_rt": _value(cell, "peak_start_rt"),
+        "full_cohort_peak_end_rt": _value(cell, "peak_end_rt"),
+        "full_cohort_trace_quality": _value(cell, "trace_quality"),
+        "full_cohort_review_identity_decision": _value(review, "identity_decision"),
+        "full_cohort_include_in_primary_matrix": _value(
             review,
             "include_in_primary_matrix",
         ),
-        "raw85_consolidation_state": consolidation_state,
-        "raw85_consolidation_winner_group_hypothesis_id": consolidation_winner,
-        "raw85_row_flags": _value(review, "row_flags"),
-        "raw85_slice_gate_status": gate_status,
-        "raw85_slice_blockers": ";".join(blockers),
+        "full_cohort_consolidation_state": consolidation_state,
+        "full_cohort_consolidation_winner_group_hypothesis_id": consolidation_winner,
+        "full_cohort_row_flags": _value(review, "row_flags"),
+        "full_cohort_acceptance_gate_status": gate_status,
+        "full_cohort_slice_blockers": ";".join(blockers),
         "recommended_action": _recommended_action(blockers),
     }
 
@@ -223,36 +222,34 @@ def _blockers(
     candidate_match: _CandidateMatch,
 ) -> tuple[str, ...]:
     if candidate_match.review_row is None:
-        return ("raw85_hypothesis_candidate_missing",)
+        return ("full_cohort_hypothesis_candidate_missing",)
     if candidate_match.cell_row is None:
-        return ("raw85_hypothesis_candidate_cell_missing",)
+        return ("full_cohort_hypothesis_candidate_cell_missing",)
 
     review = candidate_match.review_row
     cell = candidate_match.cell_row
     blockers: list[str] = []
     if _value(review, "include_in_primary_matrix") != "TRUE":
-        blockers.append("raw85_candidate_not_primary_matrix_row")
+        blockers.append("full_cohort_candidate_not_primary_matrix_row")
 
-    consolidation_state = (
-        _value(review, "consolidation_state")
-        or _value(cell, "consolidation_state")
+    consolidation_state = _value(review, "consolidation_state") or _value(
+        cell, "consolidation_state"
     )
-    consolidation_winner = (
-        _value(review, "consolidation_winner_group_hypothesis_id")
-        or _value(cell, "consolidation_winner_group_hypothesis_id")
-    )
+    consolidation_winner = _value(
+        review, "consolidation_winner_group_hypothesis_id"
+    ) or _value(cell, "consolidation_winner_group_hypothesis_id")
     if consolidation_state == "primary_loser" or consolidation_winner:
-        blockers.append("raw85_candidate_family_consolidation_review_required")
+        blockers.append("full_cohort_candidate_family_consolidation_review_required")
 
     status = _value(cell, "status")
     if status not in _ACCEPTABLE_DIRECT_CELL_STATUSES:
-        blockers.append(f"raw85_cell_status_{status or 'missing'}")
+        blockers.append(f"full_cohort_cell_status_{status or 'missing'}")
 
     primary_area = optional_float(_value(cell, "primary_matrix_area"))
     if primary_area is None or primary_area <= 0:
-        blockers.append("raw85_primary_matrix_area_missing")
+        blockers.append("full_cohort_primary_matrix_area_missing")
     if _value(cell, "primary_matrix_area_source") != _GAUSSIAN15_AREA_SOURCE:
-        blockers.append("raw85_primary_matrix_area_source_not_gaussian15")
+        blockers.append("full_cohort_primary_matrix_area_source_not_gaussian15")
     return tuple(blockers)
 
 
@@ -274,12 +271,12 @@ def _has_reviewable_hypothesis_candidate(
     if candidate_match.review_row is None or candidate_match.cell_row is None:
         return False
     hard_blockers = {
-        "raw85_hypothesis_candidate_missing",
-        "raw85_hypothesis_candidate_cell_missing",
-        "raw85_cell_status_absent",
-        "raw85_cell_status_missing",
-        "raw85_primary_matrix_area_missing",
-        "raw85_primary_matrix_area_source_not_gaussian15",
+        "full_cohort_hypothesis_candidate_missing",
+        "full_cohort_hypothesis_candidate_cell_missing",
+        "full_cohort_cell_status_absent",
+        "full_cohort_cell_status_missing",
+        "full_cohort_primary_matrix_area_missing",
+        "full_cohort_primary_matrix_area_source_not_gaussian15",
     }
     if any(blocker in hard_blockers for blocker in blockers):
         return False
@@ -289,10 +286,10 @@ def _has_reviewable_hypothesis_candidate(
 
 def _recommended_action(blockers: tuple[str, ...]) -> str:
     if not blockers:
-        return "eligible_for_direct_85raw_activation_trial"
-    if "raw85_candidate_family_consolidation_review_required" in blockers:
+        return "eligible_for_direct_full_cohort_activation_trial"
+    if "full_cohort_candidate_family_consolidation_review_required" in blockers:
         return "review_hypothesis_anchor_candidate_before_activation"
-    return "manual_85raw_review_required"
+    return "manual_full_cohort_review_required"
 
 
 def _summary(
@@ -300,11 +297,13 @@ def _summary(
     *,
     source_run_id: str,
 ) -> dict[str, Any]:
-    status_counts = Counter(_value(row, "raw85_slice_gate_status") for row in rows)
+    status_counts = Counter(
+        _value(row, "full_cohort_acceptance_gate_status") for row in rows
+    )
     blocker_counts = Counter(
         blocker
         for row in rows
-        for blocker in _semicolon_values(row.get("raw85_slice_blockers"))
+        for blocker in _semicolon_values(row.get("full_cohort_slice_blockers"))
     )
     if status_counts.get("blocked", 0):
         gate_status = "fail"
@@ -327,45 +326,45 @@ def _summary(
             0,
         ),
         "exact_cell_found_count": sum(
-            1 for row in rows if _value(row, "raw85_exact_cell_found") == "TRUE"
+            1 for row in rows if _value(row, "full_cohort_exact_cell_found") == "TRUE"
         ),
         "exact_cell_missing_count": blocker_counts.get(
-            "raw85_hypothesis_candidate_cell_missing",
+            "full_cohort_hypothesis_candidate_cell_missing",
             0,
         ),
         "not_primary_matrix_row_count": blocker_counts.get(
-            "raw85_candidate_not_primary_matrix_row",
+            "full_cohort_candidate_not_primary_matrix_row",
             0,
         ),
         "primary_loser_count": sum(
             1
             for row in rows
-            if _value(row, "raw85_consolidation_state") == "primary_loser"
+            if _value(row, "full_cohort_consolidation_state") == "primary_loser"
         ),
         "family_consolidation_review_count": blocker_counts.get(
-            "raw85_candidate_family_consolidation_review_required",
+            "full_cohort_candidate_family_consolidation_review_required",
             0,
         ),
         "duplicate_assigned_count": blocker_counts.get(
-            "raw85_cell_status_duplicate_assigned",
+            "full_cohort_cell_status_duplicate_assigned",
             0,
         ),
-        "absent_count": blocker_counts.get("raw85_cell_status_absent", 0),
+        "absent_count": blocker_counts.get("full_cohort_cell_status_absent", 0),
         "missing_gaussian_area_count": sum(
             count
             for blocker, count in blocker_counts.items()
             if blocker
             in {
-                "raw85_primary_matrix_area_missing",
-                "raw85_primary_matrix_area_source_not_gaussian15",
+                "full_cohort_primary_matrix_area_missing",
+                "full_cohort_primary_matrix_area_source_not_gaussian15",
             }
         ),
         "matrix_contract_changed": False,
         "product_behavior_changed": False,
         "next_action": (
-            "ready_for_direct_85raw_activation_trial"
+            "ready_for_direct_full_cohort_activation_trial"
             if gate_status == "pass"
-            else "review_85raw_hypothesis_candidates_before_product_transfer"
+            else "review_full_cohort_hypothesis_candidates_before_product_transfer"
         ),
         "blocker_counts": dict(sorted(blocker_counts.items())),
     }
@@ -374,7 +373,7 @@ def _summary(
 def _select_candidate_match(
     *,
     promotion_row: dict[str, str],
-    raw85_review_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
+    full_cohort_review_rows: list[dict[str, str]] | tuple[dict[str, str], ...],
     review_by_family: dict[str, dict[str, str]],
     cells_by_key: dict[tuple[str, str], dict[str, str]],
     anchor_mz_tolerance_ppm: float,
@@ -398,7 +397,7 @@ def _select_candidate_match(
 
     anchor_mz, anchor_rt = anchor
     candidates: list[tuple[tuple[float, float, float], dict[str, str]]] = []
-    for row in raw85_review_rows:
+    for row in full_cohort_review_rows:
         family_mz = optional_float(_value(row, "family_center_mz"))
         family_rt = optional_float(_value(row, "family_center_rt"))
         if family_mz is None or family_rt is None:
@@ -498,7 +497,7 @@ def _index_review_rows(
         if not family_id:
             continue
         if family_id in by_family:
-            raise ValueError(f"duplicate raw85 review row: {family_id}")
+            raise ValueError(f"duplicate full_cohort review row: {family_id}")
         by_family[family_id] = row
     return by_family
 
@@ -514,7 +513,7 @@ def _index_cell_rows(
             continue
         key = (family_id, sample)
         if key in by_key:
-            raise ValueError(f"duplicate raw85 cell row: {family_id}|{sample}")
+            raise ValueError(f"duplicate full_cohort cell row: {family_id}|{sample}")
         by_key[key] = row
     return by_key
 

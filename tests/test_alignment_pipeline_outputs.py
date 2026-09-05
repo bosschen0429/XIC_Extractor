@@ -171,7 +171,7 @@ def test_alignment_metadata_records_backfill_scope() -> None:
         selected_family_count=2,
         selected_family_source="tsv:selected.tsv",
         scope_warning="diagnostic_only_incomplete_scope",
-        skipped_evidence_predicate_version="p7-test",
+        skipped_evidence_predicate_version="alignment-parity-scoped-test",
     )
 
     assert metadata["backfill_scope"] == "selected-families"
@@ -179,7 +179,9 @@ def test_alignment_metadata_records_backfill_scope() -> None:
     assert metadata["selected_family_count"] == "2"
     assert metadata["selected_family_source"] == "tsv:selected.tsv"
     assert metadata["scope_warning"] == "diagnostic_only_incomplete_scope"
-    assert metadata["skipped_evidence_predicate_version"] == "p7-test"
+    assert (
+        metadata["skipped_evidence_predicate_version"] == "alignment-parity-scoped-test"
+    )
 
 
 def test_alignment_metadata_records_audit_evidence_mode() -> None:
@@ -201,7 +203,10 @@ def test_alignment_metadata_records_audit_evidence_mode() -> None:
     assert metadata["audit_evidence_mode"] == "none"
     assert metadata["requested_audit_evidence_mode"] == "auto"
     assert metadata["heavy_audit_enabled"] == "False"
-    assert metadata["request_plan_version"] == "p7-owner-backfill-request-plan-v1"
+    assert (
+        metadata["request_plan_version"]
+        == "alignment-parity-scoped-owner-backfill-request-plan-v1"
+    )
     assert (
         metadata["audit_evidence_mode_reason"]
         == "production_equivalent_default_no_audit"
@@ -287,9 +292,12 @@ def test_pipeline_target_anchor_metadata_requires_typed_owner_anchor() -> None:
         ),
         observed_labels=("d3-5-hmdC",),
     )
-    assert pipeline_module._typed_targeted_istd_anchor(
-        SimpleNamespace(istd_identity_anchor=anchor)
-    ) is anchor
+    assert (
+        pipeline_module._typed_targeted_istd_anchor(
+            SimpleNamespace(istd_identity_anchor=anchor)
+        )
+        is anchor
+    )
 
 
 def test_writer_timing_observations_are_truthful_with_live_output(
@@ -984,8 +992,7 @@ def test_pipeline_reads_injection_order_once_for_grouping_and_matrix_columns(
     assert read_paths == [injection_csv]
     assert len(captured["features"]) == 1
     assert (
-        captured["features"][0].evidence
-        == "owner_injection_trajectory;owner_count=3"
+        captured["features"][0].evidence == "owner_injection_trajectory;owner_count=3"
     )
     assert _status_matrix_sample_columns(
         outputs.status_matrix_tsv,
@@ -1080,7 +1087,7 @@ def test_pipeline_keeps_input_sample_order_without_injection_source(
     ) == ["Sample_C", "Sample_A", "Sample_B"]
 
 
-def test_pipeline_writes_run_metadata_sidecar_for_p7_scoped_runs(
+def test_pipeline_writes_run_metadata_sidecar_for_alignment_parity_scoped_runs(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1114,7 +1121,10 @@ def test_pipeline_writes_run_metadata_sidecar_for_p7_scoped_runs(
     assert payload["backfill_scope"] == "production-equivalent"
     assert payload["audit_evidence_mode"] == "none"
     assert payload["requested_audit_evidence_mode"] == "auto"
-    assert payload["request_plan_version"] == "p7-owner-backfill-request-plan-v1"
+    assert (
+        payload["request_plan_version"]
+        == "alignment-parity-scoped-owner-backfill-request-plan-v1"
+    )
 
 
 def test_pipeline_enables_region_audit_only_when_alignment_cells_are_emitted(
@@ -1139,9 +1149,7 @@ def test_pipeline_enables_region_audit_only_when_alignment_cells_are_emitted(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            "feature",
-        ),
+        lambda owners, **kwargs: ("feature",),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -1202,9 +1210,7 @@ def test_pipeline_enables_region_audit_when_integration_sidecar_is_emitted(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            "feature",
-        ),
+        lambda owners, **kwargs: ("feature",),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -1267,9 +1273,7 @@ def test_pipeline_backfill_seed_sidecar_does_not_force_alignment_cells_or_region
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            "feature",
-        ),
+        lambda owners, **kwargs: ("feature",),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -1334,9 +1338,7 @@ def test_pipeline_backfill_candidate_audit_requires_own_flag(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            "feature",
-        ),
+        lambda owners, **kwargs: ("feature",),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -1494,9 +1496,7 @@ def test_validation_minimal_auto_mode_does_not_enable_heavy_region_audit(
     monkeypatch.setattr(
         pipeline_module,
         "cluster_sample_local_owners",
-        lambda owners, **kwargs: (
-            "feature",
-        ),
+        lambda owners, **kwargs: ("feature",),
     )
     monkeypatch.setattr(
         pipeline_module,

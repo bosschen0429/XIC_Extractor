@@ -59,9 +59,11 @@ from xic_extractor.tabular_io import (  # noqa: E402
 
 def artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
     return {
-        "path": path.resolve(strict=False).relative_to(
+        "path": path.resolve(strict=False)
+        .relative_to(
             base_dir.resolve(strict=False),
-        ).as_posix(),
+        )
+        .as_posix(),
         "sha256": file_sha256(path),
     }
 
@@ -74,11 +76,9 @@ DISCOVERY_DEFAULT_EFFECT = "write_cid_nl_discovery_default_cell"
 FEATURE_INCLUSION_AUTHORITY_BASIS = (
     "successor_self_evidence_manifest_expected_diff_and_cid_nl_tag"
 )
-MATRIX_ROW_UNIVERSE_POLICY = "discovery_expanded_85raw_alignment_rows"
+MATRIX_ROW_UNIVERSE_POLICY = "discovery_expanded_full_cohort_alignment_rows"
 LOW_PREVALENCE_FEATURE_POLICY = "allowed_for_untargeted_downstream_filter"
-SOURCE_SUCCESSOR_IDENTITY_SCOPE = (
-    "identity_review_only_not_feature_inclusion_blocker"
-)
+SOURCE_SUCCESSOR_IDENTITY_SCOPE = "identity_review_only_not_feature_inclusion_blocker"
 LEGACY_QUANT_MATRIX_EFFECT = "write_accepted_backfill"
 LEGACY_PROVENANCE_STATUS = "accepted_backfill"
 DEFAULT_OUTPUT_DIR = ROOT / "output/validation/cid_nl_default_product_activation_v1"
@@ -318,6 +318,17 @@ def validate_cid_nl_default_product_activation(
         payload = _read_json_object(summary_json)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return [str(exc)]
+    retained_artifact = (
+        "raw_or_85raw_ran" in payload and "raw_or_full_cohort_ran" not in payload
+    )
+    expected_row_universe_policy = (
+        "discovery_expanded_85raw_alignment_rows"
+        if retained_artifact
+        else MATRIX_ROW_UNIVERSE_POLICY
+    )
+    expected_run_field = (
+        "raw_or_85raw_ran" if retained_artifact else "raw_or_full_cohort_ran"
+    )
     expected_fields: tuple[tuple[str, object], ...] = (
         ("schema_version", SCHEMA_VERSION),
         ("status", "pass"),
@@ -327,7 +338,7 @@ def validate_cid_nl_default_product_activation(
         ("product_scope_kind", "discovery_default_activation"),
         ("default_activation_effect", DISCOVERY_DEFAULT_EFFECT),
         ("feature_inclusion_authority_basis", FEATURE_INCLUSION_AUTHORITY_BASIS),
-        ("matrix_row_universe_policy", MATRIX_ROW_UNIVERSE_POLICY),
+        ("matrix_row_universe_policy", expected_row_universe_policy),
         ("low_prevalence_feature_policy", LOW_PREVALENCE_FEATURE_POLICY),
         ("source_successor_identity_scope", SOURCE_SUCCESSOR_IDENTITY_SCOPE),
         ("accepted_discovery_cell_count", expected_contract_cell_count),
@@ -347,7 +358,7 @@ def validate_cid_nl_default_product_activation(
         ("backfill_writer_authority_changed", False),
         ("cid_nl_ms2_direct_productwriter_authority", False),
         ("candidate_rows_are_matrix_rows", False),
-        ("raw_or_85raw_ran", False),
+        (expected_run_field, False),
         ("full_matrix_retention", "externalized_output_only"),
     )
     for field, expected in expected_fields:
@@ -357,8 +368,7 @@ def validate_cid_nl_default_product_activation(
     if (
         not isinstance(successor_evidence, Mapping)
         or successor_evidence.get("status") != "pass"
-        or successor_evidence.get("checked_cell_count")
-        != expected_contract_cell_count
+        or successor_evidence.get("checked_cell_count") != expected_contract_cell_count
     ):
         problems.append("successor_self_evidence_summary must pass")
     checks_path = summary_json.parent / "cid_nl_default_product_activation_checks.tsv"
@@ -1060,7 +1070,7 @@ def _summary_payload(
         "backfill_writer_authority_changed": False,
         "cid_nl_ms2_direct_productwriter_authority": False,
         "candidate_rows_are_matrix_rows": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "full_matrix_retention": "externalized_output_only",
         "matrix_delta_summary": delta_summary,
         "cell_provenance_summary": provenance_summary,
@@ -1120,7 +1130,8 @@ def _summary_payload(
             "are preserved as no-write context."
         ),
         "row_universe_statement": (
-            "The default output uses the current 85RAW-derived Discovery-expanded "
+            "The default output uses the current FULL_COHORT-derived "
+            "Discovery-expanded "
             "alignment row universe. Low-prevalence features are allowed in this "
             "untargeted handoff and are expected to be filtered downstream; low "
             "prevalence is not a CID-NL false-positive blocker by itself."
@@ -1174,7 +1185,7 @@ def _write_readme(
         "inside the shared QuantMatrixVersion writer and provenance compatibility "
         "surface.",
         "",
-        "Row-universe boundary: the output matrix uses the current 85RAW-derived "
+        "Row-universe boundary: the output matrix uses the current FULL_COHORT-derived "
         "Discovery-expanded alignment row universe. Sparse rows are acceptable "
         "for this untargeted handoff; prevalence filtering belongs downstream, "
         "not in this CID-NL activation gate.",

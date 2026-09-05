@@ -119,7 +119,7 @@ def summarize_activation_acceptance(
     decision_rows: Sequence[Mapping[str, str]],
     *,
     blast_radius_current: bool,
-    assessed_85raw_rows: int | None = None,
+    assessed_full_cohort_rows: int | None = None,
     assessed_rows_basis: str = "activation_decision_rows_fallback",
     activation_decision_scope: str = "manual_oracle_seed_rows",
     must_not_regress_status: str = "not_assessed",
@@ -128,11 +128,11 @@ def summarize_activation_acceptance(
     thresholds: ActivationAcceptanceThresholds = ActivationAcceptanceThresholds(),
 ) -> dict[str, str]:
     assessed_rows = (
-        assessed_85raw_rows
-        if assessed_85raw_rows is not None
+        assessed_full_cohort_rows
+        if assessed_full_cohort_rows is not None
         else len(decision_rows)
     )
-    if assessed_85raw_rows is None:
+    if assessed_full_cohort_rows is None:
         assessed_rows_basis = "activation_decision_rows_fallback"
     status_counts = Counter(row.get("activation_status", "") for row in decision_rows)
     product_affecting = sum(
@@ -278,15 +278,15 @@ def evaluate_must_not_regress(
     return ("pass", ()) if not failures else ("fail", tuple(failures))
 
 
-def infer_85raw_assessed_rows(
+def infer_full_cohort_assessed_rows(
     blast_radius_summary_rows: Sequence[Mapping[str, str]],
 ) -> tuple[int | None, str]:
     """Return the cohort blast-radius denominator without summing class repeats."""
     row_counts = {
         count
         for row in blast_radius_summary_rows
-        if row.get("scope") == "all_available_85raw"
-        and row.get("artifact_id") == "85raw_alignment_cells"
+        if row.get("scope") == "all_available_full_cohort"
+        and row.get("artifact_id") == "full_cohort_alignment_cells"
         for count in (_positive_int(row.get("assessed_row_count")),)
         if count is not None
     }
@@ -294,7 +294,7 @@ def infer_85raw_assessed_rows(
         return None, "activation_decision_rows_fallback"
     return (
         max(row_counts),
-        "blast_radius_summary:all_available_85raw:assessed_row_count",
+        "blast_radius_summary:all_available_full_cohort:assessed_row_count",
     )
 
 

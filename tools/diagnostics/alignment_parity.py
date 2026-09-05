@@ -22,13 +22,13 @@ REVIEW_IDENTITY_COLUMNS = (
 
 
 @dataclass(frozen=True)
-class P7AlignmentParityResult:
+class AlignmentParityResult:
     status: str
     checks: dict[str, str]
     differences: tuple[str, ...]
 
 
-def run_p7_alignment_parity(
+def run_alignment_parity(
     *,
     baseline_matrix_tsv: Path,
     optimized_matrix_tsv: Path,
@@ -40,7 +40,7 @@ def run_p7_alignment_parity(
     output_md: Path | None = None,
     output_dir: Path | None = None,
     numeric_tolerance: float = DEFAULT_NUMERIC_TOLERANCE,
-) -> P7AlignmentParityResult:
+) -> AlignmentParityResult:
     differences: list[str] = []
     checks: dict[str, str] = {}
     artifact_rows: dict[str, list[dict[str, str]]] = {}
@@ -52,7 +52,7 @@ def run_p7_alignment_parity(
     )
     checks["primary_matrix_tsv"] = "pass" if not matrix_differences else "fail"
     differences.extend(matrix_differences)
-    artifact_rows["8raw_matrix_parity.tsv"] = _difference_rows(
+    artifact_rows["matrix_parity.tsv"] = _difference_rows(
         "primary_matrix_tsv",
         matrix_differences,
     )
@@ -62,7 +62,7 @@ def run_p7_alignment_parity(
             message = "identity review comparison requires both TSV paths"
             checks["primary_identity_decisions"] = "fail"
             differences.append(message)
-            artifact_rows["8raw_identity_parity.tsv"] = _difference_rows(
+            artifact_rows["identity_parity.tsv"] = _difference_rows(
                 "primary_identity_decisions",
                 (message,),
             )
@@ -75,7 +75,7 @@ def run_p7_alignment_parity(
                 "pass" if not identity_differences else "fail"
             )
             differences.extend(identity_differences)
-            artifact_rows["8raw_identity_parity.tsv"] = _difference_rows(
+            artifact_rows["identity_parity.tsv"] = _difference_rows(
                 "primary_identity_decisions",
                 identity_differences,
             )
@@ -91,7 +91,7 @@ def run_p7_alignment_parity(
             message = "targeted benchmark comparison requires both TSV paths"
             checks["targeted_istd_benchmark"] = "fail"
             differences.append(message)
-            artifact_rows["8raw_targeted_benchmark_delta.tsv"] = _difference_rows(
+            artifact_rows["targeted_benchmark_delta.tsv"] = _difference_rows(
                 "targeted_istd_benchmark",
                 (message,),
             )
@@ -104,12 +104,12 @@ def run_p7_alignment_parity(
                 "pass" if not targeted_differences else "fail"
             )
             differences.extend(targeted_differences)
-            artifact_rows["8raw_targeted_benchmark_delta.tsv"] = _difference_rows(
+            artifact_rows["targeted_benchmark_delta.tsv"] = _difference_rows(
                 "targeted_istd_benchmark",
                 targeted_differences,
             )
 
-    result = P7AlignmentParityResult(
+    result = AlignmentParityResult(
         status="pass" if not differences else "fail",
         checks=checks,
         differences=tuple(differences),
@@ -328,7 +328,7 @@ def _is_true(value: str) -> bool:
     return value.strip().lower() in {"true", "1", "yes"}
 
 
-def _write_json(path: Path, result: P7AlignmentParityResult) -> None:
+def _write_json(path: Path, result: AlignmentParityResult) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(asdict(result), indent=2, sort_keys=True),
@@ -336,10 +336,10 @@ def _write_json(path: Path, result: P7AlignmentParityResult) -> None:
     )
 
 
-def _write_markdown(path: Path, result: P7AlignmentParityResult) -> None:
+def _write_markdown(path: Path, result: AlignmentParityResult) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# P7 Alignment Parity",
+        "# Alignment Parity",
         "",
         f"Status: {result.status}",
         "",
@@ -358,21 +358,21 @@ def _write_markdown(path: Path, result: P7AlignmentParityResult) -> None:
 
 def _write_artifacts(
     output_dir: Path,
-    result: P7AlignmentParityResult,
+    result: AlignmentParityResult,
     artifact_rows: Mapping[str, Sequence[Mapping[str, str]]],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     for filename in (
-        "8raw_matrix_parity.tsv",
-        "8raw_identity_parity.tsv",
-        "8raw_targeted_benchmark_delta.tsv",
+        "matrix_parity.tsv",
+        "identity_parity.tsv",
+        "targeted_benchmark_delta.tsv",
     ):
         _write_rows_tsv(
             output_dir / filename,
             artifact_rows.get(filename, _difference_rows(filename, ())),
         )
-    _write_json(output_dir / "8raw_p7_alignment_parity.json", result)
-    _write_markdown(output_dir / "8raw_p7_alignment_parity.md", result)
+    _write_json(output_dir / "alignment_parity.json", result)
+    _write_markdown(output_dir / "alignment_parity.md", result)
 
 
 def _difference_rows(
@@ -392,8 +392,8 @@ def _write_rows_tsv(path: Path, rows: Sequence[Mapping[str, str]]) -> None:
     write_tsv(path, rows, ("check", "status", "difference"), lineterminator="\n")
 
 
-def _error_result(error: Exception) -> P7AlignmentParityResult:
-    return P7AlignmentParityResult(
+def _error_result(error: Exception) -> AlignmentParityResult:
+    return AlignmentParityResult(
         status="fail",
         checks={"input_validation": "fail"},
         differences=(f"{type(error).__name__}: {error}",),
@@ -401,7 +401,7 @@ def _error_result(error: Exception) -> P7AlignmentParityResult:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run P7 alignment parity checks.")
+    parser = argparse.ArgumentParser(description="Run alignment parity checks.")
     parser.add_argument("--baseline-alignment-dir", type=Path)
     parser.add_argument("--optimized-alignment-dir", type=Path)
     parser.add_argument("--baseline-matrix-tsv", type=Path)
@@ -425,7 +425,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         baseline_matrix_tsv, optimized_matrix_tsv = _resolve_matrix_paths(args)
         baseline_review_tsv, optimized_review_tsv = _resolve_review_paths(args)
         baseline_targeted, optimized_targeted = _resolve_benchmark_paths(args)
-        result = run_p7_alignment_parity(
+        result = run_alignment_parity(
             baseline_matrix_tsv=baseline_matrix_tsv,
             optimized_matrix_tsv=optimized_matrix_tsv,
             baseline_review_tsv=baseline_review_tsv,

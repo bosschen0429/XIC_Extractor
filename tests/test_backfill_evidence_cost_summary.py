@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from tools.diagnostics import p7_evidence_cost_summary
-from tools.diagnostics.p7_evidence_cost_summary import run_p7_evidence_cost_summary
+from tools.diagnostics import backfill_evidence_cost_summary
+from tools.diagnostics.backfill_evidence_cost_summary import (
+    run_backfill_evidence_cost_summary,
+)
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
     SkippedEvidenceRecord,
@@ -13,7 +15,7 @@ from xic_extractor.alignment.backfill_scope import (
 )
 
 
-def test_p7_evidence_cost_summary_passes_when_backfill_cost_drops(
+def test_backfill_evidence_cost_summary_passes_when_backfill_cost_drops(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -40,7 +42,7 @@ def test_p7_evidence_cost_summary_passes_when_backfill_cost_drops(
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=40)
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -58,8 +60,8 @@ def test_p7_evidence_cost_summary_passes_when_backfill_cost_drops(
     assert result.metrics["request_target_reduction_pct"] == 60.0
     assert result.metrics["owner_backfill_speedup_ratio"] == 2.5
     assert result.metrics["raw_xic_requests_skipped"] == 2
-    assert (tmp_path / "summary" / "p7_evidence_cost_summary.json").exists()
-    with (tmp_path / "summary" / "p7_evidence_cost_summary.tsv").open(
+    assert (tmp_path / "summary" / "backfill_evidence_cost_summary.json").exists()
+    with (tmp_path / "summary" / "backfill_evidence_cost_summary.tsv").open(
         encoding="utf-8",
         newline="",
     ) as handle:
@@ -69,20 +71,16 @@ def test_p7_evidence_cost_summary_passes_when_backfill_cost_drops(
     assert tsv_rows["owner_backfill_elapsed_saved_sec"] == "60"
     assert tsv_rows["request_target_reduction_pct"] == "60"
     assert tsv_rows["status"] == "inconclusive"
-    assert (tmp_path / "summary" / "p7_evidence_cost_summary.md").exists()
+    assert (tmp_path / "summary" / "backfill_evidence_cost_summary.md").exists()
+    assert (tmp_path / "summary" / "owner_backfill_economics_full_audit.json").exists()
     assert (
-        tmp_path / "summary" / "owner_backfill_economics_8raw_full_audit.json"
+        tmp_path / "summary" / "owner_backfill_economics_production_equivalent.json"
     ).exists()
-    assert (
-        tmp_path
-        / "summary"
-        / "owner_backfill_economics_8raw_production_equivalent.json"
-    ).exists()
-    assert (tmp_path / "summary" / "skipped_evidence_ledger_8raw.tsv").exists()
-    assert (tmp_path / "summary" / "skipped_evidence_summary_8raw.json").exists()
+    assert (tmp_path / "summary" / "skipped_evidence_ledger.tsv").exists()
+    assert (tmp_path / "summary" / "skipped_evidence_summary.json").exists()
 
 
-def test_p7_evidence_cost_summary_passes_on_small_positive_resource_improvement(
+def test_backfill_evidence_cost_summary_passes_on_small_positive_resource_improvement(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -96,7 +94,7 @@ def test_p7_evidence_cost_summary_passes_on_small_positive_resource_improvement(
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=80)
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -110,7 +108,7 @@ def test_p7_evidence_cost_summary_passes_on_small_positive_resource_improvement(
     assert "request_target_count_saved" in result.operations_status_reason
 
 
-def test_p7_evidence_cost_summary_uses_ledger_when_economics_estimator_is_static(
+def test_backfill_evidence_cost_summary_uses_ledger_when_economics_estimator_is_static(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -127,7 +125,7 @@ def test_p7_evidence_cost_summary_uses_ledger_when_economics_estimator_is_static
         [(f"FAM{i:03d}", "S2", 1) for i in range(60)],
     )
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -142,7 +140,7 @@ def test_p7_evidence_cost_summary_uses_ledger_when_economics_estimator_is_static
     assert result.metrics["request_target_reduction_pct"] == 60.0
 
 
-def test_p7_evidence_cost_summary_marks_inconclusive_when_nothing_improves(
+def test_backfill_evidence_cost_summary_marks_inconclusive_when_nothing_improves(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -156,7 +154,7 @@ def test_p7_evidence_cost_summary_marks_inconclusive_when_nothing_improves(
     _economics(optimized_economics, request_target_count=100)
     _write_ledger(ledger, [])
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -170,7 +168,9 @@ def test_p7_evidence_cost_summary_marks_inconclusive_when_nothing_improves(
     assert result.operations_status_reason == "no_positive_resource_improvement"
 
 
-def test_p7_evidence_cost_summary_rejects_malformed_ledger(tmp_path: Path) -> None:
+def test_backfill_evidence_cost_summary_rejects_malformed_ledger(
+    tmp_path: Path,
+) -> None:
     baseline = tmp_path / "baseline_timing.json"
     optimized = tmp_path / "optimized_timing.json"
     baseline_economics = tmp_path / "baseline_economics.json"
@@ -183,7 +183,7 @@ def test_p7_evidence_cost_summary_rejects_malformed_ledger(tmp_path: Path) -> No
     ledger.write_text("feature_family_id\tsample_stem\nFAM001\tS2\n", encoding="utf-8")
 
     try:
-        run_p7_evidence_cost_summary(
+        run_backfill_evidence_cost_summary(
             baseline_timing_json=baseline,
             optimized_timing_json=optimized,
             baseline_owner_backfill_economics_json=baseline_economics,
@@ -196,7 +196,7 @@ def test_p7_evidence_cost_summary_rejects_malformed_ledger(tmp_path: Path) -> No
         raise AssertionError("expected malformed ledger to fail")
 
 
-def test_p7_evidence_cost_summary_cli_returns_zero_for_positive_improvement(
+def test_backfill_evidence_cost_summary_cli_returns_zero_for_positive_improvement(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -211,7 +211,7 @@ def test_p7_evidence_cost_summary_cli_returns_zero_for_positive_improvement(
     _economics(optimized_economics, request_target_count=80)
     _write_ledger(ledger, [("FAM001", "S2", 1)])
 
-    code = p7_evidence_cost_summary.main(
+    code = backfill_evidence_cost_summary.main(
         [
             "--baseline-timing-json",
             str(baseline),
@@ -229,14 +229,14 @@ def test_p7_evidence_cost_summary_cli_returns_zero_for_positive_improvement(
     )
 
     payload = json.loads(
-        (output_dir / "p7_evidence_cost_summary.json").read_text(encoding="utf-8")
+        (output_dir / "backfill_evidence_cost_summary.json").read_text(encoding="utf-8")
     )
     assert code == 0
     assert payload["operations_status"] == "PASS"
     assert payload["outcome_status"] == "inconclusive"
 
 
-def test_p7_evidence_cost_summary_cli_returns_nonzero_for_correctness_blocker(
+def test_backfill_evidence_cost_summary_cli_returns_nonzero_for_correctness_blocker(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -251,7 +251,7 @@ def test_p7_evidence_cost_summary_cli_returns_nonzero_for_correctness_blocker(
     _economics(optimized_economics, request_target_count=80)
     _write_ledger(ledger, [("FAM001", "S2", 1)])
 
-    code = p7_evidence_cost_summary.main(
+    code = backfill_evidence_cost_summary.main(
         [
             "--baseline-timing-json",
             str(baseline),
@@ -271,14 +271,14 @@ def test_p7_evidence_cost_summary_cli_returns_nonzero_for_correctness_blocker(
     )
 
     payload = json.loads(
-        (output_dir / "p7_evidence_cost_summary.json").read_text(encoding="utf-8")
+        (output_dir / "backfill_evidence_cost_summary.json").read_text(encoding="utf-8")
     )
     assert code == 1
     assert payload["operations_status"] == "PASS"
     assert payload["outcome_status"] == "diagnostic_only"
 
 
-def test_p7_evidence_cost_summary_combines_correctness_and_operations(
+def test_backfill_evidence_cost_summary_combines_correctness_and_operations(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -292,7 +292,7 @@ def test_p7_evidence_cost_summary_combines_correctness_and_operations(
     _economics(optimized_economics, request_target_count=80)
     _write_ledger(ledger, [("FAM001", "S2", 1)])
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -307,7 +307,7 @@ def test_p7_evidence_cost_summary_combines_correctness_and_operations(
     assert result.outcome_status == "production_candidate"
 
 
-def test_p7_evidence_cost_summary_correctness_blocker_overrides_ops_pass(
+def test_backfill_evidence_cost_summary_correctness_blocker_overrides_ops_pass(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -321,7 +321,7 @@ def test_p7_evidence_cost_summary_correctness_blocker_overrides_ops_pass(
     _economics(optimized_economics, request_target_count=80)
     _write_ledger(ledger, [("FAM001", "S2", 1)])
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -336,7 +336,7 @@ def test_p7_evidence_cost_summary_correctness_blocker_overrides_ops_pass(
     assert result.outcome_detail == "correctness_blocker"
 
 
-def test_p7_evidence_cost_summary_keeps_correctness_blocker_on_perf_stall(
+def test_backfill_evidence_cost_summary_keeps_correctness_blocker_on_perf_stall(
     tmp_path: Path,
 ) -> None:
     baseline = tmp_path / "baseline_timing.json"
@@ -350,7 +350,7 @@ def test_p7_evidence_cost_summary_keeps_correctness_blocker_on_perf_stall(
     _economics(optimized_economics, request_target_count=100)
     _write_ledger(ledger, [])
 
-    result = run_p7_evidence_cost_summary(
+    result = run_backfill_evidence_cost_summary(
         baseline_timing_json=baseline,
         optimized_timing_json=optimized,
         baseline_owner_backfill_economics_json=baseline_economics,
@@ -364,12 +364,12 @@ def test_p7_evidence_cost_summary_keeps_correctness_blocker_on_perf_stall(
     assert result.outcome_detail == "correctness_blocker;perf_stall"
 
 
-def test_p7_evidence_cost_summary_cli_error_uses_inconclusive_outcome(
+def test_backfill_evidence_cost_summary_cli_error_uses_inconclusive_outcome(
     tmp_path: Path,
 ) -> None:
     output_dir = tmp_path / "summary"
 
-    code = p7_evidence_cost_summary.main(
+    code = backfill_evidence_cost_summary.main(
         [
             "--baseline-timing-json",
             str(tmp_path / "missing-baseline.json"),
@@ -387,7 +387,7 @@ def test_p7_evidence_cost_summary_cli_error_uses_inconclusive_outcome(
     )
 
     payload = json.loads(
-        (output_dir / "p7_evidence_cost_summary.json").read_text(encoding="utf-8")
+        (output_dir / "backfill_evidence_cost_summary.json").read_text(encoding="utf-8")
     )
     assert code == 1
     assert payload["status"] == "inconclusive"
@@ -396,11 +396,11 @@ def test_p7_evidence_cost_summary_cli_error_uses_inconclusive_outcome(
     assert payload["operations_status"] == "fail"
 
 
-def test_p7_evidence_cost_summary_cli_rejects_invalid_correctness_status(
+def test_backfill_evidence_cost_summary_cli_rejects_invalid_correctness_status(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        p7_evidence_cost_summary.main(
+        backfill_evidence_cost_summary.main(
             [
                 "--baseline-timing-json",
                 str(tmp_path / "baseline.json"),

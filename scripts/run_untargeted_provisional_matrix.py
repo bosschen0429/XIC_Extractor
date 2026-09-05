@@ -124,15 +124,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             repetition_noise_design={
                 "paired_comparable_observations": True,
                 "no_raw_synthetic": "repeated observations with observed noise",
-                "8raw": "paired per-sample/interleaved where practical",
-                "85raw": "one comparable pair with 85-sample/stage observations",
+                "fixture_cohort": "paired per-sample/interleaved where practical",
+                "full_cohort": "one comparable pair with 85-sample/stage observations",
                 "effect_rule": (
                     "effect must clear observed noise; small-sample p95 is descriptive"
                 ),
             },
             numeric_budget={
                 "scope": "W0 programme decision, not XIC-wide rule",
-                "first_85raw_milestone_seconds": 2700,
+                "first_full_cohort_milestone_seconds": 2700,
                 "minimum_comparable_improvement_fraction": 0.25,
                 "next_milestone_seconds": 1800,
             },

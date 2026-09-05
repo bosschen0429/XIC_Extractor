@@ -1,4 +1,4 @@
-"""P1 resolver-default targeted area and RT validation gate."""
+"""Compare targeted resolver area and RT stability."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ _MISSING_VALUES = {"", "ND", "NA", "N/A", "NONE", "NULL"}
 
 
 @dataclass(frozen=True)
-class P1GateOutputs:
+class TargetedResolverComparisonOutputs:
     rows_tsv: Path
     summary_tsv: Path
     json_path: Path
@@ -51,7 +51,7 @@ class P1GateOutputs:
 
 
 @dataclass(frozen=True)
-class P1GateRow:
+class TargetedResolverComparisonRow:
     target_label: str
     sample_count: int
     baseline_area_rsd_pct: float | None
@@ -63,15 +63,15 @@ class P1GateRow:
 
 
 @dataclass(frozen=True)
-class P1GateResult:
+class TargetedResolverComparisonResult:
     overall_status: str
     failed_count: int
     max_area_rsd_delta_pct: float | None
     max_rt_median_abs_delta_sec: float | None
-    rows: tuple[P1GateRow, ...]
+    rows: tuple[TargetedResolverComparisonRow, ...]
 
 
-def run_p1_resolver_default_gate(
+def run_targeted_resolver_comparison(
     *,
     baseline_results_csv: Path,
     candidate_results_csv: Path,
@@ -79,7 +79,7 @@ def run_p1_resolver_default_gate(
     output_dir: Path,
     max_rsd_regression_pct: float = 0.5,
     max_rt_median_shift_sec: float = 0.5,
-) -> tuple[P1GateOutputs, P1GateResult]:
+) -> tuple[TargetedResolverComparisonOutputs, TargetedResolverComparisonResult]:
     labels = _read_istd_labels(targets_csv)
     baseline = _read_results(baseline_results_csv, labels)
     candidate = _read_results(candidate_results_csv, labels)
@@ -93,7 +93,7 @@ def run_p1_resolver_default_gate(
         )
         for label in labels
     )
-    result = P1GateResult(
+    result = TargetedResolverComparisonResult(
         overall_status="FAIL" if any(row.status == "FAIL" for row in rows) else "PASS",
         failed_count=sum(row.status == "FAIL" for row in rows),
         max_area_rsd_delta_pct=_max_present(row.area_rsd_delta_pct for row in rows),
@@ -103,11 +103,11 @@ def run_p1_resolver_default_gate(
         rows=rows,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    outputs = P1GateOutputs(
-        rows_tsv=output_dir / "p1_resolver_default_gate_rows.tsv",
-        summary_tsv=output_dir / "p1_resolver_default_gate_summary.tsv",
-        json_path=output_dir / "p1_resolver_default_gate.json",
-        markdown_path=output_dir / "p1_resolver_default_gate.md",
+    outputs = TargetedResolverComparisonOutputs(
+        rows_tsv=output_dir / "targeted_resolver_comparison_rows.tsv",
+        summary_tsv=output_dir / "targeted_resolver_comparison_summary.tsv",
+        json_path=output_dir / "targeted_resolver_comparison.json",
+        markdown_path=output_dir / "targeted_resolver_comparison.md",
     )
     _write_outputs(
         outputs,
@@ -121,8 +121,8 @@ def run_p1_resolver_default_gate(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare local_minimum and region_first_safe_merge targeted 8RAW "
-            "ISTD area RSD and RT shifts for the P1 default-switch gate."
+            "Compare local_minimum and region_first_safe_merge targeted "
+            "ISTD area RSD and RT shifts for the targeted resolver comparison."
         )
     )
     parser.add_argument("--baseline-results-csv", type=Path, required=True)
@@ -134,7 +134,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        outputs, result = run_p1_resolver_default_gate(
+        outputs, result = run_targeted_resolver_comparison(
             baseline_results_csv=args.baseline_results_csv.resolve(),
             candidate_results_csv=args.candidate_results_csv.resolve(),
             targets_csv=args.targets_csv.resolve(),
@@ -200,7 +200,7 @@ def _build_row(
     candidate: Mapping[str, Mapping[str, tuple[float | None, float | None]]],
     max_rsd_regression_pct: float,
     max_rt_median_shift_sec: float,
-) -> P1GateRow:
+) -> TargetedResolverComparisonRow:
     baseline_areas: list[float] = []
     candidate_areas: list[float] = []
     rt_deltas_min: list[float] = []
@@ -239,7 +239,7 @@ def _build_row(
         reasons.append("rt_shift_unavailable")
     elif rt_shift_sec > max_rt_median_shift_sec:
         reasons.append("rt_median_shift_regression")
-    return P1GateRow(
+    return TargetedResolverComparisonRow(
         target_label=label,
         sample_count=sample_count,
         baseline_area_rsd_pct=baseline_rsd,
@@ -261,8 +261,8 @@ def _area_rsd_pct(values: Sequence[float]) -> float | None:
 
 
 def _write_outputs(
-    outputs: P1GateOutputs,
-    result: P1GateResult,
+    outputs: TargetedResolverComparisonOutputs,
+    result: TargetedResolverComparisonResult,
     *,
     max_rsd_regression_pct: float,
     max_rt_median_shift_sec: float,
@@ -299,14 +299,14 @@ def _write_outputs(
     _write_markdown(outputs.markdown_path, result)
 
 
-def _row_dict(row: P1GateRow) -> dict[str, object]:
+def _row_dict(row: TargetedResolverComparisonRow) -> dict[str, object]:
     return {
         **asdict(row),
         "failure_reasons": ";".join(row.failure_reasons),
     }
 
 
-def _summary_dict(result: P1GateResult) -> dict[str, object]:
+def _summary_dict(result: TargetedResolverComparisonResult) -> dict[str, object]:
     return {
         "overall_status": result.overall_status,
         "failed_count": result.failed_count,
@@ -315,9 +315,9 @@ def _summary_dict(result: P1GateResult) -> dict[str, object]:
     }
 
 
-def _write_markdown(path: Path, result: P1GateResult) -> None:
+def _write_markdown(path: Path, result: TargetedResolverComparisonResult) -> None:
     lines = [
-        "# P1 Resolver Default Gate",
+        "# Targeted Resolver Comparison",
         "",
         f"Overall status: {result.overall_status}",
         "",

@@ -55,11 +55,13 @@ does not by itself make a command public. Conversely, a product artifact may be
 public even when its producer is not installed as a console command.
 
 Durable module, command, help, and artifact-contract language names the owned
-product or diagnostic role. Ticket numbers, rollout waves, numbered phases, and
-milestone labels such as `M7` belong only in history; they must not become
-current interface or module identity. A real runtime state such as an execution
-phase and a scientific name such as `m6A` remain valid when they are part of the
-current domain contract.
+product or diagnostic role. Ticket or PR numbers, rollout waves, numbered
+phases, shorthand such as `P7` or `M7`, construction packages, opaque
+lettered gates, dates, and first-dataset labels such as `85RAW` belong only in
+history or provenance; they must not become current interface, module, schema,
+or output identity. A real runtime state such as an execution phase, an exact
+input cardinality, a schema version, and a scientific name such as `m6A`
+remain valid when they are part of the current domain contract.
 
 ## Diagnostic Boundaries
 

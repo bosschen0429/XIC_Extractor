@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-def test_mode_track_85raw_stop_receipt_is_evidence_only() -> None:
+def test_mode_track_full_cohort_stop_receipt_is_evidence_only() -> None:
     root = Path(__file__).parents[1]
     receipt_path = (
         root

@@ -1,11 +1,11 @@
 import csv
 from pathlib import Path
 
-from tools.diagnostics import p7_alignment_parity
-from tools.diagnostics.p7_alignment_parity import run_p7_alignment_parity
+from tools.diagnostics import alignment_parity
+from tools.diagnostics.alignment_parity import run_alignment_parity
 
 
-def test_p7_alignment_parity_accepts_same_primary_rows_and_no_new_active_failures(
+def test_alignment_parity_accepts_same_primary_rows_and_no_new_active_failures(
     tmp_path: Path,
 ) -> None:
     baseline_matrix = tmp_path / "baseline_matrix.tsv"
@@ -41,7 +41,7 @@ def test_p7_alignment_parity_accepts_same_primary_rows_and_no_new_active_failure
         "dR\tTRUE\tPASS\t1\tFAM001\n",
     )
 
-    result = run_p7_alignment_parity(
+    result = run_alignment_parity(
         baseline_matrix_tsv=baseline_matrix,
         optimized_matrix_tsv=optimized_matrix,
         baseline_review_tsv=baseline_review,
@@ -58,7 +58,7 @@ def test_p7_alignment_parity_accepts_same_primary_rows_and_no_new_active_failure
     assert (tmp_path / "parity.md").exists()
 
 
-def test_p7_alignment_parity_fails_on_identity_or_new_active_failure(
+def test_alignment_parity_fails_on_identity_or_new_active_failure(
     tmp_path: Path,
 ) -> None:
     baseline_matrix = tmp_path / "baseline_matrix.tsv"
@@ -100,7 +100,7 @@ def test_p7_alignment_parity_fails_on_identity_or_new_active_failure(
         "dR\tTRUE\tFAIL\t0\t\n",
     )
 
-    result = run_p7_alignment_parity(
+    result = run_alignment_parity(
         baseline_matrix_tsv=baseline_matrix,
         optimized_matrix_tsv=optimized_matrix,
         baseline_review_tsv=baseline_review,
@@ -114,7 +114,7 @@ def test_p7_alignment_parity_fails_on_identity_or_new_active_failure(
     assert any("new active FAIL" in item for item in result.differences)
 
 
-def test_p7_alignment_parity_fails_on_missing_active_targeted_row(
+def test_alignment_parity_fails_on_missing_active_targeted_row(
     tmp_path: Path,
 ) -> None:
     baseline_matrix = tmp_path / "baseline_matrix.tsv"
@@ -139,7 +139,7 @@ def test_p7_alignment_parity_fails_on_missing_active_targeted_row(
         "target_label\tactive_tag\tstatus\tprimary_match_count\tselected_feature_id\n",
     )
 
-    result = run_p7_alignment_parity(
+    result = run_alignment_parity(
         baseline_matrix_tsv=baseline_matrix,
         optimized_matrix_tsv=optimized_matrix,
         baseline_targeted_summary_tsv=baseline_targeted,
@@ -150,7 +150,7 @@ def test_p7_alignment_parity_fails_on_missing_active_targeted_row(
     assert any("target labels differ" in item for item in result.differences)
 
 
-def test_p7_alignment_parity_fails_on_identity_confidence_or_evidence_drift(
+def test_alignment_parity_fails_on_identity_confidence_or_evidence_drift(
     tmp_path: Path,
 ) -> None:
     baseline_matrix = tmp_path / "baseline_matrix.tsv"
@@ -186,7 +186,7 @@ def test_p7_alignment_parity_fails_on_identity_confidence_or_evidence_drift(
         "dR\tTRUE\tPASS\t1\tFAM001\n",
     )
 
-    result = run_p7_alignment_parity(
+    result = run_alignment_parity(
         baseline_matrix_tsv=baseline_matrix,
         optimized_matrix_tsv=optimized_matrix,
         baseline_review_tsv=baseline_review,
@@ -200,7 +200,7 @@ def test_p7_alignment_parity_fails_on_identity_confidence_or_evidence_drift(
     assert any("primary_evidence" in item for item in result.differences)
 
 
-def test_p7_alignment_parity_ignores_non_primary_identity_diagnostic_drift(
+def test_alignment_parity_ignores_non_primary_identity_diagnostic_drift(
     tmp_path: Path,
 ) -> None:
     baseline_matrix = tmp_path / "baseline_matrix.tsv"
@@ -240,7 +240,7 @@ def test_p7_alignment_parity_ignores_non_primary_identity_diagnostic_drift(
         "dR\tTRUE\tPASS\t1\tFAM_PRIMARY\n",
     )
 
-    result = run_p7_alignment_parity(
+    result = run_alignment_parity(
         baseline_matrix_tsv=baseline_matrix,
         optimized_matrix_tsv=optimized_matrix,
         baseline_review_tsv=baseline_review,
@@ -252,7 +252,7 @@ def test_p7_alignment_parity_ignores_non_primary_identity_diagnostic_drift(
     assert result.status == "pass"
 
 
-def test_p7_alignment_parity_cli_writes_documented_artifacts(tmp_path: Path) -> None:
+def test_alignment_parity_cli_writes_documented_artifacts(tmp_path: Path) -> None:
     baseline_dir = tmp_path / "baseline"
     optimized_dir = tmp_path / "optimized"
     output_dir = tmp_path / "compare"
@@ -283,7 +283,7 @@ def test_p7_alignment_parity_cli_writes_documented_artifacts(tmp_path: Path) -> 
     _write(baseline_targeted, targeted_text)
     _write(optimized_targeted, targeted_text)
 
-    code = p7_alignment_parity.main(
+    code = alignment_parity.main(
         [
             "--baseline-alignment-dir",
             str(baseline_dir),
@@ -299,14 +299,14 @@ def test_p7_alignment_parity_cli_writes_documented_artifacts(tmp_path: Path) -> 
     )
 
     assert code == 0
-    matrix_parity = output_dir / "8raw_matrix_parity.tsv"
-    identity_parity = output_dir / "8raw_identity_parity.tsv"
-    targeted_delta = output_dir / "8raw_targeted_benchmark_delta.tsv"
+    matrix_parity = output_dir / "matrix_parity.tsv"
+    identity_parity = output_dir / "identity_parity.tsv"
+    targeted_delta = output_dir / "targeted_benchmark_delta.tsv"
     assert matrix_parity.exists()
     assert identity_parity.exists()
     assert targeted_delta.exists()
-    assert (output_dir / "8raw_p7_alignment_parity.json").exists()
-    assert (output_dir / "8raw_p7_alignment_parity.md").exists()
+    assert (output_dir / "alignment_parity.json").exists()
+    assert (output_dir / "alignment_parity.md").exists()
     for artifact_path in (matrix_parity, identity_parity, targeted_delta):
         assert b"\r\n" not in artifact_path.read_bytes()
         assert artifact_path.read_text(encoding="utf-8").splitlines()[0].split(

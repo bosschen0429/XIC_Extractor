@@ -24,8 +24,8 @@ def test_validation_harness_defaults_use_env_paths(
     import scripts.validation_harness_core as core
 
     manual_root = tmp_path / "manual_truth"
-    validation_root = tmp_path / "validation_8raw"
-    full_root = tmp_path / "tissue_85raw"
+    validation_root = tmp_path / "validation_fixture_cohort"
+    full_root = tmp_path / "tissue_full_cohort"
     with monkeypatch.context() as env:
         env.setenv("XIC_MANUAL_2RAW_ROOT", str(manual_root))
         env.setenv("XIC_RAW_VALIDATION_DIR", str(validation_root))
@@ -33,7 +33,7 @@ def test_validation_harness_defaults_use_env_paths(
         importlib.reload(core)
 
         specs = core.build_validation_specs(
-            suite_names=("manual-2raw", "tissue-8raw", "tissue-85raw"),
+            suite_names=("manual-2raw", "tissue-fixture-cohort", "tissue-full-cohort"),
             base_dir=Path("C:/repo/XIC_Extractor"),
             output_root=tmp_path / "validation_harness",
             run_id="env_defaults",
@@ -61,7 +61,7 @@ def test_validation_harness_defaults_fall_back_to_repo_placeholders(
         importlib.reload(core)
 
         specs = core.build_validation_specs(
-            suite_names=("manual-2raw", "tissue-8raw", "tissue-85raw"),
+            suite_names=("manual-2raw", "tissue-fixture-cohort", "tissue-full-cohort"),
             base_dir=Path("C:/repo/XIC_Extractor"),
             output_root=tmp_path / "validation_harness",
             run_id="fallback_defaults",
@@ -81,7 +81,7 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
     tmp_path: Path,
 ) -> None:
     specs = build_validation_specs(
-        suite_names=("manual-2raw", "tissue-8raw", "tissue-85raw"),
+        suite_names=("manual-2raw", "tissue-fixture-cohort", "tissue-full-cohort"),
         base_dir=Path("C:/repo/XIC_Extractor"),
         output_root=tmp_path / "validation_harness",
         run_id="20260506_test",
@@ -92,8 +92,8 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
 
     assert [spec.name for spec in specs] == [
         "manual-2raw",
-        "tissue-8raw",
-        "tissue-85raw",
+        "tissue-fixture-cohort",
+        "tissue-full-cohort",
     ]
     assert specs[0].output_path == (
         tmp_path
@@ -106,7 +106,7 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
         tmp_path
         / "validation_harness"
         / "20260506_test"
-        / "tissue_8raw_local_minimum"
+        / "tissue_fixture_cohort_local_minimum"
         / "xic_results_process_w4.xlsx"
     )
     assert specs[2].requires_confirmation is True
@@ -131,7 +131,7 @@ def test_build_validation_specs_includes_candidate_settings_in_commands(
     tmp_path: Path,
 ) -> None:
     specs = build_validation_specs(
-        suite_names=("tissue-8raw",),
+        suite_names=("tissue-fixture-cohort",),
         base_dir=Path("C:/repo/XIC_Extractor"),
         output_root=tmp_path / "validation_harness",
         run_id="candidate",
@@ -152,7 +152,7 @@ def test_build_validation_specs_accepts_region_first_safe_merge_mode(
     tmp_path: Path,
 ) -> None:
     specs = build_validation_specs(
-        suite_names=("tissue-8raw",),
+        suite_names=("tissue-fixture-cohort",),
         base_dir=Path("C:/repo/XIC_Extractor"),
         output_root=tmp_path / "validation_harness",
         run_id="safe_merge",
@@ -165,7 +165,7 @@ def test_build_validation_specs_accepts_region_first_safe_merge_mode(
         tmp_path
         / "validation_harness"
         / "safe_merge"
-        / "tissue_8raw_region_first_safe_merge"
+        / "tissue_fixture_cohort_region_first_safe_merge"
         / "xic_results_process_w4.xlsx"
     )
     assert "--resolver-mode region_first_safe_merge" in command_to_powershell(
@@ -180,7 +180,7 @@ def test_cli_defaults_extraction_suite_to_region_first_safe_merge(
     exit_code = main(
         [
             "--suite",
-            "tissue-8raw",
+            "tissue-fixture-cohort",
             "--output-root",
             str(tmp_path / "validation_harness"),
             "--run-id",
@@ -199,7 +199,7 @@ def test_build_validation_specs_rejects_resolver_mode_setting(
 ) -> None:
     with pytest.raises(ValueError, match="resolver_mode"):
         build_validation_specs(
-            suite_names=("tissue-8raw",),
+            suite_names=("tissue-fixture-cohort",),
             base_dir=Path("C:/repo/XIC_Extractor"),
             output_root=tmp_path / "validation_harness",
             run_id="candidate",
@@ -215,7 +215,7 @@ def test_build_validation_specs_rejects_retired_arbitrated_resolver(
 ) -> None:
     with pytest.raises(ValueError, match="retired; use region_first_safe_merge"):
         build_validation_specs(
-            suite_names=("tissue-8raw",),
+            suite_names=("tissue-fixture-cohort",),
             base_dir=Path("C:/repo/XIC_Extractor"),
             output_root=tmp_path / "validation_harness",
             run_id="candidate",
@@ -233,7 +233,7 @@ def test_validation_harness_cli_rejects_retired_arbitrated_resolver(
         main(
             [
                 "--suite",
-                "tissue-8raw",
+                "tissue-fixture-cohort",
                 "--resolver-mode",
                 "arbitrated",
                 "--output-root",
@@ -256,14 +256,14 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
 
     output_root = tmp_path / "validation_harness"
     spec = ValidationRunSpec(
-        name="tissue-8raw",
+        name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_8raw_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
         output_path=(
             output_root
             / "run1"
-            / "tissue_8raw_local_minimum"
+            / "tissue_fixture_cohort_local_minimum"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
@@ -277,7 +277,7 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
     baseline_path = (
         baseline_root
         / "run1"
-        / "tissue_8raw_local_minimum"
+        / "tissue_fixture_cohort_local_minimum"
         / "xic_results_process_w4.xlsx"
     )
     runner_calls: list[dict[str, object]] = []
@@ -330,7 +330,7 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
         "command",
     ]
     assert "suite,kind,raw_count,output_path,compare_result" in summary
-    assert "tissue-8raw,extraction,8," in summary
+    assert "tissue-fixture-cohort,extraction,8," in summary
     assert ",pass," in summary
 
 
@@ -344,14 +344,14 @@ def test_run_validation_specs_passes_candidate_settings_to_extraction_runner(
 
     output_root = tmp_path / "validation_harness"
     spec = ValidationRunSpec(
-        name="tissue-8raw",
+        name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_8raw_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
         output_path=(
             output_root
             / "run1"
-            / "tissue_8raw_local_minimum"
+            / "tissue_fixture_cohort_local_minimum"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
@@ -393,14 +393,14 @@ def test_run_validation_specs_records_compare_errors_without_traceback(
 
     output_root = tmp_path / "validation_harness"
     spec = ValidationRunSpec(
-        name="tissue-8raw",
+        name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_8raw_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
         output_path=(
             output_root
             / "run1"
-            / "tissue_8raw_local_minimum"
+            / "tissue_fixture_cohort_local_minimum"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
@@ -441,7 +441,7 @@ def test_run_validation_specs_records_baseline_path_errors_without_traceback(
         (data_dir / f"Sample{index + 1}.raw").mkdir()
 
     spec = ValidationRunSpec(
-        name="tissue-8raw",
+        name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
         output_dir=tmp_path / "outside",
@@ -487,14 +487,14 @@ def test_run_validation_specs_records_extraction_setup_errors_without_traceback(
 
     output_root = tmp_path / "validation_harness"
     spec = ValidationRunSpec(
-        name="tissue-8raw",
+        name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_8raw_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
         output_path=(
             output_root
             / "run1"
-            / "tissue_8raw_local_minimum"
+            / "tissue_fixture_cohort_local_minimum"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
@@ -585,7 +585,7 @@ def test_cli_accepts_repeated_candidate_settings_for_extraction_suite(
     exit_code = main(
         [
             "--suite",
-            "tissue-8raw",
+            "tissue-fixture-cohort",
             "--setting",
             "resolver_peak_duration_max=2.0",
             "--setting",
@@ -608,7 +608,7 @@ def test_cli_strips_candidate_setting_values(tmp_path: Path, capsys) -> None:
     exit_code = main(
         [
             "--suite",
-            "tissue-8raw",
+            "tissue-fixture-cohort",
             "--setting",
             "resolver_peak_duration_max= 2.0 ",
             "--output-root",
@@ -639,7 +639,7 @@ def test_cli_rejects_invalid_candidate_setting(
         main(
             [
                 "--suite",
-                "tissue-8raw",
+                "tissue-fixture-cohort",
                 "--setting",
                 setting,
                 "--output-root",
@@ -656,7 +656,7 @@ def test_run_validation_specs_rejects_wrong_raw_count(tmp_path: Path) -> None:
     data_dir.mkdir()
     (data_dir / "OnlyOne.raw").mkdir()
     spec = ValidationRunSpec(
-        name="tissue-8raw",
+        name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
         output_dir=tmp_path / "out",
@@ -685,7 +685,7 @@ def test_cli_refuses_full85_without_confirmation(tmp_path: Path, capsys) -> None
     exit_code = main(
         [
             "--suite",
-            "tissue-85raw",
+            "tissue-full-cohort",
             "--output-root",
             str(tmp_path / "validation_harness"),
             "--run-id",

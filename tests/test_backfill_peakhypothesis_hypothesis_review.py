@@ -3,16 +3,16 @@ import json
 from pathlib import Path
 
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_raw85_hypothesis_review as review,
+    backfill_peakhypothesis_acceptance_gate as slice_gate,
 )
 from xic_extractor.diagnostics import (
-    backfill_peakhypothesis_raw85_slice_gate as slice_gate,
+    backfill_peakhypothesis_hypothesis_review as review,
 )
 
 
 def test_builds_hypothesis_candidate_review_queue(tmp_path: Path) -> None:
-    index = review.build_raw85_hypothesis_review_queue(
-        raw85_slice_gate_rows=[
+    index = review.build_full_cohort_hypothesis_review_queue(
+        full_cohort_acceptance_gate_rows=[
             _slice_row(
                 source_family="FAM000572",
                 sample="Breast_Cancer_Tissue_pooled_QC5",
@@ -24,8 +24,8 @@ def test_builds_hypothesis_candidate_review_queue(tmp_path: Path) -> None:
                 consolidation_state="primary_loser",
                 consolidation_winner="FAM005516",
                 blockers=(
-                    "raw85_candidate_not_primary_matrix_row;"
-                    "raw85_candidate_family_consolidation_review_required"
+                    "full_cohort_candidate_not_primary_matrix_row;"
+                    "full_cohort_candidate_family_consolidation_review_required"
                 ),
             ),
             _slice_row(
@@ -38,7 +38,7 @@ def test_builds_hypothesis_candidate_review_queue(tmp_path: Path) -> None:
                 include_primary="TRUE",
                 consolidation_state="primary_winner",
                 consolidation_winner="FAM017068",
-                blockers="raw85_candidate_family_consolidation_review_required",
+                blockers="full_cohort_candidate_family_consolidation_review_required",
             ),
             {
                 **_slice_row(
@@ -50,12 +50,12 @@ def test_builds_hypothesis_candidate_review_queue(tmp_path: Path) -> None:
                     consolidation_winner="",
                     blockers="",
                 ),
-                "raw85_slice_gate_status": "candidate_no_regression",
+                "full_cohort_acceptance_gate_status": "candidate_no_regression",
             },
         ],
         source_run_id="unit-review",
     )
-    outputs = review.write_raw85_hypothesis_review_outputs(tmp_path, index)
+    outputs = review.write_full_cohort_hypothesis_review_outputs(tmp_path, index)
 
     assert len(index.rows) == 2
     fam572 = index.rows[0]
@@ -63,10 +63,10 @@ def test_builds_hypothesis_candidate_review_queue(tmp_path: Path) -> None:
     assert fam572["source_run_id"] == "unit-review"
     assert fam572["review_item_id"] == "HYPREV0001"
     assert fam572["source_feature_family_id"] == "FAM000572"
-    assert fam572["raw85_matched_peak_hypothesis_id"] == "FAM005540"
-    assert fam572["raw85_anchor_mz"] == "289.116"
-    assert fam572["raw85_anchor_rt"] == "13.0485"
-    assert fam572["raw85_primary_matrix_area"] == "48462.2"
+    assert fam572["full_cohort_matched_peak_hypothesis_id"] == "FAM005540"
+    assert fam572["full_cohort_anchor_mz"] == "289.116"
+    assert fam572["full_cohort_anchor_rt"] == "13.0485"
+    assert fam572["full_cohort_primary_matrix_area"] == "48462.2"
     assert fam572["review_focus"] == (
         "non_primary_candidate_needs_consolidation_policy"
     )
@@ -95,7 +95,7 @@ def test_builds_hypothesis_candidate_review_queue(tmp_path: Path) -> None:
     assert summary["candidate_queue_count"] == 2
 
 
-def test_raw85_hypothesis_review_cli_writes_review_queue(tmp_path: Path) -> None:
+def test_full_cohort_hypothesis_review_cli_writes_review_queue(tmp_path: Path) -> None:
     slice_tsv = tmp_path / "slice.tsv"
     output_dir = tmp_path / "out"
     _write_tsv(
@@ -106,29 +106,32 @@ def test_raw85_hypothesis_review_cli_writes_review_queue(tmp_path: Path) -> None
                 sample="Breast_Cancer_Tissue_pooled_QC5",
                 matched_family="FAM005540",
                 blockers=(
-                    "raw85_candidate_not_primary_matrix_row;"
-                    "raw85_candidate_family_consolidation_review_required"
+                    "full_cohort_candidate_not_primary_matrix_row;"
+                    "full_cohort_candidate_family_consolidation_review_required"
                 ),
             ),
         ],
     )
 
     from tools.diagnostics import (
-        backfill_peakhypothesis_raw85_hypothesis_review as cli,
+        backfill_peakhypothesis_hypothesis_review as cli,
     )
 
-    assert cli.main(
-        [
-            "--raw85-slice-gate-tsv",
-            str(slice_tsv),
-            "--output-dir",
-            str(output_dir),
-            "--source-run-id",
-            "unit-cli",
-        ],
-    ) == 1
+    assert (
+        cli.main(
+            [
+                "--full-cohort-acceptance-gate-tsv",
+                str(slice_tsv),
+                "--output-dir",
+                str(output_dir),
+                "--source-run-id",
+                "unit-cli",
+            ],
+        )
+        == 1
+    )
     rows = _read_tsv(
-        output_dir / "backfill_peakhypothesis_raw85_hypothesis_review_queue.tsv",
+        output_dir / "backfill_peakhypothesis_hypothesis_review_queue.tsv",
     )
     assert rows[0]["source_run_id"] == "unit-cli"
 
@@ -144,7 +147,7 @@ def _slice_row(
     include_primary: str = "FALSE",
     consolidation_state: str = "primary_loser",
     consolidation_winner: str = "FAM_WIN",
-    blockers: str = "raw85_candidate_family_consolidation_review_required",
+    blockers: str = "full_cohort_candidate_family_consolidation_review_required",
 ) -> dict[str, str]:
     return {
         "schema_version": slice_gate.SCHEMA_VERSION,
@@ -155,29 +158,29 @@ def _slice_row(
         "sample_stem": sample,
         "promotion_decision": "promote_matrix_write",
         "projected_matrix_value": primary_area,
-        "raw85_match_strategy": "hypothesis_anchor_mz_rt_sample",
-        "raw85_anchor_mz": anchor_mz,
-        "raw85_anchor_rt": anchor_rt,
-        "raw85_matched_feature_family_id": matched_family,
-        "raw85_matched_peak_hypothesis_id": matched_family,
-        "raw85_match_mz_delta_ppm": "0",
-        "raw85_match_rt_delta_min": "0",
-        "raw85_candidate_count": "1",
-        "raw85_exact_cell_found": "TRUE",
-        "raw85_cell_status": "rescued",
-        "raw85_primary_matrix_area": primary_area,
-        "raw85_primary_matrix_area_source": "gaussian15_positive_asls_residual",
-        "raw85_primary_matrix_area_reason": "unit",
-        "raw85_peak_start_rt": anchor_rt,
-        "raw85_peak_end_rt": "12.2",
-        "raw85_trace_quality": "owner_backfill",
-        "raw85_review_identity_decision": "audit_family",
-        "raw85_include_in_primary_matrix": include_primary,
-        "raw85_consolidation_state": consolidation_state,
-        "raw85_consolidation_winner_group_hypothesis_id": consolidation_winner,
-        "raw85_row_flags": "family_consolidation",
-        "raw85_slice_gate_status": "hypothesis_candidate_review",
-        "raw85_slice_blockers": blockers,
+        "full_cohort_match_strategy": "hypothesis_anchor_mz_rt_sample",
+        "full_cohort_anchor_mz": anchor_mz,
+        "full_cohort_anchor_rt": anchor_rt,
+        "full_cohort_matched_feature_family_id": matched_family,
+        "full_cohort_matched_peak_hypothesis_id": matched_family,
+        "full_cohort_match_mz_delta_ppm": "0",
+        "full_cohort_match_rt_delta_min": "0",
+        "full_cohort_candidate_count": "1",
+        "full_cohort_exact_cell_found": "TRUE",
+        "full_cohort_cell_status": "rescued",
+        "full_cohort_primary_matrix_area": primary_area,
+        "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "full_cohort_primary_matrix_area_reason": "unit",
+        "full_cohort_peak_start_rt": anchor_rt,
+        "full_cohort_peak_end_rt": "12.2",
+        "full_cohort_trace_quality": "owner_backfill",
+        "full_cohort_review_identity_decision": "audit_family",
+        "full_cohort_include_in_primary_matrix": include_primary,
+        "full_cohort_consolidation_state": consolidation_state,
+        "full_cohort_consolidation_winner_group_hypothesis_id": consolidation_winner,
+        "full_cohort_row_flags": "family_consolidation",
+        "full_cohort_acceptance_gate_status": "hypothesis_candidate_review",
+        "full_cohort_slice_blockers": blockers,
         "recommended_action": "review_hypothesis_anchor_candidate_before_activation",
     }
 

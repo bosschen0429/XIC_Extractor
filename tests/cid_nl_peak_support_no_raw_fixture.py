@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from tests.package2_no_raw_fixture import (
+from tests.processing_identity_no_raw_fixture import (
     NEUTRAL_LOSS_DA,
     PRECURSOR_MZ,
     PRODUCT_MZ,
-    Package2NoRawFixture,
+    ProcessingIdentityNoRawFixture,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
@@ -24,8 +24,8 @@ from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
-def issue161_peak(
-    fixture: Package2NoRawFixture,
+def cid_nl_peak(
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     mz: float = PRECURSOR_MZ,
@@ -53,7 +53,7 @@ def issue161_peak(
         rt_min=rt_left_min - 0.1,
         rt_max=rt_right_min + 0.1,
         ppm_tol=10.0,
-        source="issue161_no_raw_fixture",
+        source="cid_nl_peak_support_no_raw_fixture",
         acquisition_source_id=source.acquisition_source_id,
     )
     integration = IntegrationResult(
@@ -79,8 +79,8 @@ def issue161_peak(
     )
 
 
-def issue161_evidence(
-    fixture: Package2NoRawFixture,
+def cid_nl_evidence(
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     scan_number: int,
@@ -100,8 +100,8 @@ def issue161_evidence(
     )
 
 
-def issue161_unique_support(
-    fixture: Package2NoRawFixture,
+def cid_nl_unique_support(
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     peak: PeakObservationRef,
@@ -113,11 +113,11 @@ def issue161_unique_support(
         sample=fixture.sample(sample_stem),
         canonical_evidence=evidence,
         candidate_peaks=candidate_peaks or (peak,),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
 
 
-def issue161_support_policy() -> DdaCidNlPeakSupportPolicy:
+def cid_nl_support_policy() -> DdaCidNlPeakSupportPolicy:
     return DdaCidNlPeakSupportPolicy(
         precursor_tolerance_da=0.01,
         neutral_loss_tolerance_ppm=20.0,

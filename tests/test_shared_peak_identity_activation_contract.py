@@ -136,9 +136,10 @@ def test_peak_hypothesis_cross_mode_rescue_directly_blocks_rescue_cell() -> None
     assert row["candidate_container_id"] == "FAM011810"
     assert row["peak_hypothesis_id"] == "FAM011810::irt_green_core"
     assert row["activation_unit_scope"] == "sample_cell"
-    assert "peak_hypothesis_status=cross_mode_rescue_blocked" in row[
-        "source_evidence_tokens"
-    ]
+    assert (
+        "peak_hypothesis_status=cross_mode_rescue_blocked"
+        in row["source_evidence_tokens"]
+    )
 
 
 def test_peak_hypothesis_split_required_blocks_family_promotion() -> None:
@@ -212,9 +213,7 @@ def test_peak_hypothesis_core_without_typed_authority_requires_review() -> None:
     row = rows[0]
     assert row["activation_status"] == "review_required"
     assert row["product_effect"] == "review_only"
-    assert row["contract_rule_id"] == (
-        "peak_hypothesis_authority_not_product_facing"
-    )
+    assert row["contract_rule_id"] == ("peak_hypothesis_authority_not_product_facing")
     assert row["required_review_reason"] == (
         "typed_mode_hypothesis_or_locked_oracle_required"
     )
@@ -416,7 +415,9 @@ def test_positive_identity_without_peak_hypothesis_requires_review() -> None:
     assert row["contract_rule_id"] == "peak_hypothesis_unit_required"
 
 
-def test_activation_acceptance_requires_current_85raw_and_regression_pass() -> None:
+def test_activation_acceptance_requires_current_full_cohort_and_regression_pass() -> (
+    None
+):
     decision_rows = activation.build_activation_decision_rows(
         [
             _support_row(feature_family_id="FAM001", sample_id="S1"),
@@ -427,13 +428,13 @@ def test_activation_acceptance_requires_current_85raw_and_regression_pass() -> N
     failed = activation.summarize_activation_acceptance(
         decision_rows,
         blast_radius_current=False,
-        assessed_85raw_rows=100,
+        assessed_full_cohort_rows=100,
         must_not_regress_status="pass",
     )
     passed = activation.summarize_activation_acceptance(
         decision_rows,
         blast_radius_current=True,
-        assessed_85raw_rows=100,
+        assessed_full_cohort_rows=100,
         must_not_regress_status="pass",
     )
 
@@ -444,18 +445,17 @@ def test_activation_acceptance_requires_current_85raw_and_regression_pass() -> N
     assert passed["assessed_rows_basis"] == "activation_decision_rows_fallback"
 
 
-def test_activation_acceptance_infers_85raw_denominator_from_blast_radius_summary(
-) -> None:
-    assessed_rows, basis = activation.infer_85raw_assessed_rows(
+def test_activation_infers_full_cohort_blast_radius_denominator() -> None:
+    assessed_rows, basis = activation.infer_full_cohort_assessed_rows(
         [
             {
-                "scope": "all_available_85raw",
-                "artifact_id": "85raw_alignment_cells",
+                "scope": "all_available_full_cohort",
+                "artifact_id": "full_cohort_alignment_cells",
                 "assessed_row_count": "1854020",
             },
             {
-                "scope": "all_available_85raw",
-                "artifact_id": "85raw_alignment_cells",
+                "scope": "all_available_full_cohort",
+                "artifact_id": "full_cohort_alignment_cells",
                 "assessed_row_count": "1854020",
             },
             {
@@ -467,7 +467,7 @@ def test_activation_acceptance_infers_85raw_denominator_from_blast_radius_summar
     )
 
     assert assessed_rows == 1854020
-    assert basis == "blast_radius_summary:all_available_85raw:assessed_row_count"
+    assert basis == "blast_radius_summary:all_available_full_cohort:assessed_row_count"
 
 
 def test_must_not_regress_expectations_pass_expected_rows() -> None:
@@ -634,8 +634,9 @@ def test_must_not_regress_expectations_report_failures() -> None:
     assert "missing_row:missing_decision" in failures
 
 
-def test_activation_acceptance_fails_when_product_affecting_rows_exceed_threshold(
-) -> None:
+def test_activation_acceptance_fails_when_product_affecting_rows_exceed_threshold() -> (
+    None
+):
     decision_rows = activation.build_activation_decision_rows(
         [
             _support_row(feature_family_id=f"FAM{i:03d}", sample_id="S1")
@@ -646,7 +647,7 @@ def test_activation_acceptance_fails_when_product_affecting_rows_exceed_threshol
     summary = activation.summarize_activation_acceptance(
         decision_rows,
         blast_radius_current=True,
-        assessed_85raw_rows=100,
+        assessed_full_cohort_rows=100,
         must_not_regress_status="pass",
     )
 
