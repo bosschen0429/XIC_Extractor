@@ -238,8 +238,7 @@ def validate_quant_matrix_promotion_packet_v2(
     ):
         if payload.get(field) is not expected_bool:
             problems.append(
-                f"promotion packet v2 {field} must be "
-                f"{str(expected_bool).lower()}",
+                f"promotion packet v2 {field} must be {str(expected_bool).lower()}",
             )
     if (
         optional_int(payload.get("accepted_backfill_count", ""))
@@ -422,6 +421,7 @@ def _write_summary(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -594,12 +594,14 @@ def _validation_evidence_for_readiness_rerun(
             target_artifact.write_text(
                 json.dumps(downstream_payload, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
+                newline="\n",
             )
         raw_row["artifact_sha256"] = file_sha256(target_artifact)
     rerun_json = rerun_dir / validation_evidence_json.name
     rerun_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return rerun_json
 
@@ -698,11 +700,13 @@ def _localize_downstream_evidence_inputs(
     copied_summary.write_text(
         json.dumps(copied_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     downstream_row["artifact_sha256"] = file_sha256(copied_summary)
     evidence_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     normalized_rows = [
         {column: str(row.get(column, "")) for column in VALIDATION_EVIDENCE_ROW_COLUMNS}
@@ -724,6 +728,7 @@ def _localize_downstream_evidence_inputs(
     packet_outputs["summary_json"].write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -939,14 +944,17 @@ def _rewrite_readiness_input_paths(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
 def _artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
     return {
-        "path": path.resolve(strict=False).relative_to(
+        "path": path.resolve(strict=False)
+        .relative_to(
             base_dir.resolve(strict=False),
-        ).as_posix(),
+        )
+        .as_posix(),
         "sha256": file_sha256(path),
     }
 
@@ -962,9 +970,13 @@ def _source_argument(path: Path, *, source_root: Path) -> Path:
 
 def _source_relpath(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=True).relative_to(
-            source_root.resolve(strict=True),
-        ).as_posix()
+        return (
+            path.resolve(strict=True)
+            .relative_to(
+                source_root.resolve(strict=True),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path.resolve(strict=True))
 

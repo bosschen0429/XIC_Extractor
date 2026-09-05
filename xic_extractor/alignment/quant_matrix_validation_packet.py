@@ -112,6 +112,7 @@ def build_quant_matrix_validation_evidence_packet(
     evidence_json.write_text(
         json.dumps(evidence_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     write_tsv(
         evidence_rows_tsv,
@@ -150,6 +151,7 @@ def build_quant_matrix_validation_evidence_packet(
     summary_json.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return {
         "validation_evidence_json": evidence_json,
@@ -505,11 +507,11 @@ def _append_readiness_fixture_problems(
     fixture_dir = validation_evidence_json.parent / "readiness_integration_fixture"
     if not fixture_dir.exists():
         return
-    readiness_summary = fixture_dir / "readiness" / (
-        "quant_matrix_promotion_readiness_summary.json"
+    readiness_summary = (
+        fixture_dir / "readiness" / ("quant_matrix_promotion_readiness_summary.json")
     )
-    readiness_checks = fixture_dir / "readiness" / (
-        "quant_matrix_promotion_readiness_checks.tsv"
+    readiness_checks = (
+        fixture_dir / "readiness" / ("quant_matrix_promotion_readiness_checks.tsv")
     )
     if not readiness_summary.is_file():
         problems.append("readiness fixture summary is missing")
@@ -669,12 +671,8 @@ def _append_artifact_binding_problems(
             validate_quant_matrix_downstream_impact_smoke(
                 artifact,
                 artifact_root=source_root,
-                cell_provenance_contract_summary=(
-                    cell_provenance_contract_summary
-                ),
-                cell_provenance_minimal_fixture=(
-                    cell_provenance_minimal_fixture
-                ),
+                cell_provenance_contract_summary=(cell_provenance_contract_summary),
+                cell_provenance_minimal_fixture=(cell_provenance_minimal_fixture),
             )
         )
 

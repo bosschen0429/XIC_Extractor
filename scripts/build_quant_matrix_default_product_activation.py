@@ -364,9 +364,7 @@ def validate_quant_matrix_default_product_activation(
                 _fixture_contract_problems(
                     summary_json=artifacts["cell_provenance_summary"],
                     fixture_tsv=artifacts["cell_provenance_minimal_fixture"],
-                    expected_accepted_backfill_count=(
-                        expected_accepted_backfill_count
-                    ),
+                    expected_accepted_backfill_count=(expected_accepted_backfill_count),
                 )
             )
             expected_diff_summary = _expected_diff_summary_status(
@@ -375,9 +373,7 @@ def validate_quant_matrix_default_product_activation(
             problems.extend(
                 _expected_diff_payload_problems(
                     expected_diff_summary,
-                    expected_accepted_backfill_count=(
-                        expected_accepted_backfill_count
-                    ),
+                    expected_accepted_backfill_count=(expected_accepted_backfill_count),
                 )
             )
             _append_summary_payload_stale_problems(
@@ -606,10 +602,7 @@ def _cell_provenance_completeness_problems(
         column for column in matrix_header if column not in {"Mz", "RT"}
     )
     non_empty_matrix_cells = sum(
-        1
-        for row in matrix_rows
-        for sample in sample_columns
-        if row.get(sample, "")
+        1 for row in matrix_rows for sample in sample_columns if row.get(sample, "")
     )
     provenance_rows = read_tsv_required(
         cell_provenance_tsv,
@@ -773,9 +766,7 @@ def _failed_check_problems(rows: Sequence[Mapping[str, str]]) -> list[str]:
             continue
         check_id = row.get("check_id", "")
         if check_id.endswith("_matches_real_quant_matrix_bundle_reference"):
-            label = check_id.removesuffix(
-                "_matches_real_quant_matrix_bundle_reference"
-            )
+            label = check_id.removesuffix("_matches_real_quant_matrix_bundle_reference")
             problems.append(
                 f"{label} does not match real/candidate QuantMatrix bundle reference"
             )
@@ -912,6 +903,7 @@ def _write_summary(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -1100,10 +1092,8 @@ def _externalized_fixture_source_entry(
 def _externalized_validation_artifact_path(path: Path, *, output_dir: Path) -> Path:
     relpath = path.relative_to(output_dir)
     return (
-        ROOT
-        / "local_validation_artifacts/externalized_superpowers_validation/"
-        "quant_matrix_default_product_activation_v1"
-        / relpath
+        ROOT / "local_validation_artifacts/externalized_superpowers_validation/"
+        "quant_matrix_default_product_activation_v1" / relpath
     )
 
 
@@ -1112,10 +1102,9 @@ def _maybe_externalize_generated_artifact(path: Path, *, output_dir: Path) -> Pa
         path,
         output_dir=output_dir,
     )
-    if (
-        output_dir.resolve(strict=False)
-        != (ROOT / DEFAULT_PRODUCT_ACTIVATION_OUTPUT_DIR).resolve(strict=False)
-    ):
+    if output_dir.resolve(strict=False) != (
+        ROOT / DEFAULT_PRODUCT_ACTIVATION_OUTPUT_DIR
+    ).resolve(strict=False):
         return externalized_path
     externalized_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(path, externalized_path)
@@ -1217,18 +1206,26 @@ def _resolve_source(path: Path, *, source_root: Path) -> Path:
 
 def _source_relpath(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=False).relative_to(
-            source_root.resolve(strict=False),
-        ).as_posix()
+        return (
+            path.resolve(strict=False)
+            .relative_to(
+                source_root.resolve(strict=False),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path)
 
 
 def _relpath(path: Path, base_dir: Path) -> str:
     try:
-        return path.resolve(strict=False).relative_to(
-            base_dir.resolve(strict=False),
-        ).as_posix()
+        return (
+            path.resolve(strict=False)
+            .relative_to(
+                base_dir.resolve(strict=False),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path)
 

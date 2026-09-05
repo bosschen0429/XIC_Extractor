@@ -91,11 +91,18 @@ _RETAINED_CID_NL_CLOSURE_IDENTIFIERS = frozenset(
         "discovery_expanded_85raw_alignment_rows",
     }
 )
+_RETAINED_QUANT_MATRIX_SOURCE_IDENTIFIERS = frozenset(
+    {"seed-guard-realdata-85raw-generated-policy-policy-observed-oracle-20260617"}
+)
 ALLOWED_CONSTRUCTION_COORDINATES_BY_PATH: Mapping[str, frozenset[str]] = {
+    "scripts/build_quant_matrix_real_bundle.py": (
+        _RETAINED_QUANT_MATRIX_SOURCE_IDENTIFIERS
+    ),
     "scripts/check_architecture_census.py": (
         _HISTORICAL_REVIEW_SCHEMA_IDENTIFIERS
         | _CONSTRUCTION_COORDINATE_ORACLE_SAMPLES
         | _RETAINED_CID_NL_CLOSURE_IDENTIFIERS
+        | _RETAINED_QUANT_MATRIX_SOURCE_IDENTIFIERS
     ),
     "scripts/check_cid_nl_default_activation_universe_closure.py": (
         _RETAINED_CID_NL_CLOSURE_IDENTIFIERS

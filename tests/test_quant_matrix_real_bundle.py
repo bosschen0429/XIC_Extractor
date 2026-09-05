@@ -11,12 +11,9 @@ from scripts.build_quant_matrix_real_bundle import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_real_bundle_schema.v1.json"
-)
+SCHEMA_PATH = ROOT / "docs/superpowers/schemas/quant_matrix_real_bundle_schema.v1.json"
 RETAINED_SUMMARY = (
-    ROOT
-    / "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    ROOT / "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
     "quant_matrix_real_bundle_summary.json"
 )
 
@@ -49,6 +46,37 @@ def test_retained_seed_guard_copy_hash_matches_summary() -> None:
     assert _sha256(copied) == entry["sha256"]
 
 
+def test_tracked_default_bundle_and_activation_validate_without_local_artifacts(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    subprocess.run(
+        [
+            "git",
+            "checkout-index",
+            "--all",
+            f"--prefix={checkout.as_posix()}/",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    for script in (
+        "build_quant_matrix_real_bundle.py",
+        "build_quant_matrix_default_product_activation.py",
+    ):
+        result = subprocess.run(
+            [sys.executable, str(checkout / "scripts" / script), "--check-only"],
+            cwd=checkout,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_real_bundle_builds_self_validating_contract_outputs(tmp_path: Path) -> None:
     fixture = _write_source_run_fixture(tmp_path)
 
@@ -59,13 +87,16 @@ def test_real_bundle_builds_self_validating_contract_outputs(tmp_path: Path) -> 
         downstream_scope="synthetic_current_authority_replay",
     )
 
-    assert validate_quant_matrix_real_bundle(
-        summary_json=outputs["summary_json"],
-        repo_root=tmp_path,
-        expected_source_run_id="synthetic-current-511-authority-replay",
-        expected_downstream_scope="synthetic_current_authority_replay",
-        expected_accepted_backfill_count=1,
-    ) == []
+    assert (
+        validate_quant_matrix_real_bundle(
+            summary_json=outputs["summary_json"],
+            repo_root=tmp_path,
+            expected_source_run_id="synthetic-current-511-authority-replay",
+            expected_downstream_scope="synthetic_current_authority_replay",
+            expected_accepted_backfill_count=1,
+        )
+        == []
+    )
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
     cell_contract = outputs["cell_provenance_summary_json"]
     review_contract = outputs["review_rows_summary_json"]
@@ -73,20 +104,16 @@ def test_real_bundle_builds_self_validating_contract_outputs(tmp_path: Path) -> 
     assert outputs["cell_provenance_minimal_fixture"].is_file()
     assert review_contract.is_file()
     assert outputs["review_rows_minimal_fixture"].is_file()
-    assert (
-        summary["artifacts"]["cell_provenance_summary"]["sha256"]
-        == _sha256(cell_contract)
+    assert summary["artifacts"]["cell_provenance_summary"]["sha256"] == _sha256(
+        cell_contract
     )
-    assert (
-        summary["artifacts"]["review_rows_summary"]["sha256"]
-        == _sha256(review_contract)
+    assert summary["artifacts"]["review_rows_summary"]["sha256"] == _sha256(
+        review_contract
     )
     assert summary["artifacts"]["cell_provenance"]["retention_decision"] == (
         "externalize"
     )
-    assert summary["artifacts"]["review_rows"]["retention_decision"] == (
-        "externalize"
-    )
+    assert summary["artifacts"]["review_rows"]["retention_decision"] == ("externalize")
     assert summary["accepted_backfill_count"] == 1
     assert summary["validation_status"] == "contract_ready_science_inconclusive"
     assert summary["product_writer_changed"] is False
@@ -123,8 +150,7 @@ def test_real_bundle_check_rejects_tampered_source_copy(tmp_path: Path) -> None:
         downstream_scope="synthetic_current_authority_replay",
     )
     source_copy = (
-        fixture["output_dir"]
-        / "source_artifacts/standard_peak_activation_values.tsv"
+        fixture["output_dir"] / "source_artifacts/standard_peak_activation_values.tsv"
     )
     source_copy.write_text(
         source_copy.read_text(encoding="utf-8").replace("222.2", "333.3"),
@@ -248,9 +274,7 @@ def test_real_bundle_check_rejects_missing_or_tampered_minimal_fixture(
         repo_root=tmp_path,
         downstream_scope="synthetic_current_authority_replay",
     )
-    fixture_text = outputs["review_rows_minimal_fixture"].read_text(
-        encoding="utf-8"
-    )
+    fixture_text = outputs["review_rows_minimal_fixture"].read_text(encoding="utf-8")
     outputs["review_rows_minimal_fixture"].write_text(
         fixture_text.replace("review_only", "authority_changed", 1),
         encoding="utf-8",
@@ -302,13 +326,16 @@ def test_real_bundle_can_externalize_review_html(tmp_path: Path) -> None:
         rendered_review_dir=rendered_review_dir,
     )
 
-    assert validate_quant_matrix_real_bundle(
-        summary_json=outputs["summary_json"],
-        repo_root=tmp_path,
-        expected_source_run_id="synthetic-current-511-authority-replay",
-        expected_downstream_scope="synthetic_current_authority_replay",
-        expected_accepted_backfill_count=1,
-    ) == []
+    assert (
+        validate_quant_matrix_real_bundle(
+            summary_json=outputs["summary_json"],
+            repo_root=tmp_path,
+            expected_source_run_id="synthetic-current-511-authority-replay",
+            expected_downstream_scope="synthetic_current_authority_replay",
+            expected_accepted_backfill_count=1,
+        )
+        == []
+    )
 
     contract_html = fixture["output_dir"] / "review/quant_matrix_review_report.html"
     rendered_html = rendered_review_dir / "quant_matrix_review_report.html"

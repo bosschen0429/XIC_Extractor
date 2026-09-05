@@ -54,9 +54,7 @@ DEFAULT_ACTIVATION_DRY_RUN_SUMMARY_JSON = (
 )
 
 PRODUCT_READY_CLOSEOUT_SCHEMA = "quant_matrix_product_ready_closeout_v1"
-PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA = (
-    "quant_matrix_product_ready_closeout_check_v1"
-)
+PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA = "quant_matrix_product_ready_closeout_check_v1"
 
 CHECK_COLUMNS = (
     "schema_version",
@@ -461,6 +459,7 @@ def _write_summary(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -501,8 +500,7 @@ def _append_expected_field_problems(
     ):
         if payload.get(field) is not expected_bool:
             problems.append(
-                f"product ready closeout {field} must be "
-                f"{str(expected_bool).lower()}",
+                f"product ready closeout {field} must be {str(expected_bool).lower()}",
             )
 
 
@@ -606,18 +604,24 @@ def _output_artifacts(
 
 def _artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
     return {
-        "path": path.resolve(strict=False).relative_to(
+        "path": path.resolve(strict=False)
+        .relative_to(
             base_dir.resolve(strict=False),
-        ).as_posix(),
+        )
+        .as_posix(),
         "sha256": file_sha256(path),
     }
 
 
 def _source_relpath(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=True).relative_to(
-            source_root.resolve(strict=True),
-        ).as_posix()
+        return (
+            path.resolve(strict=True)
+            .relative_to(
+                source_root.resolve(strict=True),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path.resolve(strict=True))
 

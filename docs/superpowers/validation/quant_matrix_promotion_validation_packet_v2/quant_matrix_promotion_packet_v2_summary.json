@@ -1,47 +1,47 @@
 {
   "accepted_backfill_count": 511,
+  "artifact_role": "promotion_candidate_packet_v2",
   "artifacts": {
     "real_bundle_readiness_checks_tsv": {
       "path": "real_bundle_readiness/quant_matrix_promotion_readiness_checks.tsv",
-      "sha256": "2B33AD681714F6E968546D7112F80F7138DF785656F3E8D6D07F2A78FCC3890D"
+      "sha256": "877852EEDF5F29F605A49BE37BABB75942D6F150C795729C551504BA267F64B6"
     },
     "real_bundle_readiness_summary_json": {
       "path": "real_bundle_readiness/quant_matrix_promotion_readiness_summary.json",
-      "sha256": "0024DC45776F438A19CD397E4FF9909DD9D00276F59E48A4731E038224C69A40"
+      "sha256": "1EECFFD96CD957B0B8428AABDCFB973AA9491E83C2E20ABD21B7F3C3F71D7D48"
     },
     "validation_evidence_json": {
       "path": "quant_matrix_validation_evidence_v1.json",
-      "sha256": "FC97F9D0789E465A2DE33D0B5DF37158152CE39837D1AF78AE145BB621C1489F"
+      "sha256": "1A7A0F631CABDBFC82F97BA2ACC225E8E41BFEF26E7C81DD31A9A6DD049E039B"
     },
     "validation_evidence_rows_tsv": {
       "path": "quant_matrix_validation_evidence_rows.tsv",
-      "sha256": "499E4CC985FD211863D10A7617D803C319EC283AD3FDA8A951B78B7F266FA095"
+      "sha256": "F72D654DF40C7F856E098624308873AA203BF510978CD13D5C1963854E70FB80"
     },
     "validation_evidence_summary_json": {
       "path": "quant_matrix_validation_evidence_summary.json",
-      "sha256": "C3D76E6BF491673FEDCE0E755CDC72D17E2A5F6E031B71004FB6FAD8CE7B6C0E"
+      "sha256": "33F0DD9D8E1632D703214443988256ED859341D1F405B0730DCACC733F1FE788"
     }
   },
-  "authority_statement": "Phase 8 promotion packet v2 is a Product Ready candidate packet only. It may promote a later default quant matrix activation gate, but this artifact itself is read-only and does not change ProductWriter defaults or matrix-writing authority.",
+  "authority_statement": "Promotion candidate packet v2 is a Product Ready candidate packet only. It may promote a later default quant matrix activation gate, but this artifact itself is read-only and does not change ProductWriter defaults or matrix-writing authority.",
   "broad_backfill_unparked": false,
   "contract_correctness_status": "pass",
   "default_quant_matrix_changed": false,
   "downstream_scope": "current_511_authority_replay",
   "input_artifacts": {
-    "heldout_oracle_artifact": "output/productization_realdata_seed_guard_85raw_20260617/heldout_trace_reintegration_oracle_low_height_low_scan_clean_probe_smoke/summary.json",
-    "heldout_oracle_artifact_sha256": "9BDF20941067B3BA67C2D7E9A5A727ADCAF015207AB479E5DD69B0436AAF0F0B",
-    "large_cohort_artifact": "output/productization_realdata_seed_guard_85raw_20260617/consolidated_no_raw_productization/standard_peak_activation_inputs/standard_peak_activation_inputs_summary.json",
-    "large_cohort_artifact_sha256": "F92C35FD65D5C210CC82AF49B5E4A7EFE38A2F19D067C74E083782F12AF0DD57",
+    "heldout_oracle_artifact": "docs/superpowers/validation/quant_matrix_real_bundle_v1/source_artifacts/heldout_oracle_summary.json",
+    "heldout_oracle_artifact_sha256": "CE5FE3329A553F30ADEF8D104DCCF579DEE8DD9ABDCC9C77DB443733ECB8DE63",
+    "large_cohort_artifact": "docs/superpowers/validation/quant_matrix_real_bundle_v1/source_artifacts/cohort_activation_summary.json",
+    "large_cohort_artifact_sha256": "8E38C2788405407A920A523E35C6BF9E692223088516A65E8E6F62BE61D8AD0C",
     "real_bundle_summary_json": "docs/superpowers/validation/quant_matrix_real_bundle_v1/quant_matrix_real_bundle_summary.json",
-    "real_bundle_summary_json_sha256": "820907AD1890B6EF7B5039AA3A59B8B2D9D65E44C7EE7D1B46797D2FC40EDB38"
+    "real_bundle_summary_json_sha256": "BD6AF64D05339D62C58A1AC05AE44A7AD9CC90EE88ED92D0CFDB81B91ACA3E59"
   },
   "may_promote_default_quant_matrix": true,
   "missing_science_evidence": [],
-  "packet_id": "quant-matrix-promotion-validation-packet-v2-20260619",
-  "phase": "phase8_promotion_packet_v2",
+  "packet_id": "quant-matrix-promotion-validation-packet-v2",
   "product_writer_changed": false,
   "production_ready": true,
-  "raw_or_85raw_ran": false,
+  "raw_or_full_cohort_ran": false,
   "read_only": true,
   "readiness_label": "production_ready_candidate_packet",
   "requested_readiness_label": "production_ready",
@@ -51,8 +51,8 @@
   "source_run_id": "seed-guard-realdata-85raw-generated-policy-policy-observed-oracle-20260617",
   "status": "pass",
   "validation_tiers": {
-    "85raw_large_cohort": "pass",
     "downstream_impact_smoke": "pass",
+    "full_cohort": "pass",
     "heldout_oracle": "pass"
   },
   "write_authority": false

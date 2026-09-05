@@ -1,5 +1,6 @@
 {
   "accepted_backfill_count": 511,
+  "artifact_role": "real_quant_matrix_bundle",
   "artifacts": {
     "baseline_quant_matrix": {
       "path": "inputs/baseline_quant_matrix.tsv",
@@ -21,7 +22,7 @@
     "cell_provenance_summary": {
       "path": "quant_matrix_version/cell_provenance_summary.json",
       "retention_decision": "keep_summary",
-      "sha256": "2BF8DDBF8A1F0B081F552638BD3CCED7AB71EA8369B95DB78A81795DDB0B34B5"
+      "sha256": "7DDBB36C1052913C18EABDEF054A3772FAA05AFC46A060C023265D6BE16D39B5"
     },
     "downstream_impact_rows_tsv": {
       "path": "downstream_impact/quant_matrix_downstream_impact_rows.tsv",
@@ -29,7 +30,7 @@
     },
     "downstream_impact_summary_json": {
       "path": "downstream_impact/quant_matrix_downstream_impact_smoke.json",
-      "sha256": "E2CC7B48F4437D8E2FAC23B4F1AF28BA0D4CE28947DFE5E014F5549A06204132"
+      "sha256": "CF0D16FAE337F187CEC47F2895E8955EE3D3D6603CE13F3027382846D2FCC39A"
     },
     "expected_diff": {
       "path": "inputs/expected_diff.tsv",
@@ -57,7 +58,7 @@
     },
     "readiness_summary_json": {
       "path": "readiness/quant_matrix_promotion_readiness_summary.json",
-      "sha256": "FEE5CF5E39E6E352BDD0CCB6541B85E5984405819CCD0B6FB6965DD59003282C"
+      "sha256": "D86412FBA96EB95F1943D39585F5FFD9811E2F7B64A5E13EFA416558038F2FC4"
     },
     "review_html": {
       "externalized": true,
@@ -69,7 +70,7 @@
     },
     "review_html_summary_json": {
       "path": "review/quant_matrix_review_report_summary.json",
-      "sha256": "13062FBA0148E955C67F3F6DCF664D5AE6C0CE220C8AFF5F4D10A85FA4A7D379"
+      "sha256": "FCED016303B875CB1612448494B273A6F79B64B1BB97353A0049A4E895BDF0D9"
     },
     "review_rows": {
       "externalized": true,
@@ -87,11 +88,11 @@
     "review_rows_summary": {
       "path": "review/quant_matrix_review_rows_summary.json",
       "retention_decision": "keep_summary",
-      "sha256": "1E548C1992FACEF2F966B6D3561D22910FF583C8A9A0F58EF30F6CF3EAB6DAE0"
+      "sha256": "D4831483C745C84C85C50B602E1522DACA5E358C47FB8591C3DD2169594CDC85"
     },
     "review_summary_json": {
       "path": "review/quant_matrix_review_summary.json",
-      "sha256": "4BFF6D27F2412BD4BD3FDDD2276D1E4B24868AA3796DABC17CFE0A19AE18B068"
+      "sha256": "ACEBBA6A524F9CC2F0ADE5B6D52C0DB8D3A119A895FE74930CD81BA4F3B36A89"
     },
     "row_summary": {
       "path": "quant_matrix_version/row_summary.tsv",
@@ -134,9 +135,8 @@
       "sha256": "6B8E692311619C32FA6DC9B0860D46D07066AEE39F3A0E821C90278F8268A95F"
     }
   },
-  "phase": "phase7_real_quant_matrix_bundle",
   "product_writer_changed": false,
-  "raw_or_85raw_ran": false,
+  "raw_or_full_cohort_ran": false,
   "read_only": true,
   "schema_version": "quant_matrix_real_bundle_v1",
   "scorer_ran": false,

@@ -39,14 +39,12 @@ DEFAULT_OUTPUT_DIR = Path(
     "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v1",
 )
 DEFAULT_LARGE_COHORT_ARTIFACT = Path(
-    "output/productization_realdata_seed_guard_85raw_20260617/"
-    "consolidated_no_raw_productization/standard_peak_activation_inputs/"
-    "standard_peak_activation_inputs_summary.json",
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "source_artifacts/cohort_activation_summary.json",
 )
 DEFAULT_HELDOUT_ORACLE_ARTIFACT = Path(
-    "output/productization_realdata_seed_guard_85raw_20260617/"
-    "heldout_trace_reintegration_oracle_low_height_low_scan_clean_probe_smoke/"
-    "summary.json",
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "source_artifacts/heldout_oracle_summary.json",
 )
 DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v1"
 DEFAULT_COHORT_ID = "seed-guard-realdata-full_cohort-consolidated-20260617"

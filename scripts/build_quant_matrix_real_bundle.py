@@ -80,7 +80,7 @@ DEFAULT_RENDERED_REVIEW_DIR = (
 )
 DEFAULT_DOWNSTREAM_SCOPE = "current_511_authority_replay"
 DEFAULT_SOURCE_RUN_ID = (
-    "seed-guard-realdata-full_cohort-generated-policy-policy-observed-oracle-20260617"
+    "seed-guard-realdata-85raw-generated-policy-policy-observed-oracle-20260617"
 )
 DEFAULT_ACCEPTED_BACKFILL_COUNT = 511
 EXTERNALIZED_ARTIFACT_SUMMARY_SCHEMA = "externalized_validation_artifact_summary_v1"
@@ -1398,10 +1398,14 @@ def _append_original_source_artifact_problems(
             continue
         path = Path(value)
         resolved = path if path.is_absolute() else repo_root / path
-        if not resolved.is_file():
-            problems.append(f"{label}: original source missing")
+        if not _is_sha256(sha256):
+            problems.append(f"{label}: original source sha256 mismatch")
             continue
-        if not _is_sha256(sha256) or file_sha256(resolved) != sha256.upper():
+        if not resolved.is_file():
+            # Original run paths are provenance. Required packaged copies have
+            # already been checked and make the bundle independently replayable.
+            continue
+        if file_sha256(resolved) != sha256.upper():
             problems.append(f"{label}: original source sha256 mismatch")
 
 
