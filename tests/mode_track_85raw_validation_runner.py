@@ -9,11 +9,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
+from tests import mode_track_raw_validation_fixture as gate_c_fixture
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 
 EXPECTED_SAMPLE_COUNT = 85
-MODULE_NAME = "tests.issue180_m9_gate_c_85raw_runner"
+MODULE_NAME = "tests.mode_track_85raw_validation_runner"
 _CODE_SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 
@@ -271,7 +271,7 @@ def build_launch_inputs(
             "transaction_receipt": str(final_output_dir / "transaction_receipt.json"),
         }
     manifest: dict[str, object] = {
-        "schema_version": "issue180_m9_gate_c_launch_manifest_v2",
+        "schema_version": "mode_track_85raw_validation_gate_c_launch_manifest_v2",
         "stage": stage,
         "launch_contract": gate_c_fixture.gate_c_launch_contract(),
         "code_sha": code_sha,

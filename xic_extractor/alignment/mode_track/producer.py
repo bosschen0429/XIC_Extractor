@@ -69,7 +69,9 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     tuple[ModeTrackAssignmentBatch, ...],
     ModeTrackFitOnceSource,
 ]:
-    """Run the existing M3/M8 owners for one bounded CID-NL support universe."""
+    """Run the existing identity-trajectory and ModeTrack model/assignment
+    owners for one bounded CID-NL support universe.
+    """
 
     if not sample_assessments:
         raise ModeTrackProducerError("sample_assessments must not be empty")
@@ -309,7 +311,9 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
     tuple[ModeTrackAssignmentBatch, ...],
     ModeTrackFitOnceSource,
 ]:
-    """Run M3/M8 from workflow-neutral captured MS1 hypotheses."""
+    """Run identity-trajectory and ModeTrack model/assignment owners from
+    workflow-neutral captured MS1 hypotheses.
+    """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackProducerError("processing_owners must be owner-validated")

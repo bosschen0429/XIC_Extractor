@@ -31,10 +31,22 @@ import grimp
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOTS = ("xic_extractor", "gui", "scripts", "tools")
 STATIC_DEPENDENCY_SCOPE = "grimp_static_import_graph"
-CONSTRUCTION_PHASE_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])phase(?:\s+|[_-])?\d+(?!\d)",
-    re.IGNORECASE,
+CONSTRUCTION_MILESTONE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])(?:(?i:phase)(?:\s+|[_-])?\d+|[Mm]\d+)"
+    r"(?![A-Za-z0-9])",
 )
+_LEGACY_REVIEW_SCHEMA_IDENTIFIERS = frozenset(
+    {
+        "issue180_m9_gate_c_manual_review_v1",
+        "issue180_m9_gate_c_observation_replay_v1",
+    }
+)
+LEGACY_MILESTONE_IDENTIFIERS: Mapping[str, frozenset[str]] = {
+    "scripts/check_architecture_census.py": _LEGACY_REVIEW_SCHEMA_IDENTIFIERS,
+    "xic_extractor/alignment/mode_track_table_finalization.py": (
+        _LEGACY_REVIEW_SCHEMA_IDENTIFIERS
+    ),
+}
 _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
     {
         "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -356,10 +368,10 @@ def validate_durable_module_language(
         if relative_path.parts[0] not in REPOSITORY_ROOTS:
             continue
         path_key = relative_path.as_posix()
-        path_match = CONSTRUCTION_PHASE_PATTERN.search(path_key)
+        path_match = CONSTRUCTION_MILESTONE_PATTERN.search(path_key)
         if path_match is not None:
             problems.append(
-                f"{path_key}: durable module path uses construction phase identity"
+                f"{path_key}: durable module path uses construction milestone identity"
             )
         source_path = repo_root / relative_path
         try:
@@ -368,10 +380,15 @@ def validate_durable_module_language(
             problems.append(f"{path_key}: durable module language scan failed: {exc}")
             continue
         for line_number, line in enumerate(source.splitlines(), start=1):
-            if CONSTRUCTION_PHASE_PATTERN.search(line) is not None:
+            durable_line = line
+            for legacy_identifier in LEGACY_MILESTONE_IDENTIFIERS.get(
+                path_key, ()
+            ):
+                durable_line = durable_line.replace(legacy_identifier, "")
+            if CONSTRUCTION_MILESTONE_PATTERN.search(durable_line) is not None:
                 problems.append(
                     f"{path_key}:{line_number}: durable module language uses "
-                    "construction phase identity; name the owned role instead"
+                    "construction milestone identity; name the owned role instead"
                 )
     return sorted(set(problems))
 

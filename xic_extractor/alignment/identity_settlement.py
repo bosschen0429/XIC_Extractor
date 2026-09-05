@@ -1,7 +1,8 @@
 """Shadow-only cross-sample identity model and split-lineage settlement.
 
-This module consumes existing Alignment, M1 cell, and M2 Backfill facts without
-changing any of them.  It grants no Matrix, writer, selected-value, or product
+This module consumes existing Alignment, CellObservationRef, and Backfill
+decision facts without changing any of them.  It grants no Matrix, writer,
+selected-value, or product
 authority.  Callers must supply preregistered identity and trajectory evidence;
 this owner deliberately contains no universal scientific threshold.
 """
@@ -265,7 +266,9 @@ class SplitComponentEvidence:
         if _mint_token is not _SPLIT_COMPONENT_MINT_TOKEN:
             raise ValueError("split component evidence must be minted by its owner")
         if not isinstance(self.parent_group, ConservativeBackfillGroupFacts):
-            raise ValueError("split components require exact parent M2 facts")
+            raise ValueError(
+                "split components require exact parent Backfill decision facts"
+            )
         _required_text(self.component_id, field="component_id")
         if not self.peak_observations or any(
             not isinstance(observation, PeakObservationRef)
@@ -311,7 +314,7 @@ class SplitComponentEvidence:
             for decision in self.candidate_mapping_decisions
         ):
             raise ValueError(
-                "candidate_mapping_decisions must be owner-minted M2 decisions"
+                "candidate_mapping_decisions must be owner-minted Backfill decisions"
             )
         _validate_shadow_authority(
             validation_status=self.validation_status,
@@ -340,7 +343,9 @@ def mint_split_component_evidence(
     )
     parent_cells = {id(cell) for cell in parent_group.source_cells}
     if any(id(cell) not in parent_cells for cell in direct_support_cells):
-        raise ValueError("component direct evidence is outside parent M1 cells")
+        raise ValueError(
+            "component direct evidence is outside parent CellObservationRef cells"
+        )
     direct_observations = {
         id(cell.peak_observation)
         for cell in direct_support_cells
@@ -375,7 +380,7 @@ def mint_split_component_evidence(
 @final
 @dataclass(frozen=True, slots=True)
 class SplitComponentPartitionEvidence:
-    """Owner-minted exact component partition and M2 allocation closure."""
+    """Owner-minted exact component partition and Backfill allocation closure."""
 
     parent_group: ConservativeBackfillGroupFacts
     components: tuple[SplitComponentEvidence, ...]
@@ -568,7 +573,7 @@ def assess_split_lineage(
     """Build one explicit split state; no time/retry input can advance it."""
 
     if not isinstance(parent_group, ConservativeBackfillGroupFacts):
-        raise TypeError("split lineage requires frozen M2 parent facts")
+        raise TypeError("split lineage requires frozen Backfill parent facts")
     if not isinstance(identity_settlement, IdentitySettlementDecision):
         raise TypeError("split lineage requires a typed identity settlement")
     if identity_settlement.evidence.group is not parent_group.group_context.group:
@@ -739,10 +744,12 @@ def _validate_components(
             )
         ):
             raise ValueError(
-                "component evidence references a different M2 mapping closure"
+                "component evidence references a different Backfill mapping closure"
             )
         if any(id(cell) not in parent_cells for cell in component.direct_support_cells):
-            raise ValueError("component direct evidence is outside parent M1 cells")
+            raise ValueError(
+                "component direct evidence is outside parent CellObservationRef cells"
+            )
         if any(
             universe_id not in universes_by_id
             for universe_id in component.candidate_universe_artifact_ids
@@ -791,10 +798,11 @@ def _validate_candidate_universes(
         not isinstance(universe, ConservativeBackfillRecoveryCandidateUniverse)
         for universe in candidate_universes
     ):
-        raise ValueError("candidate universes must be owner-bound M2 receipts")
+        raise ValueError("candidate universes must be owner-bound Backfill receipts")
     if candidate_universes:
         raise ValueError(
-            "M3 recovery candidate membership requires an owner-backed complete "
+            "identity-settlement recovery candidate membership requires an "
+            "owner-backed complete "
             "same-target group universe"
         )
     return candidate_universes
@@ -807,10 +815,13 @@ def _validate_candidate_mapping_decisions(
         not isinstance(decision, ConservativeBackfillCellDecision)
         for decision in candidate_mapping_decisions
     ):
-        raise ValueError("candidate mapping closure requires owner-minted M2 decisions")
+        raise ValueError(
+            "candidate mapping closure requires owner-minted Backfill decisions"
+        )
     if candidate_mapping_decisions:
         raise ValueError(
-            "M3 mapping decisions require an owner-backed complete same-target "
+            "identity-settlement mapping decisions require an owner-backed "
+            "complete same-target "
             "group universe"
         )
     return ()

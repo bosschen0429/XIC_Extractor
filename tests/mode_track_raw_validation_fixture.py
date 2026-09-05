@@ -73,8 +73,10 @@ SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
 NEUTRAL_LOSS_DA = 116.0474
 VALIDATION_STATUS = "diagnostic_only"
-_HEARTBEAT_SCHEMA_VERSION = "issue180_m9_validation_heartbeat_v1"
-_RUNTIME_TELEMETRY_UNAVAILABLE_REASON = "not_collected_by_issue180_m9_validation"
+_HEARTBEAT_SCHEMA_VERSION = "mode_track_85raw_validation_heartbeat_v1"
+_RUNTIME_TELEMETRY_UNAVAILABLE_REASON = (
+    "not_collected_by_mode_track_85raw_validation"
+)
 RUN_CONTEXT_FIELDS = frozenset(
     (
         "code_sha processing_request_id processing_attempt_id call_cost "
@@ -134,7 +136,7 @@ class _ValidatedGateCReviewSet:
 
 def gate_c_launch_contract() -> dict[str, object]:
     return {
-        "schema_version": "issue180_m9_gate_c_launch_contract_v2",
+        "schema_version": "mode_track_85raw_validation_gate_c_launch_contract_v2",
         "validation_status": VALIDATION_STATUS,
         "precursor_mz": PRECURSOR_MZ,
         "neutral_loss_da": NEUTRAL_LOSS_DA,
@@ -142,9 +144,9 @@ def gate_c_launch_contract() -> dict[str, object]:
         "trajectory_policy": asdict(_mode_track_trajectory_policy()),
         "call_budget": {
             "discovery_raw_open_count_max": 85,
-            "m7_raw_open_count_max": 85,
+            "runtime_raw_open_count_max": 85,
             "total_raw_open_count_max": 170,
-            "m7_xic_batch_count_max": 85,
+            "runtime_xic_batch_count_max": 85,
         },
         "product_authority": "none_before_checked_c2",
     }
@@ -158,7 +160,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         raw_stem=SAMPLE_STEM,
         injection_order=1,
         sample_role="study_sample",
-        batch_id="issue180-m9-gate-b",
+        batch_id="mode-track-85raw-validation-gate-b",
         matrix_type="breast_tissue",
         group="tumor",
     )
@@ -168,7 +170,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         dll_dir=dll_dir,
         output_dir=output_dir,
         source_relpath=f"output/{output_dir.name}/mode_track_source.json",
-        identity_namespace="issue180-m9-gate-b",
+        identity_namespace="mode-track-85raw-validation-gate-b",
     )
     (output_dir / "mode_track_source.json").write_bytes(
         run.projection.source_artifact_bytes
@@ -182,7 +184,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         sum(f.direct_support_count_s for f in run.facts) != 1
         or sum(len(f.exact_owner_candidate_assignments) for f in run.facts) != 1
         or run.call_cost["discovery_raw_open_count"] != 1
-        or run.call_cost["m7_raw_open_count"] != 1
+        or run.call_cost["runtime_raw_open_count"] != 1
         or run.call_cost["total_raw_open_count"] != 2
         or run.projection.pending_acceptance_rows
         or run.projection.expected_diff_rows
@@ -192,7 +194,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     _write_json(
         receipt,
         {
-            "schema_version": "issue180_m9_gate_b_receipt_v1",
+            "schema_version": "mode_track_85raw_validation_gate_b_receipt_v1",
             "validation_status": VALIDATION_STATUS,
             "sample_stem": SAMPLE_STEM,
             "precursor_mz": PRECURSOR_MZ,
@@ -236,7 +238,7 @@ def run_gate_c(
         dll_dir=dll_dir,
         output_dir=output_dir,
         source_relpath=source_relpath,
-        identity_namespace="issue180-m9-gate-c",
+        identity_namespace="mode-track-85raw-validation-gate-c",
     )
     _validate_gate_c_call_budget(run.call_cost)
     context = {
@@ -277,7 +279,7 @@ def run_gate_c_fresh_finalization(
     code_sha: str,
     metadata_sha256: str,
 ) -> Path:
-    """Recompute M2 through its owner and close Gate C in the same process."""
+    """Recompute Backfill through its owner and close Gate C in the same process."""
 
     if len(raw_files) != 85 or len(sample_metadata) != 85:
         raise ValueError("Gate C requires exactly 85 RAW and metadata rows")
@@ -312,7 +314,7 @@ def run_gate_c_fresh_finalization(
         dll_dir=dll_dir,
         output_dir=replay_output_dir,
         source_relpath=source_path.relative_to(manifest_root).as_posix(),
-        identity_namespace="issue180-m9-gate-c",
+        identity_namespace="mode-track-85raw-validation-gate-c",
     )
     _validate_gate_c_call_budget(run.call_cost)
     source_path.write_bytes(run.projection.source_artifact_bytes)
@@ -323,7 +325,9 @@ def run_gate_c_fresh_finalization(
     _write_json(
         fresh_receipt_path,
         {
-            "schema_version": "issue180_m9_gate_c_fresh_owner_receipt_v1",
+            "schema_version": (
+                "mode_track_85raw_validation_gate_c_fresh_owner_receipt_v1"
+            ),
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
@@ -338,7 +342,9 @@ def run_gate_c_fresh_finalization(
             "audit_review_transfer_receipt_sha256": _sha256(
                 review_transfer_receipt_path
             ),
-            "eligibility_authority": "live_typed_m2_facts_same_process_only",
+            "eligibility_authority": (
+                "live_typed_backfill_facts_same_process_only"
+            ),
             "writer_input_authority": "fresh_projection_only",
         },
     )
@@ -396,7 +402,9 @@ def _finalize_gate_c_transaction(
     _write_json(
         transaction_receipt_path,
         {
-            "schema_version": "issue180_m9_gate_c_transaction_receipt_v2",
+            "schema_version": (
+                "mode_track_85raw_validation_gate_c_transaction_receipt_v2"
+            ),
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
@@ -505,15 +513,21 @@ def _run_mode_track_batch(
         ),
     )
     if not runtime_result.succeeded or len(runtime_result.sample_results) != len(jobs):
-        raise RuntimeError("M7 validation batch did not complete atomically")
-    m7_call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
-    if m7_call_cost["raw_open_count"] > len(raw_files):
-        raise RuntimeError("M7 validation batch exceeded one RAW open per sample")
+        raise RuntimeError(
+            "Real-data runtime validation batch did not complete atomically"
+        )
+    runtime_call_cost = untargeted_cid_nl_runtime_call_cost(
+        runtime_result.finalization
+    )
+    if runtime_call_cost["raw_open_count"] > len(raw_files):
+        raise RuntimeError(
+            "Real-data runtime validation batch exceeded one RAW open per sample"
+        )
     call_cost = _gate_c_workload_call_cost(
         discovery_raw_open_count=len(raw_files),
-        m7_call_cost=m7_call_cost,
+        runtime_call_cost=runtime_call_cost,
     )
-    _write_json(heartbeat_path, _heartbeat("m7_complete", started))
+    _write_json(heartbeat_path, _heartbeat("runtime_complete", started))
     sample_assessments = tuple(
         (sample, result.adapter_result.assessment_input.assessment)
         for sample, result in zip(
@@ -551,30 +565,32 @@ def _run_mode_track_batch(
 def _gate_c_workload_call_cost(
     *,
     discovery_raw_open_count: int,
-    m7_call_cost: Mapping[str, int],
+    runtime_call_cost: Mapping[str, int],
 ) -> dict[str, int]:
-    """Report Discovery and M7 costs without conflating their owners."""
+    """Report Discovery and runtime costs without conflating their owners."""
 
-    m7_raw_open_count = m7_call_cost["raw_open_count"]
+    runtime_raw_open_count = runtime_call_cost["raw_open_count"]
     return {
         "discovery_raw_open_count": discovery_raw_open_count,
-        "m7_raw_open_count": m7_raw_open_count,
-        "total_raw_open_count": discovery_raw_open_count + m7_raw_open_count,
-        "m7_xic_batch_count": m7_call_cost["xic_batch_count"],
-        "m7_logical_xic_request_count": m7_call_cost["logical_xic_request_count"],
-        "m7_adapter_chromatogram_call_count": m7_call_cost[
+        "runtime_raw_open_count": runtime_raw_open_count,
+        "total_raw_open_count": discovery_raw_open_count + runtime_raw_open_count,
+        "runtime_xic_batch_count": runtime_call_cost["xic_batch_count"],
+        "runtime_logical_xic_request_count": runtime_call_cost[
+            "logical_xic_request_count"
+        ],
+        "runtime_adapter_chromatogram_call_count": runtime_call_cost[
             "adapter_chromatogram_call_count"
         ],
-        "m7_trace_point_count": m7_call_cost["trace_point_count"],
+        "runtime_trace_point_count": runtime_call_cost["trace_point_count"],
     }
 
 
 def _validate_gate_c_call_budget(call_cost: Mapping[str, int]) -> None:
     if (
         call_cost["discovery_raw_open_count"] > 85
-        or call_cost["m7_raw_open_count"] > 85
+        or call_cost["runtime_raw_open_count"] > 85
         or call_cost["total_raw_open_count"] > 170
-        or call_cost["m7_xic_batch_count"] > 85
+        or call_cost["runtime_xic_batch_count"] > 85
     ):
         raise RuntimeError("Gate C exceeded the sample-batched RAW call budget")
 
@@ -605,7 +621,7 @@ def _fact_row(fact: ModeTrackConservativeBackfillGroupFacts) -> dict[str, object
 def _mode_track_scientific_projection_rows(
     facts: Sequence[ModeTrackConservativeBackfillGroupFacts],
 ) -> list[dict[str, object]]:
-    """Render only cross-attempt-stable scientific facts from the live M2 owner."""
+    """Render stable scientific facts from the live Backfill owner."""
 
     rows: list[dict[str, object]] = [
         {
@@ -645,7 +661,9 @@ def _mode_track_scientific_projection_rows(
     ]
     group_ids = [row["group_hypothesis_id"] for row in rows]
     if not rows or len(group_ids) != len(set(group_ids)):
-        raise ValueError("fresh M2 scientific projection group census is malformed")
+        raise ValueError(
+            "fresh Backfill scientific projection group census is malformed"
+        )
     return rows
 
 
@@ -657,7 +675,7 @@ def _validate_fresh_mode_track_projection(
     expected = _mode_track_scientific_projection_rows(fresh_facts)
     loaded = [dict(row) for row in persisted_rows]
     if loaded != expected:
-        raise ValueError("Gate C fresh M2 scientific projection differs from C1")
+        raise ValueError("Gate C fresh Backfill scientific projection differs from C1")
     return expected
 
 
@@ -669,9 +687,9 @@ def _validate_fresh_proposed_keys(
     for fact in fresh_facts:
         decision = "proposed" if fact.may_attempt_recovery else "rejected"
         reason = (
-            "m2_activation_passed"
+            "backfill_activation_passed"
             if fact.may_attempt_recovery
-            else "m2_support_below_threshold"
+            else "backfill_support_below_threshold"
         )
         for candidate in fact.exact_owner_candidate_assignments:
             fresh_key = (
@@ -681,7 +699,7 @@ def _validate_fresh_proposed_keys(
                 candidate.peak_observation_content_id,
             )
             if fresh_key in expected or any(value is None for value in fresh_key):
-                raise ValueError("fresh M2 candidate identity is duplicate")
+                raise ValueError("fresh Backfill candidate identity is duplicate")
             expected[fresh_key] = (decision, reason)
 
     decisions = _required_mapping_rows(proposal, "candidate_decision_rows")
@@ -697,7 +715,9 @@ def _validate_fresh_proposed_keys(
             raise ValueError("Gate C persisted candidate decision is duplicate")
         observed[persisted_key] = (row.get("decision"), row.get("reason_code"))
     if observed != expected:
-        raise ValueError("Gate C persisted candidate decisions differ from fresh M2")
+        raise ValueError(
+            "Gate C persisted candidate decisions differ from fresh Backfill"
+        )
 
 
 def _candidate_decision_rows(
@@ -720,9 +740,9 @@ def _candidate_decision_rows(
                         "proposed" if fact.may_attempt_recovery else "rejected"
                     ),
                     "reason_code": (
-                        "m2_activation_passed"
+                        "backfill_activation_passed"
                         if fact.may_attempt_recovery
-                        else "m2_support_below_threshold"
+                        else "backfill_support_below_threshold"
                     ),
                 }
             )
@@ -758,7 +778,7 @@ def freeze_gate_c_proposal(
         projection.mode_track_facts
     )
     proposal = {
-        "schema_version": "issue180_m9_gate_c_proposal_v2",
+        "schema_version": "mode_track_85raw_validation_gate_c_proposal_v2",
         "matrix_header": list(projection.matrix_header),
         "input_quant_matrix_rows": list(map(dict, projection.input_quant_matrix_rows)),
         "input_matrix_identity_rows": list(
@@ -799,7 +819,9 @@ def freeze_gate_c_proposal(
     )
     context["candidate_census"] = supplied_census
     receipt = {
-        "schema_version": "issue180_m9_gate_c_proposal_receipt_v2",
+        "schema_version": (
+            "mode_track_85raw_validation_gate_c_proposal_receipt_v2"
+        ),
         "proposal_sha256": _sha256(proposal_path),
         "source_file_sha256": _sha256(staged_source),
         "run_context": context,
@@ -900,7 +922,7 @@ def transfer_gate_c_review(
     final_replay_path = output_dir / replay_path.name
     final_replay_relpath = final_replay_path.relative_to(manifest_root).as_posix()
     transferred_review: dict[str, object] = {
-        "schema_version": "issue180_m9_gate_c_manual_review_v1",
+        "schema_version": "mode_track_85raw_validation_gate_c_manual_review_v1",
         "observation_replay_relpath": final_replay_relpath,
         "observation_replay_sha256": _sha256(replay_path),
         "rows": transferred_review_rows,
@@ -940,7 +962,9 @@ def transfer_gate_c_review(
     )
     _validate_pending_manifest_equality(pending, checked.rows)
     transfer_receipt = {
-        "schema_version": "issue180_m9_gate_c_review_transfer_receipt_v1",
+        "schema_version": (
+            "mode_track_85raw_validation_gate_c_review_transfer_receipt_v1"
+        ),
         "validation_status": VALIDATION_STATUS,
         "code_sha": code_sha,
         "review_subject_count": len(new_subjects),
@@ -1000,7 +1024,7 @@ def _validate_review_transfer_receipt(
     }
     if set(receipt) != required_fields or (
         receipt.get("schema_version")
-        != "issue180_m9_gate_c_review_transfer_receipt_v1"
+        != "mode_track_85raw_validation_gate_c_review_transfer_receipt_v1"
         or receipt.get("validation_status") != VALIDATION_STATUS
         or receipt.get("code_sha") != code_sha
         or receipt.get("transfer_rule")
@@ -1053,18 +1077,18 @@ def _validate_reviewed_packet_for_transfer(
     proposal_schema = proposal.get("schema_version")
     receipt_schema = receipt.get("schema_version")
     if proposal_schema not in {
-        "issue180_m9_gate_c_proposal_v1",
-        "issue180_m9_gate_c_proposal_v2",
+        "mode_track_85raw_validation_gate_c_proposal_v1",
+        "mode_track_85raw_validation_gate_c_proposal_v2",
     } or receipt_schema not in {
-        "issue180_m9_gate_c_proposal_receipt_v1",
-        "issue180_m9_gate_c_proposal_receipt_v2",
+        "mode_track_85raw_validation_gate_c_proposal_receipt_v1",
+        "mode_track_85raw_validation_gate_c_proposal_receipt_v2",
     }:
         raise ValueError("Gate C reviewed packet schema is unsupported")
     if receipt.get("proposal_sha256") != _sha256(proposal_path) or receipt.get(
         "source_file_sha256"
     ) != _sha256(source_path):
         raise ValueError("Gate C reviewed packet hash changed")
-    if proposal_schema == "issue180_m9_gate_c_proposal_v2":
+    if proposal_schema == "mode_track_85raw_validation_gate_c_proposal_v2":
         _validate_proposal_payload(proposal, receipt, source_path)
     elif (
         str(proposal.get("source_artifact_sha256", "")).upper()
@@ -1300,7 +1324,7 @@ def finalize_gate_c_fresh_projection(
         projection.mode_track_facts
     )
     final_receipt = {
-        "schema_version": "issue180_m9_gate_c_final_receipt_v3",
+        "schema_version": "mode_track_85raw_validation_gate_c_final_receipt_v3",
         "validation_status": VALIDATION_STATUS,
         "validated_review_subjects_sha256": _json_sha256(
             [asdict(subject) for subject in validated_review.subjects]
@@ -1332,9 +1356,15 @@ def _validate_proposal_payload(
     receipt: Mapping[str, object],
     source_path: Path,
 ) -> None:
-    if proposal.get("schema_version") != "issue180_m9_gate_c_proposal_v2":
+    if (
+        proposal.get("schema_version")
+        != "mode_track_85raw_validation_gate_c_proposal_v2"
+    ):
         raise ValueError("Gate C proposal schema changed")
-    if receipt.get("schema_version") != "issue180_m9_gate_c_proposal_receipt_v2":
+    if (
+        receipt.get("schema_version")
+        != "mode_track_85raw_validation_gate_c_proposal_receipt_v2"
+    ):
         raise ValueError("Gate C proposal receipt schema changed")
     source_bytes = source_path.read_bytes()
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
@@ -1405,7 +1435,10 @@ def _validate_manual_review(
     replay_relpath: str,
     replay_sha256: str,
 ) -> None:
-    if review.get("schema_version") != "issue180_m9_gate_c_manual_review_v1":
+    if (
+        review.get("schema_version")
+        != "mode_track_85raw_validation_gate_c_manual_review_v1"
+    ):
         raise ValueError("Gate C manual review schema changed")
     rows = review.get("rows")
     if not isinstance(rows, list):
@@ -1455,7 +1488,8 @@ def _validate_manual_review_replay(
     source_path: Path,
 ) -> None:
     if (
-        replay.get("schema_version") != "issue180_m9_gate_c_observation_replay_v1"
+        replay.get("schema_version")
+        != "mode_track_85raw_validation_gate_c_observation_replay_v1"
         or replay.get("validation_status") != VALIDATION_STATUS
         or replay.get("proposal_sha256") != receipt["proposal_sha256"]
         or str(replay.get("source_artifact_sha256", "")).upper()

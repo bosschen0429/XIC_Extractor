@@ -193,10 +193,10 @@ def test_heartbeat_io_failure_cannot_abort_workflow_progress(
 
     monkeypatch.setattr(runner, "_write_json_atomic", fail_write)
 
-    heartbeat.progress({"event": "m7_sample_complete", "sample_stem": "s1"})
+    heartbeat.progress({"event": "runtime_sample_complete", "sample_stem": "s1"})
 
     assert not (tmp_path / "timing.live.json").exists()
-    assert "warning: could not update heartbeat (m7_sample_complete)" in (
+    assert "warning: could not update heartbeat (runtime_sample_complete)" in (
         capsys.readouterr().err
     )
 
@@ -722,7 +722,9 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                 "proposal_sha256": proposal_sha,
                 "row_count": len(replay_rows),
                 "rows": replay_rows,
-                "schema_version": "issue180_m9_gate_c_observation_replay_v1",
+                "schema_version": (
+                    "mode_track_85raw_validation_gate_c_observation_replay_v1"
+                ),
                 "source_artifact_sha256": source_sha,
                 "validation_status": "diagnostic_only",
             },
@@ -740,7 +742,9 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                     replay_path.read_bytes()
                 ).hexdigest(),
                 "rows": review_rows,
-                "schema_version": "issue180_m9_gate_c_manual_review_v1",
+                "schema_version": (
+                    "mode_track_85raw_validation_gate_c_manual_review_v1"
+                ),
             },
             indent=2,
             sort_keys=True,

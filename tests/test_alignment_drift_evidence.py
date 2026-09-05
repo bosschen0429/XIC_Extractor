@@ -199,7 +199,7 @@ def test_missing_landmarks_cannot_be_relabelled_as_conflict() -> None:
     assert assessment.conflict_evidence_refs == ()
 
 
-def test_istd_lookup_cannot_be_used_as_m3_local_trajectory_truth() -> None:
+def test_istd_lookup_cannot_be_used_as_identity_trajectory_truth() -> None:
     with pytest.raises(TypeError, match="local feature landmarks"):
         assess_local_trajectory(DriftEvidenceLookup(points=()), ("sample-a",))
 

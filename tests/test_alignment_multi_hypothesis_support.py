@@ -145,7 +145,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
     assert len({item.group_hypothesis_id for item in batches[0].assignments}) == 2
 
 
-def test_m3_owner_membership_is_observed_geometry_not_reclassified_by_group_center(
+def test_identity_membership_is_geometry_not_group_center_reclassification(
     tmp_path: Path,
 ) -> None:
     fixture = build_package2_no_raw_fixture(

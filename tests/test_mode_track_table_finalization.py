@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
+from tests import mode_track_raw_validation_fixture as gate_c_fixture
 from tests.test_alignment_mode_track_conservative_backfill import (
     _gate_c_proposal,
     _gate_c_review,

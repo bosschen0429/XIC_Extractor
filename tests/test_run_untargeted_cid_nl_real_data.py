@@ -38,7 +38,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     raw_dir.mkdir()
     dll_dir.mkdir()
     raw_path = raw_dir / "S1.synthetic"
-    raw_path.write_bytes(b"m7-runner:S1")
+    raw_path.write_bytes(b"real-data-runtime-runner:S1")
     source_raw = _FakeRaw((7.98, 8.02))
     candidates = _current_candidates(
         source_raw,
@@ -90,7 +90,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
         sources_by_path={raw_path: source_raw},
         tmp_path=dll_dir,
     )
-    output_dir = tmp_path / "m7-output"
+    output_dir = tmp_path / "real-data-runtime-output"
 
     argv = (
         "--discovery-batch-index",
@@ -119,10 +119,12 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     exit_code = main(argv)
 
     assert exit_code == 0
-    summary = json.loads((output_dir / "m7_summary.json").read_text())
+    summary = json.loads(
+        (output_dir / "real_data_runtime_summary.json").read_text()
+    )
     timing = json.loads((output_dir / "timing.json").read_text())
-    assert summary["schema_version"] == "untargeted_cid_nl_m7_summary_v2"
-    assert timing["schema_version"] == "untargeted_cid_nl_m7_timing_v2"
+    assert summary["schema_version"] == "untargeted_cid_nl_real_data_runtime_summary_v2"
+    assert timing["schema_version"] == "untargeted_cid_nl_real_data_runtime_timing_v2"
     assert summary["runtime_succeeded"] is True
     assert summary["terminal_state"] == "quant_matrix_version_built"
     assert summary["sample_count"] == 1
@@ -149,7 +151,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     assert opened[raw_path][0].disposed is True
 
     write_discovery_candidates_csv(candidate_path, ())
-    truncated_output_dir = tmp_path / "m7-truncated-output"
+    truncated_output_dir = tmp_path / "real-data-runtime-truncated-output"
     truncated_argv = list(argv)
     truncated_argv[truncated_argv.index("--output-dir") + 1] = str(truncated_output_dir)
 
@@ -187,7 +189,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
         review_path=review_path,
         receipt=unsupported_receipt,
     )
-    unsupported_output_dir = tmp_path / "m7-unsupported-output"
+    unsupported_output_dir = tmp_path / "real-data-runtime-unsupported-output"
     unsupported_argv = list(argv)
     unsupported_argv[unsupported_argv.index("--output-dir") + 1] = str(
         unsupported_output_dir
@@ -197,7 +199,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
 
     assert unsupported_exit_code == 0
     unsupported_summary = json.loads(
-        (unsupported_output_dir / "m7_summary.json").read_text()
+        (unsupported_output_dir / "real_data_runtime_summary.json").read_text()
     )
     assert unsupported_summary["runtime_succeeded"] is True
     assert (

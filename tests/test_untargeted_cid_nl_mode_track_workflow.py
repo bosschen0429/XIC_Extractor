@@ -129,7 +129,7 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
 
     assert _workflow_call_cost(
         discovery_raw_open_count=1,
-        m7_call_cost={
+        runtime_call_cost={
             "raw_open_count": 1,
             "xic_batch_count": 1,
             "logical_xic_request_count": 2,

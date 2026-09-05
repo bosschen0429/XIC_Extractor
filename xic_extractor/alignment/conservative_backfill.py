@@ -1,6 +1,6 @@
 """Conservative no-write Backfill eligibility and mapping facts.
 
-This module consumes the canonical M1 ``CellObservationRef`` owner.  It may
+This module consumes the canonical CellObservationRef reference-spine owner.  It may
 decide whether an already-existing, frozen group is eligible for a bounded
 Backfill revisit and whether supplied recovery evidence has an unambiguous
 ordered one-to-one mapping.  It never creates a group, mints a cell, selects a
@@ -198,7 +198,10 @@ class ConservativeBackfillGroupFacts:
 @final
 @dataclass(frozen=True, slots=True)
 class ModeTrackConservativeBackfillGroupFacts:
-    """M2 activation facts for one exact M3 group in an M8 model snapshot."""
+    """Backfill activation facts for one exact identity-trajectory group.
+
+    The facts are bound to a ModeTrack model snapshot.
+    """
 
     model_set: ModeTrackModelSet
     group: CrossSamplePeakGroupHypothesis
@@ -224,11 +227,11 @@ class ModeTrackConservativeBackfillGroupFacts:
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_GROUP_FACTS_MINT_TOKEN:
             raise ConservativeBackfillContractError(
-                "ModeTrack Backfill facts must be minted by the M2 owner"
+                "ModeTrack Backfill facts must be minted by the Backfill decision owner"
             )
         if type(self.model_set) is not ModeTrackModelSet:
             raise ConservativeBackfillContractError(
-                "ModeTrack Backfill facts require one exact M8 model set"
+                "ModeTrack Backfill facts require one exact ModeTrack model set"
             )
         if not any(
             self.group is item for item in self.model_set.family_context.mode_tracks
@@ -851,7 +854,9 @@ def assess_mode_track_conservative_backfill_groups(
         ...,
     ],
 ) -> tuple[ModeTrackConservativeBackfillGroupFacts, ...]:
-    """Derive exact-owner per-ModeTrack S/K facts without entering M1."""
+    """Derive exact-owner per-ModeTrack S/K facts without entering the
+    CellObservationRef reference spine.
+    """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ConservativeBackfillContractError(
@@ -859,7 +864,7 @@ def assess_mode_track_conservative_backfill_groups(
         )
     if type(model_set) is not ModeTrackModelSet:
         raise ConservativeBackfillContractError(
-            "ModeTrack Backfill requires one exact M8 model set"
+            "ModeTrack Backfill requires one exact ModeTrack model set"
         )
     assessments = _canonical_mode_track_sample_assessments(
         sample_assessments,
@@ -946,11 +951,13 @@ def assess_mode_track_conservative_backfill_groups(
                 or support_assignment.peak_hypothesis is None
             ):
                 raise ConservativeBackfillContractError(
-                    "direct-SUPPORT assessment closure is missing its M8 assignment"
+                    "direct-SUPPORT assessment closure is missing its "
+                    "ModeTrack assignment"
                 )
             if support_assignment.direct_support_assessment is not assessment:
                 raise ConservativeBackfillContractError(
-                    "M8 direct-SUPPORT assignment substituted its source assessment"
+                    "ModeTrack direct-SUPPORT assignment substituted its "
+                    "source assessment"
                 )
             validate_cid_nl_assessment_hypothesis_closure(
                 sample=batch.sample,
@@ -1044,14 +1051,15 @@ def assess_targeted_conservative_backfill_group(
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> ConservativeBackfillGroupFacts:
-    """Thin Targeted adapter over the exact M1 CellObservation references."""
+    """Thin Targeted adapter over the exact CellObservationRef references."""
 
     if not projections or any(
         not isinstance(item, TargetedCellObservationReferenceProjection)
         for item in projections
     ):
         raise ConservativeBackfillContractError(
-            "Targeted adapter requires M1 Targeted reference projections"
+            "Targeted adapter requires CellObservationRef Targeted reference "
+            "projections"
         )
     return assess_conservative_backfill_group(
         tuple(item.cell for item in projections),
@@ -1064,14 +1072,15 @@ def assess_untargeted_conservative_backfill_group(
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> ConservativeBackfillGroupFacts:
-    """Thin Untargeted adapter over the exact M1 CellObservation references."""
+    """Thin Untargeted adapter over the exact CellObservationRef references."""
 
     if not projections or any(
         not isinstance(item, UntargetedCellObservationReferenceProjection)
         for item in projections
     ):
         raise ConservativeBackfillContractError(
-            "Untargeted adapter requires M1 Untargeted reference projections"
+            "Untargeted adapter requires CellObservationRef Untargeted reference "
+            "projections"
         )
     return assess_conservative_backfill_group(
         tuple(item.cell for item in projections),
@@ -1389,7 +1398,7 @@ def _canonical_mode_track_sample_assessments(
     )
     if len(sample_ids) != len(set(sample_ids)):
         raise ConservativeBackfillContractError(
-            "each sample may contribute exactly one M9 assessment"
+            "each sample may contribute exactly one ModeTrack assessment"
         )
     owner_samples = tuple(
         sorted(
@@ -1451,7 +1460,7 @@ def _canonical_mode_track_assignment_batches(
     sample_ids = tuple(item.canonical_sample_identity_id for item in ordered)
     if len(sample_ids) != len(set(sample_ids)):
         raise ConservativeBackfillContractError(
-            "each sample may contribute exactly one M8 assignment batch"
+            "each sample may contribute exactly one ModeTrack assignment batch"
         )
     for batch in ordered:
         validate_mode_track_assignment_batch_for_consumption(

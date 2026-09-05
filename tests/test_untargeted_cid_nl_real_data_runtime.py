@@ -60,7 +60,7 @@ from xic_extractor.raw_reader import (
 from xic_extractor.sample_metadata import SampleMetadata
 
 
-def test_runtime_delivers_one_real_subject_cohort_into_m6(
+def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -74,7 +74,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
     monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", _trace_capture)
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     for path in raw_paths:
-        path.write_bytes(f"m7-runtime:{path.stem}".encode())
+        path.write_bytes(f"real-data-runtime:{path.stem}".encode())
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw = _FakeRaw((7.98, 8.02))
@@ -114,7 +114,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
             raw_paths,
             {"S1": candidates, "S2": ()},
         ),
-        sample_identity_namespace="study:m7-runtime-test",
+        sample_identity_namespace="study:real-data-runtime-test",
     )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
@@ -142,7 +142,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-m7-test:v1",
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test:v1",
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -150,8 +150,8 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7.runtime.json",
-            "untargeted-cid-nl-m7:test",
+            tmp_path / "real_data_runtime.json",
+            "untargeted-cid-nl-real-data-runtime:test",
         ),
     )
 
@@ -183,7 +183,9 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
         sample_inputs=tuple(
             item.adapter_result.assessment_input for item in result.sample_results
         ),
-        source_artifact_relpath="output/m7/untargeted_cid_nl_source.json",
+        source_artifact_relpath=(
+            "output/real_data_runtime/untargeted_cid_nl_source.json"
+        ),
     )
     assert len(projection.spine.cells) == 2
     assert projection.matrix_header == ("Mz", "RT", "S1", "S2")
@@ -196,7 +198,7 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
     monkeypatch,
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"m7-runtime-unsupported:S1")
+    raw_path.write_bytes(b"real-data-runtime-unsupported:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw = _FakeRaw((8.0,))
@@ -231,7 +233,7 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
             (raw_path,),
             {"S1": (inferred,)},
         ),
-        sample_identity_namespace="study:m7-runtime-unsupported-test",
+        sample_identity_namespace="study:real-data-runtime-unsupported-test",
     )
     job = UntargetedCidNlRealDataRuntimeJob(
         processing_owners=context.processing_owners,
@@ -248,7 +250,7 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="untargeted-cid-nl-m7-test:v1",
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test:v1",
     )
 
     vendor_raw = _install_runtime_raw(
@@ -262,8 +264,8 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
         (job,),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7.unsupported.runtime.json",
-            "untargeted-cid-nl-m7:test",
+            tmp_path / "real_data_runtime.unsupported.json",
+            "untargeted-cid-nl-real-data-runtime:test",
         ),
     )
 
@@ -288,7 +290,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     stems = ("S1", "S2", "Missing", "NoPeak", "Blank")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for path in raw_paths:
-        path.write_bytes(f"m7-runtime-recovery:{path.stem}".encode())
+        path.write_bytes(f"real-data-runtime-recovery:{path.stem}".encode())
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws = {
@@ -363,7 +365,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             raw_paths,
             candidates_by_sample,
         ),
-        sample_identity_namespace="study:m7-runtime-recovery-test",
+        sample_identity_namespace="study:real-data-runtime-recovery-test",
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -390,7 +392,9 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-m7-recovery-test:v1",
+        owner_completeness_attestation=(
+            "untargeted-cid-nl-real-data-runtime-recovery-test:v1"
+        ),
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -398,8 +402,8 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7.recovery.runtime.json",
-            "untargeted-cid-nl-m7-recovery:test",
+            tmp_path / "real_data_runtime.recovery.json",
+            "untargeted-cid-nl-real-data-runtime-recovery:test",
         ),
     )
 
@@ -440,7 +444,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             for item in result.sample_results
             if item.recovery_input is not None
         ),
-        source_artifact_relpath="output/m7/recovered_source.json",
+        source_artifact_relpath="output/real_data_runtime/recovered_source.json",
     )
     decisions = {
         decision.target_cell.content.canonical_sample_identity_id: decision
@@ -459,7 +463,7 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"m7-runtime-request-pin:S1")
+    raw_path.write_bytes(b"real-data-runtime-request-pin:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw = _FakeRaw((8.0,))
@@ -493,7 +497,7 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
             (raw_path,),
             {"S1": candidates},
         ),
-        sample_identity_namespace="study:m7-runtime-request-pin-test",
+        sample_identity_namespace="study:real-data-runtime-request-pin-test",
     )
 
     with pytest.raises(
@@ -563,7 +567,7 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
             peak_config=peak_config,
             candidates_by_sample={"S1": candidates},
             discovery_receipts_by_sample={"S1": receipt},
-            sample_identity_namespace="study:m7-crossed-acquisition-test",
+        sample_identity_namespace="study:real-data-runtime-crossed-acquisition-test",
         )
 
 
@@ -623,7 +627,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             raw_paths,
             candidates_by_sample,
         ),
-        sample_identity_namespace="study:m7-conditional-resource-test",
+        sample_identity_namespace="study:real-data-runtime-conditional-resource-test",
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -658,7 +662,9 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="m7-conditional-resource-test:v1",
+        owner_completeness_attestation=(
+            "real-data-runtime-conditional-resource-test:v1"
+        ),
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -666,8 +672,8 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7.conditional.runtime.json",
-            "m7-conditional-resource:test",
+            tmp_path / "real_data_runtime.conditional.json",
+            "real-data-runtime-conditional-resource:test",
         ),
     )
 

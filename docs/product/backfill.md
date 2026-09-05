@@ -143,8 +143,8 @@ retired route and publication fields before expensive work.
 
 ## Conservative Eligibility Kernel
 
-Issue #162 adds a bounded `shadow_ready / no-write` policy owner over M1's
-canonical `CellObservationRef`. Its design and activation base is
+Issue #162 adds a bounded `shadow_ready / no-write` policy owner over the
+canonical `CellObservationRef` reference spine. Its design and activation base is
 `e30a04f8ed30a02c7424b49b24a42c844937a201`. It does not replace legacy
 Backfill, activate a runtime path, or grant Matrix, CSV, workbook, config,
 selected-value, counted-detection, or writer authority.
@@ -189,7 +189,7 @@ The frozen rules are:
 - A method-level `REJECT` is terminal for that attempt and is not Backfill
   eligible. Technical/no-evidence and HOLD cells may remain nonnumeric pending
   an owner-bound recovery universe; neither state creates a vote by itself.
-- Targeted and Untargeted adapters unwrap their M1 reference projections and
+- Targeted and Untargeted adapters unwrap their CellObservationRef reference projections and
   call the same policy owner over the same exact `CellObservationRef` objects;
   neither adapter owns a second workflow-neutral cell model.
 

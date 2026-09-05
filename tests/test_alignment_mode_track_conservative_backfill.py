@@ -13,7 +13,7 @@ from scripts.check_production_acceptance_manifest import (
     check_production_acceptance_manifest,
     production_acceptance_manifest_sha256,
 )
-from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
+from tests import mode_track_raw_validation_fixture as gate_c_fixture
 from tests.issue161_no_raw_fixture import (
     issue161_evidence,
     issue161_peak,
@@ -49,7 +49,7 @@ from xic_extractor.sample_metadata import (
 from xic_extractor.tabular_io import render_delimited_rows
 
 
-def test_mode_track_facts_split_mixed_assessments_without_m1_cells(
+def test_mode_track_facts_split_mixed_assessments_without_cell_observation_refs(
     tmp_path: Path,
 ) -> None:
     fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
@@ -230,7 +230,7 @@ def test_mode_track_groups_activate_independently_of_exact_owner_candidates(
     assert late.reason_codes == ("direct_support_threshold_not_met",)
 
 
-def test_mode_track_projection_prepares_only_m2_eligible_exact_owner_cells(
+def test_mode_track_projection_prepares_only_backfill_eligible_exact_owner_cells(
     tmp_path: Path,
 ) -> None:
     fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
@@ -250,7 +250,7 @@ def test_mode_track_projection_prepares_only_m2_eligible_exact_owner_cells(
     projection = build_projection(
         processing_owners=fixture.owners,
         mode_track_facts=facts,
-        source_artifact_relpath="output/m9/mode_track_source.json",
+        source_artifact_relpath="output/mode_track/mode_track_source.json",
     )
 
     assert projection.backfill_decisions == ()
@@ -306,7 +306,7 @@ def test_mode_track_projection_does_not_publish_below_threshold_candidates(
     )(
         processing_owners=fixture.owners,
         mode_track_facts=facts,
-        source_artifact_relpath="output/m9/mode_track_source.json",
+        source_artifact_relpath="output/mode_track/mode_track_source.json",
     )
 
     assert projection.pending_acceptance_rows == ()
@@ -373,7 +373,7 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
     projection = golden_path.build_untargeted_cid_nl_mode_track_projection(
         processing_owners=fixture.owners,
         mode_track_facts=facts,
-        source_artifact_relpath="output/m9/mode_track_source.json",
+        source_artifact_relpath="output/mode_track/mode_track_source.json",
     )
     source = json.loads(projection.source_artifact_bytes)
     expected_assignments = {
@@ -385,7 +385,7 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
         for assignment in fact.exact_owner_candidate_assignments
     }
 
-    assert source["schema_version"] == "m9_mode_track_source_v2"
+    assert source["schema_version"] == "mode_track_projection_source_v2"
     assert len(source["rows"]) == len(expected_assignments)
     for row in source["rows"]:
         assignment = expected_assignments[
@@ -846,7 +846,10 @@ def test_gate_c_fresh_owner_rejects_resealed_rejected_to_proposed_claim(
     below_threshold["may_attempt_recovery"] = True
     below_threshold["reason_codes"] = ["direct_support_threshold_met"]
 
-    with pytest.raises(ValueError, match="fresh M2 scientific projection differs"):
+    with pytest.raises(
+        ValueError,
+        match="fresh Backfill scientific projection differs",
+    ):
         gate_c_fixture._validate_fresh_mode_track_projection(
             persisted_rows=forged,
             fresh_facts=facts,
@@ -870,14 +873,17 @@ def test_gate_c_fresh_owner_rejects_resealed_sample_stem_claim(
     )
     proposed["sample_stem"] = "cross-sample-substitution"
 
-    with pytest.raises(ValueError, match="candidate decisions differ from fresh M2"):
+    with pytest.raises(
+        ValueError,
+        match="candidate decisions differ from fresh Backfill",
+    ):
         gate_c_fixture._validate_fresh_proposed_keys(
             proposal,
             projection.mode_track_facts,
         )
 
 
-def test_gate_c_finalizer_rejects_resealed_m2_eligibility_projection(
+def test_gate_c_finalizer_rejects_resealed_backfill_eligibility_projection(
     tmp_path: Path,
 ) -> None:
     fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
@@ -927,7 +933,10 @@ def test_gate_c_finalizer_rejects_resealed_m2_eligibility_projection(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="fresh M2 scientific projection differs"):
+    with pytest.raises(
+        ValueError,
+        match="fresh Backfill scientific projection differs",
+    ):
         _finalize_gate_c_reviewed_projection(
             projection=projection,
             proposal_dir=proposal_dir,
@@ -1337,7 +1346,7 @@ def _two_peak_assessment(
         processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}:m9-red",
+        detector_invocation_id=f"gaussian15:{sample_stem}:mode-track-red",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.7,
@@ -1404,9 +1413,9 @@ def _gate_c_run_context(projection) -> dict[str, object]:
         "processing_attempt_id": owner_ids[1],
         "call_cost": {
             "discovery_raw_open_count": 0,
-            "m7_raw_open_count": 0,
+            "runtime_raw_open_count": 0,
             "total_raw_open_count": 0,
-            "m7_xic_batch_count": 0,
+            "runtime_xic_batch_count": 0,
         },
         "candidate_census": {"pending": len(projection.pending_acceptance_rows)},
     }
@@ -1455,7 +1464,9 @@ def _gate_c_review(
     path.write_text(
         json.dumps(
             {
-                "schema_version": "issue180_m9_gate_c_manual_review_v1",
+                "schema_version": (
+                    "mode_track_85raw_validation_gate_c_manual_review_v1"
+                ),
                 "observation_replay_relpath": replay_path.relative_to(
                     tmp_path
                 ).as_posix(),
@@ -1503,7 +1514,9 @@ def _gate_c_replay(tmp_path: Path, projection) -> Path:
                 "proposal_sha256": receipt["proposal_sha256"],
                 "row_count": len(rows),
                 "rows": rows,
-                "schema_version": "issue180_m9_gate_c_observation_replay_v1",
+                "schema_version": (
+                    "mode_track_85raw_validation_gate_c_observation_replay_v1"
+                ),
                 "source_artifact_sha256": projection.source_artifact_sha256,
                 "validation_status": "diagnostic_only",
             },

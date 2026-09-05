@@ -56,21 +56,22 @@ def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
 
-def test_durable_module_language_rejects_construction_phase_identity(
+def test_durable_module_language_rejects_construction_milestone_identity(
     tmp_path: Path,
 ) -> None:
-    bad_path = Path("scripts/build_phase_7_bundle.py")
+    bad_path = Path("scripts/run_m7_bundle.py")
     bad_source = tmp_path / bad_path
     bad_source.parent.mkdir(parents=True)
     bad_source.write_text(
-        '"""Build the Phase 7 bundle."""\n',
+        '"""Run the M7 bundle."""\n',
         encoding="utf-8",
     )
 
     problems = census.validate_durable_module_language(tmp_path, (bad_path,))
 
     assert any(
-        "module path uses construction phase identity" in item for item in problems
+        "module path uses construction milestone identity" in item
+        for item in problems
     )
     assert any(
         "name the owned role instead" in item
@@ -89,6 +90,29 @@ def test_durable_module_language_accepts_role_based_identity(tmp_path: Path) -> 
     )
 
     assert census.validate_durable_module_language(tmp_path, (role_path,)) == []
+
+
+def test_durable_module_language_accepts_scientific_m6a_name(tmp_path: Path) -> None:
+    scientific_path = Path("tools/diagnostics/rna_modification.py")
+    source = tmp_path / scientific_path
+    source.parent.mkdir(parents=True)
+    source.write_text('MODIFICATION = "m6A"\n', encoding="utf-8")
+
+    assert census.validate_durable_module_language(tmp_path, (scientific_path,)) == []
+
+
+def test_durable_module_language_accepts_exact_legacy_schema_identifier(
+    tmp_path: Path,
+) -> None:
+    legacy_path = Path("xic_extractor/alignment/mode_track_table_finalization.py")
+    source = tmp_path / legacy_path
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'SCHEMA = "issue180_m9_gate_c_manual_review_v1"\n',
+        encoding="utf-8",
+    )
+
+    assert census.validate_durable_module_language(tmp_path, (legacy_path,)) == []
 
 
 def test_runtime_phase_exception_public_types_are_allowlisted() -> None:

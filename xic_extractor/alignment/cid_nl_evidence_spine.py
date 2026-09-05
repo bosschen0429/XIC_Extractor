@@ -48,7 +48,9 @@ PRODUCT_AUTHORITY = "none"
 
 
 class CidNlEvidenceSpineError(ValueError):
-    """Raised when the bounded M1 reference spine cannot close exactly."""
+    """Raised when the bounded CellObservationRef reference spine cannot close
+    exactly.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,7 +238,10 @@ def build_cid_nl_reference_spine(
     ],
     config: AlignmentConfig | None = None,
 ) -> CidNlReferenceSpine:
-    """Build M1 once and expose two no-write views over the same cell closure."""
+    """Build the CellObservationRef reference spine once.
+
+    Expose two no-write views over the same cell closure.
+    """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise CidNlEvidenceSpineError(
@@ -281,7 +286,7 @@ def build_cid_nl_reference_spine(
         }
         if len(selected_peak_ids) != 1:
             raise CidNlEvidenceSpineError(
-                "M1 SUPPORT must identify exactly one physical peak"
+                "reference-spine SUPPORT must identify exactly one physical peak"
             )
         selected_peak_id = next(iter(selected_peak_ids))
         peak = next(
@@ -337,8 +342,8 @@ def build_cid_nl_reference_spine(
     )
     if len(groups) != 1:
         raise CidNlEvidenceSpineError(
-            "M1 cannot resolve multiple provisional groups; identity resolution "
-            "belongs to M3"
+            "CellObservationRef reference spine cannot resolve multiple provisional "
+            "groups; identity resolution belongs to the identity-trajectory owner"
         )
     group = groups[0]
     try:

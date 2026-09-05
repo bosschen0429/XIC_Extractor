@@ -1,4 +1,4 @@
-"""Foreground M7 runner from current Discovery receipts to M6/QMV."""
+"""Foreground real-data runtime runner from Discovery receipts to QMV."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     elapsed = time.perf_counter() - started
     summary["elapsed_seconds"] = elapsed
-    summary_path = output_dir / "m7_summary.json"
+    summary_path = output_dir / "real_data_runtime_summary.json"
     _write_json(summary_path, summary)
     timing_path = (
         args.timing_output.resolve()
@@ -91,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else output_dir / "timing.json"
     )
     timing_payload = {
-        "schema_version": "untargeted_cid_nl_m7_timing_v2",
+        "schema_version": "untargeted_cid_nl_real_data_runtime_timing_v2",
         "validation_status": VALIDATION_STATUS,
         "elapsed_seconds": elapsed,
         "sample_count": summary["sample_count"],
@@ -101,8 +101,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     _write_json(timing_path, timing_payload)
     heartbeat.write(event="completed", terminal_state=summary["terminal_state"])
-    print(f"M7 summary: {summary_path}")
-    print(f"M7 timing: {timing_path}")
+    print(f"Real-data runtime summary: {summary_path}")
+    print(f"Real-data runtime timing: {timing_path}")
     return 0
 
 
@@ -203,7 +203,7 @@ def _run(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-m7-runner:v1",
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-runner:v1",
     )
     runtime_result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
@@ -211,12 +211,12 @@ def _run(
         telemetry_provider=_coarse_runtime_telemetry,
         recovery_marker=OwnerPathRuntimeMarker(
             output_dir / "runtime.json",
-            "untargeted-cid-nl-m7:runner",
+            "untargeted-cid-nl-real-data-runtime:runner",
         ),
         progress_callback=heartbeat.progress,
     )
     if not runtime_result.succeeded:
-        raise RuntimeError("M7 atomic runtime did not succeed")
+        raise RuntimeError("Real-data atomic runtime did not succeed")
     call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
 
     has_direct_support = any(
@@ -342,7 +342,7 @@ def _run(
     else:
         terminal_state = "prepared_requires_production_acceptance_manifest"
     return {
-        "schema_version": "untargeted_cid_nl_m7_summary_v2",
+        "schema_version": "untargeted_cid_nl_real_data_runtime_summary_v2",
         "validation_status": VALIDATION_STATUS,
         "terminal_state": terminal_state,
         "runtime_succeeded": runtime_result.succeeded,
@@ -477,7 +477,7 @@ def _peak_config(
 def _coarse_runtime_telemetry(coordinator) -> RuntimeTelemetrySamples:
     event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
-    reason = "not_collected_by_m7_foreground_runner"
+    reason = "not_collected_by_real_data_runtime_foreground_runner"
     return RuntimeTelemetrySamples(
         event_monotonic_offsets_ns=(0,) * event_count,
         artifact_io=RuntimeArtifactIoSample(
@@ -523,7 +523,7 @@ class _Heartbeat:
         _write_json(
             self._path,
             {
-                "schema_version": "untargeted_cid_nl_m7_heartbeat_v1",
+                "schema_version": "untargeted_cid_nl_real_data_runtime_heartbeat_v1",
                 "validation_status": VALIDATION_STATUS,
                 "event": event,
                 "elapsed_seconds": time.perf_counter() - self._started,
@@ -555,7 +555,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Replay current Discovery receipts through one real Untargeted "
-            "CID-NL subject and the M6 golden path."
+            "CID-NL subject and the golden-path projection."
         )
     )
     parser.add_argument("--discovery-batch-index", type=Path, required=True)
@@ -623,7 +623,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--sample-identity-namespace",
-        default="study:untargeted-cid-nl-m7",
+        default="study:untargeted-cid-nl-real-data-runtime",
     )
     parser.add_argument("--production-acceptance-manifest", type=Path)
     parser.add_argument("--timing-output", type=Path)
