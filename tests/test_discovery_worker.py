@@ -1,13 +1,16 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import pytest
 
 from gui.workers import discovery_worker as module
 from gui.workers.discovery_worker import DiscoveryRequest, DiscoveryWorker
+from tests.alignment_pipeline_helpers import write_batch
+from xic_extractor.alignment import pipeline as alignment_pipeline
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
-    _mint_owner_build_route_receipt,
+    _mint_retained_untargeted_cid_nl_route_receipt,
 )
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
@@ -18,23 +21,12 @@ from xic_extractor.config import ExtractionConfig
 def _alignment_outputs(
     *,
     configured_backend: str = "raw",
-    processing_run_spec: object | None = None,
     **kwargs: object,
 ) -> _AlignmentRunOutputs:
     return _AlignmentRunOutputs(
         **kwargs,
-        owner_build_route_receipt=_mint_owner_build_route_receipt(
+        owner_build_route_receipt=_mint_retained_untargeted_cid_nl_route_receipt(
             configured_backend=configured_backend,
-            processing_run_spec_id=(
-                getattr(processing_run_spec, "run_spec_id")
-                if processing_run_spec is not None
-                else None
-            ),
-            processing_run_spec_hash=(
-                getattr(processing_run_spec, "run_spec_hash")
-                if processing_run_spec is not None
-                else None
-            ),
         ),
     )
 
@@ -84,7 +76,11 @@ def test_align_only_summary_uses_existing_batch_index_counts(
     def fake_run_alignment(**_kwargs):
         return _alignment_outputs(matrix_tsv=output_dir / "alignment_matrix.tsv")
 
-    monkeypatch.setattr(module, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(
+        module,
+        "run_alignment",
+        create_autospec(module.run_alignment, side_effect=fake_run_alignment),
+    )
     request = DiscoveryRequest(
         mode="align_only",
         preset=str(preset_path),
@@ -280,7 +276,6 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         captured_alignment.update(kwargs)
         return _alignment_outputs(
             configured_backend=kwargs["owner_build_xic_backend"],
-            processing_run_spec=kwargs["discovery_processing_run_spec"],
             matrix_tsv=output_dir / "alignment_matrix.tsv",
         )
 
@@ -288,10 +283,13 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         captured_discovery_batch.update(kwargs)
         return SimpleNamespace(
             batch_index_csv=index_path,
-            per_sample=(SimpleNamespace(physical_bindings=("binding",)),),
         )
 
-    monkeypatch.setattr(module, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(
+        module,
+        "run_alignment",
+        create_autospec(module.run_alignment, side_effect=fake_run_alignment),
+    )
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
     monkeypatch.setattr(module, "bind_cid_nl_recipe", bind_once)
     request = DiscoveryRequest(
@@ -346,7 +344,6 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_cells"] is False
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["audit_evidence_mode"] == "none"
-    assert captured_alignment["require_discovery_owner_closure"] is (mode == "full")
     should_cancel = captured_alignment["should_cancel"]
     assert callable(should_cancel)
     assert should_cancel() is False
@@ -365,34 +362,19 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     )
     if mode == "full":
         assert captured_discovery_batch["max_workers"] == 1
-        assert captured_alignment["discovery_physical_bindings_by_sample"] == {
-            "A": ("binding",)
-        }
-        assert isinstance(
-            captured_alignment["discovery_processing_run_spec"],
-            module.ProcessingRunSpec,
-        )
-        run_spec = captured_alignment["discovery_processing_run_spec"]
-        assert summary["owner_build_route"] == {
-            "configured_owner_build_xic_backend": "raw_superwindow",
-            "effective_owner_build_route": "discovery_physical_bindings",
-            "effective_owner_build_xic_backend": None,
-            "effective_route_validation": "owner_validated",
-            "processing_run_spec_id": run_spec.run_spec_id,
-            "processing_run_spec_hash": run_spec.run_spec_hash,
-        }
+        run_spec = captured_discovery_batch["run_spec"]
+        assert run_spec.discovery_method.settings is recipe.discovery_settings
+        assert run_spec.acquisition_inputs[0].sample_stem == "A"
     else:
         assert captured_discovery_batch == {}
-        assert captured_alignment["discovery_physical_bindings_by_sample"] is None
-        assert captured_alignment["discovery_processing_run_spec"] is None
-        assert summary["owner_build_route"] == {
-            "configured_owner_build_xic_backend": "raw_superwindow",
-            "effective_owner_build_route": "configured_backend",
-            "effective_owner_build_xic_backend": "raw_superwindow",
-            "effective_route_validation": "owner_validated",
-            "processing_run_spec_id": None,
-            "processing_run_spec_hash": None,
-        }
+    assert summary["owner_build_route"] == {
+        "configured_owner_build_xic_backend": "raw_superwindow",
+        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
+        "effective_owner_build_xic_backend": None,
+        "effective_route_validation": "owner_validated",
+        "processing_run_spec_id": None,
+        "processing_run_spec_hash": None,
+    }
     assert not any(
         name.startswith("standard_peak_") for name in summary["alignment_outputs"]
     )
@@ -410,7 +392,7 @@ def test_discovery_worker_reports_alignment_interruption_as_cancelled(
         raw_file=None,
         dll_dir=tmp_path / "dll",
         output_dir=tmp_path / "out",
-        discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+        discovery_batch_index=write_batch(tmp_path, ("A",)),
     )
     worker = DiscoveryWorker(request)
     cancelled: list[bool] = []
@@ -418,9 +400,9 @@ def test_discovery_worker_reports_alignment_interruption_as_cancelled(
     worker.cancelled.connect(lambda: cancelled.append(True))
     worker.error.connect(errors.append)
     monkeypatch.setattr(
-        worker,
-        "_run_align_only",
-        lambda _request: (_ for _ in ()).throw(
+        alignment_pipeline,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: (_ for _ in ()).throw(
             InterruptedError("Alignment cancelled before output publication")
         ),
     )

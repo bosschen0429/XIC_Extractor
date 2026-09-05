@@ -13,9 +13,6 @@ from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryCandidatePhysicalBinding,
-)
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
@@ -26,7 +23,6 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
-from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -137,15 +133,6 @@ class DiscoveryWorker(QThread):
             request,
             index_path=index_path,
             raw_dir=raw_dir,
-            processing_run_spec=run_spec,
-            physical_bindings_by_sample={
-                raw_path.stem: sample_outputs.physical_bindings
-                for raw_path, sample_outputs in zip(
-                    raw_paths,
-                    batch_outputs.per_sample,
-                    strict=True,
-                )
-            },
         )
         if self.isInterruptionRequested():
             return None
@@ -252,10 +239,6 @@ class DiscoveryWorker(QThread):
         *,
         index_path: Path,
         raw_dir: Path,
-        processing_run_spec: ProcessingRunSpec | None = None,
-        physical_bindings_by_sample: (
-            dict[str, tuple[DiscoveryCandidatePhysicalBinding, ...]] | None
-        ) = None,
     ) -> tuple[AlignmentRunOutputs, OwnerBuildRouteReceipt]:
         recipe = self._alignment_runtime(request)
         outputs = run_alignment(
@@ -270,12 +253,6 @@ class DiscoveryWorker(QThread):
             ),
             discovery_settings=recipe.discovery_settings,
             owner_build_xic_backend=recipe.owner_build_xic_backend,
-            discovery_processing_run_spec=processing_run_spec,
-            discovery_physical_bindings_by_sample=physical_bindings_by_sample,
-            require_discovery_owner_closure=(
-                processing_run_spec is not None
-                or physical_bindings_by_sample is not None
-            ),
             should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )
