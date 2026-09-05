@@ -1582,7 +1582,9 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
     metadata = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
     assert metadata["backfill_scope"] == "production-equivalent"
     assert metadata["audit_evidence_mode"] == "none"
-    assert metadata["request_plan_version"] == "p7-owner-backfill-request-plan-v1"
+    assert metadata["request_plan_version"] == (
+        "alignment-parity-scoped-owner-backfill-request-plan-v1"
+    )
 
 
 def test_pipeline_production_equivalent_validation_does_not_enable_heavy_audit(
