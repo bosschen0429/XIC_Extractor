@@ -50,17 +50,22 @@ def test_tracked_default_bundle_and_activation_validate_without_local_artifacts(
     tmp_path: Path,
 ) -> None:
     checkout = tmp_path / "checkout"
-    subprocess.run(
+    checkout_result = subprocess.run(
         [
             "git",
+            "-c",
+            "core.longpaths=true",
             "checkout-index",
             "--all",
             f"--prefix={checkout.as_posix()}/",
         ],
         cwd=ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
+    )
+    assert checkout_result.returncode == 0, (
+        checkout_result.stdout + checkout_result.stderr
     )
 
     for script in (
