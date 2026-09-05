@@ -86,10 +86,9 @@ lifecycle for each provider.
   content identity differs. Candidate and RAW paths remain locators rather than
   identity. The current producer writes candidate/review locators relative to
   the batch index so a complete Discovery directory remains readable after a
-  rename or copy. The external RAW locator is not rewritten. Legacy batch
-  indexes remain readable by legacy Alignment consumers but cannot enter the
-  owner-closed real-data runtime path. Do not depend on old worktree-local output directories
-  as durable inputs.
+  rename or copy. The external RAW locator is not rewritten. Owner-closed
+  execution requires the v2 handoff and rejects legacy batch indexes. Do not
+  depend on old worktree-local output directories as durable inputs.
 - Minimal output modes are for fast inspection; standard outputs are the public
   machine handoff surfaces.
 - Discovery UX and review surfaces are public handoffs when they define

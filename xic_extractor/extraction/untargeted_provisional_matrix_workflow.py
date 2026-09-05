@@ -55,6 +55,20 @@ def run_untargeted_provisional_matrix_workflow(
 ) -> UntargetedProvisionalMatrixRun:
     """Run every fresh Discovery candidate through existing full Alignment."""
 
+    if not is_pure_single_provider_cid_nl(discovery_settings):
+        raise ValueError(
+            "provisional review supports only pure single-provider CID-NL; "
+            "use the dna_dr preset"
+        )
+    _validate_untargeted_cid_nl_alignment_options(
+        raw_workers=raw_workers,
+        raw_xic_batch_size=raw_xic_batch_size,
+        owner_backfill_xic_backend=owner_backfill_xic_backend,
+        owner_backfill_window_strategy=owner_backfill_window_strategy,
+        owner_backfill_superwindow_span_factor=(owner_backfill_superwindow_span_factor),
+        sample_column_injection_order=sample_column_injection_order,
+    )
+
     if not raw_files:
         raise ValueError("full-universe workflow requires at least one RAW file")
     if any(not path.is_file() for path in raw_files):
@@ -68,17 +82,6 @@ def run_untargeted_provisional_matrix_workflow(
         raise ValueError("full-universe workflow output already exists")
     if raw_workers < 1 or raw_xic_batch_size < 1:
         raise ValueError("RAW worker and XIC batch counts must be positive")
-    if is_pure_single_provider_cid_nl(discovery_settings):
-        _validate_untargeted_cid_nl_alignment_options(
-            raw_workers=raw_workers,
-            raw_xic_batch_size=raw_xic_batch_size,
-            owner_backfill_xic_backend=owner_backfill_xic_backend,
-            owner_backfill_window_strategy=owner_backfill_window_strategy,
-            owner_backfill_superwindow_span_factor=(
-                owner_backfill_superwindow_span_factor
-            ),
-            sample_column_injection_order=sample_column_injection_order,
-        )
 
     output_dir.mkdir(parents=True)
     discovery_dir = output_dir / "discovery"
@@ -120,9 +123,7 @@ def run_untargeted_provisional_matrix_workflow(
         owner_build_xic_backend=owner_build_xic_backend,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=(
-            owner_backfill_superwindow_span_factor
-        ),
+        owner_backfill_superwindow_span_factor=(owner_backfill_superwindow_span_factor),
         sample_column_injection_order=sample_column_injection_order,
         sample_metadata=sample_metadata,
         timing_recorder=timing_recorder,
@@ -176,22 +177,12 @@ def _peak_config(
         nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
         resolver_mode=settings.resolver_mode,
         resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
-        resolver_min_search_range_min=float(
-            defaults["resolver_min_search_range_min"]
-        ),
-        resolver_min_relative_height=float(
-            defaults["resolver_min_relative_height"]
-        ),
-        resolver_min_absolute_height=float(
-            defaults["resolver_min_absolute_height"]
-        ),
+        resolver_min_search_range_min=float(defaults["resolver_min_search_range_min"]),
+        resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
+        resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
         resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
-        resolver_peak_duration_min=float(
-            defaults["resolver_peak_duration_min"]
-        ),
-        resolver_peak_duration_max=float(
-            defaults["resolver_peak_duration_max"]
-        ),
+        resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
+        resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
         resolver_min_scans=int(defaults["resolver_min_scans"]),
     )
 

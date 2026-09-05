@@ -226,44 +226,6 @@ The seed-aware review packet remains a shadow-gate support surface. Its current
 signal is useful for review triage, but it does not change matrix authority or
 write scope.
 
-## Early-loser settlement shadow
-
-`run_alignment --emit-early-loser-shadow` is an opt-in `diagnostic_only`
-comparison surface for Issue #195 / #208. It runs the existing typed
-pre-Backfill identity consolidation as a proposal, but the original owner
-features still enter the existing Backfill request plan and execution path.
-The flag requires `--backfill-scope full-audit` and fails closed when combined
-with the activated `--preconsolidate-owner-families` path.
-After the claim registry and primary consolidation finish, the shadow compares
-every proposal row with the typed final Matrix authority and writes
-`alignment_early_loser_shadow.json`.
-
-The packet preserves the proposal source stage, direct and terminal winners,
-complete transitive lineage, unresolved states, and final-authority comparison.
-Legal two-stage `primary_loser → primary_loser → primary_winner` chains are
-retained; missing references, cycles, non-winner terminals, and winner
-mismatches fail closed. The report also includes owner request-plan feature,
-sample-cell, and logical XIC-request counts for the baseline and proposal. Those
-are workload counts, not elapsed-time, RAW-call, chromatogram-call, point-count,
-or cost savings.
-
-The durable packet binds the timing `run_id`, a canonical typed source-owner
-snapshot digest, the `AlignmentConfig` digest, and the complete final
-consolidation-comparison projection digest. A separate request-universe digest
-binds sample order and available RAW sample stems. The packet deliberately does
-not bind or certify Matrix cells/values; those facts remain unavailable gaps,
-and the persisted JSON remains an untrusted diagnostic projection after
-deserialization.
-
-The sidecar reports hard-zero observed Matrix/output diff because it never
-constructs or routes an alternate Matrix. Counterfactual selected observations,
-missing/extra cells, status/reason, areas, Matrix identity/value, and review
-population remain explicit activation gaps until an owner-valid survivor-only
-execution can supply them under a separate authorization. `GO` means only that
-the shadow instrumentation and typed lineage close and all three projected
-owner workload reductions are positive; it never grants early skip,
-Backfill eligibility, Matrix, ProductWriter, or activation authority.
-
 ## Exact Backfill request reuse
 
 The owner-closed Backfill path may reuse one extracted trace only through the
@@ -279,8 +241,8 @@ proxy counts are never accepted as equivalence proof.
 The extraction owner executes one representative per canonical class and
 returns an owner-bound typed trace result. It fans that trace back to every
 logical member in deterministic request order; each hypothesis still performs
-its own peak evaluation and keeps its original result, candidate-audit, claim,
-consolidation, Matrix-row, and writer semantics. Primary, hybrid prefilter, and
+its own peak evaluation and keeps its original result and candidate-audit
+semantics for the consuming owner. Primary, hybrid prefilter, and
 RAW validation phases use distinct identities and cannot reuse across phases or
 incompatible acquisition/backend/window/result semantics.
 
@@ -292,9 +254,8 @@ the runtime emits no exact-equivalence observation. Any legacy in-call
 semantic evidence. Timing diagnostics may report observed logical-request and
 canonical-class counts when the exact owner partition exists; they do not claim
 elapsed-time, RAW-call, chromatogram-call, point-count, or monetary savings.
-This path does not consume the early-loser shadow and grants no new Backfill
-eligibility, claim, Matrix, ProductWriter, activation, streaming, artifact, or
-recovery authority.
+This path grants no new Backfill eligibility, Matrix, ProductWriter,
+activation, streaming, artifact, or recovery authority.
 
 ## Surfaces
 
@@ -308,7 +269,6 @@ recovery authority.
 | Mechanical adjudication schema/index | Structured review evidence for candidate promotion |
 | Backfill validation packets | Evidence availability, replay, and expected-diff artifacts |
 | `alignment_backfill_cell_evidence.tsv` | Compact alignment-side evidence sidecar |
-| `alignment_early_loser_shadow.json` | Opt-in owner-valid proposal/final comparison; no-write and non-activating |
 
 ## Boundaries
 

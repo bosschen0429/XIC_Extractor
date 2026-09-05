@@ -32,10 +32,6 @@ from xic_extractor.alignment.debug_writer import (
     write_event_to_ms1_owner_tsv,
     write_owner_edge_evidence_tsv,
 )
-from xic_extractor.alignment.early_loser_shadow import EarlyLoserShadowReport
-from xic_extractor.alignment.early_loser_shadow_writer import (
-    write_early_loser_shadow_json,
-)
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.html_report import write_alignment_review_html
 from xic_extractor.alignment.matrix import AlignmentMatrix
@@ -109,7 +105,6 @@ class AlignmentRunOutputs:
     provisional_identity_tsv: Path | None = None
     provisional_cell_provenance_tsv: Path | None = None
     provisional_summary_json: Path | None = None
-    early_loser_shadow_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
     owner_backfill_evaluation_coverage: (
@@ -130,7 +125,6 @@ def output_paths(
     emit_skipped_evidence_ledger: bool = False,
     emit_target_snapshot_metadata: bool = False,
     emit_provisional_matrix: bool = False,
-    emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
     artifacts = set(artifact_names_for_output_level(output_level))
     if emit_alignment_cells:
@@ -241,11 +235,6 @@ def output_paths(
         provisional_summary_json=(
             output_dir / "provisional_matrix_summary.json"
             if emit_provisional_matrix
-            else None
-        ),
-        early_loser_shadow_json=(
-            output_dir / "alignment_early_loser_shadow.json"
-            if emit_early_loser_shadow
             else None
         ),
     )
@@ -380,7 +369,6 @@ def write_outputs_atomic(
     baseline_integration_method: str = "asls",
     baseline_audit_method: str = "",
     timing_recorder: TimingRecorder | None = None,
-    early_loser_shadow: EarlyLoserShadowReport | None = None,
     capture_artifact_fingerprints: bool = False,
 ) -> AlignmentArtifactFingerprintBatch | None:
     if not isinstance(
@@ -654,22 +642,6 @@ def write_outputs_atomic(
                 ),
             )
         )
-    if (outputs.early_loser_shadow_json is None) != (early_loser_shadow is None):
-        raise ValueError(
-            "early-loser shadow output and owner report must be provided together"
-        )
-    if outputs.early_loser_shadow_json is not None:
-        assert early_loser_shadow is not None
-        output_paths_and_writers.append(
-            (
-                outputs.early_loser_shadow_json,
-                lambda path: write_early_loser_shadow_json(
-                    path,
-                    early_loser_shadow,
-                ),
-            ),
-        )
-
     temp_paths = [
         _temp_path(final_path) for final_path, _writer in output_paths_and_writers
     ]

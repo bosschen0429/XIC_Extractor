@@ -702,63 +702,6 @@ identity layer; B inconclusive without the physical-peak owner payload; C
 aggregate-only/partial; D final-projection-only with pre-Backfill knowability
 unavailable; and E unavailable without exact request and batch lineage.
 
-Decision: value priority is an owner-valid early-loser-settlement shadow before
-exact request coalescing, derived from the observed `36,608` loser rows while
-exact request equivalence remains unavailable. A compatible artifact with zero
-loser rows reports an inconclusive priority. Dependency order is decision
-ledger, owner-valid early-settlement shadow, owner-minted exact request
-identity/coalescing, artifact-format work, then recovery/resumability. This is
-`diagnostic_only`, uses stale-revision cost evidence rather than current-head
-parity, and grants no product or scientific authority.
-
-## Issue #195 owner-valid early-loser shadow
-
-Issue #208 adds an opt-in in-process shadow at the typed Alignment owner
-boundary. It calls the existing pre-Backfill consolidation owner on the current
-`OwnerAlignedFeature` population, measures the baseline/proposal workload with
-the existing owner Backfill request-plan owner, and compares the immutable
-proposal with the typed final Matrix after claim registry and primary
-consolidation. The original owner features continue through Backfill; the
-shadow report is not an execution input.
-
-The retained Issue #195 artifact cannot supply this packet because it omits the
-complete pre-Backfill owner population. No persisted display projection is used
-to reconstruct that truth. No RAW, 8RAW, or 85RAW run was authorized for this
-slice. Current evidence is therefore deterministic no-RAW owner fixtures and
-pipeline control-flow oracles, not a current-head real-population result.
-
-The lineage owner accepts legal sequential consolidation chains such as
-`primary_loser → primary_loser → primary_winner`; it requires every reference
-to exist, rejects cycles, and requires a loser chain to terminate at a
-self-referencing primary winner. This closes the PR #207 direct-winner review
-debt without normalizing or rejecting canonical two-stage producer output.
-
-The emitted `alignment_early_loser_shadow.json` covers survivor/loser/
-unresolved rows, direct/terminal winner identity, full proposal/final lineage,
-owner request-plan feature/cell/logical-XIC workload counts, final comparison,
-rollback, and every expected-diff surface. Actual shadow output differences are
-hard-zero because the shadow never constructs an alternate Matrix. A
-counterfactual activated skip has unavailable selected-observation,
-missing/extra-cell, status/reason, area, Matrix identity/value, and review-
-population evidence; these are explicit activation blockers.
-
-The shadow requires `full-audit` and rejects simultaneous activated
-preconsolidation so the measured baseline remains the execution baseline. Its
-persisted projection binds the run, canonical typed source-owner snapshot,
-`AlignmentConfig`, and final comparison rows with SHA-256 digests. It
-also binds the sample order and available RAW sample-stem request universe. It
-explicitly does not bind Matrix cells/values and cannot be rehydrated as
-scientific authority. A proposal with any non-positive requested-feature,
-cell, or logical XIC-request reduction is insufficient decision value and
-returns `KILL`.
-
-Decision: `GO` for retaining the owner-valid shadow instrumentation only.
-Activation remains `REDESIGN / blocked` until a separately authorized,
-owner-valid survivor-only execution closes the counterfactual expected diff.
-Any false loser, terminal-winner mismatch, missing/cyclic lineage,
-non-positive projected workload reduction, or nonzero scientific/output diff
-is `KILL`. Status remains `diagnostic_only`.
-
 ## Issue #195 owner-minted exact request reuse
 
 Issue #210 implements the current in-process owner path for exact Backfill
