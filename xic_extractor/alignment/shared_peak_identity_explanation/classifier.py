@@ -13,10 +13,10 @@ from .schema import (
 )
 
 _REQUIRED_BLAST_RADIUS_SURFACE_IDS = (
-    "8raw_alignment_review",
-    "8raw_alignment_cells",
-    "85raw_alignment_review",
-    "85raw_alignment_cells",
+    "fixture_cohort_alignment_review",
+    "fixture_cohort_alignment_cells",
+    "full_cohort_alignment_review",
+    "full_cohort_alignment_cells",
 )
 
 _RISK_SEVERITY = {
@@ -30,8 +30,8 @@ _RISK_SEVERITY = {
 _BLAST_RADIUS_RISK_SCOPES = frozenset(
     {
         "non_seed_same_family",
-        "all_available_8raw",
-        "all_available_85raw",
+        "all_available_fixture_cohort",
+        "all_available_full_cohort",
         "overall",
     }
 )
@@ -281,22 +281,25 @@ def _blast_radius_assessment_status(
     manifest_rows: Sequence[Mapping[str, str]],
 ) -> str:
     by_id = {row.get("artifact_id", ""): row for row in manifest_rows}
-    for artifact_id in ("85raw_alignment_review", "85raw_alignment_cells"):
+    for artifact_id in ("full_cohort_alignment_review", "full_cohort_alignment_cells"):
         row = by_id.get(artifact_id)
         if row is None:
-            return "85raw_not_assessed"
+            return "full_cohort_not_assessed"
         if row.get("artifact_status") in {"missing", "present_missing_required_fields"}:
-            return "85raw_not_assessed"
+            return "full_cohort_not_assessed"
         if row.get("missing_required_fields"):
-            return "85raw_not_assessed"
-    for artifact_id in ("8raw_alignment_review", "8raw_alignment_cells"):
+            return "full_cohort_not_assessed"
+    for artifact_id in (
+        "fixture_cohort_alignment_review",
+        "fixture_cohort_alignment_cells",
+    ):
         row = by_id.get(artifact_id)
         if row is None:
-            return "8raw_not_assessed"
+            return "fixture_cohort_not_assessed"
         if row.get("artifact_status") in {"missing", "present_missing_required_fields"}:
-            return "8raw_not_assessed"
+            return "fixture_cohort_not_assessed"
         if row.get("missing_required_fields"):
-            return "8raw_not_assessed"
+            return "fixture_cohort_not_assessed"
     required_rows = [
         by_id[artifact_id] for artifact_id in _REQUIRED_BLAST_RADIUS_SURFACE_IDS
     ]

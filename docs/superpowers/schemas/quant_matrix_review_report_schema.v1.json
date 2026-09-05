@@ -1,7 +1,7 @@
 {
   "schema_version": "quant_matrix_review_report_schema_v1",
   "review_schema_version": "quant_matrix_review_report_v1",
-  "purpose": "Defines the Phase 4 review-only report outputs rendered from QuantMatrixVersion v1 sidecars and the validated ProductionAcceptanceManifest. This schema does not change ProductWriter default extraction, workbooks, GUI behavior, selected peaks, selected areas, counted detections, or matrix authority.",
+  "purpose": "Defines the review-only report outputs rendered from QuantMatrixVersion v1 sidecars and the validated ProductionAcceptanceManifest. This schema does not change ProductWriter default extraction, workbooks, GUI behavior, selected peaks, selected areas, counted detections, or matrix authority.",
   "outputs": {
     "review_rows": "quant_matrix_review_rows.tsv",
     "summary_json": "quant_matrix_review_summary.json",

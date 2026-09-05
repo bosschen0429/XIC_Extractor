@@ -40,7 +40,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
     monkeypatch,
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"m7-runtime-batch:S1")
+    raw_path.write_bytes(b"real-data-runtime-batch:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw, candidates = _nearby_subject_candidates(
@@ -81,7 +81,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
             (raw_path,),
             {"S1": candidates},
         ),
-        sample_identity_namespace="study:m7-runtime-batch-test",
+        sample_identity_namespace="study:real-data-runtime-batch-test",
     )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
@@ -108,7 +108,9 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-m7-batch-test:v1",
+        owner_completeness_attestation=(
+            "untargeted-cid-nl-real-data-runtime-batch-test:v1"
+        ),
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -116,8 +118,8 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7.batch.runtime.json",
-            "untargeted-cid-nl-m7-batch:test",
+            tmp_path / "real_data_runtime.batch.json",
+            "untargeted-cid-nl-real-data-runtime-batch:test",
         ),
     )
 
@@ -148,7 +150,9 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     stems = ("S1", "S2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
-        raw_path.write_bytes(f"m7-runtime-batch-recovery:{raw_path.stem}".encode())
+        raw_path.write_bytes(
+            f"real-data-runtime-batch-recovery:{raw_path.stem}".encode()
+        )
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws: dict[Path, _FakeRaw] = {}
@@ -201,7 +205,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             raw_paths,
             candidates_by_sample,
         ),
-        sample_identity_namespace="study:m7-runtime-batch-recovery-test",
+        sample_identity_namespace="study:real-data-runtime-batch-recovery-test",
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -233,7 +237,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation=(
-            "untargeted-cid-nl-m7-batch-recovery-test:v1"
+            "untargeted-cid-nl-real-data-runtime-batch-recovery-test:v1"
         ),
     )
 
@@ -242,8 +246,8 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7.batch.recovery.runtime.json",
-            "untargeted-cid-nl-m7-batch-recovery:test",
+            tmp_path / "real_data_runtime.batch.recovery.json",
+            "untargeted-cid-nl-real-data-runtime-batch-recovery:test",
         ),
     )
 

@@ -1,6 +1,6 @@
 """Build/check the QuantMatrix promotion packet v2.
 
-This no-RAW adapter binds the Phase 7 real QuantMatrix bundle to the existing
+This no-RAW adapter binds the real/candidate QuantMatrix bundle to the existing
 large-cohort and heldout-oracle evidence packet, then runs promotion readiness
 against the real bundle inputs. It does not mutate ProductWriter, default
 matrix output, workbooks, GUI behavior, selected peaks/areas, or counted
@@ -58,7 +58,7 @@ PROMOTION_PACKET_V2_SUMMARY_SCHEMA = "quant_matrix_promotion_packet_v2_summary_v
 DEFAULT_OUTPUT_DIR = Path(
     "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2",
 )
-DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v2-20260619"
+DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v2"
 
 
 def build_quant_matrix_promotion_packet_v2(
@@ -102,13 +102,13 @@ def build_quant_matrix_promotion_packet_v2(
         output_dir=output_dir,
         evidence_artifacts=[
             ValidationEvidenceArtifact(
-                tier="85raw_large_cohort",
+                tier="full_cohort",
                 status="pass",
                 source_artifact=large_cohort_artifact,
                 cohort_id=cohort_id,
                 raw_run_count=raw_run_count,
                 evidence_note=(
-                    "Existing no-RAW 85RAW consolidated standard-peak activation "
+                    "Existing no-RAW FULL_COHORT consolidated standard-peak activation "
                     "input summary; large-cohort evidence only, not matrix "
                     "authority."
                 ),
@@ -132,7 +132,7 @@ def build_quant_matrix_promotion_packet_v2(
                 ),
                 downstream_scope=downstream_scope,
                 evidence_note=(
-                    "Phase 7 real QuantMatrixVersion downstream-impact smoke "
+                    "Real/candidate QuantMatrixVersion downstream-impact smoke "
                     "artifact bound by copied summary and row metrics hashes."
                 ),
             ),
@@ -218,7 +218,7 @@ def validate_quant_matrix_promotion_packet_v2(
 
     for field, expected_text in (
         ("schema_version", PROMOTION_PACKET_V2_SUMMARY_SCHEMA),
-        ("phase", "phase8_promotion_packet_v2"),
+        ("artifact_role", "promotion_candidate_packet_v2"),
         ("status", "pass"),
         ("requested_readiness_label", "production_ready"),
         ("readiness_label", "production_ready_candidate_packet"),
@@ -229,7 +229,7 @@ def validate_quant_matrix_promotion_packet_v2(
         ("read_only", True),
         ("write_authority", False),
         ("scorer_ran", False),
-        ("raw_or_85raw_ran", False),
+        ("raw_or_full_cohort_ran", False),
         ("product_writer_changed", False),
         ("default_quant_matrix_changed", False),
         ("broad_backfill_unparked", False),
@@ -238,8 +238,7 @@ def validate_quant_matrix_promotion_packet_v2(
     ):
         if payload.get(field) is not expected_bool:
             problems.append(
-                f"promotion packet v2 {field} must be "
-                f"{str(expected_bool).lower()}",
+                f"promotion packet v2 {field} must be {str(expected_bool).lower()}",
             )
     if (
         optional_int(payload.get("accepted_backfill_count", ""))
@@ -343,14 +342,14 @@ def _write_summary(
     readiness = _read_json_object(readiness_outputs["summary_json"])
     payload = {
         "schema_version": PROMOTION_PACKET_V2_SUMMARY_SCHEMA,
-        "phase": "phase8_promotion_packet_v2",
+        "artifact_role": "promotion_candidate_packet_v2",
         "status": "pass",
         "packet_id": packet_id,
         "requested_readiness_label": requested_readiness_label,
         "read_only": True,
         "write_authority": False,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "broad_backfill_unparked": False,
@@ -413,7 +412,7 @@ def _write_summary(
             ),
         },
         "authority_statement": (
-            "Phase 8 promotion packet v2 is a Product Ready candidate packet "
+            "Promotion candidate packet v2 is a Product Ready candidate packet "
             "only. It may promote a later default quant matrix activation gate, "
             "but this artifact itself is read-only and does not change "
             "ProductWriter defaults or matrix-writing authority."
@@ -422,6 +421,7 @@ def _write_summary(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -447,7 +447,7 @@ def _append_readiness_candidate_problems(
     if summary.get("missing_science_evidence") != []:
         problems.append("promotion packet v2 readiness missing_science_evidence")
     expected_tiers = {
-        "85raw_large_cohort": "pass",
+        "full_cohort": "pass",
         "heldout_oracle": "pass",
         "downstream_impact_smoke": "pass",
     }
@@ -594,12 +594,14 @@ def _validation_evidence_for_readiness_rerun(
             target_artifact.write_text(
                 json.dumps(downstream_payload, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
+                newline="\n",
             )
         raw_row["artifact_sha256"] = file_sha256(target_artifact)
     rerun_json = rerun_dir / validation_evidence_json.name
     rerun_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return rerun_json
 
@@ -698,11 +700,13 @@ def _localize_downstream_evidence_inputs(
     copied_summary.write_text(
         json.dumps(copied_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     downstream_row["artifact_sha256"] = file_sha256(copied_summary)
     evidence_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     normalized_rows = [
         {column: str(row.get(column, "")) for column in VALIDATION_EVIDENCE_ROW_COLUMNS}
@@ -724,6 +728,7 @@ def _localize_downstream_evidence_inputs(
     packet_outputs["summary_json"].write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -939,14 +944,17 @@ def _rewrite_readiness_input_paths(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
 def _artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
     return {
-        "path": path.resolve(strict=False).relative_to(
+        "path": path.resolve(strict=False)
+        .relative_to(
             base_dir.resolve(strict=False),
-        ).as_posix(),
+        )
+        .as_posix(),
         "sha256": file_sha256(path),
     }
 
@@ -962,9 +970,13 @@ def _source_argument(path: Path, *, source_root: Path) -> Path:
 
 def _source_relpath(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=True).relative_to(
-            source_root.resolve(strict=True),
-        ).as_posix()
+        return (
+            path.resolve(strict=True)
+            .relative_to(
+                source_root.resolve(strict=True),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path.resolve(strict=True))
 

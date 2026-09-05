@@ -49,18 +49,18 @@ QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1 = (
 _AUTHORITY_ID_PREFIX = "quantitative-projection-authority.v1:"
 _AUTHORITY_RESOURCE_PACKAGE = "xic_extractor.alignment"
 _AUTHORITY_RESOURCE_DIRECTORY = "data"
-_AUTHORITY_RESOURCE_NAME = "issue256_quantitative_projection_authority_v1.json"
+_AUTHORITY_RESOURCE_NAME = "quantitative_projection_authority_v1.json"
 _AUTHORITY_MINT_TOKEN = object()
 _MANIFEST_MINT_TOKEN = object()
 
 _MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
 _MANIFEST_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
 _PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
 )
 _ACTIVATION_SUMMARY_ARTIFACT = (
     "docs/superpowers/validation/"
-    "issue256_untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+    "untargeted_owner_backfill_canonical_quantitative_activation_v1/"
     "activation_summary.json"
 )
 _MANIFEST_CONTENT_ID_PREFIX = "quantitative-projection-authority-manifest.v1:"

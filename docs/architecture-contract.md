@@ -124,8 +124,9 @@ architecture boundaries.
   enumeration, calibration, production candidate, or retirement.
 - Direct matrix writes require an activation/export contract, expected diff,
   and focused output oracle.
-- Name current modules and contracts after owned behavior, not a milestone,
-  ticket, phase, or first dataset.
+- Name current modules and contracts after owned behavior, not an Issue or PR,
+  milestone, numbered phase/package, opaque gate label, dated attempt, or first
+  validation dataset.
 
 `xic_extractor.evidence_semantics` is role-neutral and serves both candidate
 selection and product projection. Targeted role policy belongs in the Targeted

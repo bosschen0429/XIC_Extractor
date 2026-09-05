@@ -27,7 +27,7 @@ def test_classify_powershell_antipatterns(tmp_path: Path) -> None:
     assert "powershell_bash_heredoc" in codes
 
 
-def test_classify_85raw_background_and_bare_python_raw_runner(
+def test_classify_full_cohort_background_and_bare_python_raw_runner(
     tmp_path: Path,
 ) -> None:
     command = (

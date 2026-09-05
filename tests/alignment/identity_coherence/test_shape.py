@@ -168,9 +168,9 @@ def test_estimate_shape_reference_allows_morphology_rt_medoid_when_no_tier1():
     config = IdentityCoherenceConfig()
     result = estimate_shape_reference(
         (
-            _candidate("M1", sample_id="S2"),
-            _candidate("M2", sample_id="S3"),
-            _candidate("M3", sample_id="S4"),
+            _candidate("CELL_REFERENCE", sample_id="S2"),
+            _candidate("BACKFILL_DECISION", sample_id="S3"),
+            _candidate("IDENTITY_SETTLEMENT", sample_id="S4"),
         ),
         config,
         seed_sample_id="S1",
@@ -179,7 +179,11 @@ def test_estimate_shape_reference_allows_morphology_rt_medoid_when_no_tier1():
     )
 
     assert result.shape_reference_basis is ShapeReferenceBasis.MORPHOLOGY_RT_MEDOID
-    assert result.shape_reference_candidate_id in {"M1", "M2", "M3"}
+    assert result.shape_reference_candidate_id in {
+        "CELL_REFERENCE",
+        "BACKFILL_DECISION",
+        "IDENTITY_SETTLEMENT",
+    }
 
 
 def test_estimate_shape_reference_respects_morphology_rt_medoid_opt_out():
@@ -191,9 +195,9 @@ def test_estimate_shape_reference_respects_morphology_rt_medoid_opt_out():
     )
     result = estimate_shape_reference(
         (
-            _candidate("M1", sample_id="S2"),
-            _candidate("M2", sample_id="S3"),
-            _candidate("M3", sample_id="S4"),
+            _candidate("CELL_REFERENCE", sample_id="S2"),
+            _candidate("BACKFILL_DECISION", sample_id="S3"),
+            _candidate("IDENTITY_SETTLEMENT", sample_id="S4"),
         ),
         config,
         seed_sample_id="S1",
@@ -248,9 +252,9 @@ def test_estimate_shape_reference_excludes_seed_from_prototype_medoid():
     result = estimate_shape_reference(
         (
             _candidate("SEED", sample_id="S1"),
-            _candidate("M1", sample_id="S2"),
-            _candidate("M2", sample_id="S3"),
-            _candidate("M3", sample_id="S4"),
+            _candidate("CELL_REFERENCE", sample_id="S2"),
+            _candidate("BACKFILL_DECISION", sample_id="S3"),
+            _candidate("IDENTITY_SETTLEMENT", sample_id="S4"),
         ),
         config,
         seed_sample_id="S1",
@@ -259,7 +263,11 @@ def test_estimate_shape_reference_excludes_seed_from_prototype_medoid():
     )
 
     assert result.shape_reference_basis is ShapeReferenceBasis.MORPHOLOGY_RT_MEDOID
-    assert result.shape_reference_candidate_id in {"M1", "M2", "M3"}
+    assert result.shape_reference_candidate_id in {
+        "CELL_REFERENCE",
+        "BACKFILL_DECISION",
+        "IDENTITY_SETTLEMENT",
+    }
     assert result.shape_reference_candidate_id != "SEED"
     assert result.seed_fallback_used is False
 
@@ -268,9 +276,9 @@ def test_estimate_shape_reference_accepts_public_string_stage_values():
     config = IdentityCoherenceConfig()
     result = estimate_shape_reference(
         (
-            _candidate("M1", sample_id="S2"),
-            _candidate("M2", sample_id="S3"),
-            _candidate("M3", sample_id="S4"),
+            _candidate("CELL_REFERENCE", sample_id="S2"),
+            _candidate("BACKFILL_DECISION", sample_id="S3"),
+            _candidate("IDENTITY_SETTLEMENT", sample_id="S4"),
             _candidate("BACKFILL", sample_id="S5", evidence_stage="backfill_only"),
         ),
         config,
@@ -280,16 +288,20 @@ def test_estimate_shape_reference_accepts_public_string_stage_values():
     )
 
     assert result.shape_reference_basis is ShapeReferenceBasis.MORPHOLOGY_RT_MEDOID
-    assert result.shape_reference_candidate_id in {"M1", "M2", "M3"}
+    assert result.shape_reference_candidate_id in {
+        "CELL_REFERENCE",
+        "BACKFILL_DECISION",
+        "IDENTITY_SETTLEMENT",
+    }
 
 
 def test_estimate_shape_reference_excludes_candidates_outside_rt_gate():
     config = IdentityCoherenceConfig()
     result = estimate_shape_reference(
         (
-            _candidate("M1", sample_id="S2"),
-            _candidate("M2", sample_id="S3"),
-            _candidate("M3", sample_id="S4"),
+            _candidate("CELL_REFERENCE", sample_id="S2"),
+            _candidate("BACKFILL_DECISION", sample_id="S3"),
+            _candidate("IDENTITY_SETTLEMENT", sample_id="S4"),
             _candidate("FAR", sample_id="S5", start=9.75, apex=9.80, end=9.85),
         ),
         config,
@@ -299,7 +311,11 @@ def test_estimate_shape_reference_excludes_candidates_outside_rt_gate():
     )
 
     assert result.shape_reference_basis is ShapeReferenceBasis.MORPHOLOGY_RT_MEDOID
-    assert result.shape_reference_candidate_id in {"M1", "M2", "M3"}
+    assert result.shape_reference_candidate_id in {
+        "CELL_REFERENCE",
+        "BACKFILL_DECISION",
+        "IDENTITY_SETTLEMENT",
+    }
 
 
 def test_create_seed_shape_reference_marks_seed_fallback():

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.alignment.identity_settlement as identity_settlement_module
-from tests.issue161_no_raw_fixture import issue161_peak
+from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
 from tests.test_alignment_conservative_backfill import (
     _peak,
     _recovery_universe,
@@ -188,7 +188,7 @@ def test_recovery_candidate_membership_requires_complete_group_owner(
     tmp_path: Path,
 ) -> None:
     parent, components, _universes, fixture = _parent_and_components(tmp_path)
-    candidate = issue161_peak(
+    candidate = cid_nl_peak(
         fixture,
         "s1",
         apex_rt=8.20,

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.package2_no_raw_fixture import (
-    build_package2_no_raw_fixture,
-    package2_candidate_set,
-    package2_hypothesis,
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+    processing_identity_candidate_set,
+    processing_identity_hypothesis,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesisAuthorityError
 from xic_extractor.peak_detection.selection_decision import (
@@ -23,14 +23,18 @@ from xic_extractor.peak_detection.selection_decision import (
 def test_unique_candidate_externalizes_only_from_discovery_receipt(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
-    hypothesis = package2_hypothesis(
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
+    hypothesis = processing_identity_hypothesis(
         fixture,
         "sample-a",
         apex_rt=8.0,
         scan_number=42,
     )
-    candidate_set = package2_candidate_set(fixture, "sample-a", (hypothesis,))
+    candidate_set = processing_identity_candidate_set(
+        fixture, "sample-a", (hypothesis,)
+    )
 
     selection = mint_diagnostic_peak_hypothesis_selection_ref(
         candidate_set=candidate_set
@@ -59,12 +63,22 @@ def test_unique_candidate_externalizes_only_from_discovery_receipt(
 def test_candidate_reorder_is_identity_neutral_and_ambiguity_cannot_select(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
-    first = package2_hypothesis(fixture, "sample-a", apex_rt=8.0, scan_number=42)
-    second = package2_hypothesis(fixture, "sample-a", apex_rt=8.3, scan_number=52)
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
+    first = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.0, scan_number=42
+    )
+    second = processing_identity_hypothesis(
+        fixture, "sample-a", apex_rt=8.3, scan_number=52
+    )
 
-    forward_set = package2_candidate_set(fixture, "sample-a", (first, second))
-    reverse_set = package2_candidate_set(fixture, "sample-a", (second, first))
+    forward_set = processing_identity_candidate_set(
+        fixture, "sample-a", (first, second)
+    )
+    reverse_set = processing_identity_candidate_set(
+        fixture, "sample-a", (second, first)
+    )
     forward = mint_diagnostic_peak_hypothesis_selection_ref(candidate_set=forward_set)
     reverse = mint_diagnostic_peak_hypothesis_selection_ref(candidate_set=reverse_set)
 
@@ -77,9 +91,11 @@ def test_candidate_reorder_is_identity_neutral_and_ambiguity_cannot_select(
 def test_complete_empty_and_failure_remain_distinct_terminal_facts(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
-    empty_set = package2_candidate_set(fixture, "sample-a", ())
-    failed_set = package2_candidate_set(
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
+    empty_set = processing_identity_candidate_set(fixture, "sample-a", ())
+    failed_set = processing_identity_candidate_set(
         fixture,
         "sample-a",
         (),
@@ -97,22 +113,26 @@ def test_complete_empty_and_failure_remain_distinct_terminal_facts(
 
 
 def test_retry_binds_selection_to_exact_attempt_receipt(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
     retry_fixture = fixture.retry()
-    first_hypothesis = package2_hypothesis(
+    first_hypothesis = processing_identity_hypothesis(
         fixture,
         "sample-a",
         apex_rt=8.0,
         scan_number=42,
     )
-    retry_hypothesis = package2_hypothesis(
+    retry_hypothesis = processing_identity_hypothesis(
         retry_fixture,
         "sample-a",
         apex_rt=8.0,
         scan_number=42,
     )
-    first_set = package2_candidate_set(fixture, "sample-a", (first_hypothesis,))
-    retry_set = package2_candidate_set(
+    first_set = processing_identity_candidate_set(
+        fixture, "sample-a", (first_hypothesis,)
+    )
+    retry_set = processing_identity_candidate_set(
         retry_fixture,
         "sample-a",
         (retry_hypothesis,),
@@ -131,24 +151,26 @@ def test_retry_binds_selection_to_exact_attempt_receipt(tmp_path: Path) -> None:
 def test_receipt_substitution_and_direct_selection_tamper_fail_closed(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("sample-a", "sample-b"),
     )
-    hypothesis = package2_hypothesis(
+    hypothesis = processing_identity_hypothesis(
         fixture,
         "sample-a",
         apex_rt=8.0,
         scan_number=42,
     )
-    foreign = package2_hypothesis(
+    foreign = processing_identity_hypothesis(
         fixture,
         "sample-b",
         apex_rt=8.0,
         scan_number=52,
     )
-    candidate_set = package2_candidate_set(fixture, "sample-a", (hypothesis,))
-    foreign_set = package2_candidate_set(fixture, "sample-b", (foreign,))
+    candidate_set = processing_identity_candidate_set(
+        fixture, "sample-a", (hypothesis,)
+    )
+    foreign_set = processing_identity_candidate_set(fixture, "sample-b", (foreign,))
     selection = mint_diagnostic_peak_hypothesis_selection_ref(
         candidate_set=candidate_set
     )

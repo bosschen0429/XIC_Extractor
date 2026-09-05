@@ -20,7 +20,7 @@
   ],
   "authority_rules": {
     "effect_id": "untargeted_owner_backfill_canonical_quantitative_projection_v1",
-    "package_authority_artifact": "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json",
+    "package_authority_artifact": "xic_extractor/alignment/data/quantitative_projection_authority_v1.json",
     "package_authority_sha256_format": "lowercase_sha256_of_raw_canonical_package_bytes",
     "allowed_registered_writer_scope_ids": [
       "backfill_policy_write_ready_rows"
@@ -28,7 +28,7 @@
     "hold_activation_summary_artifact": "",
     "hold_activation_summary_sha256": "",
     "hold_current_effect_cell_count": 0,
-    "active_activation_summary_artifact": "docs/superpowers/validation/issue256_untargeted_owner_backfill_canonical_quantitative_activation_v1/activation_summary.json",
+    "active_activation_summary_artifact": "docs/superpowers/validation/untargeted_owner_backfill_canonical_quantitative_activation_v1/activation_summary.json",
     "active_activation_summary_sha256_format": "lowercase_sha256_of_raw_canonical_activation_summary_bytes",
     "active_current_effect_cell_count_rule": "positive_integer_equal_to_activation_summary_quantitative_effect_cell_count",
     "manifest_content_id_prefix": "quantitative-projection-authority-manifest.v1:",

@@ -1,7 +1,7 @@
 """Build/check the QuantMatrix Product Ready closeout packet.
 
-This Phase 10 adapter collects the Phase 8 promotion packet v2 and Phase 9
-default activation dry-run gate into one closeout artifact. It is still
+This product-ready closeout collects the promotion candidate packet v2 and
+default activation replay gate into one closeout artifact. It is still
 read-only: it does not activate ProductWriter, write default matrix outputs,
 change workbooks/GUI behavior, or alter selected peaks/areas/counting.
 """
@@ -54,9 +54,7 @@ DEFAULT_ACTIVATION_DRY_RUN_SUMMARY_JSON = (
 )
 
 PRODUCT_READY_CLOSEOUT_SCHEMA = "quant_matrix_product_ready_closeout_v1"
-PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA = (
-    "quant_matrix_product_ready_closeout_check_v1"
-)
+PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA = "quant_matrix_product_ready_closeout_check_v1"
 
 CHECK_COLUMNS = (
     "schema_version",
@@ -252,8 +250,8 @@ def _check_rows(
             packet_payload.get("readiness_label") == "production_ready_candidate_packet"
             and packet_payload.get("production_ready") is True
             and packet_payload.get("may_promote_default_quant_matrix") is True,
-            "phase8_promotion_packet_v2",
-            "Phase 8 packet is a production-ready candidate packet.",
+            "promotion_candidate_packet_v2",
+            "Promotion candidate packet is a production-ready candidate packet.",
         ),
         _check_row(
             "science_evidence_complete",
@@ -261,11 +259,11 @@ def _check_rows(
             and packet_payload.get("missing_science_evidence") == []
             and packet_payload.get("validation_tiers")
             == {
-                "85raw_large_cohort": "pass",
+                "full_cohort": "pass",
                 "heldout_oracle": "pass",
                 "downstream_impact_smoke": "pass",
             },
-            "phase8_promotion_packet_v2",
+            "promotion_candidate_packet_v2",
             "Large-cohort, heldout-oracle, and downstream-impact tiers pass.",
         ),
         _check_row(
@@ -273,8 +271,11 @@ def _check_rows(
             dry_run_payload.get("default_activation_dry_run_gate_status") == "pass"
             and dry_run_payload.get("all_reference_outputs_match") is True
             and dry_run_payload.get("dry_run_unused_expected_diff_count") == "0",
-            "phase9_default_activation_dry_run",
-            "Dry-run default activation replays the Phase 7 bundle exactly.",
+            "default_activation_replay",
+            (
+                "Default activation replay reproduces the real/candidate "
+                "QuantMatrix bundle exactly."
+            ),
         ),
         _check_row(
             "expected_diff_closed",
@@ -282,7 +283,7 @@ def _check_rows(
             == str(dry_run_payload.get("dry_run_written_backfill_count", ""))
             and dry_run_payload.get("dry_run_expected_diff_acceptance_status")
             == "pass",
-            "phase9_default_activation_dry_run",
+            "default_activation_replay",
             "Expected-diff rows are all written during the dry-run gate.",
         ),
         _check_row(
@@ -292,7 +293,7 @@ def _check_rows(
             and packet_payload.get("default_quant_matrix_changed") is False
             and dry_run_payload.get("default_quant_matrix_changed") is False
             and dry_run_payload.get("default_matrix_files_written") is False,
-            "phase8_phase9_authority_flags",
+            "promotion_candidate_packet_default_activation_replay_authority_flags",
             "Closeout does not grant matrix authority or write default outputs.",
         ),
         _check_row(
@@ -302,8 +303,11 @@ def _check_rows(
             == dry_run_payload.get("downstream_scope")
             and packet_payload.get("accepted_backfill_count")
             == dry_run_payload.get("accepted_backfill_count"),
-            "phase8_phase9_source_binding",
-            "Phase 8 and Phase 9 bind to the same current rule-selected source run.",
+            "promotion_candidate_packet_default_activation_replay_source_binding",
+            (
+                "Promotion candidate packet and default activation replay bind "
+                "to the same current rule-selected source run."
+            ),
         ),
     ]
     return rows
@@ -362,7 +366,7 @@ def _write_summary(
 ) -> None:
     payload = {
         "schema_version": PRODUCT_READY_CLOSEOUT_SCHEMA,
-        "phase": "phase10_product_ready_closeout",
+        "artifact_role": "product_ready_closeout",
         "status": "pass",
         "closeout_label": "product_ready_default_matrix_candidate",
         "source_run_id": packet_payload.get("source_run_id", ""),
@@ -406,7 +410,7 @@ def _write_summary(
         "read_only": True,
         "write_authority": False,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "default_matrix_files_written": False,
@@ -439,7 +443,8 @@ def _write_summary(
             "and keeps provenance/reconstructability sidecars."
         ),
         "authority_statement": (
-            "Phase 10 closes the evidence packet as a Product Ready default "
+            "Product-ready closeout closes the evidence packet as a Product "
+            "Ready default "
             "matrix candidate only. It does not itself write default matrix "
             "files, change ProductWriter behavior, or expand authority beyond "
             "the current rule-selected Backfill membership."
@@ -447,13 +452,14 @@ def _write_summary(
         "residual_risks": [
             "ProductWriter default activation still requires a separate "
             "explicit commit.",
-            "This phase ran no scorer and no RAW/85RAW.",
+            "This product-ready closeout ran no scorer and no RAW/full_cohort.",
             "Broad Backfill remains parked.",
         ],
     }
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -463,7 +469,7 @@ def _append_expected_field_problems(
 ) -> None:
     for field, expected_text in (
         ("schema_version", PRODUCT_READY_CLOSEOUT_SCHEMA),
-        ("phase", "phase10_product_ready_closeout"),
+        ("artifact_role", "product_ready_closeout"),
         ("status", "pass"),
         ("closeout_label", "product_ready_default_matrix_candidate"),
         ("promotion_packet_readiness_label", "production_ready_candidate_packet"),
@@ -484,7 +490,7 @@ def _append_expected_field_problems(
         ("read_only", True),
         ("write_authority", False),
         ("scorer_ran", False),
-        ("raw_or_85raw_ran", False),
+        ("raw_or_full_cohort_ran", False),
         ("product_writer_changed", False),
         ("default_quant_matrix_changed", False),
         ("default_matrix_files_written", False),
@@ -494,8 +500,7 @@ def _append_expected_field_problems(
     ):
         if payload.get(field) is not expected_bool:
             problems.append(
-                f"product ready closeout {field} must be "
-                f"{str(expected_bool).lower()}",
+                f"product ready closeout {field} must be {str(expected_bool).lower()}",
             )
 
 
@@ -599,18 +604,24 @@ def _output_artifacts(
 
 def _artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
     return {
-        "path": path.resolve(strict=False).relative_to(
+        "path": path.resolve(strict=False)
+        .relative_to(
             base_dir.resolve(strict=False),
-        ).as_posix(),
+        )
+        .as_posix(),
         "sha256": file_sha256(path),
     }
 
 
 def _source_relpath(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=True).relative_to(
-            source_root.resolve(strict=True),
-        ).as_posix()
+        return (
+            path.resolve(strict=True)
+            .relative_to(
+                source_root.resolve(strict=True),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path.resolve(strict=True))
 

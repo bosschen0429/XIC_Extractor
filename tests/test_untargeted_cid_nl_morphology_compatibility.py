@@ -6,7 +6,6 @@ from typing import cast
 
 import pytest
 
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -21,6 +20,9 @@ from tests.test_targeted_real_data_adapter import (
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raw,
+)
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.acquisition_contract import BatchXICAdapter
 from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -75,7 +77,7 @@ def test_adapter_parks_unresolved_morphology_receipt_compatibility(
     receipt_field: str,
     mutation: str,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -102,10 +104,7 @@ def test_adapter_parks_unresolved_morphology_receipt_compatibility(
 
     with pytest.raises(
         UntargetedCidNlRealDataAdapterError,
-        match=(
-            "morphology_receipt_compatibility_unresolved: "
-            f"{receipt_field}"
-        ),
+        match=(f"morphology_receipt_compatibility_unresolved: {receipt_field}"),
     ):
         adapt_current_discovery_sample_subject(
             processing_owners=fixture.owners,
@@ -131,7 +130,7 @@ def test_adapter_parks_owner_observed_morphology_divergence(
     receipt_field: str,
     integration_field: str,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -180,10 +179,7 @@ def test_adapter_parks_owner_observed_morphology_divergence(
 
     with pytest.raises(
         UntargetedCidNlRealDataAdapterError,
-        match=(
-            "morphology_receipt_compatibility_unresolved: "
-            f"{receipt_field}"
-        ),
+        match=(f"morphology_receipt_compatibility_unresolved: {receipt_field}"),
     ):
         adapt_current_discovery_sample_subject(
             processing_owners=fixture.owners,
@@ -302,8 +298,7 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
     settlement = result.finalization.coordinator.state.runtime.settlements[0]
     assert settlement.failure_detail is not None
     assert (
-        "morphology_receipt_compatibility_unresolved: "
-        "area_raw_counts_seconds"
+        "morphology_receipt_compatibility_unresolved: area_raw_counts_seconds"
     ) in settlement.failure_detail.message
     expected_trace_point_count = sum(
         candidates[0].ms1_search_rt_min <= float(rt) <= candidates[0].ms1_search_rt_max

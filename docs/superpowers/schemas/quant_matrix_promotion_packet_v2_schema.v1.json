@@ -3,7 +3,7 @@
   "promotion_packet_v2_summary_schema": "quant_matrix_promotion_packet_v2_summary_v1",
   "validation_evidence_schema": "quant_matrix_validation_evidence_v1",
   "promotion_readiness_schema": "quant_matrix_promotion_readiness_v1",
-  "purpose": "Defines the Phase 8 no-RAW QuantMatrix promotion packet v2 summary. The packet binds the Phase 7 real QuantMatrixVersion bundle, large-cohort evidence, heldout-oracle evidence, and real downstream-impact smoke into a production-ready candidate packet without changing ProductWriter defaults or matrix authority.",
+  "purpose": "Defines the no-RAW QuantMatrix promotion candidate packet v2 summary. The packet binds the real QuantMatrixVersion candidate bundle, large-cohort evidence, heldout-oracle evidence, and real downstream-impact smoke into a production-ready candidate packet without changing ProductWriter defaults or matrix authority.",
   "output_files": {
     "summary_json": "quant_matrix_promotion_packet_v2_summary.json",
     "validation_evidence_json": "quant_matrix_validation_evidence_v1.json",
@@ -14,7 +14,7 @@
   },
   "summary_required_fields": [
     "schema_version",
-    "phase",
+    "artifact_role",
     "status",
     "packet_id",
     "requested_readiness_label",
@@ -31,7 +31,7 @@
     "read_only",
     "write_authority",
     "scorer_ran",
-    "raw_or_85raw_ran",
+    "raw_or_full_cohort_ran",
     "product_writer_changed",
     "default_quant_matrix_changed",
     "broad_backfill_unparked",
@@ -47,7 +47,7 @@
     "readiness_must_rerun_cleanly_against_real_bundle": true,
     "readiness_must_be_production_ready_candidate_packet": true,
     "required_science_tiers_must_pass": [
-      "85raw_large_cohort",
+      "full_cohort",
       "heldout_oracle",
       "downstream_impact_smoke"
     ],
@@ -57,7 +57,7 @@
     "read_only": true,
     "write_authority": false,
     "scorer_ran": false,
-    "raw_or_85raw_ran": false,
+    "raw_or_full_cohort_ran": false,
     "product_writer_changed": false,
     "default_quant_matrix_changed": false,
     "broad_backfill_unparked": false,

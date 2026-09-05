@@ -213,7 +213,7 @@ Cross-attempt runtime dependency resolution beyond this validated predecessor
 closure remains a later consumer contract. A timestamp can describe when
 something happened; it cannot establish what happened.
 
-The M1 cell owner applies the same rule to provisional group membership. A
+The CellObservationRef reference-spine owner applies the same rule to provisional group membership. A
 group context retains the attempt that owns every direct SUPPORT assessment and
 hypothesis. Cell minting accepts those group supports only from the current
 attempt or its derived retry-predecessor chain; a sibling attempt is never an
@@ -630,11 +630,11 @@ collapse into one chromatographic support event without losing their exact
 lineage. That intermediate composition must retain zero source reopens and
 hard-zero public-output diff with both legacy writers authoritative.
 
-The M7 Untargeted CID-NL real-data bridge closes that previously external
+The Untargeted CID-NL real-data bridge closes that previously external
 caller-completeness premise only for its explicit input contract. Discovery
 batch index v2 carries one self-validating candidate-universe receipt per
 sample: exact candidate artifact bytes/size, parsed candidate payload/count,
-and the content-bound acquisition source. M7 validates the artifact before and
+and the content-bound acquisition source. The runtime validates the artifact before and
 after parsing, binds the receipt into its processing request, and rejects a
 truncated candidate file or same-stem/different-content RAW before vendor
 allocation. This closure does not upgrade the scan-level relation, authorize

@@ -1,14 +1,15 @@
 {
   "accepted_backfill_count": 511,
-  "activation_contract": "A future explicit ProductWriter activation may make the default quant matrix include detected values plus the current 511 accepted Backfill values, provided it uses this expected-diff-bound contract and keeps provenance/reconstructability sidecars.",
+  "activation_contract": "A future explicit ProductWriter activation may make the default quant matrix include detected values plus the current rule-selected Backfill values, provided it uses this expected-diff-bound contract and keeps provenance/reconstructability sidecars.",
   "all_reference_outputs_match": true,
+  "artifact_role": "product_ready_closeout",
   "artifacts": {
     "checks_tsv": {
       "path": "quant_matrix_product_ready_closeout_checks.tsv",
-      "sha256": "B2DBD7FC62C04891079D24B660F6FE01B9EEEBFE65804A31C0FDDD48DB3FFDD9"
+      "sha256": "1B02AA70C23C11128EDCDD4952478D7C9A7F24BFEFB95CF13AD4ECD3C7206EF7"
     }
   },
-  "authority_statement": "Phase 10 closes the evidence packet as a Product Ready default matrix candidate only. It does not itself write default matrix files, change ProductWriter behavior, or expand authority beyond the current 511 accepted Backfill cells.",
+  "authority_statement": "Product-ready closeout closes the evidence packet as a Product Ready default matrix candidate only. It does not itself write default matrix files, change ProductWriter behavior, or expand authority beyond the current rule-selected Backfill membership.",
   "broad_backfill_unparked": false,
   "check_count": 6,
   "closeout_label": "product_ready_default_matrix_candidate",
@@ -23,23 +24,22 @@
   "explicit_activation_not_in_this_commit": true,
   "input_artifacts": {
     "activation_dry_run_summary_json": "docs/superpowers/validation/quant_matrix_default_activation_dry_run_v1/quant_matrix_default_activation_dry_run_summary.json",
-    "activation_dry_run_summary_json_sha256": "6CB386447B36E4E805BC73DC278EB712D37A9456281F3F8AC1600B2E228DDE48",
+    "activation_dry_run_summary_json_sha256": "428EB2AC25D22CD98F03CC301BB057380164A7483E46641F2AE1C08F85AEF113",
     "promotion_packet_v2_summary_json": "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/quant_matrix_promotion_packet_v2_summary.json",
-    "promotion_packet_v2_summary_json_sha256": "AD6DFB3DBD6A5EE6CA94E20671C943EF30C0418C2226E3617BED01E59BEFAE47"
+    "promotion_packet_v2_summary_json_sha256": "767C907EA98B1D17F21C808945004330F0327276D62631B807E80113BAE12713"
   },
   "may_activate_default_quant_matrix_with_explicit_contract": true,
-  "phase": "phase10_product_ready_closeout",
   "product_ready_candidate": true,
   "product_writer_changed": false,
   "promotion_packet_may_promote_default_quant_matrix": true,
   "promotion_packet_production_ready": true,
   "promotion_packet_readiness_label": "production_ready_candidate_packet",
-  "raw_or_85raw_ran": false,
+  "raw_or_full_cohort_ran": false,
   "read_only": true,
   "requires_product_writer_activation_commit": true,
   "residual_risks": [
     "ProductWriter default activation still requires a separate explicit commit.",
-    "This phase ran no scorer and no RAW/85RAW.",
+    "This product-ready closeout ran no scorer and no RAW/full_cohort.",
     "Broad Backfill remains parked."
   ],
   "schema_version": "quant_matrix_product_ready_closeout_v1",

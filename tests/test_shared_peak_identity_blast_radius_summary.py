@@ -46,10 +46,10 @@ def test_summary_counts_scopes_and_excludes_context_rows(tmp_path: Path) -> None
             )
         ],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
     _write_cells(
-        eight_raw,
+        fixture_cohort,
         [
             _cell("FAM001", "Seed", "absent", reason="no local MS1 owner"),
             _cell("FAM001", "Other", "absent", reason="no local MS1 owner"),
@@ -57,7 +57,7 @@ def test_summary_counts_scopes_and_excludes_context_rows(tmp_path: Path) -> None
         ],
     )
     _write_cells(
-        eightyfive_raw,
+        full_cohort,
         [_cell("FAM001", "Other85", "absent", reason="no local MS1 owner")],
     )
 
@@ -65,11 +65,11 @@ def test_summary_counts_scopes_and_excludes_context_rows(tmp_path: Path) -> None
         class_profiles=class_profiles,
         manifest_rows=_manifest_rows(
             current=True,
-            eight_raw=eight_raw,
-            eightyfive_raw=eightyfive_raw,
+            fixture_cohort=fixture_cohort,
+            full_cohort=full_cohort,
         ),
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     assert all(tuple(row) == BLAST_RADIUS_SUMMARY_COLUMNS for row in rows)
@@ -140,17 +140,17 @@ def test_summary_counts_missing_columns_and_ambiguous_machine_matches(
             )
         ],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
     _write_cells(
-        eight_raw,
+        fixture_cohort,
         [
             _cell("FAM010", "A", "rescued", reason="ambiguous_ms1_owner"),
             _cell("FAM010", "A", "rescued", reason="duplicate MS1 peak claim"),
         ],
     )
     _write_cells(
-        eightyfive_raw,
+        full_cohort,
         [_cell("FAM010", "B", "rescued", reason="rt pattern conflict")],
         fieldnames=("feature_family_id", "sample_stem", "status"),
     )
@@ -159,17 +159,17 @@ def test_summary_counts_missing_columns_and_ambiguous_machine_matches(
         class_profiles=class_profiles,
         manifest_rows=_manifest_rows(
             current=True,
-            eight_raw=eight_raw,
-            eightyfive_raw=eightyfive_raw,
+            fixture_cohort=fixture_cohort,
+            full_cohort=full_cohort,
         ),
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     eight = _row(
         rows,
         "machine_too_permissive_rt_pattern_conflict",
-        "all_available_8raw",
+        "all_available_fixture_cohort",
     )
     assert eight["assessed_row_count"] == "2"
     assert eight["ambiguous_machine_match_count"] == "2"
@@ -178,7 +178,7 @@ def test_summary_counts_missing_columns_and_ambiguous_machine_matches(
     eightyfive = _row(
         rows,
         "machine_too_permissive_rt_pattern_conflict",
-        "all_available_85raw",
+        "all_available_full_cohort",
     )
     assert eightyfive["assessed_row_count"] == "1"
     assert eightyfive["all_available_row_count"] == "0"
@@ -234,10 +234,10 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
             ),
         ],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
     _write_cells(
-        eight_raw,
+        fixture_cohort,
         [
             *[
                 _cell("FAM999", f"low8_{index}", "rescued", reason="supported")
@@ -251,7 +251,7 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
         ],
     )
     _write_cells(
-        eightyfive_raw,
+        full_cohort,
         [
             *[
                 _cell("FAM999", f"low85_{index}", "rescued", reason="supported")
@@ -268,11 +268,11 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
         class_profiles=profiles,
         manifest_rows=_manifest_rows(
             current=True,
-            eight_raw=eight_raw,
-            eightyfive_raw=eightyfive_raw,
+            fixture_cohort=fixture_cohort,
+            full_cohort=full_cohort,
         ),
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     low = _row(
@@ -308,23 +308,23 @@ def test_summary_marks_unpinned_required_surfaces_unassessed(tmp_path: Path) -> 
         ],
         [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
     _write_cells(
-        eight_raw,
+        fixture_cohort,
         [_cell("FAM001", f"S{index}", "rescued") for index in range(50)],
     )
-    _write_cells(eightyfive_raw, [_cell("FAM001", "S85", "rescued")])
+    _write_cells(full_cohort, [_cell("FAM001", "S85", "rescued")])
 
     rows = build_blast_radius_summary(
         class_profiles=profiles,
         manifest_rows=_manifest_rows(
             current=False,
-            eight_raw=eight_raw,
-            eightyfive_raw=eightyfive_raw,
+            fixture_cohort=fixture_cohort,
+            full_cohort=full_cohort,
         ),
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     overall = _row(
@@ -350,31 +350,31 @@ def test_summary_requires_current_review_and_cell_surfaces(tmp_path: Path) -> No
         ],
         [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
     _write_cells(
-        eight_raw,
+        fixture_cohort,
         [_cell("FAM001", f"S{index}", "rescued") for index in range(25)],
     )
     _write_cells(
-        eightyfive_raw,
+        full_cohort,
         [_cell("FAM001", f"S85_{index}", "rescued") for index in range(25)],
     )
 
     manifest_rows = _manifest_rows(
         current=True,
-        eight_raw=eight_raw,
-        eightyfive_raw=eightyfive_raw,
+        fixture_cohort=fixture_cohort,
+        full_cohort=full_cohort,
     )
     for row in manifest_rows:
-        if row["artifact_id"] == "85raw_alignment_review":
+        if row["artifact_id"] == "full_cohort_alignment_review":
             row["artifact_status"] = "present_stale_hash_mismatch"
 
     rows = build_blast_radius_summary(
         class_profiles=profiles,
         manifest_rows=manifest_rows,
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     overall = _row(
@@ -412,17 +412,17 @@ def test_summary_scans_each_alignment_cells_file_once(
             )
         ],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
-    _write_cells(eight_raw, [_cell("FAM001", "A", "rescued")])
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
+    _write_cells(fixture_cohort, [_cell("FAM001", "A", "rescued")])
     _write_cells(
-        eightyfive_raw,
+        full_cohort,
         [
             _cell("FAM001", "B", "rescued", reason="rt pattern conflict"),
             _cell("FAM001", "B", "rescued", reason="rt pattern conflict"),
         ],
     )
-    target = eightyfive_raw / "alignment_cells.tsv"
+    target = full_cohort / "alignment_cells.tsv"
     open_count = 0
     original_open = Path.open
 
@@ -440,17 +440,17 @@ def test_summary_scans_each_alignment_cells_file_once(
         class_profiles=profiles,
         manifest_rows=_manifest_rows(
             current=True,
-            eight_raw=eight_raw,
-            eightyfive_raw=eightyfive_raw,
+            fixture_cohort=fixture_cohort,
+            full_cohort=full_cohort,
         ),
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     eightyfive = _row(
         rows,
         "machine_too_permissive_rt_pattern_conflict",
-        "all_available_85raw",
+        "all_available_full_cohort",
     )
     assert open_count == 1
     assert eightyfive["ambiguous_machine_match_count"] == "2"
@@ -473,30 +473,30 @@ def test_summary_marks_review_surface_missing_fields_unassessed(
         ],
         [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
     _write_cells(
-        eight_raw,
+        fixture_cohort,
         [_cell("FAM001", f"S{index}", "rescued") for index in range(25)],
     )
     _write_cells(
-        eightyfive_raw,
+        full_cohort,
         [_cell("FAM001", f"S85_{index}", "rescued") for index in range(25)],
     )
     manifest_rows = _manifest_rows(
         current=True,
-        eight_raw=eight_raw,
-        eightyfive_raw=eightyfive_raw,
+        fixture_cohort=fixture_cohort,
+        full_cohort=full_cohort,
     )
     for row in manifest_rows:
-        if row["artifact_id"] == "8raw_alignment_review":
+        if row["artifact_id"] == "fixture_cohort_alignment_review":
             row["missing_required_fields"] = "row_flags"
 
     rows = build_blast_radius_summary(
         class_profiles=profiles,
         manifest_rows=manifest_rows,
-        eight_raw_run_dir=eight_raw,
-        eightyfive_raw_run_dir=eightyfive_raw,
+        fixture_cohort_run_dir=fixture_cohort,
+        full_cohort_run_dir=full_cohort,
     )
 
     overall = _row(
@@ -524,27 +524,29 @@ def test_summary_rejects_manifest_path_that_does_not_match_input_run(
         ],
         [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
     )
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
-    stale_run = tmp_path / "stale_85raw"
-    _write_cells(eight_raw, [_cell("FAM001", "S1", "rescued")])
-    _write_cells(eightyfive_raw, [_cell("FAM001", "S2", "rescued")])
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
+    stale_run = tmp_path / "stale_full_cohort"
+    _write_cells(fixture_cohort, [_cell("FAM001", "S1", "rescued")])
+    _write_cells(full_cohort, [_cell("FAM001", "S2", "rescued")])
     stale_run.mkdir()
     manifest_rows = _manifest_rows(
         current=True,
-        eight_raw=eight_raw,
-        eightyfive_raw=eightyfive_raw,
+        fixture_cohort=fixture_cohort,
+        full_cohort=full_cohort,
     )
     for row in manifest_rows:
-        if row["artifact_id"] == "85raw_alignment_cells":
+        if row["artifact_id"] == "full_cohort_alignment_cells":
             row["artifact_path"] = str(stale_run / "alignment_cells.tsv")
 
-    with pytest.raises(ValueError, match="85raw_alignment_cells.*stale_85raw"):
+    with pytest.raises(
+        ValueError, match="full_cohort_alignment_cells.*stale_full_cohort"
+    ):
         build_blast_radius_summary(
             class_profiles=profiles,
             manifest_rows=manifest_rows,
-            eight_raw_run_dir=eight_raw,
-            eightyfive_raw_run_dir=eightyfive_raw,
+            fixture_cohort_run_dir=fixture_cohort,
+            full_cohort_run_dir=full_cohort,
         )
 
 
@@ -687,36 +689,36 @@ def _write_tsv(
 def _manifest_rows(
     *,
     current: bool,
-    eight_raw: Path,
-    eightyfive_raw: Path,
+    fixture_cohort: Path,
+    full_cohort: Path,
 ) -> list[dict[str, str]]:
     status = "present_current" if current else "present_hash_unpinned"
     return [
         {
-            "artifact_id": "8raw_alignment_review",
+            "artifact_id": "fixture_cohort_alignment_review",
             "artifact_role": "alignment_review",
-            "artifact_path": str(eight_raw / "alignment_review.tsv"),
+            "artifact_path": str(fixture_cohort / "alignment_review.tsv"),
             "artifact_status": status,
             "missing_required_fields": "",
         },
         {
-            "artifact_id": "8raw_alignment_cells",
+            "artifact_id": "fixture_cohort_alignment_cells",
             "artifact_role": "alignment_cells",
-            "artifact_path": str(eight_raw / "alignment_cells.tsv"),
+            "artifact_path": str(fixture_cohort / "alignment_cells.tsv"),
             "artifact_status": status,
             "missing_required_fields": "",
         },
         {
-            "artifact_id": "85raw_alignment_review",
+            "artifact_id": "full_cohort_alignment_review",
             "artifact_role": "alignment_review",
-            "artifact_path": str(eightyfive_raw / "alignment_review.tsv"),
+            "artifact_path": str(full_cohort / "alignment_review.tsv"),
             "artifact_status": status,
             "missing_required_fields": "",
         },
         {
-            "artifact_id": "85raw_alignment_cells",
+            "artifact_id": "full_cohort_alignment_cells",
             "artifact_role": "alignment_cells",
-            "artifact_path": str(eightyfive_raw / "alignment_cells.tsv"),
+            "artifact_path": str(full_cohort / "alignment_cells.tsv"),
             "artifact_status": status,
             "missing_required_fields": "",
         },

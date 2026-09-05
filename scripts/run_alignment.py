@@ -162,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     try:
-        _validate_expected_85raw_contract(args)
+        _validate_expected_full_cohort_contract(args)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -224,9 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    if recipe is not None and is_pure_single_provider_cid_nl(
-        recipe.discovery_settings
-    ):
+    if recipe is not None and is_pure_single_provider_cid_nl(recipe.discovery_settings):
         try:
             _validate_untargeted_cid_nl_alignment_options(
                 raw_workers=raw_workers,
@@ -517,7 +515,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         help=(
             "Optional JSON path updated after each timing record. Use this as "
-            "a timeout-safe heartbeat for long 85RAW validation runs."
+            "a timeout-safe heartbeat for long FULL COHORT validation runs."
         ),
     )
     parser.add_argument(
@@ -885,7 +883,7 @@ def _validate_unique_sample_stems(
         )
 
 
-def _validate_expected_85raw_contract(args: argparse.Namespace) -> None:
+def _validate_expected_full_cohort_contract(args: argparse.Namespace) -> None:
     if args.expected_sample_count != 85:
         return
 
@@ -922,23 +920,25 @@ def _validate_expected_85raw_contract(args: argparse.Namespace) -> None:
         2,
     )
     if args.timing_output is None:
-        failures.append("--timing-output is required for canonical 85RAW runs")
+        failures.append("--timing-output is required for canonical FULL COHORT runs")
     if args.timing_live_output is None:
-        failures.append("--timing-live-output is required for canonical 85RAW runs")
+        failures.append(
+            "--timing-live-output is required for canonical FULL COHORT runs"
+        )
     if args.sample_info is None or args.targeted_istd_workbook is None:
         failures.append(
             "--sample-info and --targeted-istd-workbook are required for "
-            "canonical 85RAW runs"
+            "canonical FULL COHORT runs"
         )
     if not _is_repo_venv_python():
         failures.append(
             "Python executable must be under this worktree .venv for canonical "
-            f"85RAW runs; got {sys.executable}"
+            f"FULL COHORT runs; got {sys.executable}"
         )
 
     if failures:
         joined = "\n- ".join(failures)
-        raise ValueError(f"85RAW canonical launch contract failed:\n- {joined}")
+        raise ValueError(f"FULL COHORT canonical launch contract failed:\n- {joined}")
 
 
 def _resolve_preset(
@@ -1026,7 +1026,7 @@ def _print_preflight_summary(
     if args.expected_sample_count is not None:
         print(f"Expected sample count: {args.expected_sample_count}")
     print(
-        "85RAW canonical contract: "
+        "FULL COHORT canonical contract: "
         f"{'enforced' if args.expected_sample_count == 85 else 'not requested'}"
     )
     print(f"Python executable: {sys.executable}")
@@ -1224,9 +1224,7 @@ def _effective_peak_config_settings(
     args: argparse.Namespace,
     recipe: BoundCidNlRecipe | None,
 ) -> tuple[str, float | None]:
-    if recipe is not None and is_pure_single_provider_cid_nl(
-        recipe.discovery_settings
-    ):
+    if recipe is not None and is_pure_single_provider_cid_nl(recipe.discovery_settings):
         settings = recipe.discovery_settings
         return settings.resolver_mode, settings.nl_min_intensity_ratio
     return _alignment_production_resolver_mode(args.resolver_mode), None

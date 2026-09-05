@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.issue161_no_raw_fixture import (
-    issue161_evidence,
-    issue161_peak,
-    issue161_support_policy,
-    issue161_unique_support,
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_peak,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
 )
-from tests.package2_no_raw_fixture import (
-    Package2NoRawFixture,
-    build_package2_no_raw_fixture,
+from tests.processing_identity_no_raw_fixture import (
+    ProcessingIdentityNoRawFixture,
+    build_processing_identity_no_raw_fixture,
 )
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
@@ -72,7 +72,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
         "blank": "blank",
         "MixSTD": "calibrator",
     }
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=tuple(roles),
         sample_roles=roles,
@@ -120,10 +120,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
             strict=True,
         )
     )
-    assert not any(
-        "median" in field.name.lower()
-        for field in fields(type(targeted))
-    )
+    assert not any("median" in field.name.lower() for field in fields(type(targeted)))
     assert targeted.product_authority == "none"
     assert targeted.validation_status == "shadow_ready"
 
@@ -266,9 +263,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     assert support_decision.disposition == "not_applicable"
     assert support_decision.reason_codes == ("cell_already_has_direct_support",)
     assert reject_decision.disposition == "not_applicable"
-    assert reject_decision.reason_codes == (
-        "method_reject_is_not_backfill_eligible",
-    )
+    assert reject_decision.reason_codes == ("method_reject_is_not_backfill_eligible",)
 
     incomplete_dir = tmp_path / "incomplete"
     incomplete_dir.mkdir()
@@ -300,9 +295,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
 
     assert incomplete.group_frozen is False
     assert incomplete_reject.disposition == "not_applicable"
-    assert incomplete_reject.reason_codes == (
-        "method_reject_is_not_backfill_eligible",
-    )
+    assert incomplete_reject.reason_codes == ("method_reject_is_not_backfill_eligible",)
 
 
 def test_ordered_one_to_one_mapping_retains_evidence_without_backfill_votes(
@@ -370,15 +363,13 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
 ) -> None:
     fixture = _study_fixture(tmp_path, ("a1", "a2", "b1", "b2", "missing"))
     candidate_peaks = tuple(
-        _peak(fixture, "missing", apex_rt=7.6 + index * 0.05)
-        for index in range(12)
+        _peak(fixture, "missing", apex_rt=7.6 + index * 0.05) for index in range(12)
     )
     opposite_order_pair = next(
         (early, late)
         for early in candidate_peaks
         for late in candidate_peaks
-        if early.content.integration.rt_apex_min
-        < late.content.integration.rt_apex_min
+        if early.content.integration.rt_apex_min < late.content.integration.rt_apex_min
         and early.content.peak_observation_content_id
         > late.content.peak_observation_content_id
     )
@@ -423,12 +414,14 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
         candidate_universes=(candidate_universe,),
     )
 
-    assert tuple(
-        evidence.peak_observation for evidence in decisions[0].candidate_evidence
-    ) == candidate_universe.candidate_peaks
+    assert (
+        tuple(evidence.peak_observation for evidence in decisions[0].candidate_evidence)
+        == candidate_universe.candidate_peaks
+    )
     assert {
-        decision.group_facts.group_context.group.group_center_rt:
-        decision.matched_candidate.peak_observation
+        decision.group_facts.group_context.group.group_center_rt: (
+            decision.matched_candidate.peak_observation
+        )
         for decision in decisions
         if decision.matched_candidate is not None
     } == {
@@ -487,9 +480,10 @@ def test_one_to_many_and_many_to_one_cardinality_remain_held(
     assert all(item.disposition == "hold" for item in many_to_one)
     assert all(item.matched_candidate is None for item in one_to_many + many_to_one)
     assert one_to_many[0].candidate_universe is one_to_many_universe
-    assert tuple(
-        item.peak_observation for item in one_to_many[0].candidate_evidence
-    ) == one_to_many_universe.candidate_peaks
+    assert (
+        tuple(item.peak_observation for item in one_to_many[0].candidate_evidence)
+        == one_to_many_universe.candidate_peaks
+    )
     assert all(
         item.reason_codes == ("uncertain_candidate_cardinality",)
         for item in one_to_many + many_to_one
@@ -605,8 +599,7 @@ def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
     )
 
     assert (
-        fixture.target.definition.target.mz
-        == fixture.other_target.definition.target.mz
+        fixture.target.definition.target.mz == fixture.other_target.definition.target.mz
     )
     assert universe.target_key == (
         facts.group_context.target_key_id,
@@ -838,8 +831,8 @@ def test_recovery_receipt_rejects_same_request_sibling_assessment(
 def _study_fixture(
     tmp_path: Path,
     sample_stems: tuple[str, ...],
-) -> Package2NoRawFixture:
-    return build_package2_no_raw_fixture(
+) -> ProcessingIdentityNoRawFixture:
+    return build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=sample_stems,
         sample_roles={stem: "study_sample" for stem in sample_stems},
@@ -847,7 +840,7 @@ def _study_fixture(
 
 
 def _spine(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     *,
     support_apex_by_sample: dict[str, float],
     reject_sample_stems: frozenset[str] = frozenset(),
@@ -870,9 +863,7 @@ def _spine(
                 else _assessment(
                     fixture,
                     sample.metadata.raw_stem,
-                    support_apex=support_apex_by_sample.get(
-                        sample.metadata.raw_stem
-                    ),
+                    support_apex=support_apex_by_sample.get(sample.metadata.raw_stem),
                     scan_number=100 + index,
                     invocation=f"{invocation}:{index}",
                     target=effective_target,
@@ -891,7 +882,7 @@ def _spine(
 
 
 def _reject_assessment(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     scan_number: int,
@@ -899,7 +890,7 @@ def _reject_assessment(
     target=None,
 ) -> CidNlMethodAssessmentRef:
     effective_target = fixture.target if target is None else target
-    evidence = issue161_evidence(
+    evidence = cid_nl_evidence(
         fixture,
         sample_stem,
         scan_number=scan_number,
@@ -913,7 +904,7 @@ def _reject_assessment(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
             scanned_event_count=1,
@@ -924,7 +915,7 @@ def _reject_assessment(
 
 
 def _assessment(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     support_apex: float | None,
@@ -943,7 +934,7 @@ def _assessment(
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=7.5,
                 query_rt_max=8.6,
-                support_policy=issue161_support_policy(),
+                support_policy=cid_nl_support_policy(),
                 acquisition_supported=False,
                 search_completed=False,
                 scanned_event_count=0,
@@ -953,7 +944,7 @@ def _assessment(
         )
     peak = _peak(fixture, sample_stem, apex_rt=support_apex)
     evidence_refs = tuple(
-        issue161_evidence(
+        cid_nl_evidence(
             fixture,
             sample_stem,
             scan_number=scan_number + offset,
@@ -962,7 +953,7 @@ def _assessment(
         for offset in (0, 1000)
     )
     support_refs = tuple(
-        issue161_unique_support(
+        cid_nl_unique_support(
             fixture,
             sample_stem,
             peak=peak,
@@ -978,7 +969,7 @@ def _assessment(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
             scanned_event_count=2,
@@ -991,12 +982,12 @@ def _assessment(
 
 
 def _peak(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
     apex_rt: float,
 ):
-    return issue161_peak(
+    return cid_nl_peak(
         fixture,
         sample_stem,
         apex_rt=apex_rt,
@@ -1006,7 +997,7 @@ def _peak(
 
 
 def _recovery_universe(
-    fixture: Package2NoRawFixture,
+    fixture: ProcessingIdentityNoRawFixture,
     group_facts,
     sample_stem: str,
     peaks,
@@ -1019,7 +1010,7 @@ def _recovery_universe(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.0,
             query_rt_max=9.0,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
             scanned_event_count=0,

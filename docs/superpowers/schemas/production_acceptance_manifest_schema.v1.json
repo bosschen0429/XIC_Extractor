@@ -84,7 +84,7 @@
       "sample_stem"
     ],
     "family_id_is_context_only": true,
-    "phase2_writes_default_matrix": false,
+    "acceptance_manifest_writes_default_matrix": false,
     "accepted_decisions_require_write_authority": true,
     "non_acceptance_decisions_must_not_write": true,
     "manual_negative_hard_stop": true,
@@ -98,7 +98,7 @@
     "backfill_fraction_must_match_counts": true,
     "manifest_sha256_rule": "sha256 over required-column TSV with manifest_sha256 blanked"
   },
-  "phase3_requires": [
+  "quant_matrix_version_requires": [
     "expected_diff_contract",
     "cell_provenance_sidecar",
     "focused_output_tests",

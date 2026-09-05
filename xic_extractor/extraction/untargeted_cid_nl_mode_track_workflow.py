@@ -164,10 +164,12 @@ def run_untargeted_cid_nl_mode_track_workflow(
     )
     if not runtime_result.succeeded or len(runtime_result.sample_results) != len(jobs):
         raise RuntimeError("Untargeted CID-NL runtime did not complete atomically")
-    m7_call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
-    if m7_call_cost["raw_open_count"] > len(raw_files):
+    runtime_call_cost = untargeted_cid_nl_runtime_call_cost(
+        runtime_result.finalization
+    )
+    if runtime_call_cost["raw_open_count"] > len(raw_files):
         raise RuntimeError("Untargeted CID-NL runtime exceeded one RAW open per sample")
-    _progress(progress_callback, "m7_complete")
+    _progress(progress_callback, "runtime_complete")
 
     sample_assessments = tuple(
         (sample, result.adapter_result.assessment_input.assessment)
@@ -205,7 +207,7 @@ def run_untargeted_cid_nl_mode_track_workflow(
         discovery_index=discovery.batch_index_csv,
         call_cost=_workflow_call_cost(
             discovery_raw_open_count=len(raw_files),
-            m7_call_cost=m7_call_cost,
+            runtime_call_cost=runtime_call_cost,
         ),
         refinement_transactions=refinement.transactions,
         cross_sample_applications=cross_sample_applications,
@@ -267,21 +269,21 @@ def _mode_track_runtime_jobs(
 def _workflow_call_cost(
     *,
     discovery_raw_open_count: int,
-    m7_call_cost: Mapping[str, int],
+    runtime_call_cost: Mapping[str, int],
 ) -> dict[str, int]:
-    m7_raw_open_count = m7_call_cost["raw_open_count"]
+    runtime_raw_open_count = runtime_call_cost["raw_open_count"]
     return {
         "discovery_raw_open_count": discovery_raw_open_count,
-        "m7_raw_open_count": m7_raw_open_count,
-        "total_raw_open_count": discovery_raw_open_count + m7_raw_open_count,
-        "m7_xic_batch_count": m7_call_cost["xic_batch_count"],
-        "m7_logical_xic_request_count": m7_call_cost[
+        "runtime_raw_open_count": runtime_raw_open_count,
+        "total_raw_open_count": discovery_raw_open_count + runtime_raw_open_count,
+        "runtime_xic_batch_count": runtime_call_cost["xic_batch_count"],
+        "runtime_logical_xic_request_count": runtime_call_cost[
             "logical_xic_request_count"
         ],
-        "m7_adapter_chromatogram_call_count": m7_call_cost[
+        "runtime_adapter_chromatogram_call_count": runtime_call_cost[
             "adapter_chromatogram_call_count"
         ],
-        "m7_trace_point_count": m7_call_cost["trace_point_count"],
+        "runtime_trace_point_count": runtime_call_cost["trace_point_count"],
     }
 
 

@@ -99,7 +99,7 @@ def build_untargeted_cid_nl_real_data_context(
     ],
     sample_identity_namespace: str,
 ) -> UntargetedCidNlRealDataContext:
-    """Mint one replayable request before any M7 RAW handle is opened."""
+    """Mint one replayable request before any real-data runtime RAW handle is opened."""
 
     if not isinstance(
         method_subject,
@@ -112,7 +112,9 @@ def build_untargeted_cid_nl_real_data_context(
         else (method_subject,)
     )
     if any(subject.subject_kind != "untargeted_precursor" for subject in subjects):
-        raise IdentityContractError("M7 requires an Untargeted CID-NL subject")
+        raise IdentityContractError(
+            "The real-data runtime requires an Untargeted CID-NL subject"
+        )
     if not isinstance(settings, DiscoverySettings):
         raise IdentityContractError("settings must be DiscoverySettings")
     if not isinstance(peak_config, ExtractionConfig):

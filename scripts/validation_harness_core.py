@@ -37,7 +37,7 @@ DEFAULT_FULL_TISSUE_DIR = Path(
     os.environ.get("XIC_RAW_ROOT", "local_validation_artifacts/raw/tissue_85raw")
 )
 
-SUITE_CHOICES = ("manual-2raw", "tissue-8raw", "tissue-85raw")
+SUITE_CHOICES = ("manual-2raw", "tissue-fixture-cohort", "tissue-full-cohort")
 _RESERVED_SETTING_OVERRIDE_KEYS = {"resolver_mode"}
 
 
@@ -113,9 +113,9 @@ def build_validation_specs(
                     workers=workers,
                 )
             )
-        elif suite_name == "tissue-8raw":
+        elif suite_name == "tissue-fixture-cohort":
             data_dir = data_dir_override or DEFAULT_TISSUE_VALIDATION_DIR
-            output_dir = run_root / f"tissue_8raw_{resolver_mode}"
+            output_dir = run_root / f"tissue_fixture_cohort_{resolver_mode}"
             specs.append(
                 ValidationRunSpec(
                     name=suite_name,
@@ -144,9 +144,9 @@ def build_validation_specs(
                     settings_overrides=settings_overrides,
                 )
             )
-        elif suite_name == "tissue-85raw":
+        elif suite_name == "tissue-full-cohort":
             data_dir = data_dir_override or DEFAULT_FULL_TISSUE_DIR
-            output_dir = run_root / f"tissue_85raw_{resolver_mode}"
+            output_dir = run_root / f"tissue_full_cohort_{resolver_mode}"
             specs.append(
                 ValidationRunSpec(
                     name=suite_name,

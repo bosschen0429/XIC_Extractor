@@ -81,14 +81,14 @@ lifecycle for each provider.
 - Batch discovery handoff uses `discovery_batch_index_v2`. For every sample,
   the Discovery owner binds the exact candidate CSV SHA-256/byte size, complete
   path-independent candidate payload/count, and content-bound acquisition
-  source into one `DiscoveryCandidateUniverseReceipt`. A downstream M7 replay
+  source into one `DiscoveryCandidateUniverseReceipt`. A downstream real-data replay
   must reject truncated/substituted candidate bytes and a same-stem RAW whose
   content identity differs. Candidate and RAW paths remain locators rather than
   identity. The current producer writes candidate/review locators relative to
   the batch index so a complete Discovery directory remains readable after a
   rename or copy. The external RAW locator is not rewritten. Legacy batch
   indexes remain readable by legacy Alignment consumers but cannot enter the
-  owner-closed M7 path. Do not depend on old worktree-local output directories
+  owner-closed real-data runtime path. Do not depend on old worktree-local output directories
   as durable inputs.
 - Minimal output modes are for fast inspection; standard outputs are the public
   machine handoff surfaces.

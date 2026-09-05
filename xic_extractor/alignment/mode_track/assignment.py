@@ -69,7 +69,9 @@ _MODE_TRACK_MINT_TOKEN = object()
 
 
 class ModeTrackContractError(ValueError):
-    """Raised when an M8 owner reference is crossed, forged, or incomplete."""
+    """Raised when a ModeTrack model/assignment owner reference is crossed,
+    forged, or incomplete.
+    """
 
 
 class _ModeTrackAssignmentUnavailableError(RuntimeError):
@@ -86,7 +88,9 @@ class _RuntimeFinal:
 @final
 @dataclass(frozen=True, slots=True)
 class ModeTrackTrajectoryPolicy(_RuntimeFinal):
-    """Explicit lane policy; M8 intentionally owns no universal thresholds."""
+    """Explicit lane policy; the ModeTrack model/assignment owner
+    intentionally owns no universal thresholds.
+    """
 
     trajectory_policy_version: str
     band_policy_version: str
@@ -145,7 +149,8 @@ class ModeTrackSupportAnchor(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackSupportAnchor must be minted by the M8 owner"
+                "ModeTrackSupportAnchor must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         _required_text(self.group_hypothesis_id, field="group_hypothesis_id")
         _required_text(self.processing_request_id, field="processing_request_id")
@@ -259,7 +264,8 @@ class ModeTrackModelSet(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackModelSet must be minted by the M8 owner"
+                "ModeTrackModelSet must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         if self.family_context_id != self.family_context.family_context_id:
             raise ModeTrackContractError("model set Family context was substituted")
@@ -335,7 +341,8 @@ class ModeTrackCandidateObservation(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackCandidateObservation must be minted by the M8 owner"
+                "ModeTrackCandidateObservation must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         if self.observation_class not in {"direct_support", "non_training"}:
             raise ModeTrackContractError("unsupported candidate observation class")
@@ -591,7 +598,8 @@ class ModeTrackAssignment(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackAssignment must be minted by the M8 owner"
+                "ModeTrackAssignment must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         if self.state not in {
             "uniquely_assigned",
@@ -734,7 +742,8 @@ class ModeTrackAssignmentBatch(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackAssignmentBatch must be minted by the M8 owner"
+                "ModeTrackAssignmentBatch must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         if not self.assignments:
             raise ModeTrackContractError("assignment batch cannot be empty")
@@ -832,7 +841,8 @@ class ModeTrackFitOnceSampleSource(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackFitOnceSampleSource must be minted by the M8 owner"
+                "ModeTrackFitOnceSampleSource must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         _required_text(
             self.canonical_sample_identity_id,
@@ -920,7 +930,8 @@ class ModeTrackFitOnceSampleSource(_RuntimeFinal):
                 )
         if type(self.trajectory_assessment) is not LocalTrajectoryAssessment:
             raise ModeTrackContractError(
-                "sample source trajectory must be an M3 owner assessment"
+                "sample source trajectory must be an identity-trajectory "
+                "owner assessment"
             )
         if (
             self.trajectory_status != self.trajectory_assessment.status
@@ -960,7 +971,8 @@ class ModeTrackFitOnceSource(_RuntimeFinal):
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MODE_TRACK_MINT_TOKEN:
             raise ModeTrackContractError(
-                "ModeTrackFitOnceSource must be minted by the M8 owner"
+                "ModeTrackFitOnceSource must be minted by the ModeTrack "
+                "model/assignment owner"
             )
         _required_text(self.fit_once_source_id, field="fit_once_source_id")
         _required_text(self.processing_request_id, field="processing_request_id")
@@ -1144,7 +1156,9 @@ def mint_mode_track_fit_once_sample_source(
     candidates: tuple[ModeTrackCandidateObservation, ...],
     trajectory_assessment: LocalTrajectoryAssessment,
 ) -> ModeTrackFitOnceSampleSource:
-    """Mint one complete sample carrier from existing M8/M3 owner values."""
+    """Mint one complete sample carrier from existing ModeTrack and
+    identity-trajectory owner values.
+    """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackContractError("processing_owners must be owner-validated")
@@ -1154,7 +1168,8 @@ def mint_mode_track_fit_once_sample_source(
         raise ModeTrackContractError("candidates must be an immutable tuple")
     if type(trajectory_assessment) is not LocalTrajectoryAssessment:
         raise ModeTrackContractError(
-            "trajectory_assessment must be an M3 owner assessment"
+            "trajectory_assessment must be an identity-trajectory owner "
+            "assessment"
         )
     if any(type(item) is not ModeTrackCandidateObservation for item in candidates):
         raise ModeTrackContractError(
@@ -1597,7 +1612,8 @@ def assign_mode_tracks(
         )
     if not isinstance(trajectory_assessment, LocalTrajectoryAssessment):
         raise ModeTrackContractError(
-            "trajectory_assessment must be an M3 owner assessment"
+            "trajectory_assessment must be an identity-trajectory owner "
+            "assessment"
         )
     _validate_trajectory_sample(
         trajectory_assessment,
@@ -1765,7 +1781,7 @@ def validate_mode_track_assignment_batch_for_consumption(
     model_set: ModeTrackModelSet,
     assignment_batch: ModeTrackAssignmentBatch,
 ) -> None:
-    """Revalidate one M8 batch against its complete current owner closure."""
+    """Revalidate one ModeTrack batch against its complete current owner closure."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackContractError("processing_owners must be owner-validated")
@@ -2707,7 +2723,7 @@ def _validate_assignment_observation_binding(
 def _validate_assignment_batch_graph(batch: ModeTrackAssignmentBatch) -> None:
     try:
         if type(batch) is not ModeTrackAssignmentBatch:
-            raise TypeError("assignment batch requires exact M8-owned types")
+            raise TypeError("assignment batch requires exact ModeTrack-owned types")
         ModeTrackAssignmentBatch.__post_init__(batch, _MODE_TRACK_MINT_TOKEN)
         for item in batch.assignments:
             ModeTrackAssignment.__post_init__(item, _MODE_TRACK_MINT_TOKEN)

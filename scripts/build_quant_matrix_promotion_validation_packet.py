@@ -39,19 +39,17 @@ DEFAULT_OUTPUT_DIR = Path(
     "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v1",
 )
 DEFAULT_LARGE_COHORT_ARTIFACT = Path(
-    "output/productization_realdata_seed_guard_85raw_20260617/"
-    "consolidated_no_raw_productization/standard_peak_activation_inputs/"
-    "standard_peak_activation_inputs_summary.json",
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "source_artifacts/cohort_activation_summary.json",
 )
 DEFAULT_HELDOUT_ORACLE_ARTIFACT = Path(
-    "output/productization_realdata_seed_guard_85raw_20260617/"
-    "heldout_trace_reintegration_oracle_low_height_low_scan_clean_probe_smoke/"
-    "summary.json",
+    "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "source_artifacts/heldout_oracle_summary.json",
 )
-DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v1-20260619"
-DEFAULT_COHORT_ID = "seed-guard-realdata-85raw-consolidated-20260617"
+DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v1"
+DEFAULT_COHORT_ID = "seed-guard-realdata-full_cohort-consolidated-20260617"
 DEFAULT_ORACLE_PACKET_ID = (
-    "seed-guard-realdata-85raw-low-height-low-scan-clean-smoke-20260617"
+    "seed-guard-realdata-full_cohort-low-height-low-scan-clean-smoke-20260617"
 )
 
 
@@ -131,8 +129,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--write-readiness-fixture",
         action="store_true",
         help=(
-            "Also write a synthetic contract-ready fixture and run the Phase 5 "
-            "readiness checker against this packet."
+            "Also write a synthetic contract-ready fixture and run the promotion "
+            "readiness evaluation against this packet."
         ),
     )
     parser.add_argument("--check-only", action="store_true")
@@ -145,13 +143,13 @@ def _evidence_artifacts_from_args(
 ) -> list[ValidationEvidenceArtifact]:
     artifacts = [
         ValidationEvidenceArtifact(
-            tier="85raw_large_cohort",
+            tier="full_cohort",
             status="pass",
             source_artifact=args.large_cohort_artifact,
             cohort_id=args.cohort_id,
             raw_run_count=args.raw_run_count,
             evidence_note=(
-                "Existing no-RAW 85RAW consolidated standard-peak activation "
+                "Existing no-RAW FULL_COHORT consolidated standard-peak activation "
                 "input summary; large-cohort evidence only, not matrix authority."
             ),
         ),

@@ -35,8 +35,8 @@ Status = Literal[
 RequiredAction = Literal[
     "no_rerun",
     "artifact_only_rerun",
-    "fresh_8raw_required",
-    "fresh_85raw_required_after_8raw",
+    "fresh_fixture_cohort_required",
+    "fresh_full_cohort_required_after_fixture_cohort",
     "inconclusive",
 ]
 MappingStatus = Literal[
@@ -305,7 +305,7 @@ def freshness_decision(change_class: str) -> FreshnessDecision:
     }:
         return FreshnessDecision(
             change_class=change_class,
-            required_action="fresh_8raw_required",
+            required_action="fresh_fixture_cohort_required",
             reason="artifact generation behavior or input universe changed",
         )
     if normalized in {
@@ -313,11 +313,11 @@ def freshness_decision(change_class: str) -> FreshnessDecision:
         "maturity_tier_change",
         "writer_authority_change",
         "selected_value_or_counting_change",
-        "85raw_stress_claim",
+        "full_cohort_stress_claim",
     }:
         return FreshnessDecision(
             change_class=change_class,
-            required_action="fresh_85raw_required_after_8raw",
+            required_action="fresh_full_cohort_required_after_fixture_cohort",
             reason="large-sample product or stress evidence is claimed",
         )
     return FreshnessDecision(

@@ -44,7 +44,7 @@ different typed names and cannot cross the delivery seam as if already final.
   inclusion, and renderer bytes before any behavior promotion.
 - Historical AsLS primary-matrix policy is superseded by LC-MS/MS evidence rules and morphology-aware area policy.
 - Row-completion confidence and downstream-impact benchmarks are readiness evidence; they do not change default matrix authority without a separate activation decision.
-- The M6 Untargeted CID-NL no-RAW golden path prepares one deterministic raw-area
+- The untargeted CID-NL no-RAW golden-path projection prepares one deterministic raw-area
   row and owner-mapped recovery diff, but it cannot self-authorize. Its prepared
   Backfill row must pass the file-level `ProductionAcceptanceManifest` owner and
   enter `QuantMatrixVersion` through its immutable checked snapshot before that
@@ -63,7 +63,7 @@ themselves.
   produced byte-identical `alignment_matrix.tsv`, `alignment_review.tsv`, and
   `alignment_cells.tsv` against accepted P8b outputs.
 - That PR70 claim is limited to the alignment matrix handoff behavior. It does
-  not promote baseline policy, resolver defaults, broader Phase2 cleanup, or any
+  not promote baseline policy, resolver defaults, broader cleanup work, or any
   new matrix writer scope.
 - Future branches should use stable `local_validation_artifacts/` discovery
   batch indexes for this validation shape rather than another worktree's

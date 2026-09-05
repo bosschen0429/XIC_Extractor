@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.test_alignment_xlsx_writer import sample_alignment_matrix
 from tests.test_backfill_evidence_contract import (
     _backfill_bindings,
@@ -16,6 +15,9 @@ from tests.test_untargeted_cid_nl_golden_path import (
     SAMPLE_ROLES,
     SOURCE_RELPATH,
     _golden_inputs,
+)
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment import artifact_write_receipts
 from xic_extractor.alignment import untargeted_explanation_contract as contract_module
@@ -182,7 +184,9 @@ def _complete_no_raw_kwargs(
     include_backfill_query: bool = True,
     sample_stem: str = "Missing",
 ) -> dict[str, object]:
-    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles=SAMPLE_ROLES
+    )
     sample_inputs, recovery = _golden_inputs(fixture)
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
@@ -429,10 +433,14 @@ def test_written_backfill_requires_exact_live_matrix_source_candidate(
     )
     kwargs["matrix"] = matrix
 
-    section = _build_untargeted_explanation_index(
-        alignment_config=AlignmentConfig(),
-        **kwargs,
-    ).entries[0].section(ExplanationTopic.BACKFILL)
+    section = (
+        _build_untargeted_explanation_index(
+            alignment_config=AlignmentConfig(),
+            **kwargs,
+        )
+        .entries[0]
+        .section(ExplanationTopic.BACKFILL)
+    )
 
     assert section.claim.state is EvidenceClaimState.UNAVAILABLE
     assert section.payload is None

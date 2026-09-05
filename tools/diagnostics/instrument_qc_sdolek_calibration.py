@@ -20,7 +20,7 @@ from xic_extractor.instrument_qc.calibration_writers import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Calibrate Phase 1 SDO/LEK trends with method-doc order.",
+        description="Calibrate SDO/LEK instrument trends with method-doc order.",
     )
     parser.add_argument("--trend-tsv", type=Path, required=True)
     parser.add_argument("--trend-json", type=Path, required=True)
@@ -43,10 +43,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         trend_rows = load_sdolek_trend_rows(args.trend_tsv)
-        phase1_metadata = load_metadata_source_status(args.trend_json)
+        metadata_source_status = load_metadata_source_status(args.trend_json)
         result = calibrate_sdolek_rows(
             trend_rows,
-            metadata_source_status=phase1_metadata,
+            metadata_source_status=metadata_source_status,
             injection_order_source=args.injection_order_source,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:

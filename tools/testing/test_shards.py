@@ -64,8 +64,8 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     "tests/test_check_productization_authority.py": (
         "test_productization_authority_checker_accepts_repo_artifacts",
     ),
-    "tests/test_cid_nl_85raw_universe_closure.py": (
-        "test_current_cid_nl_85raw_universe_closure_is_stable",
+    "tests/test_cid_nl_default_activation_universe_closure.py": (
+        "test_current_cid_nl_full_cohort_universe_closure_is_stable",
     ),
     "tests/test_cid_nl_discovery_full_scope_classification.py": (
         "test_current_cid_nl_discovery_full_scope_classification_is_stable",
@@ -190,7 +190,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_local_ms1_features.py",
             "tests/test_family_ms1_backfill_review_report.py",
             "tests/test_family_ms1_overlay*.py",
-            "tests/test_issue180_m9_gate_c_85raw_runner.py",
+            "tests/test_mode_track_closed_writer_validation_runner.py",
             "tests/test_matrix_identity_*.py",
             "tests/test_mode_track_*.py",
             "tests/test_ms1_index_backfill_audit.py",
@@ -247,8 +247,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_model_selection_approval_registry.py",
             "tests/test_ms1_*.py",
             "tests/test_ms2_trace_evidence.py",
-            "tests/test_p1_*.py",
-            "tests/test_p7_*.py",
+            "tests/test_targeted_*.py",
             "tests/test_paired_*.py",
             "tests/test_production_*.py",
             "tests/test_region_*.py",

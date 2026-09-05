@@ -313,7 +313,7 @@ def test_run_instrument_qc_cli_rejects_unknown_mode(capsys) -> None:
     assert "unsupported mode" in capsys.readouterr().err
 
 
-def test_run_instrument_qc_help_lists_phase2_outputs() -> None:
+def test_run_instrument_qc_help_lists_supported_outputs() -> None:
     help_text = run_instrument_qc.build_parser().format_help()
 
     assert "instrument_qc_trend_sdolek.xlsx" in help_text

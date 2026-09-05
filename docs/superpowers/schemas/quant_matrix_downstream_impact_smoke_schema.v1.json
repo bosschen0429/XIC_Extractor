@@ -59,7 +59,7 @@
     "product_writer_changed": false,
     "default_quant_matrix_changed": false,
     "does_not_run_scorer": true,
-    "does_not_read_raw_or_85raw": true,
+    "does_not_read_raw_inputs": true,
     "does_not_change_selected_peak_area_or_counting": true,
     "contract_fixture_cannot_satisfy_promotion": true
   }

@@ -1,8 +1,6 @@
 """End-to-end Pt pattern Discovery pipeline.
 
-Wires the Task 2 matcher (``xic_extractor.discovery.delta_mass_patterns``),
-the Task 3 CSV/JSON IO (``xic_extractor.discovery.delta_mass_csv``), and the
-Task 4 preset stack (``xic_extractor.presets``) into a single
+Wires the Pt-pattern matcher, CSV/JSON IO, and preset stack into a single
 ``run_pt_pattern_discovery()`` entry point: Detected Features CSV (+ optional
 CID-NL(dR) candidates CSV for the composite strategy) in, Pt Candidate CSV,
 Pt Review CSV, Pt Discovery Evidence CSV, and Pt Sidecar JSON out.

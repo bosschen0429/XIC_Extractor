@@ -449,7 +449,7 @@ def _looks_like_long_raw_run(lower_command: str) -> bool:
             "run_alignment.py",
             "--expected-sample-count 85",
             "--timing-live-output",
-            "85raw",
+            "full_cohort",
         )
     )
 

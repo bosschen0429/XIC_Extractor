@@ -1,13 +1,14 @@
 {
   "accepted_backfill_count": 511,
   "all_reference_outputs_match": true,
+  "artifact_role": "default_activation_replay",
   "artifacts": {
     "comparison_tsv": {
       "path": "default_activation_dry_run_comparison.tsv",
       "sha256": "2C42821D4A31B01FD0039823E9A59BAB235329F425A26215513A5D732AD552F8"
     }
   },
-  "authority_statement": "Phase 9 default activation dry-run gate only. It proves the manifest-driven default matrix candidate replays to the same QuantMatrixVersion outputs and expected-diff closure, but it does not write default ProductWriter outputs or change matrix authority.",
+  "authority_statement": "Default activation replay gate only. It proves the manifest-driven default matrix candidate replays to the same QuantMatrixVersion outputs and expected-diff closure, but it does not write default ProductWriter outputs or change matrix authority.",
   "broad_backfill_unparked": false,
   "comparison_row_count": 4,
   "default_activation_dry_run_gate_status": "pass",
@@ -29,15 +30,14 @@
     "production_acceptance_manifest": "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/production_acceptance_manifest.tsv",
     "production_acceptance_manifest_sha256": "BFF67E9441646B22EFCBD0AF9468876560B08FBF4A90F7B340B0DF614325FD8E",
     "promotion_packet_v2_summary_json": "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/quant_matrix_promotion_packet_v2_summary.json",
-    "promotion_packet_v2_summary_json_sha256": "AD6DFB3DBD6A5EE6CA94E20671C943EF30C0418C2226E3617BED01E59BEFAE47",
+    "promotion_packet_v2_summary_json_sha256": "767C907EA98B1D17F21C808945004330F0327276D62631B807E80113BAE12713",
     "real_bundle_summary_json": "docs/superpowers/validation/quant_matrix_real_bundle_v1/quant_matrix_real_bundle_summary.json",
-    "real_bundle_summary_json_sha256": "820907AD1890B6EF7B5039AA3A59B8B2D9D65E44C7EE7D1B46797D2FC40EDB38"
+    "real_bundle_summary_json_sha256": "BD6AF64D05339D62C58A1AC05AE44A7AD9CC90EE88ED92D0CFDB81B91ACA3E59"
   },
   "may_enter_product_ready_closeout": true,
-  "phase": "phase9_default_activation_dry_run",
   "product_writer_changed": false,
   "promotion_packet_readiness_label": "production_ready_candidate_packet",
-  "raw_or_85raw_ran": false,
+  "raw_or_full_cohort_ran": false,
   "read_only": true,
   "schema_version": "quant_matrix_default_activation_dry_run_v1",
   "scorer_ran": false,

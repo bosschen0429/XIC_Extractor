@@ -60,7 +60,7 @@ or the relevant structured productization owner.
   Issue #125 preregistration contract for estimands, finite-census versus
   sampled uncertainty dispatch, grouping keys, threshold parameters, planning
   inputs, incomplete-frame claim downgrades, and reveal timing.
-- `production_acceptance_manifest_schema.v1.json`: Phase 2 Backfill
+- `production_acceptance_manifest_schema.v1.json`: Backfill
   `ProductionAcceptanceManifest v1` contract. This defines/checks the only
   future Backfill row artifact that may grant `write_authority=true`; it does
   not activate ProductWriter or the default quant matrix.
@@ -82,54 +82,54 @@ or the relevant structured productization owner.
   owner for canonical Owner Backfill dependent quantitative-projection package
   and activation bindings. Read current state from this manifest, not narrative
   documentation.
-- `quant_matrix_version_schema.v1.json`: Phase 3 explicit
+- `quant_matrix_version_schema.v1.json`: explicit
   `QuantMatrixVersion v1` activation output contract. It defines
   `quant_matrix`, `cell_provenance`, `row_summary`, expected-diff, and source
   summary invariants for manifest-authorized Backfill values; it does not
   change ProductWriter default extraction, workbook, GUI, selected peak/area,
   or counted-detection behavior.
-- `quant_matrix_review_report_schema.v1.json`: Phase 4 review-only
+- `quant_matrix_review_report_schema.v1.json`: review-only
   `QuantMatrixVersion` report contract. It defines review rows, summary JSON,
   and HTML report outputs for accepted Backfill versus detected cells,
   prevalence uncertainty, manifest/source hashes, manual-negative closure,
   doublet closure, and Gaussian-smoothed trace-primary/raw-trace-auxiliary
   display; it does not grant ProductWriter or matrix authority.
-- `quant_matrix_promotion_readiness_schema.v1.json`: Phase 5 read-only
+- `quant_matrix_promotion_readiness_schema.v1.json`: read-only
   promotion readiness contract. It defines readiness summary JSON and checks
   TSV outputs that separate contract correctness from scientific confidence;
   focused tests and 8RAW smoke evidence cannot claim `production_ready` without
   artifact-bound large-cohort, heldout-oracle/manual-review, and
   downstream-impact evidence.
-- `quant_matrix_downstream_impact_smoke_schema.v1.json`: Phase 6 no-RAW
+- `quant_matrix_downstream_impact_smoke_schema.v1.json`: no-RAW
   downstream-impact smoke contract. It proves a real `QuantMatrixVersion`
   bundle improves numeric matrix coverage while preserving detected-only claims
   through sidecars; contract fixtures cannot satisfy promotion.
 - `quant_matrix_validation_evidence_schema.v1.json`: no-RAW artifact-bound
-  evidence packet consumed by Phase 5 promotion readiness. It records copied
+  evidence packet consumed by promotion readiness evaluation. It records copied
   packet artifact paths/hashes, source artifact paths/hashes, tier metadata,
   and missing science evidence while staying read-only with
   `write_authority=false`; downstream-impact rows must validate the artifact
   content, not only a tier string.
-- `quant_matrix_real_bundle_schema.v1.json`: Phase 7 real
+- `quant_matrix_real_bundle_schema.v1.json`: real
   `QuantMatrixVersion` bundle schema. It assembles the current standard-peak
   Backfill authority replay into manifest, expected-diff, version, review,
   downstream-impact, and contract-only readiness artifacts while leaving
   ProductWriter defaults, workbook/GUI, selected peak/area, counted detection,
   broad Backfill, and production tier unchanged.
-- `quant_matrix_promotion_packet_v2_schema.v1.json`: Phase 8 no-RAW promotion
-  packet summary schema. It binds the Phase 7 real bundle, large-cohort
+- `quant_matrix_promotion_packet_v2_schema.v1.json`: no-RAW promotion
+  packet summary schema. It binds the real candidate bundle, large-cohort
   evidence, heldout-oracle evidence, and real downstream-impact smoke into a
   `production_ready_candidate_packet` while still leaving ProductWriter
   defaults, workbook/GUI, selected peak/area, counted detection, broad Backfill,
   and default matrix authority unchanged.
-- `quant_matrix_default_activation_dry_run_schema.v1.json`: Phase 9 no-RAW
+- `quant_matrix_default_activation_dry_run_schema.v1.json`: no-RAW
   default activation dry-run gate. It reruns manifest-driven
   `QuantMatrixVersion` activation in a temporary directory, compares the
   candidate quant matrix/provenance/row summary/expected-diff summary hashes
-  with the Phase 7 real bundle, and writes only comparison/summary artifacts;
+  with the real candidate bundle, and writes only comparison/summary artifacts;
   ProductWriter defaults and default matrix outputs remain unchanged.
-- `quant_matrix_product_ready_closeout_schema.v1.json`: Phase 10 no-RAW Product
-  Ready closeout packet. It collects Phase 8 promotion packet v2 and Phase 9
+- `quant_matrix_product_ready_closeout_schema.v1.json`: no-RAW Product Ready
+  closeout packet. It collects promotion candidate packet v2 and default activation
   dry-run evidence into a `product_ready_default_matrix_candidate` statement,
   while still requiring a separate explicit ProductWriter activation commit
   before default outputs or matrix authority can change.

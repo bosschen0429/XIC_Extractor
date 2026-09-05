@@ -9,8 +9,10 @@ import pytest
 
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.workflow as workflow_owner
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.test_search_scope_capture import _capture_binding, _peak_config
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
+)
 from xic_extractor.alignment.result.application_result import (
     ApplicationResultContractError,
     FinalizedUntargetApplicationResult,
@@ -121,7 +123,7 @@ def test_batch_surface_has_explicit_typed_provider_and_result() -> None:
 
 
 def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"sample-a": "qc"},
     )
@@ -356,10 +358,9 @@ def test_batch_composes_children_after_one_runtime_without_recursive_runtime(
     monkeypatch.setattr(
         workflow_owner,
         "_execute_composition_after_runtime",
-        lambda _request, _adapter, runtime_receipt, **_kwargs: calls.append(
-            "composition"
-        )
-        or child_result,
+        lambda _request, _adapter, runtime_receipt, **_kwargs: (
+            calls.append("composition") or child_result
+        ),
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -526,8 +527,7 @@ def _fake_scope(
         samples=samples,
         method_constraints=object(),
         evidence_providers=tuple(
-            SimpleNamespace(method_subject_id=subject_id)
-            for subject_id in subject_ids
+            SimpleNamespace(method_subject_id=subject_id) for subject_id in subject_ids
         ),
         declared_candidate_ids=candidate_ids,
         capture_bindings=bindings,
@@ -552,9 +552,7 @@ def _candidate_universe_payload(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
                 "candidate_payload_sha256": "0" * 64,
-                "discovery_receipt_id": (
-                    "xic.discovery-candidate-universe.v1:test"
-                ),
+                "discovery_receipt_id": ("xic.discovery-candidate-universe.v1:test"),
                 "candidate_artifact_schema_version": "discovery_candidates_csv_v1",
                 "candidate_artifact_sha256": "0" * 64,
                 "candidate_artifact_byte_size": 0,
@@ -612,7 +610,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"sample-a": "qc"},
     )
@@ -697,7 +695,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
 def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
     tmp_path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"sample-a": "qc", "sample-b": "qc"},
     )
@@ -760,7 +758,7 @@ def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
 def test_batch_application_result_requires_owner_candidate_universe(
     tmp_path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"sample-a": "qc"},
     )
@@ -811,7 +809,7 @@ def test_batch_application_result_rejects_reversed_subject_order(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"sample-a": "qc"},
     )
@@ -853,9 +851,7 @@ def test_batch_application_result_rejects_reversed_subject_order(
                 processing_owners=fixture.owners,
                 samples=fixture.samples,
                 candidate_ids_by_stem={
-                    "sample-a": tuple(
-                        candidate_id for candidate_id, _ in memberships
-                    )
+                    "sample-a": tuple(candidate_id for candidate_id, _ in memberships)
                 },
             ),
         },

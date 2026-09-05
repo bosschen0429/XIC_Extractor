@@ -399,8 +399,8 @@ def test_incumbent_anchor_occupies_track_for_other_hypotheses(
 @pytest.mark.parametrize(
     ("occupancy", "candidate_rts", "expected_tracks"),
     (
-        ("m1_only", (7.87,), ("track_a",)),
-        ("m2_only", (8.37,), ("track_b",)),
+        ("cell_reference_only", (7.87,), ("track_a",)),
+        ("backfill_decision_only", (8.37,), ("track_b",)),
         ("both", (7.87, 8.37), ("track_a", "track_b")),
         ("neither", (), ()),
     ),

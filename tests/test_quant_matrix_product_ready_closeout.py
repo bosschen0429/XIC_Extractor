@@ -42,7 +42,7 @@ def test_product_ready_closeout_schema_matches_builder_contract() -> None:
     assert schema["authority_rules"]["requires_explicit_activation_commit"] is True
 
 
-def test_product_ready_closeout_builds_candidate_from_phase8_and_phase9(
+def test_product_ready_closeout_builds_candidate_from_promotion_and_replay(
     tmp_path: Path,
 ) -> None:
     outputs = _build_synthetic_closeout(tmp_path)
@@ -144,7 +144,7 @@ def test_product_ready_closeout_default_check_rejects_non_current_bundle(
 def test_product_ready_closeout_script_check_only_round_trip(
     tmp_path: Path,
 ) -> None:
-    inputs = _build_synthetic_phase8_phase9(tmp_path)
+    inputs = _build_synthetic_promotion_and_replay(tmp_path)
     output_dir = tmp_path / "product_ready_closeout"
     build = subprocess.run(
         [
@@ -197,7 +197,7 @@ def test_product_ready_closeout_script_check_only_round_trip(
 
 
 def _build_synthetic_closeout(tmp_path: Path) -> dict[str, Path]:
-    inputs = _build_synthetic_phase8_phase9(tmp_path)
+    inputs = _build_synthetic_promotion_and_replay(tmp_path)
     return dict(
         build_quant_matrix_product_ready_closeout(
             output_dir=tmp_path / "product_ready_closeout",
@@ -211,7 +211,7 @@ def _build_synthetic_closeout(tmp_path: Path) -> dict[str, Path]:
     )
 
 
-def _build_synthetic_phase8_phase9(tmp_path: Path) -> dict[str, Path]:
+def _build_synthetic_promotion_and_replay(tmp_path: Path) -> dict[str, Path]:
     inputs = _build_synthetic_packet_v2(tmp_path)
     dry_run = build_quant_matrix_default_activation_dry_run(
         output_dir=tmp_path / "dry_run_gate",

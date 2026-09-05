@@ -145,7 +145,7 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"issue329-production-batch:S1")
+    raw_path.write_bytes(b"production-batch:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
@@ -173,7 +173,7 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
             {"S1": candidates},
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:issue329-production-batch",
+        sample_identity_namespace="study:production-batch",
     )
 
     assert len(batch.subject_batch.subjects) == 2
@@ -212,7 +212,7 @@ def test_alignment_adapter_builds_executes_and_composes_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raw_path = tmp_path / "S1.raw"
-    raw_path.write_bytes(b"issue367-alignment-adapter:S1")
+    raw_path.write_bytes(b"alignment-adapter:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
@@ -306,7 +306,7 @@ def test_alignment_adapter_builds_executes_and_composes_once(
 
 def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"issue329-production-batch:S1")
+    raw_path.write_bytes(b"production-batch:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
@@ -335,7 +335,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
                 {"S1": candidates},
             ),
             dll_dir=tmp_path,
-            sample_identity_namespace="study:issue329-production-batch",
+            sample_identity_namespace="study:production-batch",
         )
     except ValueError as exc:
         assert "single-provider" in str(exc)
@@ -348,7 +348,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     monkeypatch,
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"issue329-production-batch:S1")
+    raw_path.write_bytes(b"production-batch:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw, candidates = _nearby_subject_candidates(
@@ -375,7 +375,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
             {"S1": candidates},
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:issue329-production-batch",
+        sample_identity_namespace="study:production-batch",
     )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
@@ -389,7 +389,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "runtime.json",
-            "issue329-production-batch",
+            "production-batch",
         ),
     )
 
@@ -505,7 +505,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
 ) -> None:
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("Support", "Hold"))
     for raw_path in raw_paths:
-        raw_path.write_bytes(f"issue329-production-hold:{raw_path.stem}".encode())
+        raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
@@ -554,7 +554,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             candidates_by_sample,
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:issue329-production-hold",
+        sample_identity_namespace="study:production-hold",
     )
     _install_runtime_raws(
         monkeypatch,
@@ -567,7 +567,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "hold.runtime.json",
-            "issue329-production-hold",
+            "production-hold",
         ),
     )
     hold_observation_ids = tuple(
@@ -608,7 +608,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     sample_stems = ("Support1", "Support2", "Support3", "Hold")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
     for raw_path in raw_paths:
-        raw_path.write_bytes(f"issue329-production-recovery:{raw_path.stem}".encode())
+        raw_path.write_bytes(f"production-recovery:{raw_path.stem}".encode())
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws = {
@@ -651,7 +651,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             candidates_by_sample,
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:issue329-production-recovery",
+        sample_identity_namespace="study:production-recovery",
     )
     _install_runtime_raws(
         monkeypatch,
@@ -664,7 +664,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "recovery.runtime.json",
-            "issue329-production-recovery",
+            "production-recovery",
         ),
     )
     recovered = tuple(
@@ -876,7 +876,7 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
     exclude_all: bool,
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"issue329-production-orphan:S1")
+    raw_path.write_bytes(b"production-orphan:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw, initial_candidates = _nearby_subject_candidates(
@@ -925,7 +925,7 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
             {"S1": candidates},
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:issue329-production-orphan",
+        sample_identity_namespace="study:production-orphan",
     )
     _install_runtime_raw(
         monkeypatch,
@@ -939,7 +939,7 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "runtime.json",
-            "issue329-production-orphan",
+            "production-orphan",
         ),
     )
     completed = compose_untargeted_cid_nl_production_result(

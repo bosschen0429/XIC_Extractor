@@ -299,7 +299,8 @@ separate expected-diff promotion.
 ## Shadow Identity Settlement
 
 Issue #163 adds a no-write comparison layer after the existing cross-sample
-group owner. It consumes immutable M1 cell references, M2 Backfill facts,
+group owner. It consumes immutable CellObservationRef reference-spine cells,
+Backfill decision facts,
 physical peak observations, and preregistered local-trajectory evidence. It
 does not replace group construction, Backfill, Matrix identity, or any writer.
 
@@ -324,7 +325,7 @@ conflict. Landmarks for one sample must agree on its injection order. The
 comparison retains the complete landmark point set and does not collapse it
 into a median template.
 The existing targeted/batch ISTD trend remains a separate diagnostic prior and
-cannot be passed to the M3 local-trajectory assessor as universal identity
+cannot be passed to the identity-trajectory assessor as universal identity
 truth for unknown features. No universal drift, width, valley, or identity
 threshold is introduced.
 
@@ -332,17 +333,18 @@ Direct identity relations are owner-bound to one exact group, and the local
 trajectory sample set must equal that group's owner population. A derived
 identity or split decision cannot be caller-constructed. Each component must
 carry explicit owner-bound membership evidence for its component ID and exact
-observations. The M3 owner seals those components into one immutable partition
+observations. The identity-settlement owner seals those components into one immutable partition
 receipt. H1b settlement, split lineage, and same-identity aggregation must all
 reuse that exact receipt; a settlement cannot be replayed against a stale,
 partial, expanded, or repartitioned component set.
 
-The current M2 recovery receipt does not prove that caller-supplied group facts
-are the complete same-target parent universe (tracked as #156 gap 10). M3
-therefore accepts only exact direct SUPPORT observations from its parent group;
+The current Backfill recovery receipt does not prove that caller-supplied group facts
+are the complete same-target parent universe (tracked as #156 gap 10). The
+identity-settlement owner therefore accepts only exact direct SUPPORT observations from its parent group;
 any non-empty recovery candidate universe fails closed before component
-membership. A receipt's declared parent count, explicit M3 membership label, or
-M2 mapping result cannot substitute for the missing complete-group owner. This
+membership. A receipt's declared parent count, explicit identity-settlement
+membership label, or Backfill mapping result cannot substitute for the missing
+complete-group owner. This
 is a deliberate shadow-capability narrowing: recovery candidate membership
 remains scientifically uncertain until that upstream contract exists.
 
@@ -400,7 +402,7 @@ owner IDs, and one `PeakHypothesis` or physical peak observation may seed at
 most one track. Fit accepts initial anchors only. A later uniquely assigned
 direct-SUPPORT observation may mint an immutable successor model set; consumers
 still do not refit. Each track follows its own injection-order-local, piecewise-linear
-trajectory. At fit time, the M8 fit owner projects each existing group's canonical
+trajectory. At fit time, the ModeTrack model/assignment owner projects each existing group's canonical
 center RT into the model as `ordering_reference_rt_min`. This immutable behavior
 snapshot is bound into `model_set_id`, and crossing checks read the snapshot
 rather than a retained rich group object. Equal model identities therefore
@@ -425,7 +427,7 @@ the sample is instead `technical_unassessable`.
 For one sample, resolved hypotheses may occupy the first track, the second
 track, both through different hypotheses, or neither. A candidate that is
 already an exact owner of one Family ModeTrack is observed occupancy of that
-existing M3 identity; M8 preserves that one-to-one owner fact instead of
+existing identity-trajectory identity; ModeTrack preserves that one-to-one owner fact instead of
 reclassifying it from the track's aggregate center or predicted interval. This
 does not make an MS1-only owner a trajectory anchor or a SUPPORT vote. Other
 candidates are `uniquely_assigned` only when exactly one prediction interval
@@ -437,7 +439,7 @@ crossing is also candidate-local: only candidates whose sole match is one of
 the crossed tracks become `technical_unassessable`; an unaffected third track
 remains assignable. A candidate matching multiple intervals remains
 `ambiguous_multiple_tracks` before crossing adjudication. A track
-accepts at most one hypothesis per sample, and occupancy includes its exact M3
+accepts at most one hypothesis per sample, and occupancy includes its exact identity-trajectory
 owner, its incumbent anchor for that injection, and provisional candidates in
 the current batch. Replaying an incumbent hypothesis is the same occupant; a
 different hypothesis cannot become a second occupant. Only a uniquely assigned
@@ -448,15 +450,15 @@ Model sets, anchors, candidates, assignments, and retained landmarks are bound
 to their exact processing request and attempt, resolved acquisition source, and
 injection order. Anchors and candidates also retain the exact physical peak
 observation identity. Every ingress revalidates the live PeakHypothesis and,
-when present, direct-SUPPORT assessment against those current owners. M8 does
-not retain or depend on `CellObservationRef`. Downstream M8 consumers must call
+when present, direct-SUPPORT assessment against those current owners. ModeTrack does
+not retain or depend on `CellObservationRef`. Downstream ModeTrack consumers must call
 `validate_mode_track_assignment_batch_for_consumption` before using a retained
 assignment batch; the operation is pure and grants no reinforcement or product
 authority. Reinforcement enters through the same validation closure.
 
 The retained fixture
 `docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
-records the source-qualified M8 stop condition; it is not a replay fixture or a
+records the source-qualified ModeTrack stop condition; it is not a replay fixture or a
 classification oracle. It preserves the producing code/base SHAs, required
 Discovery/sample/trace hashes, 85-sample census, and historical 85-open/85-call
 timing claim. The required owner-bound Discovery index and original seed bytes
@@ -467,7 +469,7 @@ authorized attempt. Its evidence verdict remains `inconclusive / no-write`;
 historical morphology, intensity, or mode labels cannot seed tracks or grant a
 current-checkout compatibility claim.
 
-The later fresh current-request Gate B receipt
+The later fresh current-request single-sample canary receipt
 `docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b_v1.json` closes
 that source gap for the CID-NL 116.0474, precursor 349.215 validation lane. The
 accepted 85-sample run retained 86 physical hypotheses in 11 ModeTracks, with
@@ -480,13 +482,13 @@ The lane must use the existing `CID_NL_ALIGNMENT_CONFIG` value
 `anchor_min_seed_events=1`: an MS1-only physical observation contributes one
 observation event. A rejected control using the generic default value `2`
 degenerated to one singleton track per physical hypothesis, so exact-owner
-assignment alone is not a sufficient Gate B oracle. Acceptance also requires
+assignment alone is not a sufficient single-sample canary oracle. Acceptance also requires
 observed cross-sample multi-owner aggregation. This receipt remains
 `shadow_ready / product_authority=none`; four tracks have no direct-SUPPORT
 anchor, and the evidence grants no Matrix, Backfill, chemical-identity, or
 ProductWriter authority.
 
-The bounded Issue #180 M9 Gate C packet at
+The bounded closed-writer validation packet at
 `docs/superpowers/validation/issue180_m9_gate_c_closed_writer_v3/README.md`
 retains the current closed-writer evidence. Its C2 finalizer accepts only the
 fresh typed ModeTrack projection plus one in-memory owner-validated review set,
@@ -496,7 +498,7 @@ QMV and terminal receipts atomically. The earlier
 retains the historical RAW-backed acquisition, fresh-owner comparison,
 manual-review, and 26-cell QMV evidence, but its broader persisted input surface
 is `diagnostic_only`. Neither packet is a replayable writer input or activates
-defaults, changes M1, establishes chemical identity, or grants a new writer
+defaults, changes the CellObservationRef reference spine, establishes chemical identity, or grants a new writer
 authority.
 
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal

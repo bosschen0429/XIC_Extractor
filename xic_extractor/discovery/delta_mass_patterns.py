@@ -125,8 +125,8 @@ def is_within_ppm(
 class PtPatternCandidate:
     """A fully-matched, sample-local Pt pattern candidate.
 
-    Field set mirrors the Pt Candidate CSV v1 contract (Task 3's CSV writer
-    and Task 5's pipeline both construct/consume this same shape). The
+    Field set mirrors the Pt Candidate CSV v1 contract shared by the CSV writer
+    and Discovery pipeline. The
     ``base_*`` fields describe the base position; ``pt_plus_1_*``,
     ``pt_plus_2_*``, and ``pt_plus_4_*`` describe the three non-base
     positions. The base position itself carries no per-position match fields

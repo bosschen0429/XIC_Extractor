@@ -1,8 +1,9 @@
 """Current Discovery-to-assessment adapter for one Untargeted CID-NL subject.
 
 Discovery candidates are receipts.  This adapter reacquires their exact MS1 and
-MS2 observations from one owner-bound RAW handle, then closes the existing M1
-assessment input without fabricating Targeted identity or Matrix authority.
+MS2 observations from one owner-bound RAW handle, then closes the existing
+CellObservationRef assessment input without fabricating Targeted identity or
+Matrix authority.
 """
 
 from __future__ import annotations
@@ -476,7 +477,7 @@ def adapt_current_discovery_sample_subject(
     _observer: _UntargetedRealDataWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> UntargetedCidNlRealDataAdapterResult:
-    """Reacquire one sample's bounded subject and mint its complete M1 input."""
+    """Reacquire a subject and mint its complete CellObservationRef input."""
 
     _validate_inputs(
         processing_owners=processing_owners,
@@ -1245,7 +1246,7 @@ def _validate_inputs(**values: object) -> None:
         or len(settings.neutral_loss_profiles) != 1
     ):
         raise UntargetedCidNlRealDataAdapterError(
-            "M7 accepts exactly one CID-NL Discovery tag"
+            "The real-data runtime accepts exactly one CID-NL Discovery tag"
         )
     if not math.isclose(
         settings.neutral_loss_profiles[0].neutral_loss_da,

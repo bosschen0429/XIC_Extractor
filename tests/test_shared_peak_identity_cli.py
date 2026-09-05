@@ -92,8 +92,8 @@ def test_cli_requires_both_blast_radius_runs(tmp_path: Path) -> None:
                 "--output-dir",
                 str(tmp_path),
                 "--enable-blast-radius",
-                "--blast-radius-8raw-run",
-                str(tmp_path / "8raw"),
+                "--blast-radius-fixture-cohort-run",
+                str(tmp_path / "fixture_cohort"),
             ]
         )
         == 2
@@ -123,30 +123,26 @@ def test_cli_preflight_samples_without_slice1_outputs(
                 "--blast-radius-preflight-only",
                 "--blast-radius-sample-row-limit",
                 "1",
-                "--blast-radius-8raw-run",
-                str(fixture["eight_raw"]),
-                "--blast-radius-85raw-run",
-                str(fixture["eightyfive_raw"]),
+                "--blast-radius-fixture-cohort-run",
+                str(fixture["fixture_cohort"]),
+                "--blast-radius-full-cohort-run",
+                str(fixture["full_cohort"]),
             ]
         )
         == 0
     )
 
     stdout = capsys.readouterr().out
-    assert "preflight_85raw_alignment_cells_row_count: 1" in stdout
+    assert "preflight_full_cohort_alignment_cells_row_count: 1" in stdout
     assert not (tmp_path / "out" / "shared_peak_identity_run_facts.tsv").exists()
     assert not (
         tmp_path / "out" / "shared_peak_identity_explanation_report.md"
     ).exists()
     assert not (
-        tmp_path
-        / "out"
-        / "shared_peak_identity_blast_radius_manifest.tsv"
+        tmp_path / "out" / "shared_peak_identity_blast_radius_manifest.tsv"
     ).exists()
     assert not (
-        tmp_path
-        / "out"
-        / "shared_peak_identity_blast_radius_summary.tsv"
+        tmp_path / "out" / "shared_peak_identity_blast_radius_summary.tsv"
     ).exists()
 
 
@@ -165,10 +161,10 @@ def test_cli_rejects_unknown_optional_blast_radius_role(tmp_path: Path) -> None:
                 "--output-dir",
                 str(tmp_path / "out"),
                 "--enable-blast-radius",
-                "--blast-radius-8raw-run",
-                str(fixture["eight_raw"]),
-                "--blast-radius-85raw-run",
-                str(fixture["eightyfive_raw"]),
+                "--blast-radius-fixture-cohort-run",
+                str(fixture["fixture_cohort"]),
+                "--blast-radius-full-cohort-run",
+                str(fixture["full_cohort"]),
                 "--optional-blast-radius-artifact",
                 f"unknown={tmp_path / 'artifact.tsv'}",
             ]
@@ -183,11 +179,13 @@ def test_cli_slice1_writes_blast_radius_outputs(tmp_path: Path) -> None:
     _write_expected_manifest(
         expected_manifest,
         {
-            "8raw_alignment_review": fixture["eight_raw"] / "alignment_review.tsv",
-            "8raw_alignment_cells": fixture["eight_raw"] / "alignment_cells.tsv",
-            "85raw_alignment_review": fixture["eightyfive_raw"]
+            "fixture_cohort_alignment_review": fixture["fixture_cohort"]
             / "alignment_review.tsv",
-            "85raw_alignment_cells": fixture["eightyfive_raw"]
+            "fixture_cohort_alignment_cells": fixture["fixture_cohort"]
+            / "alignment_cells.tsv",
+            "full_cohort_alignment_review": fixture["full_cohort"]
+            / "alignment_review.tsv",
+            "full_cohort_alignment_cells": fixture["full_cohort"]
             / "alignment_cells.tsv",
         },
     )
@@ -206,14 +204,14 @@ def test_cli_slice1_writes_blast_radius_outputs(tmp_path: Path) -> None:
                 "--output-dir",
                 str(tmp_path / "out"),
                 "--enable-blast-radius",
-                "--blast-radius-8raw-run",
-                str(fixture["eight_raw"]),
-                "--blast-radius-85raw-run",
-                str(fixture["eightyfive_raw"]),
+                "--blast-radius-fixture-cohort-run",
+                str(fixture["fixture_cohort"]),
+                "--blast-radius-full-cohort-run",
+                str(fixture["full_cohort"]),
                 "--expected-blast-radius-manifest",
                 str(expected_manifest),
                 "--optional-blast-radius-artifact",
-                f"candidate_gate_8raw={fixture['gate']}",
+                f"candidate_gate_fixture_cohort={fixture['gate']}",
             ]
         )
         == 0
@@ -229,14 +227,16 @@ def test_cli_slice1_writes_blast_radius_outputs(tmp_path: Path) -> None:
     manifest_rows = _read_tsv(
         output_dir / "shared_peak_identity_blast_radius_manifest.tsv"
     )
-    assert {row["artifact_id"] for row in manifest_rows} >= {"candidate_gate_8raw"}
+    assert {row["artifact_id"] for row in manifest_rows} >= {
+        "candidate_gate_fixture_cohort"
+    }
     summary_rows = _read_tsv(
         output_dir / "shared_peak_identity_blast_radius_summary.tsv"
     )
     compatible_by_scope = {
         row["scope"]: int(row["compatible_row_count"]) for row in summary_rows
     }
-    assert "candidate_gate_8raw" not in compatible_by_scope
+    assert "candidate_gate_fixture_cohort" not in compatible_by_scope
     report = (output_dir / "shared_peak_identity_explanation_report.md").read_text(
         encoding="utf-8"
     )
@@ -262,10 +262,10 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
                 "--output-dir",
                 str(tmp_path / "out"),
                 "--enable-blast-radius",
-                "--blast-radius-8raw-run",
-                str(fixture["eight_raw"]),
-                "--blast-radius-85raw-run",
-                str(fixture["eightyfive_raw"]),
+                "--blast-radius-fixture-cohort-run",
+                str(fixture["fixture_cohort"]),
+                "--blast-radius-full-cohort-run",
+                str(fixture["full_cohort"]),
                 "--enable-shadow-label-alignment",
             ]
         )
@@ -274,12 +274,8 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
 
     output_dir = tmp_path / "out"
     assert (output_dir / "shared_peak_identity_shadow_labels.tsv").exists()
-    assert (
-        output_dir / "shared_peak_identity_shadow_alignment_summary.tsv"
-    ).exists()
-    assert (
-        output_dir / "shared_peak_identity_machine_evidence_support.tsv"
-    ).exists()
+    assert (output_dir / "shared_peak_identity_shadow_alignment_summary.tsv").exists()
+    assert (output_dir / "shared_peak_identity_machine_evidence_support.tsv").exists()
     readiness = _read_tsv(output_dir / "shared_peak_identity_v2_readiness.tsv")[0]
     assert readiness["v2_gate_status"] == "exploratory_only"
     assert readiness["machine_only_labeler_ready"] == "FALSE"
@@ -339,9 +335,9 @@ def test_cli_writes_v2_machine_observed_support_with_optional_evidence(
     assert support["opportunity_basis_status"] == "machine_observed"
     assert support["evidence_support_status"] == "machine_observed_sufficient"
     assert "formal_shape_metric" not in support["missing_machine_evidence"]
-    assert "candidate_ms2_pattern_status=supportive" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "candidate_ms2_pattern_status=supportive" in support["observed_machine_metrics"]
+    )
     assert support["missing_machine_evidence"] == ""
 
 
@@ -394,7 +390,7 @@ def test_cli_can_emit_activation_contract_outputs(tmp_path: Path) -> None:
     assert acceptance["assessed_rows_basis"] == "activation_decision_rows_fallback"
 
 
-def test_cli_activation_acceptance_uses_85raw_blast_radius_denominator(
+def test_cli_activation_acceptance_uses_full_cohort_blast_radius_denominator(
     tmp_path: Path,
 ) -> None:
     fixture = _write_cli_fixture(tmp_path)
@@ -405,11 +401,13 @@ def test_cli_activation_acceptance_uses_85raw_blast_radius_denominator(
     _write_expected_manifest(
         expected_manifest,
         {
-            "8raw_alignment_review": fixture["eight_raw"] / "alignment_review.tsv",
-            "8raw_alignment_cells": fixture["eight_raw"] / "alignment_cells.tsv",
-            "85raw_alignment_review": fixture["eightyfive_raw"]
+            "fixture_cohort_alignment_review": fixture["fixture_cohort"]
             / "alignment_review.tsv",
-            "85raw_alignment_cells": fixture["eightyfive_raw"]
+            "fixture_cohort_alignment_cells": fixture["fixture_cohort"]
+            / "alignment_cells.tsv",
+            "full_cohort_alignment_review": fixture["full_cohort"]
+            / "alignment_review.tsv",
+            "full_cohort_alignment_cells": fixture["full_cohort"]
             / "alignment_cells.tsv",
         },
     )
@@ -429,10 +427,10 @@ def test_cli_activation_acceptance_uses_85raw_blast_radius_denominator(
                 "--output-dir",
                 str(tmp_path / "out"),
                 "--enable-blast-radius",
-                "--blast-radius-8raw-run",
-                str(fixture["eight_raw"]),
-                "--blast-radius-85raw-run",
-                str(fixture["eightyfive_raw"]),
+                "--blast-radius-fixture-cohort-run",
+                str(fixture["fixture_cohort"]),
+                "--blast-radius-full-cohort-run",
+                str(fixture["full_cohort"]),
                 "--expected-blast-radius-manifest",
                 str(expected_manifest),
                 "--enable-shadow-label-alignment",
@@ -459,7 +457,7 @@ def test_cli_activation_acceptance_uses_85raw_blast_radius_denominator(
     assert acceptance["assessed_rows"] == "2"
     assert (
         acceptance["assessed_rows_basis"]
-        == "blast_radius_summary:all_available_85raw:assessed_row_count"
+        == "blast_radius_summary:all_available_full_cohort:assessed_row_count"
     )
     assert acceptance["decision_rows_total"] == "1"
     assert acceptance["must_not_regress_status"] == "pass"
@@ -599,15 +597,15 @@ def test_cli_can_generate_rt_mode_evidence_from_mode_assignment(
         output_dir / "shared_peak_identity_machine_evidence_support.tsv"
     )[0]
     assert "rt_mode_status=mode_supported" in support["observed_machine_metrics"]
-    assert "selected_mode_role=tag_bearing_core" in support[
-        "observed_machine_metrics"
-    ]
-    assert "peak_hypothesis_status=product_candidate_core" in support[
-        "observed_machine_metrics"
-    ]
-    assert "peak_hypothesis_authority_source=legacy_rt_mode_selection" in support[
-        "observed_machine_metrics"
-    ]
+    assert "selected_mode_role=tag_bearing_core" in support["observed_machine_metrics"]
+    assert (
+        "peak_hypothesis_status=product_candidate_core"
+        in support["observed_machine_metrics"]
+    )
+    assert (
+        "peak_hypothesis_authority_source=legacy_rt_mode_selection"
+        in support["observed_machine_metrics"]
+    )
 
 
 def test_cli_can_generate_rt_mode_evidence_from_overlay_trace_data(
@@ -651,9 +649,7 @@ def test_cli_can_generate_rt_mode_evidence_from_overlay_trace_data(
     assert generated_rows[0]["selected_mode_role"] == "single_mode"
 
     peak_hypothesis_rows = _read_tsv(generated_peak_hypothesis)
-    assert peak_hypothesis_rows[0]["peak_hypothesis_status"] == (
-        "raw_mode_review_only"
-    )
+    assert peak_hypothesis_rows[0]["peak_hypothesis_status"] == ("raw_mode_review_only")
     assert peak_hypothesis_rows[0]["product_selection_action"] == (
         "require_raw_mode_review"
     )
@@ -661,12 +657,14 @@ def test_cli_can_generate_rt_mode_evidence_from_overlay_trace_data(
     support = _read_tsv(
         output_dir / "shared_peak_identity_machine_evidence_support.tsv"
     )[0]
-    assert "rt_mode_evidence_level=raw_selected_apex_modes" in support[
-        "observed_machine_metrics"
-    ]
-    assert "peak_hypothesis_status=raw_mode_review_only" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "rt_mode_evidence_level=raw_selected_apex_modes"
+        in support["observed_machine_metrics"]
+    )
+    assert (
+        "peak_hypothesis_status=raw_mode_review_only"
+        in support["observed_machine_metrics"]
+    )
 
 
 def test_cli_can_generate_typed_mode_hypothesis_assignment(
@@ -719,15 +717,15 @@ def test_cli_can_generate_typed_mode_hypothesis_assignment(
         "product_candidate_core"
     )
     assert peak_hypothesis_rows[0]["reason"] == (
-        "typed_mode_hypothesis_assignment_supported_by_mode_tag"
-        "_and_sample_required_tag"
+        "typed_mode_hypothesis_assignment_supported_by_mode_tag_and_sample_required_tag"
     )
     support = _read_tsv(
         output_dir / "shared_peak_identity_machine_evidence_support.tsv"
     )[0]
-    assert "peak_hypothesis_status=product_candidate_core" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "peak_hypothesis_status=product_candidate_core"
+        in support["observed_machine_metrics"]
+    )
     assert (
         "peak_hypothesis_authority_source=typed_mode_hypothesis_assignment"
         in support["observed_machine_metrics"]
@@ -810,9 +808,9 @@ def test_cli_accepts_qc_ms1_pattern_reference_sidecar(
     )[0]
     assert support["pattern_basis_status"] == "machine_observed"
     assert "formal_pattern_metric" not in support["missing_machine_evidence"]
-    assert "qc_ms1_reference_status=partial_support" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "qc_ms1_reference_status=partial_support" in support["observed_machine_metrics"]
+    )
 
 
 def test_cli_accepts_sample_negative_evidence_sidecar(tmp_path: Path) -> None:
@@ -850,12 +848,11 @@ def test_cli_accepts_sample_negative_evidence_sidecar(tmp_path: Path) -> None:
     )[0]
     assert support["negative_evidence_basis_status"] == "machine_observed"
     assert support["negative_evidence_class"] == "local_peak_not_decisive"
-    assert "sample_level_negative_evidence" not in support[
-        "missing_machine_evidence"
-    ]
-    assert "sample_negative_evidence_class=local_peak_not_decisive" in support[
-        "observed_machine_metrics"
-    ]
+    assert "sample_level_negative_evidence" not in support["missing_machine_evidence"]
+    assert (
+        "sample_negative_evidence_class=local_peak_not_decisive"
+        in support["observed_machine_metrics"]
+    )
 
 
 def test_cli_can_generate_ms1_pattern_coherence_evidence(
@@ -889,9 +886,7 @@ def test_cli_can_generate_ms1_pattern_coherence_evidence(
     )
 
     output_dir = tmp_path / "out"
-    generated = (
-        output_dir / "shared_peak_identity_ms1_pattern_coherence_evidence.tsv"
-    )
+    generated = output_dir / "shared_peak_identity_ms1_pattern_coherence_evidence.tsv"
     assert generated.exists()
     generated_rows = _read_tsv(generated)
     assert generated_rows[0]["ms1_pattern_status"] == "supportive"
@@ -930,15 +925,11 @@ def test_cli_can_generate_ms1_pattern_with_raw_overlay_shape_metrics(
     )
 
     output_dir = tmp_path / "out"
-    generated = (
-        output_dir / "shared_peak_identity_ms1_pattern_coherence_evidence.tsv"
-    )
+    generated = output_dir / "shared_peak_identity_ms1_pattern_coherence_evidence.tsv"
     generated_rows = _read_tsv(generated)
     assert generated_rows[0]["ms1_pattern_evidence_level"] == "trace_constellation"
     assert generated_rows[0]["shape_correlation_score"] == "0.94"
-    assert generated_rows[0]["shape_metric_source"] == (
-        "family_ms1_overlay_raw_trace"
-    )
+    assert generated_rows[0]["shape_metric_source"] == ("family_ms1_overlay_raw_trace")
     assert generated_rows[0]["peak_quality_vector_status"] == "supportive"
     assert generated_rows[0]["peak_quality_vector_basis"] == (
         "family_ms1_overlay_raw_trace_vector"
@@ -948,11 +939,13 @@ def test_cli_can_generate_ms1_pattern_with_raw_overlay_shape_metrics(
     )[0]
     assert "formal_shape_metric" not in support["missing_machine_evidence"]
     assert "formal_pattern_metric" not in support["missing_machine_evidence"]
-    assert "ms1_shape_metric_source=family_ms1_overlay_raw_trace" in support[
-        "observed_machine_metrics"
-    ]
-    assert "ms1_peak_quality_vector_basis=family_ms1_overlay_raw_trace_vector" in (
-        support["observed_machine_metrics"]
+    assert (
+        "ms1_shape_metric_source=family_ms1_overlay_raw_trace"
+        in support["observed_machine_metrics"]
+    )
+    assert (
+        "ms1_peak_quality_vector_basis=family_ms1_overlay_raw_trace_vector"
+        in (support["observed_machine_metrics"])
     )
     assert support["evidence_support_status"] == "machine_observed_sufficient"
 
@@ -995,9 +988,9 @@ def test_cli_can_generate_candidate_ms2_pattern_evidence_from_batch_index(
     support = _read_tsv(
         output_dir / "shared_peak_identity_machine_evidence_support.tsv"
     )[0]
-    assert "candidate_ms2_pattern_status=supportive" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "candidate_ms2_pattern_status=supportive" in support["observed_machine_metrics"]
+    )
     assert support["evidence_support_status"] == "machine_observed_sufficient"
 
 
@@ -1065,9 +1058,7 @@ def test_cli_can_generate_matrix_rt_drift_policy_without_external_drift_artifact
         == 0
     )
 
-    generated = (
-        tmp_path / "out" / "shared_peak_identity_matrix_rt_drift_policy.tsv"
-    )
+    generated = tmp_path / "out" / "shared_peak_identity_matrix_rt_drift_policy.tsv"
     assert generated.exists()
     assert _read_tsv(generated)[0]["matrix_rt_drift_status"] == "rt_close"
 
@@ -1122,9 +1113,9 @@ def test_cli_generated_matrix_rt_drift_policy_closes_rt_drift_blocker(
         output_dir / "shared_peak_identity_machine_evidence_support.tsv"
     )[0]
     assert "matrix_rt_drift_policy" not in support["missing_machine_evidence"]
-    assert "matrix_rt_drift_status=drift_supported" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "matrix_rt_drift_status=drift_supported" in support["observed_machine_metrics"]
+    )
 
 
 def test_cli_generated_matrix_rt_drift_policy_uses_anchor_local_trend(
@@ -1201,12 +1192,11 @@ def test_cli_generated_matrix_rt_drift_policy_uses_anchor_local_trend(
         output_dir / "shared_peak_identity_machine_evidence_support.tsv"
     )[0]
     assert "matrix_rt_drift_policy" not in support["missing_machine_evidence"]
-    assert "drift_evidence_level=sample_istd_aligned" in support[
-        "observed_machine_metrics"
-    ]
-    assert "istd_trend_injection_order_span=1-91" in support[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "drift_evidence_level=sample_istd_aligned"
+        in support["observed_machine_metrics"]
+    )
+    assert "istd_trend_injection_order_span=1-91" in support["observed_machine_metrics"]
 
 
 def test_cli_rejects_direct_and_generated_matrix_rt_drift_policy(
@@ -1396,8 +1386,8 @@ def _write_cli_fixture(tmp_path: Path) -> dict[str, Path]:
     _write_overlay_trace_data(overlay_trace_data)
     _write_discovery_batch_index(batch_index, discovery_candidates)
     _write_discovery_candidates(discovery_candidates)
-    eight_raw = _write_blast_radius_run(tmp_path / "8raw")
-    eightyfive_raw = _write_blast_radius_run(tmp_path / "85raw")
+    fixture_cohort = _write_blast_radius_run(tmp_path / "fixture_cohort")
+    full_cohort = _write_blast_radius_run(tmp_path / "full_cohort")
     return {
         "oracle": oracle,
         "review": review,
@@ -1413,8 +1403,8 @@ def _write_cli_fixture(tmp_path: Path) -> dict[str, Path]:
         "owner_edge": owner_edge,
         "overlay_trace_data": overlay_trace_data,
         "batch_index": batch_index,
-        "eight_raw": eight_raw,
-        "eightyfive_raw": eightyfive_raw,
+        "fixture_cohort": fixture_cohort,
+        "full_cohort": full_cohort,
     }
 
 
@@ -1536,7 +1526,7 @@ def _write_cells(
                 "scan_support_score": "1.0",
                 "source_candidate_id": "S3#100",
                 "reason": "supported",
-            }
+            },
         ],
     )
 
@@ -2336,9 +2326,7 @@ def _write_expected_manifest(path: Path, artifacts: dict[str, Path]) -> None:
                 "artifact_role": "alignment_cells"
                 if artifact_id.endswith("_cells")
                 else "alignment_review",
-                "expected_artifact_sha256": hashlib.sha256(
-                    artifact_path.read_bytes()
-                )
+                "expected_artifact_sha256": hashlib.sha256(artifact_path.read_bytes())
                 .hexdigest()
                 .upper(),
             }

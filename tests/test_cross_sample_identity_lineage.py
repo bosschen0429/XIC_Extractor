@@ -7,8 +7,10 @@ from dataclasses import replace
 
 import pytest
 
-from tests.issue161_no_raw_fixture import issue161_peak
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 
 
 def _subjects(tmp_path, *sample_stems: str):
@@ -16,12 +18,14 @@ def _subjects(tmp_path, *sample_stems: str):
         group_member_subject_from_peak_observation,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=sample_stems)
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=sample_stems
+    )
     subjects = tuple(
         group_member_subject_from_peak_observation(
             processing_owners=fixture.owners,
             sample=fixture.sample(sample_stem),
-            observation=issue161_peak(fixture, sample_stem),
+            observation=cid_nl_peak(fixture, sample_stem),
         )
         for sample_stem in sample_stems
     )
@@ -61,16 +65,18 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
         mint_cross_sample_group_identity,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
     first = group_member_subject_from_peak_observation(
         processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
-        observation=issue161_peak(fixture, "sample-a", apex_rt=8.0),
+        observation=cid_nl_peak(fixture, "sample-a", apex_rt=8.0),
     )
     second = group_member_subject_from_peak_observation(
         processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
-        observation=issue161_peak(fixture, "sample-a", apex_rt=8.03),
+        observation=cid_nl_peak(fixture, "sample-a", apex_rt=8.03),
     )
     assert first.member_subject_id != second.member_subject_id
     with pytest.raises(CrossSampleContractError, match="physical observation member"):
@@ -111,9 +117,7 @@ def test_excluded_edge_cannot_connect_neighborhood(tmp_path) -> None:
     _, members = _subjects(tmp_path, "sample-a", "sample-b")
     neighborhood = build_bounded_connected_neighborhood(
         member_subjects=members,
-        edges=(
-            _neighborhood_edge(members[0], members[1], disposition="excluded"),
-        ),
+        edges=(_neighborhood_edge(members[0], members[1], disposition="excluded"),),
         budget=CrossSampleNeighborhoodBudget(max_members=2, max_eligible_edges=1),
     )
 
@@ -165,8 +169,10 @@ def test_equivalent_wrappers_share_identity_and_tagged_variant_stays_distinct(
         compose_ms1_observation_peak_hypothesis,
     )
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
-    observation = issue161_peak(fixture, "sample-a")
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-a",)
+    )
+    observation = cid_nl_peak(fixture, "sample-a")
     hypothesis_a = compose_ms1_observation_peak_hypothesis(
         processing_owners=fixture.owners,
         sample=fixture.sample("sample-a"),
@@ -319,8 +325,7 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
     assert len(forward.successors) == 1
     assert len(forward.lineage) == 2
     assert all(
-        item.successor_group_hypothesis_id
-        == forward.successors[0].group_hypothesis_id
+        item.successor_group_hypothesis_id == forward.successors[0].group_hypothesis_id
         for item in forward.lineage
     )
     from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -402,11 +407,7 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
         apply_coupled_successor_proposal(
             predecessors=predecessors,
             successor_member_sets=((members[0],),),
-            edges=(
-                _neighborhood_edge(
-                    members[0], members[1], disposition="eligible"
-                ),
-            ),
+            edges=(_neighborhood_edge(members[0], members[1], disposition="eligible"),),
             budget=CrossSampleNeighborhoodBudget(
                 max_members=2,
                 max_eligible_edges=1,
@@ -420,11 +421,7 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
         apply_coupled_successor_proposal(
             predecessors=predecessors,
             successor_member_sets=(members,),
-            edges=(
-                _neighborhood_edge(
-                    members[0], members[1], disposition="eligible"
-                ),
-            ),
+            edges=(_neighborhood_edge(members[0], members[1], disposition="eligible"),),
             budget=CrossSampleNeighborhoodBudget(
                 max_members=2,
                 max_eligible_edges=1,
@@ -466,9 +463,7 @@ def test_caller_cannot_reopen_excluded_neighborhood_edge(tmp_path) -> None:
     )
 
     _, members = _subjects(tmp_path, "sample-a", "sample-b")
-    excluded = _neighborhood_edge(
-        members[0], members[1], disposition="excluded"
-    )
+    excluded = _neighborhood_edge(members[0], members[1], disposition="excluded")
     with pytest.raises(CrossSampleContractError, match="contradicts"):
         dc_replace(
             excluded,
@@ -491,9 +486,7 @@ def test_caller_cannot_reopen_excluded_neighborhood_edge(tmp_path) -> None:
                 max_eligible_edges=1,
             ),
         )
-    eligible = _neighborhood_edge(
-        members[0], members[1], disposition="eligible"
-    )
+    eligible = _neighborhood_edge(members[0], members[1], disposition="eligible")
     with pytest.raises(CrossSampleContractError, match="repeats an undirected"):
         build_bounded_connected_neighborhood(
             member_subjects=members,
@@ -522,21 +515,30 @@ def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> No
     )
     weak = dc_replace(strong, decision="weak_edge")
 
-    assert classify_cross_sample_initial_edge(
-        strong,
-        context="complete_link",
-        config=AlignmentConfig(),
-    ) == "eligible"
-    assert classify_cross_sample_initial_edge(
-        weak,
-        context="complete_link",
-        config=AlignmentConfig(),
-    ) == "review_only"
-    assert classify_cross_sample_initial_edge(
-        blocked,
-        context="hard_gate",
-        config=AlignmentConfig(),
-    ) == "excluded"
+    assert (
+        classify_cross_sample_initial_edge(
+            strong,
+            context="complete_link",
+            config=AlignmentConfig(),
+        )
+        == "eligible"
+    )
+    assert (
+        classify_cross_sample_initial_edge(
+            weak,
+            context="complete_link",
+            config=AlignmentConfig(),
+        )
+        == "review_only"
+    )
+    assert (
+        classify_cross_sample_initial_edge(
+            blocked,
+            context="hard_gate",
+            config=AlignmentConfig(),
+        )
+        == "excluded"
+    )
 
 
 def _neighborhood_edge(left, right, *, disposition):

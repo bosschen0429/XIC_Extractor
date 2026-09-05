@@ -107,7 +107,7 @@ DEPENDENT_EFFECT_LANE_ID = (
     "untargeted_owner_backfill_canonical_quantitative_projection_v1"
 )
 DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
     "15B74BC79DC9501210ACD5F761C86B4A7128DB83E74A62BF3E97B7BEB1572ED5"

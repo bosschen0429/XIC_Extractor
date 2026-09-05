@@ -21,36 +21,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         promotion_summary = _read_json(args.promotion_summary_json)
         activation_acceptance_rows = _read_tsv(args.activation_acceptance_tsv)
-        raw85_metadata = _read_json(
-            args.raw85_alignment_dir / "alignment_run_metadata.json",
+        full_cohort_metadata = _read_json(
+            args.full_cohort_alignment_dir / "alignment_run_metadata.json",
         )
-        raw85_counts = _raw85_counts(args.raw85_alignment_dir)
-        raw85_slice_gate_summary = (
-            _read_json(args.raw85_slice_gate_summary_json)
-            if args.raw85_slice_gate_summary_json is not None
+        full_cohort_counts = _full_cohort_counts(args.full_cohort_alignment_dir)
+        full_cohort_acceptance_gate_summary = (
+            _read_json(args.full_cohort_acceptance_gate_summary_json)
+            if args.full_cohort_acceptance_gate_summary_json is not None
             else None
         )
-        raw85_winner_remap_summary = (
-            _read_json(args.raw85_winner_remap_summary_json)
-            if args.raw85_winner_remap_summary_json is not None
+        full_cohort_winner_remap_summary = (
+            _read_json(args.full_cohort_winner_remap_summary_json)
+            if args.full_cohort_winner_remap_summary_json is not None
             else None
         )
-        raw85_hypothesis_review_summary = (
-            _read_json(args.raw85_hypothesis_review_summary_json)
-            if args.raw85_hypothesis_review_summary_json is not None
+        full_cohort_hypothesis_review_summary = (
+            _read_json(args.full_cohort_hypothesis_review_summary_json)
+            if args.full_cohort_hypothesis_review_summary_json is not None
             else None
         )
         index = (
             backfill_peakhypothesis_transfer_readiness.build_transfer_readiness(
                 promotion_summary=promotion_summary,
                 activation_acceptance_rows=activation_acceptance_rows,
-                raw85_metadata=raw85_metadata,
-                raw85_counts=raw85_counts,
-                raw85_slice_gate_summary=raw85_slice_gate_summary,
-                raw85_winner_remap_summary=raw85_winner_remap_summary,
-                raw85_hypothesis_review_summary=raw85_hypothesis_review_summary,
+                full_cohort_metadata=full_cohort_metadata,
+                full_cohort_counts=full_cohort_counts,
+                full_cohort_acceptance_gate_summary=full_cohort_acceptance_gate_summary,
+                full_cohort_winner_remap_summary=full_cohort_winner_remap_summary,
+                full_cohort_hypothesis_review_summary=full_cohort_hypothesis_review_summary,
                 source_run_id=args.source_run_id,
-                expected_raw85_sample_columns=args.expected_raw85_sample_columns,
+                expected_full_cohort_sample_columns=args.expected_full_cohort_sample_columns,
             )
         )
         outputs = (
@@ -71,13 +71,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--promotion-summary-json", type=Path, required=True)
     parser.add_argument("--activation-acceptance-tsv", type=Path, required=True)
-    parser.add_argument("--raw85-alignment-dir", type=Path, required=True)
+    parser.add_argument("--full_cohort-alignment-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-run-id", default="")
-    parser.add_argument("--expected-raw85-sample-columns", type=int, default=85)
-    parser.add_argument("--raw85-slice-gate-summary-json", type=Path)
-    parser.add_argument("--raw85-winner-remap-summary-json", type=Path)
-    parser.add_argument("--raw85-hypothesis-review-summary-json", type=Path)
+    parser.add_argument("--expected-full_cohort-sample-columns", type=int, default=85)
+    parser.add_argument("--full-cohort-acceptance-gate-summary-json", type=Path)
+    parser.add_argument("--full_cohort-winner-remap-summary-json", type=Path)
+    parser.add_argument("--full_cohort-hypothesis-review-summary-json", type=Path)
     return parser.parse_args(argv)
 
 
@@ -97,7 +97,7 @@ def _read_tsv(path: Path) -> tuple[dict[str, str], ...]:
         return tuple(dict(row) for row in csv.DictReader(handle, delimiter="\t"))
 
 
-def _raw85_counts(alignment_dir: Path) -> dict[str, int]:
+def _full_cohort_counts(alignment_dir: Path) -> dict[str, int]:
     matrix_path = alignment_dir / "alignment_matrix.tsv"
     review_path = alignment_dir / "alignment_review.tsv"
     cells_path = alignment_dir / "alignment_cells.tsv"

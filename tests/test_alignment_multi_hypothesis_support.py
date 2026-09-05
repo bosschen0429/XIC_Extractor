@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.issue161_no_raw_fixture import (
-    issue161_evidence,
-    issue161_peak,
-    issue161_support_policy,
-    issue161_unique_support,
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_peak,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
 )
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -31,16 +33,16 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 def test_one_assessment_preserves_two_individually_supported_peaks(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("dual",))
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("dual",))
     sample = fixture.sample("dual")
-    left = issue161_peak(
+    left = cid_nl_peak(
         fixture,
         "dual",
         apex_rt=7.8,
         rt_left_min=7.7,
         rt_right_min=7.9,
     )
-    right = issue161_peak(
+    right = cid_nl_peak(
         fixture,
         "dual",
         apex_rt=8.2,
@@ -48,26 +50,26 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         rt_right_min=8.3,
     )
     peaks = (left, right)
-    left_evidence = issue161_evidence(
+    left_evidence = cid_nl_evidence(
         fixture,
         "dual",
         scan_number=101,
         scan_rt_min=7.8,
     )
-    right_evidence = issue161_evidence(
+    right_evidence = cid_nl_evidence(
         fixture,
         "dual",
         scan_number=102,
         scan_rt_min=8.2,
     )
-    left_support = issue161_unique_support(
+    left_support = cid_nl_unique_support(
         fixture,
         "dual",
         peak=left,
         evidence=left_evidence,
         candidate_peaks=peaks,
     )
-    right_support = issue161_unique_support(
+    right_support = cid_nl_unique_support(
         fixture,
         "dual",
         peak=right,
@@ -82,7 +84,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.5,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
             scanned_event_count=2,
@@ -122,16 +124,16 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
 
     family_context, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
-        processing_owners=fixture.owners,
-        sample_assessments=((sample, assessment),),
-        alignment_config=AlignmentConfig(),
-        trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=0.1,
-            max_interpolation_gap=10,
-            max_extrapolation_gap=10,
-        ),
+            processing_owners=fixture.owners,
+            sample_assessments=((sample, assessment),),
+            alignment_config=AlignmentConfig(),
+            trajectory_policy=ModeTrackTrajectoryPolicy(
+                trajectory_policy_version="anchor-trajectory-v1",
+                band_policy_version="fixed-band-v1",
+                prediction_half_width_min=0.1,
+                max_interpolation_gap=10,
+                max_extrapolation_gap=10,
+            ),
         )
     )
 
@@ -145,10 +147,10 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
     assert len({item.group_hypothesis_id for item in batches[0].assignments}) == 2
 
 
-def test_m3_owner_membership_is_observed_geometry_not_reclassified_by_group_center(
+def test_identity_membership_is_geometry_not_group_center_reclassification(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("early", "late"),
     )
@@ -171,16 +173,16 @@ def test_m3_owner_membership_is_observed_geometry_not_reclassified_by_group_cent
 
     family_context, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
-        processing_owners=fixture.owners,
-        sample_assessments=sample_assessments,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=0.1,
-            max_interpolation_gap=10,
-            max_extrapolation_gap=10,
-        ),
+            processing_owners=fixture.owners,
+            sample_assessments=sample_assessments,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            trajectory_policy=ModeTrackTrajectoryPolicy(
+                trajectory_policy_version="anchor-trajectory-v1",
+                band_policy_version="fixed-band-v1",
+                prediction_half_width_min=0.1,
+                max_interpolation_gap=10,
+                max_extrapolation_gap=10,
+            ),
         )
     )
 
@@ -188,9 +190,7 @@ def test_m3_owner_membership_is_observed_geometry_not_reclassified_by_group_cent
     assert len(model_set.tracks) == 2
     assert tuple(len(batch.assignments) for batch in batches) == (2, 2)
     assert {
-        assignment.state
-        for batch in batches
-        for assignment in batch.assignments
+        assignment.state for batch in batches for assignment in batch.assignments
     } == {"uniquely_assigned"}
     assert all(
         assignment.peak_hypothesis_id
@@ -233,14 +233,14 @@ def _assessment_with_observation_only_peak(
     scan_number: int,
 ):
     sample = fixture.sample(sample_stem)
-    direct_peak = issue161_peak(
+    direct_peak = cid_nl_peak(
         fixture,
         sample_stem,
         apex_rt=direct_apex_rt,
         rt_left_min=direct_apex_rt - 0.1,
         rt_right_min=direct_apex_rt + 0.1,
     )
-    observed_peak = issue161_peak(
+    observed_peak = cid_nl_peak(
         fixture,
         sample_stem,
         apex_rt=observed_apex_rt,
@@ -248,13 +248,13 @@ def _assessment_with_observation_only_peak(
         rt_right_min=observed_apex_rt + 0.1,
     )
     peaks = (direct_peak, observed_peak)
-    evidence = issue161_evidence(
+    evidence = cid_nl_evidence(
         fixture,
         sample_stem,
         scan_number=scan_number,
         scan_rt_min=direct_apex_rt,
     )
-    support = issue161_unique_support(
+    support = cid_nl_unique_support(
         fixture,
         sample_stem,
         peak=direct_peak,
@@ -269,7 +269,7 @@ def _assessment_with_observation_only_peak(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=9.2,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=True,
             scanned_event_count=1,

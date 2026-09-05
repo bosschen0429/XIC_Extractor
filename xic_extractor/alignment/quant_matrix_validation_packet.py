@@ -35,17 +35,17 @@ VALIDATION_EVIDENCE_ROW_COLUMNS = (
 )
 
 VALIDATION_EVIDENCE_ALLOWED_TIERS = (
-    "85raw_large_cohort",
+    "full_cohort",
     "large_cohort_validation",
     "heldout_oracle",
     "manual_review_oracle",
     "downstream_impact_smoke",
     "focused_tests",
-    "8raw_smoke",
+    "fixture_cohort_smoke",
 )
 
 REQUIRED_SCIENCE_EVIDENCE = {
-    "large_cohort_validation": ("85raw_large_cohort", "large_cohort_validation"),
+    "large_cohort_validation": ("full_cohort", "large_cohort_validation"),
     "heldout_oracle_or_manual_review": (
         "heldout_oracle",
         "manual_review_oracle",
@@ -54,7 +54,7 @@ REQUIRED_SCIENCE_EVIDENCE = {
 }
 
 TIER_REQUIRED_METADATA = {
-    "85raw_large_cohort": ("cohort_id", "raw_run_count"),
+    "full_cohort": ("cohort_id", "raw_run_count"),
     "large_cohort_validation": ("cohort_id",),
     "heldout_oracle": ("oracle_packet_id",),
     "manual_review_oracle": ("review_packet_id",),
@@ -112,6 +112,7 @@ def build_quant_matrix_validation_evidence_packet(
     evidence_json.write_text(
         json.dumps(evidence_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     write_tsv(
         evidence_rows_tsv,
@@ -150,6 +151,7 @@ def build_quant_matrix_validation_evidence_packet(
     summary_json.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return {
         "validation_evidence_json": evidence_json,
@@ -307,10 +309,10 @@ def _validate_artifact_request(
         value = getattr(artifact, field)
         if value in ("", None):
             raise ValueError(f"{artifact.tier}: missing {field}")
-    if artifact.tier == "85raw_large_cohort" and (
+    if artifact.tier == "full_cohort" and (
         artifact.raw_run_count is None or artifact.raw_run_count < 85
     ):
-        raise ValueError("85raw_large_cohort requires raw_run_count >= 85")
+        raise ValueError("full_cohort requires raw_run_count >= 85")
 
 
 def _copy_artifact(source: Path, artifacts_dir: Path, tier: str) -> Path:
@@ -505,11 +507,11 @@ def _append_readiness_fixture_problems(
     fixture_dir = validation_evidence_json.parent / "readiness_integration_fixture"
     if not fixture_dir.exists():
         return
-    readiness_summary = fixture_dir / "readiness" / (
-        "quant_matrix_promotion_readiness_summary.json"
+    readiness_summary = (
+        fixture_dir / "readiness" / ("quant_matrix_promotion_readiness_summary.json")
     )
-    readiness_checks = fixture_dir / "readiness" / (
-        "quant_matrix_promotion_readiness_checks.tsv"
+    readiness_checks = (
+        fixture_dir / "readiness" / ("quant_matrix_promotion_readiness_checks.tsv")
     )
     if not readiness_summary.is_file():
         problems.append("readiness fixture summary is missing")
@@ -669,12 +671,8 @@ def _append_artifact_binding_problems(
             validate_quant_matrix_downstream_impact_smoke(
                 artifact,
                 artifact_root=source_root,
-                cell_provenance_contract_summary=(
-                    cell_provenance_contract_summary
-                ),
-                cell_provenance_minimal_fixture=(
-                    cell_provenance_minimal_fixture
-                ),
+                cell_provenance_contract_summary=(cell_provenance_contract_summary),
+                cell_provenance_minimal_fixture=(cell_provenance_minimal_fixture),
             )
         )
 

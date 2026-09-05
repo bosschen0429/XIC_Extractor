@@ -407,7 +407,7 @@ def test_summary_renders_engineering_go_no_go_rows():
     assert "| projected_full_cohort_identity_xic_requests | Proceed |" in markdown
 
 
-def test_summary_marks_engineering_no_go_when_85raw_budget_missing():
+def test_summary_marks_engineering_no_go_when_full_cohort_budget_missing():
     markdown = render_identity_coherence_summary(
         (output_record(),),
         context=IdentityCoherenceOutputContext(

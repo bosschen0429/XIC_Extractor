@@ -395,8 +395,8 @@ cited artifacts become stale or contradictory.
 
 ### 2026-05-28 Qualitative Selection / Owner-Backfill Scan Support Gate
 
-Verdict: `production_candidate` for the Phase 1b qualitative selected-peak /
-Backfill promotion blocker on the current production-equivalent alignment path.
+Verdict: `production_candidate` for the qualitative selected-peak / Backfill
+promotion blocker on the current production-equivalent alignment path.
 This closes the qualitative promotion blocker for the next product-decision PR;
 it does not declare the whole product `production_ready`.
 
@@ -423,7 +423,7 @@ Key facts:
   production-equivalent, audit-off, validation-fast, super-window, heartbeat
   command shape and produced the cited durable fixture summaries.
 
-Do not rerun Phase 1b just to re-prove the owner-backfill scan-support fix.
+Do not rerun this gate just to re-prove the owner-backfill scan-support fix.
 Rerun only after current code changes owner-backfill trace support emission,
 promotion-policy support semantics, selected peak boundaries, high-backfill
 confidence/flag projection, or the cited artifacts become stale or
@@ -503,7 +503,7 @@ Evidence notes and retained artifacts for this diagnostic conclusion:
 | P2B area-mismatch triage | retired private-history note; current facts summarized above |
 | Resolver default hotfix / same-surface d3 finding | retired private-history note; current facts summarized above |
 | 85RAW super-window runtime acceptance | retired private-history note; current facts summarized above |
-| Product-priority Phase 1 gate | retired private-history note; current facts summarized above |
+| Product-priority gate | retired private-history note; current facts summarized above |
 | Current 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved.tsv`, SHA256 `9A63FC81C811CF92925853884837B623878B644A26311799FAF64FA4947548E8` |
 | Post-fix 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved_primary_delivery_fix.tsv`, SHA256 `B38EC06D01714B4AACA6825B1C003C9BB724264689FCD78FBCB8DD2F9AB0CE9D` |
 | Current 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9` |

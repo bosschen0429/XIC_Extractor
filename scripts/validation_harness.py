@@ -39,13 +39,13 @@ __all__ = [
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    suite_names = tuple(args.suite or ("manual-2raw", "tissue-8raw"))
+    suite_names = tuple(args.suite or ("manual-2raw", "tissue-fixture-cohort"))
     if "all" in suite_names:
         expanded = SUITE_CHOICES
     else:
         expanded = suite_names
-    if "tissue-85raw" in expanded and not args.confirm_full_run:
-        print("tissue-85raw requires --confirm-full-run", file=sys.stderr)
+    if "tissue-full-cohort" in expanded and not args.confirm_full_run:
+        print("tissue-full-cohort requires --confirm-full-run", file=sys.stderr)
         return 2
 
     run_id = args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -93,15 +93,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         epilog=(
             "Suites:\n"
             "  manual-2raw   manual-truth area/RT comparison\n"
-            "  tissue-8raw  targeted workbook smoke or A/B comparison\n"
-            "  tissue-85raw opt-in full targeted workbook gate; requires "
+            "  tissue-fixture-cohort  targeted workbook smoke or A/B comparison\n"
+            "  tissue-full-cohort opt-in full targeted workbook gate; requires "
             "--confirm-full-run\n\n"
             "Workflow:\n"
             "  inspect  use --dry-run before RAW-backed work\n"
             "  output   <output-root>/<run-id>/validation_summary.csv\n"
             "  compare  reuse the run ID and pass --baseline-root\n"
-            "  stop     fix an inconclusive 8RAW gate; do not escalate it to "
-            "85RAW\n"
+            "  stop     fix an inconclusive FIXTURE_COHORT gate; do not escalate it to "
+            "FULL_COHORT\n"
             "  safety   docs/agent/parameter-settings.md and "
             "xic-raw-validation"
         ),
@@ -111,7 +111,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--suite",
         action="append",
         choices=(*SUITE_CHOICES, "all"),
-        help="Validation suite to run. Repeatable. Default: manual-2raw + tissue-8raw.",
+        help=(
+            "Validation suite to run. Repeatable. Default: manual-2raw + "
+            "tissue-fixture-cohort."
+        ),
     )
     parser.add_argument("--base-dir", type=Path, default=Path.cwd())
     parser.add_argument(

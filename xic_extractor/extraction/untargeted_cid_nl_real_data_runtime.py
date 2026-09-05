@@ -116,7 +116,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v2"
 VALIDATION_STATUS = "diagnostic_only"
-M7_CALL_COST_METRIC_NAMES = (
+RUNTIME_CALL_COST_METRIC_NAMES = (
     "raw_open_count",
     "logical_xic_request_count",
     "xic_batch_count",
@@ -135,7 +135,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 
 class UntargetedCidNlRealDataRuntimeError(ValueError):
-    """Raised when M7 work cannot close through the atomic runtime owner."""
+    """Raised when real-data runtime work cannot close atomically."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +278,7 @@ class UntargetedCidNlRealDataRuntimeApplicationResult:
 def untargeted_cid_nl_runtime_call_cost(
     finalization: RuntimeFinalizationReceipt,
 ) -> dict[str, int]:
-    """Project the five M7 call-cost facts from the runtime-owned ledger."""
+    """Project the five real-data runtime call-cost facts from its ledger."""
 
     if not isinstance(finalization, RuntimeFinalizationReceipt):
         raise UntargetedCidNlRealDataRuntimeError(
@@ -288,7 +288,7 @@ def untargeted_cid_nl_runtime_call_cost(
         finalization.coordinator.state.runtime.manifest.attempt.processing_attempt_id
     )
     projected: dict[str, int] = {}
-    for name in M7_CALL_COST_METRIC_NAMES:
+    for name in RUNTIME_CALL_COST_METRIC_NAMES:
         matches = tuple(
             metric
             for metric in finalization.observability_ledger.metrics
@@ -348,7 +348,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
         and runtime.manifest.work_unit_keys != keys
     ):
         raise UntargetedCidNlRealDataRuntimeError(
-            "runtime manifest must exactly match the declared M7 work units"
+            "runtime manifest must exactly match the declared real-data work units"
         )
 
     direct_assessment_by_key: dict[str, bool] = {}
@@ -758,7 +758,7 @@ def _prepare_subject_authorized_recoveries(
             method_subject=first.method_subject,
             sample_inputs=tuple(result.assessment_input for result in adapter_results),
             source_artifact_relpath=(
-                "output/m7/preliminary_untargeted_cid_nl_source.json"
+                "output/real_data_runtime/preliminary_untargeted_cid_nl_source.json"
             ),
         )
     except UntargetedCidNlGoldenPathError as exc:
@@ -1317,7 +1317,7 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
         != UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION
     ):
         raise UntargetedCidNlRealDataRuntimeError(
-            "processing request does not use the supported M7 contract"
+            "processing request does not use the supported real-data runtime contract"
         )
     request_inputs = json.loads(request.normalized_scientific_inputs_json)
     subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
@@ -1510,7 +1510,7 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 __all__ = (
-    "M7_CALL_COST_METRIC_NAMES",
+    "RUNTIME_CALL_COST_METRIC_NAMES",
     "UntargetedCidNlRealDataRuntimeApplicationResult",
     "UntargetedCidNlRealDataRuntimeError",
     "UntargetedCidNlRealDataRuntimeJob",

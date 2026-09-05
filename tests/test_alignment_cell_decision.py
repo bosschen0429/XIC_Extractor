@@ -11,8 +11,10 @@ from typing import Any, cast
 import pytest
 
 import xic_extractor.alignment.projection.untarget.pre_cell as untarget_owner
-from tests.issue161_no_raw_fixture import PRECURSOR_MZ
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 from tests.test_cell_observations import (
     _coverage_for_groups,
     _final_receipt,
@@ -92,7 +94,7 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.issue161_peak",
+        "tests.test_cell_observations.cid_nl_peak",
         _numeric_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -124,10 +126,13 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
         item.subject is subject
         for item, subject in zip(decisions, projection.subjects, strict=True)
     )
-    assert decide_production_cell(
-        projection.subjects[0],
-        target_projection=projection,
-    ) == decisions[0]
+    assert (
+        decide_production_cell(
+            projection.subjects[0],
+            target_projection=projection,
+        )
+        == decisions[0]
+    )
     for item in decisions:
         validate_production_cell_decision(item)
 
@@ -187,11 +192,14 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
     }
     assert by_member[True].variant == "not_quantifiable"
     assert by_member[False].variant == "unavailable"
-    assert decide_production_cell(
-        projection.cell_subjects[0],
-        group_handoff=alignment.cell_observation_handoff,
-        group_observations=alignment.cell_observations,
-    ) == decisions[0]
+    assert (
+        decide_production_cell(
+            projection.cell_subjects[0],
+            group_handoff=alignment.cell_observation_handoff,
+            group_observations=alignment.cell_observations,
+        )
+        == decisions[0]
+    )
     evidence = cast(FinalGroupCellObservation, by_member[True].evidence)
     integration = evidence.integrations[0]
     original_area = integration.area_raw_counts_seconds
@@ -206,7 +214,7 @@ def test_group_numeric_uses_real_primary_matrix_area(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_untargeted_cid_nl_golden_path.issue161_peak",
+        "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak",
         _numeric_peak,
     )
     _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
@@ -331,19 +339,20 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         predecessor_cells=spine.cells,
     )
     sample = fixture.sample("s4")
-    observed = next(
-        item for item in observed_cells if item.canonical_sample is sample
-    )
+    observed = next(item for item in observed_cells if item.canonical_sample is sample)
     observed_subject = GroupCellSubject(
         untarget_owner._mint_untarget_row_key(observed.group),
         sample,
         None,
     )
-    assert decide_production_cell(
-        observed_subject,
-        group_handoff=handoff,
-        group_observations=observed_cells,
-    ).variant == "unresolved"
+    assert (
+        decide_production_cell(
+            observed_subject,
+            group_handoff=handoff,
+            group_observations=observed_cells,
+        ).variant
+        == "unresolved"
+    )
 
     negative_assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
@@ -372,19 +381,20 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         handoff=handoff,
         predecessor_cells=predecessor_cells,
     )
-    negative = next(
-        item for item in negative_cells if item.canonical_sample is sample
-    )
+    negative = next(item for item in negative_cells if item.canonical_sample is sample)
     negative_subject = GroupCellSubject(
         untarget_owner._mint_untarget_row_key(negative.group),
         sample,
         None,
     )
-    assert decide_production_cell(
-        negative_subject,
-        group_handoff=handoff,
-        group_observations=negative_cells,
-    ).variant == "searched_no_observation"
+    assert (
+        decide_production_cell(
+            negative_subject,
+            group_handoff=handoff,
+            group_observations=negative_cells,
+        ).variant
+        == "searched_no_observation"
+    )
 
 
 def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
@@ -396,20 +406,21 @@ def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
         predecessor_cells=spine.cells,
     )
     fallback_reject = next(
-        item
-        for item in fallback_cells
-        if item.evidence_state == "rejected_observation"
+        item for item in fallback_cells if item.evidence_state == "rejected_observation"
     )
     fallback_subject = GroupCellSubject(
         untarget_owner._mint_untarget_row_key(fallback_reject.group),
         fallback_reject.canonical_sample,
         None,
     )
-    assert decide_production_cell(
-        fallback_subject,
-        group_handoff=fallback_handoff,
-        group_observations=fallback_cells,
-    ).variant == "rejected_observation"
+    assert (
+        decide_production_cell(
+            fallback_subject,
+            group_handoff=fallback_handoff,
+            group_observations=fallback_cells,
+        ).variant
+        == "rejected_observation"
+    )
 
     evaluated_handoff = _with_evaluated_coverage_terminal(
         fallback_handoff,
@@ -429,11 +440,14 @@ def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
         evaluated_reject.canonical_sample,
         None,
     )
-    assert decide_production_cell(
-        evaluated_subject,
-        group_handoff=evaluated_handoff,
-        group_observations=evaluated_cells,
-    ).variant == "rejected_observation"
+    assert (
+        decide_production_cell(
+            evaluated_subject,
+            group_handoff=evaluated_handoff,
+            group_observations=evaluated_cells,
+        ).variant
+        == "rejected_observation"
+    )
 
 
 def test_group_crossed_terminal_and_candidate_combinations_fail_before_decision(
@@ -480,8 +494,7 @@ def test_group_crossed_terminal_and_candidate_combinations_fail_before_decision(
         (
             item
             for item in target.group.member_subjects
-            if item.canonical_sample_identity_id
-            == target.canonical_sample_identity_id
+            if item.canonical_sample_identity_id == target.canonical_sample_identity_id
         ),
         None,
     )
@@ -504,10 +517,10 @@ def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.issue161_peak",
+        "tests.test_cell_observations.cid_nl_peak",
         _numeric_peak,
     )
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2"),
     )
@@ -611,7 +624,7 @@ def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
 def test_group_split_nonmember_maps_exact_not_searched_closure(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2"),
     )
@@ -663,20 +676,22 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         handoff=handoff,
         predecessor_cells=spine.cells,
     )
-    not_searched = next(
-        item for item in cells if item.evidence_state == "not_searched"
-    )
+    not_searched = next(item for item in cells if item.evidence_state == "not_searched")
     subject = GroupCellSubject(
         untarget_owner._mint_untarget_row_key(not_searched.group),
         not_searched.canonical_sample,
         None,
     )
 
-    assert decide_production_cell(
-        subject,
-        group_handoff=handoff,
-        group_observations=cells,
-    ).variant == "not_searched"
+    assert (
+        decide_production_cell(
+            subject,
+            group_handoff=handoff,
+            group_observations=cells,
+        ).variant
+        == "not_searched"
+    )
+
 
 def test_target_population_revalidates_row_terminal_and_integration_axes(
     tmp_path: Path,
@@ -698,6 +713,7 @@ def test_target_population_revalidates_row_terminal_and_integration_axes(
         for item in projection.subjects
         if item.terminal_subject.variant == "searched_no_observation"
     )
+    original_terminal_subject = observed.terminal_subject
 
     original_candidate_id = observed.terminal_subject.candidate_id
     object.__setattr__(
@@ -716,7 +732,7 @@ def test_target_population_revalidates_row_terminal_and_integration_axes(
     object.__setattr__(observed, "terminal_subject", negative.terminal_subject)
     with pytest.raises(CellDecisionContractError, match="scope binding"):
         decide_target_cell_population(projection)
-    object.__setattr__(observed, "terminal_subject", alignment.terminal_subjects[0])
+    object.__setattr__(observed, "terminal_subject", original_terminal_subject)
 
     original_variant = projection.row_binding.variant
     wrong_variant = "bound" if original_variant == "unbound" else "unbound"
@@ -824,6 +840,7 @@ def test_direct_and_repaired_evidence_is_rejected_before_decision(
             repaired_observations=(observation,),
         )
 
+
 def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
     tmp_path: Path,
 ) -> None:
@@ -903,8 +920,7 @@ def _with_evaluated_coverage_terminal(
         physical_evaluation=evaluation,
     )
     terminals = tuple(
-        evaluated if item is original else item
-        for item in handoff.coverage.terminals
+        evaluated if item is original else item for item in handoff.coverage.terminals
     )
     coverage = build_owner_backfill_evaluation_coverage(
         handoff.coverage.epoch,

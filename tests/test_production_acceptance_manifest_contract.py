@@ -30,7 +30,10 @@ def test_current_production_acceptance_manifest_schema_validates() -> None:
         "sample_stem",
     ]
     assert schema["authority_rules"]["family_id_is_context_only"] is True
-    assert schema["authority_rules"]["phase2_writes_default_matrix"] is False
+    assert (
+        schema["authority_rules"]["acceptance_manifest_writes_default_matrix"]
+        is False
+    )
     assert schema["authority_rules"]["source_artifact_hashes_must_match_files"] is True
     assert (
         schema["authority_rules"]["source_artifact_paths_must_stay_within_repo_root"]

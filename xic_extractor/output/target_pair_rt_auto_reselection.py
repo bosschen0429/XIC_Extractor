@@ -741,7 +741,7 @@ def _shadow_action(
                     ";".join(dict.fromkeys(product_blockers)),
                 )
             return "auto_reselected", "promote", ""
-        reasons.append("phase_2_product_switch_blocked")
+        reasons.append("product_switch_not_activated")
         return (
             "shadow_auto_reselect_proposed",
             "externalize",

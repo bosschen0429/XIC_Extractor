@@ -338,7 +338,10 @@ def _rehydrate_mode_track_review_set(
     review = _read_json_bytes(review_bytes)
     replay = _read_json_bytes(replay_bytes)
     replay_sha = hashlib.sha256(replay_bytes).hexdigest()
-    if review.get("schema_version") != "issue180_m9_gate_c_manual_review_v1":
+    if review.get("schema_version") not in {
+        "mode_track_closed_writer_manual_review_v1",
+        "issue180_m9_gate_c_manual_review_v1",
+    }:
         raise ValueError("manual review schema changed")
     if (
         not review.get("observation_replay_relpath")
@@ -347,7 +350,10 @@ def _rehydrate_mode_track_review_set(
         raise ValueError("manual review replay binding changed")
     if (
         replay.get("schema_version")
-        != "issue180_m9_gate_c_observation_replay_v1"
+        not in {
+            "mode_track_closed_writer_observation_replay_v1",
+            "issue180_m9_gate_c_observation_replay_v1",
+        }
         or replay.get("validation_status") != VALIDATION_STATUS
     ):
         raise ValueError("physical replay authority binding changed")

@@ -391,6 +391,6 @@ def test_consumer_validator_rejects_assignment_specific_shared_facts(
         mta.ModeTrackAssignmentBatch,
     ),
 )
-def test_m8_owner_types_are_runtime_final(owner_type) -> None:
+def test_mode_track_owner_types_are_runtime_final(owner_type) -> None:
     with pytest.raises(TypeError):
         type(f"Forged{owner_type.__name__}", (owner_type,), {})

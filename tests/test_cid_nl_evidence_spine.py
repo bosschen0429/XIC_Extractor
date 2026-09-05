@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from tests.issue161_no_raw_fixture import (
-    issue161_evidence,
-    issue161_peak,
-    issue161_support_policy,
-    issue161_unique_support,
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_peak,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
 )
-from tests.package2_no_raw_fixture import (
+from tests.processing_identity_no_raw_fixture import (
     NEUTRAL_LOSS_DA,
     PRECURSOR_MZ,
-    build_package2_no_raw_fixture,
+    build_processing_identity_no_raw_fixture,
 )
 from xic_extractor.alignment import cid_nl_evidence_spine as spine_module
 from xic_extractor.alignment.cell_observations import (
@@ -102,22 +102,24 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
 
 
 def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("split",))
-    left = issue161_peak(
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("split",)
+    )
+    left = cid_nl_peak(
         fixture,
         "split",
         apex_rt=7.9,
         rt_left_min=7.8,
         rt_right_min=8.0,
     )
-    right = issue161_peak(
+    right = cid_nl_peak(
         fixture,
         "split",
         apex_rt=8.1,
         rt_left_min=8.0,
         rt_right_min=8.2,
     )
-    evidence = issue161_evidence(
+    evidence = cid_nl_evidence(
         fixture,
         "split",
         scan_number=44,
@@ -129,14 +131,14 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
         sample=fixture.sample("split"),
         canonical_evidence=evidence,
         candidate_peaks=(left, right),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
     reverse = resolve_dda_cid_nl_candidate_set_relation_ref(
         processing_owners=fixture.owners,
         sample=fixture.sample("split"),
         canonical_evidence=evidence,
         candidate_peaks=(right, left),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
 
     assert forward == reverse
@@ -153,9 +155,9 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
 
 
 def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("edge",))
-    peak = issue161_peak(fixture, "edge")
-    evidence = issue161_evidence(
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("edge",))
+    peak = cid_nl_peak(fixture, "edge")
+    evidence = cid_nl_evidence(
         fixture,
         "edge",
         scan_number=45,
@@ -166,7 +168,7 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         sample=fixture.sample("edge"),
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
     assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
@@ -294,28 +296,30 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
 def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("cross",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("cross",)
+    )
     sample = fixture.sample("cross")
-    peak = issue161_peak(fixture, "cross")
-    first_evidence = issue161_evidence(
+    peak = cid_nl_peak(fixture, "cross")
+    first_evidence = cid_nl_evidence(
         fixture,
         "cross",
         scan_number=61,
         scan_rt_min=7.99,
     )
-    second_evidence = issue161_evidence(
+    second_evidence = cid_nl_evidence(
         fixture,
         "cross",
         scan_number=62,
         scan_rt_min=8.01,
     )
-    first_support = issue161_unique_support(
+    first_support = cid_nl_unique_support(
         fixture,
         "cross",
         peak=peak,
         evidence=first_evidence,
     )
-    second_support = issue161_unique_support(
+    second_support = cid_nl_unique_support(
         fixture,
         "cross",
         peak=peak,
@@ -433,10 +437,12 @@ def test_assessment_tamper_and_crossed_sample_fail_closed(tmp_path: Path) -> Non
 def test_assessment_rejects_target_precursor_and_query_window_substitution(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("bound",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("bound",)
+    )
     sample = fixture.sample("bound")
     wrong_precursor_mz = fixture.target.definition.target.mz + 100.0
-    wrong_peak = issue161_peak(fixture, "bound", mz=wrong_precursor_mz)
+    wrong_peak = cid_nl_peak(fixture, "bound", mz=wrong_precursor_mz)
     wrong_evidence = mint_cid_nl_evidence_ref(
         processing_owners=fixture.owners,
         sample=sample,
@@ -469,7 +475,7 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
             evidence_refs=(wrong_evidence,),
         )
 
-    late_evidence = issue161_evidence(
+    late_evidence = cid_nl_evidence(
         fixture,
         "bound",
         scan_number=72,
@@ -489,7 +495,9 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
 def test_assessment_requires_qualifying_evidence_before_reject(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("nonqual",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("nonqual",)
+    )
     sample = fixture.sample("nonqual")
     target = fixture.target.definition.target
     assert target.neutral_loss_da is not None
@@ -527,22 +535,24 @@ def test_assessment_requires_qualifying_evidence_before_reject(
 def test_assessment_preserves_mixed_individual_and_set_scan_relations(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("mixed",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("mixed",)
+    )
     sample = fixture.sample("mixed")
-    peak = issue161_peak(fixture, "mixed")
-    interior = issue161_evidence(
+    peak = cid_nl_peak(fixture, "mixed")
+    interior = cid_nl_evidence(
         fixture,
         "mixed",
         scan_number=75,
         scan_rt_min=8.0,
     )
-    boundary = issue161_evidence(
+    boundary = cid_nl_evidence(
         fixture,
         "mixed",
         scan_number=76,
         scan_rt_min=peak.content.integration.rt_left_min,
     )
-    individual = issue161_unique_support(
+    individual = cid_nl_unique_support(
         fixture,
         "mixed",
         peak=peak,
@@ -553,7 +563,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         sample=sample,
         canonical_evidence=boundary,
         candidate_peaks=(peak,),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
 
     assessment = mint_cid_nl_method_assessment_ref(
@@ -576,18 +586,20 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
 def test_cell_identity_binds_full_provisional_group_membership(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("a", "b"))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("a", "b")
+    )
     sample_assessments = []
     for scan_number, stem in ((77, "a"), (78, "b")):
         sample = fixture.sample(stem)
-        peak = issue161_peak(fixture, stem)
-        evidence = issue161_evidence(
+        peak = cid_nl_peak(fixture, stem)
+        evidence = cid_nl_evidence(
             fixture,
             stem,
             scan_number=scan_number,
             scan_rt_min=8.0,
         )
-        support = issue161_unique_support(
+        support = cid_nl_unique_support(
             fixture,
             stem,
             peak=peak,
@@ -651,7 +663,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
 
 
 def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("support", "hold"),
     )
@@ -688,18 +700,18 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
 def test_cell_rejects_human_disposition_from_a_different_sample(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("support", "reviewed", "crossed"),
     )
-    support_peak = issue161_peak(fixture, "support")
-    support_evidence = issue161_evidence(
+    support_peak = cid_nl_peak(fixture, "support")
+    support_evidence = cid_nl_evidence(
         fixture,
         "support",
         scan_number=73,
         scan_rt_min=8.0,
     )
-    support_relation = issue161_unique_support(
+    support_relation = cid_nl_unique_support(
         fixture,
         "support",
         peak=support_peak,
@@ -723,7 +735,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -739,7 +751,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -755,7 +767,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -771,7 +783,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -862,27 +874,29 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
 def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("multi",))
-    peak = issue161_peak(fixture, "multi")
-    first_evidence = issue161_evidence(
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("multi",)
+    )
+    peak = cid_nl_peak(fixture, "multi")
+    first_evidence = cid_nl_evidence(
         fixture,
         "multi",
         scan_number=50,
         scan_rt_min=7.99,
     )
-    second_evidence = issue161_evidence(
+    second_evidence = cid_nl_evidence(
         fixture,
         "multi",
         scan_number=51,
         scan_rt_min=8.01,
     )
-    first_support = issue161_unique_support(
+    first_support = cid_nl_unique_support(
         fixture,
         "multi",
         peak=peak,
         evidence=first_evidence,
     )
-    second_support = issue161_unique_support(
+    second_support = cid_nl_unique_support(
         fixture,
         "multi",
         peak=peak,
@@ -922,7 +936,9 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
 def test_multi_scan_owner_projection_is_order_neutral_across_samples(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("a", "b"))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("a", "b")
+    )
     first = _support_assessment(
         fixture,
         "a",
@@ -957,8 +973,10 @@ def test_multi_scan_owner_projection_is_order_neutral_across_samples(
 def test_assessment_rejects_duplicate_acquisition_scan_evidence(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("same-scan",))
-    peak = issue161_peak(fixture, "same-scan")
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("same-scan",)
+    )
+    peak = cid_nl_peak(fixture, "same-scan")
     first = _measured_evidence(
         fixture,
         "same-scan",
@@ -972,7 +990,7 @@ def test_assessment_rejects_duplicate_acquisition_scan_evidence(
         loss_error_ppm=5.0,
     )
     supports = tuple(
-        issue161_unique_support(
+        cid_nl_unique_support(
             fixture,
             "same-scan",
             peak=peak,
@@ -995,22 +1013,24 @@ def test_assessment_rejects_duplicate_acquisition_scan_evidence(
 
 
 def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample",))
-    left = issue161_peak(
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample",)
+    )
+    left = cid_nl_peak(
         fixture,
         "sample",
         apex_rt=7.9,
         rt_left_min=7.8,
         rt_right_min=8.0,
     )
-    right = issue161_peak(
+    right = cid_nl_peak(
         fixture,
         "sample",
         apex_rt=8.1,
         rt_left_min=8.0,
         rt_right_min=8.2,
     )
-    evidence = issue161_evidence(
+    evidence = cid_nl_evidence(
         fixture,
         "sample",
         scan_number=52,
@@ -1021,7 +1041,7 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
         sample=fixture.sample("sample"),
         canonical_evidence=evidence,
         candidate_peaks=(left, right),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
 
     with pytest.raises(
@@ -1033,7 +1053,7 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
             sample=fixture.sample("sample"),
             canonical_evidence=evidence,
             candidate_peaks=(left, left),
-            policy=issue161_support_policy(),
+            policy=cid_nl_support_policy(),
         )
     with pytest.raises(
         CidNlMethodAssessmentContractError,
@@ -1067,7 +1087,9 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
 def test_failed_attempt_cannot_become_reject_or_human_unassessable(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("failed",))
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("failed",)
+    )
     assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=fixture.sample("failed"),
@@ -1076,7 +1098,7 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=True,
             search_completed=False,
             scanned_event_count=0,
@@ -1093,9 +1115,11 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
 def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample",))
-    peak = issue161_peak(fixture, "sample")
-    evidence = issue161_evidence(
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample",)
+    )
+    peak = cid_nl_peak(fixture, "sample")
+    evidence = cid_nl_evidence(
         fixture,
         "sample",
         scan_number=49,
@@ -1110,10 +1134,10 @@ def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote
             sample=fixture.sample("sample"),
             canonical_evidence=evidence,
             candidate_peaks=(peak,),
-            policy=issue161_support_policy(),
+            policy=cid_nl_support_policy(),
         )
 
-    right = issue161_peak(
+    right = cid_nl_peak(
         fixture,
         "sample",
         apex_rt=8.1,
@@ -1121,7 +1145,7 @@ def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote
         rt_right_min=8.2,
     )
     with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
-        issue161_unique_support(
+        cid_nl_unique_support(
             fixture,
             "sample",
             peak=peak,
@@ -1131,19 +1155,19 @@ def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote
 
 
 def _truth_table_fixture(tmp_path: Path):
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2", "s3", "s4", "s5"),
     )
 
-    s1_peak = issue161_peak(fixture, "s1")
-    s1_evidence = issue161_evidence(
+    s1_peak = cid_nl_peak(fixture, "s1")
+    s1_evidence = cid_nl_evidence(
         fixture,
         "s1",
         scan_number=41,
         scan_rt_min=8.0,
     )
-    s1_support = issue161_unique_support(
+    s1_support = cid_nl_unique_support(
         fixture,
         "s1",
         peak=s1_peak,
@@ -1160,7 +1184,7 @@ def _truth_table_fixture(tmp_path: Path):
         individual_support_refs=(s1_support,),
     )
 
-    s2_peak = issue161_peak(fixture, "s2")
+    s2_peak = cid_nl_peak(fixture, "s2")
     s2 = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=fixture.sample("s2"),
@@ -1170,7 +1194,7 @@ def _truth_table_fixture(tmp_path: Path):
         candidate_peaks=(s2_peak,),
     )
 
-    s3_evidence = issue161_evidence(
+    s3_evidence = cid_nl_evidence(
         fixture,
         "s3",
         scan_number=43,
@@ -1185,21 +1209,21 @@ def _truth_table_fixture(tmp_path: Path):
         evidence_refs=(s3_evidence,),
     )
 
-    s4_left = issue161_peak(
+    s4_left = cid_nl_peak(
         fixture,
         "s4",
         apex_rt=7.9,
         rt_left_min=7.8,
         rt_right_min=8.0,
     )
-    s4_right = issue161_peak(
+    s4_right = cid_nl_peak(
         fixture,
         "s4",
         apex_rt=8.1,
         rt_left_min=8.0,
         rt_right_min=8.2,
     )
-    s4_evidence = issue161_evidence(
+    s4_evidence = cid_nl_evidence(
         fixture,
         "s4",
         scan_number=44,
@@ -1210,7 +1234,7 @@ def _truth_table_fixture(tmp_path: Path):
         sample=fixture.sample("s4"),
         canonical_evidence=s4_evidence,
         candidate_peaks=(s4_left, s4_right),
-        policy=issue161_support_policy(),
+        policy=cid_nl_support_policy(),
     )
     s4 = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
@@ -1231,7 +1255,7 @@ def _truth_table_fixture(tmp_path: Path):
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
-            support_policy=issue161_support_policy(),
+            support_policy=cid_nl_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -1246,7 +1270,7 @@ def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
-        support_policy=issue161_support_policy(),
+        support_policy=cid_nl_support_policy(),
         acquisition_supported=True,
         search_completed=True,
         scanned_event_count=scanned_event_count,
@@ -1282,7 +1306,7 @@ def _support_assessment(
     *,
     scan_losses: tuple[tuple[int, float], ...],
 ):
-    peak = issue161_peak(fixture, sample_stem)
+    peak = cid_nl_peak(fixture, sample_stem)
     evidence_refs = tuple(
         _measured_evidence(
             fixture,
@@ -1293,7 +1317,7 @@ def _support_assessment(
         for scan_number, loss_error_ppm in scan_losses
     )
     support_refs = tuple(
-        issue161_unique_support(
+        cid_nl_unique_support(
             fixture,
             sample_stem,
             peak=peak,

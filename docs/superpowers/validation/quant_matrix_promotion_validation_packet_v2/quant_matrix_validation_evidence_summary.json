@@ -2,7 +2,7 @@
   "evidence_row_count": 3,
   "failed_science_evidence": [],
   "missing_science_evidence": [],
-  "packet_id": "quant-matrix-promotion-validation-packet-v2-20260619",
+  "packet_id": "quant-matrix-promotion-validation-packet-v2",
   "read_only": true,
   "requested_readiness_label": "production_ready",
   "required_science_evidence_status": {
@@ -12,9 +12,9 @@
   },
   "schema_version": "quant_matrix_validation_evidence_packet_summary_v1",
   "validation_evidence_json": "quant_matrix_validation_evidence_v1.json",
-  "validation_evidence_json_sha256": "FC97F9D0789E465A2DE33D0B5DF37158152CE39837D1AF78AE145BB621C1489F",
+  "validation_evidence_json_sha256": "1A7A0F631CABDBFC82F97BA2ACC225E8E41BFEF26E7C81DD31A9A6DD049E039B",
   "validation_evidence_rows_tsv": "quant_matrix_validation_evidence_rows.tsv",
-  "validation_evidence_rows_tsv_sha256": "499E4CC985FD211863D10A7617D803C319EC283AD3FDA8A951B78B7F266FA095",
+  "validation_evidence_rows_tsv_sha256": "F72D654DF40C7F856E098624308873AA203BF510978CD13D5C1963854E70FB80",
   "validation_evidence_schema": "quant_matrix_validation_evidence_v1",
   "write_authority": false
 }

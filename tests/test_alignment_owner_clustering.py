@@ -165,8 +165,7 @@ def test_owner_clustering_splits_rt_chain_beyond_span_bound() -> None:
 
     assert len(features) > 1
     assert all(
-        "owner_bounded_continuity" not in feature.evidence
-        for feature in features
+        "owner_bounded_continuity" not in feature.evidence for feature in features
     )
 
 
@@ -190,8 +189,7 @@ def test_owner_clustering_splits_chain_that_fails_hard_envelope() -> None:
 
     assert len(features) > 1
     assert all(
-        "owner_bounded_continuity" not in feature.evidence
-        for feature in features
+        "owner_bounded_continuity" not in feature.evidence for feature in features
     )
 
 
@@ -261,13 +259,11 @@ def test_owner_clustering_requires_complete_unique_injection_order() -> None:
         )
 
         assert all(
-            "owner_injection_trajectory" not in feature.evidence
-            for feature in features
+            "owner_injection_trajectory" not in feature.evidence for feature in features
         )
 
 
-def test_owner_clustering_restores_partial_injection_trajectory_beyond_bounded_span(
-) -> None:
+def test_owner_clustering_restores_partial_trajectory() -> None:
     owners = tuple(
         _owner(
             f"sample-{index}",
@@ -280,9 +276,7 @@ def test_owner_clustering_restores_partial_injection_trajectory_beyond_bounded_s
     features = cluster_sample_local_owners(
         owners,
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
-        sample_universe=frozenset(
-            f"sample-{index}" for index in range(1, 13)
-        ),
+        sample_universe=frozenset(f"sample-{index}" for index in range(1, 13)),
         injection_order={f"sample-{index}": index for index in range(1, 13)},
     )
 
@@ -318,8 +312,7 @@ def test_owner_clustering_does_not_use_drift_lookup_order_for_trajectory() -> No
     )
 
     assert all(
-        "owner_injection_trajectory" not in feature.evidence
-        for feature in features
+        "owner_injection_trajectory" not in feature.evidence for feature in features
     )
 
 
@@ -432,7 +425,7 @@ def test_owner_clustering_keeps_parallel_injection_trajectories_separate() -> No
     }
 
 
-def test_owner_clustering_keeps_8raw_like_rt_outlier_separate_with_order() -> None:
+def test_owner_clustering_separates_fixture_cohort_rt_outlier() -> None:
     owners = tuple(
         _owner(f"sample-{index}", "main", apex_rt=10.0 + index / 10.0)
         for index in range(1, 8)
@@ -577,20 +570,15 @@ def test_connected_link_grouping_is_invariant_to_precursor_bucket_origin() -> No
             edge_cache={},
             edge_evaluator=evaluate_owner_edge,
         )
-        return tuple(
-            tuple(owner.owner_id for owner in group)
-            for group in groups
-        )
+        return tuple(tuple(owner.owner_id for owner in group) for group in groups)
 
-    expected = (
-        tuple(f"OWN-sample-{index}-{index}" for index in range(5)),
+    expected = (tuple(f"OWN-sample-{index}-{index}" for index in range(5)),)
+    assert (
+        connected_owner_ids((499.992, 499.996, 500.000, 500.004, 500.008)) == expected
     )
-    assert connected_owner_ids(
-        (499.992, 499.996, 500.000, 500.004, 500.008)
-    ) == expected
-    assert connected_owner_ids(
-        (500.192, 500.196, 500.200, 500.204, 500.208)
-    ) == expected
+    assert (
+        connected_owner_ids((500.192, 500.196, 500.200, 500.204, 500.208)) == expected
+    )
 
 
 def test_owner_clustering_does_not_single_link_merge_bridge_groups() -> None:
@@ -735,8 +723,7 @@ def test_owner_clustering_keeps_incomplete_merge_on_complete_link_partition() ->
     assert "owner_bounded_continuity" in hypotheses[0].evidence
 
 
-def test_targeted_istd_anchor_binds_generic_injection_trajectory_provenance(
-) -> None:
+def test_targeted_istd_anchor_binds_generic_injection_trajectory_provenance() -> None:
     owners = tuple(
         _owner(
             f"sample-{index}",
@@ -820,8 +807,9 @@ def test_targeted_istd_anchor_binds_generic_injection_trajectory_provenance(
     assert len(with_anchor[0].owners) == 8
 
 
-def test_targeted_istd_anchor_reconciles_loss_fragmented_sample_disjoint_groups(
-) -> None:
+def test_targeted_istd_anchor_reconciles_loss_fragmented_sample_disjoint_groups() -> (
+    None
+):
     owners = (
         _owner(
             "sample-a",
@@ -868,9 +856,7 @@ def test_targeted_istd_anchor_reconciles_loss_fragmented_sample_disjoint_groups(
         observed_labels=(target.label,),
     )
     config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
-    sample_universe = frozenset(
-        {"sample-a", "sample-b", "sample-c", "sample-d"}
-    )
+    sample_universe = frozenset({"sample-a", "sample-b", "sample-c", "sample-d"})
     injection_order = {"sample-a": 1, "sample-b": 2, "sample-c": 3}
 
     without_anchor = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
@@ -952,8 +938,7 @@ def test_targeted_istd_reconciliation_keeps_precursor_hard_conflict_separate() -
 
     assert len(hypotheses) == 2
     assert all(
-        "owner_targeted_istd_trajectory" not in item.evidence
-        for item in hypotheses
+        "owner_targeted_istd_trajectory" not in item.evidence for item in hypotheses
     )
 
 
@@ -1007,8 +992,7 @@ def test_targeted_istd_reconciliation_keeps_rt_discontinuity_separate() -> None:
 
     assert len(hypotheses) == 2
     assert all(
-        "owner_targeted_istd_trajectory" not in item.evidence
-        for item in hypotheses
+        "owner_targeted_istd_trajectory" not in item.evidence for item in hypotheses
     )
 
 
@@ -1207,8 +1191,9 @@ def test_targeted_istd_reconciliation_accepts_tail_supported_owner() -> None:
     assert hypotheses[0].evidence == "owner_targeted_istd_trajectory;owner_count=2"
 
 
-def test_targeted_istd_reconciliation_accepts_moderate_tail_without_mass_split(
-) -> None:
+def test_targeted_istd_reconciliation_accepts_moderate_tail_without_mass_split() -> (
+    None
+):
     owners = (
         _owner(
             "sample-a",
@@ -1469,8 +1454,9 @@ def test_targeted_istd_reconciliation_uses_complete_union_for_continuity() -> No
     assert validated_owner_sets == frozenset({expected_owner_set})
 
 
-def test_targeted_istd_reconciliation_excludes_unconnected_hard_compatible_group(
-) -> None:
+def test_targeted_istd_reconciliation_excludes_unconnected_hard_compatible_group() -> (
+    None
+):
     groups = (
         (
             _owner(
@@ -1565,9 +1551,7 @@ def test_targeted_istd_duplicate_demotion_accepts_natural_primary_trajectory() -
     hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
         owners,
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
-        sample_universe=frozenset(
-            {"sample-a", "sample-b", "sample-c", "sample-d"}
-        ),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c", "sample-d"}),
         injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
         drift_lookup=DriftEvidenceLookup(
             points=(),
@@ -1629,9 +1613,7 @@ def test_targeted_istd_duplicate_demotion_requires_injection_trajectory() -> Non
     hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
         owners,
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
-        sample_universe=frozenset(
-            {"sample-a", "sample-b", "sample-c", "sample-d"}
-        ),
+        sample_universe=frozenset({"sample-a", "sample-b", "sample-c", "sample-d"}),
         injection_order=None,
         drift_lookup=DriftEvidenceLookup(
             points=(),
@@ -1683,8 +1665,7 @@ def test_targeted_istd_trajectory_keeps_same_sample_or_blocked_edge_separate() -
 
     assert len(hypotheses) >= 2
     assert all(
-        "owner_targeted_istd_trajectory" not in item.evidence
-        for item in hypotheses
+        "owner_targeted_istd_trajectory" not in item.evidence for item in hypotheses
     )
 
 
@@ -1769,8 +1750,7 @@ def test_targeted_istd_anchor_keeps_blocked_trajectory_membership_and_label() ->
         item.owner_ids for item in without_anchor
     ]
     assert all(
-        "owner_targeted_istd_trajectory" not in item.evidence
-        for item in with_anchor
+        "owner_targeted_istd_trajectory" not in item.evidence for item in with_anchor
     )
 
 
@@ -2206,9 +2186,7 @@ def _owner(
     )
     physical_id = typed_identity_digest(
         "xic.peak-observation-content.v1:",
-        canonical_identity_basis_bytes(
-            {"sample_stem": sample_stem, "suffix": suffix}
-        ),
+        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
     )
     member_basis = canonical_identity_basis_bytes(
         {

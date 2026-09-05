@@ -219,7 +219,7 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
     constructs a ``NeutralLossProfile`` -- presets handled here are Pt-pattern
     presets (``pt_pattern``) or Pt-pattern-plus-neutral-loss composites
     (``pt_pattern_cid_nl_dr``); the neutral-loss tag on a composite preset is
-    intersection evidence handled downstream (Task 5's pipeline), not a
+    intersection evidence handled downstream by the Discovery pipeline, not a
     ``NeutralLossProfile`` to build here.
     """
     if not any(tag.strategy == "delta_mass" for tag in preset.tags):

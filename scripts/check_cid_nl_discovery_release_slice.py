@@ -26,7 +26,6 @@ from scripts.build_cid_nl_default_product_activation import (  # noqa: E402
     LEGACY_PROVENANCE_STATUS,
     LEGACY_QUANT_MATRIX_EFFECT,
     LOW_PREVALENCE_FEATURE_POLICY,
-    MATRIX_ROW_UNIVERSE_POLICY,
     PRODUCT_AUTHORITY_SCOPE,
     SOURCE_SUCCESSOR_IDENTITY_SCOPE,
     validate_cid_nl_default_product_activation,
@@ -34,8 +33,8 @@ from scripts.build_cid_nl_default_product_activation import (  # noqa: E402
 from scripts.check_bounded_product_lanes import (
     check_bounded_product_lanes,  # noqa: E402
 )
-from scripts.check_cid_nl_85raw_universe_closure import (  # noqa: E402
-    check_cid_nl_85raw_universe_closure,
+from scripts.check_cid_nl_default_activation_universe_closure import (  # noqa: E402
+    check_cid_nl_default_activation_universe_closure,
 )
 from scripts.check_cid_nl_discovery_full_scope_classification import (  # noqa: E402
     check_cid_nl_discovery_full_scope_classification,
@@ -86,8 +85,8 @@ def check_cid_nl_discovery_release_slice(
     )
     for problem in check_cid_nl_discovery_full_scope_classification():
         problems.append(f"full_scope_classification: {problem}")
-    for problem in check_cid_nl_85raw_universe_closure():
-        problems.append(f"85raw_universe_closure: {problem}")
+    for problem in check_cid_nl_default_activation_universe_closure():
+        problems.append(f"full_cohort_universe_closure: {problem}")
     for problem in check_productization_state(control_plane_path=control_plane):
         problems.append(f"productization_state: {problem}")
     for problem in check_productization_authority():
@@ -108,7 +107,7 @@ def _check_summary(payload: Mapping[str, Any], problems: list[str]) -> None:
         "product_authority_scope": PRODUCT_AUTHORITY_SCOPE,
         "default_activation_effect": DISCOVERY_DEFAULT_EFFECT,
         "feature_inclusion_authority_basis": FEATURE_INCLUSION_AUTHORITY_BASIS,
-        "matrix_row_universe_policy": MATRIX_ROW_UNIVERSE_POLICY,
+        "matrix_row_universe_policy": "discovery_expanded_85raw_alignment_rows",
         "low_prevalence_feature_policy": LOW_PREVALENCE_FEATURE_POLICY,
         "source_successor_identity_scope": SOURCE_SUCCESSOR_IDENTITY_SCOPE,
         "accepted_discovery_cell_count": 95,

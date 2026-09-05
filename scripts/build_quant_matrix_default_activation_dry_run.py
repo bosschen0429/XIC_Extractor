@@ -1,7 +1,8 @@
 """Build/check the QuantMatrix default activation dry-run gate.
 
-This Phase 9 adapter reruns the manifest-driven QuantMatrixVersion activation
-in a temporary directory and compares the result with the Phase 7 real bundle.
+This default activation replay reruns the manifest-driven QuantMatrixVersion
+activation in a temporary directory and compares the result with the
+real/candidate QuantMatrix bundle.
 It writes only a comparison sidecar and summary. It does not mutate
 ProductWriter, default matrix output, workbooks, GUI behavior, selected
 peaks/areas, or counted detections.
@@ -507,7 +508,7 @@ def _write_summary(
 ) -> None:
     payload = {
         "schema_version": DEFAULT_ACTIVATION_DRY_RUN_SCHEMA,
-        "phase": "phase9_default_activation_dry_run",
+        "artifact_role": "default_activation_replay",
         "status": "pass",
         "default_activation_dry_run_gate_status": "pass",
         "source_run_id": bundle_payload.get("source_run_id", ""),
@@ -538,7 +539,7 @@ def _write_summary(
         "read_only": True,
         "write_authority": False,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "default_matrix_files_written": False,
@@ -590,7 +591,7 @@ def _write_summary(
             "comparison_tsv": _artifact_record(comparison_tsv, base_dir=output_dir),
         },
         "authority_statement": (
-            "Phase 9 default activation dry-run gate only. It proves the "
+            "Default activation replay gate only. It proves the "
             "manifest-driven default matrix candidate replays to the same "
             "QuantMatrixVersion outputs and expected-diff closure, but it does "
             "not write default ProductWriter outputs or change matrix authority."
@@ -599,6 +600,7 @@ def _write_summary(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -608,7 +610,7 @@ def _append_expected_field_problems(
 ) -> None:
     for field, expected_text in (
         ("schema_version", DEFAULT_ACTIVATION_DRY_RUN_SCHEMA),
-        ("phase", "phase9_default_activation_dry_run"),
+        ("artifact_role", "default_activation_replay"),
         ("status", "pass"),
         ("default_activation_dry_run_gate_status", "pass"),
         ("promotion_packet_readiness_label", "production_ready_candidate_packet"),
@@ -623,7 +625,7 @@ def _append_expected_field_problems(
         ("read_only", True),
         ("write_authority", False),
         ("scorer_ran", False),
-        ("raw_or_85raw_ran", False),
+        ("raw_or_full_cohort_ran", False),
         ("product_writer_changed", False),
         ("default_quant_matrix_changed", False),
         ("default_matrix_files_written", False),
@@ -839,9 +841,11 @@ def _output_artifacts(
 
 def _artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
     return {
-        "path": path.resolve(strict=False).relative_to(
+        "path": path.resolve(strict=False)
+        .relative_to(
             base_dir.resolve(strict=False),
-        ).as_posix(),
+        )
+        .as_posix(),
         "sha256": file_sha256(path),
     }
 
@@ -852,18 +856,26 @@ def _source_relpath(path: Path, *, source_root: Path) -> str:
 
 def _source_relpath_existing(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=True).relative_to(
-            source_root.resolve(strict=True),
-        ).as_posix()
+        return (
+            path.resolve(strict=True)
+            .relative_to(
+                source_root.resolve(strict=True),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path.resolve(strict=True))
 
 
 def _source_relpath_reference(path: Path, *, source_root: Path) -> str:
     try:
-        return path.resolve(strict=False).relative_to(
-            source_root.resolve(strict=True),
-        ).as_posix()
+        return (
+            path.resolve(strict=False)
+            .relative_to(
+                source_root.resolve(strict=True),
+            )
+            .as_posix()
+        )
     except ValueError:
         return str(path.resolve(strict=False))
 

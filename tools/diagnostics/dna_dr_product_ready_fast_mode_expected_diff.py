@@ -114,7 +114,7 @@ def build_expected_diff_packet(
     }
     return {
         "schema_version": SCHEMA_VERSION,
-        "workload": "8RAW",
+        "workload": "FIXTURE_COHORT",
         "lane": "fast_mode_candidate_expected_diff",
         "default_behavior_changed": False,
         "exact_dir": str(exact_dir.resolve()),

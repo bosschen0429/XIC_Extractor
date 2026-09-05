@@ -320,7 +320,7 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
         payload["status"] = "ACTIVE"
         payload["activation_summary_artifact"] = (
             "docs/superpowers/validation/"
-            "issue256_untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+            "untargeted_owner_backfill_canonical_quantitative_activation_v1/"
             "activation_summary.json"
         )
         payload["activation_summary_sha256"] = "a" * 64

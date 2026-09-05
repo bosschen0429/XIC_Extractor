@@ -106,7 +106,7 @@ def render_instrument_qc_decision_markdown(
             "",
             "## Evidence Limits",
             "",
-            "- SDO/LEK Phase 1/2 evidence is MS1-only trend evidence.",
+            "- SDO/LEK instrument-trend evidence is MS1-only.",
             "- MS1-only evidence can support RT/area/width trend review, but it "
             "does not prove chemical identity.",
             "",
@@ -172,8 +172,8 @@ def _ms2_readiness(
         )
     return (
         "not_recommended",
-        "MS2 evidence is not recommended in Phase 6. The current report keeps "
-        "SDO/LEK as MS1-only instrument trend evidence until a representative "
-        "method, deterministic MS2 reader support, and manual ambiguity case "
-        "are all available.",
+        "MS2 evidence is not recommended until a representative method, "
+        "deterministic MS2 reader support, and manual ambiguity case are all "
+        "available. The current report keeps SDO/LEK as MS1-only instrument "
+        "trend evidence.",
     )

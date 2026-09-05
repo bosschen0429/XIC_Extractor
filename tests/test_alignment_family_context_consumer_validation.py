@@ -162,7 +162,7 @@ def test_mint_and_consumer_reject_malformed_consumed_owner_ids(
         validate_family_context_ref_for_consumption(reference)
 
 
-def test_empty_owner_tuple_remains_valid_at_both_m3_ingresses() -> None:
+def test_empty_owner_tuple_remains_valid_at_both_identity_ingresses() -> None:
     track = _track("track-a")
     object.__setattr__(track, "owner_ids", ())
     reference = _mint((track,))

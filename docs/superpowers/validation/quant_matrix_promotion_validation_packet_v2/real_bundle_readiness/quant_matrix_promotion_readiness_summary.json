@@ -1,5 +1,5 @@
 {
-  "authority_statement": "Contract correctness is not scientific confidence. Focused tests and 8RAW smoke evidence cannot claim production_ready without large cohort, oracle/manual review, and downstream impact evidence.",
+  "authority_statement": "Contract correctness is not scientific confidence. Focused tests and small-cohort smoke evidence cannot claim production_ready without large cohort, oracle/manual review, and downstream impact evidence.",
   "blockers": [],
   "contract_correctness_status": "pass",
   "input_artifacts": {
@@ -16,8 +16,8 @@
   "schema_version": "quant_matrix_promotion_readiness_v1",
   "scientific_confidence_status": "pass",
   "validation_tiers": {
-    "85raw_large_cohort": "pass",
     "downstream_impact_smoke": "pass",
+    "full_cohort": "pass",
     "heldout_oracle": "pass"
   }
 }

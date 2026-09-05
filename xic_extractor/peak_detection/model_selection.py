@@ -40,7 +40,7 @@ MatrixValueImpact = Literal[
 ExpectedDiffValidationTier = Literal[
     "synthetic_fixture",
     "targeted_benchmark",
-    "8raw",
+    "fixture_cohort",
     "manual_eic_ms2_review",
     "not_validated",
 ]

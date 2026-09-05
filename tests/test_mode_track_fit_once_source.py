@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 from tests.test_alignment_mode_track_assignment import _scenario
 from tests.test_alignment_mode_track_conservative_backfill import (
     _two_peak_assessment,
@@ -89,7 +91,7 @@ def test_repair_owned_physical_observation_is_non_training_assignment_input(
 def test_bootstrap_returns_fit_once_source_closing_existing_values(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2", "s3"),
     )
@@ -189,7 +191,7 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
 def test_fit_once_source_rejects_batch_from_another_candidate_snapshot(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2", "s3"),
     )

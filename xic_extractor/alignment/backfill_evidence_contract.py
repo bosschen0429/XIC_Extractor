@@ -75,7 +75,7 @@ SKIPPED_EVIDENCE_LEDGER_COLUMNS = (
     "source_artifact",
 )
 
-PREDICATE_VERSION = "p7-backfill-scope-v1"
+PREDICATE_VERSION = "alignment-parity-scoped-backfill-scope-v1"
 
 _CELL_STATUSES = frozenset(
     {

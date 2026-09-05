@@ -218,7 +218,7 @@ class UntargetedCidNlGoldenPathProjection:
 @final
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlModeTrackProjection:
-    """Prepared multi-row M9 facts immediately before the checked manifest."""
+    """Prepared multi-row ModeTrack facts immediately before the checked manifest."""
 
     mode_track_facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...]
     backfill_decisions: tuple[ConservativeBackfillCellDecision, ...]
@@ -236,7 +236,9 @@ class UntargetedCidNlModeTrackProjection:
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _GOLDEN_PATH_PROJECTION_MINT_TOKEN:
-            raise UntargetedCidNlGoldenPathError("projection requires the M6 owner")
+            raise UntargetedCidNlGoldenPathError(
+                "projection requires the untargeted CID-NL golden-path projection owner"
+            )
         expected = hashlib.sha256(self.source_artifact_bytes).hexdigest().upper()
         if self.source_artifact_sha256 != expected or self.backfill_decisions:
             raise UntargetedCidNlGoldenPathError("invalid ModeTrack projection")
@@ -527,11 +529,13 @@ def build_untargeted_cid_nl_mode_track_projection(
     mode_track_facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...],
     source_artifact_relpath: str,
 ) -> UntargetedCidNlModeTrackProjection:
-    """Render M2-approved exact owners without recomputing assignment or S/K."""
+    """Render Backfill-approved exact owners without recomputing assignment or S/K."""
 
     source_artifact_relpath = _validate_source_relpath(source_artifact_relpath)
     if not mode_track_facts:
-        raise UntargetedCidNlGoldenPathError("ModeTrack projection requires M2 facts")
+        raise UntargetedCidNlGoldenPathError(
+            "ModeTrack projection requires Backfill activation facts"
+        )
     model_set = mode_track_facts[0].model_set
     expected_groups = model_set.family_context.mode_tracks
     if len(mode_track_facts) != len(expected_groups) or any(
@@ -674,7 +678,7 @@ def build_untargeted_cid_nl_mode_track_projection(
                 }
             )
     source_bytes = _canonical_json_bytes({
-        "schema_version": "m9_mode_track_source_v2", "rows": proposals
+        "schema_version": "mode_track_projection_source_v2", "rows": proposals
     })
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
     acceptance_rows = tuple(
@@ -1063,7 +1067,7 @@ def _mode_track_acceptance_row(
         "hard_blocker_rule_ids": "",
         "triggered_risk_rule_ids": "",
         "closure_rule_ids": "",
-        "decision_reason": "exact_mode_track_owner_after_m2_activation",
+        "decision_reason": "exact_mode_track_owner_after_backfill_activation",
         "next_evidence_needed": "",
         "doublet_status": "no_doublet_claim",
         "reference_side": "not_applicable",

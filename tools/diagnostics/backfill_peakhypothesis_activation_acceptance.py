@@ -80,10 +80,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--source-run-id", default="")
     parser.add_argument(
         "--validation-scope",
-        default="8raw_current_writer_matrix_diff",
+        default="fixture_cohort_current_writer_matrix_diff",
         help=(
             "Diagnostic scope label written into acceptance outputs, for example "
-            "85raw_current_writer_matrix_diff."
+            "full_cohort_current_writer_matrix_diff."
         ),
     )
     return parser.parse_args(argv)

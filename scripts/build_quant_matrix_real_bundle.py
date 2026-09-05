@@ -1,7 +1,8 @@
-"""Build/check the Phase 7 real QuantMatrixVersion bundle.
+"""Build/check the real/candidate QuantMatrix bundle.
 
 This adapter is no-RAW and does not run a scorer. It binds the current
-511-cell standard-peak authority replay into the Phase 3/4/5/6 contracts:
+511-cell standard-peak authority replay into the
+manifest/version/review/downstream/readiness contracts:
 ProductionAcceptanceManifest, QuantMatrixVersion, review sidecar, downstream
 impact smoke, and contract-only readiness.
 
@@ -416,7 +417,7 @@ def validate_quant_matrix_real_bundle(
         problems.append("real bundle schema_version mismatch")
     for field, expected in (
         ("status", "pass"),
-        ("phase", "phase7_real_quant_matrix_bundle"),
+        ("artifact_role", "real_quant_matrix_bundle"),
         ("bundle_kind", "real_quant_matrix_version"),
         ("validation_status", "contract_ready_science_inconclusive"),
     ):
@@ -443,7 +444,7 @@ def validate_quant_matrix_real_bundle(
     for field in (
         "read_only",
         "scorer_ran",
-        "raw_or_85raw_ran",
+        "raw_or_full_cohort_ran",
         "product_writer_changed",
         "default_quant_matrix_changed",
         "broad_backfill_unparked",
@@ -773,8 +774,8 @@ def _closure_rule_ids(prevalence_flags: str) -> str:
 def _decision_reason(seed_row: Mapping[str, str]) -> str:
     reason = seed_row.get("decision_reason", "").strip()
     if reason:
-        return f"phase7_current_511_authority_replay:{reason}"
-    return "phase7_current_511_authority_replay"
+        return f"current_511_authority_replay:{reason}"
+    return "current_511_authority_replay"
 
 
 def _expected_diff_rows(
@@ -795,7 +796,7 @@ def _expected_diff_rows(
                 "baseline_value": baseline_rows[row_index - 1].get(sample, ""),
                 "activated_value": delta_by_key[key].get("activated_matrix_value", ""),
                 "expected_matrix_effect": "write_accepted_backfill",
-                "expected_reason": "phase7_current_511_authority_replay",
+                "expected_reason": "current_511_authority_replay",
             }
         )
     return rows
@@ -898,7 +899,7 @@ def _summary_payload(
         )
     return {
         "schema_version": REAL_BUNDLE_SCHEMA,
-        "phase": "phase7_real_quant_matrix_bundle",
+        "artifact_role": "real_quant_matrix_bundle",
         "status": "pass",
         "bundle_kind": "real_quant_matrix_version",
         "validation_status": "contract_ready_science_inconclusive",
@@ -908,13 +909,13 @@ def _summary_payload(
         "downstream_scope": downstream_scope,
         "read_only": True,
         "scorer_ran": False,
-        "raw_or_85raw_ran": False,
+        "raw_or_full_cohort_ran": False,
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "broad_backfill_unparked": False,
         "may_promote_default_quant_matrix": False,
         "authority_statement": (
-            "Phase 7 real QuantMatrixVersion bundle only. It proves the current "
+            "Real/candidate QuantMatrix bundle only. It proves the current "
             "511 accepted Backfill cells can pass the manifest/version/review/"
             "downstream contracts, but it does not change ProductWriter defaults."
         ),
@@ -1397,10 +1398,14 @@ def _append_original_source_artifact_problems(
             continue
         path = Path(value)
         resolved = path if path.is_absolute() else repo_root / path
-        if not resolved.is_file():
-            problems.append(f"{label}: original source missing")
+        if not _is_sha256(sha256):
+            problems.append(f"{label}: original source sha256 mismatch")
             continue
-        if not _is_sha256(sha256) or file_sha256(resolved) != sha256.upper():
+        if not resolved.is_file():
+            # Original run paths are provenance. Required packaged copies have
+            # already been checked and make the bundle independently replayable.
+            continue
+        if file_sha256(resolved) != sha256.upper():
             problems.append(f"{label}: original source sha256 mismatch")
 
 

@@ -1,8 +1,8 @@
 """Build a review-only report for QuantMatrixVersion outputs.
 
-This Phase 4 adapter renders review artifacts only. It does not run RAW,
-recompute evidence, change ProductWriter defaults, update workbooks, or touch
-GUI behavior.
+This review report renderer renders review artifacts only. It does not run
+RAW, recompute evidence, change ProductWriter defaults, update workbooks, or
+touch GUI behavior.
 """
 
 from __future__ import annotations

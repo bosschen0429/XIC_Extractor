@@ -27,7 +27,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
 )
 
-_RESOURCE_NAME = "issue256_quantitative_projection_authority_v1.json"
+_RESOURCE_NAME = "quantitative_projection_authority_v1.json"
 _CONSUMER_ID = "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
 _PROFILE_ID = (
     "signal-profile.v1:bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
@@ -35,11 +35,11 @@ _PROFILE_ID = (
 _AUTHORITY_ID_PREFIX = "quantitative-projection-authority.v1:"
 _MANIFEST_ID_PREFIX = "quantitative-projection-authority-manifest.v1:"
 _PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
 )
 _ACTIVATION_SUMMARY_ARTIFACT = (
     "docs/superpowers/validation/"
-    "issue256_untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+    "untargeted_owner_backfill_canonical_quantitative_activation_v1/"
     "activation_summary.json"
 )
 _MANIFEST_PATH = Path(

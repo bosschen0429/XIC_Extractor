@@ -343,7 +343,7 @@ class LocalTrajectoryAssessment:
 
 @dataclass(frozen=True)
 class LocalTrajectoryEvidenceLookup:
-    """Full local-landmark set for M3 shadow assessment only."""
+    """Full local-landmark set for identity-trajectory shadow assessment only."""
 
     points: tuple[LocalFeatureLandmarkEvidence, ...]
     validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS

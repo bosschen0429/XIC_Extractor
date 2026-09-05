@@ -34,8 +34,9 @@ public/legacy `family` vocabulary or add public schema by implication.
 - `ModeTrackAssignment` currently records for debug or batch review whether one
   sample-local `PeakHypothesis` is
   uniquely assigned to one existing ModeTrack, ambiguous across tracks,
-  outside the model, absent, or technically unassessable. The M3
-  identity/trajectory boundary mints this internal, immutable diagnostic fact.
+  outside the model, absent, or technically unassessable. The
+  identity-settlement/identity-trajectory boundary mints this internal,
+  immutable diagnostic fact.
   The successor ModeTrack result remains proposal-only; it does not mint a
   second group owner or select a product value.
 - Backfill may return one independently traceable owner-backed repaired
@@ -96,7 +97,7 @@ display labels. Treat this as an adapter state:
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
 - When a `PeakHypothesis` is already an exact owner of one ModeTrack in the
-  current `FamilyContextRef`, preserve that M3 identity as observed occupancy;
+  current `FamilyContextRef`, preserve that identity-settlement identity as observed occupancy;
   do not reclassify the same owner from aggregate group-center geometry. This
   grants no SUPPORT vote, trajectory reinforcement, or product authority.
 - Do not treat a Family as a same-peak or chemical-identity claim. Two resolved
@@ -105,7 +106,7 @@ display labels. Treat this as an adapter state:
 - Do not train a ModeTrack from MS1-only, Backfill, inferred, deconvolved,
   manual, shared-set, or other non-training observations. Only an existing
   owner-proven direct-SUPPORT `PeakHypothesis` may seed or reinforce one track,
-  and reinforcement follows unique assignment only. M8 must retain and
+  and reinforcement follows unique assignment only. ModeTrack must retain and
   revalidate the exact processing request/attempt, physical peak observation,
   candidate, and direct-SUPPORT assessment identities. It must not retain or
   depend on `CellObservationRef`; matching only the `PeakHypothesis` is

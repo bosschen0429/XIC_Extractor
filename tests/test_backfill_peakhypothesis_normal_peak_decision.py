@@ -22,16 +22,16 @@ def test_normal_same_peak_non_primary_candidate_requires_backfill(
                 sample="TumorBC2263_DNA",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM000808",
                 sample="TumorBC2263_DNA",
                 matched_peak_hypothesis_id="FAM007718",
                 include_primary="FALSE",
                 consolidation_state="primary_loser",
                 blockers=(
-                    "raw85_candidate_not_primary_matrix_row;"
-                    "raw85_candidate_family_consolidation_review_required"
+                    "full_cohort_candidate_not_primary_matrix_row;"
+                    "full_cohort_candidate_family_consolidation_review_required"
                 ),
             ),
         ],
@@ -59,7 +59,7 @@ def test_normal_same_peak_non_primary_candidate_requires_backfill(
     assert row["normal_peak_decision_blockers"] == ""
     assert row["normal_peak_quantitation_area"] == "298267"
     assert row["normal_peak_quantitation_area_source_field"] == (
-        "raw85_primary_matrix_area"
+        "full_cohort_primary_matrix_area"
     )
     assert row["consolidation_policy_effect"] == (
         "allow_same_peak_peakhypothesis_candidate_despite_non_primary"
@@ -98,8 +98,8 @@ def test_standard_area_policy_uses_gaussian15_selected_segment() -> None:
                 ),
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_MIXED_CONTEXT",
                 sample="Sample_A",
                 matched_peak_hypothesis_id="HYP_SELECTED_SEGMENT",
@@ -134,8 +134,8 @@ def test_machine_shape_evidence_can_classify_standard_peak_without_area_label() 
                 area_policy="",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_MACHINE_STANDARD",
                 sample="Sample_A",
                 matched_peak_hypothesis_id="HYP_MACHINE_STANDARD",
@@ -186,8 +186,8 @@ def test_machine_same_peak_support_can_replace_manual_verdict() -> None:
                 area_policy="",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_MACHINE_AUTO",
                 sample="Sample_A",
                 matched_peak_hypothesis_id="HYP_MACHINE_AUTO",
@@ -224,8 +224,8 @@ def test_manual_same_peak_conflict_overrides_machine_support() -> None:
                 area_policy="",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_MACHINE_MANUAL_CONFLICT",
                 sample="Sample_A",
                 matched_peak_hypothesis_id="HYP_MACHINE_MANUAL_CONFLICT",
@@ -267,8 +267,8 @@ def test_machine_shape_evidence_blocks_multipeak_even_if_area_label_standard() -
                 area_policy="standard_assessable_area",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_MACHINE_MULTI",
                 sample="Sample_A",
                 matched_peak_hypothesis_id="HYP_MACHINE_MULTI",
@@ -309,8 +309,8 @@ def test_machine_shape_standard_peak_blocks_without_lobe_area() -> None:
                 area_policy="",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_MACHINE_NO_AREA",
                 sample="Sample_A",
                 matched_peak_hypothesis_id="HYP_MACHINE_NO_AREA",
@@ -354,18 +354,18 @@ def test_nonstandard_peak_stays_review_only_even_with_same_peak_support() -> Non
                 promotion_blockers="nonstandard_area_review_only",
             ),
         ],
-        raw85_slice_gate_rows=[
-            _raw85_slice_row(
+        full_cohort_acceptance_gate_rows=[
+            _full_cohort_slice_row(
                 peak_hypothesis_id="FAM_NONSTANDARD",
                 sample="Sample_A",
-                matched_peak_hypothesis_id="FAM_RAW85",
+                matched_peak_hypothesis_id="FAM_FULL_COHORT",
             ),
         ],
         manual_verdict_rows=[
             _manual_verdict_row(
                 source_peak_hypothesis_id="FAM_NONSTANDARD",
                 sample="Sample_A",
-                matched_peak_hypothesis_id="FAM_RAW85",
+                matched_peak_hypothesis_id="FAM_FULL_COHORT",
             ),
         ],
     )
@@ -383,7 +383,7 @@ def test_nonstandard_peak_stays_review_only_even_with_same_peak_support() -> Non
 def test_same_peak_conflict_blocks_normal_peak_backfill() -> None:
     index = decision.build_normal_peak_decision_index(
         promotion_rows=[_promotion_row()],
-        raw85_slice_gate_rows=[_raw85_slice_row()],
+        full_cohort_acceptance_gate_rows=[_full_cohort_slice_row()],
         manual_verdict_rows=[
             _manual_verdict_row(reviewer_verdict="same_peak_conflict"),
         ],
@@ -400,11 +400,11 @@ def test_same_peak_conflict_blocks_normal_peak_backfill() -> None:
 
 def test_cli_writes_normal_peak_decision_outputs(tmp_path: Path) -> None:
     promotion_tsv = tmp_path / "promotion.tsv"
-    raw85_tsv = tmp_path / "raw85.tsv"
+    full_cohort_tsv = tmp_path / "full_cohort.tsv"
     manual_tsv = tmp_path / "manual.tsv"
     output_dir = tmp_path / "out"
     _write_tsv(promotion_tsv, [_promotion_row()])
-    _write_tsv(raw85_tsv, [_raw85_slice_row()])
+    _write_tsv(full_cohort_tsv, [_full_cohort_slice_row()])
     _write_tsv(manual_tsv, [_manual_verdict_row()])
 
     from tools.diagnostics import (
@@ -415,9 +415,9 @@ def test_cli_writes_normal_peak_decision_outputs(tmp_path: Path) -> None:
         [
             "--promotion-cells-tsv",
             str(promotion_tsv),
-            "--raw85-slice-gate-tsv",
-            str(raw85_tsv),
-            "--raw85-manual-verdict-tsv",
+            "--full-cohort-acceptance-gate-tsv",
+            str(full_cohort_tsv),
+            "--full_cohort-manual-verdict-tsv",
             str(manual_tsv),
             "--output-dir",
             str(output_dir),
@@ -471,31 +471,31 @@ def _promotion_row(
     }
 
 
-def _raw85_slice_row(
+def _full_cohort_slice_row(
     peak_hypothesis_id: str = "FAM001",
     sample: str = "Sample_A",
     *,
-    matched_peak_hypothesis_id: str = "FAM_RAW85",
+    matched_peak_hypothesis_id: str = "FAM_FULL_COHORT",
     include_primary: str = "TRUE",
     consolidation_state: str = "primary_winner",
-    blockers: str = "raw85_candidate_family_consolidation_review_required",
+    blockers: str = "full_cohort_candidate_family_consolidation_review_required",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_raw85_slice_gate_v1",
+        "schema_version": "backfill_peakhypothesis_acceptance_gate_v1",
         "peak_hypothesis_id": peak_hypothesis_id,
         "feature_family_id": peak_hypothesis_id,
         "seed_group_id": f"seed::{peak_hypothesis_id}",
         "sample_stem": sample,
-        "raw85_anchor_mz": "301.165",
-        "raw85_anchor_rt": "16.0841",
-        "raw85_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
-        "raw85_cell_status": "rescued",
-        "raw85_primary_matrix_area": "298267",
-        "raw85_primary_matrix_area_source": "gaussian15_positive_asls_residual",
-        "raw85_include_in_primary_matrix": include_primary,
-        "raw85_consolidation_state": consolidation_state,
-        "raw85_slice_gate_status": "hypothesis_candidate_review",
-        "raw85_slice_blockers": blockers,
+        "full_cohort_anchor_mz": "301.165",
+        "full_cohort_anchor_rt": "16.0841",
+        "full_cohort_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
+        "full_cohort_cell_status": "rescued",
+        "full_cohort_primary_matrix_area": "298267",
+        "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "full_cohort_include_in_primary_matrix": include_primary,
+        "full_cohort_consolidation_state": consolidation_state,
+        "full_cohort_acceptance_gate_status": "hypothesis_candidate_review",
+        "full_cohort_slice_blockers": blockers,
     }
 
 
@@ -503,15 +503,15 @@ def _manual_verdict_row(
     source_peak_hypothesis_id: str = "FAM001",
     sample: str = "Sample_A",
     *,
-    matched_peak_hypothesis_id: str = "FAM_RAW85",
+    matched_peak_hypothesis_id: str = "FAM_FULL_COHORT",
     reviewer_verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_raw85_manual_verdict_v1",
+        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict_v1",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "source_feature_family_id": source_peak_hypothesis_id,
         "sample_stem": sample,
-        "raw85_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
+        "full_cohort_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
         "reviewer_verdict": reviewer_verdict,
         "review_basis": "visual_review_raw_plus_gaussian15_overlay_gallery",
         "reviewer": "user",
@@ -531,10 +531,10 @@ def _machine_shape_row(
     same_peak_verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_raw85_overlay_v1",
+        "schema_version": "backfill_peakhypothesis_overlay_v1",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "sample_stem": sample,
-        "raw85_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
+        "full_cohort_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
         "machine_shape_decision": decision,
         "machine_shape_reasons": (
             "gaussian15_selected_segment_single_complete_unimodal_peak"

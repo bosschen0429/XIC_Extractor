@@ -1,7 +1,5 @@
 """Scan-level Pt pattern proxy: a diagnostic bridge, not a feature detector.
 
-Purpose (Task 7 of the Pt pattern Discovery plan):
-
 The Pt pattern Discovery CLI (``scripts/run_pt_pattern_discovery.py``) only
 consumes a schema-valid Detected Features CSV
 (``xic_extractor.discovery.delta_mass_csv.DETECTED_FEATURES_COLUMNS``); it
@@ -10,7 +8,7 @@ exists in this repo yet (no MS1 peak detector emits this exact schema), so
 there is currently nothing to hand the Pt pattern matcher for a first look at
 a real Fullscan sample.
 
-This module is the fallback named by the plan's Rules: a SCAN-LEVEL proxy
+This module is a SCAN-LEVEL proxy
 that reads MS1 scans directly out of a RAW file and looks, scan by scan, for
 the four Pt pattern m/z positions (``base``, ``pt_plus_1``, ``pt_plus_2``,
 ``pt_plus_4`` -- see ``xic_extractor.discovery.delta_mass_patterns.PT_PATTERN``)

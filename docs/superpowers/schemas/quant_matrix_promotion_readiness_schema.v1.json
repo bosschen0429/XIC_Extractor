@@ -33,7 +33,7 @@
   ],
   "required_science_evidence": {
     "large_cohort_validation": [
-      "85raw_large_cohort",
+      "full_cohort",
       "large_cohort_validation"
     ],
     "heldout_oracle_or_manual_review": [
@@ -45,7 +45,7 @@
     ]
   },
   "required_science_tier_provenance": {
-    "85raw_large_cohort": [
+    "full_cohort": [
       "artifact_path",
       "artifact_sha256",
       "cohort_id",

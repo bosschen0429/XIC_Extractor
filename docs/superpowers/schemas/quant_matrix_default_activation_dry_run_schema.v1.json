@@ -2,7 +2,7 @@
   "schema_version": "quant_matrix_default_activation_dry_run_schema_v1",
   "default_activation_dry_run_schema": "quant_matrix_default_activation_dry_run_v1",
   "comparison_schema": "quant_matrix_default_activation_dry_run_comparison_v1",
-  "purpose": "Defines the Phase 9 no-RAW default activation dry-run expected-diff gate. The gate reruns manifest-driven QuantMatrixVersion activation in a temporary directory, compares the candidate outputs with the Phase 7 real bundle, and writes only comparison/summary artifacts. It does not activate ProductWriter or write default matrix outputs.",
+  "purpose": "Defines the no-RAW default activation replay expected-diff gate. The gate reruns manifest-driven QuantMatrixVersion activation in a temporary directory, compares the candidate outputs with the real candidate bundle, and writes only comparison/summary artifacts. It does not activate ProductWriter or write default matrix outputs.",
   "output_files": {
     "summary_json": "quant_matrix_default_activation_dry_run_summary.json",
     "comparison_tsv": "default_activation_dry_run_comparison.tsv"
@@ -18,7 +18,7 @@
   ],
   "summary_required_fields": [
     "schema_version",
-    "phase",
+    "artifact_role",
     "status",
     "default_activation_dry_run_gate_status",
     "source_run_id",
@@ -35,7 +35,7 @@
     "read_only",
     "write_authority",
     "scorer_ran",
-    "raw_or_85raw_ran",
+    "raw_or_full_cohort_ran",
     "product_writer_changed",
     "default_quant_matrix_changed",
     "default_matrix_files_written",
@@ -54,15 +54,15 @@
     "default_check_only_must_match_511_accepted_backfills": true,
     "dry_run_activation_reruns_in_temp_dir": true,
     "comparison_tsv_must_match_rerun": true,
-    "quant_matrix_cell_provenance_row_summary_and_expected_diff_summary_hashes_must_match_phase7_reference": true,
-    "source_summary_input_hashes_must_match_phase7_inputs": true
+    "quant_matrix_cell_provenance_row_summary_and_expected_diff_summary_hashes_must_match_real_bundle_reference": true,
+    "source_summary_input_hashes_must_match_real_bundle_inputs": true
   },
   "authority_rules": {
     "dry_run_only": true,
     "read_only": true,
     "write_authority": false,
     "scorer_ran": false,
-    "raw_or_85raw_ran": false,
+    "raw_or_full_cohort_ran": false,
     "product_writer_changed": false,
     "default_quant_matrix_changed": false,
     "default_matrix_files_written": false,
@@ -73,6 +73,6 @@
   "promotion_claim": {
     "default_activation_dry_run_gate_status": "pass",
     "may_enter_product_ready_closeout": true,
-    "meaning": "This allows Phase 10 Product Ready closeout review to proceed; it does not itself activate ProductWriter or change default outputs."
+    "meaning": "This allows Product Ready closeout review to proceed; it does not itself activate ProductWriter or change default outputs."
   }
 }

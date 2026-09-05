@@ -54,7 +54,7 @@ def test_shadow_rows_can_propose_8oxodg_without_product_mutation() -> None:
     assert row["paired_istd_rt"] == "16.55000"
     assert row["pair_rt_delta_observed"] == "0.05000"
     assert row["gate_decision"] == "externalize"
-    assert "phase_2_product_switch_blocked" in row["block_reason"]
+    assert "product_switch_not_activated" in row["block_reason"]
 
     summary = summarize_target_pair_rt_auto_reselection_rows(rows)
     assert summary["shadow_auto_reselect_proposed_count"] == "1"

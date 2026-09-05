@@ -45,7 +45,9 @@ class FamilyContextRef:
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _FAMILY_CONTEXT_MINT_TOKEN:
-            raise ValueError("FamilyContextRef must be minted by the M3 owner")
+            raise ValueError(
+                "FamilyContextRef must be minted by the identity-trajectory owner"
+            )
         normalized_mz = _validated_interval(self.mz_interval, field="mz_interval")
         normalized_rt = _validated_interval(self.rt_interval, field="rt_interval")
         if (
@@ -158,7 +160,7 @@ def canonical_family_context_ref_bytes(reference: FamilyContextRef) -> bytes:
 def validate_family_context_ref_for_consumption(
     reference: FamilyContextRef,
 ) -> None:
-    """Revalidate the complete current M3-owned reference contract."""
+    """Revalidate the complete current identity-trajectory-owned reference contract."""
 
     if type(reference) is not FamilyContextRef:
         raise TypeError("consumer validation requires exact FamilyContextRef")

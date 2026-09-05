@@ -6,13 +6,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.test_targeted_real_data_adapter import (
     _current_candidates,
     _FakeRaw,
     _open_bound_raw,
     _peak_config,
     _settings,
+)
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -41,7 +43,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -92,7 +94,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -151,7 +153,7 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -203,7 +205,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
 def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -247,7 +249,7 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
 def test_adapter_closes_empty_subject_universe_as_hold_without_xic(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -283,7 +285,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     tmp_path: Path,
     include_direct_candidate: bool,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -321,7 +323,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
 def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -376,16 +378,16 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
     }
     family_context, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
-        processing_owners=fixture.owners,
-        sample_assessments=((fixture.sample("S1"), assessment),),
-        alignment_config=AlignmentConfig(),
-        trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=0.1,
-            max_interpolation_gap=0,
-            max_extrapolation_gap=0,
-        ),
+            processing_owners=fixture.owners,
+            sample_assessments=((fixture.sample("S1"), assessment),),
+            alignment_config=AlignmentConfig(),
+            trajectory_policy=ModeTrackTrajectoryPolicy(
+                trajectory_policy_version="anchor-trajectory-v1",
+                band_policy_version="fixed-band-v1",
+                prediction_half_width_min=0.1,
+                max_interpolation_gap=0,
+                max_extrapolation_gap=0,
+            ),
         )
     )
     assert len(family_context.mode_tracks) == 2
@@ -416,7 +418,7 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
 
 
 def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
@@ -457,7 +459,7 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
 def test_recovery_revisits_one_hold_cell_without_minting_support(
     tmp_path: Path,
 ) -> None:
-    fixture = build_issue175_no_raw_fixture(
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,

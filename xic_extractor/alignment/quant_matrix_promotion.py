@@ -40,7 +40,7 @@ PROMOTION_CHECK_COLUMNS = (
     "next_action",
 )
 
-_LARGE_COHORT_TIERS = {"85raw_large_cohort", "large_cohort_validation"}
+_LARGE_COHORT_TIERS = {"full_cohort", "large_cohort_validation"}
 _ORACLE_TIERS = {"heldout_oracle", "manual_review_oracle"}
 _DOWNSTREAM_TIERS = {"downstream_impact_smoke"}
 _REQUIRED_SCIENCE_EVIDENCE = {
@@ -49,7 +49,7 @@ _REQUIRED_SCIENCE_EVIDENCE = {
     "downstream_impact_smoke": _DOWNSTREAM_TIERS,
 }
 _REQUIRED_SCIENCE_TIER_PROVENANCE = {
-    "85raw_large_cohort": (
+    "full_cohort": (
         "artifact_path",
         "artifact_sha256",
         "cohort_id",
@@ -592,7 +592,7 @@ def _append_auxiliary_tier_checks(
     validation_tiers: Mapping[str, str],
     checks: list[dict[str, str]],
 ) -> None:
-    for tier in ("focused_tests", "8raw_smoke"):
+    for tier in ("focused_tests", "fixture_cohort_smoke"):
         if tier not in validation_tiers:
             continue
         _append_check(
@@ -668,7 +668,7 @@ def _required_science_binding_problems(
     tier = str(row.get("tier", "")).strip()
     required_fields = _REQUIRED_SCIENCE_TIER_PROVENANCE[tier]
     problems = [field for field in required_fields if not str(row.get(field, ""))]
-    if tier == "85raw_large_cohort":
+    if tier == "full_cohort":
         raw_run_count = optional_int(row.get("raw_run_count", ""))
         if raw_run_count is None or raw_run_count < 85:
             problems.append("raw_run_count must be >=85")

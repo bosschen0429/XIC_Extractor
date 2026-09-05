@@ -28,7 +28,7 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.issue161_peak",
+        "tests.test_cell_observations.cid_nl_peak",
         _numeric_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -74,7 +74,7 @@ def test_disjoint_internal_groups_bind_one_fixed_target_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "tests.test_cell_observations.issue161_peak",
+        "tests.test_cell_observations.cid_nl_peak",
         _numeric_peak,
     )
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -125,13 +125,11 @@ def test_target_post_cell_rejects_incomplete_or_substituted_decisions(
 
     other_root = tmp_path / "other"
     other_root.mkdir()
-    _other_fixture, _other_scope, other_alignment, _other_hypotheses = (
-        _finalized_case(
-            other_root,
-            sample_stems=("sample-a", "sample-b"),
-            observed_stems=(),
-            group_specs=(((), "provisional"),),
-        )
+    _other_fixture, _other_scope, other_alignment, _other_hypotheses = _finalized_case(
+        other_root,
+        sample_stems=("sample-a", "sample-b"),
+        observed_stems=(),
+        group_specs=(((), "provisional"),),
     )
     other_pre_cell = project_target_pre_cell(other_alignment)
     other_decisions = decide_target_cell_population(other_pre_cell)

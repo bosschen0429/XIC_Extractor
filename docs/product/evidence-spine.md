@@ -193,7 +193,7 @@ SUPPORT may compose the existing owner-backed `PeakHypothesis` and enter
 existing provisional group construction. HOLD, REJECT, and technical
 assessments remain valid without a fake hypothesis or an invented group.
 
-The M1 reference spine creates one minimal `CellObservationRef` only after a
+The CellObservationRef reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
 Untargeted diagnostic adapters receive the same exact group and cell objects;
 they do not remint equal-looking DTOs. Cell artifact identity binds both the
@@ -254,19 +254,19 @@ unlabeled tuple must not be guessed into method semantics.
 
 The read-only quarry is
 `codex/package-3b-untargeted-widening-rebuild-157` at
-`44c7601241d894a5b13cf470b6e47d7797f5184e`; the M1 activation base is
+`44c7601241d894a5b13cf470b6e47d7797f5184e`; the reference-spine activation base is
 `621d3312e0510587b88189edb01e29fb4bacd64c`. The complete 150-path quarry diff
 is classified by the following ordered rules, so no unlisted path falls
 through implicitly:
 
-| Disposition | Paths / ordered rule | Count | M1 treatment |
+| Disposition | Paths / ordered rule | Count | Reference-spine treatment |
 | --- | --- | ---: | --- |
 | `candidate_for_adaptation` | exact paths `xic_extractor/alignment/hypothesis_owner_adapter.py` and `xic_extractor/alignment/untargeted_hypothesis_alignment.py` | 2 | Inspect dependency and authority closure before any reuse |
 | `evidence_only` | Package 3B 7/28–7/29 plan files; all changed `docs/superpowers/validation/` paths; Package 3B/chromatographic/Untargeted test fixtures selected by `tests/(fixtures/package3b|test_(chrom_peak_anchor|chromatographic_quantitation|cid_nl_chromatographic|package3b|untargeted))`; matching chromatographic/Package 3B diagnostic tools; and all changed `xic_extractor/diagnostics/` paths | 54 | May inform tests or risk inventory; no code or policy import |
-| `out_of_scope` | every remaining path in the exact base-to-quarry diff after the two rules above | 94 | No M1 mutation or reuse; this includes the oversized candidate-universe/control-plane path, governance, runtime, RAW canaries, quantitation, Backfill, oracle, output, and productization changes |
+| `out_of_scope` | every remaining path in the exact base-to-quarry diff after the two rules above | 94 | No reference-spine mutation or reuse; this includes the oversized candidate-universe/control-plane path, governance, runtime, RAW canaries, quantitation, Backfill, oracle, output, and productization changes |
 
 Only one source hunk was adapted. Source commit `1a654a08` introduced
-`xic_extractor/alignment/hypothesis_owner_adapter.py`; M1 adapted its
+`xic_extractor/alignment/hypothesis_owner_adapter.py`; the reference-spine owner adapted its
 workflow-neutral measured-hypothesis → `IdentityEvent` /
 `SampleLocalMS1Owner` projection into the live
 `alignment/hypothesis_owner_adapter.py`. The destination replaces caller-owned
@@ -276,7 +276,7 @@ selection, Matrix, or writer authority. This hunk serves P4a/P16a, depends only
 on live owner-backed hypothesis, sample identity, assessment, and Alignment
 owner types, and is `adapted_with_live_contracts` rather than byte-copied.
 
-`untargeted_hypothesis_alignment.py` remained only a candidate: M1 did not copy
+`untargeted_hypothesis_alignment.py` remained only a candidate: the reference-spine owner did not copy
 it because its quarry dependency is the rejected oversized Untargeted universe.
 No whole commit was cherry-picked. The census is an audit of possible salvage,
 not activation evidence or permission to merge the quarry later.

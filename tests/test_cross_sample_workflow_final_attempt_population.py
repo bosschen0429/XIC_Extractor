@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.alignment.mode_track.refinement as refinement_owner
-from tests.issue161_no_raw_fixture import issue161_peak
+from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
 from tests.test_alignment_owner_clustering import _owner
 from tests.test_backfill_observation_repair_authorization import (
     _authorization_population,
@@ -106,7 +106,7 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
     unaffected_member = group_member_subject_from_peak_observation(
         processing_owners=fixture.owners,
         sample=fixture.sample("s3"),
-        observation=issue161_peak(fixture, "s3"),
+        observation=cid_nl_peak(fixture, "s3"),
     )
     unaffected_group = mint_cross_sample_group_identity(
         processing_request_id=group.processing_request_id,
@@ -148,8 +148,7 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
         classified_edges=classified_edges,
         anchors=(),
         injection_order={
-            owner.sample_stem: index
-            for index, owner in enumerate(owners, start=1)
+            owner.sample_stem: index for index, owner in enumerate(owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
             "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10

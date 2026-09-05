@@ -56,6 +56,117 @@ def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
 
+@pytest.mark.parametrize(
+    ("bad_path", "bad_label"),
+    [
+        ("scripts/run_issue367_bundle.py", "Issue 367"),
+        ("scripts/run_ticket_42_bundle.py", "ticket-42"),
+        ("scripts/run_m7_bundle.py", "M7"),
+        ("scripts/run_phase7_bundle.py", "phase 7"),
+        ("scripts/run_milestone4_bundle.py", "milestone-4"),
+        ("scripts/run_p7_bundle.py", "P7"),
+        ("scripts/run_package2_bundle.py", "package 2"),
+        ("scripts/run_85raw_bundle.py", "85RAW"),
+        ("scripts/run_raw85_bundle.py", "raw85"),
+        ("scripts/run_gate_c_bundle.py", "Gate C"),
+        ("scripts/run_sprint4_bundle.py", "sprint 4"),
+        ("scripts/run_wave3_bundle.py", "wave 3"),
+        ("scripts/run_fix3_bundle.py", "fix3"),
+    ],
+)
+def test_durable_repository_language_rejects_construction_coordinate_identity(
+    tmp_path: Path,
+    bad_path: str,
+    bad_label: str,
+) -> None:
+    relative_path = Path(bad_path)
+    bad_source = tmp_path / relative_path
+    bad_source.parent.mkdir(parents=True)
+    bad_source.write_text(
+        f'"""Run the {bad_label} bundle."""\n',
+        encoding="utf-8",
+    )
+
+    problems = census.validate_durable_repository_language(
+        tmp_path,
+        (relative_path,),
+    )
+
+    assert any(
+        "repository path uses construction coordinate identity" in item
+        for item in problems
+    )
+
+
+def test_durable_repository_language_accepts_role_based_identity(
+    tmp_path: Path,
+) -> None:
+    role_path = Path("scripts/build_quant_matrix_real_bundle.py")
+    role_source = tmp_path / role_path
+    role_source.parent.mkdir(parents=True)
+    role_source.write_text(
+        '"""Build the candidate QuantMatrix bundle."""\n',
+        encoding="utf-8",
+    )
+    gate_owner_path = Path("xic_extractor/alignment/identity_gates.py")
+    gate_owner_source = tmp_path / gate_owner_path
+    gate_owner_source.parent.mkdir(parents=True)
+    gate_owner_source.write_text(
+        '"""Own alignment identity gates."""\n', encoding="utf-8"
+    )
+
+    assert (
+        census.validate_durable_repository_language(
+            tmp_path,
+            (role_path, gate_owner_path),
+        )
+        == []
+    )
+
+
+def test_durable_repository_language_rejects_ticket_named_test_definition(
+    tmp_path: Path,
+) -> None:
+    test_path = Path("tests/test_product_activation.py")
+    source = tmp_path / test_path
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "def test_default_production_activation_ticket42_surface():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    problems = census.validate_durable_repository_language(tmp_path, (test_path,))
+
+    assert any("durable identifier" in item for item in problems)
+
+
+def test_durable_repository_language_accepts_scientific_m6a_name(
+    tmp_path: Path,
+) -> None:
+    scientific_path = Path("tools/diagnostics/rna_modification.py")
+    source = tmp_path / scientific_path
+    source.parent.mkdir(parents=True)
+    source.write_text('MODIFICATION = "m6A"\n', encoding="utf-8")
+
+    assert (
+        census.validate_durable_repository_language(tmp_path, (scientific_path,)) == []
+    )
+
+
+def test_durable_repository_language_accepts_exact_legacy_schema_identifier(
+    tmp_path: Path,
+) -> None:
+    legacy_path = Path("xic_extractor/alignment/mode_track_table_finalization.py")
+    source = tmp_path / legacy_path
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'SCHEMA = "issue180_m9_gate_c_manual_review_v1"\n',
+        encoding="utf-8",
+    )
+
+    assert census.validate_durable_repository_language(tmp_path, (legacy_path,)) == []
+
+
 def test_runtime_phase_exception_public_types_are_allowlisted() -> None:
     from xic_extractor import execution_runtime_owner
 
@@ -582,8 +693,7 @@ def forbidden_ingress(runtime, attempt_wall_seconds):
     problems = census.validate_runtime_boundary_authority(tmp_path, (adapter,))
 
     assert any(
-        "caller-authored projection parameter attempt_wall_seconds is forbidden"
-        in item
+        "caller-authored projection parameter attempt_wall_seconds is forbidden" in item
         for item in problems
     )
     assert not any("canonical owner metric label" in item for item in problems)
@@ -732,7 +842,7 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
 
 
 @pytest.mark.current_repository_census
-def test_issue367_production_activation_loci_are_exact() -> None:
+def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
         "run_alignment": set(),
         "complete_untargeted_cid_nl_alignment": set(),
@@ -883,12 +993,9 @@ def test_git_subprocess_environment_drops_hook_repository_bindings(
 
     environment = census._git_subprocess_environment()
 
-    assert not (
-        census._GIT_LOCAL_ENVIRONMENT_VARIABLES & environment.keys()
-    )
+    assert not (census._GIT_LOCAL_ENVIRONMENT_VARIABLES & environment.keys())
     assert not any(
-        name.startswith("GIT_CONFIG_KEY_")
-        or name.startswith("GIT_CONFIG_VALUE_")
+        name.startswith("GIT_CONFIG_KEY_") or name.startswith("GIT_CONFIG_VALUE_")
         for name in environment
     )
     assert environment["CENSUS_TEST_UNRELATED"] == "preserved"
@@ -1195,9 +1302,9 @@ def test_raw_open_receipt_private_minter_allows_raw_reader(tmp_path: Path) -> No
 
 
 def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
-    assert set(census.CENSUS_OWNER_REFS.values()) <= census.repository_tracked_paths(
-        ROOT
-    )
+    assert set(
+        census.CENSUS_OWNER_REFS.values()
+    ) <= census.repository_tracked_path_keys(ROOT)
 
 
 @pytest.mark.current_repository_census

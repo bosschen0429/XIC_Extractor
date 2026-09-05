@@ -461,12 +461,12 @@ def _normal_peak_decision_row(
         "area_policy": "standard_assessable_area",
         "matrix_quantitative_use": "standard_quantitative_use",
         "promotion_decision": "promote_matrix_write",
-        "raw85_matched_peak_hypothesis_id": "FAM_RAW85",
-        "raw85_cell_status": "rescued",
-        "raw85_primary_matrix_area": "321.5",
-        "raw85_primary_matrix_area_source": "gaussian15_positive_asls_residual",
-        "raw85_include_in_primary_matrix": "FALSE",
-        "raw85_consolidation_state": "primary_loser",
+        "full_cohort_matched_peak_hypothesis_id": "FAM_FULL_COHORT",
+        "full_cohort_cell_status": "rescued",
+        "full_cohort_primary_matrix_area": "321.5",
+        "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "full_cohort_include_in_primary_matrix": "FALSE",
+        "full_cohort_consolidation_state": "primary_loser",
         "manual_same_peak_verdict": "same_peak_supported",
         "normal_peak_shape_definition": (
             "gaussian15_asls_residual_selected_segment_single_complete_unimodal_peak;"

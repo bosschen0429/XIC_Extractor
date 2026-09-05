@@ -9,12 +9,14 @@ from typing import Any
 import pytest
 
 import xic_extractor.alignment.cell_observations as cell_owner
-from tests.issue161_no_raw_fixture import (
-    issue161_evidence,
-    issue161_peak,
-    issue161_unique_support,
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_peak,
+    cid_nl_unique_support,
 )
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 from tests.test_alignment_owner_backfill import _peak_config
 from tests.test_alignment_owner_clustering import _owner
 from tests.test_cid_nl_evidence_spine import (
@@ -79,9 +81,7 @@ def _owner_handoff(tmp_path: Path):
     spine = build_cid_nl_reference_spine(
         processing_owners=fixture.owners,
         target=fixture.target,
-        sample_assessments=tuple(
-            zip(fixture.samples, assessments, strict=True)
-        ),
+        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     assert spine.group is not None
     group = validate_cross_sample_peak_group_identity(
@@ -175,7 +175,7 @@ def _support_assessment(
     scan_number: int,
     seed_count: int = 1,
 ):
-    peak = issue161_peak(
+    peak = cid_nl_peak(
         fixture,
         sample_stem,
         apex_rt=apex_rt,
@@ -183,7 +183,7 @@ def _support_assessment(
         rt_right_min=apex_rt + 0.1,
     )
     evidence_refs = tuple(
-        issue161_evidence(
+        cid_nl_evidence(
             fixture,
             sample_stem,
             scan_number=scan_number + index,
@@ -192,7 +192,7 @@ def _support_assessment(
         for index in range(seed_count)
     )
     support_refs = tuple(
-        issue161_unique_support(
+        cid_nl_unique_support(
             fixture,
             sample_stem,
             peak=peak,
@@ -250,9 +250,7 @@ def _coverage_for_groups(
             strict=True,
         )
     }
-    acquisition_sources = {
-        stem: all_acquisitions[stem] for stem in sample_order
-    }
+    acquisition_sources = {stem: all_acquisitions[stem] for stem in sample_order}
     context = OwnerBackfillEvaluationCoverageContext(
         processing_owners=fixture.owners,
         input_features=features,
@@ -342,7 +340,7 @@ def _source_cell(
 
 def _repaired_handoff(tmp_path: Path, *, sample_stem: str = "s1"):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=(sample_stem,),
     )
@@ -463,9 +461,7 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
     assert len(cells) == len(handoff.final_population) * len(
         handoff.coverage.epoch.samples
     )
-    assert {
-        cell.evidence_state for cell in cells
-    } == {
+    assert {cell.evidence_state for cell in cells} == {
         "direct_observation",
         "unresolved",
         "rejected_observation",
@@ -548,7 +544,7 @@ def test_composer_distinguishes_completed_negative_search(
 def test_composer_rejects_same_sample_crossed_source_to_position(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
     sample = fixture.sample("s1")
     first_assessment = _support_assessment(
         fixture,
@@ -624,7 +620,7 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
 def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2"),
     )
@@ -719,10 +715,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         for item in forward
     }
     assert all(
-        {
-            association.position.position_id
-            for association in item.position_associations
-        }
+        {association.position.position_id for association in item.position_associations}
         == expected_positions_by_sample[
             item.canonical_sample.identity.sample_identity_id
         ]
@@ -733,7 +726,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
 def test_composer_split_keeps_cartesian_not_searched_remainder(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2"),
     )
@@ -794,9 +787,7 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         predecessor_cells=predecessor_spine.cells,
     )
     assert len(composed) == 4
-    by_key = {
-        (item.group, item.canonical_sample): item for item in composed
-    }
+    by_key = {(item.group, item.canonical_sample): item for item in composed}
     assert by_key[(left, samples[0])].evidence_state == "direct_observation"
     assert by_key[(right, samples[1])].evidence_state == "direct_observation"
     assert by_key[(left, samples[1])].evidence_state == "not_searched"
@@ -808,8 +799,8 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
 def test_composer_retains_exact_repaired_receipt_observation_and_integration(
     tmp_path: Path,
 ) -> None:
-    _fixture, _spine, handoff, source_cell, repair, observation = (
-        _repaired_handoff(tmp_path)
+    _fixture, _spine, handoff, source_cell, repair, observation = _repaired_handoff(
+        tmp_path
     )
 
     composed = compose_final_group_cell_observation_population(
@@ -857,8 +848,7 @@ def test_composer_rejects_repair_not_authorized_by_final_receipt(
         member_subject=next(
             member
             for member in group.member_subjects
-            if member.canonical_sample_identity_id
-            == sample.identity.sample_identity_id
+            if member.canonical_sample_identity_id == sample.identity.sample_identity_id
         ),
         sample_identity=sample,
         successor_application=handoff.final_receipt.post_mt0_application,
@@ -907,8 +897,8 @@ def test_composer_rejects_crossed_repaired_member_hypothesis_and_integration(
     _, _, handoff, source_cell, repair, observation = _repaired_handoff(
         tmp_path / "base"
     )
-    _, _, crossed_handoff, _, crossed_repair, crossed_observation = (
-        _repaired_handoff(tmp_path / "crossed", sample_stem="s2")
+    _, _, crossed_handoff, _, crossed_repair, crossed_observation = _repaired_handoff(
+        tmp_path / "crossed", sample_stem="s2"
     )
 
     with pytest.raises(
@@ -956,9 +946,7 @@ def test_composer_rejects_crossed_repaired_member_hypothesis_and_integration(
 
 
 def test_repaired_final_receipt_cannot_be_omitted_from_applicable_closure() -> None:
-    sample: Any = SimpleNamespace(
-        identity=SimpleNamespace(sample_identity_id="sample")
-    )
+    sample: Any = SimpleNamespace(identity=SimpleNamespace(sample_identity_id="sample"))
     group: Any = object()
     receipt: Any = SimpleNamespace(
         outcome="repaired",
@@ -986,9 +974,7 @@ def test_repaired_final_receipt_cannot_be_omitted_from_applicable_closure() -> N
 
 
 def test_repaired_final_receipt_rejects_equal_looking_substitution() -> None:
-    sample: Any = SimpleNamespace(
-        identity=SimpleNamespace(sample_identity_id="sample")
-    )
+    sample: Any = SimpleNamespace(identity=SimpleNamespace(sample_identity_id="sample"))
     group: Any = object()
     receipt: Any = SimpleNamespace(
         outcome="repaired",

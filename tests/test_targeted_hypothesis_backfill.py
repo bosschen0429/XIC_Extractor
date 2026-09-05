@@ -5,11 +5,11 @@ import numpy as np
 import pytest
 
 import xic_extractor.alignment.owner_backfill as owner_backfill_module
-from tests.package2_no_raw_fixture import (
-    build_package2_no_raw_fixture,
-    package2_candidate_set,
-    package2_hypothesis,
-    package2_selection,
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+    processing_identity_candidate_set,
+    processing_identity_hypothesis,
+    processing_identity_selection,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
@@ -273,7 +273,7 @@ def test_unassessable_owner_trace_remains_unassessable(tmp_path: Path) -> None:
 
 
 def _complete_inputs(tmp_path: Path):
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=(
             "observed-a",
@@ -284,16 +284,16 @@ def _complete_inputs(tmp_path: Path):
             "failed",
         ),
     )
-    observed_a = package2_hypothesis(
+    observed_a = processing_identity_hypothesis(
         fixture, "observed-a", apex_rt=8.00, scan_number=40
     )
-    observed_b = package2_hypothesis(
+    observed_b = processing_identity_hypothesis(
         fixture, "observed-b", apex_rt=8.02, scan_number=50
     )
-    ambiguous_a = package2_hypothesis(
+    ambiguous_a = processing_identity_hypothesis(
         fixture, "ambiguous", apex_rt=8.00, scan_number=60
     )
-    ambiguous_b = package2_hypothesis(
+    ambiguous_b = processing_identity_hypothesis(
         fixture, "ambiguous", apex_rt=8.30, scan_number=70
     )
     inputs = (
@@ -308,7 +308,7 @@ def _complete_inputs(tmp_path: Path):
 
 
 def _input(fixture, sample_stem, hypotheses, *, failure_reason=None):
-    candidate_set = package2_candidate_set(
+    candidate_set = processing_identity_candidate_set(
         fixture,
         sample_stem,
         hypotheses,
@@ -317,7 +317,7 @@ def _input(fixture, sample_stem, hypotheses, *, failure_reason=None):
     return TargetedHypothesisAlignmentInput(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
-        selection=package2_selection(
+        selection=processing_identity_selection(
             fixture,
             sample_stem,
             hypotheses,

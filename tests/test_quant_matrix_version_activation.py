@@ -285,7 +285,7 @@ def _write_activation_inputs(
                 "baseline_value": "",
                 "activated_value": "222.2",
                 "expected_matrix_effect": "write_accepted_backfill",
-                "expected_reason": "phase3_fixture",
+                "expected_reason": "quant_matrix_version_fixture",
             }
         ]
     _write_tsv(expected_diff, EXPECTED_DIFF_COLUMNS, expected_diff_rows)
@@ -321,7 +321,7 @@ def _acceptance_row(source: Path, doublet: Path) -> dict[str, str]:
         "hard_blocker_rule_ids": "",
         "triggered_risk_rule_ids": "low_seed_support",
         "closure_rule_ids": "",
-        "decision_reason": "phase3_fixture",
+        "decision_reason": "quant_matrix_version_fixture",
         "next_evidence_needed": "",
         "doublet_status": "no_doublet_claim",
         "reference_side": "not_applicable",

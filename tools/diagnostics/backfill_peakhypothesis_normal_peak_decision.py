@@ -27,15 +27,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                         .PROMOTION_REQUIRED_COLUMNS
                     ),
                 ),
-                raw85_slice_gate_rows=read_tsv_required(
-                    args.raw85_slice_gate_tsv,
+                full_cohort_acceptance_gate_rows=read_tsv_required(
+                    args.full_cohort_acceptance_gate_tsv,
                     (
                         backfill_peakhypothesis_normal_peak_decision
-                        .RAW85_SLICE_REQUIRED_COLUMNS
+                        .FULL_COHORT_SLICE_REQUIRED_COLUMNS
                     ),
                 ),
                 manual_verdict_rows=read_tsv_required(
-                    args.raw85_manual_verdict_tsv,
+                    args.full_cohort_manual_verdict_tsv,
                     (
                         backfill_peakhypothesis_normal_peak_decision
                         .MANUAL_VERDICT_REQUIRED_COLUMNS
@@ -70,8 +70,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--promotion-cells-tsv", type=Path, required=True)
-    parser.add_argument("--raw85-slice-gate-tsv", type=Path, required=True)
-    parser.add_argument("--raw85-manual-verdict-tsv", type=Path, required=True)
+    parser.add_argument("--full-cohort-acceptance-gate-tsv", type=Path, required=True)
+    parser.add_argument("--full_cohort-manual-verdict-tsv", type=Path, required=True)
     parser.add_argument("--machine-shape-evidence-tsv", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-run-id", default="")
