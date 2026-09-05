@@ -4,6 +4,7 @@ import pytest
 
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
+from tests.test_targeted_real_data_adapter import _settings
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
     OwnerBuildRouteReceipt,
@@ -65,6 +66,5 @@ def test_pipeline_rejects_invalid_backend_before_input_io(
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
             owner_build_xic_backend="invalid",  # type: ignore[arg-type]
-            discovery_processing_run_spec=object(),  # type: ignore[arg-type]
-            discovery_physical_bindings_by_sample={},
+            discovery_settings=_settings(),
         )
