@@ -130,8 +130,11 @@ def test_freshness_decision_separates_artifact_only_from_raw_rerun() -> None:
 
     assert docs_only.required_action == "no_rerun"
     assert metric_change.required_action == "artifact_only_rerun"
-    assert generation_change.required_action == "fresh_8raw_required"
-    assert product_gate.required_action == "fresh_85raw_required_after_8raw"
+    assert generation_change.required_action == "fresh_fixture_cohort_required"
+    assert (
+        product_gate.required_action
+        == "fresh_full_cohort_required_after_fixture_cohort"
+    )
     assert unknown.required_action == "inconclusive"
 
 

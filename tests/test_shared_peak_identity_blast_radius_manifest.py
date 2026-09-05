@@ -19,8 +19,12 @@ def test_manifest_records_counts_hashes_and_current_status(tmp_path: Path) -> No
         str(paths["slice0_evidence_vectors"]): _sha256(
             paths["slice0_evidence_vectors"]
         ),
-        str(paths["8raw_alignment_review"]): _sha256(paths["8raw_alignment_review"]),
-        str(paths["8raw_alignment_cells"]): _sha256(paths["8raw_alignment_cells"]),
+        str(paths["fixture_cohort_alignment_review"]): _sha256(
+            paths["fixture_cohort_alignment_review"]
+        ),
+        str(paths["fixture_cohort_alignment_cells"]): _sha256(
+            paths["fixture_cohort_alignment_cells"]
+        ),
     }
     _write_evidence_vectors(paths["slice0_evidence_vectors"], slice0_hashes)
     expected_manifest = tmp_path / "expected_manifest.tsv"
@@ -28,14 +32,18 @@ def test_manifest_records_counts_hashes_and_current_status(tmp_path: Path) -> No
         expected_manifest,
         [
             {
-                "artifact_id": "85raw_alignment_review",
+                "artifact_id": "full_cohort_alignment_review",
                 "artifact_role": "alignment_review",
-                "expected_artifact_sha256": _sha256(paths["85raw_alignment_review"]),
+                "expected_artifact_sha256": _sha256(
+                    paths["full_cohort_alignment_review"]
+                ),
             },
             {
-                "artifact_id": "85raw_alignment_cells",
+                "artifact_id": "full_cohort_alignment_cells",
                 "artifact_role": "alignment_cells",
-                "expected_artifact_sha256": _sha256(paths["85raw_alignment_cells"]),
+                "expected_artifact_sha256": _sha256(
+                    paths["full_cohort_alignment_cells"]
+                ),
             },
         ],
     )
@@ -44,8 +52,8 @@ def test_manifest_records_counts_hashes_and_current_status(tmp_path: Path) -> No
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
         expected_manifest_tsv=expected_manifest,
     )
 
@@ -54,13 +62,13 @@ def test_manifest_records_counts_hashes_and_current_status(tmp_path: Path) -> No
         "manual_oracle_fixture",
         "slice0_explanations",
         "slice0_evidence_vectors",
-        "8raw_alignment_review",
-        "8raw_alignment_cells",
-        "85raw_alignment_review",
-        "85raw_alignment_cells",
+        "fixture_cohort_alignment_review",
+        "fixture_cohort_alignment_cells",
+        "full_cohort_alignment_review",
+        "full_cohort_alignment_cells",
     }
-    cells = by_id["8raw_alignment_cells"]
-    assert cells["artifact_sha256"] == _sha256(paths["8raw_alignment_cells"])
+    cells = by_id["fixture_cohort_alignment_cells"]
+    assert cells["artifact_sha256"] == _sha256(paths["fixture_cohort_alignment_cells"])
     assert cells["artifact_sha256"].isupper()
     assert cells["row_count"] == "2"
     assert cells["sample_count"] == "2"
@@ -69,11 +77,9 @@ def test_manifest_records_counts_hashes_and_current_status(tmp_path: Path) -> No
     assert cells["artifact_status"] == "present_current"
     assert cells["freshness_basis"] == "slice0_evidence_vector"
     assert by_id["slice0_explanations"]["artifact_role"] == "blast_radius_context"
-    assert by_id["slice0_evidence_vectors"]["artifact_role"] == (
-        "blast_radius_context"
-    )
-    assert by_id["85raw_alignment_cells"]["artifact_status"] == "present_current"
-    assert by_id["85raw_alignment_cells"]["freshness_basis"] == (
+    assert by_id["slice0_evidence_vectors"]["artifact_role"] == ("blast_radius_context")
+    assert by_id["full_cohort_alignment_cells"]["artifact_status"] == "present_current"
+    assert by_id["full_cohort_alignment_cells"]["freshness_basis"] == (
         "expected_blast_radius_manifest"
     )
 
@@ -82,48 +88,52 @@ def test_manifest_marks_unpinned_and_hash_mismatched_artifacts(tmp_path: Path) -
     paths = _write_required_artifacts(tmp_path)
     _write_evidence_vectors(
         paths["slice0_evidence_vectors"],
-        {str(paths["8raw_alignment_cells"]): "0" * 64},
+        {str(paths["fixture_cohort_alignment_cells"]): "0" * 64},
     )
 
     rows = build_blast_radius_manifest(
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
     )
 
     by_id = {row["artifact_id"]: row for row in rows}
-    assert by_id["8raw_alignment_cells"]["artifact_status"] == (
+    assert by_id["fixture_cohort_alignment_cells"]["artifact_status"] == (
         "present_stale_hash_mismatch"
     )
-    assert by_id["85raw_alignment_cells"]["artifact_status"] == (
+    assert by_id["full_cohort_alignment_cells"]["artifact_status"] == (
         "present_hash_unpinned"
     )
-    assert by_id["85raw_alignment_cells"]["freshness_basis"] == "not_available"
+    assert by_id["full_cohort_alignment_cells"]["freshness_basis"] == "not_available"
 
 
 def test_manifest_marks_missing_required_fields_before_current(tmp_path: Path) -> None:
     paths = _write_required_artifacts(tmp_path)
     _write_tsv(
-        paths["8raw_alignment_cells"],
+        paths["fixture_cohort_alignment_cells"],
         ("feature_family_id", "sample_stem", "status"),
         [{"feature_family_id": "FAM001", "sample_stem": "S1", "status": "selected"}],
     )
     _write_evidence_vectors(
         paths["slice0_evidence_vectors"],
-        {str(paths["8raw_alignment_cells"]): _sha256(paths["8raw_alignment_cells"])},
+        {
+            str(paths["fixture_cohort_alignment_cells"]): _sha256(
+                paths["fixture_cohort_alignment_cells"]
+            )
+        },
     )
 
     rows = build_blast_radius_manifest(
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
     )
 
-    cells = {row["artifact_id"]: row for row in rows}["8raw_alignment_cells"]
+    cells = {row["artifact_id"]: row for row in rows}["fixture_cohort_alignment_cells"]
     assert cells["artifact_status"] == "present_missing_required_fields"
     assert "reason" in cells["missing_required_fields"]
 
@@ -138,13 +148,15 @@ def test_manifest_handles_missing_optional_artifact_and_rejects_unknown_role(
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
         optional_artifacts={
-            "candidate_gate_8raw": tmp_path / "missing_candidate_gate.tsv"
+            "candidate_gate_fixture_cohort": tmp_path / "missing_candidate_gate.tsv"
         },
     )
-    optional = {row["artifact_id"]: row for row in rows}["candidate_gate_8raw"]
+    optional = {row["artifact_id"]: row for row in rows}[
+        "candidate_gate_fixture_cohort"
+    ]
     assert optional["artifact_role"] == "blast_radius_context"
     assert optional["artifact_status"] == "missing"
 
@@ -153,8 +165,8 @@ def test_manifest_handles_missing_optional_artifact_and_rejects_unknown_role(
             manual_oracle_tsv=paths["manual_oracle_fixture"],
             slice0_explanations_tsv=paths["slice0_explanations"],
             slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-            eight_raw_run_dir=tmp_path / "8raw",
-            eightyfive_raw_run_dir=tmp_path / "85raw",
+            fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+            full_cohort_run_dir=tmp_path / "full_cohort",
             optional_artifacts={"not_a_role": tmp_path / "context.tsv"},
         )
 
@@ -168,8 +180,10 @@ def test_expected_manifest_requires_legal_artifact_role(tmp_path: Path) -> None:
         ("artifact_id", "expected_artifact_sha256"),
         [
             {
-                "artifact_id": "85raw_alignment_cells",
-                "expected_artifact_sha256": _sha256(paths["85raw_alignment_cells"]),
+                "artifact_id": "full_cohort_alignment_cells",
+                "expected_artifact_sha256": _sha256(
+                    paths["full_cohort_alignment_cells"]
+                ),
             }
         ],
     )
@@ -179,8 +193,8 @@ def test_expected_manifest_requires_legal_artifact_role(tmp_path: Path) -> None:
             manual_oracle_tsv=paths["manual_oracle_fixture"],
             slice0_explanations_tsv=paths["slice0_explanations"],
             slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-            eight_raw_run_dir=tmp_path / "8raw",
-            eightyfive_raw_run_dir=tmp_path / "85raw",
+            fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+            full_cohort_run_dir=tmp_path / "full_cohort",
             expected_manifest_tsv=missing_role,
         )
 
@@ -190,9 +204,11 @@ def test_expected_manifest_requires_legal_artifact_role(tmp_path: Path) -> None:
         ("artifact_id", "artifact_role", "expected_artifact_sha256"),
         [
             {
-                "artifact_id": "85raw_alignment_cells",
-                "artifact_role": "candidate_gate_85raw",
-                "expected_artifact_sha256": _sha256(paths["85raw_alignment_cells"]),
+                "artifact_id": "full_cohort_alignment_cells",
+                "artifact_role": "candidate_gate_full_cohort",
+                "expected_artifact_sha256": _sha256(
+                    paths["full_cohort_alignment_cells"]
+                ),
             }
         ],
     )
@@ -202,8 +218,8 @@ def test_expected_manifest_requires_legal_artifact_role(tmp_path: Path) -> None:
             manual_oracle_tsv=paths["manual_oracle_fixture"],
             slice0_explanations_tsv=paths["slice0_explanations"],
             slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-            eight_raw_run_dir=tmp_path / "8raw",
-            eightyfive_raw_run_dir=tmp_path / "85raw",
+            fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+            full_cohort_run_dir=tmp_path / "full_cohort",
             expected_manifest_tsv=unknown_role,
         )
 
@@ -217,9 +233,9 @@ def test_expected_manifest_uses_only_expected_hash_authority(tmp_path: Path) -> 
         ("artifact_id", "artifact_role", "artifact_sha256"),
         [
             {
-                "artifact_id": "85raw_alignment_cells",
+                "artifact_id": "full_cohort_alignment_cells",
                 "artifact_role": "alignment_cells",
-                "artifact_sha256": _sha256(paths["85raw_alignment_cells"]),
+                "artifact_sha256": _sha256(paths["full_cohort_alignment_cells"]),
             }
         ],
     )
@@ -228,12 +244,12 @@ def test_expected_manifest_uses_only_expected_hash_authority(tmp_path: Path) -> 
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
         expected_manifest_tsv=expected_manifest,
     )
 
-    cells = {row["artifact_id"]: row for row in rows}["85raw_alignment_cells"]
+    cells = {row["artifact_id"]: row for row in rows}["full_cohort_alignment_cells"]
     assert cells["expected_artifact_sha256"] == ""
     assert cells["artifact_status"] == "present_hash_unpinned"
     assert cells["freshness_basis"] == "not_available"
@@ -250,7 +266,9 @@ def test_expected_hash_matching_does_not_use_basename_only(tmp_path: Path) -> No
             {
                 "artifact_path": "alignment_cells.tsv",
                 "artifact_role": "alignment_cells",
-                "expected_artifact_sha256": _sha256(paths["85raw_alignment_cells"]),
+                "expected_artifact_sha256": _sha256(
+                    paths["full_cohort_alignment_cells"]
+                ),
             }
         ],
     )
@@ -259,16 +277,16 @@ def test_expected_hash_matching_does_not_use_basename_only(tmp_path: Path) -> No
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
         expected_manifest_tsv=expected_manifest,
     )
 
     by_id = {row["artifact_id"]: row for row in rows}
-    assert by_id["8raw_alignment_cells"]["artifact_status"] == (
+    assert by_id["fixture_cohort_alignment_cells"]["artifact_status"] == (
         "present_hash_unpinned"
     )
-    assert by_id["85raw_alignment_cells"]["artifact_status"] == (
+    assert by_id["full_cohort_alignment_cells"]["artifact_status"] == (
         "present_hash_unpinned"
     )
 
@@ -280,9 +298,13 @@ def test_manifest_path_artifact_is_opened_once_for_hash_and_counts(
     paths = _write_required_artifacts(tmp_path)
     _write_evidence_vectors(
         paths["slice0_evidence_vectors"],
-        {str(paths["85raw_alignment_cells"]): _sha256(paths["85raw_alignment_cells"])},
+        {
+            str(paths["full_cohort_alignment_cells"]): _sha256(
+                paths["full_cohort_alignment_cells"]
+            )
+        },
     )
-    target = paths["85raw_alignment_cells"]
+    target = paths["full_cohort_alignment_cells"]
     open_count = 0
     original_open = Path.open
 
@@ -298,12 +320,12 @@ def test_manifest_path_artifact_is_opened_once_for_hash_and_counts(
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
     )
 
     assert open_count == 1
-    assert {row["artifact_id"]: row for row in rows}["85raw_alignment_cells"][
+    assert {row["artifact_id"]: row for row in rows}["full_cohort_alignment_cells"][
         "artifact_status"
     ] == "present_current"
 
@@ -316,25 +338,25 @@ def test_conflicting_expected_hashes_fail_fast(tmp_path: Path) -> None:
         ("artifact_id", "artifact_role", "expected_artifact_sha256"),
         [
             {
-                "artifact_id": "85raw_alignment_cells",
+                "artifact_id": "full_cohort_alignment_cells",
                 "artifact_role": "alignment_cells",
                 "expected_artifact_sha256": "A" * 64,
             },
             {
-                "artifact_id": "85raw_alignment_cells",
+                "artifact_id": "full_cohort_alignment_cells",
                 "artifact_role": "alignment_cells",
                 "expected_artifact_sha256": "B" * 64,
             },
         ],
     )
 
-    with pytest.raises(ValueError, match="85raw_alignment_cells.*A{64}.*B{64}"):
+    with pytest.raises(ValueError, match="full_cohort_alignment_cells.*A{64}.*B{64}"):
         build_blast_radius_manifest(
             manual_oracle_tsv=paths["manual_oracle_fixture"],
             slice0_explanations_tsv=paths["slice0_explanations"],
             slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-            eight_raw_run_dir=tmp_path / "8raw",
-            eightyfive_raw_run_dir=tmp_path / "85raw",
+            fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+            full_cohort_run_dir=tmp_path / "full_cohort",
             expected_manifest_tsv=expected_manifest,
         )
 
@@ -345,7 +367,7 @@ def test_conflicting_expected_hashes_across_authorities_fail_fast(
     paths = _write_required_artifacts(tmp_path)
     _write_evidence_vectors(
         paths["slice0_evidence_vectors"],
-        {str(paths["85raw_alignment_cells"]): "A" * 64},
+        {str(paths["full_cohort_alignment_cells"]): "A" * 64},
     )
     expected_manifest = tmp_path / "conflicting_authority_manifest.tsv"
     _write_tsv(
@@ -353,7 +375,7 @@ def test_conflicting_expected_hashes_across_authorities_fail_fast(
         ("artifact_path", "artifact_role", "expected_artifact_sha256"),
         [
             {
-                "artifact_path": str(paths["85raw_alignment_cells"]),
+                "artifact_path": str(paths["full_cohort_alignment_cells"]),
                 "artifact_role": "alignment_cells",
                 "expected_artifact_sha256": "B" * 64,
             }
@@ -368,8 +390,8 @@ def test_conflicting_expected_hashes_across_authorities_fail_fast(
             manual_oracle_tsv=paths["manual_oracle_fixture"],
             slice0_explanations_tsv=paths["slice0_explanations"],
             slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-            eight_raw_run_dir=tmp_path / "8raw",
-            eightyfive_raw_run_dir=tmp_path / "85raw",
+            fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+            full_cohort_run_dir=tmp_path / "full_cohort",
             expected_manifest_tsv=expected_manifest,
         )
 
@@ -377,18 +399,18 @@ def test_conflicting_expected_hashes_across_authorities_fail_fast(
 def test_duplicate_same_expected_hash_is_accepted(tmp_path: Path) -> None:
     paths = _write_required_artifacts(tmp_path)
     expected_manifest = tmp_path / "duplicate_same_hash_manifest.tsv"
-    expected_hash = _sha256(paths["85raw_alignment_cells"])
+    expected_hash = _sha256(paths["full_cohort_alignment_cells"])
     _write_tsv(
         expected_manifest,
         ("artifact_id", "artifact_role", "expected_artifact_sha256"),
         [
             {
-                "artifact_id": "85raw_alignment_cells",
+                "artifact_id": "full_cohort_alignment_cells",
                 "artifact_role": "alignment_cells",
                 "expected_artifact_sha256": expected_hash,
             },
             {
-                "artifact_id": "85raw_alignment_cells",
+                "artifact_id": "full_cohort_alignment_cells",
                 "artifact_role": "alignment_cells",
                 "expected_artifact_sha256": expected_hash,
             },
@@ -399,12 +421,12 @@ def test_duplicate_same_expected_hash_is_accepted(tmp_path: Path) -> None:
         manual_oracle_tsv=paths["manual_oracle_fixture"],
         slice0_explanations_tsv=paths["slice0_explanations"],
         slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-        eight_raw_run_dir=tmp_path / "8raw",
-        eightyfive_raw_run_dir=tmp_path / "85raw",
+        fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+        full_cohort_run_dir=tmp_path / "full_cohort",
         expected_manifest_tsv=expected_manifest,
     )
 
-    assert {row["artifact_id"]: row for row in rows}["85raw_alignment_cells"][
+    assert {row["artifact_id"]: row for row in rows}["full_cohort_alignment_cells"][
         "artifact_status"
     ] == "present_current"
 
@@ -418,7 +440,9 @@ def test_expected_manifest_hash_requires_id_or_path_key(tmp_path: Path) -> None:
         [
             {
                 "artifact_role": "alignment_cells",
-                "expected_artifact_sha256": _sha256(paths["85raw_alignment_cells"]),
+                "expected_artifact_sha256": _sha256(
+                    paths["full_cohort_alignment_cells"]
+                ),
             }
         ],
     )
@@ -428,25 +452,25 @@ def test_expected_manifest_hash_requires_id_or_path_key(tmp_path: Path) -> None:
             manual_oracle_tsv=paths["manual_oracle_fixture"],
             slice0_explanations_tsv=paths["slice0_explanations"],
             slice0_evidence_vectors_tsv=paths["slice0_evidence_vectors"],
-            eight_raw_run_dir=tmp_path / "8raw",
-            eightyfive_raw_run_dir=tmp_path / "85raw",
+            fixture_cohort_run_dir=tmp_path / "fixture_cohort",
+            full_cohort_run_dir=tmp_path / "full_cohort",
             expected_manifest_tsv=expected_manifest,
         )
 
 
 def _write_required_artifacts(tmp_path: Path) -> dict[str, Path]:
-    eight_raw = tmp_path / "8raw"
-    eightyfive_raw = tmp_path / "85raw"
-    eight_raw.mkdir()
-    eightyfive_raw.mkdir()
+    fixture_cohort = tmp_path / "fixture_cohort"
+    full_cohort = tmp_path / "full_cohort"
+    fixture_cohort.mkdir()
+    full_cohort.mkdir()
     paths = {
         "manual_oracle_fixture": tmp_path / "manual_oracle.tsv",
         "slice0_explanations": tmp_path / "explanations.tsv",
         "slice0_evidence_vectors": tmp_path / "evidence_vectors.tsv",
-        "8raw_alignment_review": eight_raw / "alignment_review.tsv",
-        "8raw_alignment_cells": eight_raw / "alignment_cells.tsv",
-        "85raw_alignment_review": eightyfive_raw / "alignment_review.tsv",
-        "85raw_alignment_cells": eightyfive_raw / "alignment_cells.tsv",
+        "fixture_cohort_alignment_review": fixture_cohort / "alignment_review.tsv",
+        "fixture_cohort_alignment_cells": fixture_cohort / "alignment_cells.tsv",
+        "full_cohort_alignment_review": full_cohort / "alignment_review.tsv",
+        "full_cohort_alignment_cells": full_cohort / "alignment_cells.tsv",
     }
     _write_tsv(
         paths["manual_oracle_fixture"],
@@ -475,7 +499,7 @@ def _write_required_artifacts(tmp_path: Path) -> dict[str, Path]:
         ("source_artifact", "source_artifact_sha256"),
         [],
     )
-    for key in ("8raw_alignment_review", "85raw_alignment_review"):
+    for key in ("fixture_cohort_alignment_review", "full_cohort_alignment_review"):
         _write_tsv(
             paths[key],
             ("feature_family_id", "identity_decision", "identity_reason", "row_flags"),
@@ -488,7 +512,7 @@ def _write_required_artifacts(tmp_path: Path) -> dict[str, Path]:
                 }
             ],
         )
-    for key in ("8raw_alignment_cells", "85raw_alignment_cells"):
+    for key in ("fixture_cohort_alignment_cells", "full_cohort_alignment_cells"):
         _write_tsv(
             paths[key],
             (

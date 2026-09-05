@@ -31,7 +31,7 @@ def test_slice1_writer_outputs_run_facts_and_report(tmp_path: Path) -> None:
         ),
         _summary_row(
             "machine_too_permissive_rt_pattern_conflict",
-            "all_available_85raw",
+            "all_available_full_cohort",
             seed_count="1",
             context_row_count="0",
             overfit_risk="medium",
@@ -77,22 +77,22 @@ def test_slice1_writer_outputs_run_facts_and_report(tmp_path: Path) -> None:
 
 
 def test_slice1_run_facts_classify_missing_unpinned_and_stale_surfaces() -> None:
-    missing_85raw = _manifest_rows(status="present_current")
-    for row in missing_85raw:
-        if row["artifact_id"] == "85raw_alignment_cells":
+    missing_full_cohort = _manifest_rows(status="present_current")
+    for row in missing_full_cohort:
+        if row["artifact_id"] == "full_cohort_alignment_cells":
             row["artifact_status"] = "present_missing_required_fields"
             row["missing_required_fields"] = "reason"
 
     facts = build_slice1_run_facts(
         slice0_run_facts=_slice0_run_facts(),
-        manifest_rows=missing_85raw,
+        manifest_rows=missing_full_cohort,
         summary_rows=[_summary_row("machine_agrees_with_manual", "overall")],
     )
-    assert facts["blast_radius_assessed"] == "85raw_not_assessed"
+    assert facts["blast_radius_assessed"] == "full_cohort_not_assessed"
 
     unpinned = _manifest_rows(status="present_current")
     for row in unpinned:
-        if row["artifact_id"] == "85raw_alignment_review":
+        if row["artifact_id"] == "full_cohort_alignment_review":
             row["artifact_status"] = "present_hash_unpinned"
     facts = build_slice1_run_facts(
         slice0_run_facts=_slice0_run_facts(),
@@ -103,7 +103,10 @@ def test_slice1_run_facts_classify_missing_unpinned_and_stale_surfaces() -> None
 
     stale = _manifest_rows(status="present_current")
     for row in stale:
-        if row["artifact_id"] in {"8raw_alignment_review", "85raw_alignment_cells"}:
+        if row["artifact_id"] in {
+            "fixture_cohort_alignment_review",
+            "full_cohort_alignment_cells",
+        }:
             row["artifact_status"] = "present_stale_hash_mismatch"
     facts = build_slice1_run_facts(
         slice0_run_facts=_slice0_run_facts(),
@@ -222,10 +225,10 @@ def _slice0_run_facts() -> dict[str, str]:
 def _manifest_rows(*, status: str) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for artifact_id in (
-        "8raw_alignment_review",
-        "8raw_alignment_cells",
-        "85raw_alignment_review",
-        "85raw_alignment_cells",
+        "fixture_cohort_alignment_review",
+        "fixture_cohort_alignment_cells",
+        "full_cohort_alignment_review",
+        "full_cohort_alignment_cells",
     ):
         rows.append(
             {

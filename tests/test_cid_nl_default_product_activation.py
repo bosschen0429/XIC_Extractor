@@ -51,7 +51,7 @@ def test_builds_cid_nl_default_activation_from_adopt_ready_bundle(
         "successor_self_evidence_manifest_expected_diff_and_cid_nl_tag"
     )
     assert payload["matrix_row_universe_policy"] == (
-        "discovery_expanded_85raw_alignment_rows"
+        "discovery_expanded_full_cohort_alignment_rows"
     )
     assert payload["low_prevalence_feature_policy"] == (
         "allowed_for_untargeted_downstream_filter"

@@ -387,9 +387,9 @@ def test_load_review_action_expected_diff_approvals_requires_validated_approval(
     )
     row.update(
         {
-            "evidence_sources": "manual_eic;8raw_parity",
+            "evidence_sources": "manual_eic;fixture_cohort_parity",
             "evidence_summary": "Manual EIC review supports this boundary.",
-            "validation_tier": "8raw",
+            "validation_tier": "fixture_cohort",
             "reviewer_verdict": "approved",
             "final_label": "expected_diff",
             "approval_notes": "approved before product apply",
@@ -405,7 +405,7 @@ def test_load_review_action_expected_diff_approvals_requires_validated_approval(
     assert approval.action_type == "set_manual_boundary"
     assert approval.rt_apex_min == 8.4
     assert approval.expected_matrix_value_impact == "area_value_changed"
-    assert approval.evidence_sources == ("manual_eic", "8raw_parity")
+    assert approval.evidence_sources == ("manual_eic", "fixture_cohort_parity")
 
 
 def test_load_review_action_expected_diff_approvals_rejects_template_rows(
@@ -573,7 +573,7 @@ def test_review_action_apply_readiness_consumes_approved_expected_diff(
     assert rows[0]["apply_readiness_status"] == "ready_no_output_change"
     assert rows[1]["apply_readiness_status"] == "ready_expected_diff_approved"
     assert rows[1]["expected_diff_approval_status"] == "approved"
-    assert rows[1]["expected_diff_validation_tier"] == "8raw"
+    assert rows[1]["expected_diff_validation_tier"] == "fixture_cohort"
     assert rows[2]["apply_readiness_status"] == "ready_review_state_only"
     assert plan.unused_expected_diff_approvals == ()
     assert summarize_review_action_apply_readiness_plan(plan) == {
@@ -623,9 +623,9 @@ def test_review_action_apply_readiness_blocks_stale_expected_diff_baseline(
     )
     approval_row.update(
         {
-            "evidence_sources": "manual_eic;8raw_parity",
+            "evidence_sources": "manual_eic;fixture_cohort_parity",
             "evidence_summary": "Manual EIC review supports this action.",
-            "validation_tier": "8raw",
+            "validation_tier": "fixture_cohort",
             "reviewer_verdict": "approved",
             "final_label": "expected_diff",
             "approval_notes": "approved before product apply",
@@ -1453,7 +1453,7 @@ def test_apply_review_action_changesets_cli_writes_copy_and_audit(
                 "product_state;counted_detection;targeted_long_csv;audit_trail",
                 "TRUE",
                 "review_action_expected_diff:abc",
-                "8raw",
+                "fixture_cohort",
                 "presence_changed",
                 "targeted_long_csv;workbook;final_matrix",
                 "manual_review",
@@ -1706,9 +1706,9 @@ def _approved_expected_diff_row_for_action(
     )
     row.update(
         {
-            "evidence_sources": "manual_eic;8raw_parity",
+            "evidence_sources": "manual_eic;fixture_cohort_parity",
             "evidence_summary": "Manual EIC review supports this action.",
-            "validation_tier": "8raw",
+            "validation_tier": "fixture_cohort",
             "reviewer_verdict": "approved",
             "final_label": "expected_diff",
             "approval_notes": "approved before product apply",

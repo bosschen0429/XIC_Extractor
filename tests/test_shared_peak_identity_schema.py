@@ -148,8 +148,8 @@ def test_slice1_tokens_are_allowed() -> None:
     for token in {
         "seed",
         "non_seed_same_family",
-        "all_available_8raw",
-        "all_available_85raw",
+        "all_available_fixture_cohort",
+        "all_available_full_cohort",
         "manual_label",
         "overall",
     }:
@@ -670,8 +670,8 @@ def test_slice1_schema_rejects_noncanonical_review_drift_tokens() -> None:
         ("freshness_basis", "not_applicable"),
         ("artifact_role", "slice0_explanations"),
         ("artifact_role", "slice0_evidence_vectors"),
-        ("artifact_role", "candidate_gate_8raw"),
-        ("artifact_role", "tier2_coherence_8raw"),
+        ("artifact_role", "candidate_gate_fixture_cohort"),
+        ("artifact_role", "tier2_coherence_fixture_cohort"),
     ):
         with pytest.raises(ValueError):
             validate_token(token, field)
