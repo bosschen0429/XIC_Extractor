@@ -22,6 +22,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.physical_fact_persistence import (
     DiscoveryPhysicalFactRecord,
     deserialize_discovery_physical_fact_sidecar,
+    read_discovery_physical_fact_records,
     read_discovery_physical_fact_sidecar,
     serialize_discovery_physical_fact_sidecar,
     write_discovery_physical_fact_sidecar,
@@ -208,6 +209,14 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
     )
 
     assert tuple(record.work_item for record in rehydrated) == manifest
+    assert (
+        read_discovery_physical_fact_records(
+            path,
+            expected_run_spec=spec,
+            expected_acquisition_input=acquisition_input,
+        )
+        == rehydrated
+    )
     assert tuple(record.candidate_id for record in rehydrated) == tuple(
         item.candidate_id for item in manifest
     )

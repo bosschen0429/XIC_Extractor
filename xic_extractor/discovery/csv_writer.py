@@ -108,6 +108,9 @@ def format_discovery_csv_value(column: str, value: object) -> str:
     if isinstance(value, Path):
         return escape_excel_formula(_stable_path_text(value))
     if isinstance(value, float):
+        # Alignment binds this method value exactly; display rounding changes it.
+        if column == "configured_neutral_loss_da":
+            return repr(value)
         return f"{value:.6g}"
     return escape_excel_formula(str(value))
 

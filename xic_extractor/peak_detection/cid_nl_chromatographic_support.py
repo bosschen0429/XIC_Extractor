@@ -11,6 +11,7 @@ from __future__ import annotations
 from xic_extractor.evidence_artifacts import _mint_evidence_artifact_ref
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     _ARTIFACT_SEMANTIC_CONTRACT,
+    _COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT,
     ARTIFACT_SEMANTIC_ROLE,
     RELATIONSHIP,
     SCHEMA_VERSION,
@@ -21,7 +22,11 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     _member_sort_key,
     canonical_cid_nl_chromatographic_support_bytes,
 )
-from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
+from xic_extractor.peak_detection.cid_nl_evidence import (
+    ACQUISITION_MODE,
+    CidNlEvidenceRef,
+    validate_cid_nl_evidence_binding,
+)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
 )
@@ -34,6 +39,7 @@ def compose_cid_nl_chromatographic_support_ref(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     scan_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
+    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
 ) -> CidNlChromatographicSupportRef:
     """Compose repeated strict scan support into one physical-peak event."""
 
@@ -42,16 +48,23 @@ def compose_cid_nl_chromatographic_support_ref(
         scan_support_refs,
         processing_owners=processing_owners,
         sample=sample,
+        evidence_refs=evidence_refs,
     )
-    content = _content_from_supports(sample=sample, supports=supports)
+    content = _content_from_supports(
+        sample=sample, supports=supports, evidence_refs=evidence_refs
+    )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        semantic_contract=_COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT
+        if evidence_refs
+        else _ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_cid_nl_chromatographic_support_bytes(content),
         upstream_artifacts=tuple(support.artifact for support in supports),
     )
-    return CidNlChromatographicSupportRef(content=content, artifact=artifact)
+    return CidNlChromatographicSupportRef(
+        content=content, artifact=artifact, evidence_refs=evidence_refs
+    )
 
 
 def validate_cid_nl_chromatographic_support_binding(
@@ -72,8 +85,11 @@ def validate_cid_nl_chromatographic_support_binding(
         scan_support_refs,
         processing_owners=processing_owners,
         sample=sample,
+        evidence_refs=reference.evidence_refs,
     )
-    expected_content = _content_from_supports(sample=sample, supports=supports)
+    expected_content = _content_from_supports(
+        sample=sample, supports=supports, evidence_refs=reference.evidence_refs
+    )
     if reference.content != expected_content:
         raise CidNlChromatographicSupportContractError(
             "chromatographic event references a different scan support set"
@@ -105,8 +121,15 @@ def _content_from_supports(
     *,
     sample: ResolvedCanonicalSampleIdentity,
     supports: tuple[DdaCidNlPeakSupportRef, ...],
+    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
 ) -> CidNlChromatographicSupportContent:
     first = supports[0].content
+    loss_by_id = {
+        ref.artifact.content_identity.artifact_content_id: (
+            ref.observation.configured_neutral_loss_da
+        )
+        for ref in evidence_refs
+    }
     members = tuple(
         sorted(
             (
@@ -117,6 +140,9 @@ def _content_from_supports(
                     ),
                     dda_peak_support_content_id=(
                         support.artifact.content_identity.artifact_content_id
+                    ),
+                    configured_neutral_loss_da=loss_by_id.get(
+                        support.content.cid_nl_evidence_content_id
                     ),
                 )
                 for support in supports
@@ -131,7 +157,7 @@ def _content_from_supports(
         acquisition_mode=first.acquisition_mode,
         policy=first.policy,
         scan_supports=members,
-        strict_nl_scan_count=len(members),
+        strict_nl_scan_count=len({member.dda_scan_number for member in members}),
         chromatographic_support_event_count=1,
         relationship=RELATIONSHIP,
     )
@@ -142,6 +168,7 @@ def _validated_scan_supports(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
+    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
 ) -> tuple[DdaCidNlPeakSupportRef, ...]:
     if not isinstance(scan_support_refs, tuple) or not scan_support_refs:
         raise CidNlChromatographicSupportContractError(
@@ -155,6 +182,21 @@ def _validated_scan_supports(
             "scan_support_refs must contain owner-backed DDA peak support"
         )
     supports = scan_support_refs
+    loss_by_id = {}
+    if evidence_refs:
+        for evidence in evidence_refs:
+            validate_cid_nl_evidence_binding(
+                evidence, processing_owners=processing_owners, sample=sample
+            )
+            loss_by_id[evidence.artifact.content_identity.artifact_content_id] = (
+                evidence.observation.configured_neutral_loss_da
+            )
+        if len(loss_by_id) != len(evidence_refs) or set(loss_by_id) != {
+            support.content.cid_nl_evidence_content_id for support in supports
+        }:
+            raise CidNlChromatographicSupportContractError(
+                "measured loss evidence must exactly close scan supports"
+            )
     for support in supports:
         if (
             support.artifact.producer_processing_request_id
@@ -178,7 +220,13 @@ def _validated_scan_supports(
                 "DDA scan support references a different sample"
             )
     artifact_ids = tuple(support.artifact.evidence_artifact_id for support in supports)
-    scan_numbers = tuple(support.content.dda_scan_number for support in supports)
+    scan_numbers = tuple(
+        (
+            support.content.dda_scan_number,
+            loss_by_id.get(support.content.cid_nl_evidence_content_id),
+        )
+        for support in supports
+    )
     if len(set(artifact_ids)) != len(artifact_ids) or len(set(scan_numbers)) != len(
         scan_numbers
     ):

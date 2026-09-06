@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypeAlias
 
@@ -20,6 +20,10 @@ from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
+)
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleNeighborhoodEdge,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
@@ -323,8 +327,7 @@ class _WorkflowAdapterFields:
 
     def __post_init__(self) -> None:
         if type(self.capture_inputs) is not tuple or any(
-            type(item) is not CaptureWorkflowArguments
-            for item in self.capture_inputs
+            type(item) is not CaptureWorkflowArguments for item in self.capture_inputs
         ):
             raise AlignmentWorkflowContractError(
                 "adapter capture inputs must be an immutable typed tuple"
@@ -430,6 +433,17 @@ class CompletedUntargetWorkflowResult:
 class CompletedUntargetBatchWorkflowResult:
     runtime_receipt: RuntimeFinalizationReceipt
     application_result: FinalizedUntargetBatchApplicationResult
+    # Diagnostic handoff only; these retained owner facts grant no completion
+    # or Matrix authority and do not change scientific result equality.
+    method_assessments: tuple[CidNlMethodAssessmentRef, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    initial_edges: tuple[CrossSampleNeighborhoodEdge, ...] = field(
+        default=(), repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.SUCCEEDED)
@@ -799,9 +813,7 @@ def _execute_composition_after_runtime(
             raise AlignmentWorkflowContractError(
                 "CrossSample repair consumer returned an unknown variant"
             )
-        repair_receipts = (
-            () if terminal.receipt is None else (terminal.receipt,)
-        )
+        repair_receipts = () if terminal.receipt is None else (terminal.receipt,)
         repaired_observations = _repaired_observations(
             terminal.receipt,
             repair_result,
@@ -942,9 +954,10 @@ def _validate_untarget_batch_fields(
             raise AlignmentWorkflowContractError(
                 "Untarget batch capture/exclusion universe is incomplete"
             )
-    elif tuple(
-        binding.candidate_id for binding in request.scope.capture_bindings
-    ) != candidate_ids:
+    elif (
+        tuple(binding.candidate_id for binding in request.scope.capture_bindings)
+        != candidate_ids
+    ):
         raise AlignmentWorkflowContractError(
             "Untarget batch runtime scope must capture the complete candidate universe"
         )
@@ -959,9 +972,7 @@ def _validate_untarget_batch_bundles(
             "Untarget batch provider must return an immutable typed tuple"
         )
     parent_candidates = tuple(request.scope.declared_candidate_ids)
-    subject_batch = cid_nl_method_subject_batch_from_request(
-        request.processing_request
-    )
+    subject_batch = cid_nl_method_subject_batch_from_request(request.processing_request)
     parent_memberships = dict(subject_batch.candidate_memberships)
     parent_samples = tuple(request.scope.samples)
     parent_sample_ids = tuple(
@@ -972,8 +983,7 @@ def _validate_untarget_batch_bundles(
             "Untarget batch request sample universe contains duplicates"
         )
     parent_subject_ids = {
-        provider.method_subject_id
-        for provider in request.scope.evidence_providers
+        provider.method_subject_id for provider in request.scope.evidence_providers
     }
     child_candidates: list[str] = []
     child_subject_ids: list[str] = []
@@ -1157,9 +1167,9 @@ def _validate_request_adapter(
         )
     candidate_ids = tuple(item.candidate_id for item in adapter.capture_inputs)
     declared_candidate_ids = request.scope.declared_candidate_ids
-    if candidate_ids != declared_candidate_ids or len(
-        candidate_ids
-    ) != len(set(candidate_ids)):
+    if candidate_ids != declared_candidate_ids or len(candidate_ids) != len(
+        set(candidate_ids)
+    ):
         raise AlignmentWorkflowContractError(
             "capture inputs must exactly preserve declared candidate order"
         )
@@ -1170,7 +1180,20 @@ def _validate_request_adapter(
         sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)
     )
     if assessment_samples:
-        if assessment_samples != expected_samples:
+        ordered_ids = tuple(
+            sample.identity.sample_identity_id for sample in assessment_samples
+        )
+        expected_by_id = {
+            sample.identity.sample_identity_id: sample for sample in expected_samples
+        }
+        if (
+            ordered_ids != tuple(sorted(ordered_ids))
+            or tuple(dict.fromkeys(ordered_ids)) != tuple(expected_by_id)
+            or any(
+                sample is not expected_by_id.get(sample.identity.sample_identity_id)
+                for sample in assessment_samples
+            )
+        ):
             raise AlignmentWorkflowContractError(
                 "ModeTrack assessments do not close the exact scope samples"
             )

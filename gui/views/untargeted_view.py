@@ -137,6 +137,7 @@ class UntargetedView(QWidget):
             dll_dir=Path(str(config["dll_dir"])),
             output_dir=Path(str(config["output_dir"])),
             discovery_batch_index=_optional_path(config.get("discovery_batch_index")),
+            preset_snapshot=self._method.selected_method(),
         )
 
     def _on_stop(self, *, confirm: bool = True) -> None:

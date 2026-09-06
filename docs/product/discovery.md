@@ -48,6 +48,9 @@ lifecycle for each provider.
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
   measured scan-precursor, and delta provenance. This is a public identity and
   replay contract even when the CSV column set is unchanged.
+- Candidate CSV preserves the full floating-point representation of
+  `configured_neutral_loss_da`. Downstream replay compares this configured
+  method value with the bound preset; display rounding must not change it.
 - After physical MS1 evaluation and evidence scoring, one sample/tag/best-scan
   context may advance at most one pure `product_mz + neutral_loss` candidate as
   feature-backed. The highest-evidence candidate remains eligible; competing

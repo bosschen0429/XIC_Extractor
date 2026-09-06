@@ -349,6 +349,8 @@ def test_backfill_merges_candidates_inside_same_ms1_peak_boundary(
     assert candidate.seed_event_count == 2
     assert candidate.rt_seed_min == pytest.approx(7.80)
     assert candidate.rt_seed_max == pytest.approx(8.04)
+    assert candidate.ms1_search_rt_min == pytest.approx(7.60)
+    assert candidate.ms1_search_rt_max == pytest.approx(8.24)
     assert candidate.ms1_area == 1234.5
     assert candidate.ms2_product_max_intensity == 9000.0
     assert candidate.review_priority == "HIGH"

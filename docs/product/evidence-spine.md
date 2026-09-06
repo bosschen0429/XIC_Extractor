@@ -158,9 +158,41 @@ bounded rules:
 The CID-NL owner now also closes the complete method attempt before grouping.
 `CidNlMethodSubject` is the smallest shared Targeted/Untargeted subject: exact
 precursor m/z, precursor tolerance, configured neutral loss, and an immutable
-subject ID. A Targeted adapter retains its exact target snapshot/key/definition
+subject ID. A multi-tag CID-NL subject instead binds the ordered tag/loss
+requirements and their OR/AND combination; it does not represent the first
+loss as the whole method. Single-loss subject/assessment/chromatographic schemas
+remain v1/v3/v1; composite methods use v2/v4/v2 with explicit loss bindings.
+A Targeted adapter retains its exact target snapshot/key/definition
 inside the subject; an Untargeted request pins the same subject schema directly
 and never fabricates a `ResolvedTargetDefinition`.
+
+The subject owner reads the request's scalar, composite or batch configuration
+through `cid_nl_method_subjects_from_request`, using the existing strict payload
+contracts. Runtime jobs retain that validated subject configuration for candidate
+membership and scheduling; SearchScope and capture consume the same owner reader.
+Physical capture, settings and candidate-universe validation retain their existing
+owners. The derived runtime value does not mint or change request identity.
+
+The Untargeted batch factory assigns each Discovery candidate to one bounded
+method-query subject. Within each scalar loss or full configured composition,
+candidates are ordered by exact precursor m/z and candidate ID. The first mass
+fixes a subject center; later candidates join only within its configured ppm
+tolerance, without moving the center or chaining through another candidate.
+This declared query membership lets nearby measured masses in different samples
+reach evaluation of the same method subject. Each physical query retains its own
+exact source m/z, RT bounds, trace and acquisition identity. Both single-subject
+and batch SearchScope apply the same method-center ppm compatibility while
+physical-record validation remains exact. Query membership grants no
+cross-sample identity or Matrix eligibility; those decisions remain with the
+existing assessment and CrossSample owners.
+
+The real-data CID-NL adapter retains the shared capture owner's
+`SampleLocalCapture` results alongside its assessment. Production composition
+uses their bound traces and candidate bindings; it does not reconstruct those
+relationships from acquisition arrays or Discovery rows. Acquisition receipts
+remain with the runtime owner, and the shared workflow still validates its own
+complete search scope before composing downstream results.
+
 `CidNlMethodAssessmentRef` binds one detector invocation, method subject, candidate
 universe, completed-search receipt with the exact DDA support policy, measured
 evidence, and individual or set-level relations to the existing processing
@@ -173,11 +205,14 @@ positive evidence ref is therefore not treated as proof that a search
 completed, and technical failure cannot become REJECT or a human
 `unassessable` disposition.
 
-One assessment may contain at most one measured evidence ref for each exact
-`(acquisition_source_id, scan_number)` key. Multiple matched product centroids
-from one DDA scan cannot multiply its method evidence; they must be resolved by
-the evidence provider before assessment minting. When multiple distinct strict
-scans support one physical peak, the Alignment adapter projects their arithmetic
+For single-loss methods, one assessment may contain at most one measured
+evidence ref for each exact `(acquisition_source_id, scan_number)` key.
+Composite methods add the configured loss to that evidence key, so one physical
+scan can support two distinct required losses without being counted as two scans.
+Duplicate evidence for the same scan/loss is rejected. Multiple matched product
+centroids for one loss must be resolved by the evidence provider before
+assessment minting. When multiple distinct strict scans support one physical
+peak for a single-loss method, the Alignment adapter projects their arithmetic
 mean measured product m/z and observed neutral loss as one order-neutral
 chromatographic identity event. The exact per-scan evidence remains preserved
 upstream, and the aggregate does not create additional support votes.
@@ -186,12 +221,24 @@ Only a scan strictly inside one non-overlapping candidate interval may retain
 the existing individual support relation. Boundary, touching, and overlapping
 cases use `DdaCidNlCandidateSetRelationRef`; that relation grants no individual
 vote or hypothesis. At least one strict unique relation makes the method result
-SUPPORT even when other scans retain set-level relations. Set-only evidence is
+SUPPORT for a single-loss method even when other scans retain set-level relations.
+For composite methods, OR requires a qualifying configured loss and AND requires
+every configured loss on the same physical peak in the same sample. Different
+peaks, samples, or unclosed tag labels cannot pool evidence into AND support.
+Initial discovery and recovery apply the same requirement. Set-only evidence is
 HOLD, and REJECT requires qualifying CID-NL evidence with no usable physical
 MS1 peak; non-qualifying scans cannot manufacture a negative result. A unique
 SUPPORT may compose the existing owner-backed `PeakHypothesis` and enter
 existing provisional group construction. HOLD, REJECT, and technical
 assessments remain valid without a fake hypothesis or an invented group.
+If a CID-NL subject has a complete evaluated assessment for every sample
+and none is SUPPORT, the existing `UntargetedCandidateExclusion` owner retains
+those exact assessments under `cid_nl_requirement_not_supported` for a single
+method or `composite_requirement_not_supported` for a composite method. The
+exclusion requires complete current sample and request/attempt binding; a
+technical failure or incomplete assessment cannot stand in for this evidence.
+The subject does not enter ModeTrack group construction. An all-excluded batch
+completes with an empty canonical Matrix and preserves its assessment evidence.
 
 The CellObservationRef reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
@@ -206,9 +253,21 @@ subject/Target cannot be substituted. The v4 cell artifact keeps those SUPPORT a
 in its upstream closure. An optional owner-resolved human disposition must cite
 the exact current method-assessment artifact, not merely the same sample/target
 subject. Both adapters are internal, no-write, and carry
-`product_authority="none"`. Existing production callers, Backfill, Matrix,
-selected value/counting, CLI/config, and writers remain unchanged and belong to
-later activation work.
+`product_authority="none"`. Current CID-NL execution consumes their evidence
+through the retained shared batch; canonical writers alone project finalized
+values. An assessment or cell reference does not itself grant writer authority.
+
+When ModeTrack retains multiple provisional groups for one method subject, the
+shared batch constructs the complete group × sample cell population. A sample's
+SUPPORT assessment can belong to a sibling group without supporting the current
+cell's group. Such a cell preserves the original assessment and carries an
+explicit outside-group relation bound to that exact sibling group context and
+supported hypothesis. Its group-local observation and hypothesis remain empty.
+The v5 cell artifact binds this relation; existing cells retain their v4 canonical
+payload and semantic contract. The existing `local_owner_not_supersedable`
+coverage yields a blank, `not_searched` cell without asserting absence. ModeTrack
+and CrossSample retain identity authority, and the outside-group lane cannot
+duplicate a value supplied by another lane after groups merge.
 
 Pt/Delta Mass multi-observation composition remains deferred until its
 Discovery method and owner-backed position roles are stable; array order or an
@@ -225,7 +284,7 @@ unlabeled tuple must not be guessed into method semantics.
 | `DdaCidNlCandidateSetRelationRef` | One scan related conservatively to one or more boundary/touching/overlapping candidates; set-level only, zero individual votes and zero hypotheses |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
 | `CidNlMethodSubject` | Workflow-neutral CID-NL precursor/loss subject; Targeted retains exact configured-target identity while Untargeted is request-pinned without a fake Target |
-| `CidNlMethodAssessmentRef` | Complete method-subject-bound CID-NL attempt with a policy-bound completed-search receipt, unique acquisition-source/scan keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
+| `CidNlMethodAssessmentRef` | Complete method-subject-bound CID-NL attempt with a policy-bound completed-search receipt, unique measured-event keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
 | `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |
 | `peak_hypothesis_identity` | Same-owner content ID, exact attempt artifact, and binding validation for the bounded CID-NL composition; no selection or product authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |

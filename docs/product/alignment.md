@@ -524,7 +524,9 @@ Alignment owner.
 
 ## Surfaces
 
-The default `production` Alignment output is only `alignment_matrix.tsv`.
+The default `production` Matrix artifact is `alignment_matrix.tsv`. Retained
+CID-NL runs also emit `cid_nl_explanation.sqlite` after successful Matrix
+publication, alongside their runtime marker.
 Identity, review, provenance, backfill evidence, HTML, and workbook artifacts
 remain explicit machine, validation, diagnostic, or compatibility outputs;
 their schemas and writers are unchanged.
@@ -532,11 +534,49 @@ their schemas and writers are unchanged.
 | Output | Role |
 | --- | --- |
 | `alignment_matrix.tsv` | Cross-sample aligned values |
+| `cid_nl_explanation.sqlite` | Read-only CID-NL candidate explanations from retained owner decisions |
 | `alignment_review.tsv` | Human/machine review summary |
 | `alignment_matrix_identity.tsv` | Identity and owner traceability |
 | `alignment_backfill_cell_evidence.tsv` | Backfill-related cell evidence sidecar |
 | `alignment_run_metadata.json` | Conditional run settings and provenance sidecar |
 | `alignment-results-v2/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored v3 accepts the legacy or canonical Matrix value policy, historical paired targeted-ISTD v3 requires the canonical policy, and v4 requires that same paired binding and canonical policy |
+
+### CID-NL execution explanations
+
+Normal retained CID-NL execution preserves effective method assessments and the
+initial CrossSample groups and classified edges already used by composition.
+The completed batch carries these existing owner values for diagnostics; they
+grant no additional completion, identity, eligibility or Matrix authority.
+
+The diagnostic projection joins exact candidate, canonical sample, hypothesis,
+physical observation and member identities. It records configured subjects,
+assessment states/reasons, exclusions, initial edge scores/reasons, group
+dispositions and final row/cell decisions. Multiple group relationships remain
+explicit. It does not infer membership from m/z or RT or recalculate a score.
+
+The SQLite artifact stores compact, indexed candidate records and deduplicated
+details. A summary does not load every candidate's details; a candidate lookup
+does not load unrelated records. RAW traces, spectra and the live runtime object
+graph are not copied. The read-only interface is:
+
+```text
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite --candidate-id <id> --json
+```
+
+The query needs only the retained diagnostic artifact, without RAW or Thermo DLL
+access. Missing reports mean explanation unavailable, including runs interrupted
+before publication. Missing decision evidence is not converted into rejection or
+zero; an unknown candidate and an unsupported/corrupt report are explicit errors.
+The artifact records request/attempt provenance, configuration and the published
+Matrix hash/count. Its `diagnostic_only` content cannot authorize a scientific
+writer or prove readiness.
+
+The owned output collision guard reserves this artifact and its temporary/backup
+names before acquisition. Matrix publication still uses its existing atomic
+writer. Explanation publication follows successful Matrix writing; if explanation
+IO fails, the command fails and the Matrix may remain, without a complete report.
+This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
 
 ## Boundaries
 

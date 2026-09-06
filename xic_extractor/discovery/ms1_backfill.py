@@ -360,7 +360,15 @@ def _backfill_ms1_candidates_with_acquisition(
                 run_spec_id=run_spec_id,
                 acquisition_source=acquisition_source,
                 final_ordinal=binding.final_ordinal,
-                candidate=merge_result.candidates[binding.final_ordinal],
+                candidate=replace(
+                    merge_result.candidates[binding.final_ordinal],
+                    ms1_search_rt_min=physical_fact_by_index[
+                        physical_indices[binding.representative_source_ordinal]
+                    ].work_item.xic_rt_min,
+                    ms1_search_rt_max=physical_fact_by_index[
+                        physical_indices[binding.representative_source_ordinal]
+                    ].work_item.xic_rt_max,
+                ),
                 representative_source_ordinal=(binding.representative_source_ordinal),
                 member_source_ordinals=binding.member_source_ordinals,
                 representative_work_ordinal=physical_indices[
@@ -376,7 +384,11 @@ def _backfill_ms1_candidates_with_acquisition(
             for binding in merge_result.bindings
         )
     return _DiscoveryMs1AcquisitionResult(
-        candidates=merge_result.candidates,
+        candidates=(
+            tuple(binding.candidate for binding in physical_bindings)
+            if signal_processing_profile is not None
+            else merge_result.candidates
+        ),
         measurements=measurements,
         physical_work_manifest=tuple(physical_work_manifest),
         physical_evaluations=tuple(physical_evaluations),
@@ -473,9 +485,11 @@ def _has_strong_inferred_precursor_support(
     *,
     settings: DiscoverySettings,
 ) -> bool:
-    return len(group.seeds) >= 2 and max(
-        seed.product_intensity for seed in group.seeds
-    ) >= settings.evidence_profile.thresholds.product_intensity_high_min
+    return (
+        len(group.seeds) >= 2
+        and max(seed.product_intensity for seed in group.seeds)
+        >= settings.evidence_profile.thresholds.product_intensity_high_min
+    )
 
 
 def _validate_acquired_plan_chunk(
@@ -834,7 +848,7 @@ def _can_merge_by_ms1_peak(
             second.observed_neutral_loss_da,
             settings.nl_tolerance_ppm,
         )
-    return settings.tag_combine_mode == "union"
+    return settings.tag_combine_mode in {"union", "intersection"}
 
 
 def _same_ms1_feature_row_identity(

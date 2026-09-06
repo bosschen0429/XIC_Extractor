@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
 
@@ -48,6 +51,7 @@ class SampleLocalMS1Owner:
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
     cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
+    cid_nl_composite_assessment: CidNlMethodAssessmentRef | None = None
 
     def __post_init__(self) -> None:
         integration = self.selected_integration
@@ -58,9 +62,7 @@ class SampleLocalMS1Owner:
             apex = integration.rt_apex_min
             left = integration.rt_left_min
             right = integration.rt_right_min
-        if not (
-            left < apex < right
-        ):
+        if not (left < apex < right):
             object.__setattr__(self, "quantification_eligible", False)
             if not self.quantification_exclusion_reason:
                 object.__setattr__(

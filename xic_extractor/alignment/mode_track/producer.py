@@ -86,11 +86,6 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             "retain_observation_only_candidates must be boolean"
         )
 
-    sample_ids = tuple(
-        sample.identity.sample_identity_id for sample, _ in sample_assessments
-    )
-    if len(sample_ids) != len(set(sample_ids)):
-        raise ModeTrackProducerError("each sample may contribute one assessment")
     method_subject_ids = {
         assessment.content.method_subject.method_subject_id
         for _, assessment in sample_assessments
@@ -101,7 +96,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         )
 
     hypotheses_by_sample: dict[str, tuple[PeakHypothesis, ...]] = {}
-    assessment_by_sample: dict[str, CidNlMethodAssessmentRef] = {}
+    assessment_by_hypothesis: dict[str, CidNlMethodAssessmentRef] = {}
     sample_by_id: dict[str, ResolvedCanonicalSampleIdentity] = {}
     owners: list[SampleLocalMS1Owner] = []
     for sample, assessment in sample_assessments:
@@ -111,8 +106,15 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             sample=sample,
             assessment=assessment,
         )
-        hypotheses_by_sample[sample_id] = hypotheses
-        assessment_by_sample[sample_id] = assessment
+        existing = hypotheses_by_sample.get(sample_id, ())
+        known = {hypothesis.hypothesis_id for hypothesis in existing}
+        hypotheses_by_sample[sample_id] = existing + tuple(
+            hypothesis
+            for hypothesis in hypotheses
+            if hypothesis.hypothesis_id not in known
+        )
+        for hypothesis in hypotheses:
+            assessment_by_hypothesis.setdefault(hypothesis.hypothesis_id, assessment)
         sample_by_id[sample_id] = sample
     has_direct_support = any(
         hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
@@ -124,9 +126,9 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     )
     for sample_id in sorted(hypotheses_by_sample):
         sample = sample_by_id[sample_id]
-        assessment = assessment_by_sample[sample_id]
         hypotheses = hypotheses_by_sample[sample_id]
         for hypothesis in hypotheses:
+            assessment = assessment_by_hypothesis[hypothesis.hypothesis_id]
             if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
                 owners.append(
                     owner_from_cid_nl_assessment_support(
@@ -225,7 +227,9 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=processing_owners,
             track=track_by_id[provisional_group_ids[hypothesis.hypothesis_id]],
             sample=sample_by_id[sample_id],
-            direct_support_assessment=assessment_by_sample[sample_id],
+            direct_support_assessment=assessment_by_hypothesis[
+                hypothesis.hypothesis_id
+            ],
             peak_hypothesis=hypothesis,
         )
         for sample_id in sorted(hypotheses_by_sample)
@@ -243,14 +247,13 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     sample_sources = []
     for sample_id in sorted(hypotheses_by_sample):
         sample = sample_by_id[sample_id]
-        assessment = assessment_by_sample[sample_id]
         candidates = tuple(
             mint_mode_track_candidate_observation(
                 processing_owners=processing_owners,
                 sample=sample,
                 peak_hypothesis=hypothesis,
                 direct_support_assessment=(
-                    assessment
+                    assessment_by_hypothesis[hypothesis.hypothesis_id]
                     if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
                     else None
                 ),
@@ -317,8 +320,12 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackProducerError("processing_owners must be owner-validated")
-    if type(samples) is not tuple or not samples or any(
-        type(sample) is not ResolvedCanonicalSampleIdentity for sample in samples
+    if (
+        type(samples) is not tuple
+        or not samples
+        or any(
+            type(sample) is not ResolvedCanonicalSampleIdentity for sample in samples
+        )
     ):
         raise ModeTrackProducerError("samples must be an exact non-empty tuple")
     if type(sample_hypotheses) is not tuple:
@@ -327,9 +334,7 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
         raise ModeTrackProducerError("alignment_config must be explicit and typed")
     if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
-    sample_by_id = {
-        sample.identity.sample_identity_id: sample for sample in samples
-    }
+    sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
     hypotheses_by_sample: dict[str, list[PeakHypothesis]] = {
         sample_id: [] for sample_id in sample_by_id
     }

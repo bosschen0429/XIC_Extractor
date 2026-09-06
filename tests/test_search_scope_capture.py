@@ -482,8 +482,9 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
     )
 
 
+@pytest.mark.parametrize("query_offset", (0.0, 0.001))
 def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
-    tmp_path: Path,
+    tmp_path: Path, query_offset: float,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
@@ -535,7 +536,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
             method_subject_id=method_subject_id,
             sample=sample,
             acquisition_source_id=source.acquisition_source_id,
-            mz=batch.subject_for_candidate(candidate_id).precursor_mz,
+            mz=batch.subject_for_candidate(candidate_id).precursor_mz + query_offset,
             ppm_tol=batch.subject_for_candidate(candidate_id).precursor_tolerance_ppm,
             rt_min=7.7,
             rt_max=8.3,
@@ -601,6 +602,15 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         trace=trace,
     )
     assert capture.trace_group.context_id.startswith("untargeted:")
+    for substitution in (
+        {"query_mz": bindings[0].query_mz + 0.01},
+        {"query_ppm_tol": bindings[0].query_ppm_tol + 1.0},
+    ):
+        with pytest.raises(SearchScopeContractError, match="bound subject"):
+            replace(
+                scope,
+                capture_bindings=(replace(bindings[0], **substitution), bindings[1]),
+            )
     with pytest.raises(
         SearchScopeContractError,
         match="candidate subject membership",

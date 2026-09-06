@@ -5,8 +5,9 @@ import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
+from xic_extractor.acquisition_contract import TraceCoordinate
 from xic_extractor.alignment.backfill_scope import (
     BackfillScope,
     backfill_request_planning_reason,
@@ -19,6 +20,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     validate_cross_sample_group_population,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
 from xic_extractor.alignment.owner_backfill_request_plan import (
@@ -32,6 +34,15 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     mint_owner_backfill_logical_request_member,
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
+from xic_extractor.evidence_artifacts import (
+    EvidenceArtifactRef,
+    _mint_artifact_semantic_contract_ref,
+    verify_evidence_artifact_payload,
+)
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+    validate_cid_nl_method_assessment_binding,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     PhysicalPeakEvaluation,
     validate_bounded_physical_peak_evaluation,
@@ -39,6 +50,12 @@ from xic_extractor.peak_detection.evidence_facts import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.cell_observations import CellObservationRef
+    from xic_extractor.alignment.conservative_backfill import (
+        ConservativeBackfillCellDecision,
+    )
 
 OwnerBackfillPlanningState = Literal["planned", "not_planned"]
 OwnerBackfillPlanningReason = Literal[
@@ -50,6 +67,8 @@ OwnerBackfillPlanningReason = Literal[
     "raw_source_unavailable",
     "retained_local_owner",
     "local_owner_not_supersedable",
+    "direct_support_threshold_not_met",
+    "recovery_search_completed_empty",
 ]
 OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "planned",
@@ -60,6 +79,8 @@ OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "raw_source_unavailable",
     "retained_local_owner",
     "local_owner_not_supersedable",
+    "direct_support_threshold_not_met",
+    "recovery_search_completed_empty",
 )
 
 OwnerBackfillCandidatePhase = Literal[
@@ -93,6 +114,414 @@ _POSITION_PREFIX = "xic.owner-backfill-coverage-position.v1:"
 _TERMINAL_PREFIX = "xic.owner-backfill-coverage-terminal.v1:"
 _EPOCH_PREFIX = "xic.owner-backfill-planning-epoch.v1:"
 _BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage.v1:"
+
+_COMPLETED_RECOVERY_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
+    semantic_role="owner_backfill_completed_recovery_projection",
+    schema_version="owner_backfill_completed_recovery_projection_v1",
+    validation_status="diagnostic_only",
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf-v1",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillCompletedRecoveryProjection:
+    """Runtime-issued completion evidence; it makes no physical absence claim."""
+
+    processing_owners: ProcessingOwnerReferences
+    sample: ResolvedCanonicalSampleIdentity
+    group_identity: CrossSampleGroupIdentity
+    group_center_rt: float
+    source_result_artifact: EvidenceArtifactRef
+    initial_assessment_artifact: EvidenceArtifactRef
+    recovery_assessment: CidNlMethodAssessmentRef
+    trace_coordinate: TraceCoordinate
+    acquisition_sha256: str
+    artifact: EvidenceArtifactRef
+
+    def __post_init__(self) -> None:
+        owners = self.processing_owners
+        if not isinstance(owners, ProcessingOwnerReferences) or not any(
+            self.sample is sample for sample in owners.sample_resolutions
+        ):
+            raise ValueError("completed recovery crossed its exact sample owners")
+        replace(self.group_identity)
+        replace(self.trace_coordinate)
+        if self.group_identity.processing_request_id != (
+            owners.request.processing_request_id
+        ):
+            raise ValueError("completed recovery crossed its group request")
+        assessment = self.recovery_assessment
+        validate_cid_nl_method_assessment_binding(
+            assessment,
+            processing_owners=owners,
+            sample=self.sample,
+            method_subject=assessment.content.method_subject,
+        )
+        receipt = assessment.content.evaluation_receipt
+        request = self.trace_coordinate.request
+        subject = assessment.content.method_subject
+        if (
+            assessment.content.detector_invocation_id
+            != "untargeted-cid-nl-backfill-recovery:v1"
+            or assessment.content.technical_state != "evaluated"
+            or assessment.content.method_result != "HOLD"
+            or assessment.candidate_peaks
+            or not receipt.search_completed
+            or not receipt.acquisition_supported
+            or request.mz != subject.precursor_mz
+            or request.ppm_tol != subject.precursor_tolerance_ppm
+            or request.rt_min != receipt.query_rt_min
+            or request.rt_max != receipt.query_rt_max
+            or not request.rt_min <= self.group_center_rt <= request.rt_max
+            or self.trace_coordinate.acquisition_source_id
+            != assessment.content.acquisition_source_id
+        ):
+            raise ValueError("completed recovery does not close an exact empty epoch")
+        if len(self.acquisition_sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in self.acquisition_sha256
+        ):
+            raise ValueError("completed recovery requires its acquisition digest")
+        for artifact in (
+            self.source_result_artifact,
+            self.initial_assessment_artifact,
+            assessment.artifact,
+            self.artifact,
+        ):
+            replace(artifact)
+            if (
+                artifact.producer_processing_request_id
+                != owners.request.processing_request_id
+                or artifact.producer_processing_attempt_id
+                != owners.attempt.processing_attempt_id
+            ):
+                raise ValueError("completed recovery crossed its producer attempt")
+        if (
+            self.source_result_artifact.semantic_contract.owner_namespace
+            != "xic_extractor.untargeted_cid_nl_real_data_runtime"
+            or self.source_result_artifact.semantic_contract.semantic_role
+            != "untargeted_cid_nl_real_data_sample_result"
+            or self.initial_assessment_artifact.evidence_artifact_id
+            not in self.source_result_artifact.upstream_artifact_ids
+            or assessment.artifact.evidence_artifact_id
+            not in self.source_result_artifact.upstream_artifact_ids
+            or self.initial_assessment_artifact == assessment.artifact
+            or self.artifact.semantic_contract != _COMPLETED_RECOVERY_CONTRACT
+            or self.artifact.upstream_artifact_ids
+            != tuple(
+                sorted(
+                    {
+                        self.source_result_artifact.evidence_artifact_id,
+                        assessment.artifact.evidence_artifact_id,
+                    }
+                )
+            )
+        ):
+            raise ValueError("completed recovery lost its runtime artifact closure")
+        verify_evidence_artifact_payload(
+            self.artifact,
+            canonical_owner_backfill_completed_recovery_bytes(self),
+        )
+
+
+def canonical_owner_backfill_completed_recovery_bytes(
+    projection: OwnerBackfillCompletedRecoveryProjection,
+) -> bytes:
+    return _completed_recovery_projection_bytes(
+        processing_owners=projection.processing_owners,
+        sample=projection.sample,
+        group_identity=projection.group_identity,
+        group_center_rt=projection.group_center_rt,
+        source_result_artifact=projection.source_result_artifact,
+        initial_assessment_artifact=projection.initial_assessment_artifact,
+        recovery_assessment=projection.recovery_assessment,
+        trace_coordinate=projection.trace_coordinate,
+        acquisition_sha256=projection.acquisition_sha256,
+    )
+
+
+def _completed_recovery_projection_bytes(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    group_identity: CrossSampleGroupIdentity,
+    group_center_rt: float,
+    source_result_artifact: EvidenceArtifactRef,
+    initial_assessment_artifact: EvidenceArtifactRef,
+    recovery_assessment: CidNlMethodAssessmentRef,
+    trace_coordinate: TraceCoordinate,
+    acquisition_sha256: str,
+) -> bytes:
+    return _canonical_proof_bytes(
+        {
+            "schema": "owner_backfill_completed_recovery_projection_v1",
+            "processing_request_id": processing_owners.request.processing_request_id,
+            "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
+            "sample_identity_id": sample.identity.sample_identity_id,
+            "sample_snapshot_id": sample.snapshot.snapshot_id,
+            "sample_snapshot_sha256": sample.snapshot.content_sha256,
+            "group_id": group_identity.group_hypothesis_id,
+            "group_basis": group_identity.basis_bytes.hex(),
+            "group_center_rt": group_center_rt,
+            "source_result_artifact_id": source_result_artifact.evidence_artifact_id,
+            "initial_assessment_artifact_id": (
+                initial_assessment_artifact.evidence_artifact_id
+            ),
+            "recovery_assessment_artifact_id": (
+                recovery_assessment.artifact.evidence_artifact_id
+            ),
+            "trace_coordinate_id": trace_coordinate.trace_coordinate_id,
+            "acquisition_sha256": acquisition_sha256,
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillConservativeNoRequestProof:
+    """Exact conservative decision retained across a no-request coverage lane."""
+
+    proof_id: str
+    processing_owners: ProcessingOwnerReferences
+    group_identity: CrossSampleGroupIdentity
+    sample: ResolvedCanonicalSampleIdentity
+    decision: ConservativeBackfillCellDecision
+    completion: OwnerBackfillCompletedRecoveryProjection | None = None
+
+    @property
+    def variant(self) -> Literal["threshold_not_met", "completed_recovery_empty"]:
+        return (
+            "threshold_not_met"
+            if self.completion is None
+            else "completed_recovery_empty"
+        )
+
+    @property
+    def planning_reason(self) -> OwnerBackfillPlanningReason:
+        return (
+            "direct_support_threshold_not_met"
+            if self.completion is None
+            else "recovery_search_completed_empty"
+        )
+
+    def __post_init__(self) -> None:
+        _validate_conservative_no_request(self)
+        if self.proof_id != _typed_id(
+            "xic.owner-backfill-conservative-no-request.v1:",
+            _conservative_no_request_basis(
+                processing_owners=self.processing_owners,
+                group_identity=self.group_identity,
+                sample=self.sample,
+                decision=self.decision,
+                completion=self.completion,
+            ),
+        ):
+            raise ValueError("conservative no-request proof identity was substituted")
+
+
+def mint_owner_backfill_conservative_no_request_proof(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    group_identity: CrossSampleGroupIdentity,
+    sample: ResolvedCanonicalSampleIdentity,
+    decision: ConservativeBackfillCellDecision,
+    completion: OwnerBackfillCompletedRecoveryProjection | None = None,
+) -> OwnerBackfillConservativeNoRequestProof:
+    return OwnerBackfillConservativeNoRequestProof(
+        proof_id=_typed_id(
+            "xic.owner-backfill-conservative-no-request.v1:",
+            _conservative_no_request_basis(
+                processing_owners=processing_owners,
+                group_identity=group_identity,
+                sample=sample,
+                decision=decision,
+                completion=completion,
+            ),
+        ),
+        processing_owners=processing_owners,
+        group_identity=group_identity,
+        sample=sample,
+        decision=decision,
+        completion=completion,
+    )
+
+
+def _validate_conservative_no_request(
+    proof: OwnerBackfillConservativeNoRequestProof,
+) -> None:
+    # These owners consume coverage types; defer their validation imports.
+    from xic_extractor.alignment.conservative_backfill import (
+        ConservativeBackfillCellDecision,
+        assess_conservative_backfill_group,
+        map_conservative_backfill_candidates,
+    )
+
+    owners = proof.processing_owners
+    if not isinstance(owners, ProcessingOwnerReferences) or not any(
+        proof.sample is sample for sample in owners.sample_resolutions
+    ):
+        raise ValueError("no-request proof crossed its exact sample owners")
+    decision = proof.decision
+    if type(decision) is not ConservativeBackfillCellDecision:
+        raise TypeError("no-request proof requires a conservative owner decision")
+    facts = decision.group_facts
+    replace(facts.group_context)
+    canonical_samples = tuple(
+        sorted(owners.sample_resolutions, key=lambda x: x.identity.sample_identity_id)
+    )
+    if len(facts.sample_population) != len(canonical_samples) or any(
+        left is not right
+        for left, right in zip(facts.sample_population, canonical_samples, strict=True)
+    ):
+        raise ValueError("no-request proof crossed its complete sample population")
+    for cell in facts.source_cells:
+        replace(cell)
+        source_sample = next(
+            sample
+            for sample in canonical_samples
+            if sample.identity.sample_identity_id
+            == cell.content.canonical_sample_identity_id
+        )
+        validate_cid_nl_method_assessment_binding(
+            cell.method_assessment,
+            processing_owners=owners,
+            sample=source_sample,
+            method_subject=facts.group_context.method_subject,
+        )
+        if cell.group_context.processing_attempt is not owners.attempt or (
+            cell.artifact.producer_processing_attempt_id
+            != owners.attempt.processing_attempt_id
+        ):
+            raise ValueError("no-request proof crossed its current source attempt")
+    derived = assess_conservative_backfill_group(
+        facts.source_cells, sample_population=canonical_samples
+    )
+    if facts != derived or not facts.group_frozen:
+        raise ValueError("no-request proof requires exact frozen conservative facts")
+    if proof.group_identity != validate_cross_sample_peak_group_identity(
+        facts.group_context.group, require_canonical=True
+    ):
+        raise ValueError("no-request proof crossed its exact group")
+    target = decision.target_cell
+    if (
+        target.content.canonical_sample_identity_id
+        != proof.sample.identity.sample_identity_id
+        or target.content.technical_state != "evaluated"
+        or target.content.method_result != "HOLD"
+        or not target.method_assessment.content.evaluation_receipt.search_completed
+        or not target.method_assessment.content.evaluation_receipt.acquisition_supported
+        or target.peak_observation is not None
+        or target.peak_hypothesis is not None
+        or target.method_assessment.candidate_peaks
+        or target.content.outside_group is not None
+        or decision.disposition != "hold"
+        or decision.matched_candidate is not None
+        or decision.candidate_evidence
+    ):
+        raise ValueError("no-request proof cannot replace an arbitrary cell result")
+    universe = decision.candidate_universe
+    if proof.completion is None:
+        if universe is not None or facts.may_attempt_recovery:
+            raise ValueError("threshold proof cannot hide an eligible recovery")
+        expected_reason = "direct_support_threshold_not_met"
+    else:
+        completion = proof.completion
+        replace(completion)
+        if (
+            not facts.may_attempt_recovery
+            or universe is None
+            or completion.processing_owners is not owners
+            or completion.sample is not proof.sample
+            or completion.group_identity != proof.group_identity
+            or completion.group_center_rt != facts.group_context.group.group_center_rt
+            or completion.recovery_assessment is not target.method_assessment
+            or universe.candidate_assessment is not target.method_assessment
+            or universe.candidate_peaks
+        ):
+            raise ValueError("empty recovery proof lost its exact completed epoch")
+        replace(universe)
+        expected_reason = "recovery_candidate_universe_empty"
+    (expected,) = map_conservative_backfill_candidates(
+        (facts,),
+        sample=proof.sample,
+        candidate_universes=() if universe is None else (universe,),
+    )
+    if decision != expected or decision.reason_codes != (expected_reason,):
+        raise ValueError("no-request proof does not match the conservative mapper")
+
+
+def _conservative_no_request_basis(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    group_identity: CrossSampleGroupIdentity,
+    sample: ResolvedCanonicalSampleIdentity,
+    decision: ConservativeBackfillCellDecision,
+    completion: OwnerBackfillCompletedRecoveryProjection | None,
+) -> Mapping[str, object]:
+    facts = decision.group_facts
+    return {
+        "schema": "owner_backfill_conservative_no_request_v1",
+        "variant": "threshold_not_met"
+        if completion is None
+        else "completed_recovery_empty",
+        "policy_version": decision.policy_version,
+        "processing_request_id": processing_owners.request.processing_request_id,
+        "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
+        "group_id": group_identity.group_hypothesis_id,
+        "group_basis": group_identity.basis_bytes.hex(),
+        "group_center_rt": facts.group_context.group.group_center_rt,
+        "sample_id": sample.identity.sample_identity_id,
+        "sample_snapshot_id": sample.snapshot.snapshot_id,
+        "sample_snapshot_sha256": sample.snapshot.content_sha256,
+        "source_cells": [
+            cell.artifact.evidence_artifact_id for cell in facts.source_cells
+        ],
+        "sample_population": [
+            (
+                item.identity.sample_identity_id,
+                item.snapshot.snapshot_id,
+                item.snapshot.content_sha256,
+            )
+            for item in facts.sample_population
+        ],
+        "support_artifacts": [
+            (
+                item.assessment.artifact.evidence_artifact_id,
+                item.hypothesis.hypothesis_id,
+            )
+            for item in facts.group_context.supports
+        ],
+        "target_cell_artifact": decision.target_cell.artifact.evidence_artifact_id,
+        "assessment_artifact": (
+            decision.target_cell.method_assessment.artifact.evidence_artifact_id
+        ),
+        "sample_count_n": facts.sample_count_n,
+        "direct_support_count_s": facts.direct_support_count_s,
+        "minimum_support_k": facts.minimum_support_k,
+        "disposition": decision.disposition,
+        "reason_codes": decision.reason_codes,
+        "completion_artifact": None
+        if completion is None
+        else completion.artifact.evidence_artifact_id,
+        "candidate_universe_artifact": (
+            None
+            if decision.candidate_universe is None
+            else decision.candidate_universe.artifact.evidence_artifact_id
+        ),
+    }
+
+
+def _canonical_proof_bytes(basis: Mapping[str, object]) -> bytes:
+    return (
+        json.dumps(
+            basis,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +599,7 @@ class OwnerBackfillPlanningPosition:
     planning_state: OwnerBackfillPlanningState
     planning_reason: OwnerBackfillPlanningReason
     primary_logical_requests: tuple[OwnerBackfillPlannedLogicalRequest, ...]
+    conservative_no_request_proof: OwnerBackfillConservativeNoRequestProof | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.group_identity, CrossSampleGroupIdentity):
@@ -201,6 +631,21 @@ class OwnerBackfillPlanningPosition:
                 raise ValueError("planned position requires primary logical requests")
         elif self.planning_reason == "planned" or self.primary_logical_requests:
             raise ValueError("not-planned position cannot retain logical requests")
+        proof = self.conservative_no_request_proof
+        if proof is not None:
+            replace(proof)
+            if (
+                self.planning_state != "not_planned"
+                or self.planning_reason != proof.planning_reason
+                or self.group_identity != proof.group_identity
+                or self.sample is not proof.sample
+            ):
+                raise ValueError("position crossed its conservative no-request proof")
+        elif self.planning_reason in {
+            "direct_support_threshold_not_met",
+            "recovery_search_completed_empty",
+        }:
+            raise ValueError("conservative no-request reason requires its owner proof")
         logical_ids: set[str] = set()
         for item in self.primary_logical_requests:
             logical = item.logical_request
@@ -211,6 +656,44 @@ class OwnerBackfillPlanningPosition:
                 raise ValueError("logical request crosses input group identity")
             if logical.item.sample_stem != self.sample.lookup_token:
                 raise ValueError("logical request crosses canonical sample lookup")
+
+
+def validate_owner_backfill_conservative_no_request_position(
+    position: OwnerBackfillPlanningPosition,
+    *,
+    source_cell: CellObservationRef | None = None,
+    source_population: tuple[CellObservationRef, ...] | None = None,
+) -> OwnerBackfillConservativeNoRequestProof | None:
+    """Revalidate the proof and its exact current consumer population."""
+    proof = position.conservative_no_request_proof
+    if proof is None:
+        if position.planning_reason in {
+            "direct_support_threshold_not_met",
+            "recovery_search_completed_empty",
+        }:
+            raise ValueError("conservative no-request reason requires its owner proof")
+        return None
+    replace(position)
+    if source_cell is not None and proof.decision.target_cell is not source_cell:
+        raise ValueError("no-request proof crossed its consumer source cell")
+    if source_population is not None:
+        group_cells = tuple(
+            sorted(
+                (
+                    cell
+                    for cell in source_population
+                    if cell.content.group_hypothesis_id
+                    == position.group_identity.group_hypothesis_id
+                ),
+                key=lambda cell: cell.content.canonical_sample_identity_id,
+            )
+        )
+        expected = proof.decision.group_facts.source_cells
+        if len(group_cells) != len(expected) or any(
+            left is not right for left, right in zip(group_cells, expected, strict=True)
+        ):
+            raise ValueError("no-request proof crossed its consumer cell population")
+    return proof
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +764,14 @@ class OwnerBackfillEvaluationPlanningEpoch:
         )
         if actual_positions != expected_positions:
             raise ValueError("planning epoch does not close the Cartesian population")
+        for position in self.positions:
+            proof = validate_owner_backfill_conservative_no_request_position(position)
+            if proof is not None and (
+                proof.processing_owners is not self.processing_owners
+                or proof.decision.group_facts.group_context.config
+                != self.alignment_config
+            ):
+                raise ValueError("planning epoch crossed its conservative proof owners")
         expected_id = _typed_id(
             _EPOCH_PREFIX,
             _epoch_basis(
@@ -724,6 +1215,11 @@ def _validate_batch(
 ) -> None:
     if not isinstance(epoch, OwnerBackfillEvaluationPlanningEpoch):
         raise TypeError("coverage requires an owner planning epoch")
+    if any(
+        position.conservative_no_request_proof is not None
+        for position in epoch.positions
+    ):
+        replace(epoch)
     if not isinstance(terminals, tuple) or any(
         not isinstance(item, OwnerBackfillAttemptTerminal) for item in terminals
     ):
@@ -965,8 +1461,13 @@ def _epoch_basis(
     selected_family_ids: frozenset[str],
     positions: tuple[OwnerBackfillPlanningPosition, ...],
 ) -> Mapping[str, object]:
+    has_proof = any(
+        item.conservative_no_request_proof is not None for item in positions
+    )
     return {
-        "schema": "owner_backfill_planning_epoch_v1",
+        "schema": "owner_backfill_planning_epoch_v2"
+        if has_proof
+        else "owner_backfill_planning_epoch_v1",
         "processing_request_id": processing_request_id,
         "groups": [
             {
@@ -1012,6 +1513,17 @@ def _epoch_basis(
                     request.request_identity.request_identity_id
                     for request in item.primary_logical_requests
                 ],
+                **(
+                    {
+                        "conservative_no_request_proof_id": (
+                            item.conservative_no_request_proof.proof_id
+                            if item.conservative_no_request_proof is not None
+                            else None
+                        )
+                    }
+                    if has_proof
+                    else {}
+                ),
             }
             for item in positions
         ],

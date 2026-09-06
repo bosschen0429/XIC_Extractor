@@ -12,6 +12,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillAttemptTerminal,
     OwnerBackfillEvaluationCoverageBatch,
     OwnerBackfillPlanningPosition,
+    validate_owner_backfill_conservative_no_request_position,
     validate_owner_backfill_evaluation_coverage,
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
@@ -399,14 +400,11 @@ class ObservationRepairReceipt:
                     is not ObservationRepairNoRepairTerminal
                 ):
                     raise TypeError("no-repair terminal must be owner-minted")
-                self.no_repair_terminal.__post_init__(
-                    _NO_REPAIR_TERMINAL_MINT_TOKEN
-                )
+                self.no_repair_terminal.__post_init__(_NO_REPAIR_TERMINAL_MINT_TOKEN)
                 if (
                     self.no_repair_terminal.subject_id != self.subject_id
                     or self.no_repair_terminal.repair_epoch != self.repair_epoch
-                    or self.no_repair_terminal.authorization_id
-                    != self.authorization_id
+                    or self.no_repair_terminal.authorization_id != self.authorization_id
                     or self.no_repair_terminal.candidate_id != self.candidate_id
                 ):
                     raise ObservationRepairContractError(
@@ -495,8 +493,7 @@ class ObservationRepairTerminalResult:
                 )
             if (
                 self.receipt.subject != self.authorization.candidate
-                or self.receipt.authorization_id
-                != self.authorization.authorization_id
+                or self.receipt.authorization_id != self.authorization.authorization_id
                 or self.receipt.candidate_id
                 != self.authorization.candidate.candidate_id
             ):
@@ -647,9 +644,18 @@ def authorize_observation_repair(
         seen_keys.add(key)
         cell_id = _cell_identity_id(cell)
         rows.append((key, cell_id, cell, position))
+        no_request_proof = validate_owner_backfill_conservative_no_request_position(
+            position,
+            source_cell=cell,
+            source_population=cell_observations,
+        )
         if (
-            cell.content.technical_state == "evaluated"
+            no_request_proof is None
+            and cell.content.technical_state == "evaluated"
             and cell.content.method_result == "HOLD"
+            # A completed composite requirement cannot become SUPPORT through
+            # an MS1-only repair. Its acquisition owner evaluates every loss.
+            and cell.method_assessment.content.method_subject.composition is None
             and not (
                 cell.peak_observation is not None
                 and position.planning_reason == "retained_local_owner"
@@ -826,10 +832,7 @@ def close_observation_repair(
 
 
 def _close_observation_repair_after_authorization(
-    subject: (
-        ObservationRepairSubject
-        | ObservationRepairCandidate
-    ),
+    subject: (ObservationRepairSubject | ObservationRepairCandidate),
     result: OwnerBackfillSampleResult,
 ) -> ObservationRepairReceipt:
     """Close one already-authorized owner result."""
@@ -1963,9 +1966,7 @@ def _validate_no_repair_terminal(
     terminal: ObservationRepairNoRepairTerminal,
 ) -> None:
     if terminal.authorization_id is None or terminal.candidate_id is None:
-        raise ObservationRepairContractError(
-            "no-repair terminal is candidate-scoped"
-        )
+        raise ObservationRepairContractError("no-repair terminal is candidate-scoped")
     _validate_typed_id(
         terminal.terminal_id,
         _NO_REPAIR_TERMINAL_PREFIX,
@@ -2029,9 +2030,7 @@ def _receipt_id(
         )
     candidate_receipt = candidate_id is not None
     if not candidate_receipt and no_repair_terminal is not None:
-        raise ObservationRepairContractError(
-            "no-repair terminal is candidate-scoped"
-        )
+        raise ObservationRepairContractError("no-repair terminal is candidate-scoped")
     evidence_basis: object = None
     if evidence is not None:
         evidence_basis = {

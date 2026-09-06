@@ -14,7 +14,11 @@ import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.test_targeted_real_data_adapter import _peak_config, _settings
+from tests.test_targeted_real_data_adapter import (
+    _multi_tag_settings,
+    _peak_config,
+    _settings,
+)
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
@@ -55,6 +59,300 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.sample_metadata import SampleMetadata
 
 
+def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
+    import json
+    from dataclasses import asdict
+
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
+    from xic_extractor.alignment import cell_observations as cell_owner
+
+    source_cells = tuple(
+        source
+        for final_cell in scientific.cell_observations
+        for source in final_cell.predecessor_cells
+    )
+    outside_cells = tuple(
+        source for source in source_cells if source.content.outside_group is not None
+    )
+    local_cells = tuple(
+        source for source in source_cells if source.content.outside_group is None
+    )
+    assert {source.group_context.group.public_family_id for source in source_cells} == {
+        "FAM000001",
+        "FAM000002",
+    }
+    for source in local_cells:
+        legacy_content = asdict(source.content)
+        legacy_content.pop("outside_group")
+        expected = (
+            json.dumps(
+                {
+                    "schema_version": "cell_observation_v4",
+                    "validation_status": cell_owner.VALIDATION_STATUS,
+                    "content": legacy_content,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        )
+        assert (
+            cell_owner.canonical_cell_observation_bytes(source.content)
+            == expected.encode()
+        )
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v4"
+    outside = outside_cells[0]
+    relation = outside.content.outside_group
+    assert relation is not None
+    supporting = outside.outside_group_context
+    assert supporting is not None
+    support = next(
+        item
+        for item in supporting.supports
+        if item.assessment is outside.method_assessment
+    )
+    job = next(
+        job
+        for job in batch.jobs
+        if job.sample.identity.sample_identity_id
+        == outside.content.canonical_sample_identity_id
+    )
+    mint_args = dict(
+        processing_owners=job.processing_owners,
+        sample=job.sample,
+        group_context=outside.group_context,
+        method_assessment=outside.method_assessment,
+        outside_group_context=supporting,
+    )
+    assert cell_owner.mint_cell_observation_ref(**mint_args) == outside
+    for source in outside_cells:
+        payload = json.loads(
+            cell_owner.canonical_cell_observation_bytes(source.content)
+        )
+        assert payload["schema_version"] == "cell_observation_v5"
+        assert payload["content"]["outside_group"] == asdict(
+            source.content.outside_group
+        )
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v5"
+        assert source.peak_observation is None and source.peak_hypothesis is None
+        assert source.content.method_result == "SUPPORT"
+        assert (
+            source.content.reason_codes == source.method_assessment.content.reason_codes
+        )
+    (tmp_path / "other-request").mkdir()
+    other_request = build_processing_identity_no_raw_fixture(
+        tmp_path / "other-request", sample_stems=("different",)
+    )
+    other_job = next(item for item in batch.jobs if item.sample != job.sample)
+    for substitution in (
+        {"outside_group_context": outside.group_context},
+        {"peak_hypothesis": support.hypothesis},
+        {
+            "peak_observation": next(
+                source.peak_observation
+                for source in local_cells
+                if source.method_assessment is support.assessment
+            )
+        },
+        {"sample": other_job.sample},
+        {"processing_owners": other_request.owners},
+    ):
+        with pytest.raises(cell_owner.CellObservationContractError):
+            cell_owner.mint_cell_observation_ref(**(mint_args | substitution))
+    with pytest.raises(cell_owner.CellObservationContractError):
+        replace(
+            outside,
+            content=replace(
+                outside.content,
+                outside_group=replace(
+                    relation,
+                    supporting_peak_hypothesis_id=local_cells[
+                        0
+                    ].group_context.group.owner_ids[0],
+                ),
+            ),
+        )
+    with pytest.raises(cell_owner.CellObservationContractError):
+        replace(outside, outside_group_context=outside.group_context)
+
+
+def _assert_single_unsupported_exclusion(
+    completed, runtime_result, batch, tmp_path: Path, *, populated: bool
+) -> None:
+    from copy import copy
+
+    from xic_extractor.alignment.result.application_result import (
+        ApplicationResultContractError,
+        UntargetBatchApplicationResultRequest,
+    )
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        mint_cid_nl_method_assessment_ref,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        issue_processing_attempt,
+    )
+
+    result = completed.application_result
+    exclusions = result.excluded_candidates
+    assert len(exclusions) == 2
+    subject_ids = {item.method_subject_id for item in exclusions}
+    assert len(subject_ids) == 1
+    retained = tuple(
+        sorted(
+            (
+                item.effective_assessment
+                for item in runtime_result.sample_results
+                if item.job.method_subject.method_subject_id in subject_ids
+            ),
+            key=lambda ref: ref.content.canonical_sample_identity_id,
+        )
+    )
+    assert len(retained) == 2
+    assert all(
+        item.reason_code == "cid_nl_requirement_not_supported"
+        and not item.composite_assessments
+        and item.method_assessments == retained
+        and all(
+            left is right
+            for left, right in zip(item.method_assessments, retained, strict=True)
+        )
+        for item in exclusions
+    )
+    assert {item.candidate_id for item in exclusions} == {
+        candidate_id
+        for candidate_id, subject_id in batch.subject_batch.candidate_memberships
+        if subject_id in subject_ids
+    }
+    assert len(result.children) == int(populated)
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    destination = tmp_path / "single-unsupported-matrix.tsv"
+    write_alignment_matrix_tsv(
+        destination, writer.matrix, production_decisions=writer.production_decisions
+    )
+    with destination.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        assert {"Support", "Hold"}.issubset(reader.fieldnames)
+        rows = list(reader)
+    assert len(rows) == int(populated)
+    if populated:
+        assert all(float(rows[0][stem]) > 0 for stem in ("Support", "Hold"))
+    else:
+        assert not writer.matrix.clusters and not writer.matrix.cells
+
+    def validate(exclusion):
+        return UntargetBatchApplicationResultRequest(
+            scope=result.scope,
+            processing_request=result.processing_request,
+            processing_attempt=result.processing_attempt,
+            children=result.children,
+            excluded_candidates=(exclusion, *exclusions[1:]),
+        )
+
+    first = exclusions[0]
+    for proof in (retained[:1], (retained[0], retained[0])):
+        with pytest.raises(
+            ApplicationResultContractError, match="complete sample coverage"
+        ):
+            validate(replace(first, method_assessments=proof))
+    for substitution in (
+        {"method_assessments": ()},
+        {"composite_assessments": retained},
+        {"method_assessments": (), "composite_assessments": retained},
+        {"reason_code": "composite_requirement_not_supported"},
+        {"reason_code": "discovery_candidate_not_search_eligible"},
+    ):
+        with pytest.raises(ApplicationResultContractError):
+            replace(first, **substitution)
+    crossed = copy(first)
+    object.__setattr__(crossed, "composite_assessments", retained)
+    with pytest.raises(ApplicationResultContractError):
+        validate(crossed)
+    if populated:
+        supported = next(
+            item.effective_assessment
+            for item in runtime_result.sample_results
+            if item.effective_assessment.content.method_result == "SUPPORT"
+        )
+        with pytest.raises(ApplicationResultContractError):
+            replace(first, method_assessments=(supported, retained[1]))
+        with pytest.raises(ApplicationResultContractError):
+            replace(
+                first,
+                method_subject_id=supported.content.method_subject.method_subject_id,
+                method_assessments=(supported,),
+            )
+
+    sample = next(
+        sample
+        for sample in batch.context.samples
+        if sample.identity.sample_identity_id
+        == retained[0].content.canonical_sample_identity_id
+    )
+    receipt = replace(retained[0].content.evaluation_receipt, scanned_event_count=0)
+    for state in ("failed", "not_evaluated", "unsupported"):
+        technical = mint_cid_nl_method_assessment_ref(
+            processing_owners=batch.context.processing_owners,
+            sample=sample,
+            method_subject=retained[0].content.method_subject,
+            detector_invocation_id=f"test:{state}",
+            evaluation_receipt=replace(
+                receipt,
+                search_completed=False,
+                reason_code=f"test_{state}",
+                acquisition_supported=state != "unsupported",
+            ),
+            technical_state=state,
+        )
+        with pytest.raises(ApplicationResultContractError):
+            replace(first, method_assessments=(technical, retained[1]))
+    retry_owners = replace(
+        batch.context.processing_owners,
+        attempt=issue_processing_attempt(
+            result.processing_request, retry_of=result.processing_attempt
+        ),
+    )
+    retry_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=retry_owners,
+        sample=sample,
+        method_subject=retained[0].content.method_subject,
+        detector_invocation_id="test:retry",
+        evaluation_receipt=receipt,
+    )
+    with pytest.raises(ApplicationResultContractError, match="owner binding"):
+        validate(replace(first, method_assessments=(retry_assessment, retained[1])))
+    import json
+
+    request = result.processing_request
+    other_request = build_processing_request_identity(
+        acquisition_sources=request.acquisition_sources,
+        acquisition_bindings=request.acquisition_bindings,
+        scientific_input_schema_version=request.scientific_input_schema_version,
+        processing_algorithm_version=request.processing_algorithm_version + ":other",
+        processing_contract_version=request.processing_contract_version,
+        scientific_inputs=json.loads(request.normalized_scientific_inputs_json),
+    )
+    other_owners = replace(
+        batch.context.processing_owners,
+        request=other_request,
+        attempt=issue_processing_attempt(other_request),
+    )
+    foreign_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=other_owners,
+        sample=sample,
+        method_subject=retained[0].content.method_subject,
+        detector_invocation_id="test:foreign-request",
+        evaluation_receipt=receipt,
+    )
+    with pytest.raises(ApplicationResultContractError, match="owner binding"):
+        validate(replace(first, method_assessments=(foreign_assessment, retained[1])))
+
+
 def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
     facts = {"physical-1": (500.0, 8.0)}
 
@@ -64,6 +362,454 @@ def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> Non
             physical_id="physical-1",
             mz=500.0,
             rt=8.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("group_sizes", "method_mode", "nearby"),
+    (
+        ((2,), "single", False),
+        ((1, 1), "single", False),
+        ((2, 2), "single", False),
+        pytest.param((2,), "single", True, id="nearby-single"),
+        pytest.param((2,), "union", True, id="nearby-or-different-tags"),
+        pytest.param((2,), "intersection", True, id="nearby-and-incomplete"),
+    ),
+)
+def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
+    tmp_path: Path, monkeypatch, group_sizes: tuple[int, ...], method_mode, nearby
+) -> None:
+    from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
+    from xic_extractor.discovery.grouping import group_discovery_seeds
+    from xic_extractor.discovery.ms1_backfill import (
+        _backfill_ms1_candidates_with_acquisition,
+    )
+    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.physical_fact_persistence import (
+        write_discovery_physical_fact_sidecar,
+    )
+    from xic_extractor.discovery.processing_run_spec_adapter import (
+        compile_discovery_processing_run_spec,
+    )
+    from xic_extractor.peak_detection.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.processing_identity import IdentityContractError
+
+    separate_groups = len(group_sizes) == 2
+    sample_stems = tuple(f"S{index + 1}" for index in range(sum(group_sizes)))
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+    # Observed RAW coordinates: acquisition bounds do not land on scan RTs.
+    center_rt = 13.263299286133334
+    precursor_mz = 307.1023254394531
+    settings = replace(
+        _settings() if method_mode == "single" else _multi_tag_settings(),
+        neutral_loss_profile=None,
+        tag_combine_mode=method_mode,
+        rt_min=13.1,
+        rt_max=17.4 if separate_groups else 13.4,
+    )
+    peak_config = _peak_config(tmp_path)
+    profile = SignalProcessingProfile(window_points=15)
+    spec = compile_discovery_processing_run_spec(
+        paths, discovery_settings=settings, signal_processing_profile=profile
+    )
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_real_data_runtime as runtime_module,
+    )
+
+    source_raws = {}
+    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
+    receipts = {}
+    csvs = {}
+    candidates = {}
+    physical_facts = {}
+    for path, source in zip(paths, spec.acquisition_inputs, strict=True):
+        import numpy as np
+
+        sample_offset = (
+            4.0
+            if separate_groups and sample_stems.index(path.stem) >= group_sizes[0]
+            else 0.0
+        )
+        sample_center_rt = center_rt + sample_offset
+        sample_index = sample_stems.index(path.stem)
+        sample_mz = precursor_mz + (sample_index * 0.00030517578125 if nearby else 0.0)
+        loss_index = sample_index if method_mode != "single" else 0
+        raw = _FakeRaw(
+            (8.0,),
+            scan_precursor_mz=sample_mz,
+            neutral_loss_das=(
+                settings.neutral_loss_profiles[loss_index].neutral_loss_da,
+            ),
+            acquisition_source=source.acquisition_source,
+        )
+        raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521) + sample_offset
+        raw.rt[int(np.argmin(np.abs(raw.rt - sample_center_rt)))] = sample_center_rt
+        raw.intensity = (
+            1000.0 * np.exp(-0.5 * ((raw.rt - sample_center_rt) / 0.035) ** 2) + 250.0
+        ) * (1.0 + sample_index * 0.4 if nearby else 1.0)
+        raw.scans = tuple(
+            replace(
+                scan,
+                rt=sample_center_rt,
+                scan_number=int(np.argmin(np.abs(raw.rt - sample_center_rt))) + 1,
+            )
+            for scan in raw.scans
+        )
+        source_raws[path] = raw
+        with runtime_module.open_raw(
+            path, tmp_path, expected_acquisition_source=source.acquisition_source
+        ) as discovery_raw:
+            seeds = collect_strict_nl_seeds(
+                discovery_raw, raw_file=path, settings=settings
+            )
+            discovery = _backfill_ms1_candidates_with_acquisition(
+                discovery_raw,
+                group_discovery_seeds(seeds, settings=settings),
+                acquisition_source=source.acquisition_source,
+                run_spec_id=spec.run_spec_id,
+                settings=settings,
+                peak_config=peak_config,
+                signal_processing_profile=profile,
+            )
+        folder = tmp_path / path.stem
+        folder.mkdir()
+        receipts.update(
+            _discovery_receipts(folder, (path,), {path.stem: discovery.candidates})
+        )
+        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
+        write_discovery_physical_fact_sidecar(
+            folder / "discovery_physical_facts.v1.json",
+            run_spec=spec,
+            acquisition_input=source,
+            work_manifest=discovery.physical_work_manifest,
+            records=discovery.physical_evaluations,
+        )
+        candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
+            csvs[path.stem], receipt=receipts[path.stem], require_successor_columns=True
+        )
+        (record,) = discovery.physical_evaluations
+        assert record.evaluation.facts is not None
+        assert (
+            record.evaluation.question.context_rt_start_min
+            != record.work_item.xic_rt_min
+        )
+        assert (
+            record.evaluation.question.context_rt_end_min != record.work_item.xic_rt_max
+        )
+        physical_facts[path.stem] = record.evaluation.facts
+    discovery_batch = DiscoveryBatchInput(
+        sample_order=sample_stems,
+        candidate_csvs=csvs,
+        raw_files={path.stem: path for path in paths},
+        review_csvs={path.stem: None for path in paths},
+        candidate_receipts=receipts,
+    )
+    captured_batches = []
+    captured_peaks = []
+    from xic_extractor.peak_detection import capture as capture_owner
+
+    capture_peak = capture_owner.capture_peak_hypotheses
+
+    def retain_capture(**kwargs):
+        capture = capture_peak(**kwargs)
+        captured_peaks.append(capture)
+        return capture
+
+    monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", retain_capture)
+    build_batch = alignment_adapter.build_untargeted_cid_nl_production_batch
+
+    def retain_batch(**kwargs):
+        batch = build_batch(**kwargs)
+        captured_batches.append(batch)
+        return batch
+
+    monkeypatch.setattr(
+        alignment_adapter, "build_untargeted_cid_nl_production_batch", retain_batch
+    )
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_production_batch as production,
+    )
+
+    runtime_results = []
+    runtime_execute = production.execute_untargeted_cid_nl_real_data_runtime
+
+    def checked_runtime(*args, **kwargs):
+        result = runtime_execute(*args, **kwargs)
+        assert result.succeeded, tuple(
+            settlement.failure_detail.message
+            for settlement in result.finalization.coordinator.state.runtime.settlements
+            if settlement.failure_detail is not None
+        )
+        runtime_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        production, "execute_untargeted_cid_nl_real_data_runtime", checked_runtime
+    )
+    completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
+        discovery_batch=discovery_batch,
+        candidates_by_sample=candidates,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "alignment",
+        settings=settings,
+        peak_config=peak_config,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        signal_processing_profile=profile,
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    matrix_path = tmp_path / "canonical-matrix.tsv"
+    write_alignment_matrix_tsv(
+        matrix_path, writer.matrix, production_decisions=writer.production_decisions
+    )
+    with matrix_path.open(encoding="utf-8", newline="") as handle:
+        matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    if nearby:
+        assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
+        batch = captured_batches[0]
+        assert len(batch.subject_batch.subjects) == 1
+        for result in runtime_results[0].sample_results:
+            stem = result.job.sample.metadata.raw_stem
+            (candidate,) = batch.context.candidates_by_sample[stem]
+            record = batch.context.physical_records_by_candidate[candidate.candidate_id]
+            assert record.work_item.precursor_mz == candidate.precursor_mz
+            assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
+            assert record.evaluation.facts == physical_facts[stem]
+            assert result.effective_assessment.content.method_result == (
+                "HOLD" if method_mode == "intersection" else "SUPPORT"
+            )
+        if method_mode == "intersection":
+            assert writer.matrix.cells == ()
+            assert writer.matrix.clusters == ()
+            assert all(
+                "incomplete_composite_requirement"
+                in result.effective_assessment.content.reason_codes
+                for result in runtime_results[0].sample_results
+            )
+            return
+    assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
+    for cell in writer.matrix.cells:
+        if cell.selected_integration is None:
+            assert separate_groups
+            assert not writer.production_decisions.cell(
+                cell.cluster_id, cell.sample_stem
+            ).write_matrix_value
+            continue
+        facts = physical_facts[cell.sample_stem]
+        assert cell.area == facts.area_counts_seconds
+        assert cell.selected_integration is not None
+        assert cell.selected_integration.area_raw_counts_seconds != cell.area
+        assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
+        assert cell.selected_integration.height_smoothed == facts.height
+        assert facts.physical_segment_id in cell.selected_integration.boundary_sources
+    expected_row_count = sum(size > 1 for size in group_sizes)
+    assert len(matrix_rows) == expected_row_count
+    for sample_stem, facts in physical_facts.items():
+        sample_values = [
+            float(row[sample_stem]) for row in matrix_rows if row[sample_stem]
+        ]
+        assert sample_values == pytest.approx(
+            [facts.area_counts_seconds] if expected_row_count else []
+        )
+    if nearby:
+        assert len({facts.fact_content_id for facts in physical_facts.values()}) == 2
+        assert len({cell.source_candidate_id for cell in writer.matrix.cells}) == 2
+        assert len(matrix_rows) == 1
+        return
+    if separate_groups:
+        (child,) = completed.application_result.children
+        scientific = child.scientific_core
+        assert len(scientific.final_population) == 2
+        assert len(scientific.cell_observations) == 2 * len(sample_stems)
+        assert sum(
+            cell.evidence_states == ("not_searched",)
+            for cell in scientific.cell_observations
+        ) == len(sample_stems)
+        assert all(
+            sum(bool(row[stem]) for stem in sample_stems) == 2 for row in matrix_rows
+        )
+        assert all(
+            result.effective_assessment.content.method_result == "SUPPORT"
+            for result in runtime_results[0].sample_results
+        )
+        _assert_outside_group_cells(scientific, captured_batches[0], tmp_path)
+        return
+
+    from xic_extractor.peak_detection.observations import (
+        PeakObservationContractError,
+        mint_peak_observation_ref,
+        physical_peak_observation_integration,
+    )
+
+    capture = captured_peaks[0]
+    evaluation = capture.physical_evaluation
+    assert evaluation is not None
+    integration = physical_peak_observation_integration(evaluation)
+    prepared = prepare_physical_signal(
+        capture.trace.rt, capture.trace.intensity, profile=profile
+    )
+    assert prepared.prepared is not None
+    observation_args = dict(
+        processing_owners=captured_batches[0].jobs[0].processing_owners,
+        sample=captured_batches[0].jobs[0].sample,
+        trace=capture.trace,
+        integration=integration,
+        selection_intensity=prepared.prepared.positive_signal,
+        resolver_mode=peak_config.resolver_mode,
+        proposal_sources=("canonical_physical_segment_v1",),
+        physical_evaluation=evaluation,
+        signal_processing_profile=profile,
+    )
+    for substitution in (
+        {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
+        {"trace": replace(capture.trace, intensity=capture.trace.intensity + 1.0)},
+        {
+            "integration": replace(
+                integration,
+                area_baseline_corrected=integration.area_baseline_corrected + 1.0,
+            )
+        },
+    ):
+        with pytest.raises((PeakObservationContractError, ValueError)):
+            mint_peak_observation_ref(**(observation_args | substitution))
+    from xic_extractor.peak_detection.search_scope import SearchScopeContractError
+
+    changed_answer = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="substituted-selection-subject",
+        query_rt_min=evaluation.question.query_rt_min,
+        request_context_rt_start_min=capture.trace.rt_min,
+        request_context_rt_end_min=capture.trace.rt_max,
+    )
+    with pytest.raises(SearchScopeContractError, match="answer is not bound"):
+        replace(
+            capture.scope,
+            capture_bindings=tuple(
+                replace(binding, physical_evaluation=changed_answer)
+                if binding.candidate_id == capture.candidate_id
+                else binding
+                for binding in capture.scope.capture_bindings
+            ),
+        )
+    batch = captured_batches[0]
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_real_data_runtime as runtime_module,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+        UntargetedCidNlRealDataAdapterError,
+        recover_untargeted_cid_nl_sample_subject,
+    )
+    from xic_extractor.peak_detection.cid_nl_peak_support import (
+        DdaCidNlPeakSupportPolicy,
+    )
+    from xic_extractor.processing_identity import resolve_request_acquisition_source
+
+    job = batch.jobs[0]
+    recovery_raw = runtime_module.open_raw(
+        paths[0],
+        tmp_path,
+        expected_acquisition_source=resolve_request_acquisition_source(
+            processing_owners=job.processing_owners, sample=job.sample
+        ),
+    )
+    recovery_args = dict(
+        processing_owners=job.processing_owners,
+        sample=job.sample,
+        method_subject=job.method_subject,
+        group_center_rt=center_rt,
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
+        ),
+        peak_config=peak_config,
+        raw=recovery_raw,
+        settings=settings,
+        signal_processing_profile=profile,
+    )
+    recovered = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+    (observation,) = recovered.assessment.candidate_peaks
+    acquired = recovered.acquisition.traces[0]
+    recovery_prepared = prepare_physical_signal(
+        acquired.trace.rt, acquired.trace.intensity, profile=profile
+    )
+    expected_recovery = evaluate_physical_peak(
+        recovery_prepared,
+        selection_subject_id=job.method_subject.method_subject_id,
+        query_rt_min=center_rt,
+        request_context_rt_start_min=center_rt
+        - peak_config.nl_rt_anchor_half_window_min,
+        request_context_rt_end_min=center_rt + peak_config.nl_rt_anchor_half_window_min,
+    )
+    assert expected_recovery.facts is not None
+    assert (
+        observation.content.integration.area_baseline_corrected
+        == expected_recovery.facts.area_counts_seconds
+    )
+    assert (
+        observation.content.integration.height_smoothed
+        == expected_recovery.facts.height
+    )
+    assert recovered.assessment.content.method_result == "HOLD"
+    with pytest.raises(
+        capture_owner.SampleLocalCaptureError, match="question is not request-bound"
+    ):
+        recover_untargeted_cid_nl_sample_subject(
+            **(
+                recovery_args
+                | {
+                    "signal_processing_profile": SignalProcessingProfile(
+                        window_points=21
+                    )
+                }
+            )
+        )
+    with pytest.raises(
+        UntargetedCidNlRealDataAdapterError, match="lost its request-bound profile"
+    ):
+        recover_untargeted_cid_nl_sample_subject(
+            **(recovery_args | {"signal_processing_profile": None})
+        )
+    original_intensity = source_raws[paths[0]].intensity
+    try:
+        source_raws[paths[0]].intensity = original_intensity * 0.0
+        unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+        assert unavailable.assessment.candidate_peaks == ()
+        assert unavailable.assessment.content.method_result == "HOLD"
+        assert unavailable.recovery_input is None
+    finally:
+        source_raws[paths[0]].intensity = original_intensity
+        recovery_raw.__exit__(None, None, None)
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+        UntargetedCidNlRealDataRuntimeError,
+    )
+
+    with pytest.raises(
+        UntargetedCidNlRealDataRuntimeError, match="profile is not request-bound"
+    ):
+        replace(
+            batch.jobs[0],
+            signal_processing_profile=SignalProcessingProfile(window_points=21),
+        )
+    wrong_records = dict(batch.context.physical_records_by_candidate)
+    keys = tuple(wrong_records)
+    wrong_records[keys[0]] = wrong_records[keys[1]]
+    with pytest.raises(IdentityContractError, match="crossed candidate"):
+        build_batch(
+            raw_paths=paths,
+            sample_metadata=tuple(sample.metadata for sample in batch.context.samples),
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample=batch.context.candidates_by_sample,
+            discovery_receipts_by_sample=receipts,
+            dll_dir=tmp_path,
+            sample_identity_namespace="test:physical-replay",
+            signal_processing_profile=profile,
+            physical_records_by_candidate=wrong_records,
         )
 
 
@@ -141,12 +887,35 @@ def test_writer_projection_keeps_distinct_repaired_facts_with_shared_signal() ->
     assert len(physical_ids) == 2
 
 
-def test_production_batch_preserves_exact_nearby_subject_membership(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("masses", "losses", "ppm", "centers"),
+    (
+        ((500.0, 500.004), (116.0474, 116.0474), 20.0, (500.0, 500.0)),
+        ((500.0, 500.02), (116.0474, 116.0474), 20.0, (500.0, 500.02)),
+        (
+            (500.0, 500.008, 500.016),
+            (116.0474,) * 3,
+            20.0,
+            (500.0, 500.0, 500.016),
+        ),
+        (
+            (512.0, 512.0078125),
+            (116.0474, 116.0474),
+            15.2587890625,
+            (512.0, 512.0),
+        ),
+        ((500.0, 500.0), (116.0474, 132.0423), 20.0, (500.0, 500.0)),
+    ),
+    ids=("nearby", "outside", "fixed-anchor", "inclusive-bound", "scalar-losses"),
+)
+def test_production_batch_preserves_bounded_subject_membership(
+    tmp_path: Path, masses, losses, ppm, centers
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
-    settings = _settings()
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=ppm
+    )
     peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
         raw_path,
@@ -154,7 +923,18 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         peak_config=peak_config,
     )
 
-    batch = build_untargeted_cid_nl_production_batch(
+    candidates = tuple(
+        replace(
+            candidates[0],
+            candidate_id=f"{raw_path.stem}:membership-{index}",
+            best_ms2_scan_id=index + 100,
+            precursor_mz=mz,
+            product_mz=mz - loss,
+            configured_neutral_loss_da=loss,
+        )
+        for index, (mz, loss) in enumerate(zip(masses, losses, strict=True))
+    )
+    arguments = dict(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -166,7 +946,6 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
         discovery_receipts_by_sample=_discovery_receipts(
             tmp_path,
             (raw_path,),
@@ -176,29 +955,38 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         sample_identity_namespace="study:production-batch",
     )
 
-    assert len(batch.subject_batch.subjects) == 2
-    assert tuple(
-        subject.precursor_mz for subject in batch.subject_batch.subjects
-    ) == tuple(
-        subject.precursor_mz
-        for subject in sorted(
-            batch.subject_batch.subjects,
-            key=lambda item: item.method_subject_id,
-        )
+    batch = build_untargeted_cid_nl_production_batch(
+        **arguments, candidates_by_sample={"S1": candidates}
     )
-    assert batch.subject_batch.candidate_memberships == tuple(
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+    )
+
+    expected_memberships = tuple(
         sorted(
             (
                 candidate.candidate_id,
-                next(
-                    subject.method_subject_id
-                    for subject in batch.subject_batch.subjects
-                    if subject.precursor_mz == candidate.precursor_mz
-                ),
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=center,
+                    precursor_tolerance_ppm=ppm,
+                    neutral_loss_da=loss,
+                ).method_subject_id,
             )
-            for candidate in candidates
+            for candidate, center, loss in zip(candidates, centers, losses, strict=True)
         )
     )
+    assert batch.subject_batch.candidate_memberships == expected_memberships
+    assert len(batch.subject_batch.subjects) == len(
+        set(zip(centers, losses, strict=True))
+    )
+    permuted = build_untargeted_cid_nl_production_batch(
+        **arguments, candidates_by_sample={"S1": tuple(reversed(candidates))}
+    )
+    assert (
+        permuted.subject_batch.request_payload()
+        == batch.subject_batch.request_payload()
+    )
+    assert tuple(candidate.precursor_mz for candidate in candidates) == masses
     assert tuple(job.method_subject for job in batch.jobs) == (
         batch.subject_batch.subjects
     )
@@ -315,7 +1103,10 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
         peak_config=peak_config,
     )
     crossed_settings = type(settings)(
-        neutral_loss_profiles=settings.neutral_loss_profiles,
+        neutral_loss_profiles=(
+            settings.neutral_loss_profiles[0],
+            settings.neutral_loss_profiles[0],
+        ),
         selected_tag_names=settings.selected_tag_names,
         tag_combine_mode="intersection",
         nl_tolerance_ppm=settings.nl_tolerance_ppm,
@@ -340,7 +1131,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
     except ValueError as exc:
         assert "single-provider" in str(exc)
     else:
-        raise AssertionError("intersection route must remain outside CID-NL production")
+        raise AssertionError("duplicate tag settings must be rejected")
 
 
 def test_production_batch_executes_one_atomic_sample_phase(
@@ -349,7 +1140,10 @@ def test_production_batch_executes_one_atomic_sample_phase(
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
-    settings = _settings()
+    # The atomic phase must contain two disjoint method worksets.
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
     peak_config = _peak_config(tmp_path)
     source_raw, candidates = _nearby_subject_candidates(
         raw_path,
@@ -499,16 +1293,51 @@ def test_production_batch_executes_one_atomic_sample_phase(
     }
 
 
+@pytest.mark.parametrize(
+    "scenario", ("mixed", "all_hold", "all_reject", "hold_reject", "other_support")
+)
 def test_production_composition_closes_observation_only_hold_without_membership(
     tmp_path: Path,
     monkeypatch,
+    scenario: str,
 ) -> None:
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_production_batch as production,
+    )
+
+    execute_runtime = production.execute_untargeted_cid_nl_real_data_runtime
+
+    def checked_runtime(*args, **kwargs):
+        result = execute_runtime(*args, **kwargs)
+        assert result.succeeded, tuple(
+            settlement.failure_detail.message
+            for settlement in result.finalization.coordinator.state.runtime.settlements
+            if settlement.failure_detail is not None
+        )
+        return result
+
+    monkeypatch.setattr(
+        production, "execute_untargeted_cid_nl_real_data_runtime", checked_runtime
+    )
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("Support", "Hold"))
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
-    settings = _settings()
+    # The other-support case must keep its independently rejected workset.
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
     peak_config = _peak_config(tmp_path)
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
+    rejected_samples = (
+        ("Support", "Hold")
+        if scenario == "all_reject"
+        else ("Hold",)
+        if scenario == "hold_reject"
+        else ()
+    )
+    for raw_path, raw in source_raws.items():
+        if raw_path.stem in rejected_samples:
+            raw.intensity[:] = 0
     support = _current_candidates(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],
@@ -529,6 +1358,25 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         "Support": (support,),
         "Hold": (inferred_hold,),
     }
+    if scenario != "mixed":
+        candidates_by_sample["Support"] = (
+            replace(support, precursor_mz_basis="product_plus_neutral_loss"),
+        )
+    if scenario in {"all_reject", "hold_reject"}:
+        for stem in rejected_samples:
+            candidate = support if stem == "Support" else direct_hold
+            candidates_by_sample[stem] = (candidate,)
+    if scenario == "other_support":
+        for raw_path in raw_paths:
+            source_raw, nearby = _nearby_subject_candidates(
+                raw_path, settings=settings, peak_config=peak_config
+            )
+            source_raws[raw_path] = source_raw
+            first, second = sorted(nearby, key=lambda item: item.precursor_mz)
+            candidates_by_sample[raw_path.stem] = (
+                replace(first, precursor_mz_basis="product_plus_neutral_loss"),
+                second,
+            )
     batch = build_untargeted_cid_nl_production_batch(
         raw_paths=raw_paths,
         sample_metadata=(
@@ -576,7 +1424,17 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         for peak in result.effective_assessment.candidate_peaks
         if result.effective_assessment.content.method_result == "HOLD"
     )
-    assert len(hold_observation_ids) == 1
+    assert runtime_result.succeeded
+    assert (
+        len(hold_observation_ids)
+        == {
+            "mixed": 1,
+            "all_hold": 2,
+            "all_reject": 0,
+            "hold_reject": 1,
+            "other_support": 2,
+        }[scenario]
+    )
 
     completed = compose_untargeted_cid_nl_production_result(
         batch,
@@ -584,11 +1442,20 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
 
-    assert hold_observation_ids[0] not in (
+    assert not set(hold_observation_ids) & set(
         completed.application_result.physical_observation_ids
     )
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
     assert writer_inputs.matrix.sample_order == ("Support", "Hold")
+    if scenario != "mixed":
+        _assert_single_unsupported_exclusion(
+            completed,
+            runtime_result,
+            batch,
+            tmp_path,
+            populated=scenario == "other_support",
+        )
+        return
     assert len(writer_inputs.matrix.clusters) == 1
     assert tuple(cell.sample_stem for cell in writer_inputs.matrix.cells) == (
         "Support",
@@ -601,11 +1468,353 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     assert decisions.cell(cluster_id, "Hold").blank_reason != ""
 
 
+def _assert_conservative_coverage_handoff(
+    completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
+) -> None:
+    from xic_extractor.alignment.backfill.observation_repair import (
+        authorize_observation_repair,
+    )
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    (child,) = completed.application_result.children
+    scientific = child.scientific_core
+    handoff = scientific.cell_observation_handoff
+    assert handoff is not None
+    coverage = handoff.coverage
+    (position,) = tuple(
+        position
+        for position in coverage.epoch.positions
+        if position.sample.metadata.raw_stem == "Hold"
+    )
+    proof = position.conservative_no_request_proof
+    assert proof is not None
+    assert proof.variant == (
+        "threshold_not_met" if threshold else "completed_recovery_empty"
+    )
+    assert proof.decision.group_facts.direct_support_count_s == (1 if threshold else 3)
+    assert proof.decision.group_facts.minimum_support_k == 2
+    assert position.planning_state == "not_planned"
+    assert position.primary_logical_requests == ()
+    assert coverage.terminals == ()
+    (hold_cell,) = tuple(
+        cell
+        for cell in scientific.cell_observations
+        if cell.canonical_sample.metadata.raw_stem == "Hold"
+    )
+    assert hold_cell.evidence_states == (
+        ("not_searched",) if threshold else ("unavailable",)
+    )
+    assert hold_cell.repair_receipts == hold_cell.repaired_observations == ()
+    (source,) = hold_cell.predecessor_cells
+    assert source is proof.decision.target_cell
+    assert source.method_assessment is next(
+        result.effective_assessment
+        for result in runtime_result.sample_results
+        if result.job.sample is position.sample
+    )
+    assert source.content.method_result == "HOLD"
+    assert source.peak_observation is source.peak_hypothesis is None
+    authorization = authorize_observation_repair(
+        processing_owners=batch.context.processing_owners,
+        coverage=coverage,
+        cell_observations=tuple(
+            cell
+            for final in scientific.cell_observations
+            for cell in final.predecessor_cells
+        ),
+    )
+    assert authorization.state == "not_run"
+    assert authorization.eligible_cell_ids == ()
+    hold_decisions = tuple(
+        decision
+        for decision in writer_inputs.production_decisions.cells.values()
+        if decision.sample_stem == "Hold"
+    )
+    assert all(
+        not decision.write_matrix_value and decision.matrix_value is None
+        for decision in hold_decisions
+    )
+    matrix_path = tmp_path / "conservative-matrix.tsv"
+    write_alignment_matrix_tsv(
+        matrix_path,
+        writer_inputs.matrix,
+        production_decisions=writer_inputs.production_decisions,
+    )
+    with matrix_path.open(encoding="utf-8", newline="") as handle:
+        matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    assert len(matrix_rows) == (0 if threshold else 1)
+    assert all(row["Hold"] == "" for row in matrix_rows)
+    if not threshold:
+        assert all(
+            float(matrix_rows[0][stem]) > 0
+            for stem in ("Support1", "Support2", "Support3")
+        )
+    _assert_conservative_proof_seals(
+        proof, position, coverage, handoff, hold_cell, batch, runtime_result
+    )
+
+
+def _assert_conservative_proof_seals(
+    proof, position, coverage, handoff, final_cell, batch, runtime_result
+) -> None:
+    import hashlib
+    import json
+    from copy import copy, deepcopy
+    from dataclasses import fields
+
+    from xic_extractor.alignment.backfill import evaluation_coverage as owner
+    from xic_extractor.alignment.backfill.observation_repair import (
+        authorize_observation_repair,
+    )
+    from xic_extractor.alignment.cell_observations import (
+        _derive_lane_evidence_state,
+        canonical_cell_observation_bytes,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+        canonical_untargeted_cid_nl_sample_result_bytes,
+        project_untargeted_cid_nl_completed_recovery,
+    )
+    from xic_extractor.processing_identity import issue_processing_attempt
+
+    epoch = coverage.epoch
+    epoch_args = {
+        field.name: getattr(epoch, field.name)
+        for field in fields(epoch)
+        if field.name != "epoch_id"
+    }
+    basis_args = {
+        key: value
+        for key, value in epoch_args.items()
+        if key not in {"processing_owners", "group_identities"}
+    } | {
+        "processing_request_id": epoch.processing_owners.request.processing_request_id,
+        "groups": epoch.group_identities,
+    }
+    epoch_basis = owner._epoch_basis(**basis_args)
+    assert epoch_basis["schema"] == "owner_backfill_planning_epoch_v2"
+    assert proof.proof_id in {
+        row["conservative_no_request_proof_id"] for row in epoch_basis["positions"]
+    }
+    assert epoch.epoch_id == owner._typed_id(owner._EPOCH_PREFIX, epoch_basis)
+    assert coverage.coverage_id == owner._typed_id(
+        owner._BATCH_PREFIX,
+        {
+            "schema": "owner_backfill_evaluation_coverage_v1",
+            "epoch_id": epoch.epoch_id,
+            "terminal_ids": [],
+            "terminal_evaluations": [],
+        },
+    )
+    assert json.loads(handoff.basis_bytes)["coverage_id"] == coverage.coverage_id
+    assert handoff.handoff_id.endswith(hashlib.sha256(handoff.basis_bytes).hexdigest())
+    assert json.loads(final_cell.basis_bytes)["handoff_id"] == handoff.handoff_id
+    assert final_cell.cell_observation_id.endswith(
+        hashlib.sha256(final_cell.basis_bytes).hexdigest()
+    )
+    assert (
+        json.loads(
+            canonical_cell_observation_bytes(proof.decision.target_cell.content)
+        )["schema_version"]
+        == "cell_observation_v4"
+    )
+
+    # The old schema has precisely these position fields and no absent-proof key.
+    legacy_positions = tuple(
+        replace(
+            item,
+            conservative_no_request_proof=None,
+            planning_reason="retained_local_owner",
+        )
+        for item in epoch.positions
+    )
+    legacy_basis = owner._epoch_basis(**(basis_args | {"positions": legacy_positions}))
+    expected_legacy = deepcopy(epoch_basis)
+    expected_legacy["schema"] = "owner_backfill_planning_epoch_v1"
+    for row in expected_legacy["positions"]:
+        row.pop("conservative_no_request_proof_id")
+        row["planning_reason"] = "retained_local_owner"
+
+    def canonical(value):
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+
+    assert canonical(legacy_basis) == canonical(expected_legacy)
+    legacy_epoch = owner.mint_owner_backfill_planning_epoch(
+        **(epoch_args | {"positions": legacy_positions})
+    )
+    assert (
+        legacy_epoch.epoch_id
+        == owner._EPOCH_PREFIX + hashlib.sha256(canonical(expected_legacy)).hexdigest()
+    )
+    assert legacy_epoch.epoch_id != epoch.epoch_id
+
+    other_sample = next(
+        sample for sample in epoch.samples if sample is not proof.sample
+    )
+    for substitution in (
+        {"sample": other_sample},
+        {"proof_id": "xic.owner-backfill-conservative-no-request.v1:" + "0" * 64},
+        {
+            "processing_owners": replace(
+                proof.processing_owners,
+                attempt=issue_processing_attempt(proof.processing_owners.request),
+            )
+        },
+    ):
+        with pytest.raises(ValueError):
+            replace(proof, **substitution)
+    other_group = copy(proof.group_identity)
+    object.__setattr__(other_group, "group_hypothesis_id", "crossed-group")
+    with pytest.raises(ValueError):
+        replace(proof, group_identity=other_group)
+    from xic_extractor.alignment.conservative_backfill import (
+        map_conservative_backfill_candidates,
+    )
+
+    (support_decision,) = map_conservative_backfill_candidates(
+        (proof.decision.group_facts,), sample=other_sample, candidate_universes=()
+    )
+    with pytest.raises(ValueError):
+        replace(proof, decision=support_decision)
+    for substitution in (
+        {"planning_state": "planned", "planning_reason": "planned"},
+        {"planning_reason": "retained_local_owner"},
+        {"conservative_no_request_proof": None},
+    ):
+        with pytest.raises(ValueError):
+            replace(position, **substitution)
+    with pytest.raises(ValueError):
+        owner.validate_owner_backfill_conservative_no_request_position(
+            position, source_population=(proof.decision.target_cell,)
+        )
+    with pytest.raises(ValueError):
+        owner.validate_owner_backfill_conservative_no_request_position(
+            position,
+            source_cell=next(
+                cell
+                for cell in proof.decision.group_facts.source_cells
+                if cell is not proof.decision.target_cell
+            ),
+        )
+
+    forged = copy(proof)
+    object.__setattr__(forged, "proof_id", "changed-proof")
+    forged_position = copy(position)
+    object.__setattr__(forged_position, "conservative_no_request_proof", forged)
+    forged_epoch = copy(epoch)
+    object.__setattr__(
+        forged_epoch,
+        "positions",
+        tuple(
+            forged_position if item is position else item for item in epoch.positions
+        ),
+    )
+    forged_coverage = copy(coverage)
+    object.__setattr__(forged_coverage, "epoch", forged_epoch)
+    with pytest.raises(ValueError):
+        owner.validate_owner_backfill_evaluation_coverage(forged_coverage)
+    with pytest.raises(ValueError):
+        authorize_observation_repair(
+            processing_owners=batch.context.processing_owners,
+            coverage=forged_coverage,
+            cell_observations=proof.decision.group_facts.source_cells,
+        )
+    lane_args = dict(
+        association=final_cell.position_associations[0],
+        source_cell=proof.decision.target_cell,
+        coverage_terminals=(),
+        repair_receipts=(),
+        repaired_observations=(),
+        final_group=final_cell.group,
+        canonical_sample=proof.sample,
+        processing_request_id=epoch.processing_owners.request.processing_request_id,
+    )
+    for field in ("coverage_terminals", "repair_receipts", "repaired_observations"):
+        with pytest.raises(ValueError, match="physical or repair evidence"):
+            _derive_lane_evidence_state(**(lane_args | {field: (object(),)}))
+
+    result = next(
+        item
+        for item in runtime_result.sample_results
+        if item.job.sample is proof.sample
+    )
+    context = proof.decision.group_facts.group_context
+    original_result_bytes = canonical_untargeted_cid_nl_sample_result_bytes(
+        result.result_ref
+    )
+    with pytest.raises(ValueError, match="not a recovery"):
+        project_untargeted_cid_nl_completed_recovery(
+            replace(result, recovery_attempts=()), group_context=context
+        )
+    if proof.completion is not None:
+        completion = proof.completion
+        with pytest.raises(ValueError):
+            replace(proof, completion=None)
+        assert (
+            project_untargeted_cid_nl_completed_recovery(result, group_context=context)
+            == completion
+        )
+        other_coordinate = next(
+            item.adapter_result.acquisition.traces[0].coordinate
+            for item in runtime_result.sample_results
+            if item.job.sample is other_sample
+        )
+        for substitution in (
+            {"acquisition_sha256": "0" * 64},
+            {"source_result_artifact": completion.initial_assessment_artifact},
+            {"trace_coordinate": other_coordinate},
+        ):
+            with pytest.raises(ValueError):
+                replace(completion, **substitution)
+        recovery = result.recovery_attempt
+        with pytest.raises(ValueError):
+            project_untargeted_cid_nl_completed_recovery(
+                replace(
+                    result,
+                    recovery_attempts=(
+                        replace(
+                            recovery,
+                            assessment=result.adapter_result.assessment_input.assessment,
+                        ),
+                    ),
+                ),
+                group_context=context,
+            )
+        for traces in ((), recovery.acquisition.traces * 2):
+            wrong_acquisition = copy(recovery.acquisition)
+            object.__setattr__(wrong_acquisition, "traces", traces)
+            with pytest.raises(ValueError, match="sealed runtime result"):
+                project_untargeted_cid_nl_completed_recovery(
+                    replace(
+                        result,
+                        recovery_attempts=(
+                            replace(recovery, acquisition=wrong_acquisition),
+                        ),
+                    ),
+                    group_context=context,
+                )
+    assert (
+        canonical_untargeted_cid_nl_sample_result_bytes(result.result_ref)
+        == original_result_bytes
+    )
+
+
+@pytest.mark.parametrize("recovery_case", ("positive", "threshold", "completed_empty"))
 def test_production_composition_closes_recovered_observation_without_candidate(
     tmp_path: Path,
     monkeypatch,
+    recovery_case: str,
 ) -> None:
-    sample_stems = ("Support1", "Support2", "Support3", "Hold")
+    sample_stems = (
+        ("Support1", "Hold")
+        if recovery_case == "threshold"
+        else ("Support1", "Support2", "Support3", "Hold")
+    )
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-recovery:{raw_path.stem}".encode())
@@ -615,10 +1824,12 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         raw_path: _FakeRaw((apex_rt,))
         for raw_path, apex_rt in zip(
             raw_paths,
-            (7.97, 7.99, 8.01, 8.03),
+            (7.97, 8.03) if recovery_case == "threshold" else (7.97, 7.99, 8.01, 8.03),
             strict=True,
         )
     }
+    if recovery_case != "positive":
+        source_raws[raw_paths[-1]].intensity[:] = 0.0
     candidates_by_sample = {
         raw_path.stem: (
             _current_candidates(
@@ -653,7 +1864,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-recovery",
     )
-    _install_runtime_raws(
+    opened = _install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -673,8 +1884,11 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         if result.job.sample.metadata.raw_stem == "Hold"
     )
     assert len(recovered) == 1
-    assert recovered[0].recovery_attempt is not None
-    assert len(recovered[0].effective_assessment.candidate_peaks) == 1
+    assert (recovered[0].recovery_attempt is not None) == (recovery_case != "threshold")
+    assert len(recovered[0].effective_assessment.candidate_peaks) == (
+        recovery_case == "positive"
+    )
+    opens_before_composition = sum(map(len, opened.values()))
 
     completed = compose_untargeted_cid_nl_production_result(
         batch,
@@ -684,6 +1898,36 @@ def test_production_composition_closes_recovered_observation_without_candidate(
 
     assert completed.application_result.children
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    if recovery_case != "positive":
+        assert (
+            sum(map(len, opened.values()))
+            == opens_before_composition
+            == len(sample_stems) - (recovery_case == "threshold")
+        )
+        _assert_conservative_coverage_handoff(
+            completed,
+            writer_inputs,
+            batch,
+            runtime_result,
+            tmp_path,
+            threshold=recovery_case == "threshold",
+        )
+        return
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+        project_untargeted_cid_nl_completed_recovery,
+    )
+
+    (child,) = completed.application_result.children
+    recovered_source = next(
+        source
+        for cell in child.scientific_core.cell_observations
+        for source in cell.predecessor_cells
+        if source.method_assessment is recovered[0].effective_assessment
+    )
+    with pytest.raises(ValueError, match="completed empty epoch"):
+        project_untargeted_cid_nl_completed_recovery(
+            recovered[0], group_context=recovered_source.group_context
+        )
     assert writer_inputs.matrix.sample_order == sample_stems
     assert len(writer_inputs.matrix.clusters) == 1
     assert (
@@ -877,7 +2121,10 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-orphan:S1")
-    settings = _settings()
+    # Isolate the orphan's method rejection from the acquired candidate.
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
     peak_config = _peak_config(tmp_path)
     source_raw, initial_candidates = _nearby_subject_candidates(
         raw_path,
@@ -960,9 +2207,25 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
         item.method_subject_id
         == dict(batch.subject_batch.candidate_memberships)[item.candidate_id]
         and item.discovery_candidate_state == "review_only_orphan_nl"
-        and item.reason_code == "discovery_candidate_not_search_eligible"
+        and item.reason_code == "cid_nl_requirement_not_supported"
+        and len(item.method_assessments) == 1
+        and item.method_assessments[0].content.method_result == "REJECT"
         for item in exclusions
     )
+    from xic_extractor.alignment.result.application_result import (
+        ApplicationResultContractError,
+    )
+
+    for item in exclusions:
+        legacy = replace(
+            item,
+            reason_code="discovery_candidate_not_search_eligible",
+            method_assessments=(),
+        )
+        assert legacy.discovery_candidate_state == item.discovery_candidate_state
+        for field in ("method_assessments", "composite_assessments"):
+            with pytest.raises(ApplicationResultContractError):
+                replace(legacy, **{field: item.method_assessments})
     if exclude_all:
         assert completed.application_result.children == ()
         assert completed.application_result.subject_ids == tuple(

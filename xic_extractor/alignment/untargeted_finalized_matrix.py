@@ -154,10 +154,9 @@ def project_completed_untarget_batch_writer_inputs(
                 ): owner_decision
                 for owner_decision in closed_decisions
             }
-            if (
-                len(decisions_by_sample) != len(closed_decisions)
-                or set(decisions_by_sample) != set(sample_stems)
-            ):
+            if len(decisions_by_sample) != len(closed_decisions) or set(
+                decisions_by_sample
+            ) != set(sample_stems):
                 raise ValueError("writer projection crossed canonical sample order")
             owner_decisions = tuple(
                 decisions_by_sample[sample_stem] for sample_stem in sample_stems
@@ -171,13 +170,9 @@ def project_completed_untarget_batch_writer_inputs(
             ):
                 raise TypeError("writer projection requires final group-cell evidence")
             typed_observations = tuple(
-                item
-                for item in observations
-                if type(item) is FinalGroupCellObservation
+                item for item in observations if type(item) is FinalGroupCellObservation
             )
-            mz_values, rt_values, physical_ids = _presentation_facts(
-                typed_observations
-            )
+            mz_values, rt_values, physical_ids = _presentation_facts(typed_observations)
             duplicate_ids = seen_physical_ids.intersection(physical_ids)
             if duplicate_ids:
                 raise ValueError(
@@ -389,9 +384,7 @@ def _aligned_cell(
         backfill_request_rt_max=(
             repaired.cell.backfill_request_rt_max if repaired else None
         ),
-        backfill_request_ppm=(
-            repaired.cell.backfill_request_ppm if repaired else None
-        ),
+        backfill_request_ppm=(repaired.cell.backfill_request_ppm if repaired else None),
         group_hypothesis_id=row.group_hypothesis_id,
         public_family_id=row.public_family_id,
         group_construction_role=row.group_construction_role,
@@ -448,6 +441,24 @@ def _selected_cell_source(
         try:
             return direct_candidate_ids[key], None
         except KeyError as exc:
+            # A completed recovery can supply direct composite CID-NL support
+            # outside the closed Discovery candidate universe. Keep its physical
+            # identity and explicit absent candidate instead of inventing one.
+            assessments = evidence.method_assessments
+            if (
+                len(assessments) == 1
+                and assessments[0].content.method_subject.composition is not None
+            ):
+                from xic_extractor.alignment.hypothesis_owner_adapter import (
+                    validate_cid_nl_assessment_hypothesis_closure,
+                )
+
+                validate_cid_nl_assessment_hypothesis_closure(
+                    sample=decision.subject.canonical_sample,
+                    assessment=assessments[0],
+                    hypothesis=evidence.direct_hypotheses[0],
+                )
+                return None, None
             raise ValueError(
                 "direct writer cell lacks its terminal Discovery candidate identity"
             ) from exc

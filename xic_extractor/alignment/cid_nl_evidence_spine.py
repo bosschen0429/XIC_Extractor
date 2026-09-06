@@ -28,6 +28,7 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentContractError,
     CidNlMethodAssessmentRef,
+    supported_cid_nl_peak_ids,
     validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -280,10 +281,7 @@ def build_cid_nl_reference_spine(
     for sample, assessment in ordered:
         if assessment.content.method_result != "SUPPORT":
             continue
-        selected_peak_ids = {
-            relation.content.peak_observation_content_id
-            for relation in assessment.individual_support_refs
-        }
+        selected_peak_ids = supported_cid_nl_peak_ids(assessment)
         if len(selected_peak_ids) != 1:
             raise CidNlEvidenceSpineError(
                 "reference-spine SUPPORT must identify exactly one physical peak"
@@ -298,7 +296,24 @@ def build_cid_nl_reference_spine(
             chromatographic_support = compose_cid_nl_chromatographic_support_ref(
                 processing_owners=processing_owners,
                 sample=sample,
-                scan_support_refs=assessment.individual_support_refs,
+                scan_support_refs=tuple(
+                    ref
+                    for ref in assessment.individual_support_refs
+                    if ref.content.peak_observation_content_id == selected_peak_id
+                ),
+                evidence_refs=tuple(
+                    ref
+                    for ref in assessment.evidence_refs
+                    if ref.artifact.content_identity.artifact_content_id
+                    in {
+                        support.content.cid_nl_evidence_content_id
+                        for support in assessment.individual_support_refs
+                        if support.content.peak_observation_content_id
+                        == selected_peak_id
+                    }
+                )
+                if assessment.content.method_subject.composition
+                else (),
             )
             hypothesis = compose_cid_nl_peak_hypothesis(
                 processing_owners=processing_owners,

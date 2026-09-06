@@ -19,6 +19,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 )
 from xic_extractor.presets import (
     BoundCidNlRecipe,
+    Preset,
     PresetError,
     bind_cid_nl_recipe,
     load_preset,
@@ -64,6 +65,7 @@ class DiscoveryRequest:
     dll_dir: Path
     output_dir: Path
     discovery_batch_index: Path | None
+    preset_snapshot: Preset | None = None
 
 
 class DiscoveryWorker(QThread):
@@ -267,7 +269,7 @@ class DiscoveryWorker(QThread):
     ) -> BoundCidNlRecipe:
         binding = self._recipe_binding
         if binding is None:
-            preset = load_preset(request.preset)
+            preset = request.preset_snapshot or load_preset(request.preset)
             recipe = bind_cid_nl_recipe(
                 preset,
                 request.mode,
@@ -279,7 +281,7 @@ class DiscoveryWorker(QThread):
         return recipe
 
     def _build_settings(self, request: DiscoveryRequest) -> DiscoverySettings:
-        preset = load_preset(request.preset)
+        preset = request.preset_snapshot or load_preset(request.preset)
         recipe = bind_cid_nl_recipe(
             preset,
             request.mode,

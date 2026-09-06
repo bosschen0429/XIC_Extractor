@@ -29,12 +29,21 @@ from xic_extractor.peak_detection.baseline import (
     bounded_trace_interval,
     integrate_with_baseline,
 )
+from xic_extractor.peak_detection.evidence_facts import (
+    PhysicalPeakEvaluation,
+    evaluate_physical_peak,
+    prepare_physical_signal,
+    validate_bounded_physical_peak_evaluation,
+)
 from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
     gaussian15_positive_asls_residual_metrics,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -409,6 +418,8 @@ def mint_peak_observation_ref(
     selection_intensity: object | None = None,
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> PeakObservationRef:
     """Mint one no-RAW observation after binding integration to exact signals.
 
@@ -445,6 +456,8 @@ def mint_peak_observation_ref(
         selection_intensity=selection_intensity,
         resolver_mode=resolver_mode,
         proposal_sources=proposal_sources,
+        physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
     )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
@@ -471,6 +484,8 @@ def validate_peak_observation_trace_binding(
     selection_intensity: object | None = None,
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> None:
     """Reject an observation reconstructed from any other capture trace."""
 
@@ -485,6 +500,8 @@ def validate_peak_observation_trace_binding(
         selection_intensity=selection_intensity,
         resolver_mode=resolver_mode,
         proposal_sources=proposal_sources,
+        physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
     )
     if (
         reference.content != expected_content
@@ -503,6 +520,8 @@ def _peak_observation_values(
     selection_intensity: object | None,
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> tuple[PeakObservationContent, PeakObservationGenerationProvenance]:
     if not isinstance(trace, Trace):
         raise PeakObservationContractError("trace must be an owner-produced Trace")
@@ -522,6 +541,8 @@ def _peak_observation_values(
         selection_values,
         integration,
         selected_indices,
+        physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
     )
     selected_rt = tuple(
         _finite_float(float(trace.rt[index]), field="selected_rt")
@@ -555,9 +576,7 @@ def _peak_observation_values(
             integration=normalized_integration,
         ),
         PeakObservationGenerationProvenance(
-            full_trace_sha256=hashlib.sha256(
-                _canonical_trace_bytes(trace)
-            ).hexdigest(),
+            full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
             selection_trace_sha256=hashlib.sha256(
                 _canonical_selection_trace_bytes(trace, selection_values)
             ).hexdigest(),
@@ -656,22 +675,14 @@ def _canonical_trace_bytes(trace: Trace) -> bytes:
         {
             "schema": "ms1_trace_generation_provenance_v1",
             "mz": _finite_float(float(trace.mz), field="trace.mz"),
-            "rt": [
-                _finite_float(float(value), field="trace.rt") for value in trace.rt
-            ],
+            "rt": [_finite_float(float(value), field="trace.rt") for value in trace.rt],
             "intensity": [
                 _finite_float(float(value), field="trace.intensity")
                 for value in trace.intensity
             ],
-            "query_rt_min": _finite_float(
-                float(trace.rt_min), field="trace.rt_min"
-            ),
-            "query_rt_max": _finite_float(
-                float(trace.rt_max), field="trace.rt_max"
-            ),
-            "query_ppm_tol": _finite_float(
-                float(trace.ppm_tol), field="trace.ppm_tol"
-            ),
+            "query_rt_min": _finite_float(float(trace.rt_min), field="trace.rt_min"),
+            "query_rt_max": _finite_float(float(trace.rt_max), field="trace.rt_max"),
+            "query_ppm_tol": _finite_float(float(trace.ppm_tol), field="trace.ppm_tol"),
             "trace_source": trace.source,
             "acquisition_source_id": trace.acquisition_source_id,
         }
@@ -686,8 +697,7 @@ def _canonical_selection_trace_bytes(
         {
             "schema": "ms1_peak_selection_trace_v1",
             "rt": [
-                _finite_float(float(value), field="selection.rt")
-                for value in trace.rt
+                _finite_float(float(value), field="selection.rt") for value in trace.rt
             ],
             "intensity": [
                 _finite_float(float(value), field="selection.intensity")
@@ -752,9 +762,7 @@ def _exact_payload_mapping(
     expected_fields: frozenset[str],
     field: str,
 ) -> dict[str, object]:
-    if not isinstance(value, Mapping) or any(
-        not isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
         raise PeakObservationContractError(f"{field} must be a JSON object")
     normalized = dict(value)
     actual_fields = frozenset(normalized)
@@ -869,6 +877,9 @@ def _validate_signal_integration_binding(
     selection_intensity: np.ndarray,
     integration: IntegrationResult,
     selected_indices: tuple[int, ...],
+    *,
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> None:
     left_index = selected_indices[0]
     right_index = selected_indices[-1] + 1
@@ -919,6 +930,15 @@ def _validate_signal_integration_binding(
         expected_area,
         field="area_raw_counts_seconds",
     )
+    if physical_evaluation is not None or signal_processing_profile is not None:
+        _validate_physical_integration_facts(
+            trace,
+            selection_intensity,
+            integration,
+            physical_evaluation=physical_evaluation,
+            profile=signal_processing_profile,
+        )
+        return
     baseline_values = _validate_baseline_integration_facts(
         trace,
         integration,
@@ -932,6 +952,66 @@ def _validate_signal_integration_binding(
         left_index=left_index,
         right_index=right_index,
     )
+
+
+def physical_peak_observation_integration(
+    evaluation: PhysicalPeakEvaluation,
+) -> IntegrationResult:
+    """Bind the physical owner's raw descriptor to its exact selected samples."""
+    validate_bounded_physical_peak_evaluation(evaluation)
+    facts = evaluation.facts
+    integration = evaluation.integration
+    if evaluation.state != "available" or facts is None or integration is None:
+        raise PeakObservationContractError(
+            "physical observation requires available facts"
+        )
+    segment = next(
+        segment
+        for segment in evaluation.segment_universe.segments
+        if segment.physical_segment_id == facts.physical_segment_id
+    )
+    return replace(
+        integration,
+        height_smoothed=facts.height,
+        raw_scan_indices=tuple(range(segment.start_index, segment.end_index)),
+        boundary_sources=(*integration.boundary_sources, facts.physical_segment_id),
+    )
+
+
+def _validate_physical_integration_facts(
+    trace: Trace,
+    selection_intensity: np.ndarray,
+    integration: IntegrationResult,
+    *,
+    physical_evaluation: PhysicalPeakEvaluation | None,
+    profile: SignalProcessingProfile | None,
+) -> None:
+    if physical_evaluation is None or profile is None:
+        raise PeakObservationContractError(
+            "physical observation requires its profile and answer"
+        )
+    prepared = prepare_physical_signal(
+        trace.rt,
+        trace.intensity,
+        profile=profile,
+        trace_content_id=physical_evaluation.prepared.trace_content_id,
+    )
+    actual = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=physical_evaluation.question.selection_subject_id,
+        query_rt_min=physical_evaluation.question.query_rt_min,
+        request_context_rt_start_min=trace.rt_min,
+        request_context_rt_end_min=trace.rt_max,
+    )
+    if (
+        actual != physical_evaluation
+        or prepared.prepared is None
+        or not np.array_equal(selection_intensity, prepared.prepared.positive_signal)
+        or integration != physical_peak_observation_integration(actual)
+    ):
+        raise PeakObservationContractError(
+            "physical integration contradicts the owner answer"
+        )
 
 
 def _validate_baseline_integration_facts(

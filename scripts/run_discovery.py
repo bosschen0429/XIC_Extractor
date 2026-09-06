@@ -15,6 +15,7 @@ from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
     resolve_selected_tag_profiles,
 )
+from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
@@ -46,7 +47,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
         return 2
 
-    settings = _discovery_settings(args)
+    try:
+        settings = _discovery_settings(args)
+    except (OSError, PresetError, ValueError) as exc:
+        print(_bounded_run_spec_error(exc), file=sys.stderr)
+        return 2
     data_dir = raw_path.parent if raw_path is not None else raw_dir
     if data_dir is None:
         raise ValueError("Discovery input directory was not resolved")
@@ -170,8 +175,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         help="Optional JSON path for discovery stage timing.",
     )
-    parser.add_argument("--neutral-loss-tag", default="DNA_dR")
-    parser.add_argument("--neutral-loss-da", type=_positive_float, default=116.0474)
+    parser.add_argument("--preset", help="Built-in CID-NL name or method TOML path.")
+    parser.add_argument("--neutral-loss-tag")
+    parser.add_argument("--neutral-loss-da", type=_positive_float)
     parser.add_argument("--feature-list", type=Path)
     parser.add_argument(
         "--selected-tags",
@@ -180,42 +186,52 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--tag-combine-mode",
         choices=("union", "intersection"),
-        default="union",
     )
-    parser.add_argument("--nl-tolerance-ppm", type=_positive_float, default=20.0)
+    parser.add_argument("--nl-tolerance-ppm", type=_positive_float)
     parser.add_argument(
         "--precursor-mz-tolerance-ppm",
         type=_positive_float,
-        default=20.0,
     )
     parser.add_argument(
         "--product-mz-tolerance-ppm",
         type=_positive_float,
-        default=20.0,
     )
-    parser.add_argument("--product-search-ppm", type=_positive_float, default=50.0)
+    parser.add_argument("--product-search-ppm", type=_positive_float)
     parser.add_argument(
         "--ms2-precursor-tol-da",
         type=_positive_float,
-        default=float(CANONICAL_SETTINGS_DEFAULTS["ms2_precursor_tol_da"]),
         help=(
             "MS2 filter precursor / isolation window tolerance in Da for "
             "product+neutral-loss inferred discovery seeds."
         ),
     )
-    parser.add_argument("--nl-min-intensity-ratio", type=_positive_float, default=0.01)
-    parser.add_argument("--seed-rt-gap-min", type=_positive_float, default=0.20)
-    parser.add_argument("--ms1-search-padding-min", type=_positive_float, default=0.35)
-    parser.add_argument("--rt-min", type=_rt_bound, default=0.0)
-    parser.add_argument("--rt-max", type=_rt_bound, default=999.0)
+    parser.add_argument("--nl-min-intensity-ratio", type=_positive_float)
+    parser.add_argument("--seed-rt-gap-min", type=_positive_float)
+    parser.add_argument("--ms1-search-padding-min", type=_positive_float)
+    parser.add_argument("--rt-min", type=_rt_bound)
+    parser.add_argument("--rt-max", type=_rt_bound)
     parser.add_argument(
         "--resolver-mode",
         type=_resolver_mode,
-        default="local_minimum",
     )
     args = parser.parse_args(argv)
-    if args.rt_min > args.rt_max:
+    rt_min = args.rt_min if args.rt_min is not None else 0.0
+    rt_max = args.rt_max if args.rt_max is not None else 999.0
+    if (
+        args.preset is None or (args.rt_min is not None and args.rt_max is not None)
+    ) and rt_min > rt_max:
         parser.error("rt-min must be <= rt-max")
+    if args.preset is not None and any(
+        value is not None
+        for value in (
+            args.neutral_loss_tag,
+            args.neutral_loss_da,
+            args.feature_list,
+            args.selected_tags,
+            args.tag_combine_mode,
+        )
+    ):
+        parser.error("--preset cannot be combined with separate tag selectors")
     if args.feature_list is not None and not args.selected_tags:
         parser.error("--selected-tags is required when --feature-list is provided")
     return args
@@ -235,11 +251,18 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
         "rt_max": args.rt_max,
         "resolver_mode": args.resolver_mode,
     }
+    common = {key: value for key, value in common.items() if value is not None}
+    if args.preset is not None:
+        return bind_cid_nl_recipe(
+            load_preset(args.preset), "discovery_only", recipe_overrides=common
+        ).discovery_settings
     if args.feature_list is None:
         return DiscoverySettings(
             neutral_loss_profile=NeutralLossProfile(
-                tag=args.neutral_loss_tag,
-                neutral_loss_da=args.neutral_loss_da,
+                tag=args.neutral_loss_tag or "DNA_dR",
+                neutral_loss_da=args.neutral_loss_da
+                if args.neutral_loss_da is not None
+                else 116.0474,
             ),
             tag_combine_mode="single",
             **common,
@@ -261,7 +284,7 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
             for profile in profiles
         ),
         selected_tag_names=tuple(profile.tag_name for profile in profiles),
-        tag_combine_mode=args.tag_combine_mode,
+        tag_combine_mode=args.tag_combine_mode or "union",
         **common,
     )
 

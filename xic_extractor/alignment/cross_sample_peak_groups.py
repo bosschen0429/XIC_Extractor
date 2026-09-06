@@ -27,6 +27,7 @@ from xic_extractor.alignment.edge_scoring import (
     EdgeDecision,
     HardGateFailureReason,
     OwnerEdgeEvidence,
+    _compatible_composite_owners,
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.ownership_models import (
@@ -2087,6 +2088,7 @@ class _GroupHardGateEnvelope:
     product_mz_max: float | None
     observed_loss_min: float | None
     observed_loss_max: float | None
+    composite_owner: SampleLocalMS1Owner | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -3401,17 +3403,16 @@ def _group_passes_hard_envelope(
     *,
     config: AlignmentConfig,
 ) -> bool:
-    if (
-        len({owner.sample_stem for owner in group}) != len(group)
-        or any(
-            owner.neutral_loss_tag != group[0].neutral_loss_tag for owner in group[1:]
-        )
+    if len({owner.sample_stem for owner in group}) != len(group) or any(
+        owner.neutral_loss_tag != group[0].neutral_loss_tag for owner in group[1:]
     ):
         return False
     envelope = _group_envelope_for_owner(group[0])
     for owner in group[1:]:
         envelope = _extend_group_envelope(envelope, owner)
-    if all(owner.primary_identity_event is None for owner in group):
+    if envelope.composite_owner is not None or all(
+        owner.primary_identity_event is None for owner in group
+    ):
         return all(
             not _range_exceeds_ppm(
                 owner.precursor_mz,
@@ -3557,6 +3558,10 @@ def _owner_within_group_envelope(
         return False
 
     event = owner.primary_identity_event
+    if envelope.composite_owner is not None and _compatible_composite_owners(
+        owner, envelope.composite_owner
+    ):
+        return True
     if event is None:
         return envelope.product_mz_min is None and envelope.observed_loss_min is None
     if (
@@ -3616,6 +3621,7 @@ def _group_envelope_for_owner(
         product_mz_max=None if event is None else event.product_mz,
         observed_loss_min=None if event is None else event.observed_neutral_loss_da,
         observed_loss_max=None if event is None else event.observed_neutral_loss_da,
+        composite_owner=owner if _compatible_composite_owners(owner, owner) else None,
     )
 
 
@@ -3660,6 +3666,10 @@ def _extend_group_envelope(
         product_mz_max=product_mz_max,
         observed_loss_min=observed_loss_min,
         observed_loss_max=observed_loss_max,
+        composite_owner=envelope.composite_owner
+        if envelope.composite_owner is not None
+        and _compatible_composite_owners(owner, envelope.composite_owner)
+        else None,
     )
 
 

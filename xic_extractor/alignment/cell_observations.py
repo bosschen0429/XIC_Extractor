@@ -5,13 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Sequence
-from dataclasses import InitVar, asdict, dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import InitVar, asdict, dataclass, field, replace
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillAttemptTerminal,
     OwnerBackfillPlanningPosition,
+    validate_owner_backfill_conservative_no_request_position,
 )
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairReceipt,
@@ -32,6 +33,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
+    compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
 )
@@ -76,6 +78,7 @@ from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "cell_observation_v4"
+OUTSIDE_GROUP_SCHEMA_VERSION = "cell_observation_v5"
 ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -96,6 +99,14 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.cell_observations",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
+    validation_status=VALIDATION_STATUS,
+    media_type=MEDIA_TYPE,
+    serialization_format=SERIALIZATION_FORMAT,
+)
+_OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.alignment.cell_observations",
+    semantic_role=ARTIFACT_SEMANTIC_ROLE,
+    schema_version=OUTSIDE_GROUP_SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
@@ -194,7 +205,13 @@ class CidNlCellGroupContext:
             expected_owners,
             config=self.config,
         )
-        if len(expected_groups) != 1 or expected_groups[0] != self.group:
+        validate_cross_sample_peak_group_identity(self.group, require_canonical=True)
+        # Public family ordinals belong to the complete population's presentation.
+        if (
+            len(expected_groups) != 1
+            or replace(expected_groups[0], public_family_id=self.group.public_family_id)
+            != self.group
+        ):
             raise CellObservationContractError(
                 "group context does not close its exact SUPPORT owners and config"
             )
@@ -230,6 +247,29 @@ class CidNlCellGroupContext:
 
 
 @dataclass(frozen=True, slots=True)
+class OutsideGroupCellRelation:
+    """Reference support in one exact sibling without a group-local observation."""
+
+    supporting_group_hypothesis_id: str
+    supporting_peak_hypothesis_id: str
+    relation: Literal["outside_group"] = "outside_group"
+
+    def __post_init__(self) -> None:
+        if self.relation != "outside_group":
+            raise CellObservationContractError(
+                "outside-group relation is not canonical"
+            )
+        _required_text(
+            self.supporting_group_hypothesis_id, field="supporting_group_hypothesis_id"
+        )
+        _validate_typed_digest_id(
+            self.supporting_peak_hypothesis_id,
+            prefix=_PEAK_HYPOTHESIS_ID_PREFIX,
+            field="supporting_peak_hypothesis_id",
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CellObservationContent:
     """Orthogonal axes only; no value, writer, fill, or product authority."""
 
@@ -248,6 +288,7 @@ class CellObservationContent:
     evidence_artifact_ids: tuple[str, ...]
     reason_codes: tuple[str, ...]
     human_disposition_ref_id: str | None
+    outside_group: OutsideGroupCellRelation | None = None
 
     def __post_init__(self) -> None:
         _validate_typed_digest_id(
@@ -265,7 +306,9 @@ class CellObservationContent:
         )
         _validate_typed_digest_id(
             self.group_method_subject_id,
-            prefix=_METHOD_SUBJECT_ID_PREFIX,
+            prefix="xic.cid-nl-method-subject.v2:"
+            if self.group_method_subject_id.startswith("xic.cid-nl-method-subject.v2:")
+            else _METHOD_SUBJECT_ID_PREFIX,
             field="group_method_subject_id",
         )
         target_ids = (
@@ -360,7 +403,25 @@ class CellObservationContent:
             raise CellObservationContractError(
                 "evaluated technical state requires a named method result"
             )
-        if self.method_result == "SUPPORT":
+        if self.outside_group is not None:
+            if type(self.outside_group) is not OutsideGroupCellRelation:
+                raise CellObservationContractError(
+                    "outside-group relation has the wrong owner type"
+                )
+            self.outside_group.__post_init__()
+            if (
+                self.method_result != "SUPPORT"
+                or self.peak_observation_content_id is not None
+                or self.peak_hypothesis_id is not None
+                or self.outside_group.supporting_group_hypothesis_id
+                == self.group_hypothesis_id
+                or self.outside_group.supporting_peak_hypothesis_id
+                in self.group_owner_ids
+            ):
+                raise CellObservationContractError(
+                    "outside-group SUPPORT cannot carry a group-local observation"
+                )
+        elif self.method_result == "SUPPORT":
             if (
                 self.peak_observation_content_id is None
                 or self.peak_hypothesis_id is None
@@ -373,6 +434,7 @@ class CellObservationContent:
                 "only SUPPORT may carry an individual PeakHypothesis"
             )
 
+
 @dataclass(frozen=True, slots=True)
 class CellObservationRef:
     """One exact cell closure under an already-existing provisional group."""
@@ -384,6 +446,7 @@ class CellObservationRef:
     peak_hypothesis: PeakHypothesis | None
     human_disposition: ResolvedReviewRecordRef | None
     artifact: EvidenceArtifactRef
+    outside_group_context: CidNlCellGroupContext | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.content, CellObservationContent):
@@ -407,10 +470,8 @@ class CellObservationRef:
                 "cell group identity does not match its exact group context"
             )
         if (
-            self.content.group_method_subject_id
-            != self.group_context.method_subject_id
-            or self.content.group_target_key_id
-            != self.group_context.target_key_id
+            self.content.group_method_subject_id != self.group_context.method_subject_id
+            or self.content.group_target_key_id != self.group_context.target_key_id
             or self.content.group_target_definition_id
             != self.group_context.target_definition_id
             or self.content.group_support_assessment_artifact_content_ids
@@ -443,6 +504,15 @@ class CellObservationRef:
         if self.content.reason_codes != self.method_assessment.content.reason_codes:
             raise CellObservationContractError(
                 "cell rewrites method-assessment reason codes"
+            )
+        expected_relation = _outside_group_relation(
+            group_context=self.group_context,
+            method_assessment=self.method_assessment,
+            outside_group_context=self.outside_group_context,
+        )
+        if self.content.outside_group != expected_relation:
+            raise CellObservationContractError(
+                "outside-group SUPPORT closure was substituted"
             )
         expected_evidence_ids = tuple(
             sorted(
@@ -496,7 +566,11 @@ class CellObservationRef:
             raise CellObservationContractError(
                 "artifact must be an owner-minted EvidenceArtifactRef"
             )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
+        if self.artifact.semantic_contract != (
+            _OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT
+            if self.content.outside_group is not None
+            else _ARTIFACT_SEMANTIC_CONTRACT
+        ):
             raise CellObservationContractError(
                 "artifact semantic contract is not owned by CellObservation"
             )
@@ -507,6 +581,7 @@ class CellObservationRef:
                 method_assessment=self.method_assessment,
                 peak_observation=self.peak_observation,
                 peak_hypothesis=self.peak_hypothesis,
+                outside_group_context=self.outside_group_context,
             )
         )
         if self.artifact.upstream_artifact_ids != expected_upstream_ids:
@@ -671,8 +746,7 @@ def _repaired_member_integration(
         or member not in group.member_subjects
         or subject.sample_identity != canonical_sample
         or evidence.member_subject_id != member.member_subject_id
-        or evidence.group_hypothesis_id
-        != subject.predecessor_group.group_hypothesis_id
+        or evidence.group_hypothesis_id != subject.predecessor_group.group_hypothesis_id
     ):
         raise CellObservationContractError(
             "repair receipt does not authorize the exact final member"
@@ -716,8 +790,6 @@ def _repaired_member_integration(
     return facts.integration
 
 
-
-
 def _processing_request_id(value: object) -> str:
     try:
         return validate_typed_identity_id(
@@ -737,6 +809,55 @@ def _terminal_trace_group_id(value: object) -> str:
     return value
 
 
+def _outside_group_relation(
+    *,
+    group_context: CidNlCellGroupContext,
+    method_assessment: CidNlMethodAssessmentRef,
+    outside_group_context: CidNlCellGroupContext | None,
+) -> OutsideGroupCellRelation | None:
+    if outside_group_context is None:
+        return None
+    if type(outside_group_context) is not CidNlCellGroupContext:
+        raise CellObservationContractError(
+            "outside-group context has the wrong owner type"
+        )
+    group_context.__post_init__()
+    outside_group_context.__post_init__()
+    if (
+        method_assessment.content.method_result != "SUPPORT"
+        or outside_group_context.method_subject != group_context.method_subject
+        or outside_group_context.processing_attempt != group_context.processing_attempt
+        or outside_group_context.config != group_context.config
+        or outside_group_context.group.processing_request_id
+        != group_context.group.processing_request_id
+        or outside_group_context.group.group_hypothesis_id
+        == group_context.group.group_hypothesis_id
+    ):
+        raise CellObservationContractError(
+            "outside-group context crossed its sibling owner boundary"
+        )
+    supports = tuple(
+        support
+        for support in outside_group_context.supports
+        if support.assessment is method_assessment
+        and support.sample.identity.sample_identity_id
+        == method_assessment.content.canonical_sample_identity_id
+    )
+    if len(supports) != 1:
+        raise CellObservationContractError(
+            "outside-group context lost its exact sample SUPPORT"
+        )
+    support = supports[0]
+    if support.hypothesis.hypothesis_id in group_context.group.owner_ids:
+        raise CellObservationContractError(
+            "outside-group hypothesis belongs to the local group"
+        )
+    return OutsideGroupCellRelation(
+        supporting_group_hypothesis_id=outside_group_context.group.group_hypothesis_id,
+        supporting_peak_hypothesis_id=support.hypothesis.hypothesis_id,
+    )
+
+
 def mint_cell_observation_ref(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -747,6 +868,7 @@ def mint_cell_observation_ref(
     peak_observation: PeakObservationRef | None = None,
     peak_hypothesis: PeakHypothesis | None = None,
     human_disposition: ResolvedReviewRecordRef | None = None,
+    outside_group_context: CidNlCellGroupContext | None = None,
 ) -> CellObservationRef:
     """Attach a completed assessment to an existing group without creating it."""
 
@@ -796,7 +918,17 @@ def mint_cell_observation_ref(
     except ValueError as exc:
         raise CellObservationContractError(str(exc)) from exc
     method_result = method_assessment.content.method_result
-    if method_result == "SUPPORT":
+    outside_group = _outside_group_relation(
+        group_context=group_context,
+        method_assessment=method_assessment,
+        outside_group_context=outside_group_context,
+    )
+    if outside_group is not None:
+        if peak_observation is not None or peak_hypothesis is not None:
+            raise CellObservationContractError(
+                "outside-group SUPPORT cannot carry a group-local observation"
+            )
+    elif method_result == "SUPPORT":
         if peak_observation is None or peak_hypothesis is None:
             raise CellObservationContractError(
                 "SUPPORT cell requires the exact observation and hypothesis"
@@ -874,8 +1006,7 @@ def mint_cell_observation_ref(
                 "human disposition references a different sample"
             )
         if (
-            review_reference.target_key_id
-            != target.definition.target_key.target_key_id
+            review_reference.target_key_id != target.definition.target_key.target_key_id
             or review_reference.target_definition_id
             != target.definition.target_definition_id
         ):
@@ -924,17 +1055,23 @@ def mint_cell_observation_ref(
             if human_disposition is None
             else human_disposition.reference.review_record_id
         ),
+        outside_group=outside_group,
     )
     upstreams = _cell_upstream_artifacts(
         group_context=group_context,
         method_assessment=method_assessment,
         peak_observation=peak_observation,
         peak_hypothesis=peak_hypothesis,
+        outside_group_context=outside_group_context,
     )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        semantic_contract=(
+            _OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT
+            if outside_group is not None
+            else _ARTIFACT_SEMANTIC_CONTRACT
+        ),
         payload_bytes=canonical_cell_observation_bytes(content),
         upstream_artifacts=upstreams,
     )
@@ -946,6 +1083,7 @@ def mint_cell_observation_ref(
         peak_hypothesis=peak_hypothesis,
         human_disposition=human_disposition,
         artifact=artifact,
+        outside_group_context=outside_group_context,
     )
 
 
@@ -954,10 +1092,17 @@ def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
         raise CellObservationContractError(
             "canonical serialization requires CellObservation content"
         )
+    values = asdict(content)
+    if content.outside_group is None:
+        values.pop("outside_group")
     payload = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": (
+            OUTSIDE_GROUP_SCHEMA_VERSION
+            if content.outside_group is not None
+            else SCHEMA_VERSION
+        ),
         "validation_status": VALIDATION_STATUS,
-        "content": asdict(content),
+        "content": values,
     }
     try:
         serialized = json.dumps(
@@ -980,8 +1125,11 @@ def _cell_upstream_artifacts(
     method_assessment: CidNlMethodAssessmentRef,
     peak_observation: PeakObservationRef | None,
     peak_hypothesis: PeakHypothesis | None,
+    outside_group_context: CidNlCellGroupContext | None = None,
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = [method_assessment.artifact]
+    if outside_group_context is not None:
+        artifacts.extend(_group_support_artifacts(outside_group_context.supports))
     for support in group_context.supports:
         artifacts.append(support.assessment.artifact)
         if support.hypothesis.artifact is None:
@@ -1070,6 +1218,7 @@ def _required_text(value: object, *, field: str) -> str:
             f"{field} must not contain surrounding whitespace"
         )
     return value
+
 
 # ---------------------------------------------------------------------------
 # Exact CrossSample/Backfill handoff closure
@@ -1229,6 +1378,12 @@ def compose_final_group_cell_observation_population(
         positions=positions,
         processing_request_id=request_id,
     )
+    for position in positions:
+        validate_owner_backfill_conservative_no_request_position(
+            position,
+            source_cell=source_by_position[position.position_id],
+            source_population=tuple(predecessor_cells),
+        )
     receipt_by_position, observation_by_receipt = _index_repair_inputs(
         repair_receipts,
         repaired_observations,
@@ -1423,9 +1578,10 @@ def validate_final_group_cell_observation_population(
             raise CellObservationContractError(
                 "final cell substituted an equivalent final group"
             )
-        if item.canonical_sample is not samples_by_id[
-            item.canonical_sample_identity_id
-        ]:
+        if (
+            item.canonical_sample
+            is not samples_by_id[item.canonical_sample_identity_id]
+        ):
             raise CellObservationContractError(
                 "final cell substituted an equivalent canonical sample"
             )
@@ -1470,8 +1626,7 @@ def _validate_final_handoff(
                 "handoff position association substituted its predecessor group"
             )
         if not any(
-            position_association.position.sample is sample
-            for sample in epoch_samples
+            position_association.position.sample is sample for sample in epoch_samples
         ):
             raise CellObservationContractError(
                 "handoff position association substituted its canonical sample"
@@ -1548,6 +1703,7 @@ def _validate_source_cell(
             peak_hypothesis=cell.peak_hypothesis,
             human_disposition=cell.human_disposition,
             artifact=cell.artifact,
+            outside_group_context=cell.outside_group_context,
         )
     except (TypeError, ValueError) as exc:
         raise CellObservationContractError(
@@ -1646,9 +1802,7 @@ def _index_repair_inputs(
             matching_positions[0].position_id,
             [],
         ).append(receipt)
-    observation_by_receipt: dict[
-        str, list[OwnerBackfillPeakFactObservation]
-    ] = {}
+    observation_by_receipt: dict[str, list[OwnerBackfillPeakFactObservation]] = {}
     for observation in observations:
         matching_receipts = tuple(
             receipt
@@ -1679,9 +1833,7 @@ def _index_repair_inputs(
             raise CellObservationContractError(
                 "no-repair receipt carries contradictory repaired observation facts"
             )
-    if any(
-        position_id not in position_by_id for position_id in receipts_by_position
-    ):
+    if any(position_id not in position_by_id for position_id in receipts_by_position):
         raise CellObservationContractError(
             "repair receipt references an extra position"
         )
@@ -1709,9 +1861,7 @@ def _validate_handoff_repair_closure(
     repair_receipts: Sequence[ObservationRepairReceipt],
     repaired_observations: Sequence[OwnerBackfillPeakFactObservation],
     receipt_by_position: dict[str, tuple[ObservationRepairReceipt, ...]],
-    observation_by_receipt: dict[
-        str, tuple[OwnerBackfillPeakFactObservation, ...]
-    ],
+    observation_by_receipt: dict[str, tuple[OwnerBackfillPeakFactObservation, ...]],
 ) -> None:
     """Require an applicable final receipt's complete repair provenance.
 
@@ -1761,8 +1911,7 @@ def _validate_handoff_repair_closure(
         )
     live_observations = observation_by_receipt.get(final_receipt.receipt_id, ())
     if len(live_observations) != 1 or not any(
-        observation is live_observations[0]
-        for observation in repaired_observations
+        observation is live_observations[0] for observation in repaired_observations
     ):
         raise CellObservationContractError(
             "applicable repaired handoff requires its exact live observation"
@@ -1870,6 +2019,40 @@ def _derive_lane_evidence_state(
     assessment = source_cell.method_assessment
     technical_state = assessment.content.technical_state
     method_result = assessment.content.method_result
+    if source_cell.content.outside_group is not None:
+        if (
+            source_member is not None
+            or source_cell.peak_observation is not None
+            or source_cell.peak_hypothesis is not None
+            or repair_receipts
+            or repaired_observations
+            or coverage_terminals
+            or association.position.planning_state != "not_planned"
+            or association.position.planning_reason != "local_owner_not_supersedable"
+        ):
+            raise CellObservationContractError(
+                "outside-group lane cannot supply local observation or repair evidence"
+            )
+        # A merged sibling may supply a direct lane; this lane adds no value.
+        return "not_searched"
+    no_request_proof = validate_owner_backfill_conservative_no_request_position(
+        association.position, source_cell=source_cell
+    )
+    if no_request_proof is not None:
+        if (
+            coverage_terminals
+            or repair_receipts
+            or repaired_observations
+            or final_member is not None
+        ):
+            raise CellObservationContractError(
+                "conservative no-request lane cannot carry physical or repair evidence"
+            )
+        return (
+            "not_searched"
+            if no_request_proof.variant == "threshold_not_met"
+            else "unavailable"
+        )
     if final_member is not None and method_result in {"HOLD", "REJECT"}:
         raise CellObservationContractError(
             "final CrossSample member cannot carry a HOLD or REJECT method lane"
@@ -2325,9 +2508,7 @@ def _validate_final_cell_handoff_refs(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
 ) -> None:
-    groups = {
-        group.group_hypothesis_id: group for group in handoff.final_population
-    }
+    groups = {group.group_hypothesis_id: group for group in handoff.final_population}
     samples = {
         sample.identity.sample_identity_id: sample
         for sample in handoff.coverage.epoch.samples
@@ -2420,8 +2601,6 @@ def _require_same_refs(
         )
 
 
-
-
 __all__ = [
     "ARTIFACT_SEMANTIC_ROLE",
     "CidNlCellGroupContext",
@@ -2432,10 +2611,133 @@ __all__ = [
     "FinalCellEvidenceAggregate",
     "FinalCellEvidenceState",
     "FinalGroupCellObservation",
+    "OutsideGroupCellRelation",
+    "OUTSIDE_GROUP_SCHEMA_VERSION",
     "SCHEMA_VERSION",
     "TerminalObservationVariant",
     "canonical_cell_observation_bytes",
     "compose_final_group_cell_observation_population",
+    "compose_cid_nl_predecessor_cells",
     "mint_cell_observation_ref",
     "validate_final_group_cell_observation_population",
 ]
+
+
+def compose_cid_nl_predecessor_cells(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+    recovery_assessments_by_group: Mapping[tuple[str, str], CidNlMethodAssessmentRef]
+    | None = None,
+) -> tuple[CellObservationRef, ...]:
+    """Attach original assessments to the existing ModeTrack predecessor groups."""
+    sample_assessments = tuple(
+        sorted(
+            dict.fromkeys(sample_assessments),
+            key=lambda pair: pair[0].identity.sample_identity_id,
+        )
+    )
+    supports = tuple(
+        CidNlCellGroupSupport(
+            sample=sample, assessment=assessment, hypothesis=hypothesis
+        )
+        for sample, assessment in sample_assessments
+        for hypothesis in compose_peak_hypotheses_from_assessment_universe(
+            processing_owners=processing_owners,
+            sample=sample,
+            assessment=assessment,
+        )
+        if any(hypothesis.hypothesis_id in group.owner_ids for group in groups)
+    )
+    contexts = tuple(
+        CidNlCellGroupContext(
+            group=group,
+            supports=tuple(
+                support
+                for support in supports
+                if support.hypothesis.hypothesis_id in group.owner_ids
+            ),
+            config=alignment_config,
+            processing_attempt=processing_owners.attempt,
+        )
+        for group in groups
+    )
+    assessments_by_sample: dict[str, list[CidNlMethodAssessmentRef]] = {}
+    samples = {}
+    for sample, assessment in sample_assessments:
+        sample_id = sample.identity.sample_identity_id
+        samples[sample_id] = sample
+        refs = assessments_by_sample.setdefault(sample_id, [])
+        if assessment not in refs:
+            refs.append(assessment)
+    cells = []
+    for context in contexts:
+        for sample_id, refs in assessments_by_sample.items():
+            sample = samples[sample_id]
+            local_refs = tuple(
+                support.assessment
+                for support in context.supports
+                if support.sample.identity.sample_identity_id == sample_id
+            )
+            recovered = (recovery_assessments_by_group or {}).get(
+                (context.group.group_hypothesis_id, sample_id)
+            )
+            if recovered is not None and not any(recovered is ref for ref in refs):
+                raise CellObservationContractError(
+                    "group recovery is outside the assessment population"
+                )
+            assessment = (
+                local_refs[0]
+                if local_refs
+                else recovered
+                if recovered is not None
+                else refs[0]
+            )
+            local = tuple(
+                support
+                for support in context.supports
+                if support.sample is sample and support.assessment is assessment
+            )
+            outside_context = None
+            observation = None
+            hypothesis = None
+            if local:
+                (support,) = local
+                hypothesis = support.hypothesis
+                (observation,) = hypothesis.peak_observation_refs
+            elif assessment.content.method_result == "SUPPORT":
+                siblings = tuple(
+                    sibling
+                    for sibling in contexts
+                    if sibling is not context
+                    and any(
+                        support.sample is sample and support.assessment is assessment
+                        for support in sibling.supports
+                    )
+                )
+                if len(siblings) != 1:
+                    raise ValueError(
+                        "outside-group cell requires one exact sibling SUPPORT context"
+                    )
+                (outside_context,) = siblings
+            elif (
+                assessment.content.method_result == "HOLD"
+                and len(assessment.candidate_peaks) == 1
+            ):
+                observation = assessment.candidate_peaks[0]
+            cells.append(
+                mint_cell_observation_ref(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    group_context=context,
+                    method_assessment=assessment,
+                    peak_observation=observation,
+                    peak_hypothesis=hypothesis,
+                    outside_group_context=outside_context,
+                )
+            )
+    return tuple(cells)

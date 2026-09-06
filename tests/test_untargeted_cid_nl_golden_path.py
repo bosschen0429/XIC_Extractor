@@ -421,6 +421,90 @@ def test_untargeted_method_subject_binding_rejects_json_boolean_numeric_alias(
         validate_cid_nl_method_subject_binding(subject, processing_owners=owners)
 
 
+@pytest.mark.parametrize("form", ("scalar", "composite", "batch"))
+def test_request_subject_reader_preserves_formats_and_strict_rejection(
+    tmp_path: Path,
+    form: str,
+) -> None:
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        CidNlComposition,
+        cid_nl_method_subject_batch_from_request,
+        cid_nl_method_subject_from_request,
+        cid_nl_method_subjects_from_request,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "qc"}
+    )
+    scalar = fixture.method_subject
+    composite = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=scalar.precursor_mz,
+        precursor_tolerance_ppm=scalar.precursor_tolerance_ppm,
+        composition=CidNlComposition(
+            tags=(("A", 116.0474), ("B", 132.0423)), combine_mode="union"
+        ),
+    )
+    batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=tuple(sorted((scalar, composite), key=lambda s: s.method_subject_id)),
+        candidate_memberships=(
+            ("candidate-a", scalar.method_subject_id),
+            ("candidate-b", composite.method_subject_id),
+        ),
+    )
+    expected = {"scalar": scalar, "composite": composite, "batch": batch}[form]
+    base = fixture.owners.request
+
+    def request_for(payload):
+        return build_processing_request_identity(
+            acquisition_sources=base.acquisition_sources,
+            acquisition_bindings=base.acquisition_bindings,
+            scientific_input_schema_version=base.scientific_input_schema_version,
+            processing_algorithm_version=base.processing_algorithm_version,
+            processing_contract_version=base.processing_contract_version,
+            scientific_inputs={"cid_nl_method_subject": payload},
+        )
+
+    payload = expected.request_payload()
+    request = request_for(payload)
+    assert cid_nl_method_subjects_from_request(request) == expected
+    compatible = (
+        cid_nl_method_subject_batch_from_request
+        if form == "batch"
+        else cid_nl_method_subject_from_request
+    )
+    incompatible = (
+        cid_nl_method_subject_from_request
+        if form == "batch"
+        else cid_nl_method_subject_batch_from_request
+    )
+    assert compatible(request) == expected
+    with pytest.raises(CidNlMethodSubjectContractError):
+        incompatible(request)
+    for invalid in (
+        {**payload, "schema_version": "unknown"},
+        {**payload, "undeclared": True},
+        {key: value for key, value in payload.items() if key != "schema_version"},
+    ):
+        with pytest.raises(CidNlMethodSubjectContractError):
+            cid_nl_method_subjects_from_request(request_for(invalid))
+    if form == "batch":
+        with pytest.raises(CidNlMethodSubjectContractError):
+            cid_nl_method_subjects_from_request(
+                request_for(
+                    {
+                        **payload,
+                        "candidate_memberships": [
+                            {
+                                "candidate_id": "candidate-a",
+                                "method_subject_id": "unknown",
+                            },
+                        ],
+                    }
+                )
+            )
+
+
 def _golden_inputs(
     fixture: UntargetedCidNlNoRawFixture,
 ) -> tuple[

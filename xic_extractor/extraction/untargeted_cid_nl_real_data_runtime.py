@@ -5,32 +5,43 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    _COMPLETED_RECOVERY_CONTRACT,
+    OwnerBackfillCompletedRecoveryProjection,
+    _completed_recovery_projection_bytes,
+)
+from xic_extractor.alignment.cell_observations import (
+    CidNlCellGroupContext,
+    compose_cid_nl_predecessor_cells,
+)
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
+    assess_conservative_backfill_group,
     minimum_direct_support_count,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     CID_NL_ALIGNMENT_CONFIG,
-    UntargetedCidNlGoldenPathError,
     UntargetedCidNlRecoveryInput,
-    build_untargeted_cid_nl_golden_path,
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -97,13 +108,20 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    BATCH_SCHEMA_VERSION,
-    REQUEST_INPUT_KEY,
     CidNlMethodSubject,
     CidNlMethodSubjectContractError,
-    cid_nl_method_subject_batch_from_request,
+    UntargetedCidNlMethodSubjectBatch,
+    cid_nl_method_subjects_from_request,
+)
+from xic_extractor.peak_detection.search_scope import (
+    PHYSICAL_CAPTURE_INPUT_KEY,
+    physical_capture_input_payload,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     IdentityContractError,
@@ -113,8 +131,9 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.raw_reader import RawReaderOpenError, open_raw
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.xic_models import XICRequest
 
-SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v2"
+SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v3"
 VALIDATION_STATUS = "diagnostic_only"
 RUNTIME_CALL_COST_METRIC_NAMES = (
     "raw_open_count",
@@ -150,6 +169,11 @@ class UntargetedCidNlRealDataRuntimeJob:
     raw_path: Path
     dll_dir: Path
     work_unit_key: str
+    signal_processing_profile: SignalProcessingProfile | None = None
+    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
+    _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         expected = (
@@ -162,10 +186,10 @@ class UntargetedCidNlRealDataRuntimeJob:
             ("raw_path", Path),
             ("dll_dir", Path),
         )
-        for field, kind in expected:
-            if not isinstance(getattr(self, field), kind):
+        for field_name, kind in expected:
+            if not isinstance(getattr(self, field_name), kind):
                 raise UntargetedCidNlRealDataRuntimeError(
-                    f"{field} has the wrong owner type"
+                    f"{field_name} has the wrong owner type"
                 )
         if not isinstance(self.candidates, tuple) or any(
             not isinstance(item, DiscoveryCandidate) for item in self.candidates
@@ -174,7 +198,9 @@ class UntargetedCidNlRealDataRuntimeJob:
                 "candidates must contain current DiscoveryCandidate values"
             )
         _required_text(self.work_unit_key, field="work_unit_key")
-        _validate_request_bound_inputs(self)
+        object.__setattr__(
+            self, "_request_subjects", _validate_request_bound_inputs(self)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +216,8 @@ class UntargetedCidNlSampleResultRef:
     recovery_assessment_artifact_id: str | None
     recovery_candidate_count: int
     acquisition_sha256: str | None
+    recovery_assessment_artifact_ids: tuple[str, ...]
+    recovery_query_bounds: tuple[tuple[float, float], ...]
     artifact: EvidenceArtifactRef
 
     def __post_init__(self) -> None:
@@ -214,15 +242,166 @@ class UntargetedCidNlRuntimeSampleResult:
     adapter_result: UntargetedCidNlRealDataAdapterResult
     result_ref: UntargetedCidNlSampleResultRef
     recovery_input: UntargetedCidNlRecoveryInput | None = None
-    recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None = None
+    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
+
+    @property
+    def recovery_attempt(self) -> UntargetedCidNlRecoveryAttemptResult | None:
+        if len(self.recovery_attempts) > 1:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "multiple recovery attempts require group selection"
+            )
+        return self.recovery_attempts[0] if self.recovery_attempts else None
+
+    @property
+    def effective_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
+        return (self.adapter_result.assessment_input.assessment,) + tuple(
+            attempt.assessment for attempt in self.recovery_attempts
+        )
 
     @property
     def effective_assessment(self) -> CidNlMethodAssessmentRef:
-        """Return the terminal assessment after any authorized recovery."""
+        recovery = self.recovery_attempt
+        return (
+            recovery.assessment
+            if recovery is not None
+            else self.adapter_result.assessment_input.assessment
+        )
 
-        if self.recovery_attempt is not None:
-            return self.recovery_attempt.assessment
-        return self.adapter_result.assessment_input.assessment
+    def recovery_for_group(
+        self, center: float
+    ) -> UntargetedCidNlRecoveryAttemptResult | None:
+        half_window = self.job.peak_config.nl_rt_anchor_half_window_min
+        matches = tuple(
+            attempt
+            for attempt in self.recovery_attempts
+            if attempt.assessment.content.evaluation_receipt.query_rt_min
+            == max(0.0, center - half_window)
+            and attempt.assessment.content.evaluation_receipt.query_rt_max
+            == center + half_window
+        )
+        if len(matches) > 1:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "group has duplicate recovery attempts"
+            )
+        return matches[0] if matches else None
+
+
+def project_untargeted_cid_nl_completed_recovery(
+    result: UntargetedCidNlRuntimeSampleResult,
+    *,
+    group_context: CidNlCellGroupContext,
+) -> OwnerBackfillCompletedRecoveryProjection:
+    """Project an existing completed empty recovery without executing it again."""
+    if type(result) is not UntargetedCidNlRuntimeSampleResult:
+        raise UntargetedCidNlRealDataRuntimeError("recovery requires a runtime result")
+    job = result.job
+    replace(job)
+    replace(group_context)
+    group = validate_cross_sample_peak_group_identity(
+        group_context.group, require_canonical=True
+    )
+    assert group is not None
+    center = group_context.group.group_center_rt
+    if (
+        group_context.processing_attempt is not job.processing_owners.attempt
+        or group_context.method_subject != job.method_subject
+        or center is None
+    ):
+        raise UntargetedCidNlRealDataRuntimeError("recovery crossed its owner group")
+    recovery = result.recovery_for_group(center)
+    if recovery is None:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "initial assessment is not a recovery"
+        )
+    assessment = recovery.assessment
+    initial = result.adapter_result.assessment_input.assessment
+    for reference in (initial, assessment):
+        validate_cid_nl_method_assessment_binding(
+            reference,
+            processing_owners=job.processing_owners,
+            sample=job.sample,
+            method_subject=job.method_subject,
+        )
+    receipt = assessment.content.evaluation_receipt
+    if (
+        assessment.content.technical_state != "evaluated"
+        or assessment.content.method_result != "HOLD"
+        or assessment.candidate_peaks
+        or assessment.content.detector_invocation_id
+        != "untargeted-cid-nl-backfill-recovery:v1"
+        or not receipt.search_completed
+        or not receipt.acquisition_supported
+        or recovery.recovery_input is not None
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "recovery is not a completed empty epoch"
+        )
+    replace(result.result_ref)
+    expected_result = mint_untargeted_cid_nl_sample_result_ref(
+        job=job,
+        result=result.adapter_result,
+        recovery_input=result.recovery_input,
+        recovery_attempt=None,
+        recovery_attempts=result.recovery_attempts,
+        acquisition=recovery.acquisition,
+    )
+    if result.result_ref != expected_result:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "completed recovery lost its sealed runtime result"
+        )
+    expected_request = XICRequest(
+        mz=job.method_subject.precursor_mz,
+        rt_min=max(0.0, center - job.peak_config.nl_rt_anchor_half_window_min),
+        rt_max=center + job.peak_config.nl_rt_anchor_half_window_min,
+        ppm_tol=job.method_subject.precursor_tolerance_ppm,
+    )
+    exact = tuple(
+        acquired
+        for acquired in recovery.acquisition.traces
+        if acquired.coordinate.request == expected_request
+        and acquired.coordinate.acquisition_source_id
+        == assessment.content.acquisition_source_id
+    )
+    if len(exact) != 1 or (
+        receipt.query_rt_min != expected_request.rt_min
+        or receipt.query_rt_max != expected_request.rt_max
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "recovery crossed its exact request coordinates"
+        )
+    (acquired,) = exact
+    replace(acquired)
+    digest = result.result_ref.acquisition_sha256
+    assert digest is not None
+    artifact = _mint_evidence_artifact_ref(
+        producer_processing_request_id=job.processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=job.processing_owners.attempt.processing_attempt_id,
+        semantic_contract=_COMPLETED_RECOVERY_CONTRACT,
+        payload_bytes=_completed_recovery_projection_bytes(
+            processing_owners=job.processing_owners,
+            sample=job.sample,
+            group_identity=group,
+            group_center_rt=center,
+            source_result_artifact=result.result_ref.artifact,
+            initial_assessment_artifact=initial.artifact,
+            recovery_assessment=assessment,
+            trace_coordinate=acquired.coordinate,
+            acquisition_sha256=digest,
+        ),
+        upstream_artifacts=(result.result_ref.artifact, assessment.artifact),
+    )
+    return OwnerBackfillCompletedRecoveryProjection(
+        processing_owners=job.processing_owners,
+        sample=job.sample,
+        group_identity=group,
+        group_center_rt=center,
+        source_result_artifact=result.result_ref.artifact,
+        initial_assessment_artifact=initial.artifact,
+        recovery_assessment=assessment,
+        trace_coordinate=acquired.coordinate,
+        acquisition_sha256=digest,
+        artifact=artifact,
+    )
 
 
 @dataclass(slots=True)
@@ -234,8 +413,8 @@ class _RuntimeJobState:
     error: Exception | None = None
     adapter_result: UntargetedCidNlRealDataAdapterResult | None = None
     recovery_input: UntargetedCidNlRecoveryInput | None = None
-    recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None = None
-    recovery_group_center_rt: float | None = None
+    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
+    recovery_group_center_rts: tuple[float, ...] = ()
     open_attempted: bool = False
     opened: bool = False
     cleanup_outcome: RuntimeResourceCleanupOutcome = (
@@ -378,9 +557,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
     recovery_subject_ids = {
         method_subject_id
         for method_subject_id, subject_jobs in eligible_by_subject.items()
-        if sum(
-            direct_assessment_by_key[job.work_unit_key] for job in subject_jobs
-        )
+        if sum(direct_assessment_by_key[job.work_unit_key] for job in subject_jobs)
         >= minimum_direct_support_count(len(subject_jobs))
     }
 
@@ -398,9 +575,8 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 and not job.sample.metadata.excluded
                 and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
             )
-            if (
-                not _request_uses_subject_batch(job)
-                and (initial_requires_raw or recovery_may_need_raw)
+            if not _request_uses_subject_batch(job) and (
+                initial_requires_raw or recovery_may_need_raw
             ):
                 resource_key = f"acquisition-session:{job.work_unit_key}"
                 source = resolve_request_acquisition_source(
@@ -507,11 +683,10 @@ def execute_untargeted_cid_nl_real_data_runtime(
         for state in states:
             if (
                 not _request_uses_subject_batch(state.job)
-                and state.recovery_group_center_rt is not None
+                and state.recovery_group_center_rts
             ):
                 _execute_recovery(
                     state,
-                    group_center_rt=state.recovery_group_center_rt,
                 )
         for phase in batch_phases:
             _execute_recovery_batch(phase)
@@ -540,7 +715,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                         "sample_stem": state.job.sample.metadata.raw_stem,
                         "work_unit_key": state.job.work_unit_key,
                         "succeeded": sample_result is not None,
-                        "recovery_attempted": state.recovery_attempt is not None,
+                        "recovery_attempted": bool(state.recovery_attempts),
                     }
                 )
         for phase in batch_phases:
@@ -602,6 +777,8 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 peak_config=job.peak_config,
                 raw=raw,
                 _observer=state.observer,
+                signal_processing_profile=job.signal_processing_profile,
+                physical_records=job.physical_records,
             )
     except RawReaderOpenError as exc:
         state.cleanup_outcome = (
@@ -670,6 +847,8 @@ def _execute_initial_assessment_batch(
                 raw=raw,
                 _observer=state.observer,
                 _preacquired_traces=trace_batch,
+                signal_processing_profile=state.job.signal_processing_profile,
+                physical_records=state.job.physical_records,
             )
     except RawReaderOpenError as exc:
         phase.initial_cleanup_outcome = (
@@ -705,9 +884,7 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        _prepare_subject_authorized_recoveries(
-            tuple(by_subject[method_subject_id])
-        )
+        _prepare_subject_authorized_recoveries(tuple(by_subject[method_subject_id]))
 
 
 def _prepare_subject_authorized_recoveries(
@@ -723,7 +900,7 @@ def _prepare_subject_authorized_recoveries(
         for result in adapter_results
     ):
         return
-    support_owners = []
+    support_owners: list[SampleLocalMS1Owner] = []
     for state in states:
         result = state.adapter_result
         if result is None:
@@ -736,68 +913,65 @@ def _prepare_subject_authorized_recoveries(
             sample=state.job.sample,
             assessment=assessment,
         )
-        if len(hypotheses) != 1:
-            return
-        support_owners.append(
+        support_owners.extend(
             owner_from_cid_nl_assessment_support(
-                sample=state.job.sample,
-                assessment=assessment,
-                hypothesis=hypotheses[0],
+                sample=state.job.sample, assessment=assessment, hypothesis=hypothesis
             )
+            for hypothesis in hypotheses
         )
-    legacy_groups = construct_cross_sample_peak_group_hypotheses(
+    groups = construct_cross_sample_peak_group_hypotheses(
         tuple(support_owners),
         config=CID_NL_ALIGNMENT_CONFIG,
     )
-    if len(legacy_groups) != 1:
-        return
     first = states[0].job
-    try:
-        preliminary = build_untargeted_cid_nl_golden_path(
-            processing_owners=first.processing_owners,
-            method_subject=first.method_subject,
-            sample_inputs=tuple(result.assessment_input for result in adapter_results),
-            source_artifact_relpath=(
-                "output/real_data_runtime/preliminary_untargeted_cid_nl_source.json"
+    cells = compose_cid_nl_predecessor_cells(
+        processing_owners=first.processing_owners,
+        groups=groups,
+        sample_assessments=tuple(
+            (state.job.sample, result.assessment_input.assessment)
+            for state, result in zip(states, adapter_results, strict=True)
+        ),
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
+    )
+    for group in groups:
+        facts = assess_conservative_backfill_group(
+            tuple(
+                cell
+                for cell in cells
+                if cell.content.group_hypothesis_id == group.group_hypothesis_id
             ),
+            sample_population=tuple(state.job.sample for state in states),
         )
-    except UntargetedCidNlGoldenPathError as exc:
-        for state in states:
-            state.error = exc
-        return
-    facts = preliminary.backfill_facts
-    if not facts.may_attempt_recovery:
-        return
-    group = preliminary.spine.group
-    if group is None or group.group_center_rt is None:
-        error = UntargetedCidNlRealDataRuntimeError(
-            "Backfill owner authorized recovery without a frozen RT group"
-        )
-        for state in states:
-            state.error = error
-        return
-    eligible_ids = set(facts.activation_eligible_sample_ids)
-    for state in states:
-        result = state.adapter_result
-        if result is None or state.error is not None:
+        if not facts.may_attempt_recovery:
             continue
-        assessment = result.assessment_input.assessment
-        sample_id = state.job.sample.identity.sample_identity_id
-        if sample_id not in eligible_ids or assessment.content.method_result != "HOLD":
-            continue
-        if assessment.candidate_peaks:
-            state.recovery_input = UntargetedCidNlRecoveryInput(
-                sample=state.job.sample,
-                candidate_assessment=assessment,
+        center = group.group_center_rt
+        if center is None:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "authorized recovery requires a frozen RT group"
             )
-            continue
-        state.recovery_group_center_rt = group.group_center_rt
+        for state in states:
+            result = state.adapter_result
+            assert result is not None
+            assessment = result.assessment_input.assessment
+            if (
+                state.job.sample.identity.sample_identity_id
+                not in facts.activation_eligible_sample_ids
+                or assessment.content.method_result != "HOLD"
+            ):
+                continue
+            if assessment.candidate_peaks:
+                state.recovery_input = UntargetedCidNlRecoveryInput(
+                    sample=state.job.sample,
+                    candidate_assessment=assessment,
+                )
+            else:
+                state.recovery_group_center_rts = tuple(
+                    sorted((*state.recovery_group_center_rts, center))
+                )
 
 
 def _execute_recovery(
     state: _RuntimeJobState,
-    *,
-    group_center_rt: float,
 ) -> None:
     job = state.job
     result = state.adapter_result
@@ -824,19 +998,33 @@ def _execute_recovery(
             expected_acquisition_source=source,
         )
         state.opened = True
-        state.recovery_attempt = recover_untargeted_cid_nl_sample_subject(
+        trace_batch = acquire_untargeted_cid_nl_recovery_trace_batch(
             processing_owners=job.processing_owners,
             sample=job.sample,
-            method_subject=job.method_subject,
-            group_center_rt=group_center_rt,
-            support_policy=(
-                result.assessment_input.assessment.content.evaluation_receipt.support_policy
+            recovery_requests=tuple(
+                (job.method_subject, center)
+                for center in state.recovery_group_center_rts
             ),
             peak_config=job.peak_config,
             raw=raw,
-            _observer=state.observer,
         )
-        state.recovery_input = state.recovery_attempt.recovery_input
+        for center in state.recovery_group_center_rts:
+            recovery = recover_untargeted_cid_nl_sample_subject(
+                processing_owners=job.processing_owners,
+                sample=job.sample,
+                method_subject=job.method_subject,
+                group_center_rt=center,
+                support_policy=result.assessment_input.assessment.content.evaluation_receipt.support_policy,
+                peak_config=job.peak_config,
+                raw=raw,
+                _observer=state.observer,
+                settings=job.settings,
+                signal_processing_profile=job.signal_processing_profile,
+                _preacquired_traces=trace_batch,
+            )
+            state.recovery_attempts += (recovery,)
+        if len(state.recovery_attempts) == 1:
+            state.recovery_input = state.recovery_attempts[0].recovery_input
     except RawReaderOpenError as exc:
         state.cleanup_outcome = (
             RuntimeResourceCleanupOutcome.FAILED
@@ -862,8 +1050,7 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             (
                 state
                 for state in phase.states
-                if state.error is None
-                and state.recovery_group_center_rt is not None
+                if state.error is None and state.recovery_group_center_rts
             ),
             key=lambda state: state.job.method_subject.method_subject_id,
         )
@@ -898,10 +1085,10 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             recovery_requests=tuple(
                 (
                     state.job.method_subject,
-                    state.recovery_group_center_rt,
+                    center,
                 )
                 for state in pending
-                if state.recovery_group_center_rt is not None
+                for center in state.recovery_group_center_rts
             ),
             peak_config=first.peak_config,
             raw=raw,
@@ -910,21 +1097,25 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
         for state in pending:
             result = state.adapter_result
             assert result is not None
-            assert state.recovery_group_center_rt is not None
-            state.recovery_attempt = recover_untargeted_cid_nl_sample_subject(
-                processing_owners=state.job.processing_owners,
-                sample=state.job.sample,
-                method_subject=state.job.method_subject,
-                group_center_rt=state.recovery_group_center_rt,
-                support_policy=(
-                    result.assessment_input.assessment.content.evaluation_receipt.support_policy
-                ),
-                peak_config=state.job.peak_config,
-                raw=None,
-                _observer=state.observer,
-                _preacquired_traces=trace_batch,
-            )
-            state.recovery_input = state.recovery_attempt.recovery_input
+            for center in state.recovery_group_center_rts:
+                recovery = recover_untargeted_cid_nl_sample_subject(
+                    processing_owners=state.job.processing_owners,
+                    sample=state.job.sample,
+                    method_subject=state.job.method_subject,
+                    group_center_rt=center,
+                    support_policy=(
+                        result.assessment_input.assessment.content.evaluation_receipt.support_policy
+                    ),
+                    peak_config=state.job.peak_config,
+                    raw=raw if state.job.method_subject.composition else None,
+                    settings=state.job.settings,
+                    signal_processing_profile=state.job.signal_processing_profile,
+                    _observer=state.observer,
+                    _preacquired_traces=trace_batch,
+                )
+                state.recovery_attempts += (recovery,)
+            if len(state.recovery_attempts) == 1:
+                state.recovery_input = state.recovery_attempts[0].recovery_input
     except RawReaderOpenError as exc:
         phase.recovery_cleanup_outcome = (
             RuntimeResourceCleanupOutcome.FAILED
@@ -941,9 +1132,7 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                phase.recovery_cleanup_outcome = (
-                    RuntimeResourceCleanupOutcome.FAILED
-                )
+                phase.recovery_cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 for state in pending:
                     if state.error is None:
                         state.error = exc
@@ -1038,9 +1227,9 @@ def _finalize_job_state(
                 artifacts=(
                     *adapter_result.lineage_artifacts,
                     *(
-                        state.recovery_attempt.lineage_artifacts
-                        if state.recovery_attempt is not None
-                        else ()
+                        artifact
+                        for recovery in state.recovery_attempts
+                        for artifact in recovery.lineage_artifacts
                     ),
                 ),
             )
@@ -1052,7 +1241,8 @@ def _finalize_job_state(
                 job=job,
                 result=adapter_result,
                 recovery_input=state.recovery_input,
-                recovery_attempt=state.recovery_attempt,
+                recovery_attempt=None,
+                recovery_attempts=state.recovery_attempts,
                 acquisition=acquisition,
             )
             registered_artifacts = canonical_current_attempt_artifact_closure(
@@ -1130,7 +1320,7 @@ def _finalize_job_state(
             adapter_result=adapter_result,
             result_ref=result_ref,
             recovery_input=state.recovery_input,
-            recovery_attempt=state.recovery_attempt,
+            recovery_attempts=state.recovery_attempts,
         )
         if success and adapter_result is not None and result_ref is not None
         else None
@@ -1149,7 +1339,17 @@ def mint_untargeted_cid_nl_sample_result_ref(
     recovery_input: UntargetedCidNlRecoveryInput | None,
     recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None,
     acquisition: TraceAcquisitionBatch | None,
+    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = (),
 ) -> UntargetedCidNlSampleResultRef:
+    if recovery_attempt is not None:
+        if recovery_attempts:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "duplicate recovery input carriers"
+            )
+        recovery_attempts = (recovery_attempt,)
+    if len(recovery_attempts) == 1:
+        recovery_attempt = recovery_attempts[0]
+    recovery_assessments = tuple(attempt.assessment for attempt in recovery_attempts)
     assessment = result.assessment_input.assessment
     projections = result.assessment_input.discovery_projections
     acquisition_sha256 = (
@@ -1164,12 +1364,37 @@ def mint_untargeted_cid_nl_sample_result_ref(
         raise UntargetedCidNlRealDataRuntimeError(
             "recovery input does not match the observed recovery attempt"
         )
+    for observed in recovery_attempts:
+        validate_cid_nl_method_assessment_binding(
+            observed.assessment,
+            processing_owners=job.processing_owners,
+            sample=job.sample,
+            method_subject=job.method_subject,
+        )
+        if acquisition is None or _canonical_acquisition_bytes(
+            observed.acquisition
+        ) != _canonical_acquisition_bytes(acquisition):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "recovery lost its sealed runtime result acquisition"
+            )
+    if len(recovery_attempts) > 1 and recovery_input is not None:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "multiple recoveries cannot use a scalar recovery input"
+        )
     recovery_assessment = (
         recovery_attempt.assessment
         if recovery_attempt is not None
         else (
             recovery_input.candidate_assessment if recovery_input is not None else None
         )
+    )
+    recovery_candidate_count = len(
+        {
+            peak.content.peak_observation_content_id
+            for ref in recovery_assessments
+            or ((recovery_assessment,) if recovery_assessment is not None else ())
+            for peak in ref.candidate_peaks
+        }
     )
     values = {
         "work_unit_key": job.work_unit_key,
@@ -1187,10 +1412,16 @@ def mint_untargeted_cid_nl_sample_result_ref(
             if recovery_assessment is not None
             else None
         ),
-        "recovery_candidate_count": (
-            len(recovery_assessment.candidate_peaks)
-            if recovery_assessment is not None
-            else 0
+        "recovery_candidate_count": recovery_candidate_count,
+        "recovery_assessment_artifact_ids": tuple(
+            ref.artifact.evidence_artifact_id for ref in recovery_assessments
+        ),
+        "recovery_query_bounds": tuple(
+            (
+                ref.content.evaluation_receipt.query_rt_min,
+                ref.content.evaluation_receipt.query_rt_max,
+            )
+            for ref in recovery_assessments
         ),
         "acquisition_sha256": acquisition_sha256,
     }
@@ -1204,15 +1435,19 @@ def mint_untargeted_cid_nl_sample_result_ref(
         ),
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=payload,
-        upstream_artifacts=(
-            assessment.artifact,
-            *(projection.artifact for projection in projections),
-            *(
-                (recovery_assessment.artifact,)
-                if recovery_assessment is not None
-                and recovery_assessment.artifact != assessment.artifact
-                else ()
-            ),
+        upstream_artifacts=tuple(
+            dict.fromkeys(
+                (
+                    assessment.artifact,
+                    *(projection.artifact for projection in projections),
+                    *(ref.artifact for ref in recovery_assessments),
+                    *(
+                        (recovery_assessment.artifact,)
+                        if recovery_assessment is not None
+                        else ()
+                    ),
+                )
+            )
         ),
     )
     return UntargetedCidNlSampleResultRef(
@@ -1231,12 +1466,18 @@ def mint_untargeted_cid_nl_sample_result_ref(
             if recovery_assessment is not None
             else None
         ),
-        recovery_candidate_count=(
-            len(recovery_assessment.candidate_peaks)
-            if recovery_assessment is not None
-            else 0
-        ),
+        recovery_candidate_count=recovery_candidate_count,
         acquisition_sha256=acquisition_sha256,
+        recovery_assessment_artifact_ids=tuple(
+            ref.artifact.evidence_artifact_id for ref in recovery_assessments
+        ),
+        recovery_query_bounds=tuple(
+            (
+                ref.content.evaluation_receipt.query_rt_min,
+                ref.content.evaluation_receipt.query_rt_max,
+            )
+            for ref in recovery_assessments
+        ),
         artifact=artifact,
     )
 
@@ -1256,6 +1497,8 @@ def canonical_untargeted_cid_nl_sample_result_bytes(
         recovery_assessment_artifact_id=(reference.recovery_assessment_artifact_id),
         recovery_candidate_count=reference.recovery_candidate_count,
         acquisition_sha256=reference.acquisition_sha256,
+        recovery_assessment_artifact_ids=reference.recovery_assessment_artifact_ids,
+        recovery_query_bounds=reference.recovery_query_bounds,
     )
 
 
@@ -1306,7 +1549,9 @@ def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:
     ).encode("utf-8")
 
 
-def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> None:
+def _validate_request_bound_inputs(
+    job: UntargetedCidNlRealDataRuntimeJob,
+) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
     request = job.processing_owners.request
     if (
         request.scientific_input_schema_version
@@ -1320,27 +1565,64 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
             "processing request does not use the supported real-data runtime contract"
         )
     request_inputs = json.loads(request.normalized_scientific_inputs_json)
-    subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
-    if (
-        isinstance(subject_payload, dict)
-        and subject_payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    ):
-        try:
-            batch = cid_nl_method_subject_batch_from_request(request)
-        except CidNlMethodSubjectContractError as exc:
+    physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
+    if job.signal_processing_profile is None:
+        if physical_payload is not None or job.physical_records:
             raise UntargetedCidNlRealDataRuntimeError(
-                "processing request has an invalid CID-NL subject batch"
-            ) from exc
+                "physical replay lost its profile"
+            )
+    else:
+        records = {record.candidate_id: record for record in job.physical_records}
+        if (
+            type(job.physical_records) is not tuple
+            or len(records) != len(job.physical_records)
+            or set(records) != {candidate.candidate_id for candidate in job.candidates}
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay candidate coverage changed"
+            )
+        expected_physical = physical_capture_input_payload(
+            job.signal_processing_profile,
+            {
+                candidate_id: record.evaluation
+                for candidate_id, record in records.items()
+            },
+        )
+        if (
+            not isinstance(physical_payload, dict)
+            or physical_payload.get("profile") != expected_physical["profile"]
+            or not isinstance(physical_payload.get("candidates"), dict)
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay profile is not request-bound"
+            )
+        expected_candidates = expected_physical["candidates"]
+        assert isinstance(expected_candidates, dict)
+        actual_candidates = physical_payload["candidates"]
+        if any(
+            actual_candidates.get(candidate_id) != value
+            for candidate_id, value in expected_candidates.items()
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay answer is not request-bound"
+            )
+    try:
+        pinned = cid_nl_method_subjects_from_request(request)
+    except CidNlMethodSubjectContractError as exc:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "processing request has an invalid CID-NL method subject configuration"
+        ) from exc
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         matching_subjects = tuple(
             subject
-            for subject in batch.subjects
+            for subject in pinned.subjects
             if subject.method_subject_id == job.method_subject.method_subject_id
         )
         if matching_subjects != (job.method_subject,):
             raise UntargetedCidNlRealDataRuntimeError(
                 "method subject is not an exact member of the processing request"
             )
-    elif subject_payload != job.method_subject.request_payload():
+    elif pinned != job.method_subject:
         raise UntargetedCidNlRealDataRuntimeError(
             "method subject does not match the processing request"
         )
@@ -1393,36 +1675,23 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
         raise UntargetedCidNlRealDataRuntimeError(
             "candidate universe does not match the processing request"
         )
+    return pinned
 
 
 def _request_subject_candidates(
     job: UntargetedCidNlRealDataRuntimeJob,
 ) -> tuple[DiscoveryCandidate, ...]:
-    request_inputs = json.loads(
-        job.processing_owners.request.normalized_scientific_inputs_json
-    )
-    subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
-    if not (
-        isinstance(subject_payload, dict)
-        and subject_payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    ):
+    pinned = job._request_subjects
+    if not isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
             job.candidates,
             sample=job.sample,
             method_subject=job.method_subject,
             settings=job.settings,
         )
-    try:
-        batch = cid_nl_method_subject_batch_from_request(
-            job.processing_owners.request
-        )
-    except CidNlMethodSubjectContractError as exc:
-        raise UntargetedCidNlRealDataRuntimeError(
-            "processing request has an invalid CID-NL subject batch"
-        ) from exc
     member_ids = {
         candidate_id
-        for candidate_id, method_subject_id in batch.candidate_memberships
+        for candidate_id, method_subject_id in pinned.candidate_memberships
         if method_subject_id == job.method_subject.method_subject_id
     }
     return tuple(
@@ -1433,14 +1702,7 @@ def _request_subject_candidates(
 
 
 def _request_uses_subject_batch(job: UntargetedCidNlRealDataRuntimeJob) -> bool:
-    request_inputs = json.loads(
-        job.processing_owners.request.normalized_scientific_inputs_json
-    )
-    subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
-    return (
-        isinstance(subject_payload, dict)
-        and subject_payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    )
+    return isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch)
 
 
 def _runtime_sample_groups(
@@ -1468,8 +1730,6 @@ def _runtime_sample_groups(
                 "sample-local runtime jobs crossed their shared acquisition inputs"
             )
     return groups
-
-
 
 
 def _failure_detail(

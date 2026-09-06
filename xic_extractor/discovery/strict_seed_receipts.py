@@ -37,25 +37,34 @@ def read_complete_strict_scan_seeds(
     *,
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
+    preserve_configured_losses: bool = False,
 ) -> tuple[tuple[Ms2Scan, DiscoverySeed], ...]:
     """Return every declared strict scan once, with its exact canonical seed."""
 
-    by_scan: dict[int, tuple[Ms2Scan, DiscoverySeed]] = {}
+    by_scan: dict[tuple[int, float], tuple[Ms2Scan, DiscoverySeed]] = {}
     for candidate in candidates:
         for scan in _read_exact_scans(raw, candidate):
-            seed = _read_exact_seed(
+            seeds = _read_exact_seed(
                 scan,
                 raw_file=candidate.raw_file,
                 candidate=candidate,
                 settings=settings,
+                preserve_configured_losses=preserve_configured_losses,
             )
-            existing = by_scan.get(scan.scan_number)
-            if existing is not None and existing[1] != seed:
-                raise StrictSeedReceiptError(
-                    f"scan {scan.scan_number}: candidate receipts disagree on "
-                    "canonical strict evidence"
+            for seed in seeds:
+                key = (
+                    scan.scan_number,
+                    seed.configured_neutral_loss_da
+                    if preserve_configured_losses
+                    else 0.0,
                 )
-            by_scan[scan.scan_number] = (scan, seed)
+                existing = by_scan.get(key)
+                if existing is not None and existing[1] != seed:
+                    raise StrictSeedReceiptError(
+                        f"scan {scan.scan_number}: candidate receipts disagree on "
+                        "canonical strict evidence"
+                    )
+                by_scan[key] = (scan, seed)
     return tuple(by_scan[scan_number] for scan_number in sorted(by_scan))
 
 
@@ -94,7 +103,8 @@ def _read_exact_seed(
     raw_file: Path,
     candidate: DiscoveryCandidate,
     settings: DiscoverySettings,
-) -> DiscoverySeed:
+    preserve_configured_losses: bool = False,
+) -> tuple[DiscoverySeed, ...]:
     representative = scan.scan_number == candidate.best_ms2_scan_id
     tag_product_receipts = _scan_tag_product_receipts(
         candidate,
@@ -124,7 +134,8 @@ def _read_exact_seed(
             settings.precursor_mz_tolerance_ppm,
         )
         and (
-            not representative
+            preserve_configured_losses
+            or not representative
             or (
                 _receipt_close(seed.precursor_mz, candidate.precursor_mz)
                 and _receipt_close(seed.product_mz, candidate.product_mz)
@@ -144,11 +155,25 @@ def _read_exact_seed(
     tag_precedence = {
         tag_name: index for index, tag_name in enumerate(settings.selected_tag_names)
     }
-    return min(
-        matches,
-        key=lambda seed: tag_precedence.get(
-            seed.neutral_loss_tag,
-            len(tag_precedence),
+    if preserve_configured_losses:
+        # Reconstruct the representative's persisted facts as well.
+        if representative and not any(
+            _receipt_close(seed.precursor_mz, candidate.precursor_mz)
+            and _receipt_close(seed.product_mz, candidate.product_mz)
+            for seed in matches
+        ):
+            raise StrictSeedReceiptError(
+                f"{candidate.candidate_id}: "
+                "exact canonical Discovery seed is not unique"
+            )
+        return matches
+    return (
+        min(
+            matches,
+            key=lambda seed: tag_precedence.get(
+                seed.neutral_loss_tag,
+                len(tag_precedence),
+            ),
         ),
     )
 

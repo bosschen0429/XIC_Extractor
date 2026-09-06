@@ -6,6 +6,10 @@ from typing import Literal, Protocol
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+    supported_cid_nl_peak_ids,
+)
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
 HardGateFailureReason = Literal[
@@ -166,14 +170,15 @@ def _hard_gate_failure(
         return "same_sample"
     left_event = left.primary_identity_event
     right_event = right.primary_identity_event
+    composite_compatible = _compatible_composite_owners(left, right)
     if (left_event is None) != (right_event is None):
         return "neutral_loss_tag_mismatch"
-    if left.neutral_loss_tag != right.neutral_loss_tag:
+    if not composite_compatible and left.neutral_loss_tag != right.neutral_loss_tag:
         return "neutral_loss_tag_mismatch"
     if _ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance"
 
-    if left_event is None:
+    if left_event is None or composite_compatible:
         return None
     assert right_event is not None
     if _ppm(left_event.product_mz, right_event.product_mz) > (
@@ -189,6 +194,51 @@ def _hard_gate_failure(
     ):
         return "observed_loss_out_of_tolerance"
     return None
+
+
+def _compatible_composite_owners(
+    left: SampleLocalMS1Owner, right: SampleLocalMS1Owner
+) -> bool:
+    """Only exact typed assessment/physical membership closes composition."""
+    first, second = left.cid_nl_composite_assessment, right.cid_nl_composite_assessment
+    if not isinstance(first, CidNlMethodAssessmentRef) or not isinstance(
+        second, CidNlMethodAssessmentRef
+    ):
+        return False
+    assessments = (first, second)
+    if (
+        first.content.method_subject.composition is None
+        or first.content.method_subject != second.content.method_subject
+    ):
+        return False
+    for owner, assessment in zip((left, right), assessments, strict=True):
+        member = owner.cross_sample_member_subject
+        if (
+            member is None
+            or member.subject_id != owner.owner_id
+            or member.processing_request_id
+            != assessment.artifact.producer_processing_request_id
+            or member.canonical_sample_identity_id
+            != assessment.content.canonical_sample_identity_id
+        ):
+            return False
+        if len(member.physical_observation_ids) != 1 or not set(
+            member.physical_observation_ids
+        ).issubset(supported_cid_nl_peak_ids(assessment)):
+            return False
+        peak = next(
+            item
+            for item in assessment.candidate_peaks
+            if item.content.peak_observation_content_id
+            == member.physical_observation_ids[0]
+        )
+        if (
+            owner.raw_file != assessment.content.acquisition_source_id
+            or owner.selected_integration != peak.content.integration
+            or owner.precursor_mz != peak.content.mz
+        ):
+            return False
+    return True
 
 
 def _drift_corrected_delta_sec(

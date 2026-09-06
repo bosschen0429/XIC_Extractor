@@ -86,6 +86,14 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
 )
+_COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.peak_detection.cid_nl_method_assessment",
+    semantic_role=ARTIFACT_SEMANTIC_ROLE,
+    schema_version="cid_nl_method_assessment_v4",
+    validation_status=VALIDATION_STATUS,
+    media_type=MEDIA_TYPE,
+    serialization_format=SERIALIZATION_FORMAT,
+)
 
 
 class CidNlMethodAssessmentContractError(ValueError):
@@ -328,7 +336,11 @@ class CidNlMethodAssessmentRef:
             raise CidNlMethodAssessmentContractError(
                 "artifact must be an owner-minted EvidenceArtifactRef"
             )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
+        if self.artifact.semantic_contract != (
+            _COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT
+            if self.content.method_subject.composition
+            else _ARTIFACT_SEMANTIC_CONTRACT
+        ):
             raise CidNlMethodAssessmentContractError(
                 "artifact semantic contract is not owned by CID-NL assessment"
             )
@@ -405,6 +417,7 @@ def mint_cid_nl_method_assessment_ref(
         set_relation_refs=set_relations,
     )
     method_result, reason_codes = _method_result(
+        method_subject=subject,
         technical_state=technical_state,
         evaluation_receipt=evaluation_receipt,
         candidate_peaks=candidates,
@@ -450,7 +463,9 @@ def mint_cid_nl_method_assessment_ref(
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        semantic_contract=_COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT
+        if subject.composition
+        else _ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_cid_nl_method_assessment_bytes(content),
         upstream_artifacts=upstreams,
     )
@@ -504,11 +519,16 @@ def canonical_cid_nl_method_assessment_bytes(
         raise CidNlMethodAssessmentContractError(
             "canonical serialization requires method assessment content"
         )
+    content_payload = asdict(content)
     payload = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": "cid_nl_method_assessment_v4"
+        if content.method_subject.composition
+        else SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
-        "content": asdict(content),
+        "content": content_payload,
     }
+    if content.method_subject.composition is None:
+        content_payload["method_subject"].pop("composition")
     try:
         serialized = json.dumps(
             payload,
@@ -611,7 +631,12 @@ def _validate_attempt_state(
             raise CidNlMethodAssessmentContractError(
                 "completed evaluation cannot carry a technical failure reason"
             )
-        if evaluation_receipt.scanned_event_count < len(evidence_refs):
+        if evaluation_receipt.scanned_event_count < len(
+            {
+                (ref.observation.acquisition_source_id, ref.observation.scan_number)
+                for ref in evidence_refs
+            }
+        ):
             raise CidNlMethodAssessmentContractError(
                 "scanned_event_count cannot be smaller than measured evidence"
             )
@@ -671,7 +696,6 @@ def _validate_upstream_bindings(
             evaluation_receipt=evaluation_receipt,
             subject="candidate peak apex",
         )
-    configured_loss = method_subject.neutral_loss_da
     evidence_by_content_id = {}
     for evidence in evidence_refs:
         try:
@@ -693,11 +717,14 @@ def _validate_upstream_bindings(
             evaluation_receipt=evaluation_receipt,
             subject="CID-NL evidence scan",
         )
-        if not math.isclose(
-            evidence.observation.configured_neutral_loss_da,
-            configured_loss,
-            rel_tol=1e-12,
-            abs_tol=1e-12,
+        if not any(
+            math.isclose(
+                evidence.observation.configured_neutral_loss_da,
+                configured_loss,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+            for configured_loss in method_subject.configured_losses
         ):
             raise CidNlMethodAssessmentContractError(
                 "CID-NL evidence references a different method-subject neutral loss"
@@ -709,6 +736,9 @@ def _validate_upstream_bindings(
         (
             evidence.observation.acquisition_source_id,
             evidence.observation.scan_number,
+            evidence.observation.configured_neutral_loss_da
+            if method_subject.composition
+            else None,
         )
         for evidence in evidence_refs
     )
@@ -886,6 +916,7 @@ def _is_strict_unique_support(
 
 def _method_result(
     *,
+    method_subject: CidNlMethodSubject,
     technical_state: CidNlTechnicalState,
     evaluation_receipt: CidNlEvaluationReceipt,
     candidate_peaks: tuple[PeakObservationRef, ...],
@@ -896,8 +927,10 @@ def _method_result(
     if technical_state != "evaluated":
         assert evaluation_receipt.reason_code is not None
         return None, (evaluation_receipt.reason_code,)
-    if individual_support_refs:
+    if _supported_peak_ids(method_subject, evidence_refs, individual_support_refs):
         return "SUPPORT", ("unique_support_within_declared_candidate_universe",)
+    if method_subject.composition is not None and individual_support_refs:
+        return "HOLD", ("incomplete_composite_requirement",)
     if set_relation_refs:
         return "HOLD", ("set_level_relation",)
     if not candidate_peaks and any(
@@ -909,6 +942,43 @@ def _method_result(
     if candidate_peaks:
         return "HOLD", ("no_unique_qualifying_relation",)
     return "HOLD", ("insufficient_method_evidence",)
+
+
+def supported_cid_nl_peak_ids(assessment: CidNlMethodAssessmentRef) -> frozenset[str]:
+    """Physical peaks that satisfy the complete owner-bound requirement."""
+    if assessment.content.technical_state != "evaluated":
+        return frozenset()
+    return _supported_peak_ids(
+        assessment.content.method_subject,
+        assessment.evidence_refs,
+        assessment.individual_support_refs,
+    )
+
+
+def _supported_peak_ids(
+    subject: CidNlMethodSubject,
+    evidence_refs: tuple[CidNlEvidenceRef, ...],
+    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
+) -> frozenset[str]:
+    loss_by_evidence = {
+        ref.artifact.content_identity.artifact_content_id: (
+            ref.observation.configured_neutral_loss_da
+        )
+        for ref in evidence_refs
+    }
+    losses_by_peak: dict[str, set[float]] = {}
+    for support in individual_support_refs:
+        losses_by_peak.setdefault(
+            support.content.peak_observation_content_id, set()
+        ).add(loss_by_evidence[support.content.cid_nl_evidence_content_id])
+    required = set(subject.configured_losses)
+    return frozenset(
+        peak_id
+        for peak_id, losses in losses_by_peak.items()
+        if subject.composition is None
+        or subject.composition.combine_mode == "union"
+        or required.issubset(losses)
+    )
 
 
 def _assessment_upstream_artifacts(

@@ -71,7 +71,11 @@ def compose_cid_nl_peak_hypotheses_from_assessment(
             [],
         ).append(relation)
     hypotheses: list[PeakHypothesis] = []
-    for peak_id in sorted(refs_by_peak_id):
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        supported_cid_nl_peak_ids,
+    )
+
+    for peak_id in sorted(supported_cid_nl_peak_ids(assessment)):
         peak = peak_by_id.get(peak_id)
         if peak is None:
             raise HypothesisOwnerAdapterError(
@@ -82,6 +86,17 @@ def compose_cid_nl_peak_hypotheses_from_assessment(
                 processing_owners=processing_owners,
                 sample=sample,
                 scan_support_refs=tuple(refs_by_peak_id[peak_id]),
+                evidence_refs=tuple(
+                    ref
+                    for ref in assessment.evidence_refs
+                    if ref.artifact.content_identity.artifact_content_id
+                    in {
+                        support.content.cid_nl_evidence_content_id
+                        for support in refs_by_peak_id[peak_id]
+                    }
+                )
+                if assessment.content.method_subject.composition
+                else (),
             )
             hypothesis = compose_cid_nl_peak_hypothesis(
                 processing_owners=processing_owners,
@@ -153,7 +168,12 @@ def owner_from_cid_nl_assessment_support(
     ) / len(measured)
     integration = observation.content.integration
     neutral_loss_tag = (
-        f"{assessment.content.method_id}:{measured[0].configured_neutral_loss_da:.12g}"
+        assessment.content.method_subject.method_subject_id
+        if assessment.content.method_subject.composition
+        else (
+            f"{assessment.content.method_id}:"
+            f"{measured[0].configured_neutral_loss_da:.12g}"
+        )
     )
     event = IdentityEvent(
         candidate_id=hypothesis.hypothesis_id,
@@ -181,11 +201,12 @@ def owner_from_cid_nl_assessment_support(
         supporting_events=(),
         identity_conflict=False,
         assignment_reason="cid_nl_method_assessment_unique_support",
+        cid_nl_composite_assessment=assessment
+        if assessment.content.method_subject.composition
+        else None,
         selected_integration=integration,
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
-            processing_request_id=(
-                assessment.artifact.producer_processing_request_id
-            ),
+            processing_request_id=(assessment.artifact.producer_processing_request_id),
             sample=sample,
             hypothesis=hypothesis,
         ),
@@ -229,17 +250,21 @@ def owner_from_cid_nl_assessment_observation(
         )
     integration = observation.content.integration
     neutral_loss = assessment.content.method_subject.neutral_loss_da
-    event = IdentityEvent(
-        candidate_id=hypothesis.hypothesis_id,
-        sample_stem=sample.metadata.raw_stem,
-        raw_file=observation.generation_provenance.acquisition_source_id,
-        neutral_loss_tag=(f"{assessment.content.method_id}:{neutral_loss:.12g}"),
-        precursor_mz=observation.content.mz,
-        product_mz=observation.content.mz - neutral_loss,
-        observed_neutral_loss_da=neutral_loss,
-        seed_rt=integration.rt_apex_min,
-        evidence_score=100,
-        seed_event_count=1,
+    event = (
+        None
+        if neutral_loss is None
+        else IdentityEvent(
+            candidate_id=hypothesis.hypothesis_id,
+            sample_stem=sample.metadata.raw_stem,
+            raw_file=observation.generation_provenance.acquisition_source_id,
+            neutral_loss_tag=(f"{assessment.content.method_id}:{neutral_loss:.12g}"),
+            precursor_mz=observation.content.mz,
+            product_mz=observation.content.mz - neutral_loss,
+            observed_neutral_loss_da=neutral_loss,
+            seed_rt=integration.rt_apex_min,
+            evidence_score=100,
+            seed_event_count=1,
+        )
     )
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
@@ -410,7 +435,10 @@ def _assessment_hypothesis_components(
                 "hypothesis support evidence is missing from the assessment"
             )
         support_evidence.append(evidence)
-    if len(support_evidence) != support.content.strict_nl_scan_count:
+    if (
+        len({ref.observation.scan_number for ref in support_evidence})
+        != support.content.strict_nl_scan_count
+    ):
         raise HypothesisOwnerAdapterError(
             "hypothesis support scan count does not close its measured evidence"
         )

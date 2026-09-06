@@ -1,7 +1,7 @@
 # Presets
 
-Presets are explicit bundles of resolver settings, alignment settings, and
-post-alignment stages. They are reproducibility and public behavior surfaces;
+Presets are named Discovery methods with effective tuning and the retained
+alignment runtime option. They are reproducibility and public behavior surfaces;
 they are not product authority by themselves.
 
 ## Contract
@@ -17,6 +17,13 @@ they are not product authority by themselves.
   overwrite user intent.
 - Preset runs should be reproducible from documented CLI/config surfaces and
   metadata, not from branch-local command diaries.
+- `serialize_preset` and `save_preset` own portable method export. They resolve
+  effective Discovery values and the preset-owned runtime option before writing
+  the existing TOML shape, then validate it through the same parser and apply
+  functions used for intake. Invalid methods leave an existing destination intact.
+  Export preserves tag order and combination; `source` is derived on load and
+  is never a TOML field or scientific identity. The format carries method intent,
+  not RAW/output paths, worker counts, or GUI state.
 - `dna_dr_product_ready` is a historical compatibility name for the
   `raw_superwindow` Owner Build profile. A successful run does not assert
   product readiness and does not invoke Standard Peak or a publication checker.
@@ -30,7 +37,9 @@ they are not product authority by themselves.
 | Surface | Role |
 | --- | --- |
 | `xic_extractor/presets/` | Preset loading and code surface |
+| `xic_extractor/presets/serialization.py` | Validated effective-method TOML export and atomic saving |
 | `xic_extractor/presets/data/` | Built-in TOML preset resources |
+| `scripts/run_discovery.py --preset ...` | Discovery CLI using the same recipe binder; only explicit tuning flags override the method |
 | `scripts/run_alignment.py --preset ...` | CLI path that activates alignment presets |
 | Resolver settings in config/GUI | Public behavior surface for peak detection choices |
 | Runner metadata and sidecars | Provenance for preset-backed runs |
@@ -53,10 +62,15 @@ The current V1 routes remain the existing entry-point modes:
 | `align_only` | Existing Discovery index -> retained finalized CID-NL batch -> canonical Matrix writer |
 | diagnostic ModeTrack review runner | Opt-in single-subject debug/batch review; no product authority |
 
-The retained finalized CID-NL batch closes the Matrix loop for pure
-single-provider presets. Its route receipt preserves any configured legacy
+The retained finalized CID-NL batch closes the Matrix loop for neutral-loss
+presets, including multi-tag `union` (OR) and `intersection` (AND). OR accepts
+any configured tag on the same physical peak; AND requires all configured tags
+on that peak within one sample. Alignment and recovery use the same method
+requirement. Different tag hits across samples can share a row when the existing
+physical peak compatibility gates pass; labels alone do not establish identity.
+Its route receipt preserves any configured legacy
 owner-build backend for compatibility but reports no effective legacy backend.
-Generic Alignment remains the explicit route for non-pure methods. Standard Peak is
+Normal Alignment rejects methods outside this CID-NL route. Standard Peak is
 not reachable from normal CLI/GUI/preset execution, and the source-Matrix
 republisher and its authority/productization chain are deleted. Retained
 Standard Peak helpers are explicit offline falsifiers/renderers only; T5D does
