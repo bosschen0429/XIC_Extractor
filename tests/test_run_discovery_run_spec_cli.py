@@ -98,6 +98,45 @@ def test_discovery_cli_rejects_competing_method_sources(selector) -> None:
     assert exc.value.code == 2
 
 
+def test_discovery_cli_reports_unreadable_preset_before_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"preset-read-error")
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    method = tmp_path / "method.toml"
+    method.write_text("unreadable method", encoding="utf-8")
+    read_bytes = Path.read_bytes
+
+    def unreadable_method(path: Path) -> bytes:
+        if path == method:
+            raise PermissionError("preset access denied " + "x" * 500)
+        return read_bytes(path)
+
+    def unexpected_compile(*_args, **_kwargs):
+        pytest.fail("execution entered after preset read failure")
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable_method)
+    monkeypatch.setattr(
+        run_discovery, "_compile_processing_run_spec", unexpected_compile
+    )
+    code = run_discovery.main(
+        ["--raw", str(raw_path), "--dll-dir", str(dll_dir), "--preset", str(method)]
+    )
+
+    assert code == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err.startswith(
+        "Discovery run specification failed: preset access denied"
+    )
+    assert len(output.err.rstrip("\n")) <= 400
+    assert "Traceback" not in output.err
+
+
 def test_run_discovery_main_rejects_duplicate_acquisition_content_before_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

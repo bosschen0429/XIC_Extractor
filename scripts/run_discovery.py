@@ -49,7 +49,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         settings = _discovery_settings(args)
-    except (PresetError, ValueError) as exc:
+    except (OSError, PresetError, ValueError) as exc:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
     data_dir = raw_path.parent if raw_path is not None else raw_dir
