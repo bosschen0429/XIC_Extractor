@@ -27,7 +27,7 @@ from tests.test_discovery_pipeline import (
     _settings,
 )
 from xic_extractor.discovery.csv_writer import build_discovery_review_note
-from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
+from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem, DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
     _backfill_ms1_candidates_with_acquisition,
 )
@@ -57,6 +57,133 @@ from xic_extractor.xic_models import XICTrace
 _TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
 
 
+@pytest.mark.parametrize("combine_mode", ("union", "intersection"))
+def test_merged_physical_candidate_persists_representative_search_window(
+    tmp_path: Path, combine_mode: str
+) -> None:
+    from xic_extractor.acquisition_contract import serialize_acquired_trace
+    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+    from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+        _restore_physical_candidate,
+    )
+    from xic_extractor.peak_detection.evidence_facts import (
+        serialize_physical_peak_evaluation,
+    )
+
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"representative-window")
+    settings = DiscoverySettings(
+        selected_tag_names=("dR", "R"),
+        tag_combine_mode=combine_mode,
+        neutral_loss_profiles=_multi_tag_settings().neutral_loss_profiles[:2],
+    )
+    profile = SignalProcessingProfile(window_points=3)
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings, signal_processing_profile=profile
+    )
+    source = spec.acquisition_inputs[0].acquisition_source
+    groups = tuple(
+        replace(
+            _group((_seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),)),
+            neutral_loss_tag=tag,
+            configured_neutral_loss_da=loss,
+            matched_tag_names=(tag,),
+        )
+        for scan, rt, tag, loss in (
+            (10, 7.78, "dR", 116.047344),
+            (20, 7.82, "R", 132.0423),
+        )
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        groups,
+        acquisition_source=source,
+        run_spec_id=spec.run_spec_id,
+        settings=settings,
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+    (candidate,) = result.candidates
+    (binding,) = result.physical_bindings
+    assert binding.candidate is candidate
+    assert binding.member_source_ordinals == (0, 1)
+    assert candidate.matched_tag_names == ("dR", "R")
+    assert candidate.seed_scan_ids == (10, 20)
+    assert (
+        len(
+            {
+                (work.xic_rt_min, work.xic_rt_max)
+                for work in result.physical_work_manifest
+            }
+        )
+        == 2
+    )
+    selected = binding.physical_fact_record
+    before_trace = serialize_acquired_trace(selected.acquired_trace)
+    before_evaluation = serialize_physical_peak_evaluation(
+        selected.rt, selected.raw, profile=profile, evaluation=selected.evaluation
+    )
+    csv_path = write_discovery_candidates_csv(tmp_path / "candidates.csv", (candidate,))
+    sidecar_path = tmp_path / "physical.json"
+    write_discovery_physical_fact_sidecar(
+        sidecar_path,
+        run_spec=spec,
+        acquisition_input=spec.acquisition_inputs[0],
+        work_manifest=result.physical_work_manifest,
+        records=result.physical_evaluations,
+    )
+    records = read_discovery_physical_fact_sidecar(
+        sidecar_path,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+        expected_work_manifest=result.physical_work_manifest,
+    )
+    restored_record = next(
+        record for record in records if record.candidate_id == candidate.candidate_id
+    )
+    (csv_candidate,) = read_discovery_candidates_csv(csv_path)
+    restored = _restore_physical_candidate(csv_candidate, restored_record)
+    assert (
+        restored.ms1_search_rt_min
+        == candidate.ms1_search_rt_min
+        == selected.work_item.xic_rt_min
+    )
+    assert (
+        restored.ms1_search_rt_max
+        == candidate.ms1_search_rt_max
+        == selected.work_item.xic_rt_max
+    )
+    assert restored.best_ms2_scan_id == selected.work_item.best_ms2_scan_id
+    assert selected.evaluation.facts is not None
+    assert (
+        restored.ms1_area
+        == candidate.ms1_area
+        == selected.evaluation.facts.area_counts_seconds
+    )
+    assert (
+        restored.ms1_height == candidate.ms1_height == selected.evaluation.facts.height
+    )
+    assert serialize_acquired_trace(restored_record.acquired_trace) == before_trace
+    assert (
+        serialize_physical_peak_evaluation(
+            restored_record.rt,
+            restored_record.raw,
+            profile=profile,
+            evaluation=restored_record.evaluation,
+        )
+        == before_evaluation
+    )
+    assert raw.raw_chromatogram_call_count == 1
+    for name in ("ms1_search_rt_min", "ms1_search_rt_max"):
+        with pytest.raises(ValueError, match="search window"):
+            replace(
+                binding,
+                candidate=replace(candidate, **{name: getattr(candidate, name) + 0.01}),
+            )
+
+
 class _CadenceBoundRaw:
     def __init__(self, source, rt: np.ndarray, intensity: np.ndarray) -> None:
         self.acquisition_source = source
@@ -71,9 +198,7 @@ class _CadenceBoundRaw:
         traces = []
         for request in requests:
             mask = (self.rt >= request.rt_min) & (self.rt <= request.rt_max)
-            traces.append(
-                XICTrace.from_arrays(self.rt[mask], self.intensity[mask])
-            )
+            traces.append(XICTrace.from_arrays(self.rt[mask], self.intensity[mask]))
         return tuple(traces)
 
     def scan_window_for_request(self, request):
@@ -362,9 +487,7 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
-    full_intensity = 100.0 + 10_000.0 * np.exp(
-        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
-    )
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.15) ** 2)
 
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
@@ -419,9 +542,7 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
-    full_intensity = 100.0 + 10_000.0 * np.exp(
-        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
-    )
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.15) ** 2)
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
     group = _group(
@@ -468,9 +589,7 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
-    full_intensity = 100.0 + 10_000.0 * np.exp(
-        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
-    )
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.15) ** 2)
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
     group = _group(

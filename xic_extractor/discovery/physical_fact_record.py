@@ -103,9 +103,7 @@ def validate_discovery_physical_fact_record(
             record.acquired_trace.trace.intensity,
         )
     except ValueError as exc:
-        raise ValueError(
-            "physical evaluation crosses acquired trace content"
-        ) from exc
+        raise ValueError("physical evaluation crosses acquired trace content") from exc
 
 
 def validate_discovery_candidate_physical_binding(
@@ -149,6 +147,13 @@ def validate_discovery_candidate_physical_binding(
         )
     if work_item.sample_stem != binding.candidate.sample_stem:
         raise ValueError("Discovery physical binding crosses record sample")
+    if (
+        binding.candidate.ms1_search_rt_min != work_item.xic_rt_min
+        or binding.candidate.ms1_search_rt_max != work_item.xic_rt_max
+    ):
+        raise ValueError(
+            "Discovery physical binding crosses representative search window"
+        )
     if work_item.selection_subject_id != binding.selection_subject_id:
         raise ValueError("Discovery physical binding crosses record selection subject")
     expected_subject_id = build_discovery_physical_selection_subject_id(
