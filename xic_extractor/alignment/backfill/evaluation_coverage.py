@@ -412,7 +412,7 @@ def _validate_conservative_no_request(
         or not target.method_assessment.content.evaluation_receipt.acquisition_supported
         or target.peak_observation is not None
         or target.peak_hypothesis is not None
-        or target.method_assessment.candidate_peaks
+        or (proof.completion is not None and target.method_assessment.candidate_peaks)
         or target.content.outside_group is not None
         or decision.disposition != "hold"
         or decision.matched_candidate is not None

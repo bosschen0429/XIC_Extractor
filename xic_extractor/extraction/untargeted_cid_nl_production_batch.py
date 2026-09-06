@@ -641,7 +641,6 @@ def compose_untargeted_cid_nl_production_result(
                 if (
                     cell.content.technical_state != "evaluated"
                     or cell.content.method_result != "HOLD"
-                    or cell.method_assessment.candidate_peaks
                     or cell.peak_observation is not None
                 ):
                     continue
@@ -650,6 +649,8 @@ def compose_untargeted_cid_nl_production_result(
                     ConservativeBackfillRecoveryCandidateUniverse, ...
                 ] = ()
                 if facts.may_attempt_recovery:
+                    if cell.method_assessment.candidate_peaks:
+                        continue
                     sample_result = result_by_key[
                         (sample.metadata.raw_stem, subject.method_subject_id)
                     ]

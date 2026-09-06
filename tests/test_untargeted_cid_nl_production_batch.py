@@ -1459,7 +1459,15 @@ def test_production_batch_executes_one_atomic_sample_phase(
 
 
 @pytest.mark.parametrize(
-    "scenario", ("mixed", "all_hold", "all_reject", "hold_reject", "other_support")
+    "scenario",
+    (
+        "mixed",
+        "all_hold",
+        "all_reject",
+        "hold_reject",
+        "other_support",
+        "ambiguous_hold_below_threshold",
+    ),
 )
 def test_production_composition_closes_observation_only_hold_without_membership(
     tmp_path: Path,
@@ -1493,6 +1501,8 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     )
     peak_config = _peak_config(tmp_path)
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
+    if scenario == "ambiguous_hold_below_threshold":
+        source_raws[raw_paths[1]] = _FakeRaw((7.8, 8.2))
     rejected_samples = (
         ("Support", "Hold")
         if scenario == "all_reject"
@@ -1509,12 +1519,13 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         settings=settings,
         peak_config=peak_config,
     )[0]
-    direct_hold = _current_candidates(
+    direct_hold_candidates = _current_candidates(
         source_raws[raw_paths[1]],
         raw_file=raw_paths[1],
         settings=settings,
         peak_config=peak_config,
-    )[0]
+    )
+    direct_hold = direct_hold_candidates[0]
     inferred_hold = replace(
         direct_hold,
         precursor_mz_basis="product_plus_neutral_loss",
@@ -1523,7 +1534,12 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         "Support": (support,),
         "Hold": (inferred_hold,),
     }
-    if scenario != "mixed":
+    if scenario == "ambiguous_hold_below_threshold":
+        candidates_by_sample["Hold"] = tuple(
+            replace(candidate, precursor_mz_basis="product_plus_neutral_loss")
+            for candidate in direct_hold_candidates
+        )
+    if scenario not in {"mixed", "ambiguous_hold_below_threshold"}:
         candidates_by_sample["Support"] = (
             replace(support, precursor_mz_basis="product_plus_neutral_loss"),
         )
@@ -1569,7 +1585,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-hold",
     )
-    _install_runtime_raws(
+    opened = _install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
@@ -1598,9 +1614,11 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             "all_reject": 0,
             "hold_reject": 1,
             "other_support": 2,
+            "ambiguous_hold_below_threshold": 2,
         }[scenario]
     )
 
+    opens_before_composition = sum(map(len, opened.values()))
     completed = compose_untargeted_cid_nl_production_result(
         batch,
         runtime_result,
@@ -1612,6 +1630,66 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     )
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
     assert writer_inputs.matrix.sample_order == ("Support", "Hold")
+    if scenario == "ambiguous_hold_below_threshold":
+        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+        assert all(
+            not result.recovery_attempts for result in runtime_result.sample_results
+        )
+        assert sum(map(len, opened.values())) == opens_before_composition == 2
+        (child,) = completed.application_result.children
+        scientific = child.scientific_core
+        handoff = scientific.cell_observation_handoff
+        coverage = handoff.coverage
+        position = next(
+            item
+            for item in coverage.epoch.positions
+            if item.sample.metadata.raw_stem == "Hold"
+        )
+        proof = position.conservative_no_request_proof
+        assert proof.variant == "threshold_not_met"
+        assert proof.completion is None
+        assert proof.decision.group_facts.direct_support_count_s == 1
+        assert proof.decision.group_facts.minimum_support_k == 2
+        assert not proof.decision.group_facts.may_attempt_recovery
+        assert proof.decision.reason_codes == ("direct_support_threshold_not_met",)
+        assert position.primary_logical_requests == coverage.terminals == ()
+        hold_cell = next(
+            cell
+            for cell in scientific.cell_observations
+            if cell.canonical_sample.metadata.raw_stem == "Hold"
+        )
+        assert hold_cell.evidence_states == ("not_searched",)
+        assert hold_cell.repair_receipts == hold_cell.repaired_observations == ()
+        (source,) = hold_cell.predecessor_cells
+        assert source is proof.decision.target_cell
+        assert source.content.method_result == "HOLD"
+        assert len(source.method_assessment.candidate_peaks) == 2
+        assert source.method_assessment is next(
+            result.adapter_result.assessment_input.assessment
+            for result in runtime_result.sample_results
+            if result.job.sample.metadata.raw_stem == "Hold"
+        )
+        assert source.peak_observation is source.peak_hypothesis is None
+        assert all(
+            not item.write_matrix_value and item.matrix_value is None
+            for item in writer_inputs.production_decisions.cells.values()
+            if item.sample_stem == "Hold"
+        )
+        matrix_path = tmp_path / "ambiguous-hold-matrix.tsv"
+        write_alignment_matrix_tsv(
+            matrix_path,
+            writer_inputs.matrix,
+            production_decisions=writer_inputs.production_decisions,
+        )
+        with matrix_path.open(encoding="utf-8", newline="") as handle:
+            assert all(
+                row["Hold"] == "" for row in csv.DictReader(handle, delimiter="\t")
+            )
+        _assert_conservative_proof_seals(
+            proof, position, coverage, handoff, hold_cell, batch, runtime_result
+        )
+        return
     if scenario != "mixed":
         _assert_single_unsupported_exclusion(
             completed,
