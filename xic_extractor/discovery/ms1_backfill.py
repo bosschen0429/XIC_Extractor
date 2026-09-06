@@ -473,9 +473,11 @@ def _has_strong_inferred_precursor_support(
     *,
     settings: DiscoverySettings,
 ) -> bool:
-    return len(group.seeds) >= 2 and max(
-        seed.product_intensity for seed in group.seeds
-    ) >= settings.evidence_profile.thresholds.product_intensity_high_min
+    return (
+        len(group.seeds) >= 2
+        and max(seed.product_intensity for seed in group.seeds)
+        >= settings.evidence_profile.thresholds.product_intensity_high_min
+    )
 
 
 def _validate_acquired_plan_chunk(
@@ -834,7 +836,7 @@ def _can_merge_by_ms1_peak(
             second.observed_neutral_loss_da,
             settings.nl_tolerance_ppm,
         )
-    return settings.tag_combine_mode == "union"
+    return settings.tag_combine_mode in {"union", "intersection"}
 
 
 def _same_ms1_feature_row_identity(

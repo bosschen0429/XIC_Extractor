@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
@@ -22,7 +23,15 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
 )
+from xic_extractor.peak_detection.evidence_facts import (
+    PhysicalPeakEvaluation,
+    validate_bounded_physical_peak_evaluation,
+)
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+    canonical_signal_processing_profile_bytes,
+)
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
@@ -30,6 +39,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SEARCH_SCOPE_SCHEMA_VERSION = "search_scope_v1"
+PHYSICAL_CAPTURE_INPUT_KEY = "physical_capture_inputs"
 SearchScopeVariant = Literal["targeted", "untargeted"]
 CaptureBoundaryPolicy = Literal["resolver_interval", "targeted_gaussian15"]
 CaptureSelectionPolicy = Literal["capture_default", "retained_only"]
@@ -49,6 +59,7 @@ class CaptureMethodConstraints:
 
     boundary_policy: CaptureBoundaryPolicy
     peak_config: ExtractionConfig
+    signal_processing_profile: SignalProcessingProfile | None = None
 
     def __post_init__(self) -> None:
         if self.boundary_policy not in {
@@ -59,6 +70,14 @@ class CaptureMethodConstraints:
         if not isinstance(self.peak_config, ExtractionConfig):
             raise SearchScopeContractError(
                 "capture method constraints require owner-resolved ExtractionConfig"
+            )
+        if self.signal_processing_profile is not None and (
+            not isinstance(self.signal_processing_profile, SignalProcessingProfile)
+            or self.boundary_policy != "resolver_interval"
+        ):
+            raise SearchScopeContractError(
+                "physical capture requires an exact signal profile "
+                "and no legacy promotion"
             )
 
 
@@ -78,6 +97,7 @@ class CaptureCandidateBinding:
     preferred_rt: float
     retained_selected_integration: IntegrationResult | None = None
     selection_policy: CaptureSelectionPolicy = "capture_default"
+    physical_evaluation: PhysicalPeakEvaluation | None = None
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
@@ -112,6 +132,19 @@ class CaptureCandidateBinding:
             raise SearchScopeContractError(
                 "retained capture selection must use one exact IntegrationResult"
             )
+        if self.physical_evaluation is not None:
+            validate_bounded_physical_peak_evaluation(self.physical_evaluation)
+            question = self.physical_evaluation.question
+            if (
+                self.selection_policy != "capture_default"
+                or self.retained_selected_integration is not None
+                or question.query_rt_min != self.preferred_rt
+                or question.context_rt_start_min != self.query_rt_min
+                or question.context_rt_end_min != self.query_rt_max
+            ):
+                raise SearchScopeContractError(
+                    "physical capture binding crosses its exact owner question"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +172,12 @@ class TargetSearchScope:
     target: ResolvedTargetDefinition
 
     def __post_init__(self) -> None:
+        if self.method_constraints.signal_processing_profile is not None or any(
+            binding.physical_evaluation is not None for binding in self.capture_bindings
+        ):
+            raise SearchScopeContractError(
+                "Target scope does not consume physical replay"
+            )
         _validate_common_scope(
             schema_version=self.schema_version,
             request=self.request,
@@ -213,6 +252,7 @@ class UntargetedSearchScope:
             declared_candidate_ids=self.declared_candidate_ids,
             evidence_providers=self.evidence_providers,
         )
+        _validate_physical_capture_scope(self)
 
     @property
     def variant(self) -> Literal["untargeted"]:
@@ -224,6 +264,67 @@ class UntargetedSearchScope:
 
 
 SearchScope: TypeAlias = TargetSearchScope | UntargetedSearchScope
+
+
+def physical_capture_input_payload(
+    profile: SignalProcessingProfile,
+    evaluations: Mapping[str, PhysicalPeakEvaluation],
+) -> dict[str, object]:
+    """Pin the profile and owner-issued physical answers in request identity."""
+    return {
+        "schema_version": "physical_capture_inputs_v1",
+        "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
+        "candidates": {
+            candidate_id: _physical_evaluation_identity(evaluation)
+            for candidate_id, evaluation in sorted(evaluations.items())
+        },
+    }
+
+
+def _physical_evaluation_identity(evaluation: PhysicalPeakEvaluation) -> dict[str, str]:
+    validate_bounded_physical_peak_evaluation(evaluation)
+    return {
+        "prepared_signal_id": evaluation.prepared.prepared_signal_id,
+        "physical_question_id": evaluation.question.physical_question_id,
+        "physical_answer_id": evaluation.answer.physical_answer_id,
+        "physical_fact_id": evaluation.facts.fact_content_id
+        if evaluation.facts
+        else "",
+    }
+
+
+def _validate_physical_capture_scope(scope: UntargetedSearchScope) -> None:
+    profile = scope.method_constraints.signal_processing_profile
+    payload = _request_inputs(scope.request).get(PHYSICAL_CAPTURE_INPUT_KEY)
+    if profile is None:
+        if payload is not None or any(
+            binding.physical_evaluation is not None
+            for binding in scope.capture_bindings
+        ):
+            raise SearchScopeContractError(
+                "physical replay lost its request-bound profile"
+            )
+        return
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != "physical_capture_inputs_v1"
+        or payload.get("profile")
+        != json.loads(canonical_signal_processing_profile_bytes(profile))
+        or not isinstance(payload.get("candidates"), dict)
+    ):
+        raise SearchScopeContractError("physical capture profile is not request-bound")
+    candidates = payload["candidates"]
+    for binding in scope.capture_bindings:
+        evaluation = binding.physical_evaluation
+        if (
+            evaluation is None
+            or evaluation.prepared.profile_id != profile.profile_id
+            or candidates.get(binding.candidate_id)
+            != _physical_evaluation_identity(evaluation)
+        ):
+            raise SearchScopeContractError(
+                "physical capture answer is not bound to its request candidate"
+            )
 
 
 def scope_allows_evidence_inspection(scope: SearchScope, candidate_id: str) -> bool:
@@ -300,9 +401,7 @@ def validate_scope_trace_coordinates(
 
     _validate_scope_type(scope)
     if binding not in scope.capture_bindings:
-        raise SearchScopeContractError(
-            "capture binding is outside this SearchScope"
-        )
+        raise SearchScopeContractError("capture binding is outside this SearchScope")
     trace_sample = _normalized_text(sample_name, field="trace sample_name")
     trace_source = _normalized_text(
         acquisition_source_id,
@@ -376,16 +475,11 @@ def _validate_common_scope(
         raise SearchScopeContractError(
             "method_constraints must be a closed CaptureMethodConstraints value"
         )
-    if (
-        not isinstance(evidence_providers, tuple)
-        or any(
-            not isinstance(provider, EvidenceProviderBinding)
-            for provider in evidence_providers
-        )
+    if not isinstance(evidence_providers, tuple) or any(
+        not isinstance(provider, EvidenceProviderBinding)
+        for provider in evidence_providers
     ):
-        raise SearchScopeContractError(
-            "evidence_providers must be a typed tuple"
-        )
+        raise SearchScopeContractError("evidence_providers must be a typed tuple")
     provider_keys = tuple(
         (provider.provider_id, provider.method_subject_id)
         for provider in evidence_providers
@@ -397,12 +491,9 @@ def _validate_common_scope(
         field="declared_candidate_ids",
     )
     if not isinstance(capture_bindings, tuple) or any(
-        not isinstance(binding, CaptureCandidateBinding)
-        for binding in capture_bindings
+        not isinstance(binding, CaptureCandidateBinding) for binding in capture_bindings
     ):
-        raise SearchScopeContractError(
-            "capture_bindings must be a typed tuple"
-        )
+        raise SearchScopeContractError("capture_bindings must be a typed tuple")
     capture_ids = tuple(binding.candidate_id for binding in capture_bindings)
     if len(capture_ids) != len(set(capture_ids)):
         raise SearchScopeContractError(
@@ -448,9 +539,7 @@ def _validate_targeted_capture_bindings(
                 "Target capture binding mismatches exact Target subject/m/z/ppm"
             )
         expected_selection_policy = (
-            "retained_only"
-            if value.neutral_loss_da is None
-            else "capture_default"
+            "retained_only" if value.neutral_loss_da is None else "capture_default"
         )
         if binding.selection_policy != expected_selection_policy:
             raise SearchScopeContractError(
@@ -483,9 +572,7 @@ def _validate_untargeted_capture_bindings(
         provider_subject_ids = tuple(
             provider.method_subject_id for provider in evidence_providers
         )
-        all_subject_ids = tuple(
-            subject.method_subject_id for subject in batch.subjects
-        )
+        all_subject_ids = tuple(subject.method_subject_id for subject in batch.subjects)
         if provider_subject_ids == all_subject_ids:
             expected_memberships = batch.candidate_memberships
         elif len(provider_subject_ids) == 1:
@@ -516,17 +603,12 @@ def _validate_untargeted_capture_bindings(
             candidate_id: index
             for index, candidate_id in enumerate(expected_candidate_ids)
         }
-        if (
-            not set(declared_candidate_ids).issubset(expected_positions)
-            or tuple(
+        if not set(declared_candidate_ids).issubset(expected_positions) or tuple(
+            expected_positions[candidate_id] for candidate_id in declared_candidate_ids
+        ) != tuple(
+            sorted(
                 expected_positions[candidate_id]
                 for candidate_id in declared_candidate_ids
-            )
-            != tuple(
-                sorted(
-                    expected_positions[candidate_id]
-                    for candidate_id in declared_candidate_ids
-                )
             )
         ):
             raise SearchScopeContractError(
@@ -609,8 +691,10 @@ def _request_sample_candidate_ids(
             continue
         stem = entry["sample_stem"]
         ids = entry.get("candidate_ids")
-        if not isinstance(stem, str) or not isinstance(ids, list) or any(
-            not isinstance(candidate_id, str) for candidate_id in ids
+        if (
+            not isinstance(stem, str)
+            or not isinstance(ids, list)
+            or any(not isinstance(candidate_id, str) for candidate_id in ids)
         ):
             raise SearchScopeContractError(
                 "Untargeted batch candidate universe is malformed"

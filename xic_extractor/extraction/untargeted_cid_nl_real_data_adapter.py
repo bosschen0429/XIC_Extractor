@@ -8,9 +8,11 @@ Matrix authority.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -37,6 +39,8 @@ from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoverySettings,
 )
+from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
     read_complete_strict_scan_seeds,
@@ -60,6 +64,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
+    CidNlComposition,
     CidNlMethodSubject,
     CidNlMethodSubjectContractError,
     validate_cid_nl_method_subject_binding,
@@ -69,6 +74,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
     resolve_dda_cid_nl_peak_support_ref,
 )
+from xic_extractor.peak_detection.evidence_facts import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.observations import (
@@ -76,12 +82,16 @@ from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
 )
 from xic_extractor.peak_detection.search_scope import (
+    PHYSICAL_CAPTURE_INPUT_KEY,
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeContractError,
     UntargetedSearchScope,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import trace_from_xic_request
 from xic_extractor.processing_identity import (
@@ -308,9 +318,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise UntargetedCidNlRealDataAdapterError("sample has the wrong owner type")
     if not isinstance(settings, DiscoverySettings):
-        raise UntargetedCidNlRealDataAdapterError(
-            "settings has the wrong owner type"
-        )
+        raise UntargetedCidNlRealDataAdapterError("settings has the wrong owner type")
     if type(candidates) is not tuple or any(
         not isinstance(candidate, DiscoveryCandidate) for candidate in candidates
     ):
@@ -369,9 +377,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     return UntargetedCidNlSampleTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
         acquisition_source_id=source.acquisition_source_id,
-        candidate_ids=tuple(
-            candidate.candidate_id for candidate in capture_candidates
-        ),
+        candidate_ids=tuple(candidate.candidate_id for candidate in capture_candidates),
         acquisition=acquisition,
     )
 
@@ -476,6 +482,8 @@ def adapt_current_discovery_sample_subject(
     raw: UntargetedCidNlRealDataRaw | None,
     _observer: _UntargetedRealDataWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
 ) -> UntargetedCidNlRealDataAdapterResult:
     """Reacquire a subject and mint its complete CellObservationRef input."""
 
@@ -551,6 +559,7 @@ def adapt_current_discovery_sample_subject(
                 if candidate.precursor_mz_basis == "scan_precursor"
             ),
             settings=settings,
+            preserve_configured_losses=method_subject.composition is not None,
         )
         strict_scan_seeds = tuple(
             item
@@ -578,6 +587,8 @@ def adapt_current_discovery_sample_subject(
         candidates=candidates,
         capture_candidates=peak_candidates,
         peak_config=peak_config,
+        signal_processing_profile=signal_processing_profile,
+        physical_records=physical_records,
     )
     acquisition, observations = _reacquire_peak_observations(
         processing_owners=processing_owners,
@@ -694,7 +705,7 @@ def adapt_current_discovery_sample_subject(
             else tuple(item.candidate_id for item in peak_candidates)
         ),
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
-        strict_scan_count=len(strict_scan_seeds),
+        strict_scan_count=len({scan.scan_number for scan, _ in strict_scan_seeds}),
         lineage_artifacts=lineage,
     )
 
@@ -708,6 +719,8 @@ def recover_untargeted_cid_nl_sample_subject(
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw | None,
+    settings: DiscoverySettings | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
     _observer: _UntargetedRealDataWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlRecoveryTraceBatch | None = None,
 ) -> UntargetedCidNlRecoveryAttemptResult:
@@ -751,6 +764,12 @@ def recover_untargeted_cid_nl_sample_subject(
         )
     except CidNlMethodSubjectContractError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+    if signal_processing_profile is None and PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
+        processing_owners.request.normalized_scientific_inputs_json
+    ):
+        raise UntargetedCidNlRealDataAdapterError(
+            "physical recovery lost its request-bound profile"
+        )
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
@@ -787,10 +806,8 @@ def recover_untargeted_cid_nl_sample_subject(
         acquired = acquisition.traces[0]
     else:
         if (
-            _preacquired_traces.sample_identity_id
-            != sample.identity.sample_identity_id
-            or _preacquired_traces.acquisition_source_id
-            != source.acquisition_source_id
+            _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
+            or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise UntargetedCidNlRealDataAdapterError(
                 "recovery trace batch crossed its sample or acquisition source"
@@ -803,62 +820,126 @@ def recover_untargeted_cid_nl_sample_subject(
         )
     if _observer is not None:
         _observer.record_acquisition(acquisition)
-    detection = detect_ms1_trace_peak(
-        acquired.trace.rt,
-        acquired.trace.intensity,
-        peak_config=peak_config,
-        preferred_rt=float(group_center_rt),
-        peak_finder=find_peak_and_area,
-    )
     observations: tuple[PeakObservationRef, ...] = ()
-    if detection.status == "detected" and detection.result is not None:
-        hypotheses = build_peak_hypotheses(
-            analysis_mode="untargeted",
-            common_evidence_source_id=method_subject.method_subject_id,
-            sample_name=sample.metadata.sample_name,
-            target_label=(
-                f"untargeted:{method_subject.precursor_mz:.8g}:"
-                f"NL{method_subject.neutral_loss_da:.8g}:recovery"
-            ),
-            role="Analyte",
-            istd_pair="",
-            resolver_mode=peak_config.resolver_mode,
-            peak_result=detection.result,
-            rt=detection.rt,
-            intensity=detection.intensity,
-            baseline_integration_method="asls",
-            ms1_morphology_smoothing_window_points=(
-                peak_config.ms1_morphology_smoothing_window_points
-            ),
-        )
+    if signal_processing_profile is not None:
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
             request=request,
             xic_trace=acquired.trace,
-            source=(
-                f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}"
-            ),
+            source=f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )
-        observations = tuple(
-            sorted(
-                (
-                    mint_peak_observation_ref(
-                        processing_owners=processing_owners,
-                        sample=sample,
-                        trace=trace,
-                        integration=hypothesis.integration,
-                        resolver_mode=peak_config.resolver_mode,
-                        proposal_sources=hypothesis.audit.proposal_sources,
-                    )
-                    for hypothesis in hypotheses
-                ),
-                key=lambda item: item.content.peak_observation_content_id,
-            )
+        observation = capture_owner.capture_physical_recovery_observation(
+            processing_owners=processing_owners,
+            sample=sample,
+            method_subject=method_subject,
+            trace=trace,
+            group_center_rt=float(group_center_rt),
+            profile=signal_processing_profile,
+            resolver_mode=peak_config.resolver_mode,
         )
+        observations = (observation,) if observation is not None else ()
+    else:
+        detection = detect_ms1_trace_peak(
+            acquired.trace.rt,
+            acquired.trace.intensity,
+            peak_config=peak_config,
+            preferred_rt=float(group_center_rt),
+            peak_finder=find_peak_and_area,
+        )
+        if detection.status == "detected" and detection.result is not None:
+            hypotheses = build_peak_hypotheses(
+                analysis_mode="untargeted",
+                common_evidence_source_id=method_subject.method_subject_id,
+                sample_name=sample.metadata.sample_name,
+                target_label=(
+                    f"untargeted:{method_subject.precursor_mz:.8g}:"
+                    f"{method_subject.label}:recovery"
+                ),
+                role="Analyte",
+                istd_pair="",
+                resolver_mode=peak_config.resolver_mode,
+                peak_result=detection.result,
+                rt=detection.rt,
+                intensity=detection.intensity,
+                baseline_integration_method="asls",
+                ms1_morphology_smoothing_window_points=(
+                    peak_config.ms1_morphology_smoothing_window_points
+                ),
+            )
+            trace = trace_from_xic_request(
+                sample_name=sample.metadata.sample_name,
+                request=request,
+                xic_trace=acquired.trace,
+                source=(
+                    f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}"
+                ),
+                acquisition_source_id=source.acquisition_source_id,
+            )
+            observations = tuple(
+                sorted(
+                    (
+                        mint_peak_observation_ref(
+                            processing_owners=processing_owners,
+                            sample=sample,
+                            trace=trace,
+                            integration=hypothesis.integration,
+                            resolver_mode=peak_config.resolver_mode,
+                            proposal_sources=hypothesis.audit.proposal_sources,
+                        )
+                        for hypothesis in hypotheses
+                    ),
+                    key=lambda item: item.content.peak_observation_content_id,
+                )
+            )
     if _observer is not None:
         for observation in observations:
             _observer.record_artifact(observation.artifact)
+    recovery_evidence: tuple[CidNlEvidenceRef, ...] = ()
+    recovery_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
+    recovery_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
+    scanned_count = 0
+    if method_subject.composition is not None:
+        if raw is None or settings is None:
+            raise UntargetedCidNlRealDataAdapterError(
+                "composite recovery requires full settings and owner-opened MS2 source"
+            )
+        if settings.tag_combine_mode == "single":
+            raise UntargetedCidNlRealDataAdapterError(
+                "Composite recovery requires union or intersection"
+            )
+        expected = CidNlComposition(
+            tags=tuple(
+                (profile.tag, profile.neutral_loss_da)
+                for profile in settings.neutral_loss_profiles
+            ),
+            combine_mode=settings.tag_combine_mode,
+        )
+        if expected != method_subject.composition:
+            raise UntargetedCidNlRealDataAdapterError(
+                "recovery composition mismatches the method subject"
+            )
+        bound_raw = require_owner_bound_raw_handle(raw, source)
+        recovery_evidence, recovery_support, recovery_sets, scanned_count = (
+            _composite_recovery_evidence(
+                processing_owners=processing_owners,
+                sample=sample,
+                method_subject=method_subject,
+                raw=bound_raw,
+                settings=settings,
+                query_rt_min=query_rt_min,
+                query_rt_max=query_rt_max,
+                observations=observations,
+                support_policy=support_policy,
+            )
+        )
+        if _observer is not None:
+            for artifact in (
+                *(ref.artifact for ref in recovery_evidence),
+                *(ref.artifact for ref in recovery_support),
+                *(ref.artifact for ref in recovery_sets),
+            ):
+                _observer.record_artifact(artifact)
     try:
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=processing_owners,
@@ -871,10 +952,13 @@ def recover_untargeted_cid_nl_sample_subject(
                 support_policy=support_policy,
                 acquisition_supported=True,
                 search_completed=True,
-                scanned_event_count=0,
+                scanned_event_count=scanned_count,
                 reason_code=None,
             ),
             candidate_peaks=observations,
+            evidence_refs=recovery_evidence,
+            individual_support_refs=recovery_support,
+            set_relation_refs=recovery_sets,
         )
     except CidNlMethodAssessmentContractError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
@@ -884,6 +968,9 @@ def recover_untargeted_cid_nl_sample_subject(
         producer_attempt=processing_owners.attempt,
         artifacts=(
             *(observation.artifact for observation in observations),
+            *(ref.artifact for ref in recovery_evidence),
+            *(ref.artifact for ref in recovery_support),
+            *(ref.artifact for ref in recovery_sets),
             assessment.artifact,
         ),
     )
@@ -892,7 +979,7 @@ def recover_untargeted_cid_nl_sample_subject(
             sample=sample,
             candidate_assessment=assessment,
         )
-        if observations
+        if observations and assessment.content.method_result == "HOLD"
         else None
     )
     return UntargetedCidNlRecoveryAttemptResult(
@@ -900,6 +987,92 @@ def recover_untargeted_cid_nl_sample_subject(
         recovery_input=recovery_input,
         acquisition=acquisition,
         lineage_artifacts=lineage,
+    )
+
+
+def _composite_recovery_evidence(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    method_subject: CidNlMethodSubject,
+    raw: UntargetedCidNlRealDataRaw,
+    settings: DiscoverySettings,
+    query_rt_min: float,
+    query_rt_max: float,
+    observations: tuple[PeakObservationRef, ...],
+    support_policy: DdaCidNlPeakSupportPolicy,
+) -> tuple[
+    tuple[CidNlEvidenceRef, ...],
+    tuple[DdaCidNlPeakSupportRef, ...],
+    tuple[DdaCidNlCandidateSetRelationRef, ...],
+    int,
+]:
+    """Evaluate the configured loss set on the recovered physical universe."""
+    evidence_refs: list[CidNlEvidenceRef] = []
+    individual_refs: list[DdaCidNlPeakSupportRef] = []
+    set_refs: list[DdaCidNlCandidateSetRelationRef] = []
+    scan_numbers: set[int] = set()
+    for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):
+        if event.parse_error is not None or event.scan is None:
+            raise UntargetedCidNlRealDataAdapterError(
+                "composite recovery MS2 acquisition did not complete"
+            )
+        scan = event.scan
+        if scan.scan_number in scan_numbers:
+            raise UntargetedCidNlRealDataAdapterError(
+                "duplicate acquisition scan during composite recovery"
+            )
+        scan_numbers.add(scan.scan_number)
+        for seed in discovery_seeds_from_scan(
+            scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
+        ):
+            if seed.precursor_mz_basis != "scan_precursor" or not _within_ppm(
+                seed.precursor_mz,
+                method_subject.precursor_mz,
+                method_subject.precursor_tolerance_ppm,
+            ):
+                continue
+            evidence = mint_cid_nl_evidence_ref(
+                processing_owners=processing_owners,
+                sample=sample,
+                scan_number=seed.scan_number,
+                precursor_mz=seed.precursor_mz,
+                product_mz=seed.product_mz,
+                configured_neutral_loss_da=seed.configured_neutral_loss_da,
+                observed_neutral_loss_da=seed.observed_neutral_loss_da,
+                observed_loss_error_ppm=seed.observed_loss_error_ppm,
+                scan_rt_min=seed.rt,
+                product_intensity=seed.product_intensity,
+            )
+            evidence_refs.append(evidence)
+            kind = _relation_kind(
+                evidence=evidence, candidate_peaks=observations, policy=support_policy
+            )
+            if kind == "individual":
+                individual_refs.append(
+                    resolve_dda_cid_nl_peak_support_ref(
+                        processing_owners=processing_owners,
+                        sample=sample,
+                        canonical_evidence=evidence,
+                        candidate_peaks=observations,
+                        policy=support_policy,
+                    )
+                )
+            elif kind == "set":
+                set_refs.append(
+                    resolve_dda_cid_nl_candidate_set_relation_ref(
+                        processing_owners=processing_owners,
+                        sample=sample,
+                        canonical_evidence=evidence,
+                        candidate_peaks=observations,
+                        policy=support_policy,
+                    )
+                )
+    return (
+        tuple(evidence_refs),
+        tuple(individual_refs),
+        tuple(set_refs),
+        len(scan_numbers),
     )
 
 
@@ -939,10 +1112,8 @@ def _reacquire_peak_observations(
         acquired_traces = acquisition.traces
     else:
         if (
-            _preacquired_traces.sample_identity_id
-            != sample.identity.sample_identity_id
-            or _preacquired_traces.acquisition_source_id
-            != source.acquisition_source_id
+            _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
+            or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise UntargetedCidNlRealDataAdapterError(
                 "preacquired traces crossed their sample or acquisition source"
@@ -976,7 +1147,10 @@ def _reacquire_peak_observations(
                 f"{candidate.candidate_id}: current MS1 receipt was not reacquired"
             )
         integration = capture.selected_hypothesis.integration
-        _validate_candidate_integration(candidate, integration)
+        if capture.physical_evaluation is None:
+            _validate_candidate_integration(candidate, integration)
+        else:
+            _validate_physical_candidate_receipt(candidate, capture.physical_evaluation)
         observations.append(
             capture_owner.mint_captured_peak_observation(
                 capture,
@@ -1087,7 +1261,11 @@ def _mint_assessment(
                 support_policy=support_policy,
                 acquisition_supported=technical_state != "unsupported",
                 search_completed=search_completed,
-                scanned_event_count=(len(evidence_refs) if search_completed else 0),
+                scanned_event_count=(
+                    len({ref.observation.scan_number for ref in evidence_refs})
+                    if search_completed
+                    else 0
+                ),
                 reason_code=technical_reason_code,
             ),
             candidate_peaks=candidate_peaks,
@@ -1121,7 +1299,6 @@ def _bounded_subject_candidates(
             raise UntargetedCidNlRealDataAdapterError(
                 f"{candidate.candidate_id}: raw receipt mismatches its sample"
             )
-    tag_name = settings.selected_tag_names[0]
     return tuple(
         sorted(
             (
@@ -1132,13 +1309,16 @@ def _bounded_subject_candidates(
                     method_subject.precursor_mz,
                     method_subject.precursor_tolerance_ppm,
                 )
-                and math.isclose(
-                    candidate.configured_neutral_loss_da,
-                    method_subject.neutral_loss_da,
-                    rel_tol=_WRITER_ROUNDING_REL_TOL,
-                    abs_tol=_WRITER_ROUNDING_ABS_TOL,
+                and any(
+                    math.isclose(
+                        candidate.configured_neutral_loss_da,
+                        loss,
+                        rel_tol=_WRITER_ROUNDING_REL_TOL,
+                        abs_tol=_WRITER_ROUNDING_ABS_TOL,
+                    )
+                    for loss in method_subject.configured_losses
                 )
-                and candidate.neutral_loss_tag == tag_name
+                and candidate.neutral_loss_tag in settings.selected_tag_names
             ),
             key=lambda item: item.candidate_id,
         )
@@ -1154,7 +1334,10 @@ def _untargeted_search_scope(
     candidates: tuple[DiscoveryCandidate, ...],
     capture_candidates: tuple[DiscoveryCandidate, ...],
     peak_config: ExtractionConfig,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
 ) -> UntargetedSearchScope:
+    records = {record.candidate_id: record for record in physical_records}
     try:
         return UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -1163,6 +1346,7 @@ def _untargeted_search_scope(
             method_constraints=CaptureMethodConstraints(
                 boundary_policy="resolver_interval",
                 peak_config=peak_config,
+                signal_processing_profile=signal_processing_profile,
             ),
             evidence_providers=(
                 EvidenceProviderBinding(
@@ -1183,6 +1367,11 @@ def _untargeted_search_scope(
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
                     preferred_rt=item.best_seed_rt,
+                    physical_evaluation=(
+                        records[item.candidate_id].evaluation
+                        if signal_processing_profile is not None
+                        else None
+                    ),
                 )
                 for item in capture_candidates
             ),
@@ -1240,17 +1429,33 @@ def _validate_inputs(**values: object) -> None:
         )
     except CidNlMethodSubjectContractError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
-    if (
-        settings.tag_combine_mode != "single"
+    if method_subject.composition is not None:
+        if settings.tag_combine_mode == "single":
+            raise UntargetedCidNlRealDataAdapterError(
+                "Composite assessment requires union or intersection"
+            )
+        expected_composition = CidNlComposition(
+            tags=tuple(
+                (profile.tag, profile.neutral_loss_da)
+                for profile in settings.neutral_loss_profiles
+            ),
+            combine_mode=settings.tag_combine_mode,
+        )
+        if method_subject.composition != expected_composition:
+            raise UntargetedCidNlRealDataAdapterError(
+                "Discovery composition mismatches the method subject"
+            )
+    elif (
+        settings.tag_combine_mode not in {"single", "union", "intersection"}
         or len(settings.selected_tag_names) != 1
         or len(settings.neutral_loss_profiles) != 1
     ):
         raise UntargetedCidNlRealDataAdapterError(
             "The real-data runtime accepts exactly one CID-NL Discovery tag"
         )
-    if not math.isclose(
+    if method_subject.composition is None and not math.isclose(
         settings.neutral_loss_profiles[0].neutral_loss_da,
-        method_subject.neutral_loss_da,
+        method_subject.configured_losses[0],
         rel_tol=0.0,
         abs_tol=1e-12,
     ):
@@ -1276,6 +1481,31 @@ def _validate_raw_adapter(raw: object) -> None:
     for method in ("extract_xic_many", "scan_window_for_request", "iter_ms2_scans"):
         if not callable(getattr(raw, method, None)):
             raise UntargetedCidNlRealDataAdapterError(f"raw adapter lacks {method}")
+
+
+def _validate_physical_candidate_receipt(
+    candidate: DiscoveryCandidate,
+    evaluation: PhysicalPeakEvaluation,
+) -> None:
+    facts = evaluation.facts
+    if evaluation.state != "available" or facts is None:
+        raise UntargetedCidNlRealDataAdapterError("physical receipt was not reacquired")
+    for field, expected in (
+        ("apex_rt_min", candidate.ms1_apex_rt),
+        ("left_rt_min", candidate.ms1_peak_rt_start),
+        ("right_rt_min", candidate.ms1_peak_rt_end),
+        ("area_counts_seconds", candidate.ms1_area),
+        ("height", candidate.ms1_height),
+    ):
+        if expected is None or not math.isclose(
+            getattr(facts, field),
+            expected,
+            rel_tol=_WRITER_ROUNDING_REL_TOL,
+            abs_tol=_WRITER_ROUNDING_ABS_TOL,
+        ):
+            raise UntargetedCidNlRealDataAdapterError(
+                f"{candidate.candidate_id}: physical {field} mismatches current receipt"
+            )
 
 
 def _validate_candidate_integration(

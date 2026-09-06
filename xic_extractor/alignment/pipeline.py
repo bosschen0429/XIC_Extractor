@@ -313,6 +313,7 @@ def _run_untargeted_cid_nl_alignment(
             alignment_config=alignment_config,
             sample_metadata=sample_metadata,
             timing_recorder=timing_recorder,
+            signal_processing_profile=signal_processing_profile,
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc

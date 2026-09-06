@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig
@@ -13,6 +13,10 @@ from xic_extractor.discovery.batch_contract import (
     validate_discovery_candidate_universe,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryPhysicalFactRecord,
+    validate_discovery_physical_fact_record,
+)
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_SCIENTIFIC_SETTING_FIELDS,
 )
@@ -20,6 +24,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
+)
+from xic_extractor.peak_detection.search_scope import (
+    PHYSICAL_CAPTURE_INPUT_KEY,
+    physical_capture_input_payload,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -73,6 +84,10 @@ class UntargetedCidNlRealDataContext:
         str,
         DiscoveryCandidateUniverseReceipt,
     ]
+    signal_processing_profile: SignalProcessingProfile | None = None
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord] = field(
+        default_factory=dict
+    )
 
     def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
         matches = tuple(
@@ -98,6 +113,9 @@ def build_untargeted_cid_nl_real_data_context(
         DiscoveryCandidateUniverseReceipt,
     ],
     sample_identity_namespace: str,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
+    | None = None,
 ) -> UntargetedCidNlRealDataContext:
     """Mint one replayable request before any real-data runtime RAW handle is opened."""
 
@@ -161,6 +179,47 @@ def build_untargeted_cid_nl_real_data_context(
         sources_by_stem=sources_by_stem,
         candidates_by_stem=candidate_map,
     )
+    physical_records = dict(physical_records_by_candidate or {})
+    candidate_by_id = {
+        candidate.candidate_id: candidate
+        for candidates in candidate_map.values()
+        for candidate in candidates
+    }
+    if signal_processing_profile is None:
+        if physical_records:
+            raise IdentityContractError(
+                "physical replay records require a signal profile"
+            )
+    else:
+        if not isinstance(signal_processing_profile, SignalProcessingProfile):
+            raise IdentityContractError(
+                "physical replay profile must be owner-resolved"
+            )
+        if set(physical_records) != set(candidate_by_id):
+            raise IdentityContractError(
+                "physical replay must cover the exact candidate universe"
+            )
+        for candidate_id, record in physical_records.items():
+            validate_discovery_physical_fact_record(record)
+            candidate = candidate_by_id[candidate_id]
+            work = record.work_item
+            if (
+                record.candidate_id != candidate_id
+                or work.sample_stem != candidate.sample_stem
+                or work.acquisition_source_id
+                != sources_by_stem[candidate.sample_stem].acquisition_source_id
+                or work.best_ms2_scan_id != candidate.best_ms2_scan_id
+                or work.precursor_mz != candidate.precursor_mz
+                or work.product_mz != candidate.product_mz
+                or work.query_rt_min != candidate.best_seed_rt
+                or work.xic_rt_min != candidate.ms1_search_rt_min
+                or work.xic_rt_max != candidate.ms1_search_rt_max
+                or record.evaluation.prepared.profile_id
+                != signal_processing_profile.profile_id
+            ):
+                raise IdentityContractError(
+                    "physical replay crossed candidate, acquisition, or profile"
+                )
     ordered_stems = tuple(
         stem
         for stem, _metadata in sorted(
@@ -177,19 +236,13 @@ def build_untargeted_cid_nl_real_data_context(
         for stem in ordered_stems
     )
     request = build_processing_request_identity(
-        acquisition_sources=tuple(
-            sources_by_stem[stem] for stem in ordered_stems
-        ),
+        acquisition_sources=tuple(sources_by_stem[stem] for stem in ordered_stems),
         acquisition_bindings=bindings,
         scientific_input_schema_version=(
             UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION
         ),
-        processing_algorithm_version=(
-            UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION
-        ),
-        processing_contract_version=(
-            UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION
-        ),
+        processing_algorithm_version=(UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION),
+        processing_contract_version=(UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION),
         scientific_inputs={
             REQUEST_INPUT_KEY: method_subject.request_payload(),
             DISCOVERY_SETTINGS_INPUT_KEY: discovery_settings_payload(settings),
@@ -202,6 +255,19 @@ def build_untargeted_cid_nl_real_data_context(
                 field: getattr(peak_config, field)
                 for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
             },
+            **(
+                {
+                    PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
+                        signal_processing_profile,
+                        {
+                            candidate_id: record.evaluation
+                            for candidate_id, record in physical_records.items()
+                        },
+                    )
+                }
+                if signal_processing_profile is not None
+                else {}
+            ),
         },
     )
     snapshot = mint_sample_metadata_snapshot(
@@ -226,6 +292,8 @@ def build_untargeted_cid_nl_real_data_context(
         raw_paths_by_sample=dict(paths_by_stem),
         candidates_by_sample=dict(candidate_map),
         discovery_receipts_by_sample=dict(receipt_map),
+        signal_processing_profile=signal_processing_profile,
+        physical_records_by_candidate=physical_records,
     )
 
 
@@ -292,9 +360,7 @@ def validate_candidate_universe_payload(
         "schema_version",
         "samples",
     }:
-        raise IdentityContractError(
-            "candidate universe must use the exact v2 envelope"
-        )
+        raise IdentityContractError("candidate universe must use the exact v2 envelope")
     if payload.get("schema_version") != CANDIDATE_UNIVERSE_SCHEMA_VERSION:
         raise IdentityContractError("candidate universe schema is unsupported")
     samples = payload.get("samples")
@@ -499,8 +565,7 @@ def _candidate_map(
         if len(ids) != len(set(ids)):
             raise IdentityContractError("candidate universe IDs must be unique")
         if any(
-            item.sample_stem != stem or item.raw_file.stem != stem
-            for item in ordered
+            item.sample_stem != stem or item.raw_file.stem != stem for item in ordered
         ):
             raise IdentityContractError(
                 f"candidate universe for {stem!r} contains a different sample"

@@ -265,7 +265,9 @@ class CellObservationContent:
         )
         _validate_typed_digest_id(
             self.group_method_subject_id,
-            prefix=_METHOD_SUBJECT_ID_PREFIX,
+            prefix="xic.cid-nl-method-subject.v2:"
+            if self.group_method_subject_id.startswith("xic.cid-nl-method-subject.v2:")
+            else _METHOD_SUBJECT_ID_PREFIX,
             field="group_method_subject_id",
         )
         target_ids = (
@@ -373,6 +375,7 @@ class CellObservationContent:
                 "only SUPPORT may carry an individual PeakHypothesis"
             )
 
+
 @dataclass(frozen=True, slots=True)
 class CellObservationRef:
     """One exact cell closure under an already-existing provisional group."""
@@ -407,10 +410,8 @@ class CellObservationRef:
                 "cell group identity does not match its exact group context"
             )
         if (
-            self.content.group_method_subject_id
-            != self.group_context.method_subject_id
-            or self.content.group_target_key_id
-            != self.group_context.target_key_id
+            self.content.group_method_subject_id != self.group_context.method_subject_id
+            or self.content.group_target_key_id != self.group_context.target_key_id
             or self.content.group_target_definition_id
             != self.group_context.target_definition_id
             or self.content.group_support_assessment_artifact_content_ids
@@ -671,8 +672,7 @@ def _repaired_member_integration(
         or member not in group.member_subjects
         or subject.sample_identity != canonical_sample
         or evidence.member_subject_id != member.member_subject_id
-        or evidence.group_hypothesis_id
-        != subject.predecessor_group.group_hypothesis_id
+        or evidence.group_hypothesis_id != subject.predecessor_group.group_hypothesis_id
     ):
         raise CellObservationContractError(
             "repair receipt does not authorize the exact final member"
@@ -714,8 +714,6 @@ def _repaired_member_integration(
             "repair integration authority content ID was substituted"
         )
     return facts.integration
-
-
 
 
 def _processing_request_id(value: object) -> str:
@@ -874,8 +872,7 @@ def mint_cell_observation_ref(
                 "human disposition references a different sample"
             )
         if (
-            review_reference.target_key_id
-            != target.definition.target_key.target_key_id
+            review_reference.target_key_id != target.definition.target_key.target_key_id
             or review_reference.target_definition_id
             != target.definition.target_definition_id
         ):
@@ -1070,6 +1067,7 @@ def _required_text(value: object, *, field: str) -> str:
             f"{field} must not contain surrounding whitespace"
         )
     return value
+
 
 # ---------------------------------------------------------------------------
 # Exact CrossSample/Backfill handoff closure
@@ -1423,9 +1421,10 @@ def validate_final_group_cell_observation_population(
             raise CellObservationContractError(
                 "final cell substituted an equivalent final group"
             )
-        if item.canonical_sample is not samples_by_id[
-            item.canonical_sample_identity_id
-        ]:
+        if (
+            item.canonical_sample
+            is not samples_by_id[item.canonical_sample_identity_id]
+        ):
             raise CellObservationContractError(
                 "final cell substituted an equivalent canonical sample"
             )
@@ -1470,8 +1469,7 @@ def _validate_final_handoff(
                 "handoff position association substituted its predecessor group"
             )
         if not any(
-            position_association.position.sample is sample
-            for sample in epoch_samples
+            position_association.position.sample is sample for sample in epoch_samples
         ):
             raise CellObservationContractError(
                 "handoff position association substituted its canonical sample"
@@ -1646,9 +1644,7 @@ def _index_repair_inputs(
             matching_positions[0].position_id,
             [],
         ).append(receipt)
-    observation_by_receipt: dict[
-        str, list[OwnerBackfillPeakFactObservation]
-    ] = {}
+    observation_by_receipt: dict[str, list[OwnerBackfillPeakFactObservation]] = {}
     for observation in observations:
         matching_receipts = tuple(
             receipt
@@ -1679,9 +1675,7 @@ def _index_repair_inputs(
             raise CellObservationContractError(
                 "no-repair receipt carries contradictory repaired observation facts"
             )
-    if any(
-        position_id not in position_by_id for position_id in receipts_by_position
-    ):
+    if any(position_id not in position_by_id for position_id in receipts_by_position):
         raise CellObservationContractError(
             "repair receipt references an extra position"
         )
@@ -1709,9 +1703,7 @@ def _validate_handoff_repair_closure(
     repair_receipts: Sequence[ObservationRepairReceipt],
     repaired_observations: Sequence[OwnerBackfillPeakFactObservation],
     receipt_by_position: dict[str, tuple[ObservationRepairReceipt, ...]],
-    observation_by_receipt: dict[
-        str, tuple[OwnerBackfillPeakFactObservation, ...]
-    ],
+    observation_by_receipt: dict[str, tuple[OwnerBackfillPeakFactObservation, ...]],
 ) -> None:
     """Require an applicable final receipt's complete repair provenance.
 
@@ -1761,8 +1753,7 @@ def _validate_handoff_repair_closure(
         )
     live_observations = observation_by_receipt.get(final_receipt.receipt_id, ())
     if len(live_observations) != 1 or not any(
-        observation is live_observations[0]
-        for observation in repaired_observations
+        observation is live_observations[0] for observation in repaired_observations
     ):
         raise CellObservationContractError(
             "applicable repaired handoff requires its exact live observation"
@@ -2325,9 +2316,7 @@ def _validate_final_cell_handoff_refs(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
 ) -> None:
-    groups = {
-        group.group_hypothesis_id: group for group in handoff.final_population
-    }
+    groups = {group.group_hypothesis_id: group for group in handoff.final_population}
     samples = {
         sample.identity.sample_identity_id: sample
         for sample in handoff.coverage.epoch.samples
@@ -2418,8 +2407,6 @@ def _require_same_refs(
         raise CellObservationContractError(
             "final cell did not retain exact repaired observation references"
         )
-
-
 
 
 __all__ = [

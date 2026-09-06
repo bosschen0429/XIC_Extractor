@@ -31,6 +31,7 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -105,6 +106,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
     cid_nl_method_subject_batch_from_request,
 )
+from xic_extractor.peak_detection.search_scope import (
+    PHYSICAL_CAPTURE_INPUT_KEY,
+    physical_capture_input_payload,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.processing_identity import (
     IdentityContractError,
     ProcessingOwnerReferences,
@@ -150,6 +158,8 @@ class UntargetedCidNlRealDataRuntimeJob:
     raw_path: Path
     dll_dir: Path
     work_unit_key: str
+    signal_processing_profile: SignalProcessingProfile | None = None
+    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
 
     def __post_init__(self) -> None:
         expected = (
@@ -378,9 +388,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
     recovery_subject_ids = {
         method_subject_id
         for method_subject_id, subject_jobs in eligible_by_subject.items()
-        if sum(
-            direct_assessment_by_key[job.work_unit_key] for job in subject_jobs
-        )
+        if sum(direct_assessment_by_key[job.work_unit_key] for job in subject_jobs)
         >= minimum_direct_support_count(len(subject_jobs))
     }
 
@@ -398,9 +406,8 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 and not job.sample.metadata.excluded
                 and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
             )
-            if (
-                not _request_uses_subject_batch(job)
-                and (initial_requires_raw or recovery_may_need_raw)
+            if not _request_uses_subject_batch(job) and (
+                initial_requires_raw or recovery_may_need_raw
             ):
                 resource_key = f"acquisition-session:{job.work_unit_key}"
                 source = resolve_request_acquisition_source(
@@ -602,6 +609,8 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 peak_config=job.peak_config,
                 raw=raw,
                 _observer=state.observer,
+                signal_processing_profile=job.signal_processing_profile,
+                physical_records=job.physical_records,
             )
     except RawReaderOpenError as exc:
         state.cleanup_outcome = (
@@ -670,6 +679,8 @@ def _execute_initial_assessment_batch(
                 raw=raw,
                 _observer=state.observer,
                 _preacquired_traces=trace_batch,
+                signal_processing_profile=state.job.signal_processing_profile,
+                physical_records=state.job.physical_records,
             )
     except RawReaderOpenError as exc:
         phase.initial_cleanup_outcome = (
@@ -705,9 +716,7 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        _prepare_subject_authorized_recoveries(
-            tuple(by_subject[method_subject_id])
-        )
+        _prepare_subject_authorized_recoveries(tuple(by_subject[method_subject_id]))
 
 
 def _prepare_subject_authorized_recoveries(
@@ -835,6 +844,8 @@ def _execute_recovery(
             peak_config=job.peak_config,
             raw=raw,
             _observer=state.observer,
+            settings=job.settings,
+            signal_processing_profile=job.signal_processing_profile,
         )
         state.recovery_input = state.recovery_attempt.recovery_input
     except RawReaderOpenError as exc:
@@ -862,8 +873,7 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             (
                 state
                 for state in phase.states
-                if state.error is None
-                and state.recovery_group_center_rt is not None
+                if state.error is None and state.recovery_group_center_rt is not None
             ),
             key=lambda state: state.job.method_subject.method_subject_id,
         )
@@ -920,7 +930,9 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
                     result.assessment_input.assessment.content.evaluation_receipt.support_policy
                 ),
                 peak_config=state.job.peak_config,
-                raw=None,
+                raw=raw if state.job.method_subject.composition else None,
+                settings=state.job.settings,
+                signal_processing_profile=state.job.signal_processing_profile,
                 _observer=state.observer,
                 _preacquired_traces=trace_batch,
             )
@@ -941,9 +953,7 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                phase.recovery_cleanup_outcome = (
-                    RuntimeResourceCleanupOutcome.FAILED
-                )
+                phase.recovery_cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 for state in pending:
                     if state.error is None:
                         state.error = exc
@@ -1320,6 +1330,47 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
             "processing request does not use the supported real-data runtime contract"
         )
     request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
+    if job.signal_processing_profile is None:
+        if physical_payload is not None or job.physical_records:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay lost its profile"
+            )
+    else:
+        records = {record.candidate_id: record for record in job.physical_records}
+        if (
+            type(job.physical_records) is not tuple
+            or len(records) != len(job.physical_records)
+            or set(records) != {candidate.candidate_id for candidate in job.candidates}
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay candidate coverage changed"
+            )
+        expected_physical = physical_capture_input_payload(
+            job.signal_processing_profile,
+            {
+                candidate_id: record.evaluation
+                for candidate_id, record in records.items()
+            },
+        )
+        if (
+            not isinstance(physical_payload, dict)
+            or physical_payload.get("profile") != expected_physical["profile"]
+            or not isinstance(physical_payload.get("candidates"), dict)
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay profile is not request-bound"
+            )
+        expected_candidates = expected_physical["candidates"]
+        assert isinstance(expected_candidates, dict)
+        actual_candidates = physical_payload["candidates"]
+        if any(
+            actual_candidates.get(candidate_id) != value
+            for candidate_id, value in expected_candidates.items()
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "physical replay answer is not request-bound"
+            )
     subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
     if (
         isinstance(subject_payload, dict)
@@ -1413,9 +1464,7 @@ def _request_subject_candidates(
             settings=job.settings,
         )
     try:
-        batch = cid_nl_method_subject_batch_from_request(
-            job.processing_owners.request
-        )
+        batch = cid_nl_method_subject_batch_from_request(job.processing_owners.request)
     except CidNlMethodSubjectContractError as exc:
         raise UntargetedCidNlRealDataRuntimeError(
             "processing request has an invalid CID-NL subject batch"
@@ -1468,8 +1517,6 @@ def _runtime_sample_groups(
                 "sample-local runtime jobs crossed their shared acquisition inputs"
             )
     return groups
-
-
 
 
 def _failure_detail(

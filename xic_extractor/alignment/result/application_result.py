@@ -23,6 +23,10 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     CANDIDATE_UNIVERSE_INPUT_KEY,
     validate_candidate_universe_payload,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+    validate_cid_nl_method_assessment_binding,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
     cid_nl_method_subject_batch_from_request,
@@ -34,6 +38,7 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.processing_identity import (
     IdentityContractError,
     ProcessingAttemptIdentity,
+    ProcessingOwnerReferences,
     ProcessingRequestIdentity,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -62,9 +67,10 @@ class UntargetedCandidateExclusion:
     method_subject_id: str
     canonical_sample_identity_id: str
     discovery_candidate_state: DiscoveryCandidateState
-    reason_code: Literal["discovery_candidate_not_search_eligible"] = (
-        "discovery_candidate_not_search_eligible"
-    )
+    reason_code: Literal[
+        "discovery_candidate_not_search_eligible", "composite_requirement_not_supported"
+    ] = "discovery_candidate_not_search_eligible"
+    composite_assessments: tuple[CidNlMethodAssessmentRef, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name, value in (
@@ -76,15 +82,36 @@ class UntargetedCandidateExclusion:
                 raise ApplicationResultContractError(
                     f"Untargeted candidate exclusion {field_name} is invalid"
                 )
-        if (
-            self.discovery_candidate_state not in DISCOVERY_CANDIDATE_STATE_VALUES
-            or self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-        ):
+        if self.discovery_candidate_state not in DISCOVERY_CANDIDATE_STATE_VALUES:
+            raise ApplicationResultContractError("Invalid excluded Discovery state")
+        if self.reason_code == "composite_requirement_not_supported":
+            refs = self.composite_assessments
+            if (
+                type(refs) is not tuple
+                or not refs
+                or any(
+                    type(ref) is not CidNlMethodAssessmentRef
+                    or ref.content.method_subject.composition is None
+                    or ref.content.method_subject.method_subject_id
+                    != self.method_subject_id
+                    or ref.content.technical_state != "evaluated"
+                    or ref.content.method_result == "SUPPORT"
+                    for ref in refs
+                )
+            ):
+                raise ApplicationResultContractError(
+                    "Composite exclusion requires evaluated unsupported assessments"
+                )
+            return
+        if self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES:
             raise ApplicationResultContractError(
                 "Untargeted candidate exclusion requires a non-feature-backed "
                 "Discovery state"
             )
-        if self.reason_code != "discovery_candidate_not_search_eligible":
+        if (
+            self.reason_code != "discovery_candidate_not_search_eligible"
+            or self.composite_assessments
+        ):
             raise ApplicationResultContractError(
                 "Untargeted candidate exclusion reason is unsupported"
             )
@@ -278,9 +305,7 @@ class FinalizedUntargetBatchApplicationResult:
     @property
     def rows(self) -> tuple[object, ...]:
         return tuple(
-            row
-            for child in self.children
-            for row in child.completed_projection.rows
+            row for child in self.children for row in child.completed_projection.rows
         )
 
     @property
@@ -310,9 +335,7 @@ class FinalizedUntargetBatchApplicationResult:
     @property
     def lineage(self) -> tuple[object, ...]:
         return tuple(
-            edge
-            for child in self.children
-            for edge in child.scientific_core.lineage
+            edge for child in self.children for edge in child.scientific_core.lineage
         )
 
 
@@ -401,11 +424,9 @@ def _validate_common_result(
         raise ApplicationResultContractError(
             "application result scientific core substituted its processing request"
         )
-    if len(scientific_core.scope.samples) != len(
-        scientific_core.canonical_samples
-    ) or {id(sample) for sample in scientific_core.scope.samples} != {
-        id(sample) for sample in scientific_core.canonical_samples
-    }:
+    if len(scientific_core.scope.samples) != len(scientific_core.canonical_samples) or {
+        id(sample) for sample in scientific_core.scope.samples
+    } != {id(sample) for sample in scientific_core.canonical_samples}:
         raise ApplicationResultContractError(
             "application result scientific core substituted its canonical "
             "sample universe"
@@ -460,8 +481,7 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
         )
     if any(
         not any(
-            subject.terminal_subject is terminal
-            for terminal in core.terminal_subjects
+            subject.terminal_subject is terminal for terminal in core.terminal_subjects
         )
         for subject in projection.cell_subjects
     ):
@@ -631,6 +651,9 @@ def _validate_untarget_batch_request(
         )
 
     parent_sample_ids_set = set(parent_sample_ids)
+    subject_by_id = {
+        subject.method_subject_id: subject for subject in subject_batch.subjects
+    }
     for exclusion in exclusions:
         expected_sample_id = candidate_sample_ids.get(exclusion.candidate_id)
         if (
@@ -645,6 +668,39 @@ def _validate_untarget_batch_request(
             raise ApplicationResultContractError(
                 "Untarget batch exclusion crossed candidate, subject, or sample"
             )
+        if exclusion.reason_code == "composite_requirement_not_supported":
+            assessments = exclusion.composite_assessments
+            if (
+                tuple(ref.content.canonical_sample_identity_id for ref in assessments)
+                != parent_sample_ids
+            ):
+                raise ApplicationResultContractError(
+                    "Composite exclusion requires exact complete sample coverage"
+                )
+            owners = ProcessingOwnerReferences(
+                request=request.processing_request,
+                attempt=request.processing_attempt,
+                sample_snapshot=parent_samples[0].snapshot,
+                sample_resolutions=parent_samples,
+            )
+            for sample, assessment in zip(
+                sorted(
+                    parent_samples, key=lambda item: item.identity.sample_identity_id
+                ),
+                assessments,
+                strict=True,
+            ):
+                try:
+                    validate_cid_nl_method_assessment_binding(
+                        assessment,
+                        processing_owners=owners,
+                        sample=sample,
+                        method_subject=subject_by_id[exclusion.method_subject_id],
+                    )
+                except ValueError as exc:
+                    raise ApplicationResultContractError(
+                        "Composite exclusion crossed its assessment owner binding"
+                    ) from exc
 
     child_candidates: list[str] = []
     child_subject_ids: list[str] = []
@@ -792,9 +848,7 @@ def _candidate_sample_ids_from_request(
     try:
         entries = validate_candidate_universe_payload(
             request_inputs[CANDIDATE_UNIVERSE_INPUT_KEY],
-            expected_sample_stems=tuple(
-                sample.metadata.raw_stem for sample in samples
-            ),
+            expected_sample_stems=tuple(sample.metadata.raw_stem for sample in samples),
         )
     except (IdentityContractError, KeyError) as exc:
         raise ApplicationResultContractError(

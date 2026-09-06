@@ -22,6 +22,7 @@ from xic_extractor.processing_identity import (
 )
 
 SCHEMA_VERSION = "cid_nl_method_subject_v1"
+COMPOSITE_SCHEMA_VERSION = "cid_nl_method_subject_v2"
 BATCH_SCHEMA_VERSION = "cid_nl_method_subject_batch_v1"
 REQUEST_INPUT_KEY = "cid_nl_method_subject"
 CID_NL_PROVIDER_ID = "dda_ddms2_cid_nl"
@@ -45,6 +46,38 @@ class CidNlMethodSubjectContractError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class CidNlComposition:
+    """Ordered configured requirements; tags are evidence dimensions."""
+
+    tags: tuple[tuple[str, float], ...]
+    combine_mode: Literal["union", "intersection"]
+
+    def __post_init__(self) -> None:
+        if self.combine_mode not in {"union", "intersection"}:
+            raise CidNlMethodSubjectContractError(
+                "composition requires union or intersection"
+            )
+        if type(self.tags) is not tuple or len(self.tags) < 2:
+            raise CidNlMethodSubjectContractError(
+                "composition requires multiple ordered tags"
+            )
+        normalized = tuple(
+            (
+                _normalized_text(name, field="tag"),
+                _positive_finite_float(loss, field="neutral_loss_da"),
+            )
+            for name, loss in self.tags
+        )
+        if len({name for name, _ in normalized}) != len(normalized) or len(
+            {loss for _, loss in normalized}
+        ) != len(normalized):
+            raise CidNlMethodSubjectContractError(
+                "composition tags and losses must be distinct"
+            )
+        object.__setattr__(self, "tags", normalized)
+
+
+@dataclass(frozen=True, slots=True)
 class CidNlMethodSubject:
     """Smallest shared subject for Targeted and Untargeted CID-NL assessment."""
 
@@ -52,10 +85,11 @@ class CidNlMethodSubject:
     subject_kind: CidNlMethodSubjectKind
     precursor_mz: float
     precursor_tolerance_ppm: float
-    neutral_loss_da: float
+    neutral_loss_da: float | None
     target_snapshot_id: str | None = None
     target_key_id: str | None = None
     target_definition_id: str | None = None
+    composition: CidNlComposition | None = None
 
     def __post_init__(self) -> None:
         precursor_mz = _positive_finite_float(self.precursor_mz, field="precursor_mz")
@@ -63,10 +97,22 @@ class CidNlMethodSubject:
             self.precursor_tolerance_ppm,
             field="precursor_tolerance_ppm",
         )
-        neutral_loss_da = _positive_finite_float(
-            self.neutral_loss_da,
-            field="neutral_loss_da",
+        neutral_loss_da = (
+            None
+            if self.composition is not None
+            else _positive_finite_float(
+                self.neutral_loss_da,
+                field="neutral_loss_da",
+            )
         )
+        if self.composition is not None and (
+            type(self.composition) is not CidNlComposition
+            or self.neutral_loss_da is not None
+            or self.subject_kind != "untargeted_precursor"
+        ):
+            raise CidNlMethodSubjectContractError(
+                "composite subject requires scalar-absent Untargeted identity"
+            )
         if self.subject_kind not in {"targeted_definition", "untargeted_precursor"}:
             raise CidNlMethodSubjectContractError(
                 "subject_kind must be targeted_definition or untargeted_precursor"
@@ -116,6 +162,7 @@ class CidNlMethodSubject:
             target_snapshot_id=self.target_snapshot_id,
             target_key_id=self.target_key_id,
             target_definition_id=self.target_definition_id,
+            composition=self.composition,
         )
         if self.method_subject_id != expected_id:
             raise CidNlMethodSubjectContractError(
@@ -125,10 +172,28 @@ class CidNlMethodSubject:
     def request_payload(self) -> dict[str, object]:
         """Return the exact value an Untargeted processing request must pin."""
 
+        payload = asdict(self)
+        if self.composition is None:
+            payload.pop("composition")
         return {
-            "schema_version": SCHEMA_VERSION,
-            **asdict(self),
+            "schema_version": COMPOSITE_SCHEMA_VERSION
+            if self.composition
+            else SCHEMA_VERSION,
+            **payload,
         }
+
+    @property
+    def configured_losses(self) -> tuple[float, ...]:
+        if self.composition is not None:
+            return tuple(loss for _, loss in self.composition.tags)
+        assert self.neutral_loss_da is not None
+        return (self.neutral_loss_da,)
+
+    @property
+    def label(self) -> str:
+        if self.composition is not None:
+            return self.method_subject_id
+        return f"NL{self.neutral_loss_da:.8g}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +287,8 @@ def mint_untargeted_cid_nl_method_subject(
     *,
     precursor_mz: float,
     precursor_tolerance_ppm: float,
-    neutral_loss_da: float,
+    neutral_loss_da: float | None = None,
+    composition: CidNlComposition | None = None,
 ) -> CidNlMethodSubject:
     """Mint an Untargeted subject without fabricating configured Target IDs."""
 
@@ -231,6 +297,7 @@ def mint_untargeted_cid_nl_method_subject(
         precursor_mz=precursor_mz,
         precursor_tolerance_ppm=precursor_tolerance_ppm,
         neutral_loss_da=neutral_loss_da,
+        composition=composition,
     )
 
 
@@ -301,9 +368,7 @@ def cid_nl_method_subject_batch_from_request(
             )
         candidate_id = item["candidate_id"]
         method_subject_id = item["method_subject_id"]
-        if not isinstance(candidate_id, str) or not isinstance(
-            method_subject_id, str
-        ):
+        if not isinstance(candidate_id, str) or not isinstance(method_subject_id, str):
             raise CidNlMethodSubjectContractError(
                 "Untargeted request CID-NL subject membership IDs must be text"
             )
@@ -423,11 +488,14 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         "target_key_id",
         "target_definition_id",
     }
+    composite = payload.get("schema_version") == COMPOSITE_SCHEMA_VERSION
+    if composite:
+        expected_fields.add("composition")
     if set(payload) != expected_fields:
         raise CidNlMethodSubjectContractError(
             "Untargeted request CID-NL method subject has wrong fields"
         )
-    if payload["schema_version"] != SCHEMA_VERSION:
+    if payload["schema_version"] not in {SCHEMA_VERSION, COMPOSITE_SCHEMA_VERSION}:
         raise CidNlMethodSubjectContractError(
             f"Untargeted request CID-NL schema must be {SCHEMA_VERSION!r}"
         )
@@ -451,6 +519,25 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
             "Untargeted request method subject cannot carry Target identity"
         )
     try:
+        composition = None
+        if composite:
+            raw = payload["composition"]
+            if (
+                not isinstance(raw, dict)
+                or set(raw) != {"tags", "combine_mode"}
+                or not isinstance(raw["tags"], (list, tuple))
+            ):
+                raise CidNlMethodSubjectContractError(
+                    "composite requirement has wrong fields"
+                )
+            composition = CidNlComposition(
+                tags=tuple(tuple(item) for item in raw["tags"]),
+                combine_mode=raw["combine_mode"],
+            )
+            if payload["neutral_loss_da"] is not None:
+                raise CidNlMethodSubjectContractError(
+                    "composite subject cannot carry scalar loss"
+                )
         return CidNlMethodSubject(
             method_subject_id=method_subject_id,
             subject_kind="untargeted_precursor",
@@ -461,9 +548,12 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
                 payload["precursor_tolerance_ppm"],
                 field="precursor_tolerance_ppm",
             ),
-            neutral_loss_da=_positive_finite_float(
+            neutral_loss_da=None
+            if composite
+            else _positive_finite_float(
                 payload["neutral_loss_da"], field="neutral_loss_da"
             ),
+            composition=composition,
         )
     except (TypeError, ValueError) as exc:
         if isinstance(exc, CidNlMethodSubjectContractError):
@@ -501,6 +591,7 @@ def _validate_untargeted_subject_batch(
                 target_snapshot_id=subject.target_snapshot_id,
                 target_key_id=subject.target_key_id,
                 target_definition_id=subject.target_definition_id,
+                composition=subject.composition,
             )
         except (TypeError, ValueError) as exc:
             raise CidNlMethodSubjectContractError(
@@ -527,9 +618,7 @@ def _validate_untargeted_subject_batch(
                 "Untargeted CID-NL subject batch has malformed membership"
             )
         candidate_id = _normalized_text(membership[0], field="candidate_id")
-        method_subject_id = _normalized_text(
-            membership[1], field="method_subject_id"
-        )
+        method_subject_id = _normalized_text(membership[1], field="method_subject_id")
         normalized_memberships.append((candidate_id, method_subject_id))
     if tuple(normalized_memberships) != candidate_memberships:
         raise CidNlMethodSubjectContractError(
@@ -571,17 +660,22 @@ def _mint_subject(
     subject_kind: CidNlMethodSubjectKind,
     precursor_mz: float,
     precursor_tolerance_ppm: float,
-    neutral_loss_da: float,
+    neutral_loss_da: float | None,
     target_snapshot_id: str | None = None,
     target_key_id: str | None = None,
     target_definition_id: str | None = None,
+    composition: CidNlComposition | None = None,
 ) -> CidNlMethodSubject:
     precursor = _positive_finite_float(precursor_mz, field="precursor_mz")
     tolerance = _positive_finite_float(
         precursor_tolerance_ppm,
         field="precursor_tolerance_ppm",
     )
-    neutral_loss = _positive_finite_float(neutral_loss_da, field="neutral_loss_da")
+    neutral_loss = (
+        None
+        if composition is not None
+        else _positive_finite_float(neutral_loss_da, field="neutral_loss_da")
+    )
     return CidNlMethodSubject(
         method_subject_id=_method_subject_id(
             subject_kind=subject_kind,
@@ -591,6 +685,7 @@ def _mint_subject(
             target_snapshot_id=target_snapshot_id,
             target_key_id=target_key_id,
             target_definition_id=target_definition_id,
+            composition=composition,
         ),
         subject_kind=subject_kind,
         precursor_mz=precursor,
@@ -599,6 +694,7 @@ def _mint_subject(
         target_snapshot_id=target_snapshot_id,
         target_key_id=target_key_id,
         target_definition_id=target_definition_id,
+        composition=composition,
     )
 
 
@@ -607,10 +703,11 @@ def _method_subject_id(
     subject_kind: CidNlMethodSubjectKind,
     precursor_mz: float,
     precursor_tolerance_ppm: float,
-    neutral_loss_da: float,
+    neutral_loss_da: float | None,
     target_snapshot_id: str | None,
     target_key_id: str | None,
     target_definition_id: str | None,
+    composition: CidNlComposition | None = None,
 ) -> str:
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -625,6 +722,9 @@ def _method_subject_id(
         "target_key_id": target_key_id,
         "target_definition_id": target_definition_id,
     }
+    if composition is not None:
+        payload["schema_version"] = COMPOSITE_SCHEMA_VERSION
+        payload["composition"] = asdict(composition)
     encoded = json.dumps(
         payload,
         ensure_ascii=False,
@@ -632,7 +732,8 @@ def _method_subject_id(
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
-    return _SUBJECT_ID_PREFIX + hashlib.sha256(encoded).hexdigest()
+    prefix = "xic.cid-nl-method-subject.v2:" if composition else _SUBJECT_ID_PREFIX
+    return prefix + hashlib.sha256(encoded).hexdigest()
 
 
 def _positive_finite_float(value: object, *, field: str) -> float:
@@ -640,9 +741,7 @@ def _positive_finite_float(value: object, *, field: str) -> float:
         raise CidNlMethodSubjectContractError(f"{field} must be numeric")
     parsed = float(value)
     if not math.isfinite(parsed) or parsed <= 0.0:
-        raise CidNlMethodSubjectContractError(
-            f"{field} must be finite and positive"
-        )
+        raise CidNlMethodSubjectContractError(f"{field} must be finite and positive")
     return parsed
 
 
@@ -653,13 +752,9 @@ def _validate_typed_id(
     field: str,
 ) -> str:
     if not isinstance(value, str) or not value.startswith(prefix):
-        raise CidNlMethodSubjectContractError(
-            f"{field} must use the {prefix!r} prefix"
-        )
+        raise CidNlMethodSubjectContractError(f"{field} must use the {prefix!r} prefix")
     if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise CidNlMethodSubjectContractError(
-            f"{field} must contain a SHA-256 digest"
-        )
+        raise CidNlMethodSubjectContractError(f"{field} must contain a SHA-256 digest")
     return value
 
 

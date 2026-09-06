@@ -186,6 +186,31 @@ def read_discovery_physical_fact_sidecar(
     )
 
 
+def read_discovery_physical_fact_records(
+    path: Path,
+    *,
+    expected_run_spec: ProcessingRunSpec,
+    expected_acquisition_input: ProcessingAcquisitionInput,
+) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+    """Recover the declared manifest and verify every record against its run."""
+    payload = path.read_bytes()
+    root = _mapping(
+        json.loads(payload, object_pairs_hook=_unique_mapping),
+        label="Discovery physical sidecar",
+    )
+    _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
+    manifest = tuple(
+        _work_from_content(item)
+        for item in _list(root["work_manifest"], label="work_manifest")
+    )
+    return deserialize_discovery_physical_fact_sidecar(
+        payload,
+        expected_run_spec=expected_run_spec,
+        expected_acquisition_input=expected_acquisition_input,
+        expected_work_manifest=manifest,
+    )
+
+
 def deserialize_discovery_physical_fact_sidecar(
     payload: bytes | str,
     *,

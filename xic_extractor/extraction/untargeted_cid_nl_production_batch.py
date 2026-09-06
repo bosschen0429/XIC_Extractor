@@ -59,6 +59,7 @@ from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoverySettings,
 )
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
@@ -84,6 +85,7 @@ from xic_extractor.peak_detection.capture import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
+    CidNlComposition,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
     mint_untargeted_cid_nl_method_subject,
@@ -96,7 +98,11 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
+from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -114,12 +120,11 @@ def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
 
     if not isinstance(settings, DiscoverySettings):
         return False
-    return (
-        settings.tag_combine_mode == "single"
-        and len(settings.neutral_loss_profiles) == 1
-        and len(settings.selected_tag_names) == 1
-        and settings.selected_tag_names[0] == settings.neutral_loss_profiles[0].tag
-    )
+    try:
+        CidNlDiscoveryMethodSpec(settings=settings)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def build_untargeted_cid_nl_production_batch(
@@ -135,6 +140,9 @@ def build_untargeted_cid_nl_production_batch(
     ],
     dll_dir: Path,
     sample_identity_namespace: str,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
+    | None = None,
 ) -> UntargetedCidNlProductionBatch:
     """Seal exact candidate membership before any subject-local runtime work."""
 
@@ -155,8 +163,22 @@ def build_untargeted_cid_nl_production_batch(
     if len(candidate_ids) != len(set(candidate_ids)):
         raise ValueError("Discovery candidate identity must be globally unique")
 
-    subject_by_key: dict[tuple[float, float], CidNlMethodSubject] = {}
-    membership_keys: list[tuple[str, tuple[float, float]]] = []
+    combine_mode = settings.tag_combine_mode
+    if len(settings.neutral_loss_profiles) > 1 and combine_mode == "single":
+        raise ValueError("Multiple CID-NL tags require union or intersection")
+    composition = (
+        CidNlComposition(
+            tags=tuple(
+                (profile.tag, profile.neutral_loss_da)
+                for profile in settings.neutral_loss_profiles
+            ),
+            combine_mode=combine_mode,
+        )
+        if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
+        else None
+    )
+    subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
+    membership_keys: list[tuple[str, tuple[float, float | None]]] = []
     for candidate in candidates:
         precursor_mz = float(candidate.precursor_mz)
         neutral_loss_da = float(candidate.configured_neutral_loss_da)
@@ -167,13 +189,14 @@ def build_untargeted_cid_nl_production_batch(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-        key = (precursor_mz, neutral_loss_da)
+        key = (precursor_mz, None if composition else neutral_loss_da)
         subject_by_key.setdefault(
             key,
             mint_untargeted_cid_nl_method_subject(
                 precursor_mz=precursor_mz,
                 precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-                neutral_loss_da=neutral_loss_da,
+                neutral_loss_da=None if composition else neutral_loss_da,
+                composition=composition,
             ),
         )
         membership_keys.append((candidate.candidate_id, key))
@@ -202,6 +225,8 @@ def build_untargeted_cid_nl_production_batch(
         candidates_by_sample=candidates_by_sample,
         discovery_receipts_by_sample=discovery_receipts_by_sample,
         sample_identity_namespace=sample_identity_namespace,
+        signal_processing_profile=signal_processing_profile,
+        physical_records_by_candidate=physical_records_by_candidate,
     )
     jobs = tuple(
         UntargetedCidNlRealDataRuntimeJob(
@@ -219,6 +244,14 @@ def build_untargeted_cid_nl_production_batch(
             work_unit_key=(
                 "untargeted-cid-nl:"
                 f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
+            ),
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                record
+                for _candidate_id, record in sorted(
+                    context.physical_records_by_candidate.items()
+                )
+                if record.work_item.sample_stem == sample.metadata.raw_stem
             ),
         )
         for sample in context.samples
@@ -299,6 +332,22 @@ def compose_untargeted_cid_nl_production_result(
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
     }
+    unsupported_subjects = {}
+    for subject in batch.subject_batch.subjects:
+        subject_assessments = tuple(
+            result_by_key[
+                (sample.metadata.raw_stem, subject.method_subject_id)
+            ].effective_assessment
+            for sample in sorted(
+                batch.context.samples, key=lambda item: item.identity.sample_identity_id
+            )
+        )
+        if subject.composition is not None and all(
+            ref.content.technical_state == "evaluated"
+            and ref.content.method_result != "SUPPORT"
+            for ref in subject_assessments
+        ):
+            unsupported_subjects[subject.method_subject_id] = subject_assessments
     bindings = tuple(
         _capture_binding(
             batch=batch,
@@ -308,6 +357,7 @@ def compose_untargeted_cid_nl_production_result(
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
         if candidate_by_id[candidate_id].discovery_candidate_state
         in MS1_FEATURE_BACKED_STATES
+        and method_subject_id not in unsupported_subjects
     )
     exclusions = tuple(
         UntargetedCandidateExclusion(
@@ -319,12 +369,19 @@ def compose_untargeted_cid_nl_production_result(
             discovery_candidate_state=(
                 candidate_by_id[candidate_id].discovery_candidate_state
             ),
+            reason_code=(
+                "composite_requirement_not_supported"
+                if method_subject_id in unsupported_subjects
+                else "discovery_candidate_not_search_eligible"
+            ),
+            composite_assessments=unsupported_subjects.get(method_subject_id, ()),
         )
         for candidate_id, method_subject_id in (
             batch.subject_batch.candidate_memberships
         )
         if candidate_by_id[candidate_id].discovery_candidate_state
         not in MS1_FEATURE_BACKED_STATES
+        or method_subject_id in unsupported_subjects
     )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -333,6 +390,7 @@ def compose_untargeted_cid_nl_production_result(
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
             peak_config=batch.context.peak_config,
+            signal_processing_profile=batch.context.signal_processing_profile,
         ),
         evidence_providers=tuple(
             EvidenceProviderBinding(
@@ -604,9 +662,7 @@ def _runtime_candidate_traces(
                 request=acquired.coordinate.request,
                 xic_trace=acquired.trace,
                 source=UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
-                acquisition_source_id=(
-                    acquired.coordinate.acquisition_source_id
-                ),
+                acquisition_source_id=(acquired.coordinate.acquisition_source_id),
             )
     expected = {
         candidate.candidate_id
@@ -631,6 +687,7 @@ def _capture_binding(
     source = batch.context.discovery_receipts_by_sample[
         candidate.sample_stem
     ].acquisition_source
+    physical = batch.context.physical_records_by_candidate.get(candidate.candidate_id)
     return CaptureCandidateBinding(
         candidate_id=candidate.candidate_id,
         method_subject_id=method_subject_id,
@@ -642,6 +699,7 @@ def _capture_binding(
         query_rt_max=candidate.ms1_search_rt_max,
         query_ppm_tol=batch.context.settings.precursor_mz_tolerance_ppm,
         preferred_rt=candidate.best_seed_rt,
+        physical_evaluation=physical.evaluation if physical is not None else None,
     )
 
 

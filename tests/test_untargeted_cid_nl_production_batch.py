@@ -67,6 +67,326 @@ def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> Non
         )
 
 
+def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
+    from xic_extractor.discovery.grouping import group_discovery_seeds
+    from xic_extractor.discovery.ms1_backfill import (
+        _backfill_ms1_candidates_with_acquisition,
+    )
+    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.physical_fact_persistence import (
+        write_discovery_physical_fact_sidecar,
+    )
+    from xic_extractor.discovery.processing_run_spec_adapter import (
+        compile_discovery_processing_run_spec,
+    )
+    from xic_extractor.peak_detection.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.processing_identity import IdentityContractError
+
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("S1", "S2"))
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    profile = SignalProcessingProfile(window_points=15)
+    spec = compile_discovery_processing_run_spec(
+        paths, discovery_settings=settings, signal_processing_profile=profile
+    )
+    source_raws = {}
+    receipts = {}
+    csvs = {}
+    candidates = {}
+    physical_facts = {}
+    for path, source in zip(paths, spec.acquisition_inputs, strict=True):
+        raw = _FakeRaw((8.0,), acquisition_source=source.acquisition_source)
+        raw.intensity = raw.intensity + 250.0
+        source_raws[path] = raw
+        seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
+        discovery = _backfill_ms1_candidates_with_acquisition(
+            raw,
+            group_discovery_seeds(seeds, settings=settings),
+            acquisition_source=source.acquisition_source,
+            run_spec_id=spec.run_spec_id,
+            settings=settings,
+            peak_config=peak_config,
+            signal_processing_profile=profile,
+        )
+        folder = tmp_path / path.stem
+        folder.mkdir()
+        receipts.update(
+            _discovery_receipts(folder, (path,), {path.stem: discovery.candidates})
+        )
+        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
+        write_discovery_physical_fact_sidecar(
+            folder / "discovery_physical_facts.v1.json",
+            run_spec=spec,
+            acquisition_input=source,
+            work_manifest=discovery.physical_work_manifest,
+            records=discovery.physical_evaluations,
+        )
+        candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
+            csvs[path.stem], receipt=receipts[path.stem], require_successor_columns=True
+        )
+        (record,) = discovery.physical_evaluations
+        assert record.evaluation.facts is not None
+        physical_facts[path.stem] = record.evaluation.facts
+    discovery_batch = DiscoveryBatchInput(
+        sample_order=("S1", "S2"),
+        candidate_csvs=csvs,
+        raw_files={path.stem: path for path in paths},
+        review_csvs={path.stem: None for path in paths},
+        candidate_receipts=receipts,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
+    captured_batches = []
+    captured_peaks = []
+    from xic_extractor.peak_detection import capture as capture_owner
+
+    capture_peak = capture_owner.capture_peak_hypotheses
+
+    def retain_capture(**kwargs):
+        capture = capture_peak(**kwargs)
+        captured_peaks.append(capture)
+        return capture
+
+    monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", retain_capture)
+    build_batch = alignment_adapter.build_untargeted_cid_nl_production_batch
+
+    def retain_batch(**kwargs):
+        batch = build_batch(**kwargs)
+        captured_batches.append(batch)
+        return batch
+
+    monkeypatch.setattr(
+        alignment_adapter, "build_untargeted_cid_nl_production_batch", retain_batch
+    )
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_production_batch as production,
+    )
+
+    runtime_execute = production.execute_untargeted_cid_nl_real_data_runtime
+
+    def checked_runtime(*args, **kwargs):
+        result = runtime_execute(*args, **kwargs)
+        assert result.succeeded, tuple(
+            settlement.failure_detail.message
+            for settlement in result.finalization.coordinator.state.runtime.settlements
+            if settlement.failure_detail is not None
+        )
+        return result
+
+    monkeypatch.setattr(
+        production, "execute_untargeted_cid_nl_real_data_runtime", checked_runtime
+    )
+    completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
+        discovery_batch=discovery_batch,
+        candidates_by_sample=candidates,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "alignment",
+        settings=settings,
+        peak_config=peak_config,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        signal_processing_profile=profile,
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    assert len(writer.matrix.cells) == 2
+    for cell in writer.matrix.cells:
+        facts = physical_facts[cell.sample_stem]
+        assert cell.area == facts.area_counts_seconds
+        assert cell.selected_integration is not None
+        assert cell.selected_integration.area_raw_counts_seconds != cell.area
+        assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
+        assert cell.selected_integration.height_smoothed == facts.height
+        assert facts.physical_segment_id in cell.selected_integration.boundary_sources
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    matrix_path = tmp_path / "canonical-matrix.tsv"
+    write_alignment_matrix_tsv(
+        matrix_path, writer.matrix, production_decisions=writer.production_decisions
+    )
+    with matrix_path.open(encoding="utf-8", newline="") as handle:
+        (matrix_row,) = tuple(csv.DictReader(handle, delimiter="\t"))
+    for sample_stem, facts in physical_facts.items():
+        assert float(matrix_row[sample_stem]) == pytest.approx(
+            facts.area_counts_seconds
+        )
+
+    from xic_extractor.peak_detection.observations import (
+        PeakObservationContractError,
+        mint_peak_observation_ref,
+        physical_peak_observation_integration,
+    )
+
+    capture = captured_peaks[0]
+    evaluation = capture.physical_evaluation
+    assert evaluation is not None
+    integration = physical_peak_observation_integration(evaluation)
+    prepared = prepare_physical_signal(
+        capture.trace.rt, capture.trace.intensity, profile=profile
+    )
+    assert prepared.prepared is not None
+    observation_args = dict(
+        processing_owners=captured_batches[0].jobs[0].processing_owners,
+        sample=captured_batches[0].jobs[0].sample,
+        trace=capture.trace,
+        integration=integration,
+        selection_intensity=prepared.prepared.positive_signal,
+        resolver_mode=peak_config.resolver_mode,
+        proposal_sources=("canonical_physical_segment_v1",),
+        physical_evaluation=evaluation,
+        signal_processing_profile=profile,
+    )
+    for substitution in (
+        {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
+        {"trace": replace(capture.trace, intensity=capture.trace.intensity + 1.0)},
+        {
+            "integration": replace(
+                integration,
+                area_baseline_corrected=integration.area_baseline_corrected + 1.0,
+            )
+        },
+    ):
+        with pytest.raises((PeakObservationContractError, ValueError)):
+            mint_peak_observation_ref(**(observation_args | substitution))
+    from xic_extractor.peak_detection.search_scope import SearchScopeContractError
+
+    changed_answer = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="substituted-selection-subject",
+        query_rt_min=evaluation.question.query_rt_min,
+        request_context_rt_start_min=capture.trace.rt_min,
+        request_context_rt_end_min=capture.trace.rt_max,
+    )
+    with pytest.raises(SearchScopeContractError, match="answer is not bound"):
+        replace(
+            capture.scope,
+            capture_bindings=tuple(
+                replace(binding, physical_evaluation=changed_answer)
+                if binding.candidate_id == capture.candidate_id
+                else binding
+                for binding in capture.scope.capture_bindings
+            ),
+        )
+    batch = captured_batches[0]
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_real_data_runtime as runtime_module,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+        UntargetedCidNlRealDataAdapterError,
+        recover_untargeted_cid_nl_sample_subject,
+    )
+    from xic_extractor.peak_detection.cid_nl_peak_support import (
+        DdaCidNlPeakSupportPolicy,
+    )
+    from xic_extractor.processing_identity import resolve_request_acquisition_source
+
+    job = batch.jobs[0]
+    recovery_raw = runtime_module.open_raw(
+        paths[0],
+        tmp_path,
+        expected_acquisition_source=resolve_request_acquisition_source(
+            processing_owners=job.processing_owners, sample=job.sample
+        ),
+    )
+    recovery_args = dict(
+        processing_owners=job.processing_owners,
+        sample=job.sample,
+        method_subject=job.method_subject,
+        group_center_rt=8.0,
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
+        ),
+        peak_config=peak_config,
+        raw=recovery_raw,
+        settings=settings,
+        signal_processing_profile=profile,
+    )
+    recovered = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+    (observation,) = recovered.assessment.candidate_peaks
+    acquired = recovered.acquisition.traces[0]
+    recovery_prepared = prepare_physical_signal(
+        acquired.trace.rt, acquired.trace.intensity, profile=profile
+    )
+    expected_recovery = evaluate_physical_peak(
+        recovery_prepared,
+        selection_subject_id=job.method_subject.method_subject_id,
+        query_rt_min=8.0,
+        request_context_rt_start_min=8.0 - peak_config.nl_rt_anchor_half_window_min,
+        request_context_rt_end_min=8.0 + peak_config.nl_rt_anchor_half_window_min,
+    )
+    assert expected_recovery.facts is not None
+    assert (
+        observation.content.integration.area_baseline_corrected
+        == expected_recovery.facts.area_counts_seconds
+    )
+    assert (
+        observation.content.integration.height_smoothed
+        == expected_recovery.facts.height
+    )
+    assert recovered.assessment.content.method_result == "HOLD"
+    with pytest.raises(
+        capture_owner.SampleLocalCaptureError, match="question is not request-bound"
+    ):
+        recover_untargeted_cid_nl_sample_subject(
+            **(
+                recovery_args
+                | {
+                    "signal_processing_profile": SignalProcessingProfile(
+                        window_points=21
+                    )
+                }
+            )
+        )
+    with pytest.raises(
+        UntargetedCidNlRealDataAdapterError, match="lost its request-bound profile"
+    ):
+        recover_untargeted_cid_nl_sample_subject(
+            **(recovery_args | {"signal_processing_profile": None})
+        )
+    original_intensity = source_raws[paths[0]].intensity
+    try:
+        source_raws[paths[0]].intensity = original_intensity * 0.0
+        unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+        assert unavailable.assessment.candidate_peaks == ()
+        assert unavailable.assessment.content.method_result == "HOLD"
+        assert unavailable.recovery_input is None
+    finally:
+        source_raws[paths[0]].intensity = original_intensity
+        recovery_raw.__exit__(None, None, None)
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+        UntargetedCidNlRealDataRuntimeError,
+    )
+
+    with pytest.raises(
+        UntargetedCidNlRealDataRuntimeError, match="profile is not request-bound"
+    ):
+        replace(
+            batch.jobs[0],
+            signal_processing_profile=SignalProcessingProfile(window_points=21),
+        )
+    wrong_records = dict(batch.context.physical_records_by_candidate)
+    keys = tuple(wrong_records)
+    wrong_records[keys[0]] = wrong_records[keys[1]]
+    with pytest.raises(IdentityContractError, match="crossed candidate"):
+        build_batch(
+            raw_paths=paths,
+            sample_metadata=tuple(sample.metadata for sample in batch.context.samples),
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample=batch.context.candidates_by_sample,
+            discovery_receipts_by_sample=receipts,
+            dll_dir=tmp_path,
+            sample_identity_namespace="test:physical-replay",
+            signal_processing_profile=profile,
+            physical_records_by_candidate=wrong_records,
+        )
+
+
 @pytest.mark.parametrize(
     ("mz", "rt"),
     (
@@ -315,7 +635,10 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
         peak_config=peak_config,
     )
     crossed_settings = type(settings)(
-        neutral_loss_profiles=settings.neutral_loss_profiles,
+        neutral_loss_profiles=(
+            settings.neutral_loss_profiles[0],
+            settings.neutral_loss_profiles[0],
+        ),
         selected_tag_names=settings.selected_tag_names,
         tag_combine_mode="intersection",
         nl_tolerance_ppm=settings.nl_tolerance_ppm,
@@ -340,7 +663,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
     except ValueError as exc:
         assert "single-provider" in str(exc)
     else:
-        raise AssertionError("intersection route must remain outside CID-NL production")
+        raise AssertionError("duplicate tag settings must be rejected")
 
 
 def test_production_batch_executes_one_atomic_sample_phase(

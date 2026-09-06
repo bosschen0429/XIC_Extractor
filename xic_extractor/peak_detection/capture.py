@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 from typing import cast
 
@@ -10,12 +11,21 @@ from xic_extractor.peak_detection.capture_boundary_policy import (
     promote_targeted_boundary_hypothesis,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
     CidNlMethodSubjectContractError,
     cid_nl_method_subject_batch_from_request,
     cid_nl_method_subject_from_request,
+    validate_cid_nl_method_subject_binding,
+)
+from xic_extractor.peak_detection.evidence_facts import (
+    PhysicalPeakEvaluation,
+    evaluate_physical_peak,
+    prepare_physical_signal,
 )
 from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import (
+    AuditTrail,
+    EvidenceVector,
     PeakHypothesis,
     build_peak_hypotheses,
 )
@@ -31,15 +41,22 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     PeakObservationRef,
     mint_peak_observation_ref,
+    physical_peak_observation_integration,
     validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.search_scope import (
+    PHYSICAL_CAPTURE_INPUT_KEY,
+    CaptureCandidateBinding,
     SearchScope,
     SearchScopeContractError,
     TargetSearchScope,
     require_capture_binding,
     validate_scope_owner_binding,
     validate_scope_trace_coordinates,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
 from xic_extractor.processing_identity import ProcessingOwnerReferences
@@ -60,6 +77,8 @@ class _CaptureOwnerSeal:
     hypotheses: tuple[PeakHypothesis, ...]
     receipt_hypothesis: PeakHypothesis | None
     selected_hypothesis: PeakHypothesis | None
+    physical_evaluation: PhysicalPeakEvaluation | None = None
+    physical_selection_intensity: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +92,7 @@ class SampleLocalCapture:
     hypotheses: tuple[PeakHypothesis, ...]
     receipt_hypothesis: PeakHypothesis | None
     selected_hypothesis: PeakHypothesis | None
+    physical_evaluation: PhysicalPeakEvaluation | None = None
 
     def __post_init__(self) -> None:
         seal = self._owner_seal
@@ -86,6 +106,7 @@ class SampleLocalCapture:
             or seal.hypotheses is not self.hypotheses
             or seal.receipt_hypothesis is not self.receipt_hypothesis
             or seal.selected_hypothesis is not self.selected_hypothesis
+            or seal.physical_evaluation is not self.physical_evaluation
         ):
             raise SampleLocalCaptureError(
                 "SampleLocalCapture must be issued by the shared capture owner"
@@ -116,23 +137,6 @@ def capture_peak_hypotheses(
     except SearchScopeContractError as exc:
         raise SampleLocalCaptureError(str(exc)) from exc
     peak_config = scope.method_constraints.peak_config
-    if (
-        binding.selection_policy == "retained_only"
-        and binding.retained_selected_integration is None
-    ):
-        detection = Ms1TracePeakDetection(
-            status="not_detected",
-            rt=trace.rt,
-            intensity=trace.intensity,
-        )
-    else:
-        detection = detect_ms1_trace_peak(
-            trace.rt,
-            trace.intensity,
-            peak_config=peak_config,
-            preferred_rt=binding.preferred_rt,
-            peak_finder=find_peak_and_area,
-        )
     label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
         scope,
         query_mz=binding.query_mz,
@@ -155,6 +159,28 @@ def capture_peak_hypotheses(
         role=role,
         istd_pair=istd_pair,
     )
+    if scope.method_constraints.signal_processing_profile is not None:
+        return _capture_physical_peak(
+            scope=scope,
+            binding=binding,
+            trace=trace,
+            trace_group=trace_group,
+        )
+    if (
+        binding.selection_policy == "retained_only"
+        and binding.retained_selected_integration is None
+    ):
+        detection = Ms1TracePeakDetection(
+            status="not_detected", rt=trace.rt, intensity=trace.intensity
+        )
+    else:
+        detection = detect_ms1_trace_peak(
+            trace.rt,
+            trace.intensity,
+            peak_config=peak_config,
+            preferred_rt=binding.preferred_rt,
+            peak_finder=find_peak_and_area,
+        )
     hypotheses: tuple[PeakHypothesis, ...] = ()
     receipt_hypothesis: PeakHypothesis | None = None
     selected: PeakHypothesis | None = None
@@ -247,6 +273,92 @@ def capture_peak_hypotheses(
     )
 
 
+def _capture_physical_peak(
+    *,
+    scope: SearchScope,
+    binding: CaptureCandidateBinding,
+    trace: Trace,
+    trace_group: TraceGroup,
+) -> SampleLocalCapture:
+    profile = scope.method_constraints.signal_processing_profile
+    expected = binding.physical_evaluation
+    if profile is None or expected is None:
+        raise SampleLocalCaptureError(
+            "physical capture requires its closed owner question"
+        )
+    prepared = prepare_physical_signal(
+        trace.rt,
+        trace.intensity,
+        profile=profile,
+        trace_content_id=expected.prepared.trace_content_id,
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=expected.question.selection_subject_id,
+        query_rt_min=binding.preferred_rt,
+        request_context_rt_start_min=binding.query_rt_min,
+        request_context_rt_end_min=binding.query_rt_max,
+    )
+    if evaluation != expected:
+        raise SampleLocalCaptureError(
+            "physical capture changed the retained owner answer"
+        )
+    selected: PeakHypothesis | None = None
+    selection_intensity: tuple[float, ...] | None = None
+    if evaluation.state == "available":
+        facts = evaluation.facts
+        integration = evaluation.integration
+        if facts is None or integration is None or prepared.prepared is None:
+            raise SampleLocalCaptureError("available physical capture lost owner facts")
+        selection_intensity = prepared.prepared.positive_signal
+        selected = PeakHypothesis(
+            hypothesis_id=f"physical-capture:{facts.fact_content_id}",
+            trace_group_id=trace_group.trace_group_id,
+            target_label=trace_group.context_id,
+            role=trace_group.role,
+            istd_pair=trace_group.istd_pair,
+            analysis_mode=scope.variant,
+            resolver_mode=scope.method_constraints.peak_config.resolver_mode,
+            integration=physical_peak_observation_integration(evaluation),
+            evidence=EvidenceVector(),
+            audit=AuditTrail(
+                proposal_sources=("canonical_physical_segment_v1",),
+                selected=True,
+                selection_reference_rt_min=binding.preferred_rt,
+            ),
+        )
+    detection = Ms1TracePeakDetection(
+        status="detected" if selected is not None else "not_detected",
+        rt=trace.rt,
+        intensity=trace.intensity,
+    )
+    hypotheses = (selected,) if selected is not None else ()
+    seal = _CaptureOwnerSeal(
+        scope=scope,
+        candidate_id=binding.candidate_id,
+        trace=trace,
+        trace_group=trace_group,
+        detection=detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=selected,
+        selected_hypothesis=selected,
+        physical_evaluation=evaluation,
+        physical_selection_intensity=selection_intensity,
+    )
+    return SampleLocalCapture(
+        _owner_seal=seal,
+        scope=scope,
+        candidate_id=binding.candidate_id,
+        trace=trace,
+        trace_group=trace_group,
+        detection=detection,
+        hypotheses=hypotheses,
+        receipt_hypothesis=selected,
+        selected_hypothesis=selected,
+        physical_evaluation=evaluation,
+    )
+
+
 def _bind_retained_selection(
     hypotheses: tuple[PeakHypothesis, ...],
     retained: IntegrationResult,
@@ -276,6 +388,56 @@ def _bind_retained_selection(
         if selected_item:
             selected_hypothesis = updated
     return tuple(rebound), selected_hypothesis
+
+
+def capture_physical_recovery_observation(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    method_subject: CidNlMethodSubject,
+    trace: Trace,
+    group_center_rt: float,
+    profile: SignalProcessingProfile,
+    resolver_mode: str,
+) -> PeakObservationRef | None:
+    """Capture a recovery question using its request-bound method and profile."""
+    validate_cid_nl_method_subject_binding(
+        method_subject, processing_owners=processing_owners
+    )
+    payload = json.loads(processing_owners.request.normalized_scientific_inputs_json)
+    physical_inputs = payload.get(PHYSICAL_CAPTURE_INPUT_KEY)
+    if (
+        not isinstance(physical_inputs, dict)
+        or physical_inputs.get("schema_version") != "physical_capture_inputs_v1"
+        or physical_inputs.get("profile")
+        != json.loads(canonical_signal_processing_profile_bytes(profile))
+        or trace.mz != method_subject.precursor_mz
+        or trace.ppm_tol != method_subject.precursor_tolerance_ppm
+        or not trace.rt_min <= group_center_rt <= trace.rt_max
+    ):
+        raise SampleLocalCaptureError("physical recovery question is not request-bound")
+    prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=method_subject.method_subject_id,
+        query_rt_min=group_center_rt,
+        request_context_rt_start_min=trace.rt_min,
+        request_context_rt_end_min=trace.rt_max,
+    )
+    if evaluation.state != "available":
+        return None
+    assert prepared.prepared is not None
+    return mint_peak_observation_ref(
+        processing_owners=processing_owners,
+        sample=sample,
+        trace=trace,
+        integration=physical_peak_observation_integration(evaluation),
+        selection_intensity=prepared.prepared.positive_signal,
+        resolver_mode=resolver_mode,
+        proposal_sources=("canonical_physical_segment_v1",),
+        physical_evaluation=evaluation,
+        signal_processing_profile=profile,
+    )
 
 
 def _same_physical_peak(
@@ -341,6 +503,8 @@ def mint_captured_peak_observation(
         selection_intensity=_captured_selection_intensity(capture),
         resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
         proposal_sources=selected.audit.proposal_sources,
+        physical_evaluation=capture.physical_evaluation,
+        signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
     )
 
 
@@ -380,6 +544,8 @@ def bind_owner_backed_capture_hypothesis(
             selection_intensity=_captured_selection_intensity(capture),
             resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
             proposal_sources=selected.audit.proposal_sources,
+            physical_evaluation=capture.physical_evaluation,
+            signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
         )
     except (PeakObservationContractError, SearchScopeContractError) as exc:
         raise SampleLocalCaptureError(
@@ -395,6 +561,8 @@ def bind_owner_backed_capture_hypothesis(
         hypotheses=hypotheses,
         receipt_hypothesis=capture.receipt_hypothesis,
         selected_hypothesis=hypothesis,
+        physical_evaluation=capture.physical_evaluation,
+        physical_selection_intensity=capture._owner_seal.physical_selection_intensity,
     )
     return SampleLocalCapture(
         _owner_seal=seal,
@@ -406,10 +574,13 @@ def bind_owner_backed_capture_hypothesis(
         hypotheses=hypotheses,
         receipt_hypothesis=capture.receipt_hypothesis,
         selected_hypothesis=hypothesis,
+        physical_evaluation=capture.physical_evaluation,
     )
 
 
 def _captured_selection_intensity(capture: SampleLocalCapture) -> object | None:
+    if capture.physical_evaluation is not None:
+        return capture._owner_seal.physical_selection_intensity
     selected = capture.selected_hypothesis
     if selected is None or selected.integration.integration_method not in {
         "selected_envelope_gaussian15",
@@ -420,8 +591,7 @@ def _captured_selection_intensity(capture: SampleLocalCapture) -> object | None:
         capture.trace.intensity,
         asls_baseline(capture.trace.intensity),
         window_points=(
-            capture.scope.method_constraints.peak_config
-            .ms1_morphology_smoothing_window_points
+            capture.scope.method_constraints.peak_config.ms1_morphology_smoothing_window_points
         ),
     )
 
@@ -485,10 +655,7 @@ def _hypothesis_context(
             for subject in batch.subjects
             if subject.method_subject_id == method_subject_id
         )
-    label = (
-        f"untargeted:{query_mz:.8g}:"
-        f"NL{method_subject.neutral_loss_da:.8g}"
-    )
+    label = f"untargeted:{query_mz:.8g}:{method_subject.label}"
     return label, "Analyte", "", label
 
 
@@ -497,5 +664,6 @@ __all__ = (
     "SampleLocalCaptureError",
     "bind_owner_backed_capture_hypothesis",
     "capture_peak_hypotheses",
+    "capture_physical_recovery_observation",
     "mint_captured_peak_observation",
 )

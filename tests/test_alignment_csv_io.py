@@ -330,6 +330,7 @@ def test_discovery_writer_to_alignment_reader_roundtrips_rounded_row_identity(
     assert parsed.candidate_id == "Sample_1#6095@mz1000.377783_p884.330383"
     assert parsed.discovery_candidate_state == "ms1_feature_nl_rescued"
     assert parsed.ms1_feature_row_id == "Sample_1|DNA_dR|1000.377783|23.41"
+    assert parsed.configured_neutral_loss_da == candidate.configured_neutral_loss_da
 
 
 def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(
