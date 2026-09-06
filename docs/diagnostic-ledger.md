@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-08-26
+**Last updated:** 2026-09-06
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,39 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-06 CID-NL 8RAW Request Rehydration
+
+Verdict: `inconclusive`; unaccepted candidate reverted. On base
+`0611556836a517e38774df49acbbf2ab162750da`, fresh `dna_dr` Discovery completed
+for the eight tissue validation RAW files with 30,748 candidate rows. The
+documented accepted-v2 Discovery index was absent on this host; the fresh index
+passed the eight-sample Alignment preflight.
+
+An unprofiled Alignment preparation probe loaded physical replay in 90.504 s,
+then repeatedly entered method-subject JSON/batch reconstruction from each
+runtime job constructor. Process private-memory snapshots reached 10.60 GB;
+the probe was interrupted before job construction completed. A candidate that
+reused immutable request subjects and sample-local job inputs built jobs in
+21.073 s after 97.078 s of replay loading, with a 1.48 GB post-build private-memory
+snapshot. Its later analysis repeatedly reached SearchScope request JSON
+decoding and was interrupted without final output. These observations are
+stage diagnostics and memory snapshots, not completed wall-clock comparisons
+or peak-memory measurements.
+
+Neither a completed baseline/candidate pair nor analytical-output parity was
+obtained; there is no accepted speedup, product promotion, or 85RAW result.
+The candidate passed 52 focused regression tests but was reverted because that
+does not establish the requested performance/parity oracle. Task-local evidence
+and the unaccepted patch are under `output/cid-nl-end-to-end/` (not reusable
+cross-worktree inputs); patch SHA-256 is
+`9eb1030446d8c4106a120ee6b7064bb361750536ce07fab10d7e054efbf951d5`.
+
+Before repeating the full experiment, resolve the cost and memory feasibility
+of request-wide reconstruction across all sample/subject jobs, including the
+SearchScope consumer. Do not infer an end-to-end gain from the construction
+stage or start 85RAW on this evidence. A changed implementation or a bounded
+probe that resolves that feasibility question justifies renewed measurement.
 
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 
