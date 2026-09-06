@@ -226,6 +226,18 @@ subject. Both adapters are internal, no-write, and carry
 through the retained shared batch; canonical writers alone project finalized
 values. An assessment or cell reference does not itself grant writer authority.
 
+When ModeTrack retains multiple provisional groups for one method subject, the
+shared batch constructs the complete group × sample cell population. A sample's
+SUPPORT assessment can belong to a sibling group without supporting the current
+cell's group. Such a cell preserves the original assessment and carries an
+explicit outside-group relation bound to that exact sibling group context and
+supported hypothesis. Its group-local observation and hypothesis remain empty.
+The v5 cell artifact binds this relation; existing cells retain their v4 canonical
+payload and semantic contract. The existing `local_owner_not_supersedable`
+coverage yields a blank, `not_searched` cell without asserting absence. ModeTrack
+and CrossSample retain identity authority, and the outside-group lane cannot
+duplicate a value supplied by another lane after groups merge.
+
 Pt/Delta Mass multi-observation composition remains deferred until its
 Discovery method and owner-backed position roles are stable; array order or an
 unlabeled tuple must not be guessed into method semantics.

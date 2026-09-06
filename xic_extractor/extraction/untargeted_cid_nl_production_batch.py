@@ -17,12 +17,15 @@ from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairCandidate,
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    build_cid_nl_reference_spine,
+from xic_extractor.alignment.cell_observations import (
+    CellObservationRef,
+    CidNlCellGroupContext,
+    CidNlCellGroupSupport,
+    mint_cell_observation_ref,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
-    validate_cross_sample_peak_group_identity,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     apply_mode_track_refinement_run_for_workflow,
@@ -83,6 +86,9 @@ from xic_extractor.peak_detection.capture import (
     capture_peak_hypotheses,
     mint_captured_peak_observation,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlComposition,
@@ -102,8 +108,12 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
+from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
-from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.sample_metadata import (
+    ResolvedCanonicalSampleIdentity,
+    SampleMetadata,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,12 +468,6 @@ def compose_untargeted_cid_nl_production_result(
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
         )
-        spine = build_cid_nl_reference_spine(
-            processing_owners=batch.context.processing_owners,
-            method_subject=subject,
-            sample_assessments=assessments,
-            config=alignment_config,
-        )
         capture_inputs_list = []
         captures_list = []
         assessment_by_sample_id = {
@@ -548,15 +552,20 @@ def compose_untargeted_cid_nl_production_result(
             captures=captures,
             run=refinement,
         )
-        repair_group = (
-            None
-            if spine.group is None
-            else validate_cross_sample_peak_group_identity(
-                spine.group,
-                require_canonical=True,
-            )
+        predecessor_cells = _predecessor_cell_population(
+            processing_owners=batch.context.processing_owners,
+            groups=refinement.family_context.mode_tracks,
+            sample_assessments=assessments,
+            alignment_config=alignment_config,
         )
-        repair_groups = () if repair_group is None else (repair_group,)
+        cell_by_key = {
+            (
+                cell.content.group_hypothesis_id,
+                cell.content.canonical_sample_identity_id,
+            ): cell
+            for cell in predecessor_cells
+        }
+        repair_groups = refinement.predecessors
         positions = tuple(
             OwnerBackfillPlanningPosition(
                 position_id=mint_owner_backfill_position_id(
@@ -567,7 +576,14 @@ def compose_untargeted_cid_nl_production_result(
                 group_identity=group,
                 sample=sample,
                 planning_state="not_planned",
-                planning_reason="retained_local_owner",
+                planning_reason=(
+                    "local_owner_not_supersedable"
+                    if cell_by_key[
+                        (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                    ].content.outside_group
+                    is not None
+                    else "retained_local_owner"
+                ),
                 primary_logical_requests=(),
             )
             for group in repair_groups
@@ -606,10 +622,10 @@ def compose_untargeted_cid_nl_production_result(
                     ),
                     repair=ObservationRepairWorkflowArguments(
                         coverage=coverage,
-                        cell_observations=spine.cells,
+                        cell_observations=predecessor_cells,
                         execute=_unexpected_repair,
                     ),
-                    predecessor_cell_observations=spine.cells,
+                    predecessor_cell_observations=predecessor_cells,
                 ),
             )
         )
@@ -625,6 +641,90 @@ def compose_untargeted_cid_nl_production_result(
             f"reason={getattr(terminal, 'failure_message', None)}"
         )
     return terminal
+
+
+def _predecessor_cell_population(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+) -> tuple[CellObservationRef, ...]:
+    """Attach original assessments to the existing ModeTrack predecessor groups."""
+    supports = tuple(
+        CidNlCellGroupSupport(
+            sample=sample, assessment=assessment, hypothesis=hypothesis
+        )
+        for sample, assessment in sample_assessments
+        for hypothesis in compose_peak_hypotheses_from_assessment_universe(
+            processing_owners=processing_owners,
+            sample=sample,
+            assessment=assessment,
+        )
+        if any(hypothesis.hypothesis_id in group.owner_ids for group in groups)
+    )
+    contexts = tuple(
+        CidNlCellGroupContext(
+            group=group,
+            supports=tuple(
+                support
+                for support in supports
+                if support.hypothesis.hypothesis_id in group.owner_ids
+            ),
+            config=alignment_config,
+            processing_attempt=processing_owners.attempt,
+        )
+        for group in groups
+    )
+    cells = []
+    for context in contexts:
+        for sample, assessment in sample_assessments:
+            local = tuple(
+                support
+                for support in context.supports
+                if support.sample is sample and support.assessment is assessment
+            )
+            outside_context = None
+            observation = None
+            hypothesis = None
+            if local:
+                (support,) = local
+                hypothesis = support.hypothesis
+                (observation,) = hypothesis.peak_observation_refs
+            elif assessment.content.method_result == "SUPPORT":
+                siblings = tuple(
+                    sibling
+                    for sibling in contexts
+                    if sibling is not context
+                    and any(
+                        support.sample is sample and support.assessment is assessment
+                        for support in sibling.supports
+                    )
+                )
+                if len(siblings) != 1:
+                    raise ValueError(
+                        "outside-group cell requires one exact sibling SUPPORT context"
+                    )
+                (outside_context,) = siblings
+            elif (
+                assessment.content.method_result == "HOLD"
+                and len(assessment.candidate_peaks) == 1
+            ):
+                observation = assessment.candidate_peaks[0]
+            cells.append(
+                mint_cell_observation_ref(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    group_context=context,
+                    method_assessment=assessment,
+                    peak_observation=observation,
+                    peak_hypothesis=hypothesis,
+                    outside_group_context=outside_context,
+                )
+            )
+    return tuple(cells)
 
 
 def _runtime_candidate_traces(

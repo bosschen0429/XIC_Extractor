@@ -55,6 +55,127 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.sample_metadata import SampleMetadata
 
 
+def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
+    import json
+    from dataclasses import asdict
+
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
+    from xic_extractor.alignment import cell_observations as cell_owner
+
+    source_cells = tuple(
+        source
+        for final_cell in scientific.cell_observations
+        for source in final_cell.predecessor_cells
+    )
+    outside_cells = tuple(
+        source for source in source_cells if source.content.outside_group is not None
+    )
+    local_cells = tuple(
+        source for source in source_cells if source.content.outside_group is None
+    )
+    assert {source.group_context.group.public_family_id for source in source_cells} == {
+        "FAM000001",
+        "FAM000002",
+    }
+    for source in local_cells:
+        legacy_content = asdict(source.content)
+        legacy_content.pop("outside_group")
+        expected = (
+            json.dumps(
+                {
+                    "schema_version": "cell_observation_v4",
+                    "validation_status": cell_owner.VALIDATION_STATUS,
+                    "content": legacy_content,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        )
+        assert (
+            cell_owner.canonical_cell_observation_bytes(source.content)
+            == expected.encode()
+        )
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v4"
+    outside = outside_cells[0]
+    relation = outside.content.outside_group
+    assert relation is not None
+    supporting = outside.outside_group_context
+    assert supporting is not None
+    support = next(
+        item
+        for item in supporting.supports
+        if item.assessment is outside.method_assessment
+    )
+    job = next(
+        job
+        for job in batch.jobs
+        if job.sample.identity.sample_identity_id
+        == outside.content.canonical_sample_identity_id
+    )
+    mint_args = dict(
+        processing_owners=job.processing_owners,
+        sample=job.sample,
+        group_context=outside.group_context,
+        method_assessment=outside.method_assessment,
+        outside_group_context=supporting,
+    )
+    assert cell_owner.mint_cell_observation_ref(**mint_args) == outside
+    for source in outside_cells:
+        payload = json.loads(
+            cell_owner.canonical_cell_observation_bytes(source.content)
+        )
+        assert payload["schema_version"] == "cell_observation_v5"
+        assert payload["content"]["outside_group"] == asdict(
+            source.content.outside_group
+        )
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v5"
+        assert source.peak_observation is None and source.peak_hypothesis is None
+        assert source.content.method_result == "SUPPORT"
+        assert (
+            source.content.reason_codes == source.method_assessment.content.reason_codes
+        )
+    (tmp_path / "other-request").mkdir()
+    other_request = build_processing_identity_no_raw_fixture(
+        tmp_path / "other-request", sample_stems=("different",)
+    )
+    other_job = next(item for item in batch.jobs if item.sample != job.sample)
+    for substitution in (
+        {"outside_group_context": outside.group_context},
+        {"peak_hypothesis": support.hypothesis},
+        {
+            "peak_observation": next(
+                source.peak_observation
+                for source in local_cells
+                if source.method_assessment is support.assessment
+            )
+        },
+        {"sample": other_job.sample},
+        {"processing_owners": other_request.owners},
+    ):
+        with pytest.raises(cell_owner.CellObservationContractError):
+            cell_owner.mint_cell_observation_ref(**(mint_args | substitution))
+    with pytest.raises(cell_owner.CellObservationContractError):
+        replace(
+            outside,
+            content=replace(
+                outside.content,
+                outside_group=replace(
+                    relation,
+                    supporting_peak_hypothesis_id=local_cells[
+                        0
+                    ].group_context.group.owner_ids[0],
+                ),
+            ),
+        )
+    with pytest.raises(cell_owner.CellObservationContractError):
+        replace(outside, outside_group_context=outside.group_context)
+
+
 def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
     facts = {"physical-1": (500.0, 8.0)}
 
@@ -67,8 +188,9 @@ def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> Non
         )
 
 
+@pytest.mark.parametrize("group_sizes", ((2,), (1, 1), (2, 2)))
 def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, group_sizes: tuple[int, ...]
 ) -> None:
     from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
     from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -87,13 +209,20 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.processing_identity import IdentityContractError
 
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("S1", "S2"))
+    separate_groups = len(group_sizes) == 2
+    sample_stems = tuple(f"S{index + 1}" for index in range(sum(group_sizes)))
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
     for path in paths:
         path.write_bytes(path.stem.encode())
     # Observed RAW coordinates: acquisition bounds do not land on scan RTs.
     center_rt = 13.263299286133334
     precursor_mz = 307.1023254394531
-    settings = replace(_settings(), neutral_loss_profile=None, rt_min=13.1, rt_max=13.4)
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        rt_min=13.1,
+        rt_max=17.4 if separate_groups else 13.4,
+    )
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     spec = compile_discovery_processing_run_spec(
@@ -112,22 +241,28 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         import numpy as np
 
+        sample_offset = (
+            4.0
+            if separate_groups and sample_stems.index(path.stem) >= group_sizes[0]
+            else 0.0
+        )
+        sample_center_rt = center_rt + sample_offset
         raw = _FakeRaw(
             (8.0,),
             scan_precursor_mz=precursor_mz,
             neutral_loss_das=(settings.neutral_loss_profiles[0].neutral_loss_da,),
             acquisition_source=source.acquisition_source,
         )
-        raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521)
-        raw.rt[int(np.argmin(np.abs(raw.rt - center_rt)))] = center_rt
+        raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521) + sample_offset
+        raw.rt[int(np.argmin(np.abs(raw.rt - sample_center_rt)))] = sample_center_rt
         raw.intensity = (
-            1000.0 * np.exp(-0.5 * ((raw.rt - center_rt) / 0.035) ** 2) + 250.0
+            1000.0 * np.exp(-0.5 * ((raw.rt - sample_center_rt) / 0.035) ** 2) + 250.0
         )
         raw.scans = tuple(
             replace(
                 scan,
-                rt=center_rt,
-                scan_number=int(np.argmin(np.abs(raw.rt - center_rt))) + 1,
+                rt=sample_center_rt,
+                scan_number=int(np.argmin(np.abs(raw.rt - sample_center_rt))) + 1,
             )
             for scan in raw.scans
         )
@@ -174,7 +309,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
         physical_facts[path.stem] = record.evaluation.facts
     discovery_batch = DiscoveryBatchInput(
-        sample_order=("S1", "S2"),
+        sample_order=sample_stems,
         candidate_csvs=csvs,
         raw_files={path.stem: path for path in paths},
         review_csvs={path.stem: None for path in paths},
@@ -206,6 +341,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         untargeted_cid_nl_production_batch as production,
     )
 
+    runtime_results = []
     runtime_execute = production.execute_untargeted_cid_nl_real_data_runtime
 
     def checked_runtime(*args, **kwargs):
@@ -215,6 +351,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             for settlement in result.finalization.coordinator.state.runtime.settlements
             if settlement.failure_detail is not None
         )
+        runtime_results.append(result)
         return result
 
     monkeypatch.setattr(
@@ -232,8 +369,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         signal_processing_profile=profile,
     )
     writer = project_completed_untarget_batch_writer_inputs(completed)
-    assert len(writer.matrix.cells) == 2
+    assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
     for cell in writer.matrix.cells:
+        if cell.selected_integration is None:
+            assert separate_groups
+            assert not writer.production_decisions.cell(
+                cell.cluster_id, cell.sample_stem
+            ).write_matrix_value
+            continue
         facts = physical_facts[cell.sample_stem]
         assert cell.area == facts.area_counts_seconds
         assert cell.selected_integration is not None
@@ -248,11 +391,34 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         matrix_path, writer.matrix, production_decisions=writer.production_decisions
     )
     with matrix_path.open(encoding="utf-8", newline="") as handle:
-        (matrix_row,) = tuple(csv.DictReader(handle, delimiter="\t"))
+        matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    expected_row_count = sum(size > 1 for size in group_sizes)
+    assert len(matrix_rows) == expected_row_count
     for sample_stem, facts in physical_facts.items():
-        assert float(matrix_row[sample_stem]) == pytest.approx(
-            facts.area_counts_seconds
+        sample_values = [
+            float(row[sample_stem]) for row in matrix_rows if row[sample_stem]
+        ]
+        assert sample_values == pytest.approx(
+            [facts.area_counts_seconds] if expected_row_count else []
         )
+    if separate_groups:
+        (child,) = completed.application_result.children
+        scientific = child.scientific_core
+        assert len(scientific.final_population) == 2
+        assert len(scientific.cell_observations) == 2 * len(sample_stems)
+        assert sum(
+            cell.evidence_states == ("not_searched",)
+            for cell in scientific.cell_observations
+        ) == len(sample_stems)
+        assert all(
+            sum(bool(row[stem]) for stem in sample_stems) == 2 for row in matrix_rows
+        )
+        assert all(
+            result.effective_assessment.content.method_result == "SUPPORT"
+            for result in runtime_results[0].sample_results
+        )
+        _assert_outside_group_cells(scientific, captured_batches[0], tmp_path)
+        return
 
     from xic_extractor.peak_detection.observations import (
         PeakObservationContractError,

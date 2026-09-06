@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import copy
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -36,6 +36,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     build_owner_backfill_evaluation_coverage,
     build_owner_backfill_planning_epoch,
     mint_owner_backfill_attempt_terminal,
+    mint_owner_backfill_planning_epoch,
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cell_observations import (
@@ -617,8 +618,10 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         )
 
 
+@pytest.mark.parametrize("outside_support", (False, True))
 def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     tmp_path: Path,
+    outside_support: bool,
 ) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
@@ -667,6 +670,33 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         samples,
         planned=False,
     )
+    if outside_support:
+        epoch = coverage.epoch
+        coverage = build_owner_backfill_evaluation_coverage(
+            mint_owner_backfill_planning_epoch(
+                **{
+                    item.name: getattr(epoch, item.name)
+                    for item in fields(epoch)
+                    if item.name not in {"epoch_id", "positions"}
+                },
+                positions=tuple(
+                    replace(
+                        position,
+                        planning_reason=(
+                            "retained_local_owner"
+                            if any(
+                                member.canonical_sample_identity_id
+                                == position.sample.identity.sample_identity_id
+                                for member in position.group_identity.member_subjects
+                            )
+                            else "local_owner_not_supersedable"
+                        ),
+                    )
+                    for position in epoch.positions
+                ),
+            ),
+            (),
+        )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
         predecessors=(left, right),
@@ -689,6 +719,23 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         for group_spine in (left_spine, right_spine)
         for sample in samples
     )
+    if outside_support:
+        predecessor_cells = tuple(
+            group_spine.cells[0]
+            if group_spine is supporting_spine
+            else mint_cell_observation_ref(
+                processing_owners=fixture.owners,
+                sample=sample,
+                target=fixture.target,
+                group_context=group_spine.cells[0].group_context,
+                method_assessment=supporting_spine.cells[0].method_assessment,
+                outside_group_context=supporting_spine.cells[0].group_context,
+            )
+            for group_spine in (left_spine, right_spine)
+            for sample, supporting_spine in zip(
+                samples, (left_spine, right_spine), strict=True
+            )
+        )
     forward = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=predecessor_cells,
@@ -703,7 +750,12 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         item.group is merged
         and len(item.position_associations) == 2
         and len(item.predecessor_cells) == 2
-        and item.evidence_states == ("not_searched", "not_searched")
+        and sorted(item.evidence_states)
+        == (
+            ["direct_observation", "not_searched"]
+            if outside_support
+            else ["not_searched", "not_searched"]
+        )
         for item in forward
     )
     expected_positions_by_sample = {
