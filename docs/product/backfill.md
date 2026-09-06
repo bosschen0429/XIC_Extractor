@@ -73,6 +73,25 @@ HOLD in the ModeTrack candidate population without reopening Backfill.
 `selected_for_output` is a producer fact and never changes eligibility,
 candidate identity, or cardinality.
 
+Retained CID-NL production also transfers two closed conservative outcomes into
+typed no-request coverage. A frozen group below the existing direct-SUPPORT
+threshold retains the policy owner's exact decision and yields `not_searched`.
+An already completed recovery with no retained observation requires a sealed
+runtime projection, the exact recovery assessment and acquisition/request
+binding, and the conservative owner's empty-universe decision. It yields
+`unavailable`: the retained receipt does not establish a negative physical
+peak-detection result. Both preserve the original HOLD and blank quantity and
+prevent another repair epoch. Missing receipts, arbitrary HOLD, and incomplete
+or positive recovery evidence cannot use these exceptions.
+
+The coverage owner revalidates the complete group/sample/cell closure and binds
+the proof into its planning epoch. ObservationRepair and the final cell owner
+consume that same proof. Proof-bearing epochs use the v2 canonical payload;
+epochs without a proof retain their existing bytes and identity. Source cell
+artifacts and runtime result artifacts retain their existing formats. The
+runtime owner issues the completed-recovery projection; coverage never imports
+the extraction runtime or treats nearby trace coordinates as exact requests.
+
 The result is a closed authorization union: no eligible cells produce
 `not_run`, one produces `repair(candidate)`, and more than one produces a
 typed `multiple_eligible` block. Missing, duplicate, extra, crossed, stale, or

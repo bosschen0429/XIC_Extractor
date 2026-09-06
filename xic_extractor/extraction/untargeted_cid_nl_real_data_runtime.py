@@ -5,16 +5,23 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.alignment.backfill.evaluation_coverage import (
+    _COMPLETED_RECOVERY_CONTRACT,
+    OwnerBackfillCompletedRecoveryProjection,
+    _completed_recovery_projection_bytes,
+)
+from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
     minimum_direct_support_count,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -98,6 +105,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     BATCH_SCHEMA_VERSION,
@@ -121,6 +129,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.raw_reader import RawReaderOpenError, open_raw
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.xic_models import XICRequest
 
 SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v2"
 VALIDATION_STATUS = "diagnostic_only"
@@ -233,6 +242,125 @@ class UntargetedCidNlRuntimeSampleResult:
         if self.recovery_attempt is not None:
             return self.recovery_attempt.assessment
         return self.adapter_result.assessment_input.assessment
+
+
+def project_untargeted_cid_nl_completed_recovery(
+    result: UntargetedCidNlRuntimeSampleResult,
+    *,
+    group_context: CidNlCellGroupContext,
+) -> OwnerBackfillCompletedRecoveryProjection:
+    """Project an existing completed empty recovery without executing it again."""
+    if type(result) is not UntargetedCidNlRuntimeSampleResult:
+        raise UntargetedCidNlRealDataRuntimeError("recovery requires a runtime result")
+    job = result.job
+    replace(job)
+    replace(group_context)
+    group = validate_cross_sample_peak_group_identity(
+        group_context.group, require_canonical=True
+    )
+    assert group is not None
+    center = group_context.group.group_center_rt
+    if (
+        group_context.processing_attempt is not job.processing_owners.attempt
+        or group_context.method_subject != job.method_subject
+        or center is None
+    ):
+        raise UntargetedCidNlRealDataRuntimeError("recovery crossed its owner group")
+    recovery = result.recovery_attempt
+    if recovery is None:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "initial assessment is not a recovery"
+        )
+    assessment = recovery.assessment
+    initial = result.adapter_result.assessment_input.assessment
+    for reference in (initial, assessment):
+        validate_cid_nl_method_assessment_binding(
+            reference,
+            processing_owners=job.processing_owners,
+            sample=job.sample,
+            method_subject=job.method_subject,
+        )
+    receipt = assessment.content.evaluation_receipt
+    if (
+        assessment is not result.effective_assessment
+        or assessment.content.technical_state != "evaluated"
+        or assessment.content.method_result != "HOLD"
+        or assessment.candidate_peaks
+        or assessment.content.detector_invocation_id
+        != "untargeted-cid-nl-backfill-recovery:v1"
+        or not receipt.search_completed
+        or not receipt.acquisition_supported
+        or recovery.recovery_input is not None
+        or result.recovery_input is not None
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "recovery is not a completed empty epoch"
+        )
+    replace(result.result_ref)
+    expected_result = mint_untargeted_cid_nl_sample_result_ref(
+        job=job,
+        result=result.adapter_result,
+        recovery_input=result.recovery_input,
+        recovery_attempt=recovery,
+        acquisition=recovery.acquisition,
+    )
+    if result.result_ref != expected_result:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "completed recovery lost its sealed runtime result"
+        )
+    expected_request = XICRequest(
+        mz=job.method_subject.precursor_mz,
+        rt_min=max(0.0, center - job.peak_config.nl_rt_anchor_half_window_min),
+        rt_max=center + job.peak_config.nl_rt_anchor_half_window_min,
+        ppm_tol=job.method_subject.precursor_tolerance_ppm,
+    )
+    exact = tuple(
+        acquired
+        for acquired in recovery.acquisition.traces
+        if acquired.coordinate.request == expected_request
+        and acquired.coordinate.acquisition_source_id
+        == assessment.content.acquisition_source_id
+    )
+    if len(exact) != 1 or (
+        receipt.query_rt_min != expected_request.rt_min
+        or receipt.query_rt_max != expected_request.rt_max
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "recovery crossed its exact request coordinates"
+        )
+    (acquired,) = exact
+    replace(acquired)
+    digest = result.result_ref.acquisition_sha256
+    assert digest is not None
+    artifact = _mint_evidence_artifact_ref(
+        producer_processing_request_id=job.processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=job.processing_owners.attempt.processing_attempt_id,
+        semantic_contract=_COMPLETED_RECOVERY_CONTRACT,
+        payload_bytes=_completed_recovery_projection_bytes(
+            processing_owners=job.processing_owners,
+            sample=job.sample,
+            group_identity=group,
+            group_center_rt=center,
+            source_result_artifact=result.result_ref.artifact,
+            initial_assessment_artifact=initial.artifact,
+            recovery_assessment=assessment,
+            trace_coordinate=acquired.coordinate,
+            acquisition_sha256=digest,
+        ),
+        upstream_artifacts=(result.result_ref.artifact, assessment.artifact),
+    )
+    return OwnerBackfillCompletedRecoveryProjection(
+        processing_owners=job.processing_owners,
+        sample=job.sample,
+        group_identity=group,
+        group_center_rt=center,
+        source_result_artifact=result.result_ref.artifact,
+        initial_assessment_artifact=initial.artifact,
+        recovery_assessment=assessment,
+        trace_coordinate=acquired.coordinate,
+        acquisition_sha256=digest,
+        artifact=artifact,
+    )
 
 
 @dataclass(slots=True)

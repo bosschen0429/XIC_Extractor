@@ -10,6 +10,7 @@ from pathlib import Path
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillPlanningPosition,
     build_owner_backfill_evaluation_coverage,
+    mint_owner_backfill_conservative_no_request_proof,
     mint_owner_backfill_planning_epoch,
     mint_owner_backfill_position_id,
 )
@@ -24,6 +25,12 @@ from xic_extractor.alignment.cell_observations import (
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.conservative_backfill import (
+    ConservativeBackfillRecoveryCandidateUniverse,
+    assess_conservative_backfill_group,
+    map_conservative_backfill_candidates,
+    mint_conservative_backfill_recovery_candidate_universe,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -79,6 +86,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeApplicationResult,
     UntargetedCidNlRealDataRuntimeJob,
     execute_untargeted_cid_nl_real_data_runtime,
+    project_untargeted_cid_nl_completed_recovery,
     untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.capture import (
@@ -581,6 +589,59 @@ def compose_untargeted_cid_nl_production_result(
             for cell in predecessor_cells
         }
         repair_groups = refinement.predecessors
+        no_request_proofs = {}
+        for group in repair_groups:
+            facts = assess_conservative_backfill_group(
+                tuple(
+                    cell
+                    for cell in predecessor_cells
+                    if cell.content.group_hypothesis_id == group.group_hypothesis_id
+                ),
+                sample_population=batch.context.samples,
+            )
+            for sample in batch.context.samples:
+                key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                cell = cell_by_key[key]
+                if (
+                    cell.content.technical_state != "evaluated"
+                    or cell.content.method_result != "HOLD"
+                    or cell.method_assessment.candidate_peaks
+                    or cell.peak_observation is not None
+                ):
+                    continue
+                completion = None
+                universes: tuple[
+                    ConservativeBackfillRecoveryCandidateUniverse, ...
+                ] = ()
+                if facts.may_attempt_recovery:
+                    sample_result = result_by_key[
+                        (sample.metadata.raw_stem, subject.method_subject_id)
+                    ]
+                    if sample_result.recovery_attempt is None:
+                        continue
+                    completion = project_untargeted_cid_nl_completed_recovery(
+                        sample_result, group_context=facts.group_context
+                    )
+                    universes = (
+                        mint_conservative_backfill_recovery_candidate_universe(
+                            processing_owners=batch.context.processing_owners,
+                            sample=sample,
+                            group_facts=(facts,),
+                            candidate_assessment=completion.recovery_assessment,
+                        ),
+                    )
+                (decision,) = map_conservative_backfill_candidates(
+                    (facts,), sample=sample, candidate_universes=universes
+                )
+                no_request_proofs[key] = (
+                    mint_owner_backfill_conservative_no_request_proof(
+                        processing_owners=batch.context.processing_owners,
+                        group_identity=group,
+                        sample=sample,
+                        decision=decision,
+                        completion=completion,
+                    )
+                )
         positions = tuple(
             OwnerBackfillPlanningPosition(
                 position_id=mint_owner_backfill_position_id(
@@ -592,7 +653,12 @@ def compose_untargeted_cid_nl_production_result(
                 sample=sample,
                 planning_state="not_planned",
                 planning_reason=(
-                    "local_owner_not_supersedable"
+                    no_request_proofs[
+                        (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                    ].planning_reason
+                    if (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                    in no_request_proofs
+                    else "local_owner_not_supersedable"
                     if cell_by_key[
                         (group.group_hypothesis_id, sample.identity.sample_identity_id)
                     ].content.outside_group
@@ -600,6 +666,9 @@ def compose_untargeted_cid_nl_production_result(
                     else "retained_local_owner"
                 ),
                 primary_logical_requests=(),
+                conservative_no_request_proof=no_request_proofs.get(
+                    (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                ),
             )
             for group in repair_groups
             for sample in batch.context.samples

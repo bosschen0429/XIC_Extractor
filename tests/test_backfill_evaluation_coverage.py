@@ -563,6 +563,8 @@ def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
         "raw_source_unavailable",
         "retained_local_owner",
         "local_owner_not_supersedable",
+        "direct_support_threshold_not_met",
+        "recovery_search_completed_empty",
     }
     assert set(OWNER_BACKFILL_CANDIDATE_PHASES) == {
         "primary_query",

@@ -12,6 +12,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillAttemptTerminal,
     OwnerBackfillEvaluationCoverageBatch,
     OwnerBackfillPlanningPosition,
+    validate_owner_backfill_conservative_no_request_position,
     validate_owner_backfill_evaluation_coverage,
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
@@ -643,8 +644,14 @@ def authorize_observation_repair(
         seen_keys.add(key)
         cell_id = _cell_identity_id(cell)
         rows.append((key, cell_id, cell, position))
+        no_request_proof = validate_owner_backfill_conservative_no_request_position(
+            position,
+            source_cell=cell,
+            source_population=cell_observations,
+        )
         if (
-            cell.content.technical_state == "evaluated"
+            no_request_proof is None
+            and cell.content.technical_state == "evaluated"
             and cell.content.method_result == "HOLD"
             # A completed composite requirement cannot become SUPPORT through
             # an MS1-only repair. Its acquisition owner evaluates every loss.

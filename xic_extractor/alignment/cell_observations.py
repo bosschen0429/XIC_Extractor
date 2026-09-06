@@ -12,6 +12,7 @@ from typing import Literal, TypeAlias
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillAttemptTerminal,
     OwnerBackfillPlanningPosition,
+    validate_owner_backfill_conservative_no_request_position,
 )
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairReceipt,
@@ -1376,6 +1377,12 @@ def compose_final_group_cell_observation_population(
         positions=positions,
         processing_request_id=request_id,
     )
+    for position in positions:
+        validate_owner_backfill_conservative_no_request_position(
+            position,
+            source_cell=source_by_position[position.position_id],
+            source_population=tuple(predecessor_cells),
+        )
     receipt_by_position, observation_by_receipt = _index_repair_inputs(
         repair_receipts,
         repaired_observations,
@@ -2027,6 +2034,24 @@ def _derive_lane_evidence_state(
             )
         # A merged sibling may supply a direct lane; this lane adds no value.
         return "not_searched"
+    no_request_proof = validate_owner_backfill_conservative_no_request_position(
+        association.position, source_cell=source_cell
+    )
+    if no_request_proof is not None:
+        if (
+            coverage_terminals
+            or repair_receipts
+            or repaired_observations
+            or final_member is not None
+        ):
+            raise CellObservationContractError(
+                "conservative no-request lane cannot carry physical or repair evidence"
+            )
+        return (
+            "not_searched"
+            if no_request_proof.variant == "threshold_not_met"
+            else "unavailable"
+        )
     if final_member is not None and method_result in {"HOLD", "REJECT"}:
         raise CellObservationContractError(
             "final CrossSample member cannot carry a HOLD or REJECT method lane"
