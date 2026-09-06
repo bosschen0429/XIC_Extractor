@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import math
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,6 +49,11 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     compose_untargeted_cid_nl_production_result,
     execute_untargeted_cid_nl_production_batch,
 )
+from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+    UntargetedCidNlRealDataRuntimeError,
+    UntargetedCidNlRealDataRuntimeJob,
+    build_untargeted_cid_nl_sample_runtime_jobs,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -57,6 +62,59 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def _assert_jobs_match_direct_construction(batch) -> None:
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_real_data_runtime as runtime_owner,
+    )
+
+    context = batch.context
+    expected = tuple(
+        UntargetedCidNlRealDataRuntimeJob(
+            processing_owners=context.processing_owners,
+            sample=sample,
+            method_subject=subject,
+            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[
+                sample.metadata.raw_stem
+            ],
+            settings=context.settings,
+            peak_config=context.peak_config,
+            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            dll_dir=batch.jobs[0].dll_dir,
+            work_unit_key=(
+                "untargeted-cid-nl:"
+                f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
+            ),
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                record
+                for _candidate_id, record in sorted(
+                    context.physical_records_by_candidate.items()
+                )
+                if record.work_item.sample_stem == sample.metadata.raw_stem
+            ),
+        )
+        for sample in context.samples
+        for subject in batch.subject_batch.subjects
+    )
+    assert batch.jobs == expected
+    assert tuple(job._request_subjects for job in batch.jobs) == tuple(
+        job._request_subjects for job in expected
+    )
+    memberships = dict(batch.subject_batch.candidate_memberships)
+    for job, direct_job in zip(batch.jobs, expected, strict=True):
+        records = tuple(
+            record
+            for record in job.physical_records
+            if memberships.get(record.candidate_id)
+            == job.method_subject.method_subject_id
+        )
+        selected = runtime_owner._request_subject_physical_records(job)
+        assert selected == records
+        assert all(left is right for left, right in zip(selected, records, strict=True))
+        assert runtime_owner._request_subject_physical_records(direct_job) == records
 
 
 def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
@@ -561,6 +619,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         signal_processing_profile=profile,
     )
+    _assert_jobs_match_direct_construction(captured_batches[0])
     writer = project_completed_untarget_batch_writer_inputs(completed)
     from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
@@ -795,6 +854,29 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             batch.jobs[0],
             signal_processing_profile=SignalProcessingProfile(window_points=21),
         )
+    first_job = batch.jobs[0]
+    sample_inputs = {
+        item.name: getattr(first_job, item.name)
+        for item in fields(first_job)
+        if item.init and item.name not in {"method_subject", "work_unit_key"}
+    }
+    subject_work_units = tuple(
+        (job.method_subject, job.work_unit_key)
+        for job in batch.jobs
+        if job.sample == first_job.sample
+    )
+    for changed, message in (
+        ({"signal_processing_profile": None}, "lost its profile"),
+        (
+            {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
+            "profile is not request-bound",
+        ),
+        ({"physical_records": ()}, "candidate coverage changed"),
+    ):
+        with pytest.raises(UntargetedCidNlRealDataRuntimeError, match=message):
+            build_untargeted_cid_nl_sample_runtime_jobs(
+                **(sample_inputs | changed), subject_work_units=subject_work_units
+            )
     wrong_records = dict(batch.context.physical_records_by_candidate)
     keys = tuple(wrong_records)
     wrong_records[keys[0]] = wrong_records[keys[1]]
@@ -993,6 +1075,89 @@ def test_production_batch_preserves_bounded_subject_membership(
     assert all(
         job.candidates is batch.context.candidates_by_sample["S1"] for job in batch.jobs
     )
+    _assert_jobs_match_direct_construction(batch)
+
+
+def test_sample_job_builder_rejects_changed_request_bound_inputs(
+    tmp_path: Path,
+) -> None:
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+    )
+
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"production-batch:S1")
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
+    peak_config = _peak_config(tmp_path)
+    _source_raw, candidates = _nearby_subject_candidates(
+        raw_path, settings=settings, peak_config=peak_config
+    )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=(raw_path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path, (raw_path,), {"S1": candidates}
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:production-batch",
+    )
+    first = batch.jobs[0]
+    shared = {
+        item.name: getattr(first, item.name)
+        for item in fields(first)
+        if item.init and item.name not in {"method_subject", "work_unit_key"}
+    }
+    work_units = tuple((job.method_subject, job.work_unit_key) for job in batch.jobs)
+    assert len(work_units) == 2
+    assert build_untargeted_cid_nl_sample_runtime_jobs(
+        **shared, subject_work_units=work_units
+    ) == batch.jobs
+    other_dir = tmp_path / "other-request"
+    other_dir.mkdir()
+    other = build_processing_identity_no_raw_fixture(other_dir, sample_stems=("Other",))
+    changed_subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=600.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    for subject, key, message in (
+        (changed_subject, "changed-subject", "not an exact member"),
+        (None, "changed-subject", "wrong owner type"),
+        (work_units[1][0], "", "work_unit_key"),
+    ):
+        with pytest.raises(UntargetedCidNlRealDataRuntimeError, match=message):
+            build_untargeted_cid_nl_sample_runtime_jobs(
+                **shared, subject_work_units=(work_units[0], (subject, key))
+            )
+    for changed, message in (
+        ({"processing_owners": other.owners}, "supported real-data runtime contract"),
+        ({"sample": other.sample("Other")}, "candidate universe"),
+        ({"settings": replace(settings, rt_min=7.0)}, "Discovery settings"),
+        ({"peak_config": replace(peak_config, smooth_window=17)}, "peak settings"),
+        (
+            {"candidates": (replace(candidates[0], reason="changed"), *candidates[1:])},
+            "candidate universe",
+        ),
+    ):
+        with pytest.raises(UntargetedCidNlRealDataRuntimeError, match=message):
+            build_untargeted_cid_nl_sample_runtime_jobs(
+                **(shared | changed), subject_work_units=work_units
+            )
 
 
 def test_alignment_adapter_builds_executes_and_composes_once(

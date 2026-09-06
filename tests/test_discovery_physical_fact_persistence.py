@@ -232,6 +232,8 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
     [
         lambda value: value.update({"unknown": True}),
         lambda value: value.pop("sample"),
+        lambda value: value["sample"].__setitem__("input_ordinal", 0.0),
+        lambda value: value["sample"].__setitem__("input_ordinal", False),
         lambda value: value["work_manifest"][0].pop("product_mz"),
         lambda value: value["work_manifest"][0].__setitem__("candidate_id", "swapped"),
         lambda value: value["work_manifest"][0].__setitem__(

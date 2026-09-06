@@ -13,6 +13,7 @@ import json
 import math
 import re
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
@@ -319,7 +320,21 @@ def cid_nl_method_subjects_from_request(
 ) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
     """Rehydrate the request's singular or batch subject configuration."""
 
-    payload = _request_cid_nl_payload(request)
+    if not isinstance(request, ProcessingRequestIdentity):
+        raise CidNlMethodSubjectContractError(
+            "request must be an owner-minted processing request"
+        )
+    return _subjects_from_normalized_inputs(request.normalized_scientific_inputs_json)
+
+
+@lru_cache(maxsize=1)
+def _subjects_from_normalized_inputs(
+    normalized_inputs_json: str,
+) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
+    # Every job used to retain another full copy of the request's immutable
+    # subject/membership batch. Reuse only the latest exact payload; a different
+    # payload still goes through the same strict reader before it can be shared.
+    payload = _cid_nl_payload_from_normalized_inputs(normalized_inputs_json)
     if payload.get("schema_version") == BATCH_SCHEMA_VERSION:
         return _batch_from_payload(payload)
     return _subject_from_payload(payload)
@@ -464,8 +479,16 @@ def _request_cid_nl_payload(
         raise CidNlMethodSubjectContractError(
             "request must be an owner-minted processing request"
         )
+    return _cid_nl_payload_from_normalized_inputs(
+        request.normalized_scientific_inputs_json
+    )
+
+
+def _cid_nl_payload_from_normalized_inputs(
+    normalized_inputs_json: str,
+) -> dict[str, object]:
     try:
-        request_inputs = json.loads(request.normalized_scientific_inputs_json)
+        request_inputs = json.loads(normalized_inputs_json)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise CidNlMethodSubjectContractError(
             "Untargeted request scientific inputs are malformed"

@@ -80,8 +80,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeApplicationResult,
     UntargetedCidNlRealDataRuntimeJob,
+    _RuntimeResultContext,
+    build_untargeted_cid_nl_sample_runtime_jobs,
     execute_untargeted_cid_nl_real_data_runtime,
-    project_untargeted_cid_nl_completed_recovery,
     untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.capture import (
@@ -251,11 +252,26 @@ def build_untargeted_cid_nl_production_batch(
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
     )
+    ordered_physical_records = tuple(
+        record
+        for _candidate_id, record in sorted(
+            context.physical_records_by_candidate.items()
+        )
+    )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        job
+        for sample in context.samples
+        for job in build_untargeted_cid_nl_sample_runtime_jobs(
             processing_owners=context.processing_owners,
             sample=sample,
-            method_subject=subject,
+            subject_work_units=tuple(
+                (
+                    subject,
+                    "untargeted-cid-nl:"
+                    f"{sample.metadata.raw_stem}:{subject.method_subject_id}",
+                )
+                for subject in subject_batch.subjects
+            ),
             candidates=context.candidates_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
@@ -264,21 +280,13 @@ def build_untargeted_cid_nl_production_batch(
             peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
             dll_dir=dll_dir,
-            work_unit_key=(
-                "untargeted-cid-nl:"
-                f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
-            ),
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
                 record
-                for _candidate_id, record in sorted(
-                    context.physical_records_by_candidate.items()
-                )
+                for record in ordered_physical_records
                 if record.work_item.sample_stem == sample.metadata.raw_stem
             ),
         )
-        for sample in context.samples
-        for subject in subject_batch.subjects
     )
     return UntargetedCidNlProductionBatch(
         subject_batch=subject_batch,
@@ -339,6 +347,7 @@ def compose_untargeted_cid_nl_production_result(
         raise RuntimeError("CID-NL production cannot compose a partial runtime")
     if not isinstance(alignment_config, AlignmentConfig):
         raise TypeError("alignment_config must be an AlignmentConfig")
+    result_context = _RuntimeResultContext(batch.jobs)
     result_by_key = {
         (
             result.job.sample.metadata.raw_stem,
@@ -652,7 +661,7 @@ def compose_untargeted_cid_nl_production_result(
                         is None
                     ):
                         continue
-                    completion = project_untargeted_cid_nl_completed_recovery(
+                    completion = result_context.project_completed_recovery(
                         sample_result, group_context=facts.group_context
                     )
                     universes = (

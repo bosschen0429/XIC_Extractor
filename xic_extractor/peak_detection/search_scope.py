@@ -4,6 +4,8 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
+from types import MappingProxyType
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.models import ExtractionConfig
@@ -14,6 +16,7 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
+    CidNlMethodSubject,
     CidNlMethodSubjectContractError,
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_method_subject_from_target,
@@ -562,17 +565,15 @@ def _validate_untargeted_capture_bindings(
         raise SearchScopeContractError(str(exc)) from exc
     if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         batch = pinned
+        index = _request_batch_capture_index(request)
         provider_subject_ids = tuple(
             provider.method_subject_id for provider in evidence_providers
         )
-        all_subject_ids = tuple(subject.method_subject_id for subject in batch.subjects)
-        if provider_subject_ids == all_subject_ids:
+        if provider_subject_ids == index.subject_ids:
             expected_memberships = batch.candidate_memberships
         elif len(provider_subject_ids) == 1:
-            expected_memberships = tuple(
-                membership
-                for membership in batch.candidate_memberships
-                if membership[1] == provider_subject_ids[0]
+            expected_memberships = index.memberships_by_subject.get(
+                provider_subject_ids[0], ()
             )
         else:
             raise SearchScopeContractError(
@@ -580,8 +581,8 @@ def _validate_untargeted_capture_bindings(
                 "one exact subject view"
             )
         sample_candidate_ids = _request_sample_candidate_ids(
-            _request_inputs(request),
-            samples=samples,
+            request,
+            sample_stems=frozenset(sample.metadata.raw_stem for sample in samples),
         )
         if sample_candidate_ids is not None:
             expected_memberships = tuple(
@@ -620,13 +621,10 @@ def _validate_untargeted_capture_bindings(
             raise SearchScopeContractError(
                 "Untargeted capture bindings do not preserve declared candidate order"
             )
-        subjects_by_id = {
-            subject.method_subject_id: subject for subject in batch.subjects
-        }
         memberships_by_candidate = dict(expected_memberships)
         for binding in bindings:
             subject_id = memberships_by_candidate[binding.candidate_id]
-            subject = subjects_by_id.get(subject_id)
+            subject = index.subjects_by_id.get(subject_id)
             if subject is None or binding.method_subject_id != subject_id:
                 raise SearchScopeContractError(
                     "Untargeted capture binding does not match its candidate "
@@ -663,11 +661,40 @@ def _validate_untargeted_capture_bindings(
             )
 
 
+@dataclass(frozen=True, slots=True)
+class _BatchCaptureIndex:
+    subject_ids: tuple[str, ...]
+    subjects_by_id: Mapping[str, CidNlMethodSubject]
+    memberships_by_subject: Mapping[str, tuple[tuple[str, str], ...]]
+
+
+@lru_cache(maxsize=1)
+def _request_batch_capture_index(
+    request: ProcessingRequestIdentity,
+) -> _BatchCaptureIndex:
+    batch = cid_nl_method_subjects_from_request(request)
+    assert isinstance(batch, UntargetedCidNlMethodSubjectBatch)
+    memberships: dict[str, list[tuple[str, str]]] = {}
+    for membership in batch.candidate_memberships:
+        memberships.setdefault(membership[1], []).append(membership)
+    return _BatchCaptureIndex(
+        subject_ids=tuple(subject.method_subject_id for subject in batch.subjects),
+        subjects_by_id=MappingProxyType(
+            {subject.method_subject_id: subject for subject in batch.subjects}
+        ),
+        memberships_by_subject=MappingProxyType(
+            {subject_id: tuple(values) for subject_id, values in memberships.items()}
+        ),
+    )
+
+
+@lru_cache(maxsize=1)
 def _request_sample_candidate_ids(
-    request_inputs: dict[str, object],
+    request: ProcessingRequestIdentity,
     *,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_stems: frozenset[str],
 ) -> frozenset[str] | None:
+    request_inputs = _request_inputs(request)
     universe = request_inputs.get("current_discovery_candidate_universe")
     if universe is None:
         return None
@@ -675,7 +702,7 @@ def _request_sample_candidate_ids(
         raise SearchScopeContractError(
             "Untargeted batch request candidate universe is malformed"
         )
-    expected_stems = {sample.metadata.raw_stem for sample in samples}
+    expected_stems = sample_stems
     matched_stems: set[str] = set()
     candidate_ids: set[str] = set()
     for entry in universe["samples"]:
@@ -708,7 +735,13 @@ def _request_sample_candidate_ids(
 
 
 def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:
-    values = json.loads(request.normalized_scientific_inputs_json)
+    return _parsed_request_inputs(request.normalized_scientific_inputs_json)
+
+
+@lru_cache(maxsize=1)
+def _parsed_request_inputs(normalized_inputs_json: str) -> dict[str, object]:
+    # This payload stays within the owner's read-only validation paths.
+    values = json.loads(normalized_inputs_json)
     if not isinstance(values, dict):
         raise SearchScopeContractError(
             "processing request scientific inputs must be a mapping"
@@ -769,6 +802,22 @@ def _validate_untargeted_evidence_provider(
             f"Untargeted SearchScope evidence provider is not request-bound: {exc}"
         ) from exc
     if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
+        if len(providers) == 1:
+            binding = providers[0]
+            if (
+                binding
+                == EvidenceProviderBinding(
+                    provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=binding.method_subject_id,
+                )
+                and binding.method_subject_id
+                in _request_batch_capture_index(request).subjects_by_id
+            ):
+                return
+            raise SearchScopeContractError(
+                "Untargeted SearchScope evidence providers must match the request "
+                "subject batch or one exact subject view"
+            )
         expected = tuple(
             EvidenceProviderBinding(
                 provider_id=CID_NL_PROVIDER_ID,
@@ -776,9 +825,7 @@ def _validate_untargeted_evidence_provider(
             )
             for subject in pinned.subjects
         )
-        if providers != expected and not (
-            len(providers) == 1 and providers[0] in expected
-        ):
+        if providers != expected:
             raise SearchScopeContractError(
                 "Untargeted SearchScope evidence providers must match the request "
                 "subject batch or one exact subject view"

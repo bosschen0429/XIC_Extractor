@@ -28,9 +28,9 @@ from xic_extractor.execution_runtime import (
     WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
+    _settle_work_units,
     _start_runtime_attempt,
     append_attempt_lifecycle_event,
-    settle_work_unit,
 )
 from xic_extractor.execution_runtime import (
     mint_work_unit_settlement as _mint_work_unit_settlement,
@@ -47,13 +47,13 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
     SupervisorFinalizationRecord,
+    _register_runtime_artifacts,
     accept_supervisor_finalization,
     begin_attempt_finalization,
     mint_supervisor_finalization,
     propose_attempt_terminal,
     record_runtime_resource_cleanup,
     record_runtime_resource_open,
-    register_runtime_artifact,
     reserve_runtime_resource,
 )
 from xic_extractor.execution_runtime_observability import (
@@ -63,6 +63,7 @@ from xic_extractor.execution_runtime_observability import (
     RuntimeObservabilityLedger,
     RuntimeObservationEvent,
     RuntimeObservationSubject,
+    _index_event_offsets,
     _mint_runtime_observability_ledger,
 )
 from xic_extractor.processing_identity import (
@@ -1116,35 +1117,38 @@ def _apply_runtime_worker_batch(
             outcome=resource_receipt.open_outcome,
         )
 
-    for settlement in sorted(
-        batch.settlements,
-        key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
-    ):
-        if settlement.attempt != attempt:
-            raise RuntimeFinalizationContractError(
-                "work settlement references a different runtime attempt"
-            )
-        runtime = settle_work_unit(
-            state.runtime,
-            work_unit_key=settlement.work_unit_key,
-            outcome=settlement.outcome,
-            owner_result_ref=settlement.owner_result_ref,
-            failure_detail=settlement.failure_detail,
-        )
-        state = replace(state, runtime=runtime)
+    def ordered_settlements() -> Iterable[WorkUnitSettlement]:
+        for settlement in sorted(
+            batch.settlements,
+            key=lambda item: manifest_order.get(
+                item.work_unit_key, len(manifest_order)
+            ),
+        ):
+            if settlement.attempt != attempt:
+                raise RuntimeFinalizationContractError(
+                    "work settlement references a different runtime attempt"
+                )
+            yield settlement
 
-    for registration in sorted(
-        batch.artifact_registrations,
-        key=lambda item: (
-            manifest_order.get(item.work_unit_key, len(manifest_order)),
-            item.artifact.evidence_artifact_id,
-        ),
-    ):
-        state = register_runtime_artifact(
+    if batch.settlements:
+        state = replace(
             state,
-            work_unit_key=registration.work_unit_key,
-            artifact=registration.artifact,
+            runtime=_settle_work_units(state.runtime, ordered_settlements()),
         )
+
+    state = _register_runtime_artifacts(
+        state,
+        (
+            (registration.work_unit_key, registration.artifact)
+            for registration in sorted(
+                batch.artifact_registrations,
+                key=lambda item: (
+                    manifest_order.get(item.work_unit_key, len(manifest_order)),
+                    item.artifact.evidence_artifact_id,
+                ),
+            )
+        ),
+    )
 
     for resource_receipt in resource_settlements:
         state = record_runtime_resource_cleanup(
@@ -1466,6 +1470,7 @@ def _derive_runtime_observability_ledger(
             events=events,
             metrics=tuple(metrics),
         )
+    event_offsets = _index_event_offsets(events)
     metrics.extend(
         (
             _measured_metric(
@@ -1475,8 +1480,8 @@ def _derive_runtime_observability_ledger(
                 unit="seconds",
                 aggregation="last",
                 value=(
-                    _event_offset(events, "terminal_proposal")
-                    - _event_offset(events, "attempt_started")
+                    _event_offset(event_offsets, "terminal_proposal")
+                    - _event_offset(event_offsets, "attempt_started")
                 )
                 / 1_000_000_000,
             ),
@@ -1487,8 +1492,8 @@ def _derive_runtime_observability_ledger(
                 unit="seconds",
                 aggregation="last",
                 value=(
-                    _event_offset(events, "terminal_outcome")
-                    - _event_offset(events, "attempt_queued")
+                    _event_offset(event_offsets, "terminal_outcome")
+                    - _event_offset(event_offsets, "attempt_queued")
                 )
                 / 1_000_000_000,
             ),
@@ -1502,8 +1507,8 @@ def _derive_runtime_observability_ledger(
             unit="seconds",
             aggregation="sum",
             value=(
-                _event_offset(events, "work_unit_settled", work_unit_key)
-                - _event_offset(events, "work_unit_started", work_unit_key)
+                _event_offset(event_offsets, "work_unit_settled", work_unit_key)
+                - _event_offset(event_offsets, "work_unit_started", work_unit_key)
             )
             / 1_000_000_000,
         )
@@ -1713,6 +1718,7 @@ def _preflight_terminal_metrics(
 ) -> tuple[RuntimeMetricRecord, ...]:
     attempt_id = attempt.processing_attempt_id
     unavailable_reason = "not_started_preflight_failure"
+    event_offsets = _index_event_offsets(events)
     return (
         _unsupported_metric(
             name="coordinator_work_seconds",
@@ -1729,8 +1735,8 @@ def _preflight_terminal_metrics(
             unit="seconds",
             aggregation="last",
             value=(
-                _event_offset(events, "terminal_outcome")
-                - _event_offset(events, "attempt_queued")
+                _event_offset(event_offsets, "terminal_outcome")
+                - _event_offset(event_offsets, "attempt_queued")
             )
             / 1_000_000_000,
         ),
@@ -1762,15 +1768,11 @@ def _preflight_terminal_metrics(
 
 
 def _event_offset(
-    events: tuple[RuntimeObservationEvent, ...],
+    event_offsets: dict[tuple[str, str], tuple[int, ...]],
     kind: str,
     subject_key: str = "attempt",
 ) -> int:
-    matches = tuple(
-        event.monotonic_offset_ns
-        for event in events
-        if event.kind == kind and event.subject_key == subject_key
-    )
+    matches = event_offsets.get((kind, subject_key), ())
     if len(matches) != 1:
         raise RuntimeFinalizationContractError(
             "owner-derived elapsed metric lacks one correlated event"

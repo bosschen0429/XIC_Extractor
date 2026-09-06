@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import replace
 
 import numpy as np
@@ -19,6 +20,9 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.extraction import (
+    untargeted_cid_nl_real_data_runtime as runtime_owner,
+)
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     build_untargeted_cid_nl_production_batch,
     compose_untargeted_cid_nl_production_result,
@@ -140,6 +144,14 @@ def test_runtime_recovers_every_authorized_rt_group(
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation="multi-group-recovery:v1",
     )
+    canonical_calls = []
+    canonical_bytes = runtime_owner._canonical_acquisition_bytes
+
+    def count_canonical(acquisition):
+        canonical_calls.append(id(acquisition))
+        return canonical_bytes(acquisition)
+
+    monkeypatch.setattr(runtime_owner, "_canonical_acquisition_bytes", count_canonical)
     result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
         jobs,
@@ -153,6 +165,23 @@ def test_runtime_recovers_every_authorized_rt_group(
         for s in result.finalization.coordinator.state.runtime.settlements
         if s.failure_detail is not None
     )
+    assert len(canonical_calls) == len(set(canonical_calls))
+    for sample_result in result.sample_results:
+        acquisition = (
+            sample_result.recovery_attempts[0].acquisition
+            if sample_result.recovery_attempts
+            else sample_result.adapter_result.acquisition
+        )
+        assert sample_result.result_ref == (
+            runtime_owner.mint_untargeted_cid_nl_sample_result_ref(
+                job=sample_result.job,
+                result=sample_result.adapter_result,
+                recovery_input=sample_result.recovery_input,
+                recovery_attempt=None,
+                recovery_attempts=sample_result.recovery_attempts,
+                acquisition=acquisition,
+            )
+        )
     missing = next(
         item
         for item in result.sample_results
@@ -185,10 +214,13 @@ def test_runtime_recovers_every_authorized_rt_group(
         with pytest.raises(ValueError, match="multiple recovery attempts"):
             _ = missing.recovery_attempt
     if batched:
+        canonical_calls.clear()
         completed = compose_untargeted_cid_nl_production_result(
             batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
         )
+        assert len(canonical_calls) == len(set(canonical_calls))
         assert len(completed.initial_groups) == 2
+        projection_context = runtime_owner._RuntimeResultContext(jobs)
 
         (child,) = completed.application_result.children
         scientific = child.scientific_core
@@ -215,6 +247,27 @@ def test_runtime_recovers_every_authorized_rt_group(
                 completion = project_untargeted_cid_nl_completed_recovery(
                     missing, group_context=source.group_context
                 )
+                assert projection_context.project_completed_recovery(
+                    missing, group_context=source.group_context
+                ) == completion
+                with pytest.raises(ValueError, match="exact runtime batch job"):
+                    projection_context.project_completed_recovery(
+                        replace(missing, job=replace(missing.job)),
+                        group_context=source.group_context,
+                    )
+                changed_acquisition = deepcopy(recovery.acquisition)
+                changed_trace = changed_acquisition.traces[0].trace
+                changed_trace.intensity.flags.writeable = True
+                changed_trace.intensity[0] += 1.0
+                changed_recoveries = tuple(
+                    replace(attempt, acquisition=changed_acquisition)
+                    for attempt in missing.recovery_attempts
+                )
+                with pytest.raises(ValueError, match="sealed runtime result"):
+                    project_untargeted_cid_nl_completed_recovery(
+                        replace(missing, recovery_attempts=changed_recoveries),
+                        group_context=source.group_context,
+                    )
                 assert completion.recovery_assessment is recovery.assessment
                 if len(missing.recovery_attempts) > 1:
                     with pytest.raises(ValueError, match="sealed runtime result"):
