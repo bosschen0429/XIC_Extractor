@@ -176,6 +176,179 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         replace(outside, outside_group_context=outside.group_context)
 
 
+def _assert_single_unsupported_exclusion(
+    completed, runtime_result, batch, tmp_path: Path, *, populated: bool
+) -> None:
+    from copy import copy
+
+    from xic_extractor.alignment.result.application_result import (
+        ApplicationResultContractError,
+        UntargetBatchApplicationResultRequest,
+    )
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        mint_cid_nl_method_assessment_ref,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        issue_processing_attempt,
+    )
+
+    result = completed.application_result
+    exclusions = result.excluded_candidates
+    assert len(exclusions) == 2
+    subject_ids = {item.method_subject_id for item in exclusions}
+    assert len(subject_ids) == 1
+    retained = tuple(
+        sorted(
+            (
+                item.effective_assessment
+                for item in runtime_result.sample_results
+                if item.job.method_subject.method_subject_id in subject_ids
+            ),
+            key=lambda ref: ref.content.canonical_sample_identity_id,
+        )
+    )
+    assert len(retained) == 2
+    assert all(
+        item.reason_code == "cid_nl_requirement_not_supported"
+        and not item.composite_assessments
+        and item.method_assessments == retained
+        and all(
+            left is right
+            for left, right in zip(item.method_assessments, retained, strict=True)
+        )
+        for item in exclusions
+    )
+    assert {item.candidate_id for item in exclusions} == {
+        candidate_id
+        for candidate_id, subject_id in batch.subject_batch.candidate_memberships
+        if subject_id in subject_ids
+    }
+    assert len(result.children) == int(populated)
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    destination = tmp_path / "single-unsupported-matrix.tsv"
+    write_alignment_matrix_tsv(
+        destination, writer.matrix, production_decisions=writer.production_decisions
+    )
+    with destination.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        assert {"Support", "Hold"}.issubset(reader.fieldnames)
+        rows = list(reader)
+    assert len(rows) == int(populated)
+    if populated:
+        assert all(float(rows[0][stem]) > 0 for stem in ("Support", "Hold"))
+    else:
+        assert not writer.matrix.clusters and not writer.matrix.cells
+
+    def validate(exclusion):
+        return UntargetBatchApplicationResultRequest(
+            scope=result.scope,
+            processing_request=result.processing_request,
+            processing_attempt=result.processing_attempt,
+            children=result.children,
+            excluded_candidates=(exclusion, *exclusions[1:]),
+        )
+
+    first = exclusions[0]
+    for proof in (retained[:1], (retained[0], retained[0])):
+        with pytest.raises(
+            ApplicationResultContractError, match="complete sample coverage"
+        ):
+            validate(replace(first, method_assessments=proof))
+    for substitution in (
+        {"method_assessments": ()},
+        {"composite_assessments": retained},
+        {"method_assessments": (), "composite_assessments": retained},
+        {"reason_code": "composite_requirement_not_supported"},
+        {"reason_code": "discovery_candidate_not_search_eligible"},
+    ):
+        with pytest.raises(ApplicationResultContractError):
+            replace(first, **substitution)
+    crossed = copy(first)
+    object.__setattr__(crossed, "composite_assessments", retained)
+    with pytest.raises(ApplicationResultContractError):
+        validate(crossed)
+    if populated:
+        supported = next(
+            item.effective_assessment
+            for item in runtime_result.sample_results
+            if item.effective_assessment.content.method_result == "SUPPORT"
+        )
+        with pytest.raises(ApplicationResultContractError):
+            replace(first, method_assessments=(supported, retained[1]))
+        with pytest.raises(ApplicationResultContractError):
+            replace(
+                first,
+                method_subject_id=supported.content.method_subject.method_subject_id,
+                method_assessments=(supported,),
+            )
+
+    sample = next(
+        sample
+        for sample in batch.context.samples
+        if sample.identity.sample_identity_id
+        == retained[0].content.canonical_sample_identity_id
+    )
+    receipt = replace(retained[0].content.evaluation_receipt, scanned_event_count=0)
+    for state in ("failed", "not_evaluated", "unsupported"):
+        technical = mint_cid_nl_method_assessment_ref(
+            processing_owners=batch.context.processing_owners,
+            sample=sample,
+            method_subject=retained[0].content.method_subject,
+            detector_invocation_id=f"test:{state}",
+            evaluation_receipt=replace(
+                receipt,
+                search_completed=False,
+                reason_code=f"test_{state}",
+                acquisition_supported=state != "unsupported",
+            ),
+            technical_state=state,
+        )
+        with pytest.raises(ApplicationResultContractError):
+            replace(first, method_assessments=(technical, retained[1]))
+    retry_owners = replace(
+        batch.context.processing_owners,
+        attempt=issue_processing_attempt(
+            result.processing_request, retry_of=result.processing_attempt
+        ),
+    )
+    retry_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=retry_owners,
+        sample=sample,
+        method_subject=retained[0].content.method_subject,
+        detector_invocation_id="test:retry",
+        evaluation_receipt=receipt,
+    )
+    with pytest.raises(ApplicationResultContractError, match="owner binding"):
+        validate(replace(first, method_assessments=(retry_assessment, retained[1])))
+    import json
+
+    request = result.processing_request
+    other_request = build_processing_request_identity(
+        acquisition_sources=request.acquisition_sources,
+        acquisition_bindings=request.acquisition_bindings,
+        scientific_input_schema_version=request.scientific_input_schema_version,
+        processing_algorithm_version=request.processing_algorithm_version + ":other",
+        processing_contract_version=request.processing_contract_version,
+        scientific_inputs=json.loads(request.normalized_scientific_inputs_json),
+    )
+    other_owners = replace(
+        batch.context.processing_owners,
+        request=other_request,
+        attempt=issue_processing_attempt(other_request),
+    )
+    foreign_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=other_owners,
+        sample=sample,
+        method_subject=retained[0].content.method_subject,
+        detector_invocation_id="test:foreign-request",
+        evaluation_receipt=receipt,
+    )
+    with pytest.raises(ApplicationResultContractError, match="owner binding"):
+        validate(replace(first, method_assessments=(foreign_assessment, retained[1])))
+
+
 def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
     facts = {"physical-1": (500.0, 8.0)}
 
@@ -1027,16 +1200,48 @@ def test_production_batch_executes_one_atomic_sample_phase(
     }
 
 
+@pytest.mark.parametrize(
+    "scenario", ("mixed", "all_hold", "all_reject", "hold_reject", "other_support")
+)
 def test_production_composition_closes_observation_only_hold_without_membership(
     tmp_path: Path,
     monkeypatch,
+    scenario: str,
 ) -> None:
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_production_batch as production,
+    )
+
+    execute_runtime = production.execute_untargeted_cid_nl_real_data_runtime
+
+    def checked_runtime(*args, **kwargs):
+        result = execute_runtime(*args, **kwargs)
+        assert result.succeeded, tuple(
+            settlement.failure_detail.message
+            for settlement in result.finalization.coordinator.state.runtime.settlements
+            if settlement.failure_detail is not None
+        )
+        return result
+
+    monkeypatch.setattr(
+        production, "execute_untargeted_cid_nl_real_data_runtime", checked_runtime
+    )
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("Support", "Hold"))
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
+    rejected_samples = (
+        ("Support", "Hold")
+        if scenario == "all_reject"
+        else ("Hold",)
+        if scenario == "hold_reject"
+        else ()
+    )
+    for raw_path, raw in source_raws.items():
+        if raw_path.stem in rejected_samples:
+            raw.intensity[:] = 0
     support = _current_candidates(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],
@@ -1057,6 +1262,25 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         "Support": (support,),
         "Hold": (inferred_hold,),
     }
+    if scenario != "mixed":
+        candidates_by_sample["Support"] = (
+            replace(support, precursor_mz_basis="product_plus_neutral_loss"),
+        )
+    if scenario in {"all_reject", "hold_reject"}:
+        for stem in rejected_samples:
+            candidate = support if stem == "Support" else direct_hold
+            candidates_by_sample[stem] = (candidate,)
+    if scenario == "other_support":
+        for raw_path in raw_paths:
+            source_raw, nearby = _nearby_subject_candidates(
+                raw_path, settings=settings, peak_config=peak_config
+            )
+            source_raws[raw_path] = source_raw
+            first, second = sorted(nearby, key=lambda item: item.precursor_mz)
+            candidates_by_sample[raw_path.stem] = (
+                replace(first, precursor_mz_basis="product_plus_neutral_loss"),
+                second,
+            )
     batch = build_untargeted_cid_nl_production_batch(
         raw_paths=raw_paths,
         sample_metadata=(
@@ -1104,7 +1328,17 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         for peak in result.effective_assessment.candidate_peaks
         if result.effective_assessment.content.method_result == "HOLD"
     )
-    assert len(hold_observation_ids) == 1
+    assert runtime_result.succeeded
+    assert (
+        len(hold_observation_ids)
+        == {
+            "mixed": 1,
+            "all_hold": 2,
+            "all_reject": 0,
+            "hold_reject": 1,
+            "other_support": 2,
+        }[scenario]
+    )
 
     completed = compose_untargeted_cid_nl_production_result(
         batch,
@@ -1112,11 +1346,20 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
 
-    assert hold_observation_ids[0] not in (
+    assert not set(hold_observation_ids) & set(
         completed.application_result.physical_observation_ids
     )
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
     assert writer_inputs.matrix.sample_order == ("Support", "Hold")
+    if scenario != "mixed":
+        _assert_single_unsupported_exclusion(
+            completed,
+            runtime_result,
+            batch,
+            tmp_path,
+            populated=scenario == "other_support",
+        )
+        return
     assert len(writer_inputs.matrix.clusters) == 1
     assert tuple(cell.sample_stem for cell in writer_inputs.matrix.cells) == (
         "Support",
@@ -1488,9 +1731,25 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
         item.method_subject_id
         == dict(batch.subject_batch.candidate_memberships)[item.candidate_id]
         and item.discovery_candidate_state == "review_only_orphan_nl"
-        and item.reason_code == "discovery_candidate_not_search_eligible"
+        and item.reason_code == "cid_nl_requirement_not_supported"
+        and len(item.method_assessments) == 1
+        and item.method_assessments[0].content.method_result == "REJECT"
         for item in exclusions
     )
+    from xic_extractor.alignment.result.application_result import (
+        ApplicationResultContractError,
+    )
+
+    for item in exclusions:
+        legacy = replace(
+            item,
+            reason_code="discovery_candidate_not_search_eligible",
+            method_assessments=(),
+        )
+        assert legacy.discovery_candidate_state == item.discovery_candidate_state
+        for field in ("method_assessments", "composite_assessments"):
+            with pytest.raises(ApplicationResultContractError):
+                replace(legacy, **{field: item.method_assessments})
     if exclude_all:
         assert completed.application_result.children == ()
         assert completed.application_result.subject_ids == tuple(

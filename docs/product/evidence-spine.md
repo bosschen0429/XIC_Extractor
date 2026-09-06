@@ -203,10 +203,13 @@ MS1 peak; non-qualifying scans cannot manufacture a negative result. A unique
 SUPPORT may compose the existing owner-backed `PeakHypothesis` and enter
 existing provisional group construction. HOLD, REJECT, and technical
 assessments remain valid without a fake hypothesis or an invented group.
-If a composite subject has a complete evaluated assessment for every sample
+If a CID-NL subject has a complete evaluated assessment for every sample
 and none is SUPPORT, the existing `UntargetedCandidateExclusion` owner retains
-those exact assessments under `composite_requirement_not_supported`. The
-subject does not enter ModeTrack group construction. An all-excluded batch
+those exact assessments under `cid_nl_requirement_not_supported` for a single
+method or `composite_requirement_not_supported` for a composite method. The
+exclusion requires complete current sample and request/attempt binding; a
+technical failure or incomplete assessment cannot stand in for this evidence.
+The subject does not enter ModeTrack group construction. An all-excluded batch
 completes with an empty canonical Matrix and preserves its assessment evidence.
 
 The CellObservationRef reference spine creates one minimal `CellObservationRef` only after a

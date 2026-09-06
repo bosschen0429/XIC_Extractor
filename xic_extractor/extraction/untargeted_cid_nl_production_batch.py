@@ -352,9 +352,9 @@ def compose_untargeted_cid_nl_production_result(
                 batch.context.samples, key=lambda item: item.identity.sample_identity_id
             )
         )
-        if subject.composition is not None and all(
+        if all(
             ref.content.technical_state == "evaluated"
-            and ref.content.method_result != "SUPPORT"
+            and ref.content.method_result in {"HOLD", "REJECT"}
             for ref in subject_assessments
         ):
             unsupported_subjects[subject.method_subject_id] = subject_assessments
@@ -382,9 +382,24 @@ def compose_untargeted_cid_nl_production_result(
             reason_code=(
                 "composite_requirement_not_supported"
                 if method_subject_id in unsupported_subjects
+                and unsupported_subjects[method_subject_id][
+                    0
+                ].content.method_subject.composition
+                is not None
+                else "cid_nl_requirement_not_supported"
+                if method_subject_id in unsupported_subjects
                 else "discovery_candidate_not_search_eligible"
             ),
-            composite_assessments=unsupported_subjects.get(method_subject_id, ()),
+            composite_assessments=tuple(
+                ref
+                for ref in unsupported_subjects.get(method_subject_id, ())
+                if ref.content.method_subject.composition is not None
+            ),
+            method_assessments=tuple(
+                ref
+                for ref in unsupported_subjects.get(method_subject_id, ())
+                if ref.content.method_subject.composition is None
+            ),
         )
         for candidate_id, method_subject_id in (
             batch.subject_batch.candidate_memberships

@@ -68,9 +68,12 @@ class UntargetedCandidateExclusion:
     canonical_sample_identity_id: str
     discovery_candidate_state: DiscoveryCandidateState
     reason_code: Literal[
-        "discovery_candidate_not_search_eligible", "composite_requirement_not_supported"
+        "discovery_candidate_not_search_eligible",
+        "composite_requirement_not_supported",
+        "cid_nl_requirement_not_supported",
     ] = "discovery_candidate_not_search_eligible"
     composite_assessments: tuple[CidNlMethodAssessmentRef, ...] = ()
+    method_assessments: tuple[CidNlMethodAssessmentRef, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name, value in (
@@ -84,7 +87,18 @@ class UntargetedCandidateExclusion:
                 )
         if self.discovery_candidate_state not in DISCOVERY_CANDIDATE_STATE_VALUES:
             raise ApplicationResultContractError("Invalid excluded Discovery state")
+        if (
+            type(self.composite_assessments) is not tuple
+            or type(self.method_assessments) is not tuple
+        ):
+            raise ApplicationResultContractError(
+                "Exclusion assessment proofs must be immutable tuples"
+            )
         if self.reason_code == "composite_requirement_not_supported":
+            if self.method_assessments:
+                raise ApplicationResultContractError(
+                    "Composite exclusion cannot carry method assessments"
+                )
             refs = self.composite_assessments
             if (
                 type(refs) is not tuple
@@ -103,6 +117,28 @@ class UntargetedCandidateExclusion:
                     "Composite exclusion requires evaluated unsupported assessments"
                 )
             return
+        if self.reason_code == "cid_nl_requirement_not_supported":
+            refs = self.method_assessments
+            if (
+                self.composite_assessments
+                or type(refs) is not tuple
+                or not refs
+                or any(
+                    type(ref) is not CidNlMethodAssessmentRef
+                    or ref.content.method_subject.composition is not None
+                    or ref.content.method_subject.subject_kind != "untargeted_precursor"
+                    or ref.content.method_subject.method_subject_id
+                    != self.method_subject_id
+                    or ref.content.technical_state != "evaluated"
+                    or ref.content.method_result not in {"HOLD", "REJECT"}
+                    for ref in refs
+                )
+            ):
+                raise ApplicationResultContractError(
+                    "CID-NL exclusion requires evaluated unsupported single-method "
+                    "assessments and no composite proof"
+                )
+            return
         if self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES:
             raise ApplicationResultContractError(
                 "Untargeted candidate exclusion requires a non-feature-backed "
@@ -111,6 +147,7 @@ class UntargetedCandidateExclusion:
         if (
             self.reason_code != "discovery_candidate_not_search_eligible"
             or self.composite_assessments
+            or self.method_assessments
         ):
             raise ApplicationResultContractError(
                 "Untargeted candidate exclusion reason is unsupported"
@@ -655,6 +692,7 @@ def _validate_untarget_batch_request(
         subject.method_subject_id: subject for subject in subject_batch.subjects
     }
     for exclusion in exclusions:
+        exclusion.__post_init__()
         expected_sample_id = candidate_sample_ids.get(exclusion.candidate_id)
         if (
             parent_memberships.get(exclusion.candidate_id)
@@ -668,14 +706,21 @@ def _validate_untarget_batch_request(
             raise ApplicationResultContractError(
                 "Untarget batch exclusion crossed candidate, subject, or sample"
             )
-        if exclusion.reason_code == "composite_requirement_not_supported":
-            assessments = exclusion.composite_assessments
+        if exclusion.reason_code in {
+            "composite_requirement_not_supported",
+            "cid_nl_requirement_not_supported",
+        }:
+            assessments = (
+                exclusion.composite_assessments
+                if exclusion.reason_code == "composite_requirement_not_supported"
+                else exclusion.method_assessments
+            )
             if (
                 tuple(ref.content.canonical_sample_identity_id for ref in assessments)
                 != parent_sample_ids
             ):
                 raise ApplicationResultContractError(
-                    "Composite exclusion requires exact complete sample coverage"
+                    "Method exclusion requires exact complete sample coverage"
                 )
             owners = ProcessingOwnerReferences(
                 request=request.processing_request,
@@ -699,7 +744,7 @@ def _validate_untarget_batch_request(
                     )
                 except ValueError as exc:
                     raise ApplicationResultContractError(
-                        "Composite exclusion crossed its assessment owner binding"
+                        "Method exclusion crossed its assessment owner binding"
                     ) from exc
 
     child_candidates: list[str] = []
