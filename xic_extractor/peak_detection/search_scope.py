@@ -13,12 +13,11 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    BATCH_SCHEMA_VERSION,
     CID_NL_PROVIDER_ID,
     CidNlMethodSubjectContractError,
-    cid_nl_method_subject_batch_from_request,
-    cid_nl_method_subject_from_request,
+    UntargetedCidNlMethodSubjectBatch,
     cid_nl_method_subject_from_target,
+    cid_nl_method_subjects_from_request,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
@@ -557,16 +556,12 @@ def _validate_untargeted_capture_bindings(
     declared_candidate_ids: tuple[str, ...],
     evidence_providers: tuple[EvidenceProviderBinding, ...],
 ) -> None:
-    request_inputs = _request_inputs(request)
-    payload = request_inputs.get(CID_NL_REQUEST_INPUT_KEY)
-    if (
-        isinstance(payload, dict)
-        and payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    ):
-        try:
-            batch = cid_nl_method_subject_batch_from_request(request)
-        except CidNlMethodSubjectContractError as exc:
-            raise SearchScopeContractError(str(exc)) from exc
+    try:
+        pinned = cid_nl_method_subjects_from_request(request)
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(str(exc)) from exc
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
+        batch = pinned
         provider_subject_ids = tuple(
             provider.method_subject_id for provider in evidence_providers
         )
@@ -585,7 +580,7 @@ def _validate_untargeted_capture_bindings(
                 "one exact subject view"
             )
         sample_candidate_ids = _request_sample_candidate_ids(
-            request_inputs,
+            _request_inputs(request),
             samples=samples,
         )
         if sample_candidate_ids is not None:
@@ -651,10 +646,7 @@ def _validate_untargeted_capture_bindings(
                 )
         return
 
-    try:
-        subject = cid_nl_method_subject_from_request(request)
-    except CidNlMethodSubjectContractError as exc:
-        raise SearchScopeContractError(str(exc)) from exc
+    subject = pinned
     for binding in bindings:
         mz_error_ppm = (
             abs(binding.query_mz - subject.precursor_mz)
@@ -770,24 +762,19 @@ def _validate_untargeted_evidence_provider(
     *,
     request: ProcessingRequestIdentity,
 ) -> None:
-    request_inputs = _request_inputs(request)
-    payload = request_inputs.get(CID_NL_REQUEST_INPUT_KEY)
-    if (
-        isinstance(payload, dict)
-        and payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    ):
-        try:
-            batch = cid_nl_method_subject_batch_from_request(request)
-        except CidNlMethodSubjectContractError as exc:
-            raise SearchScopeContractError(
-                f"Untargeted SearchScope evidence provider is not request-bound: {exc}"
-            ) from exc
+    try:
+        pinned = cid_nl_method_subjects_from_request(request)
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(
+            f"Untargeted SearchScope evidence provider is not request-bound: {exc}"
+        ) from exc
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         expected = tuple(
             EvidenceProviderBinding(
                 provider_id=CID_NL_PROVIDER_ID,
                 method_subject_id=subject.method_subject_id,
             )
-            for subject in batch.subjects
+            for subject in pinned.subjects
         )
         if providers != expected and not (
             len(providers) == 1 and providers[0] in expected
@@ -797,15 +784,9 @@ def _validate_untargeted_evidence_provider(
                 "subject batch or one exact subject view"
             )
         return
-    try:
-        expected_subject = cid_nl_method_subject_from_request(request)
-    except CidNlMethodSubjectContractError as exc:
-        raise SearchScopeContractError(
-            f"Untargeted SearchScope evidence provider is not request-bound: {exc}"
-        ) from exc
     _validate_exact_cid_nl_provider(
         providers,
-        expected_method_subject_id=expected_subject.method_subject_id,
+        expected_method_subject_id=pinned.method_subject_id,
         variant="Untargeted",
     )
 

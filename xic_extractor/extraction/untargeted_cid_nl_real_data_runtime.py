@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
@@ -108,11 +108,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    BATCH_SCHEMA_VERSION,
-    REQUEST_INPUT_KEY,
     CidNlMethodSubject,
     CidNlMethodSubjectContractError,
-    cid_nl_method_subject_batch_from_request,
+    UntargetedCidNlMethodSubjectBatch,
+    cid_nl_method_subjects_from_request,
 )
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
@@ -169,6 +168,9 @@ class UntargetedCidNlRealDataRuntimeJob:
     work_unit_key: str
     signal_processing_profile: SignalProcessingProfile | None = None
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
+    _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         expected = (
@@ -181,10 +183,10 @@ class UntargetedCidNlRealDataRuntimeJob:
             ("raw_path", Path),
             ("dll_dir", Path),
         )
-        for field, kind in expected:
-            if not isinstance(getattr(self, field), kind):
+        for field_name, kind in expected:
+            if not isinstance(getattr(self, field_name), kind):
                 raise UntargetedCidNlRealDataRuntimeError(
-                    f"{field} has the wrong owner type"
+                    f"{field_name} has the wrong owner type"
                 )
         if not isinstance(self.candidates, tuple) or any(
             not isinstance(item, DiscoveryCandidate) for item in self.candidates
@@ -193,7 +195,9 @@ class UntargetedCidNlRealDataRuntimeJob:
                 "candidates must contain current DiscoveryCandidate values"
             )
         _required_text(self.work_unit_key, field="work_unit_key")
-        _validate_request_bound_inputs(self)
+        object.__setattr__(
+            self, "_request_subjects", _validate_request_bound_inputs(self)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1444,7 +1448,9 @@ def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:
     ).encode("utf-8")
 
 
-def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> None:
+def _validate_request_bound_inputs(
+    job: UntargetedCidNlRealDataRuntimeJob,
+) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
     request = job.processing_owners.request
     if (
         request.scientific_input_schema_version
@@ -1499,27 +1505,23 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
             raise UntargetedCidNlRealDataRuntimeError(
                 "physical replay answer is not request-bound"
             )
-    subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
-    if (
-        isinstance(subject_payload, dict)
-        and subject_payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    ):
-        try:
-            batch = cid_nl_method_subject_batch_from_request(request)
-        except CidNlMethodSubjectContractError as exc:
-            raise UntargetedCidNlRealDataRuntimeError(
-                "processing request has an invalid CID-NL subject batch"
-            ) from exc
+    try:
+        pinned = cid_nl_method_subjects_from_request(request)
+    except CidNlMethodSubjectContractError as exc:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "processing request has an invalid CID-NL method subject configuration"
+        ) from exc
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         matching_subjects = tuple(
             subject
-            for subject in batch.subjects
+            for subject in pinned.subjects
             if subject.method_subject_id == job.method_subject.method_subject_id
         )
         if matching_subjects != (job.method_subject,):
             raise UntargetedCidNlRealDataRuntimeError(
                 "method subject is not an exact member of the processing request"
             )
-    elif subject_payload != job.method_subject.request_payload():
+    elif pinned != job.method_subject:
         raise UntargetedCidNlRealDataRuntimeError(
             "method subject does not match the processing request"
         )
@@ -1572,34 +1574,23 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
         raise UntargetedCidNlRealDataRuntimeError(
             "candidate universe does not match the processing request"
         )
+    return pinned
 
 
 def _request_subject_candidates(
     job: UntargetedCidNlRealDataRuntimeJob,
 ) -> tuple[DiscoveryCandidate, ...]:
-    request_inputs = json.loads(
-        job.processing_owners.request.normalized_scientific_inputs_json
-    )
-    subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
-    if not (
-        isinstance(subject_payload, dict)
-        and subject_payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    ):
+    pinned = job._request_subjects
+    if not isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
             job.candidates,
             sample=job.sample,
             method_subject=job.method_subject,
             settings=job.settings,
         )
-    try:
-        batch = cid_nl_method_subject_batch_from_request(job.processing_owners.request)
-    except CidNlMethodSubjectContractError as exc:
-        raise UntargetedCidNlRealDataRuntimeError(
-            "processing request has an invalid CID-NL subject batch"
-        ) from exc
     member_ids = {
         candidate_id
-        for candidate_id, method_subject_id in batch.candidate_memberships
+        for candidate_id, method_subject_id in pinned.candidate_memberships
         if method_subject_id == job.method_subject.method_subject_id
     }
     return tuple(
@@ -1610,14 +1601,7 @@ def _request_subject_candidates(
 
 
 def _request_uses_subject_batch(job: UntargetedCidNlRealDataRuntimeJob) -> bool:
-    request_inputs = json.loads(
-        job.processing_owners.request.normalized_scientific_inputs_json
-    )
-    subject_payload = request_inputs.get(REQUEST_INPUT_KEY)
-    return (
-        isinstance(subject_payload, dict)
-        and subject_payload.get("schema_version") == BATCH_SCHEMA_VERSION
-    )
+    return isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch)
 
 
 def _runtime_sample_groups(

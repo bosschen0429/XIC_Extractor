@@ -166,6 +166,13 @@ A Targeted adapter retains its exact target snapshot/key/definition
 inside the subject; an Untargeted request pins the same subject schema directly
 and never fabricates a `ResolvedTargetDefinition`.
 
+The subject owner reads the request's scalar, composite or batch configuration
+through `cid_nl_method_subjects_from_request`, using the existing strict payload
+contracts. Runtime jobs retain that validated subject configuration for candidate
+membership and scheduling; SearchScope and capture consume the same owner reader.
+Physical capture, settings and candidate-universe validation retain their existing
+owners. The derived runtime value does not mint or change request identity.
+
 The Untargeted batch factory assigns each Discovery candidate to one bounded
 method-query subject. Within each scalar loss or full configured composition,
 candidates are ordered by exact precursor m/z and candidate ID. The first mass

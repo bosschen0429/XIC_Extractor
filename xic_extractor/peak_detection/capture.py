@@ -12,9 +12,8 @@ from xic_extractor.peak_detection.capture_boundary_policy import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
-    CidNlMethodSubjectContractError,
-    cid_nl_method_subject_batch_from_request,
-    cid_nl_method_subject_from_request,
+    UntargetedCidNlMethodSubjectBatch,
+    cid_nl_method_subjects_from_request,
     validate_cid_nl_method_subject_binding,
 )
 from xic_extractor.peak_detection.evidence_facts import (
@@ -654,15 +653,15 @@ def _hypothesis_context(
             target.istd_pair,
             target.label,
         )
-    try:
-        method_subject = cid_nl_method_subject_from_request(scope.request)
-    except CidNlMethodSubjectContractError:
-        batch = cid_nl_method_subject_batch_from_request(scope.request)
+    pinned = cid_nl_method_subjects_from_request(scope.request)
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         method_subject = next(
             subject
-            for subject in batch.subjects
+            for subject in pinned.subjects
             if subject.method_subject_id == method_subject_id
         )
+    else:
+        method_subject = pinned
     label = f"untargeted:{query_mz:.8g}:{method_subject.label}"
     return label, "Analyte", "", label
 

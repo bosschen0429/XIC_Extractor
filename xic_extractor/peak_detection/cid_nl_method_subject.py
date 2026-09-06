@@ -314,6 +314,17 @@ def mint_untargeted_cid_nl_method_subject_batch(
     )
 
 
+def cid_nl_method_subjects_from_request(
+    request: ProcessingRequestIdentity,
+) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
+    """Rehydrate the request's singular or batch subject configuration."""
+
+    payload = _request_cid_nl_payload(request)
+    if payload.get("schema_version") == BATCH_SCHEMA_VERSION:
+        return _batch_from_payload(payload)
+    return _subject_from_payload(payload)
+
+
 def cid_nl_method_subject_from_request(
     request: ProcessingRequestIdentity,
 ) -> CidNlMethodSubject:
@@ -337,6 +348,12 @@ def cid_nl_method_subject_batch_from_request(
         raise CidNlMethodSubjectContractError(
             "Untargeted request pins a singular CID-NL method subject"
         )
+    return _batch_from_payload(payload)
+
+
+def _batch_from_payload(
+    payload: dict[str, object],
+) -> UntargetedCidNlMethodSubjectBatch:
     expected_fields = {"schema_version", "subjects", "candidate_memberships"}
     if set(payload) != expected_fields:
         raise CidNlMethodSubjectContractError(
@@ -424,24 +441,17 @@ def validate_cid_nl_method_subject_binding(
             "Untargeted method subject cannot be paired with a configured Target"
         )
     try:
-        pinned_batch = cid_nl_method_subject_batch_from_request(
-            processing_owners.request
-        )
-    except CidNlMethodSubjectContractError:
-        try:
-            pinned_subject = cid_nl_method_subject_from_request(
-                processing_owners.request
-            )
-        except CidNlMethodSubjectContractError as exc:
-            raise CidNlMethodSubjectContractError(
-                "Untargeted method subject is not pinned by the processing request"
-            ) from exc
-        if pinned_subject != subject:
-            raise CidNlMethodSubjectContractError(
-                "Untargeted method subject is not pinned by the processing request"
-            )
-        return
-    if subject not in pinned_batch.subjects:
+        pinned = cid_nl_method_subjects_from_request(processing_owners.request)
+    except CidNlMethodSubjectContractError as exc:
+        raise CidNlMethodSubjectContractError(
+            "Untargeted method subject is not pinned by the processing request"
+        ) from exc
+    subjects = (
+        pinned.subjects
+        if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
+        else (pinned,)
+    )
+    if subject not in subjects:
         raise CidNlMethodSubjectContractError(
             "Untargeted method subject is not pinned by the processing request"
         )
@@ -772,6 +782,7 @@ __all__ = [
     "cid_nl_method_subject_batch_from_request",
     "cid_nl_method_subject_from_request",
     "cid_nl_method_subject_from_target",
+    "cid_nl_method_subjects_from_request",
     "mint_untargeted_cid_nl_method_subject",
     "mint_untargeted_cid_nl_method_subject_batch",
     "validate_cid_nl_method_subject_binding",
