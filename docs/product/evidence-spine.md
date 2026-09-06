@@ -179,6 +179,13 @@ physical-record validation remains exact. Query membership grants no
 cross-sample identity or Matrix eligibility; those decisions remain with the
 existing assessment and CrossSample owners.
 
+The real-data CID-NL adapter retains the shared capture owner's
+`SampleLocalCapture` results alongside its assessment. Production composition
+uses their bound traces and candidate bindings; it does not reconstruct those
+relationships from acquisition arrays or Discovery rows. Acquisition receipts
+remain with the runtime owner, and the shared workflow still validates its own
+complete search scope before composing downstream results.
+
 `CidNlMethodAssessmentRef` binds one detector invocation, method subject, candidate
 universe, completed-search receipt with the exact DDA support policy, measured
 evidence, and individual or set-level relations to the existing processing

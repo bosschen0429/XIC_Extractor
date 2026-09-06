@@ -133,7 +133,7 @@ class UntargetedCidNlRealDataRaw(BatchXICAdapter, Protocol):
 class UntargetedCidNlRealDataAdapterResult:
     assessment_input: UntargetedCidNlAssessmentInput
     acquisition: TraceAcquisitionBatch | None
-    acquired_candidate_ids: tuple[str, ...]
+    captures: tuple[capture_owner.SampleLocalCapture, ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
@@ -530,7 +530,7 @@ def adapt_current_discovery_sample_subject(
                 assessment=assessment,
             ),
             acquisition=None,
-            acquired_candidate_ids=(),
+            captures=(),
             source_candidate_ids=(),
             strict_scan_count=0,
             lineage_artifacts=lineage,
@@ -590,7 +590,7 @@ def adapt_current_discovery_sample_subject(
         signal_processing_profile=signal_processing_profile,
         physical_records=physical_records,
     )
-    acquisition, observations = _reacquire_peak_observations(
+    acquisition, observations, captures = _reacquire_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
         candidates=peak_candidates,
@@ -699,11 +699,7 @@ def adapt_current_discovery_sample_subject(
             discovery_projections=tuple(projections),
         ),
         acquisition=acquisition,
-        acquired_candidate_ids=(
-            _preacquired_traces.candidate_ids
-            if acquisition is not None and _preacquired_traces is not None
-            else tuple(item.candidate_id for item in peak_candidates)
-        ),
+        captures=captures,
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
         strict_scan_count=len({scan.scan_number for scan, _ in strict_scan_seeds}),
         lineage_artifacts=lineage,
@@ -1088,9 +1084,13 @@ def _reacquire_peak_observations(
     search_scope: UntargetedSearchScope,
     _observer: _UntargetedRealDataWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
-) -> tuple[TraceAcquisitionBatch | None, tuple[PeakObservationRef, ...]]:
+) -> tuple[
+    TraceAcquisitionBatch | None,
+    tuple[PeakObservationRef, ...],
+    tuple[capture_owner.SampleLocalCapture, ...],
+]:
     if not candidates:
-        return None, ()
+        return None, (), ()
     if _preacquired_traces is None:
         capability = mint_trace_acquisition_capability(
             source,
@@ -1126,6 +1126,7 @@ def _reacquire_peak_observations(
     if _observer is not None:
         _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
+    captures: list[capture_owner.SampleLocalCapture] = []
     for candidate, acquired in zip(candidates, acquired_traces, strict=True):
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
@@ -1158,7 +1159,8 @@ def _reacquire_peak_observations(
                 sample=sample,
             )
         )
-    return acquisition, tuple(observations)
+        captures.append(capture)
+    return acquisition, tuple(observations), tuple(captures)
 
 
 def method_label(candidate: DiscoveryCandidate) -> str:

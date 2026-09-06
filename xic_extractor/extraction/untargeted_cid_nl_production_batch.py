@@ -75,9 +75,6 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
     start_runtime_attempt,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
-    UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
-)
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
     build_untargeted_cid_nl_real_data_context,
@@ -90,6 +87,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.capture import (
+    SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
     capture_peak_hypotheses,
     mint_captured_peak_observation,
@@ -107,15 +105,14 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
+    require_capture_binding,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
@@ -359,7 +356,7 @@ def compose_untargeted_cid_nl_production_result(
     if len(result_by_key) != len(batch.jobs):
         raise RuntimeError("CID-NL production runtime lost sample/subject results")
 
-    trace_by_candidate = _runtime_candidate_traces(batch, runtime_result)
+    capture_by_candidate = _runtime_captures_by_candidate(batch, runtime_result)
     candidate_by_id = {
         candidate.candidate_id: candidate
         for candidates in batch.context.candidates_by_sample.values()
@@ -382,10 +379,9 @@ def compose_untargeted_cid_nl_production_result(
         ):
             unsupported_subjects[subject.method_subject_id] = subject_assessments
     bindings = tuple(
-        _capture_binding(
-            batch=batch,
-            candidate=candidate_by_id[candidate_id],
-            method_subject_id=method_subject_id,
+        require_capture_binding(
+            capture_by_candidate[candidate_id].scope,
+            candidate_id,
         )
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
         if candidate_by_id[candidate_id].discovery_candidate_state
@@ -518,7 +514,7 @@ def compose_untargeted_cid_nl_production_result(
         }
         for binding in child_bindings:
             sample = sample_by_id[binding.sample_identity_id]
-            trace = trace_by_candidate[binding.candidate_id]
+            trace = capture_by_candidate[binding.candidate_id].trace
             captured = capture_peak_hypotheses(
                 scope=child_scope,
                 candidate_id=binding.candidate_id,
@@ -826,80 +822,27 @@ def _predecessor_cell_population(
     return tuple(cells)
 
 
-def _runtime_candidate_traces(
+def _runtime_captures_by_candidate(
     batch: UntargetedCidNlProductionBatch,
     runtime_result: UntargetedCidNlRealDataRuntimeApplicationResult,
-) -> dict[str, Trace]:
-    traces: dict[str, Trace] = {}
-    seen_acquisitions: set[int] = set()
-    sample_by_stem = {
-        sample.metadata.raw_stem: sample for sample in batch.context.samples
-    }
+) -> dict[str, SampleLocalCapture]:
+    captures: dict[str, SampleLocalCapture] = {}
     for result in runtime_result.sample_results:
-        acquisition = result.adapter_result.acquisition
-        acquired_candidate_ids = result.adapter_result.acquired_candidate_ids
-        if acquisition is None:
-            if acquired_candidate_ids:
-                raise RuntimeError("runtime acquisition lost its candidate mapping")
-            continue
-        acquisition_identity = id(acquisition)
-        if acquisition_identity in seen_acquisitions:
-            continue
-        seen_acquisitions.add(acquisition_identity)
-        if len(acquisition.traces) != len(acquired_candidate_ids):
-            raise RuntimeError("runtime acquisition/candidate mapping is partial")
-        sample = sample_by_stem[result.job.sample.metadata.raw_stem]
-        for candidate_id, acquired in zip(
-            acquired_candidate_ids,
-            acquisition.traces,
-            strict=True,
-        ):
-            if candidate_id in traces:
-                raise RuntimeError("runtime acquisition duplicated a candidate trace")
-            traces[candidate_id] = trace_from_xic_request(
-                sample_name=sample.metadata.sample_name,
-                request=acquired.coordinate.request,
-                xic_trace=acquired.trace,
-                source=UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
-                acquisition_source_id=(acquired.coordinate.acquisition_source_id),
-            )
+        for capture in result.adapter_result.captures:
+            if capture.candidate_id in captures:
+                raise RuntimeError("runtime capture duplicated a candidate")
+            captures[capture.candidate_id] = capture
     expected = {
         candidate.candidate_id
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
         if candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
     }
-    if set(traces) != expected:
+    if set(captures) != expected:
         raise RuntimeError(
-            "runtime acquisition does not close capture-eligible candidates"
+            "runtime capture does not close capture-eligible candidates"
         )
-    return traces
-
-
-def _capture_binding(
-    *,
-    batch: UntargetedCidNlProductionBatch,
-    candidate: DiscoveryCandidate,
-    method_subject_id: str,
-) -> CaptureCandidateBinding:
-    sample = batch.context.sample(candidate.sample_stem)
-    source = batch.context.discovery_receipts_by_sample[
-        candidate.sample_stem
-    ].acquisition_source
-    physical = batch.context.physical_records_by_candidate.get(candidate.candidate_id)
-    return CaptureCandidateBinding(
-        candidate_id=candidate.candidate_id,
-        method_subject_id=method_subject_id,
-        sample_identity_id=sample.identity.sample_identity_id,
-        sample_name=sample.metadata.sample_name,
-        acquisition_source_id=source.acquisition_source_id,
-        query_mz=candidate.precursor_mz,
-        query_rt_min=candidate.ms1_search_rt_min,
-        query_rt_max=candidate.ms1_search_rt_max,
-        query_ppm_tol=batch.context.settings.precursor_mz_tolerance_ppm,
-        preferred_rt=candidate.best_seed_rt,
-        physical_evaluation=physical.evaluation if physical is not None else None,
-    )
+    return captures
 
 
 def _unexpected_repair(
