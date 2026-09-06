@@ -16,6 +16,85 @@ from xic_extractor.presets import (
 )
 
 
+@pytest.mark.parametrize("timing", [False, True])
+@pytest.mark.parametrize(
+    ("input_mode", "default_workers", "override", "expected_workers"),
+    [
+        ("raw-dir", 8, None, 2),
+        ("raw-dir", 1, None, 1),
+        ("raw-dir", 8, 1, 1),
+        ("raw-dir", 1, 3, 3),
+        ("raw", 8, None, None),
+        ("raw", 8, 3, None),
+    ],
+)
+def test_discovery_cli_forwards_worker_budget_and_run_spec(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    timing: bool,
+    input_mode: str,
+    default_workers: int,
+    override: int | None,
+    expected_workers: int | None,
+) -> None:
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    raw_paths = (raw_dir / "A.raw", raw_dir / "B.raw")
+    for path in raw_paths:
+        path.write_bytes(path.stem.encode())
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    observed = []
+
+    def capture_pipeline(paths, **kwargs):
+        observed.append((paths, kwargs))
+        return SimpleNamespace(
+            batch_index_csv=tmp_path / "batch.csv",
+            candidates_csv=tmp_path / "candidates.csv",
+            review_csv=tmp_path / "review.csv",
+        )
+
+    monkeypatch.setattr(
+        run_discovery, "default_parallel_workers", lambda: default_workers
+    )
+    monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", capture_pipeline)
+    args = [
+        f"--{input_mode}",
+        str(raw_dir if input_mode == "raw-dir" else raw_paths[0]),
+        "--dll-dir",
+        str(dll_dir),
+        "--output-dir",
+        str(tmp_path / "out"),
+    ]
+    if override is not None:
+        args.extend(("--max-workers", str(override)))
+    if timing:
+        args.extend(("--timing-output", str(tmp_path / "timing.json")))
+    assert run_discovery.main(args) == 0
+    (paths, forwarded), = observed
+    assert paths == (raw_paths if input_mode == "raw-dir" else raw_paths[0])
+    if expected_workers is None:
+        assert "max_workers" not in forwarded
+    else:
+        assert forwarded["max_workers"] == expected_workers
+    assert ("timing_recorder" in forwarded) is timing
+    assert forwarded["run_spec"].discovery_method.settings == forwarded["settings"]
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1.5"])
+def test_discovery_cli_rejects_nonpositive_or_noninteger_worker_budget(
+    value: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        run_discovery._parse_args(
+            ["--raw-dir", "raws", "--dll-dir", "dll", "--max-workers", value]
+        )
+    assert exc.value.code == 2
+    assert "--max-workers" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("combine_mode", ["union", "intersection"])
 def test_discovery_cli_runs_saved_method_with_only_explicit_tuning_overrides(
     monkeypatch: pytest.MonkeyPatch,

@@ -21,6 +21,7 @@ from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
     CANONICAL_SETTINGS_DEFAULTS,
     RESOLVER_MODES,
+    default_parallel_workers,
 )
 
 _RT_BOUND_ERROR = "RT bounds must be finite values >= 0"
@@ -102,6 +103,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Discovery candidates CSV: {single_outputs.candidates_csv}")
             print(f"Discovery review CSV: {single_outputs.review_csv}")
         else:
+            max_workers = (
+                args.max_workers
+                if args.max_workers is not None
+                else min(len(raw_paths), default_parallel_workers())
+            )
             if timing_recorder is None:
                 batch_outputs = run_discovery_batch(
                     raw_paths,
@@ -109,6 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     settings=settings,
                     peak_config=peak_config,
                     run_spec=run_spec,
+                    max_workers=max_workers,
                 )
             else:
                 batch_outputs = run_discovery_batch(
@@ -117,6 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     settings=settings,
                     peak_config=peak_config,
                     run_spec=run_spec,
+                    max_workers=max_workers,
                     timing_recorder=timing_recorder,
                 )
             print(f"Discovery batch index: {batch_outputs.batch_index_csv}")
@@ -174,6 +182,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--timing-output",
         type=Path,
         help="Optional JSON path for discovery stage timing.",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=_positive_int,
+        help=(
+            "Worker limit for --raw-dir. Defaults to the smaller of the RAW count "
+            "and the standard parallel worker budget (CPU count minus one, minimum "
+            "one). Use 1 for serial execution. Ignored for --raw."
+        ),
     )
     parser.add_argument("--preset", help="Built-in CID-NL name or method TOML path.")
     parser.add_argument("--neutral-loss-tag")
@@ -326,6 +343,16 @@ def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
     if raw_dir is None:
         return ()
     return tuple(sorted(raw_dir.glob("*.raw"), key=lambda path: path.name.lower()))
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be > 0")
+    return parsed
 
 
 def _positive_float(value: str) -> float:
