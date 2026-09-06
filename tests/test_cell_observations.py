@@ -27,6 +27,9 @@ from tests.test_cross_sample_association_lineage import _final_receipt, _runtime
 from tests.test_owner_backfill_peak_fact_provenance import (
     _CanonicalOwnerBoundSource,
 )
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
+)
 from xic_extractor.alignment.backfill import (
     close_observation_repair,
     mint_observation_repair_subject,
@@ -55,12 +58,17 @@ from xic_extractor.alignment.cross_sample import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodBudget,
     CrossSampleSuccessorApplication,
+    construct_cross_sample_peak_group_hypotheses,
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     build_cross_sample_post_mt0_context,
     reconcile_observation_repair,
+)
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_cid_nl_peak_hypotheses_from_assessment,
+    owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.mode_track.contracts import ModeTrackEvidenceProfile
 from xic_extractor.alignment.owner_backfill import build_owner_backfill_result
@@ -69,12 +77,141 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     OwnerBackfillRequestEquivalenceContext,
     build_owner_backfill_request_plan,
 )
+from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
+
+
+@pytest.mark.parametrize("support_centers", [(8.0,), (8.0, 12.0)])
+def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
+    tmp_path: Path, support_centers: tuple[float, ...],
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"Multi": "study_sample", "Third": "study_sample"}
+    )
+    assessments = []
+    for stem, centers in (("Multi", support_centers), ("Third", (16.0,))):
+        peaks = tuple(
+            cid_nl_peak(
+                fixture, stem, apex_rt=center,
+                rt_left_min=center - 0.1, rt_right_min=center + 0.1,
+            )
+            for center in centers
+        )
+        evidence = tuple(
+            cid_nl_evidence(
+                fixture, stem, scan_number=100 + index, scan_rt_min=center
+            )
+            for index, center in enumerate(centers)
+        )
+        supports = tuple(
+            cid_nl_unique_support(
+                fixture, stem, peak=peak, evidence=event, candidate_peaks=peaks
+            )
+            for peak, event in zip(peaks, evidence, strict=True)
+        )
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample(stem),
+            method_subject=fixture.method_subject,
+            detector_invocation_id=f"outside-group:{stem}",
+            evaluation_receipt=replace(
+                _completed_receipt(scanned_event_count=len(centers)), query_rt_max=16.5
+            ),
+            candidate_peaks=peaks,
+            evidence_refs=evidence,
+            individual_support_refs=supports,
+        )
+        assert assessment.content.method_result == "SUPPORT"
+        assessments.append((fixture.sample(stem), assessment))
+    owners = tuple(
+        owner_from_cid_nl_assessment_support(
+            sample=sample, assessment=assessment, hypothesis=hypothesis
+        )
+        for sample, assessment in assessments
+        for hypothesis in compose_cid_nl_peak_hypotheses_from_assessment(
+            processing_owners=fixture.owners, sample=sample, assessment=assessment
+        )
+    )
+    groups = construct_cross_sample_peak_group_hypotheses(
+        owners, config=CID_NL_ALIGNMENT_CONFIG
+    )
+    assert len(groups) == len(support_centers) + 1
+    original_contents = None
+    for ordered_groups in (groups, tuple(reversed(groups))):
+        cells = cell_owner.compose_cid_nl_predecessor_cells(
+            processing_owners=fixture.owners,
+            groups=ordered_groups,
+            sample_assessments=tuple(assessments),
+            alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        )
+        assert len(cells) == len(groups) * len(assessments)
+        assert {
+            (
+                cell.content.group_hypothesis_id,
+                cell.content.canonical_sample_identity_id,
+            )
+            for cell in cells
+        } == {
+            (group.group_hypothesis_id, sample.identity.sample_identity_id)
+            for group in groups
+            for sample, _assessment in assessments
+        }
+        for sample, assessment in assessments:
+            sample_cells = tuple(
+                cell for cell in cells
+                if cell.content.canonical_sample_identity_id
+                == sample.identity.sample_identity_id
+            )
+            assert all(cell.method_assessment is assessment for cell in sample_cells)
+            direct = tuple(
+                cell for cell in sample_cells if cell.peak_observation is not None
+            )
+            assert len(direct) == len(assessment.candidate_peaks)
+            assert all(
+                any(cell.peak_observation is peak for cell in direct)
+                for peak in assessment.candidate_peaks
+            )
+            witness_id = min(cell.content.group_hypothesis_id for cell in direct)
+            for cell in sample_cells:
+                relation = cell.content.outside_group
+                if relation is None:
+                    continue
+                assert relation.supporting_group_hypothesis_id == witness_id
+                assert cell.peak_observation is None and cell.peak_hypothesis is None
+                assert cell.content.peak_observation_content_id is None
+                assert cell.content.peak_hypothesis_id is None
+        contents = {
+            (
+                cell.content.group_hypothesis_id,
+                cell.content.canonical_sample_identity_id,
+            ): cell.content
+            for cell in cells
+        }
+        if original_contents is None:
+            original_contents = contents
+        else:
+            assert contents == original_contents
+    third_group = next(
+        cell.group_context.group
+        for cell in cells
+        if cell.content.canonical_sample_identity_id
+        == fixture.sample("Third").identity.sample_identity_id
+        and cell.peak_observation is not None
+    )
+    with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
+        cell_owner.compose_cid_nl_predecessor_cells(
+            processing_owners=fixture.owners,
+            groups=(third_group,),
+            sample_assessments=tuple(assessments),
+            alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        )
 
 
 def _owner_handoff(tmp_path: Path):

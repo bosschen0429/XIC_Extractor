@@ -2719,11 +2719,13 @@ def compose_cid_nl_predecessor_cells(
                         for support in sibling.supports
                     )
                 )
-                if len(siblings) != 1:
+                if not siblings:
                     raise ValueError(
                         "outside-group cell requires one exact sibling SUPPORT context"
                     )
-                (outside_context,) = siblings
+                outside_context = min(
+                    siblings, key=lambda sibling: sibling.group.group_hypothesis_id
+                )
             elif (
                 assessment.content.method_result == "HOLD"
                 and len(assessment.candidate_peaks) == 1
