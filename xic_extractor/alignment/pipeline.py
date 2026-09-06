@@ -43,6 +43,9 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+    write_cid_nl_explanation,
+)
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
@@ -384,6 +387,17 @@ def _run_untargeted_cid_nl_alignment(
         outputs = replace(
             outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
         )
+    if outputs.matrix_tsv is None:
+        raise RuntimeError("CID-NL explanation requires the published Matrix")
+    with timing_recorder.stage("alignment.write_cid_nl_explanation"):
+        write_cid_nl_explanation(
+            output_dir / "cid_nl_explanation.sqlite",
+            completed=completed,
+            writer_inputs=writer_inputs,
+            candidates_by_sample=candidates_by_sample,
+            matrix_path=outputs.matrix_tsv,
+            alignment_config=alignment_config,
+        )
     return replace(
         outputs,
         owner_build_route_receipt=owner_build_route_receipt,
@@ -398,6 +412,7 @@ _write_outputs_atomic = write_outputs_atomic
 
 
 _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
+    "cid_nl_explanation.sqlite",
     "alignment_cell_integration_audit.tsv",
     "alignment_owner_backfill_seed_audit.tsv",
     "alignment_owner_backfill_candidate_audit.tsv",

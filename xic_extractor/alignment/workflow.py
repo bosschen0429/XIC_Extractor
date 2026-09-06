@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypeAlias
 
@@ -20,6 +20,10 @@ from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
+)
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleNeighborhoodEdge,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
@@ -430,6 +434,17 @@ class CompletedUntargetWorkflowResult:
 class CompletedUntargetBatchWorkflowResult:
     runtime_receipt: RuntimeFinalizationReceipt
     application_result: FinalizedUntargetBatchApplicationResult
+    # Diagnostic handoff only; these retained owner facts grant no completion
+    # or Matrix authority and do not change scientific result equality.
+    method_assessments: tuple[CidNlMethodAssessmentRef, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    initial_edges: tuple[CrossSampleNeighborhoodEdge, ...] = field(
+        default=(), repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.SUCCEEDED)

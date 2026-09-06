@@ -9,6 +9,37 @@ from tests.test_targeted_real_data_adapter import _settings
 from xic_extractor.alignment import AlignmentConfig
 
 
+@pytest.mark.parametrize("suffix", ("", ".tmp", ".bak"))
+def test_pipeline_rejects_stale_explanation_before_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    report = output_dir / f"cid_nl_explanation.sqlite{suffix}"
+    report.write_bytes(b"retained report")
+
+    def fail_completion(**kwargs):
+        pytest.fail("stale diagnostic reached retained acquisition")
+
+    monkeypatch.setattr(
+        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_completion
+    )
+    with pytest.raises(FileExistsError, match="cid_nl_explanation"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+        )
+    assert report.read_bytes() == b"retained report"
+
+
 def test_pipeline_rejects_stale_output_pair_before_writer_or_raw(
     tmp_path: Path,
     monkeypatch,

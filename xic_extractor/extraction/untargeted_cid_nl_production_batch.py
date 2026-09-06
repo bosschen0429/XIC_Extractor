@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
@@ -32,6 +32,7 @@ from xic_extractor.alignment.conservative_backfill import (
     mint_conservative_backfill_recovery_candidate_universe,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
@@ -459,6 +460,8 @@ def compose_untargeted_cid_nl_production_result(
     )
 
     bundles = []
+    initial_groups: list[CrossSamplePeakGroupHypothesis] = []
+    initial_edges: list[CrossSampleNeighborhoodEdge] = []
     for subject in batch.subject_batch.subjects:
         child_bindings = tuple(
             binding
@@ -562,6 +565,8 @@ def compose_untargeted_cid_nl_production_result(
             trajectory_policy=trajectory_policy,
             retain_observation_only_candidates=True,
         )
+        initial_groups.extend(refinement.family_context.mode_tracks)
+        initial_edges.extend(refinement.classified_edges)
         selected_ids = tuple(
             sorted(
                 capture.selected_hypothesis.hypothesis_id
@@ -735,7 +740,14 @@ def compose_untargeted_cid_nl_production_result(
             f"stage={getattr(terminal, 'stage', None)}; "
             f"reason={getattr(terminal, 'failure_message', None)}"
         )
-    return terminal
+    return replace(
+        terminal,
+        method_assessments=tuple(
+            result.effective_assessment for result in runtime_result.sample_results
+        ),
+        initial_groups=tuple(initial_groups),
+        initial_edges=tuple(initial_edges),
+    )
 
 
 def _predecessor_cell_population(

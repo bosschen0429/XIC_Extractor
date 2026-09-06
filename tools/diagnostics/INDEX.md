@@ -1,7 +1,7 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Total entry-points:** 109
-**Total files (incl. helpers):** 191 Python files under `tools/diagnostics/`
+**Total entry-points:** 110
+**Total files (incl. helpers):** 192 Python files under `tools/diagnostics/`
 **Count method:** top-level `### *.py` entry headings for entry-points;
 top-level `tools/diagnostics/*.py` files for total files.
 **Governing contracts:** `docs/architecture-contract.md` and
@@ -30,7 +30,7 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 
 1. [Validation Gates](#validation-gates) — 7 tools
 2. [Evidence Consistency](#evidence-consistency) — 8 tools
-3. [Alignment Diagnostics](#alignment-diagnostics) — 8 tools
+3. [Alignment Diagnostics](#alignment-diagnostics) — 9 tools
 4. [Backfill Reviews](#backfill-reviews) — 42 tools
 5. [Peak / Candidate Audits](#peak--candidate-audits) — 7 tools
 6. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews) — 11 tools
@@ -368,6 +368,21 @@ primary detected values.
 ---
 
 ## Alignment Diagnostics
+
+### `explain_cid_nl_run.py`
+
+**Purpose**: Read the normal CID-NL execution explanation artifact and return a
+compact summary or exact candidate details without reading RAW.
+**Owner**: [Alignment execution explanations](../../docs/product/alignment.md#cid-nl-execution-explanations).
+**Input**: `cid_nl_explanation.sqlite`, optionally an exact candidate ID.
+**Output**: Readable text or JSON on stdout; no file or product mutation.
+**Status**: Maintained diagnostic reader. Retains owner assessment, initial
+CrossSample and final disposition facts; does not recalculate decisions or grant
+Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
+health, while `alignment_decision_report_io.py` reads existing review tables;
+neither contains excluded candidate and initial weak-edge facts from default runs.
+
+---
 
 CLI reports and audits over alignment outputs (cells, families, owner
 decisions, RT normalization, matrix identity).

@@ -62,9 +62,11 @@ def test_pure_single_provider_cid_nl_dispatches_with_route_receipt(
     }
 
 
+@pytest.mark.parametrize("writer_fails", (False, True))
 def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    writer_fails: bool,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     completed = object()
@@ -102,8 +104,39 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
     def write_outputs(*_args: object, **kwargs: object) -> None:
         captured_write.update(kwargs)
+        if writer_fails:
+            raise OSError("Matrix publication failed")
+        matrix_path = tmp_path / "out" / "alignment_matrix.tsv"
+        matrix_path.parent.mkdir(parents=True, exist_ok=True)
+        matrix_path.write_text("Mz\tRT\tS1\n", encoding="utf-8")
+
+    report = tmp_path / "out" / "cid_nl_explanation.sqlite"
+
+    def write_explanation(path: Path, **kwargs: object) -> Path:
+        assert kwargs["completed"] is completed
+        assert kwargs["writer_inputs"] is writer_inputs
+        assert kwargs["matrix_path"].read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
+        path.write_text("published", encoding="utf-8")
+        return path
 
     monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", write_outputs)
+    monkeypatch.setattr(
+        pipeline_module, "write_cid_nl_explanation", write_explanation, raising=False
+    )
+
+    if writer_fails:
+        with pytest.raises(OSError, match="Matrix publication failed"):
+            pipeline_module.run_alignment(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            )
+        assert not report.exists()
+        return
 
     result = pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
@@ -117,6 +150,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         sample_metadata=retained_sample_metadata,
     )
 
+    assert report.read_text(encoding="utf-8") == "published"
     assert result.untargeted_cid_nl_result is completed
     assert captured_retained["sample_metadata"] is retained_sample_metadata
     assert result.owner_build_route_receipt is not None
