@@ -139,8 +139,6 @@ class CaptureCandidateBinding:
                 self.selection_policy != "capture_default"
                 or self.retained_selected_integration is not None
                 or question.query_rt_min != self.preferred_rt
-                or question.context_rt_start_min != self.query_rt_min
-                or question.context_rt_end_min != self.query_rt_max
             ):
                 raise SearchScopeContractError(
                     "physical capture binding crosses its exact owner question"

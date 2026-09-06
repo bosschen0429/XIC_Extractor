@@ -292,6 +292,14 @@ def _capture_physical_peak(
         profile=profile,
         trace_content_id=expected.prepared.trace_content_id,
     )
+    # Physical context follows acquired scan RTs, independently of XIC bounds.
+    if prepared.trace_context_rt_start_min is not None and (
+        expected.question.context_rt_start_min != prepared.trace_context_rt_start_min
+        or expected.question.context_rt_end_min != prepared.trace_context_rt_end_min
+    ):
+        raise SampleLocalCaptureError(
+            "physical capture changed the exact acquired trace context"
+        )
     evaluation = evaluate_physical_peak(
         prepared,
         selection_subject_id=expected.question.selection_subject_id,

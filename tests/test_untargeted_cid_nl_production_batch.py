@@ -90,31 +90,63 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("S1", "S2"))
     for path in paths:
         path.write_bytes(path.stem.encode())
-    settings = _settings()
+    # Observed RAW coordinates: acquisition bounds do not land on scan RTs.
+    center_rt = 13.263299286133334
+    precursor_mz = 307.1023254394531
+    settings = replace(_settings(), neutral_loss_profile=None, rt_min=13.1, rt_max=13.4)
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=profile
     )
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_real_data_runtime as runtime_module,
+    )
+
     source_raws = {}
+    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
     receipts = {}
     csvs = {}
     candidates = {}
     physical_facts = {}
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
-        raw = _FakeRaw((8.0,), acquisition_source=source.acquisition_source)
-        raw.intensity = raw.intensity + 250.0
-        source_raws[path] = raw
-        seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-        discovery = _backfill_ms1_candidates_with_acquisition(
-            raw,
-            group_discovery_seeds(seeds, settings=settings),
+        import numpy as np
+
+        raw = _FakeRaw(
+            (8.0,),
+            scan_precursor_mz=precursor_mz,
+            neutral_loss_das=(settings.neutral_loss_profiles[0].neutral_loss_da,),
             acquisition_source=source.acquisition_source,
-            run_spec_id=spec.run_spec_id,
-            settings=settings,
-            peak_config=peak_config,
-            signal_processing_profile=profile,
         )
+        raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521)
+        raw.rt[int(np.argmin(np.abs(raw.rt - center_rt)))] = center_rt
+        raw.intensity = (
+            1000.0 * np.exp(-0.5 * ((raw.rt - center_rt) / 0.035) ** 2) + 250.0
+        )
+        raw.scans = tuple(
+            replace(
+                scan,
+                rt=center_rt,
+                scan_number=int(np.argmin(np.abs(raw.rt - center_rt))) + 1,
+            )
+            for scan in raw.scans
+        )
+        source_raws[path] = raw
+        with runtime_module.open_raw(
+            path, tmp_path, expected_acquisition_source=source.acquisition_source
+        ) as discovery_raw:
+            seeds = collect_strict_nl_seeds(
+                discovery_raw, raw_file=path, settings=settings
+            )
+            discovery = _backfill_ms1_candidates_with_acquisition(
+                discovery_raw,
+                group_discovery_seeds(seeds, settings=settings),
+                acquisition_source=source.acquisition_source,
+                run_spec_id=spec.run_spec_id,
+                settings=settings,
+                peak_config=peak_config,
+                signal_processing_profile=profile,
+            )
         folder = tmp_path / path.stem
         folder.mkdir()
         receipts.update(
@@ -133,6 +165,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
         (record,) = discovery.physical_evaluations
         assert record.evaluation.facts is not None
+        assert (
+            record.evaluation.question.context_rt_start_min
+            != record.work_item.xic_rt_min
+        )
+        assert (
+            record.evaluation.question.context_rt_end_min != record.work_item.xic_rt_max
+        )
         physical_facts[path.stem] = record.evaluation.facts
     discovery_batch = DiscoveryBatchInput(
         sample_order=("S1", "S2"),
@@ -141,7 +180,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         review_csvs={path.stem: None for path in paths},
         candidate_receipts=receipts,
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
     captured_batches = []
     captured_peaks = []
     from xic_extractor.peak_detection import capture as capture_owner
@@ -297,7 +335,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         processing_owners=job.processing_owners,
         sample=job.sample,
         method_subject=job.method_subject,
-        group_center_rt=8.0,
+        group_center_rt=center_rt,
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
         ),
@@ -315,9 +353,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     expected_recovery = evaluate_physical_peak(
         recovery_prepared,
         selection_subject_id=job.method_subject.method_subject_id,
-        query_rt_min=8.0,
-        request_context_rt_start_min=8.0 - peak_config.nl_rt_anchor_half_window_min,
-        request_context_rt_end_min=8.0 + peak_config.nl_rt_anchor_half_window_min,
+        query_rt_min=center_rt,
+        request_context_rt_start_min=center_rt
+        - peak_config.nl_rt_anchor_half_window_min,
+        request_context_rt_end_min=center_rt + peak_config.nl_rt_anchor_half_window_min,
     )
     assert expected_recovery.facts is not None
     assert (
