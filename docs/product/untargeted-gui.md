@@ -12,9 +12,20 @@ does not create a separate product-authority lane.
   as first-class workspaces.
 - Untargeted settings are local GUI state in `config/discovery_gui.json`;
   that file stays ignored.
-- Method settings come from built-in presets in
-  `xic_extractor/presets/data/*.toml`.
+- Method settings come from built-in presets or imported TOML methods through
+  the same `xic_extractor.presets` loader used by the CLI. The method section
+  exposes create, import, edit, and Save As operations for CID-NL methods.
+- The operator configures Discovery tags, their combination, Discovery tuning,
+  and dataset inputs. Alignment and Backfill strategy remain platform-owned.
 - Advanced values are explicit user overrides layered on the selected preset.
+- Save As materializes the effective method values through the preset owner;
+  the result can be used directly with CLI `--preset`. Cancelling the editor or
+  rejecting an import preserves the current method. The GUI stores only the
+  selected locator and overrides in its local config, not a second method format.
+- A run uses the method snapshot displayed by the GUI. External edits to the
+  source file do not silently change that run; re-import selects the new content.
+  On restart the locator is loaded normally. Missing or invalid persisted methods
+  remain visible and block Run until the operator selects a valid method.
 - Stop requests cancellation, then waits for the current worker stage to
   yield.
 - Automatic Backfill gallery / MS1 overlay generation is parked outside the
@@ -39,7 +50,8 @@ run directory-level discovery plus alignment.
 | --- | --- |
 | `gui/views/untargeted_view.py` | Workspace state and run lifecycle |
 | `gui/sections/discovery_source_section.py` | RAW, DLL, output, mode, and batch-index inputs |
-| `gui/sections/discovery_method_section.py` | Preset selection and advanced overrides |
+| `gui/sections/discovery_method_section.py` | Method selection/import, displayed snapshot, and advanced overrides |
+| `gui/method_editor.py` | Name, tag, and composition editing; delegates TOML saving to the preset owner |
 | `gui/sections/discovery_results_section.py` | Output links and run summary |
 | `gui/workers/discovery_worker.py` | Threaded mode dispatch; reports the gallery route as parked |
 | `gui/workers/backfill_gallery.py` | Retained explicit diagnostic composition helper; not a normal GUI caller |
@@ -75,6 +87,7 @@ for machine, validation, or diagnostic workflows.
 | --- | --- |
 | Main-window routing | `tests/test_gui_main.py`, `tests/test_main_window_layout.py` |
 | Local GUI config | `tests/test_gui_config_io.py` |
+| Method editing and portable TOML | `tests/test_gui_method_editor.py`, `tests/test_presets_serialization.py` |
 | Untargeted run/stop behavior | `tests/test_untargeted_view.py` |
 | Worker mode dispatch | `tests/test_discovery_worker.py` |
 | Shared run controls | `tests/test_pipeline_worker.py` |
