@@ -637,8 +637,13 @@ def _validate_untargeted_capture_bindings(
                     "Untargeted capture binding does not match its candidate "
                     "subject membership"
                 )
+            mz_error_ppm = (
+                abs(binding.query_mz - subject.precursor_mz)
+                / subject.precursor_mz
+                * 1_000_000.0
+            )
             if (
-                binding.query_mz != subject.precursor_mz
+                mz_error_ppm > subject.precursor_tolerance_ppm
                 or binding.query_ppm_tol != subject.precursor_tolerance_ppm
             ):
                 raise SearchScopeContractError(

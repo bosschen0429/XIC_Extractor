@@ -165,6 +165,20 @@ remain v1/v3/v1; composite methods use v2/v4/v2 with explicit loss bindings.
 A Targeted adapter retains its exact target snapshot/key/definition
 inside the subject; an Untargeted request pins the same subject schema directly
 and never fabricates a `ResolvedTargetDefinition`.
+
+The Untargeted batch factory assigns each Discovery candidate to one bounded
+method-query subject. Within each scalar loss or full configured composition,
+candidates are ordered by exact precursor m/z and candidate ID. The first mass
+fixes a subject center; later candidates join only within its configured ppm
+tolerance, without moving the center or chaining through another candidate.
+This declared query membership lets nearby measured masses in different samples
+reach evaluation of the same method subject. Each physical query retains its own
+exact source m/z, RT bounds, trace and acquisition identity. Both single-subject
+and batch SearchScope apply the same method-center ppm compatibility while
+physical-record validation remains exact. Query membership grants no
+cross-sample identity or Matrix eligibility; those decisions remain with the
+existing assessment and CrossSample owners.
+
 `CidNlMethodAssessmentRef` binds one detector invocation, method subject, candidate
 universe, completed-search receipt with the exact DDA support policy, measured
 evidence, and individual or set-level relations to the existing processing

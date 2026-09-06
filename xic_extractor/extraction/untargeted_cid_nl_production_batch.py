@@ -195,8 +195,7 @@ def build_untargeted_cid_nl_production_batch(
         if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
         else None
     )
-    subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
-    membership_keys: list[tuple[str, tuple[float, float | None]]] = []
+    candidate_facts: list[tuple[float, float, str]] = []
     for candidate in candidates:
         precursor_mz = float(candidate.precursor_mz)
         neutral_loss_da = float(candidate.configured_neutral_loss_da)
@@ -207,17 +206,33 @@ def build_untargeted_cid_nl_production_batch(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-        key = (precursor_mz, None if composition else neutral_loss_da)
-        subject_by_key.setdefault(
-            key,
-            mint_untargeted_cid_nl_method_subject(
+        candidate_facts.append(
+            (
+                0.0 if composition else neutral_loss_da,
+                precursor_mz,
+                candidate.candidate_id,
+            )
+        )
+    subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
+    membership_keys: list[tuple[str, tuple[float, float | None]]] = []
+    key_by_requirement: dict[float | None, tuple[float, float | None]] = {}
+    for neutral_loss_da, precursor_mz, candidate_id in sorted(candidate_facts):
+        requirement = None if composition else neutral_loss_da
+        key = key_by_requirement.get(requirement)
+        # A fixed first query center bounds the workset without chaining masses.
+        if key is None or (
+            abs(precursor_mz - key[0]) / key[0] * 1_000_000.0
+            > settings.precursor_mz_tolerance_ppm
+        ):
+            key = (precursor_mz, requirement)
+            key_by_requirement[requirement] = key
+            subject_by_key[key] = mint_untargeted_cid_nl_method_subject(
                 precursor_mz=precursor_mz,
                 precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-                neutral_loss_da=None if composition else neutral_loss_da,
+                neutral_loss_da=requirement,
                 composition=composition,
-            ),
-        )
-        membership_keys.append((candidate.candidate_id, key))
+            )
+        membership_keys.append((candidate_id, key))
 
     subjects = tuple(
         sorted(subject_by_key.values(), key=lambda subject: subject.method_subject_id)

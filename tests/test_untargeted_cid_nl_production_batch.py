@@ -14,7 +14,11 @@ import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.test_targeted_real_data_adapter import _peak_config, _settings
+from tests.test_targeted_real_data_adapter import (
+    _multi_tag_settings,
+    _peak_config,
+    _settings,
+)
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
@@ -361,9 +365,19 @@ def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> Non
         )
 
 
-@pytest.mark.parametrize("group_sizes", ((2,), (1, 1), (2, 2)))
+@pytest.mark.parametrize(
+    ("group_sizes", "method_mode", "nearby"),
+    (
+        ((2,), "single", False),
+        ((1, 1), "single", False),
+        ((2, 2), "single", False),
+        pytest.param((2,), "single", True, id="nearby-single"),
+        pytest.param((2,), "union", True, id="nearby-or-different-tags"),
+        pytest.param((2,), "intersection", True, id="nearby-and-incomplete"),
+    ),
+)
 def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
-    tmp_path: Path, monkeypatch, group_sizes: tuple[int, ...]
+    tmp_path: Path, monkeypatch, group_sizes: tuple[int, ...], method_mode, nearby
 ) -> None:
     from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
     from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -391,8 +405,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     center_rt = 13.263299286133334
     precursor_mz = 307.1023254394531
     settings = replace(
-        _settings(),
+        _settings() if method_mode == "single" else _multi_tag_settings(),
         neutral_loss_profile=None,
+        tag_combine_mode=method_mode,
         rt_min=13.1,
         rt_max=17.4 if separate_groups else 13.4,
     )
@@ -420,17 +435,20 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             else 0.0
         )
         sample_center_rt = center_rt + sample_offset
+        sample_index = sample_stems.index(path.stem)
+        sample_mz = precursor_mz + (sample_index * 0.00030517578125 if nearby else 0.0)
+        loss_index = sample_index if method_mode != "single" else 0
         raw = _FakeRaw(
             (8.0,),
-            scan_precursor_mz=precursor_mz,
-            neutral_loss_das=(settings.neutral_loss_profiles[0].neutral_loss_da,),
+            scan_precursor_mz=sample_mz,
+            neutral_loss_das=(settings.neutral_loss_profiles[loss_index].neutral_loss_da,),
             acquisition_source=source.acquisition_source,
         )
         raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521) + sample_offset
         raw.rt[int(np.argmin(np.abs(raw.rt - sample_center_rt)))] = sample_center_rt
         raw.intensity = (
             1000.0 * np.exp(-0.5 * ((raw.rt - sample_center_rt) / 0.035) ** 2) + 250.0
-        )
+        ) * (1.0 + sample_index * 0.4 if nearby else 1.0)
         raw.scans = tuple(
             replace(
                 scan,
@@ -542,6 +560,37 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         signal_processing_profile=profile,
     )
     writer = project_completed_untarget_batch_writer_inputs(completed)
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    matrix_path = tmp_path / "canonical-matrix.tsv"
+    write_alignment_matrix_tsv(
+        matrix_path, writer.matrix, production_decisions=writer.production_decisions
+    )
+    with matrix_path.open(encoding="utf-8", newline="") as handle:
+        matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    if nearby:
+        assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
+        batch = captured_batches[0]
+        assert len(batch.subject_batch.subjects) == 1
+        for result in runtime_results[0].sample_results:
+            stem = result.job.sample.metadata.raw_stem
+            (candidate,) = batch.context.candidates_by_sample[stem]
+            record = batch.context.physical_records_by_candidate[candidate.candidate_id]
+            assert record.work_item.precursor_mz == candidate.precursor_mz
+            assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
+            assert record.evaluation.facts == physical_facts[stem]
+            assert result.effective_assessment.content.method_result == (
+                "HOLD" if method_mode == "intersection" else "SUPPORT"
+            )
+        if method_mode == "intersection":
+            assert writer.matrix.cells == ()
+            assert writer.matrix.clusters == ()
+            assert all(
+                "incomplete_composite_requirement"
+                in result.effective_assessment.content.reason_codes
+                for result in runtime_results[0].sample_results
+            )
+            return
     assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
     for cell in writer.matrix.cells:
         if cell.selected_integration is None:
@@ -557,14 +606,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
         assert cell.selected_integration.height_smoothed == facts.height
         assert facts.physical_segment_id in cell.selected_integration.boundary_sources
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix_path = tmp_path / "canonical-matrix.tsv"
-    write_alignment_matrix_tsv(
-        matrix_path, writer.matrix, production_decisions=writer.production_decisions
-    )
-    with matrix_path.open(encoding="utf-8", newline="") as handle:
-        matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
     expected_row_count = sum(size > 1 for size in group_sizes)
     assert len(matrix_rows) == expected_row_count
     for sample_stem, facts in physical_facts.items():
@@ -574,6 +615,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert sample_values == pytest.approx(
             [facts.area_counts_seconds] if expected_row_count else []
         )
+    if nearby:
+        assert len({facts.fact_content_id for facts in physical_facts.values()}) == 2
+        assert len({cell.source_candidate_id for cell in writer.matrix.cells}) == 2
+        assert len(matrix_rows) == 1
+        return
     if separate_groups:
         (child,) = completed.application_result.children
         scientific = child.scientific_core
@@ -839,12 +885,35 @@ def test_writer_projection_keeps_distinct_repaired_facts_with_shared_signal() ->
     assert len(physical_ids) == 2
 
 
-def test_production_batch_preserves_exact_nearby_subject_membership(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("masses", "losses", "ppm", "centers"),
+    (
+        ((500.0, 500.004), (116.0474, 116.0474), 20.0, (500.0, 500.0)),
+        ((500.0, 500.02), (116.0474, 116.0474), 20.0, (500.0, 500.02)),
+        (
+            (500.0, 500.008, 500.016),
+            (116.0474,) * 3,
+            20.0,
+            (500.0, 500.0, 500.016),
+        ),
+        (
+            (512.0, 512.0078125),
+            (116.0474, 116.0474),
+            15.2587890625,
+            (512.0, 512.0),
+        ),
+        ((500.0, 500.0), (116.0474, 132.0423), 20.0, (500.0, 500.0)),
+    ),
+    ids=("nearby", "outside", "fixed-anchor", "inclusive-bound", "scalar-losses"),
+)
+def test_production_batch_preserves_bounded_subject_membership(
+    tmp_path: Path, masses, losses, ppm, centers
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
-    settings = _settings()
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=ppm
+    )
     peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
         raw_path,
@@ -852,7 +921,18 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         peak_config=peak_config,
     )
 
-    batch = build_untargeted_cid_nl_production_batch(
+    candidates = tuple(
+        replace(
+            candidates[0],
+            candidate_id=f"{raw_path.stem}:membership-{index}",
+            best_ms2_scan_id=index + 100,
+            precursor_mz=mz,
+            product_mz=mz - loss,
+            configured_neutral_loss_da=loss,
+        )
+        for index, (mz, loss) in enumerate(zip(masses, losses, strict=True))
+    )
+    arguments = dict(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -864,7 +944,6 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
         discovery_receipts_by_sample=_discovery_receipts(
             tmp_path,
             (raw_path,),
@@ -874,29 +953,38 @@ def test_production_batch_preserves_exact_nearby_subject_membership(
         sample_identity_namespace="study:production-batch",
     )
 
-    assert len(batch.subject_batch.subjects) == 2
-    assert tuple(
-        subject.precursor_mz for subject in batch.subject_batch.subjects
-    ) == tuple(
-        subject.precursor_mz
-        for subject in sorted(
-            batch.subject_batch.subjects,
-            key=lambda item: item.method_subject_id,
-        )
+    batch = build_untargeted_cid_nl_production_batch(
+        **arguments, candidates_by_sample={"S1": candidates}
     )
-    assert batch.subject_batch.candidate_memberships == tuple(
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+    )
+
+    expected_memberships = tuple(
         sorted(
             (
                 candidate.candidate_id,
-                next(
-                    subject.method_subject_id
-                    for subject in batch.subject_batch.subjects
-                    if subject.precursor_mz == candidate.precursor_mz
-                ),
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=center,
+                    precursor_tolerance_ppm=ppm,
+                    neutral_loss_da=loss,
+                ).method_subject_id,
             )
-            for candidate in candidates
+            for candidate, center, loss in zip(candidates, centers, losses, strict=True)
         )
     )
+    assert batch.subject_batch.candidate_memberships == expected_memberships
+    assert len(batch.subject_batch.subjects) == len(
+        set(zip(centers, losses, strict=True))
+    )
+    permuted = build_untargeted_cid_nl_production_batch(
+        **arguments, candidates_by_sample={"S1": tuple(reversed(candidates))}
+    )
+    assert (
+        permuted.subject_batch.request_payload()
+        == batch.subject_batch.request_payload()
+    )
+    assert tuple(candidate.precursor_mz for candidate in candidates) == masses
     assert tuple(job.method_subject for job in batch.jobs) == (
         batch.subject_batch.subjects
     )
@@ -1050,7 +1138,10 @@ def test_production_batch_executes_one_atomic_sample_phase(
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
-    settings = _settings()
+    # The atomic phase must contain two disjoint method worksets.
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
     peak_config = _peak_config(tmp_path)
     source_raw, candidates = _nearby_subject_candidates(
         raw_path,
@@ -1229,7 +1320,10 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("Support", "Hold"))
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
-    settings = _settings()
+    # The other-support case must keep its independently rejected workset.
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
     peak_config = _peak_config(tmp_path)
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
     rejected_samples = (
@@ -2023,7 +2117,10 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-orphan:S1")
-    settings = _settings()
+    # Isolate the orphan's method rejection from the acquired candidate.
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
     peak_config = _peak_config(tmp_path)
     source_raw, initial_candidates = _nearby_subject_candidates(
         raw_path,
