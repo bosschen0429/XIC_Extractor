@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, asdict, dataclass, field, replace
 from typing import Literal, TypeAlias
 
@@ -33,6 +33,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
+    compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
 )
@@ -2616,6 +2617,127 @@ __all__ = [
     "TerminalObservationVariant",
     "canonical_cell_observation_bytes",
     "compose_final_group_cell_observation_population",
+    "compose_cid_nl_predecessor_cells",
     "mint_cell_observation_ref",
     "validate_final_group_cell_observation_population",
 ]
+
+
+def compose_cid_nl_predecessor_cells(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+    recovery_assessments_by_group: Mapping[tuple[str, str], CidNlMethodAssessmentRef]
+    | None = None,
+) -> tuple[CellObservationRef, ...]:
+    """Attach original assessments to the existing ModeTrack predecessor groups."""
+    sample_assessments = tuple(
+        sorted(
+            dict.fromkeys(sample_assessments),
+            key=lambda pair: pair[0].identity.sample_identity_id,
+        )
+    )
+    supports = tuple(
+        CidNlCellGroupSupport(
+            sample=sample, assessment=assessment, hypothesis=hypothesis
+        )
+        for sample, assessment in sample_assessments
+        for hypothesis in compose_peak_hypotheses_from_assessment_universe(
+            processing_owners=processing_owners,
+            sample=sample,
+            assessment=assessment,
+        )
+        if any(hypothesis.hypothesis_id in group.owner_ids for group in groups)
+    )
+    contexts = tuple(
+        CidNlCellGroupContext(
+            group=group,
+            supports=tuple(
+                support
+                for support in supports
+                if support.hypothesis.hypothesis_id in group.owner_ids
+            ),
+            config=alignment_config,
+            processing_attempt=processing_owners.attempt,
+        )
+        for group in groups
+    )
+    assessments_by_sample: dict[str, list[CidNlMethodAssessmentRef]] = {}
+    samples = {}
+    for sample, assessment in sample_assessments:
+        sample_id = sample.identity.sample_identity_id
+        samples[sample_id] = sample
+        refs = assessments_by_sample.setdefault(sample_id, [])
+        if assessment not in refs:
+            refs.append(assessment)
+    cells = []
+    for context in contexts:
+        for sample_id, refs in assessments_by_sample.items():
+            sample = samples[sample_id]
+            local_refs = tuple(
+                support.assessment
+                for support in context.supports
+                if support.sample.identity.sample_identity_id == sample_id
+            )
+            recovered = (recovery_assessments_by_group or {}).get(
+                (context.group.group_hypothesis_id, sample_id)
+            )
+            if recovered is not None and not any(recovered is ref for ref in refs):
+                raise CellObservationContractError(
+                    "group recovery is outside the assessment population"
+                )
+            assessment = (
+                local_refs[0]
+                if local_refs
+                else recovered
+                if recovered is not None
+                else refs[0]
+            )
+            local = tuple(
+                support
+                for support in context.supports
+                if support.sample is sample and support.assessment is assessment
+            )
+            outside_context = None
+            observation = None
+            hypothesis = None
+            if local:
+                (support,) = local
+                hypothesis = support.hypothesis
+                (observation,) = hypothesis.peak_observation_refs
+            elif assessment.content.method_result == "SUPPORT":
+                siblings = tuple(
+                    sibling
+                    for sibling in contexts
+                    if sibling is not context
+                    and any(
+                        support.sample is sample and support.assessment is assessment
+                        for support in sibling.supports
+                    )
+                )
+                if len(siblings) != 1:
+                    raise ValueError(
+                        "outside-group cell requires one exact sibling SUPPORT context"
+                    )
+                (outside_context,) = siblings
+            elif (
+                assessment.content.method_result == "HOLD"
+                and len(assessment.candidate_peaks) == 1
+            ):
+                observation = assessment.candidate_peaks[0]
+            cells.append(
+                mint_cell_observation_ref(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    group_context=context,
+                    method_assessment=assessment,
+                    peak_observation=observation,
+                    peak_hypothesis=hypothesis,
+                    outside_group_context=outside_context,
+                )
+            )
+    return tuple(cells)

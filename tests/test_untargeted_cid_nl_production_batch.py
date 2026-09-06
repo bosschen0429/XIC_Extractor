@@ -441,7 +441,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         raw = _FakeRaw(
             (8.0,),
             scan_precursor_mz=sample_mz,
-            neutral_loss_das=(settings.neutral_loss_profiles[loss_index].neutral_loss_da,),
+            neutral_loss_das=(
+                settings.neutral_loss_profiles[loss_index].neutral_loss_da,
+            ),
             acquisition_source=source.acquisition_source,
         )
         raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521) + sample_offset
@@ -1747,7 +1749,7 @@ def _assert_conservative_proof_seals(
     )
     with pytest.raises(ValueError, match="not a recovery"):
         project_untargeted_cid_nl_completed_recovery(
-            replace(result, recovery_attempt=None), group_context=context
+            replace(result, recovery_attempts=()), group_context=context
         )
     if proof.completion is not None:
         completion = proof.completion
@@ -1774,9 +1776,11 @@ def _assert_conservative_proof_seals(
             project_untargeted_cid_nl_completed_recovery(
                 replace(
                     result,
-                    recovery_attempt=replace(
-                        recovery,
-                        assessment=result.adapter_result.assessment_input.assessment,
+                    recovery_attempts=(
+                        replace(
+                            recovery,
+                            assessment=result.adapter_result.assessment_input.assessment,
+                        ),
                     ),
                 ),
                 group_context=context,
@@ -1788,8 +1792,8 @@ def _assert_conservative_proof_seals(
                 project_untargeted_cid_nl_completed_recovery(
                     replace(
                         result,
-                        recovery_attempt=replace(
-                            recovery, acquisition=wrong_acquisition
+                        recovery_attempts=(
+                            replace(recovery, acquisition=wrong_acquisition),
                         ),
                     ),
                     group_context=context,

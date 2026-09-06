@@ -212,13 +212,16 @@ class UntargetedCidNlRecoveryTraceBatch:
             )
         if (
             type(self.method_subject_ids) is not tuple
-            or self.method_subject_ids != tuple(sorted(set(self.method_subject_ids)))
+            or tuple(zip(self.method_subject_ids, self.group_center_rts))
+            != tuple(sorted(set(zip(self.method_subject_ids, self.group_center_rts))))
             or not self.method_subject_ids
             or type(self.group_center_rts) is not tuple
             or type(self.requests) is not tuple
-            or len(self.method_subject_ids)
-            != len(self.group_center_rts)
-            != len(self.requests)
+            or not (
+                len(self.method_subject_ids)
+                == len(self.group_center_rts)
+                == len(self.requests)
+            )
         ):
             raise UntargetedCidNlRealDataAdapterError(
                 "recovery trace batch entries must be canonical and complete"
@@ -238,7 +241,9 @@ class UntargetedCidNlRecoveryTraceBatch:
         request: XICRequest,
     ) -> AcquiredTrace:
         try:
-            index = self.method_subject_ids.index(method_subject_id)
+            index = tuple(zip(self.method_subject_ids, self.group_center_rts)).index(
+                (method_subject_id, group_center_rt)
+            )
         except ValueError as exc:
             raise UntargetedCidNlRealDataAdapterError(
                 "recovery trace batch has no matching method subject"
@@ -420,7 +425,10 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             "recovery requests must be a non-empty typed tuple"
         )
     method_subject_ids = tuple(item[0].method_subject_id for item in recovery_requests)
-    if method_subject_ids != tuple(sorted(set(method_subject_ids))):
+    request_keys = tuple(
+        (subject.method_subject_id, center) for subject, center in recovery_requests
+    )
+    if request_keys != tuple(sorted(set(request_keys))):
         raise UntargetedCidNlRealDataAdapterError(
             "recovery requests must be canonical and unique"
         )

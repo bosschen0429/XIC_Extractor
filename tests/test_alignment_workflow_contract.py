@@ -155,9 +155,20 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
         )
 
 
-def test_workflow_rejects_capture_binding_subset_of_declared_candidates(
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "capture-subset",
+        "missing-assessment",
+        "crossed-sample",
+        "unknown-sample",
+        "assessment-order",
+    ],
+)
+def test_workflow_rejects_incomplete_or_crossed_owner_population(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mismatch: str,
 ) -> None:
     from tests.test_backfill_observation_repair_authorization import (
         _authorization_population,
@@ -169,13 +180,14 @@ def test_workflow_rejects_capture_binding_subset_of_declared_candidates(
         hold_samples=(),
     )
     scope, captures = _target_scope_and_captures(fixture, spine, tmp_path)
-    scope = replace(
-        scope,
-        declared_candidate_ids=(
-            *scope.declared_candidate_ids,
-            "inspection-only:candidate",
-        ),
-    )
+    if mismatch == "capture-subset":
+        scope = replace(
+            scope,
+            declared_candidate_ids=(
+                *scope.declared_candidate_ids,
+                "inspection-only:candidate",
+            ),
+        )
     runtime = object.__new__(workflow_owner.AttemptRuntime)
     object.__setattr__(runtime, "manifest", SimpleNamespace(attempt=fixture.attempt))
     object.__setattr__(runtime, "history", SimpleNamespace(attempt=fixture.attempt))
@@ -197,6 +209,26 @@ def test_workflow_rejects_capture_binding_subset_of_declared_candidates(
             key=lambda item: item[0].identity.sample_identity_id,
         )
     )
+    if mismatch == "missing-assessment":
+        assessments = assessments[:-1]
+    elif mismatch == "crossed-sample":
+        assessments = (
+            (replace(assessments[0][0]), assessments[0][1]),
+            *assessments[1:],
+        )
+    elif mismatch == "unknown-sample":
+        (tmp_path / "other").mkdir()
+        other = build_processing_identity_no_raw_fixture(
+            tmp_path / "other", sample_stems=("Unknown",)
+        )
+        assessments = tuple(
+            sorted(
+                (*assessments, (other.samples[0], assessments[0][1])),
+                key=lambda pair: pair[0].identity.sample_identity_id,
+            )
+        )
+    elif mismatch == "assessment-order":
+        assessments = tuple(reversed(assessments))
     adapter = TargetWorkflowAdapter(
         capture_inputs=tuple(
             CaptureWorkflowArguments(capture.candidate_id, capture.trace)
@@ -232,7 +264,9 @@ def test_workflow_rejects_capture_binding_subset_of_declared_candidates(
 
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
-        match="declared candidate order",
+        match="declared candidate order"
+        if mismatch == "capture-subset"
+        else "exact scope samples",
     ):
         execute_alignment_workflow(request, adapter)
 
