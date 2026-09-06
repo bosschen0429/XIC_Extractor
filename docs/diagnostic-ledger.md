@@ -65,38 +65,49 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
-### 2026-09-06 CID-NL 8RAW Request Rehydration
+### 2026-09-07 CID-NL 8RAW Runtime and Composition
 
-Verdict: `inconclusive`; unaccepted candidate reverted. On base
-`0611556836a517e38774df49acbbf2ab162750da`, fresh `dna_dr` Discovery completed
-for the eight tissue validation RAW files with 30,748 candidate rows. The
-documented accepted-v2 Discovery index was absent on this host; the fresh index
-passed the eight-sample Alignment preflight.
+Evidence: `diagnostic_only`; full production completion remains unverified.
+The operator removed a completed baseline/A-B run as an optimization prerequisite.
+Request/sample reuse, SearchScope indexes, physical-fact read reuse, batched
+runtime settlement and event indexes are applied in `e4424ba3`. Focused regression
+suites, independent source reviews and commit checks passed. These are engineering
+receipts, not full analytical parity or scientific/product readiness.
 
-An unprofiled Alignment preparation probe loaded physical replay in 90.504 s,
-then repeatedly entered method-subject JSON/batch reconstruction from each
-runtime job constructor. Process private-memory snapshots reached 10.60 GB;
-the probe was interrupted before job construction completed. A candidate that
-reused immutable request subjects and sample-local job inputs built jobs in
-21.073 s after 97.078 s of replay loading, with a 1.48 GB post-build private-memory
-snapshot. Its later analysis repeatedly reached SearchScope request JSON
-decoding and was interrupted without final output. These observations are
-stage diagnostics and memory snapshots, not completed wall-clock comparisons
-or peak-memory measurements.
+The input universe is eight tissue validation RAW files, `dna_dr`, 30,748
+Discovery candidates and 95,320 sample/subject runtime jobs. A clean run at
+`0d307078` completed Discovery in 59.482 s and failed Alignment after 998.257 s.
+All runtime jobs completed; ledger derivation took 8.410 s and full runtime
+finalization 24.376 s. Composition preparation took 344.042 s, followed by
+35.176 s in the final workflow before an ObservationRepair contract failure:
+`eligible cell has no planned owner Backfill request`. No matrix or explanation
+SQLite was produced. There is no completed end-to-end speedup or 85RAW result.
 
-Neither a completed baseline/candidate pair nor analytical-output parity was
-obtained; there is no accepted speedup, product promotion, or 85RAW result.
-The candidate passed 52 focused regression tests but was reverted because that
-does not establish the requested performance/parity oracle. Task-local evidence
-and the unaccepted patch are under `output/cid-nl-end-to-end/` (not reusable
-cross-worktree inputs); patch SHA-256 is
-`9eb1030446d8c4106a120ee6b7064bb361750536ce07fab10d7e054efbf951d5`.
+Public no-RAW reproductions distinguish two missing handoff cases. The
+below-threshold, multiple-candidate HOLD case is corrected in `0d307078`, preserving
+the existing threshold proof, HOLD and blank quantity; 50 focused tests passed.
+With two SUPPORT samples and a multiple-candidate HOLD, runtime retains the local
+candidate assessment but production supplies neither a request nor a legal
+no-request proof. The shifted-support/empty-candidate control succeeds. A proposed
+positive-candidate handoff is not implemented; current eligibility and the
+completed-empty proof remain authoritative. The real8 failing cell identity was
+not correctly preserved, so its identity is not inferred from these reproductions.
 
-Before repeating the full experiment, resolve the cost and memory feasibility
-of request-wide reconstruction across all sample/subject jobs, including the
-SearchScope consumer. Do not infer an end-to-end gain from the construction
-stage or start 85RAW on this evidence. A changed implementation or a bounded
-probe that resolves that feasibility question justifies renewed measurement.
+Two diagnostic costs need separate treatment. A partial 100-subject/3-sample
+composition profile observed 5,319 assessment remints in an 8.015 s window;
+overlapping/interrupted cumulative values are not wall-time shares or a scaling
+proof. The run harness also enabled one live timing-file rewrite per terminal job.
+A 1,000-callback probe measured median 1.823 s with live writes versus 0.00214 s
+in memory; extrapolation to 95,320 callbacks is about 174 s, not an end-to-end
+measurement. The task harness now retains coarse progress and final timing while
+omitting this live-file flag; product timing behavior is unchanged.
+
+Task-local evidence, commands, source/helper hashes and reproductions are under
+`output/cid-nl-end-to-end/`, especially `result-8raw-4`, `backfill-handoff-repro`,
+`composition-probe` and `heartbeat-probe`. These ignored host-local artifacts are
+not reusable clean-checkout inputs. Before another full run, close the applicable
+handoff with its existing semantic owners and preserve the actual inner failure
+context. Do not label a failed composition or a component timing as full success.
 
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 
