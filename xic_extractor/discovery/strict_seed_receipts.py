@@ -39,7 +39,7 @@ def read_complete_strict_scan_seeds(
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
 ) -> tuple[tuple[Ms2Scan, DiscoverySeed], ...]:
-    """Return every declared strict scan once, with its exact canonical seed."""
+    """Return exact direct seeds from declared scans, including mixed candidates."""
 
     by_scan: dict[tuple[int, float], tuple[Ms2Scan, DiscoverySeed]] = {}
     for candidate in candidates:
@@ -118,7 +118,10 @@ def _read_exact_seed(
             settings=settings,
         )
         if seed.scan_number in candidate.seed_scan_ids
-        and seed.precursor_mz_basis == "scan_precursor"
+        and (
+            seed.precursor_mz_basis == "scan_precursor"
+            or candidate.precursor_mz_basis == "mixed"
+        )
         and any(
             seed.neutral_loss_tag == tag_name
             and _within_ppm(
@@ -166,7 +169,16 @@ def _read_exact_seed(
                 f"{candidate.candidate_id}: "
                 "exact canonical Discovery seed is not unique"
             )
-        return matches
+        return tuple(
+            seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
+        )
+    # A mixed candidate may declare both direct and inferred scans. Reconstruct
+    # their receipts above, but only direct observations establish strict support.
+    matches = tuple(
+        seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
+    )
+    if not matches:
+        return ()
     return (
         min(
             matches,

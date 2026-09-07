@@ -287,6 +287,57 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
+def test_adapter_preserves_strict_scans_within_mixed_candidate(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    strict_scan_ids = tuple(scan.scan_number for scan in source_raw.scans[:2])
+    inferred_scan = replace(
+        source_raw.scans[2],
+        precursor_mz=source_raw.scans[2].precursor_mz + 0.5,
+    )
+    source_raw.scans = (*source_raw.scans[:2], inferred_scan)
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    (candidate,) = candidates
+    assert candidate.precursor_mz_basis == "mixed"
+    assert set(candidate.seed_scan_ids) == {
+        *strict_scan_ids,
+        inferred_scan.scan_number,
+    }
+    raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert result.strict_scan_count == len(strict_scan_ids)
+    assert tuple(
+        sorted(
+            evidence.observation.scan_number for evidence in assessment.evidence_refs
+        )
+    ) == tuple(sorted(strict_scan_ids))
+
+
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:

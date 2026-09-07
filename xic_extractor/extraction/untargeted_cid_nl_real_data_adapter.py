@@ -656,7 +656,7 @@ def adapt_current_discovery_sample_subject(
             candidates=tuple(
                 candidate
                 for candidate in bounded
-                if candidate.precursor_mz_basis == "scan_precursor"
+                if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
             ),
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
