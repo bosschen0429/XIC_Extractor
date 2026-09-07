@@ -520,6 +520,16 @@ def compose_untargeted_cid_nl_production_result(
             sample.identity.sample_identity_id: sample
             for sample in batch.context.samples
         }
+        hypotheses_by_sample_id = {
+            sample_id: compose_peak_hypotheses_from_assessment_universe(
+                processing_owners=batch.context.processing_owners,
+                sample=sample_by_id[sample_id],
+                assessment=assessment_by_sample_id[sample_id],
+            )
+            for sample_id in dict.fromkeys(
+                binding.sample_identity_id for binding in child_bindings
+            )
+        }
         for binding in child_bindings:
             sample = sample_by_id[binding.sample_identity_id]
             trace = capture_by_candidate[binding.candidate_id].trace
@@ -533,11 +543,7 @@ def compose_untargeted_cid_nl_production_result(
                 processing_owners=batch.context.processing_owners,
                 sample=sample,
             )
-            hypotheses = compose_peak_hypotheses_from_assessment_universe(
-                processing_owners=batch.context.processing_owners,
-                sample=sample,
-                assessment=assessment_by_sample_id[binding.sample_identity_id],
-            )
+            hypotheses = hypotheses_by_sample_id[binding.sample_identity_id]
             matches = tuple(
                 hypothesis
                 for hypothesis in hypotheses
