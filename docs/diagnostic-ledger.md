@@ -67,26 +67,30 @@ dated productization control-plane path is compatibility lookup only.
 
 ### 2026-09-07 CID-NL 8RAW Runtime and Composition
 
-Evidence: `diagnostic_only`; full production completion remains unverified.
-The operator selected internal data-flow simplification and stopped repeated
-full-RAW runs. Reuse compatible Discovery and retained observations; focused
-behavior checks establish engineering coverage, not analytical parity or readiness.
+Evidence: `diagnostic_only`; the eight-RAW engineering completion target passed.
+This is not analytical parity or scientific/production readiness evidence.
+Reuse the retained run and compatible composition inputs before another RAW run.
 
-The input universe is eight tissue validation RAW files, `dna_dr`, 30,748
-Discovery candidates and 95,320 sample/subject runtime jobs. Discovery from
-`result-8raw-4/discovery` is retained. The latest full Alignment attempt,
-`alignment-family-3` at `7bdf3691`, stopped at its 1,800.008 s timeout with exit
-124 and no matrix or explanation SQLite. Its initial assessments totalled
-313.15 s, including 11.48 s of acquisition; recovery planning took 15.25 s and
-recovery attempts 8.10 s. Production composition began at 462.15 s and nested
-batch composition at 829.65 s; neither has a completion event. These nested
-measurements must not be added or interpreted as a completed-run speedup.
+Clean `39cfa36ad3457febf85da49f1bfebe6ec5343759` completed fresh Discovery and
+Alignment on eight tissue validation RAW files with `dna_dr`, production output,
+four Discovery workers and the existing single-worker Alignment route. Discovery
+took 81.455 s and Alignment 663.566 s, totalling 745.021 s of sequential CLI wall
+time (12 min 25 s; excludes input hashing and harness setup). Both exited zero.
+The workload contained 30,748 Discovery candidates and 95,320 runtime jobs.
+Production composition took 200.721 s, including 184.236 s of nested batch
+composition; these overlapping spans must not be added.
 
-The retained composition profile has 228 weighted samples: 167 enter assessment
-binding and 40 enter completion-receipt digests. Its sampling window is not a
-full-run cost distribution. Current source identified duplicate ModeTrack
-bootstrap and CrossSample application on identical inputs, plus full binding
-and cell scans inside per-subject/per-group loops.
+The decisive repeated cost was rebuilding `ProcessingOwnerReferences` for each
+of 27,926 method-excluded candidates. Each construction reparsed the same
+25,016,161-byte request, and batch validation ran three times. Five bounded
+construction measurements took 0.0619–0.0642 s each. The validator now retains
+one shared owner per invocation, and canonical-subject membership lookup uses
+one set instead of a full membership scan per subject. Completion receipts
+retain the identity of the already-validated frozen processing request without
+rehashing its contents for every child. The remaining binding checks are kept.
+Compatible historical eight-RAW inputs replayed without RAW opens in 217.505 s,
+with all 877 row/group/subject identities and routes preserved versus the
+owner-hoist-only replay. This replay is mechanism evidence, not full-run parity.
 
 Current production builds initial CrossSample groups and passes their context
 directly to workflow, without ModeTrack fitting, assignment, split/merge
@@ -102,17 +106,27 @@ Changed physical acquisition questions are evaluated once at the capture owner;
 same-question comparisons and persisted physical-answer revalidation remain.
 
 The runtime uses the selected Alignment configuration consistently. Unresolved
-candidate assessments retain HOLD and blank quantities. No completion or
-end-to-end speedup is inferred from these handoff corrections. The task harness
-retains coarse progress and final timing without per-job live timing-file
-rewrites; product timing behavior is unchanged.
+candidate assessments retain HOLD and blank quantities. Writer presentation
+includes physical observations only when they belong to the formal group;
+nonmember HOLD evidence remains queryable. The duplicate-observation guard
+remains enabled. This removes the old writer failure without promoting HOLD
+values or changing scientific thresholds.
 
-Task-local evidence, commands, source/helper hashes and reproductions are under
-`output/cid-nl-end-to-end/`, especially `alignment-family-3`, `family_context_probe`,
-`composition-probe` and `heartbeat-probe`. These ignored host-local artifacts are
-not reusable clean-checkout inputs. The production/workflow, CID-NL evidence-spine
-and Backfill tests own the focused behavior oracles, including reuse without
-scientific reevaluation and preserved writer outputs.
+The completed matrix contains 29 primary rows across eight sample columns,
+77 finite numeric values and 155 blanks. Explanation SQLite retains 877 groups,
+7,016 cell decisions and all 30,748 candidates. The public reader, matrix hash,
+exact matrix sample-column order, sample population, SQLite integrity and
+record-link checks passed. The explanation enumerates canonical samples, so its
+sample order need not match the Discovery index or matrix columns. The focused
+workflow, result, projection and production tests passed (133 tests); commit
+checks also passed. These checks establish engineering behavior coverage.
+
+Task-local evidence, commands and RAW/DLL/source hashes are under
+`output/cid-nl-end-to-end/composition-v9-e2e/` (`run.json`, `alignment.log`,
+`artifact-verification.json`) and `composition-cost-v9/`. These ignored host-local
+artifacts are not reusable clean-checkout inputs. The task harness retains
+coarse progress and final timing without per-job live timing-file rewrites;
+product timing behavior is unchanged.
 
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 
