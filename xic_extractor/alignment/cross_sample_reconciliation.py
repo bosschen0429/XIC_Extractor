@@ -676,14 +676,25 @@ def apply_mode_track_refinement_run_for_workflow(
         raise CrossSampleReconciliationContractError(
             "ModeTrack run requires complete typed component transactions"
         )
-    transaction_predecessor_ids = tuple(
-        group.group_hypothesis_id
+    component_predecessor_ids = tuple(
+        tuple(
+            group.group_hypothesis_id
+            for group in transaction.application_context.predecessors
+        )
         for transaction in transaction_tuple
-        for group in transaction.application_context.predecessors
     )
-    if transaction_predecessor_ids != tuple(
-        group.group_hypothesis_id for group in predecessors
-    ) or len(transaction_predecessor_ids) != len(set(transaction_predecessor_ids)):
+    transaction_predecessor_ids = tuple(
+        group_id for component in component_predecessor_ids for group_id in component
+    )
+    # Bootstrap orders whole components by their first canonical predecessor;
+    # group identities in different components may interleave.
+    if (
+        any(not component for component in component_predecessor_ids)
+        or component_predecessor_ids != tuple(sorted(component_predecessor_ids))
+        or tuple(sorted(transaction_predecessor_ids))
+        != tuple(group.group_hypothesis_id for group in predecessors)
+        or len(transaction_predecessor_ids) != len(set(transaction_predecessor_ids))
+    ):
         raise CrossSampleReconciliationContractError(
             "ModeTrack transactions do not close canonical predecessor order"
         )
