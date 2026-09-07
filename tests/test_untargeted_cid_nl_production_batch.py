@@ -664,16 +664,33 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         alignment_adapter, "build_untargeted_cid_nl_production_batch", retain_batch
     )
+    from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment import workflow as workflow_owner
+    from xic_extractor.alignment.mode_track import refinement as refinement_owner
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
 
+    def unexpected_mt0(*args, **kwargs):
+        raise AssertionError("retained production must not execute MT0 refinement")
+
+    monkeypatch.setattr(
+        refinement_owner, "mint_mode_track_trajectory_input", unexpected_mt0
+    )
+    monkeypatch.setattr(
+        refinement_owner, "_propose_mode_track_refinement", unexpected_mt0
+    )
+    monkeypatch.setattr(
+        cross_sample_reconciliation,
+        "apply_accepted_mode_track_refinement",
+        unexpected_mt0,
+    )
+
     bootstrap_runs = []
-    applied_contexts = []
+    retained_contexts = []
     consumed_contexts = []
     bootstrap = production.bootstrap_mode_track_refinement_from_cid_nl_support
-    apply_refinement = production.apply_mode_track_refinement_run_for_workflow
+    retain_groups = production.retain_initial_mode_track_groups_for_workflow
     consume_repair = workflow_owner.consume_observation_repair_terminal
 
     def counted_bootstrap(**kwargs):
@@ -681,9 +698,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         bootstrap_runs.append(run)
         return run
 
-    def counted_apply(**kwargs):
-        context = apply_refinement(**kwargs)
-        applied_contexts.append(context)
+    def retain_initial_context(**kwargs):
+        context = retain_groups(**kwargs)
+        retained_contexts.append(context)
         return context
 
     def retain_consumed_context(**kwargs):
@@ -696,9 +713,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             "bootstrap_mode_track_refinement_from_cid_nl_support",
             counted_bootstrap,
         )
-        monkeypatch.setattr(
-            owner, "apply_mode_track_refinement_run_for_workflow", counted_apply
-        )
+    monkeypatch.setattr(
+        production,
+        "retain_initial_mode_track_groups_for_workflow",
+        retain_initial_context,
+    )
+    monkeypatch.setattr(
+        workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
+    )
     monkeypatch.setattr(
         workflow_owner, "consume_observation_repair_terminal", retain_consumed_context
     )
@@ -774,10 +796,19 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
     assert len(bootstrap_runs) == len(completed.application_result.children)
-    assert len(applied_contexts) == len(consumed_contexts)
+    assert len(retained_contexts) == len(consumed_contexts)
     assert all(
-        applied is consumed
-        for applied, consumed in zip(applied_contexts, consumed_contexts, strict=True)
+        retained is consumed
+        for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
+    )
+    for run, child in zip(
+        bootstrap_runs, completed.application_result.children, strict=True
+    ):
+        assert run.transactions == ()
+        assert child.scientific_core.final_population == run.predecessors
+        assert child.scientific_core.lineage == ()
+    assert completed.initial_edges == tuple(
+        edge for run in bootstrap_runs for edge in run.classified_edges
     )
     if family_context:
         assert len(matrix_rows) == 1

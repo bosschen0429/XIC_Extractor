@@ -34,7 +34,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
-    apply_mode_track_refinement_run_for_workflow,
+    retain_initial_mode_track_groups_for_workflow,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
@@ -589,6 +589,7 @@ def compose_untargeted_cid_nl_production_result(
             alignment_config=alignment_config,
             trajectory_policy=trajectory_policy,
             retain_observation_only_candidates=True,
+            build_refinement_transactions=False,
         )
         initial_groups.extend(refinement.family_context.mode_tracks)
         initial_edges.extend(refinement.classified_edges)
@@ -613,7 +614,7 @@ def compose_untargeted_cid_nl_production_result(
                 "CID-NL capture/assessment owner mismatch: "
                 f"captures={selected_ids!r}; assessments={retained_ids!r}"
             )
-        mode_track_context = apply_mode_track_refinement_run_for_workflow(
+        mode_track_context = retain_initial_mode_track_groups_for_workflow(
             processing_owners=batch.context.processing_owners,
             captures=captures,
             run=refinement,

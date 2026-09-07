@@ -259,9 +259,7 @@ def _propose_mode_track_refinement(
             reason_codes=rejected_reasons,
         )
     successor_members_by_group: dict[str, list[str]] = {}
-    model_group_ids = {
-        track.group_hypothesis_id for track in evidence.model_set.tracks
-    }
+    model_group_ids = {track.group_hypothesis_id for track in evidence.model_set.tracks}
     for member_id, assignment in assignment_by_member_id.items():
         group_id = assignment.group_hypothesis_id
         if group_id is None:
@@ -338,8 +336,7 @@ def _validate_final_attempt_variant(
         )
     if discriminant == "assigned":
         valid_content = (
-            bool(assignment_batches)
-            and type(proposal) is AcceptedModeTrackRefinement
+            bool(assignment_batches) and type(proposal) is AcceptedModeTrackRefinement
         )
     elif discriminant in {"untrained", "assignment_unavailable"}:
         valid_content = (
@@ -349,8 +346,7 @@ def _validate_final_attempt_variant(
         )
     elif discriminant == "rejected":
         valid_content = (
-            bool(assignment_batches)
-            and type(proposal) is RejectedModeTrackRefinement
+            bool(assignment_batches) and type(proposal) is RejectedModeTrackRefinement
         )
     else:
         valid_content = type(proposal) is UnassessableModeTrackRefinement
@@ -422,15 +418,12 @@ def run_post_repair_mode_track_final_attempt(
             "final attempt crossed request, attempt, receipt, or trajectory"
         )
     source_policy = source.model_set.policy
-    if (
-        post_repair.post_repair_trajectory.evidence_profile
-        != ModeTrackEvidenceProfile(
-            source_policy.trajectory_policy_version,
-            source_policy.band_policy_version,
-            source_policy.prediction_half_width_min,
-            source_policy.max_interpolation_gap,
-            source_policy.max_extrapolation_gap,
-        )
+    if post_repair.post_repair_trajectory.evidence_profile != ModeTrackEvidenceProfile(
+        source_policy.trajectory_policy_version,
+        source_policy.band_policy_version,
+        source_policy.prediction_half_width_min,
+        source_policy.max_interpolation_gap,
+        source_policy.max_extrapolation_gap,
     ):
         raise ModeTrackFinalAttemptContractError(
             "post-repair trajectory crossed the fit-once model policy"
@@ -774,6 +767,7 @@ def _mint_final_attempt_result(
         _mint_token=_FINAL_ATTEMPT_MINT_TOKEN,
     )
 
+
 MODE_TRACK_NEIGHBORHOOD_BUDGET = CrossSampleNeighborhoodBudget(
     max_members=86,
     max_eligible_edges=3655,
@@ -820,14 +814,17 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
     retain_observation_only_candidates: bool = False,
+    build_refinement_transactions: bool = True,
 ) -> ModeTrackRefinementRun:
+    """Bootstrap groups and diagnostics, optionally proposing MT0 refinements."""
+
     bootstrap_result = bootstrap_mode_tracks_from_cid_nl_support(
-            processing_owners=processing_owners,
-            sample_assessments=sample_assessments,
-            alignment_config=alignment_config,
-            trajectory_policy=trajectory_policy,
-            drift_lookup=drift_lookup,
-            retain_observation_only_candidates=retain_observation_only_candidates,
+        processing_owners=processing_owners,
+        sample_assessments=sample_assessments,
+        alignment_config=alignment_config,
+        trajectory_policy=trajectory_policy,
+        drift_lookup=drift_lookup,
+        retain_observation_only_candidates=retain_observation_only_candidates,
     )
     return _bootstrap_mode_track_refinement(
         processing_owners=processing_owners,
@@ -835,6 +832,7 @@ def bootstrap_mode_track_refinement_from_cid_nl_support(
         alignment_config=alignment_config,
         trajectory_policy=trajectory_policy,
         drift_lookup=drift_lookup,
+        build_refinement_transactions=build_refinement_transactions,
     )
 
 
@@ -882,19 +880,14 @@ def _bootstrap_mode_track_refinement(
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None,
+    build_refinement_transactions: bool = True,
 ) -> ModeTrackRefinementRun:
     family_context, model_set, assignment_batches, fit_once_source = bootstrap_result
     groups = family_context.mode_tracks
     predecessors = validate_cross_sample_group_population(
-        tuple(
-            _required_group_identity(group)
-            for group in groups
-        )
+        tuple(_required_group_identity(group) for group in groups)
     )
     owners = tuple(owner for group in groups for owner in group.owners)
-    owner_by_member_id = {
-        _required_owner_member(owner).member_subject_id: owner for owner in owners
-    }
     classified_edges = tuple(
         classify_cross_sample_initial_neighborhood_edge(
             left_owner=owners[left_index],
@@ -906,19 +899,6 @@ def _bootstrap_mode_track_refinement(
         for left_index in range(len(owners))
         for right_index in range(left_index + 1, len(owners))
     )
-    members = tuple(
-        member for predecessor in predecessors for member in predecessor.member_subjects
-    )
-    full_neighborhood = build_bounded_connected_neighborhood(
-        member_subjects=members,
-        edges=classified_edges,
-        budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
-    )
-    predecessor_by_member_id = {
-        member.member_subject_id: predecessor
-        for predecessor in predecessors
-        for member in predecessor.member_subjects
-    }
     injection_order = _injection_order(assignment_batches)
     owner_injection_order = {
         owner.sample_stem: injection_order[owner.sample_stem] for owner in owners
@@ -937,86 +917,108 @@ def _bootstrap_mode_track_refinement(
     )
 
     transactions = []
-    assigned_evidence = AssignedModeTrackRefinementEvidence(
-        variant="assigned",
-        processing_owners=processing_owners,
-        model_set=model_set,
-        assignment_batches=assignment_batches,
-    )
-    proposal: ModeTrackRefinementProposal
-    for component in full_neighborhood.connected_components:
-        component_ids = frozenset(component)
-        component_predecessors = tuple(
-            sorted(
-                {predecessor_by_member_id[member_id] for member_id in component_ids},
-                key=lambda group: group.group_hypothesis_id,
-            )
+    if build_refinement_transactions:
+        owner_by_member_id = {
+            _required_owner_member(owner).member_subject_id: owner for owner in owners
+        }
+        members = tuple(
+            member
+            for predecessor in predecessors
+            for member in predecessor.member_subjects
         )
-        if any(
-            not {
-                member.member_subject_id for member in group.member_subjects
-            }.issubset(component_ids)
-            for group in component_predecessors
-        ):
-            raise ModeTrackRefinementContractError(
-                "one predecessor spans disconnected eligible components"
-            )
-        component_owners = tuple(
-            owner_by_member_id[member_id] for member_id in sorted(component_ids)
-        )
-        component_edges = tuple(
-            edge
-            for edge in classified_edges
-            if edge.left_member_subject_id in component_ids
-            and edge.right_member_subject_id in component_ids
-        )
-        trajectory_input = mint_mode_track_trajectory_input(
-            predecessors=component_predecessors,
-            owners=component_owners,
-            classified_edges=component_edges,
-            anchors=tuple(
-                anchor_by_owner_id[owner.owner_id]
-                for owner in component_owners
-                if owner.owner_id in anchor_by_owner_id
-            ),
-            injection_order={
-                owner.sample_stem: injection_order[owner.sample_stem]
-                for owner in component_owners
-            },
-            evidence_profile=evidence_profile,
+        full_neighborhood = build_bounded_connected_neighborhood(
+            member_subjects=members,
+            edges=classified_edges,
             budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
         )
-        if trajectory_input.neighborhood_status == "unassessable":
-            proposal = _mint_unassessable_mode_track_refinement(
-                trajectory_input_id=trajectory_input.trajectory_input_id,
+        predecessor_by_member_id = {
+            member.member_subject_id: predecessor
+            for predecessor in predecessors
+            for member in predecessor.member_subjects
+        }
+        assigned_evidence = AssignedModeTrackRefinementEvidence(
+            variant="assigned",
+            processing_owners=processing_owners,
+            model_set=model_set,
+            assignment_batches=assignment_batches,
+        )
+        proposal: ModeTrackRefinementProposal
+        for component in full_neighborhood.connected_components:
+            component_ids = frozenset(component)
+            component_predecessors = tuple(
+                sorted(
+                    {
+                        predecessor_by_member_id[member_id]
+                        for member_id in component_ids
+                    },
+                    key=lambda group: group.group_hypothesis_id,
+                )
             )
-        elif not trajectory_input.anchor_ids:
-            proposal = _mint_insufficient_mode_track_training(
-                trajectory_input_id=trajectory_input.trajectory_input_id,
-                reason_codes=("no_direct_support_anchor",),
+            if any(
+                not {
+                    member.member_subject_id for member in group.member_subjects
+                }.issubset(component_ids)
+                for group in component_predecessors
+            ):
+                raise ModeTrackRefinementContractError(
+                    "one predecessor spans disconnected eligible components"
+                )
+            component_owners = tuple(
+                owner_by_member_id[member_id] for member_id in sorted(component_ids)
             )
-        else:
-            proposal = _propose_mode_track_refinement(
-                trajectory_input=trajectory_input,
+            component_edges = tuple(
+                edge
+                for edge in classified_edges
+                if edge.left_member_subject_id in component_ids
+                and edge.right_member_subject_id in component_ids
+            )
+            trajectory_input = mint_mode_track_trajectory_input(
+                predecessors=component_predecessors,
                 owners=component_owners,
-                evidence=assigned_evidence,
-            )
-        transactions.append(
-            ModeTrackRefinementTransaction(
-                trajectory_input=trajectory_input,
-                proposal=proposal,
-                application_context=CrossSampleCoupledProposalContext(
-                    predecessors=component_predecessors,
-                    classified_edges=component_edges,
-                    budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+                classified_edges=component_edges,
+                anchors=tuple(
+                    anchor_by_owner_id[owner.owner_id]
+                    for owner in component_owners
+                    if owner.owner_id in anchor_by_owner_id
                 ),
+                injection_order={
+                    owner.sample_stem: injection_order[owner.sample_stem]
+                    for owner in component_owners
+                },
+                evidence_profile=evidence_profile,
+                budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+            )
+            if trajectory_input.neighborhood_status == "unassessable":
+                proposal = _mint_unassessable_mode_track_refinement(
+                    trajectory_input_id=trajectory_input.trajectory_input_id,
+                )
+            elif not trajectory_input.anchor_ids:
+                proposal = _mint_insufficient_mode_track_training(
+                    trajectory_input_id=trajectory_input.trajectory_input_id,
+                    reason_codes=("no_direct_support_anchor",),
+                )
+            else:
+                proposal = _propose_mode_track_refinement(
+                    trajectory_input=trajectory_input,
+                    owners=component_owners,
+                    evidence=assigned_evidence,
+                )
+            transactions.append(
+                ModeTrackRefinementTransaction(
+                    trajectory_input=trajectory_input,
+                    proposal=proposal,
+                    application_context=CrossSampleCoupledProposalContext(
+                        predecessors=component_predecessors,
+                        classified_edges=component_edges,
+                        budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+                    ),
+                )
+            )
+        transactions.sort(
+            key=lambda transaction: (
+                transaction.application_context.predecessors[0].group_hypothesis_id
             )
         )
-    transactions.sort(
-        key=lambda transaction: (
-            transaction.application_context.predecessors[0].group_hypothesis_id
-        )
-    )
     return ModeTrackRefinementRun(
         family_context=family_context,
         model_set=model_set,
@@ -1211,8 +1213,7 @@ def _assignments_for_current_members(
                 )
             if (
                 type(candidate) is ModeTrackRepairAssignmentObservation
-                and candidate.apex_rt_min
-                != owner_by_member_id[member_id].owner_apex_rt
+                and candidate.apex_rt_min != owner_by_member_id[member_id].owner_apex_rt
             ):
                 raise ModeTrackRefinementContractError(
                     "repair assignment apex does not match the current owner apex"
