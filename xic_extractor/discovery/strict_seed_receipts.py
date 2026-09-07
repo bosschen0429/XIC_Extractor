@@ -124,10 +124,16 @@ def _read_exact_seed(
         )
         and any(
             seed.neutral_loss_tag == tag_name
-            and _within_ppm(
-                seed.product_mz,
-                product_mz,
-                settings.product_mz_tolerance_ppm,
+            and (
+                (
+                    not representative
+                    and seed.precursor_mz_basis == "product_plus_neutral_loss"
+                )
+                or _within_ppm(
+                    seed.product_mz,
+                    product_mz,
+                    settings.product_mz_tolerance_ppm,
+                )
             )
             for tag_name, product_mz in tag_product_receipts.items()
         )
@@ -172,8 +178,9 @@ def _read_exact_seed(
         return tuple(
             seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
         )
-    # A mixed candidate may declare both direct and inferred scans. Reconstruct
-    # their receipts above, but only direct observations establish strict support.
+    # MS1 merging can retain inferred members beyond the final representative's
+    # product window. They only account for declared scans here; the direct
+    # product check still applies to every seed returned as strict evidence.
     matches = tuple(
         seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
     )

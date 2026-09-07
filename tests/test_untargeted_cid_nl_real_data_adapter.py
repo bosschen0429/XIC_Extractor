@@ -338,6 +338,71 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     ) == tuple(sorted(strict_scan_ids))
 
 
+def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    first, inferred, representative = source_raw.scans
+    source_raw.scans = (
+        replace(
+            first,
+            precursor_mz=first.precursor_mz + 0.005,
+            masses=first.masses + 0.005,
+        ),
+        replace(
+            inferred,
+            precursor_mz=inferred.precursor_mz + 0.5,
+            masses=inferred.masses + 0.009,
+            intensities=np.asarray((700.0, 200.0)),
+        ),
+        replace(representative, intensities=np.asarray((900.0, 100.0))),
+    )
+    settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.01)
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    (candidate,) = candidates
+    assert candidate.precursor_mz_basis == "mixed"
+    assert candidate.best_ms2_scan_id == representative.scan_number
+    assert set(candidate.seed_scan_ids) == {
+        first.scan_number,
+        inferred.scan_number,
+        representative.scan_number,
+    }
+    inferred_product_mz = float(source_raw.scans[1].masses[0])
+    assert (
+        abs(inferred_product_mz - candidate.product_mz) / candidate.product_mz * 1e6
+        > settings.product_mz_tolerance_ppm
+    )
+    raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert result.strict_scan_count == 2
+    assert {
+        evidence.observation.scan_number for evidence in assessment.evidence_refs
+    } == {first.scan_number, representative.scan_number}
+
+
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:
