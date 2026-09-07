@@ -100,6 +100,7 @@ class CaptureCandidateBinding:
     retained_selected_integration: IntegrationResult | None = None
     selection_policy: CaptureSelectionPolicy = "capture_default"
     physical_evaluation: PhysicalPeakEvaluation | None = None
+    source_physical_evaluation: PhysicalPeakEvaluation | None = None
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
@@ -134,6 +135,18 @@ class CaptureCandidateBinding:
             raise SearchScopeContractError(
                 "retained capture selection must use one exact IntegrationResult"
             )
+        if self.source_physical_evaluation is not None:
+            validate_bounded_physical_peak_evaluation(self.source_physical_evaluation)
+            if (
+                self.physical_evaluation is None
+                or self.source_physical_evaluation.question.query_rt_min
+                != self.preferred_rt
+                or self.source_physical_evaluation.question.selection_subject_id
+                != self.physical_evaluation.question.selection_subject_id
+            ):
+                raise SearchScopeContractError(
+                    "fresh physical capture lost its source question"
+                )
         if self.physical_evaluation is not None:
             validate_bounded_physical_peak_evaluation(self.physical_evaluation)
             question = self.physical_evaluation.question
@@ -316,11 +329,20 @@ def _validate_physical_capture_scope(scope: UntargetedSearchScope) -> None:
     candidates = payload["candidates"]
     for binding in scope.capture_bindings:
         evaluation = binding.physical_evaluation
+        source_evaluation = binding.source_physical_evaluation or evaluation
+        if binding.source_physical_evaluation is not None and not isinstance(
+            scope, UntargetedSearchScope
+        ):
+            raise SearchScopeContractError(
+                "fresh physical context requires Untargeted scope"
+            )
         if (
             evaluation is None
+            or source_evaluation is None
             or evaluation.prepared.profile_id != profile.profile_id
             or candidates.get(binding.candidate_id)
-            != _physical_evaluation_identity(evaluation)
+            != _physical_evaluation_identity(source_evaluation)
+            or source_evaluation.prepared.profile_id != profile.profile_id
         ):
             raise SearchScopeContractError(
                 "physical capture answer is not bound to its request candidate"

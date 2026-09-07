@@ -994,6 +994,7 @@ def _execute_initial_assessment_batch(
                 candidates=job.candidates,
                 settings=job.settings,
                 raw=raw,
+                signal_processing_profile=job.signal_processing_profile,
             )
             phase.initial_acquisition = (
                 trace_batch.acquisition if trace_batch is not None else None

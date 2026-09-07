@@ -538,6 +538,15 @@ def compose_untargeted_cid_nl_production_result(
                 candidate_id=binding.candidate_id,
                 trace=trace,
             )
+            if captured.selected_hypothesis is None:
+                captures_list.append(captured)
+                capture_inputs_list.append(
+                    CaptureWorkflowArguments(
+                        candidate_id=binding.candidate_id,
+                        trace=trace,
+                    )
+                )
+                continue
             observation = mint_captured_peak_observation(
                 captured,
                 processing_owners=batch.context.processing_owners,
@@ -580,9 +589,11 @@ def compose_untargeted_cid_nl_production_result(
         initial_edges.extend(refinement.classified_edges)
         selected_ids = tuple(
             sorted(
-                capture.selected_hypothesis.hypothesis_id
-                for capture in captures
-                if capture.selected_hypothesis is not None
+                {
+                    capture.selected_hypothesis.hypothesis_id
+                    for capture in captures
+                    if capture.selected_hypothesis is not None
+                }
             )
         )
         retained_ids = tuple(

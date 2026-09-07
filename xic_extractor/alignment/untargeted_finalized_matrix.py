@@ -472,6 +472,7 @@ def _direct_candidate_ids(
     if type(scientific_core) is not FinalizedScientificAlignment:
         raise TypeError("writer projection requires an exact finalized scientific core")
     candidate_ids: dict[tuple[str, str], str] = {}
+    observed_subjects: dict[tuple[str, str], ObservedSearchSubject] = {}
     for subject in scientific_core.terminal_subjects:
         if type(subject) is not ObservedSearchSubject:
             continue
@@ -479,11 +480,15 @@ def _direct_candidate_ids(
             subject.canonical_sample_identity_id,
             subject.hypothesis.hypothesis_id,
         )
-        if key in candidate_ids:
+        previous = observed_subjects.get(key)
+        if previous is not None and previous.hypothesis != subject.hypothesis:
             raise ValueError(
-                "finalized scientific core duplicated a direct candidate identity"
+                "finalized scientific core conflicts on a direct physical identity"
             )
-        candidate_ids[key] = subject.candidate_id
+        observed_subjects[key] = subject
+        candidate_ids[key] = min(
+            candidate_ids.get(key, subject.candidate_id), subject.candidate_id
+        )
     return candidate_ids
 
 

@@ -621,21 +621,17 @@ def apply_mode_track_refinement_run_for_workflow(
         for candidate in sample_source.candidates
     }
     if (
-        len(selected_ids) != len(set(selected_ids))
-        or not set(selected_ids).issubset(source_by_id)
+        not set(selected_ids).issubset(source_by_id)
         or len(owner_ids) != len(set(owner_ids))
     ):
         raise CrossSampleReconciliationContractError(
             "workflow MT0 captures cross the exact retained candidate population"
         )
-    captured_by_id = {
-        capture.selected_hypothesis.hypothesis_id: capture.selected_hypothesis
+    if any(
+        capture.selected_hypothesis.integration
+        is not source_by_id[capture.selected_hypothesis.hypothesis_id].integration
         for capture in capture_tuple
         if capture.selected_hypothesis is not None
-    }
-    if any(
-        captured.integration is not source_by_id[hypothesis_id].integration
-        for hypothesis_id, captured in captured_by_id.items()
     ):
         raise CrossSampleReconciliationContractError(
             "workflow MT0 captures crossed exact retained physical integration"

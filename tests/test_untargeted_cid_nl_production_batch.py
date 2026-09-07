@@ -424,18 +424,24 @@ def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> Non
 
 
 @pytest.mark.parametrize(
-    ("group_sizes", "method_mode", "nearby"),
+    ("group_sizes", "method_mode", "nearby", "family_context"),
     (
-        ((2,), "single", False),
-        ((1, 1), "single", False),
-        ((2, 2), "single", False),
-        pytest.param((2,), "single", True, id="nearby-single"),
-        pytest.param((2,), "union", True, id="nearby-or-different-tags"),
-        pytest.param((2,), "intersection", True, id="nearby-and-incomplete"),
+        ((2,), "single", False, False),
+        ((1, 1), "single", False, False),
+        ((2, 2), "single", False, False),
+        pytest.param((2,), "single", True, False, id="nearby-single"),
+        pytest.param((2,), "union", True, False, id="nearby-or-different-tags"),
+        pytest.param((2,), "intersection", True, False, id="nearby-and-incomplete"),
+        pytest.param((2,), "single", False, True, id="overlapping-family-one-peak"),
     ),
 )
 def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
-    tmp_path: Path, monkeypatch, group_sizes: tuple[int, ...], method_mode, nearby
+    tmp_path: Path,
+    monkeypatch,
+    group_sizes: tuple[int, ...],
+    method_mode,
+    nearby,
+    family_context,
 ) -> None:
     from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
     from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -471,6 +477,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
+    if family_context:
+        settings = replace(
+            settings, neutral_loss_profile=None, seed_rt_gap_min=0.01, rt_min=12.8
+        )
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=profile
     )
@@ -479,11 +489,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     source_raws = {}
-    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
+    opened_raws = _install_runtime_raws(
+        monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path
+    )
     receipts = {}
     csvs = {}
     candidates = {}
     physical_facts = {}
+    source_records = {}
+    family_evaluations = {}
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         import numpy as np
 
@@ -507,7 +521,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521) + sample_offset
         raw.rt[int(np.argmin(np.abs(raw.rt - sample_center_rt)))] = sample_center_rt
         raw.intensity = (
-            1000.0 * np.exp(-0.5 * ((raw.rt - sample_center_rt) / 0.035) ** 2) + 250.0
+            1000.0
+            * np.exp(
+                -0.5
+                * ((raw.rt - sample_center_rt) / (0.15 if family_context else 0.035))
+                ** 2
+            )
+            + 250.0
         ) * (1.0 + sample_index * 0.4 if nearby else 1.0)
         raw.scans = tuple(
             replace(
@@ -517,6 +537,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
             for scan in raw.scans
         )
+        if family_context:
+            raw.scans = tuple(
+                replace(
+                    raw.scans[0],
+                    rt=query_rt,
+                    scan_number=int(np.argmin(np.abs(raw.rt - query_rt))) + 1,
+                )
+                for query_rt in (sample_center_rt - 0.25, sample_center_rt + 0.05)
+            )
         source_raws[path] = raw
         with runtime_module.open_raw(
             path, tmp_path, expected_acquisition_source=source.acquisition_source
@@ -549,6 +578,53 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
             csvs[path.stem], receipt=receipts[path.stem], require_successor_columns=True
         )
+        source_records.update(
+            (record.candidate_id, record) for record in discovery.physical_evaluations
+        )
+        if family_context:
+            assert len(candidates[path.stem]) == 2
+            assert all(candidate.ms1_peak_found for candidate in candidates[path.stem])
+            left, right = discovery.physical_evaluations
+            assert left.work_item.xic_rt_max > right.work_item.xic_rt_min
+            rt_min = min(
+                record.work_item.xic_rt_min for record in discovery.physical_evaluations
+            )
+            rt_max = max(
+                record.work_item.xic_rt_max for record in discovery.physical_evaluations
+            )
+            # The vendor boundary includes the end scan returned for the request,
+            # which may lie just beyond the requested RT upper bound.
+            vendor = opened_raws[path][0]
+            start = vendor.ScanNumberFromRetentionTime(rt_min) - 1
+            end = vendor.ScanNumberFromRetentionTime(rt_max)
+            prepared = prepare_physical_signal(
+                raw.rt[start:end], raw.intensity[start:end], profile=profile
+            )
+            for record in discovery.physical_evaluations:
+                family_evaluations[record.candidate_id] = evaluate_physical_peak(
+                    prepared,
+                    selection_subject_id=record.evaluation.question.selection_subject_id,
+                    query_rt_min=record.evaluation.question.query_rt_min,
+                    request_context_rt_start_min=rt_min,
+                    request_context_rt_end_min=rt_max,
+                )
+            assert (
+                len(
+                    {
+                        family_evaluations[
+                            record.candidate_id
+                        ].facts.physical_segment_id
+                        for record in discovery.physical_evaluations
+                        if family_evaluations[record.candidate_id].facts is not None
+                    }
+                )
+                == 1
+            )
+            assert all(
+                family_evaluations[record.candidate_id].facts is not None
+                for record in discovery.physical_evaluations
+            )
+            continue
         (record,) = discovery.physical_evaluations
         assert record.evaluation.facts is not None
         assert (
@@ -603,6 +679,39 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             if settlement.failure_detail is not None
         )
         runtime_results.append(result)
+        if family_context:
+            for sample_result in result.sample_results:
+                adapter = sample_result.adapter_result
+                stem = sample_result.job.sample.metadata.raw_stem
+                assert set(adapter.source_candidate_ids) == {
+                    candidate.candidate_id for candidate in candidates[stem]
+                }
+                assert (
+                    captured_batches[0].context.physical_records_by_candidate
+                    == source_records
+                )
+                assert adapter.acquisition is not None
+                assert len(adapter.acquisition.traces) == 1
+                assert opened_raws[tmp_path / f"{stem}.synthetic"][
+                    -1
+                ].chromatogram_request_counts == [1]
+                assert len(adapter.assessment_input.assessment.candidate_peaks) == 1
+                from xic_extractor.alignment.hypothesis_owner_adapter import (
+                    compose_peak_hypotheses_from_assessment_universe,
+                )
+
+                hypotheses = compose_peak_hypotheses_from_assessment_universe(
+                    processing_owners=sample_result.job.processing_owners,
+                    sample=sample_result.job.sample,
+                    assessment=adapter.assessment_input.assessment,
+                )
+                assert len(hypotheses) == 1
+                assert {capture.candidate_id for capture in adapter.captures} == set(
+                    adapter.source_candidate_ids
+                )
+                for capture in adapter.captures:
+                    expected = family_evaluations[capture.candidate_id]
+                    assert capture.physical_evaluation.facts == expected.facts
         return result
 
     monkeypatch.setattr(
@@ -629,6 +738,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    if family_context:
+        assert len(matrix_rows) == 1
+        assert len(writer.matrix.cells) == len(sample_stems)
+        return
     if nearby:
         assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
         batch = captured_batches[0]
@@ -1124,9 +1237,12 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
     }
     work_units = tuple((job.method_subject, job.work_unit_key) for job in batch.jobs)
     assert len(work_units) == 2
-    assert build_untargeted_cid_nl_sample_runtime_jobs(
-        **shared, subject_work_units=work_units
-    ) == batch.jobs
+    assert (
+        build_untargeted_cid_nl_sample_runtime_jobs(
+            **shared, subject_work_units=work_units
+        )
+        == batch.jobs
+    )
     other_dir = tmp_path / "other-request"
     other_dir.mkdir()
     other = build_processing_identity_no_raw_fixture(other_dir, sample_stems=("Other",))
