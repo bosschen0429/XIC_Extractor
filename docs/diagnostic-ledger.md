@@ -82,10 +82,17 @@ an MS1-merged inferred member as though it had to match the final representative
 product window. Both handoff defects are corrected. Direct evidence keeps its
 existing scientific thresholds; inferred members do not become strict support.
 The corrected reader reconstructed all 2,448 direct/mixed candidates across
-eight RAW files without errors. Matrix retention remains pending the corrected
-run. The prior d4-N6-2HE-dA row used inferred precursor evidence and MS1
-integration/rescue; restoring that acceptance path is a separate unresolved
-method-policy decision. Task-local receipts are under
+eight RAW files without errors. The direct/mixed-only run completed with 124
+matrix rows, but still failed six-ISTD sample-cell retention. The prior
+d4-N6-2HE-dA row used inferred precursor evidence and MS1 integration/rescue.
+The operator authorized restoring MS1-backed inferred evidence. That path now
+preserves the measured scan precursor separately from the product-plus-loss
+precursor and retains the existing mass/RT checks. All 9,925 eligible candidates
+across eight RAW files reconstructed without receipt errors or duplicate
+scan/loss evidence. The inferred-evidence run completed runtime finalization,
+but timed out during batch composition at 1,800.011 seconds without a matrix.
+Full matrix retention remains unverified; the receipt is not a successful run.
+Task-local receipts are under
 `output/cid-nl-feature-loss-v10/`.
 
 Clean `39cfa36ad3457febf85da49f1bfebe6ec5343759` completed fresh Discovery and
