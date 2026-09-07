@@ -688,6 +688,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment import workflow as workflow_owner
+    from xic_extractor.alignment.mode_track import producer as producer_owner
     from xic_extractor.alignment.mode_track import refinement as refinement_owner
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
@@ -697,6 +698,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         raise AssertionError("retained production must not execute MT0 refinement")
 
     _forbid_retained_production_repair(monkeypatch)
+
+    for model_operation in (
+        "fit_mode_track_model_set",
+        "assign_mode_tracks",
+        "mint_mode_track_fit_once_sample_source",
+        "mint_mode_track_fit_once_source",
+    ):
+        monkeypatch.setattr(producer_owner, model_operation, unexpected_mt0)
 
     monkeypatch.setattr(
         refinement_owner, "mint_mode_track_trajectory_input", unexpected_mt0
@@ -710,36 +719,30 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         unexpected_mt0,
     )
 
-    bootstrap_runs = []
     retained_contexts = []
+    retained_initial_edges = []
     consumed_contexts = []
-    bootstrap = production.bootstrap_mode_track_refinement_from_cid_nl_support
-    retain_groups = production.retain_initial_mode_track_groups_for_workflow
+    build_initial_context = production.build_initial_cid_nl_cross_sample_context
     close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
 
-    def counted_bootstrap(**kwargs):
-        run = bootstrap(**kwargs)
-        bootstrap_runs.append(run)
-        return run
-
     def retain_initial_context(**kwargs):
-        context = retain_groups(**kwargs)
+        family, context, edges = build_initial_context(**kwargs)
         retained_contexts.append(context)
-        return context
+        retained_initial_edges.extend(edges)
+        return family, context, edges
 
     def retain_consumed_context(context):
         consumed_contexts.append(context)
         return close_without_repair(context)
 
-    for owner in (production, workflow_owner):
-        monkeypatch.setattr(
-            owner,
-            "bootstrap_mode_track_refinement_from_cid_nl_support",
-            counted_bootstrap,
-        )
+    monkeypatch.setattr(
+        workflow_owner,
+        "bootstrap_mode_track_refinement_from_cid_nl_support",
+        unexpected_mt0,
+    )
     monkeypatch.setattr(
         production,
-        "retain_initial_mode_track_groups_for_workflow",
+        "build_initial_cid_nl_cross_sample_context",
         retain_initial_context,
     )
     monkeypatch.setattr(
@@ -821,22 +824,20 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
-    assert len(bootstrap_runs) == len(completed.application_result.children)
+    assert len(retained_contexts) == len(completed.application_result.children)
     assert len(retained_contexts) == len(consumed_contexts)
     assert all(
         retained is consumed
         for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
     )
-    for run, child in zip(
-        bootstrap_runs, completed.application_result.children, strict=True
+    for context, child in zip(
+        retained_contexts, completed.application_result.children, strict=True
     ):
-        assert run.transactions == ()
-        assert child.scientific_core.final_population == run.predecessors
+        assert context.fit_once_source_id is None
+        assert child.scientific_core.final_population == context.population
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
-    assert completed.initial_edges == tuple(
-        edge for run in bootstrap_runs for edge in run.classified_edges
-    )
+    assert completed.initial_edges == tuple(retained_initial_edges)
     if family_context:
         assert len(matrix_rows) == 1
         assert len(writer.matrix.cells) == len(sample_stems)

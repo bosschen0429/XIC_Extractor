@@ -40,13 +40,17 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     _apply_repaired_nonmember_admission,
     _expected_cross_sample_lineage,
     _mint_cross_sample_repaired_observation,
+    classify_cross_sample_initial_neighborhood_edge,
     classify_cross_sample_repair_admission_edge,
     mint_cross_sample_group_identity,
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
-from xic_extractor.alignment.mode_track.assignment import ModeTrackSupportAnchor
+from xic_extractor.alignment.mode_track.assignment import (
+    ModeTrackSupportAnchor,
+    ModeTrackTrajectoryPolicy,
+)
 from xic_extractor.alignment.mode_track.contracts import (
     AcceptedModeTrackRefinement,
     InsufficientModeTrackTraining,
@@ -67,6 +71,10 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.capture import SampleLocalCapture
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
+)
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
@@ -79,8 +87,10 @@ from xic_extractor.processing_identity import (
     validate_typed_identity_basis,
     validate_typed_identity_id,
 )
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.mode_track.family_context import FamilyContextRef
     from xic_extractor.alignment.mode_track.refinement import (
         ModeTrackFinalAttemptResult,
         ModeTrackRefinementRun,
@@ -638,29 +648,117 @@ def apply_mode_track_refinement_run_for_workflow(
     )
 
 
-def retain_initial_mode_track_groups_for_workflow(
+def build_initial_cid_nl_cross_sample_context(
     *,
     processing_owners: ProcessingOwnerReferences,
     captures: Sequence[SampleLocalCapture],
-    run: ModeTrackRefinementRun,
-) -> CrossSamplePostMT0Context:
-    """Retain initial CID-NL groups without split/merge proposal application."""
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+    trajectory_policy: ModeTrackTrajectoryPolicy,
+    drift_lookup: DriftLookupProtocol | None = None,
+) -> tuple[
+    FamilyContextRef,
+    CrossSamplePostMT0Context,
+    tuple[CrossSampleNeighborhoodEdge, ...],
+]:
+    """Close initial CID-NL groups without fitting or assigning ModeTracks."""
 
-    predecessors = _validate_mode_track_run_for_workflow(
-        processing_owners=processing_owners,
-        captures=captures,
-        run=run,
+    from xic_extractor.alignment.mode_track.producer import (
+        bootstrap_cid_nl_initial_population,
     )
-    if run.transactions:
+    from xic_extractor.alignment.mode_track.refinement import (
+        MODE_TRACK_NEIGHBORHOOD_BUDGET,
+    )
+
+    if type(processing_owners) is not ProcessingOwnerReferences:
         raise CrossSampleReconciliationContractError(
-            "initial group retention requires a run without refinement transactions"
+            "initial CID-NL context requires exact processing owners"
         )
-    return _build_mode_track_workflow_context(
+    if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
+        raise CrossSampleReconciliationContractError(
+            "initial CID-NL context requires an exact trajectory policy"
+        )
+    family_context, anchors, sample_candidates = bootstrap_cid_nl_initial_population(
         processing_owners=processing_owners,
-        run=run,
-        predecessors=predecessors,
-        population=predecessors,
+        sample_assessments=sample_assessments,
+        alignment_config=alignment_config,
+        drift_lookup=drift_lookup,
+        retain_observation_only_candidates=True,
     )
+    groups = family_context.mode_tracks
+    owners = tuple(owner for group in groups for owner in group.owners)
+    source_by_id = {
+        candidate.peak_hypothesis_id: candidate.peak_hypothesis
+        for _, candidates in sample_candidates
+        for candidate in candidates
+    }
+    _validate_capture_owner_hypotheses(
+        captures=captures,
+        owners=owners,
+        source_by_id=source_by_id,
+    )
+    identities = tuple(
+        validate_cross_sample_peak_group_identity(group, require_canonical=True)
+        for group in groups
+    )
+    if any(identity is None for identity in identities):
+        raise CrossSampleReconciliationContractError(
+            "initial CID-NL group lost its canonical identity"
+        )
+    predecessors = validate_cross_sample_group_population(
+        tuple(identity for identity in identities if identity is not None)
+    )
+    classified_edges = tuple(
+        classify_cross_sample_initial_neighborhood_edge(
+            left_owner=owners[left_index],
+            right_owner=owners[right_index],
+            context="complete_link",
+            config=alignment_config,
+            drift_lookup=drift_lookup,
+        )
+        for left_index in range(len(owners))
+        for right_index in range(left_index + 1, len(owners))
+    )
+    injection_order: dict[str, int] = {}
+    for sample, candidates in sample_candidates:
+        for candidate in candidates:
+            prior = injection_order.setdefault(
+                sample.metadata.raw_stem, candidate.injection_order
+            )
+            if prior != candidate.injection_order:
+                raise CrossSampleReconciliationContractError(
+                    "initial CID-NL candidates crossed injection order"
+                )
+    application = CrossSampleSuccessorApplication(
+        status="assessable",
+        predecessors=predecessors,
+        successors=predecessors,
+        lineage=(),
+        reason="unchanged_membership_no_lineage",
+    )
+    context = build_cross_sample_post_mt0_context(
+        processing_request_id=processing_owners.request.processing_request_id,
+        processing_owners=processing_owners,
+        population=predecessors,
+        application=application,
+        owners=owners,
+        classified_edges=classified_edges,
+        anchors=anchors,
+        injection_order={
+            owner.sample_stem: injection_order[owner.sample_stem] for owner in owners
+        },
+        evidence_profile=ModeTrackEvidenceProfile(
+            trajectory_policy_version=trajectory_policy.trajectory_policy_version,
+            band_policy_version=trajectory_policy.band_policy_version,
+            prediction_half_width_min=trajectory_policy.prediction_half_width_min,
+            max_interpolation_gap=trajectory_policy.max_interpolation_gap,
+            max_extrapolation_gap=trajectory_policy.max_extrapolation_gap,
+        ),
+        budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+    )
+    return family_context, context, classified_edges
 
 
 def _validate_mode_track_run_for_workflow(
@@ -704,6 +802,46 @@ def _validate_mode_track_run_for_workflow(
         raise CrossSampleReconciliationContractError(
             "ModeTrack run crossed its exact fit-once source"
         )
+    source_by_id = {
+        candidate.peak_hypothesis_id: candidate.peak_hypothesis
+        for sample_source in run.fit_once_source.sample_sources
+        for candidate in sample_source.candidates
+    }
+    _validate_capture_owner_hypotheses(
+        captures=captures,
+        owners=run.owners,
+        source_by_id=source_by_id,
+    )
+    try:
+        predecessors = validate_cross_sample_group_population(run.predecessors)
+    except (TypeError, ValueError) as exc:
+        raise CrossSampleReconciliationContractError(str(exc)) from exc
+    family_predecessors = tuple(
+        validate_cross_sample_peak_group_identity(track, require_canonical=True)
+        for track in run.family_context.mode_tracks
+    )
+    if (
+        any(group is None for group in family_predecessors)
+        or tuple(
+            sorted(
+                (group for group in family_predecessors if group is not None),
+                key=lambda group: group.group_hypothesis_id,
+            )
+        )
+        != predecessors
+    ):
+        raise CrossSampleReconciliationContractError(
+            "ModeTrack run predecessor population crossed Family context"
+        )
+    return predecessors
+
+
+def _validate_capture_owner_hypotheses(
+    *,
+    captures: Sequence[SampleLocalCapture],
+    owners: Sequence[SampleLocalMS1Owner],
+    source_by_id: Mapping[str, PeakHypothesis],
+) -> None:
     capture_tuple = tuple(captures)
     if not capture_tuple or any(
         type(capture) is not SampleLocalCapture for capture in capture_tuple
@@ -735,12 +873,7 @@ def _validate_mode_track_run_for_workflow(
             if capture.selected_hypothesis is not None
         )
     )
-    owner_ids = tuple(sorted(owner.owner_id for owner in run.owners))
-    source_by_id = {
-        candidate.peak_hypothesis_id: candidate.peak_hypothesis
-        for sample_source in run.fit_once_source.sample_sources
-        for candidate in sample_source.candidates
-    }
+    owner_ids = tuple(sorted(owner.owner_id for owner in owners))
     if not set(selected_ids).issubset(source_by_id) or len(owner_ids) != len(
         set(owner_ids)
     ):
@@ -766,33 +899,11 @@ def _validate_mode_track_run_for_workflow(
         or owner.owner_area
         != source_by_id[owner.owner_id].integration.area_raw_counts_seconds
         or owner.owner_height != source_by_id[owner.owner_id].integration.height_raw
-        for owner in run.owners
+        for owner in owners
     ):
         raise CrossSampleReconciliationContractError(
             "workflow MT0 source crossed exact owner physical integration"
         )
-    try:
-        predecessors = validate_cross_sample_group_population(run.predecessors)
-    except (TypeError, ValueError) as exc:
-        raise CrossSampleReconciliationContractError(str(exc)) from exc
-    family_predecessors = tuple(
-        validate_cross_sample_peak_group_identity(track, require_canonical=True)
-        for track in run.family_context.mode_tracks
-    )
-    if (
-        any(group is None for group in family_predecessors)
-        or tuple(
-            sorted(
-                (group for group in family_predecessors if group is not None),
-                key=lambda group: group.group_hypothesis_id,
-            )
-        )
-        != predecessors
-    ):
-        raise CrossSampleReconciliationContractError(
-            "ModeTrack run predecessor population crossed Family context"
-        )
-    return predecessors
 
 
 def _build_mode_track_workflow_context(

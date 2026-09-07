@@ -49,7 +49,7 @@ def _exact_uninitialized(value_type, **fields):
     return value
 
 
-@pytest.mark.parametrize("variant", ["target", "untarget", "untarget-completed"])
+@pytest.mark.parametrize("variant", ["target", "untarget"])
 @pytest.mark.parametrize("crossed_result", [False, True])
 @pytest.mark.parametrize("changed_trajectory", [False, True])
 def test_workflow_forwards_exact_owner_objects_once(
@@ -114,8 +114,8 @@ def test_workflow_forwards_exact_owner_objects_once(
     if variant != "target":
         object.__setattr__(
             adapter,
-            "completed_mode_track",
-            (run, context) if variant == "untarget-completed" else None,
+            "completed_cross_sample",
+            None,
         )
     post_repair = _exact_uninitialized(CrossSamplePostRepairModeTrackInput)
     final_attempt = object()
@@ -265,8 +265,7 @@ def test_workflow_forwards_exact_owner_objects_once(
         "runtime",
         "capture",
     ]
-    if variant != "untarget-completed":
-        expected_calls.extend(("mt0", "cross_mt0"))
+    expected_calls.extend(("mt0", "cross_mt0"))
     if changed_trajectory:
         expected_calls.append("repair_callback")
     expected_calls.extend(("repair", "cross_repair"))

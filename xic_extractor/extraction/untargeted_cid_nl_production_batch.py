@@ -30,14 +30,13 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
-    retain_initial_mode_track_groups_for_workflow,
+    build_initial_cid_nl_cross_sample_context,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.alignment.mode_track import (
     ModeTrackTrajectoryPolicy,
-    bootstrap_mode_track_refinement_from_cid_nl_support,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
@@ -578,45 +577,20 @@ def compose_untargeted_cid_nl_production_result(
             )
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
-        refinement = bootstrap_mode_track_refinement_from_cid_nl_support(
-            processing_owners=batch.context.processing_owners,
-            sample_assessments=assessments,
-            alignment_config=alignment_config,
-            trajectory_policy=trajectory_policy,
-            retain_observation_only_candidates=True,
-            build_refinement_transactions=False,
-        )
-        initial_groups.extend(refinement.family_context.mode_tracks)
-        initial_edges.extend(refinement.classified_edges)
-        selected_ids = tuple(
-            sorted(
-                {
-                    capture.selected_hypothesis.hypothesis_id
-                    for capture in captures
-                    if capture.selected_hypothesis is not None
-                }
+        family_context, cross_sample_context, classified_edges = (
+            build_initial_cid_nl_cross_sample_context(
+                processing_owners=batch.context.processing_owners,
+                captures=captures,
+                sample_assessments=assessments,
+                alignment_config=alignment_config,
+                trajectory_policy=trajectory_policy,
             )
         )
-        retained_ids = tuple(
-            sorted(
-                candidate.peak_hypothesis_id
-                for sample_source in refinement.fit_once_source.sample_sources
-                for candidate in sample_source.candidates
-            )
-        )
-        if not set(selected_ids).issubset(retained_ids):
-            raise RuntimeError(
-                "CID-NL capture/assessment owner mismatch: "
-                f"captures={selected_ids!r}; assessments={retained_ids!r}"
-            )
-        mode_track_context = retain_initial_mode_track_groups_for_workflow(
-            processing_owners=batch.context.processing_owners,
-            captures=captures,
-            run=refinement,
-        )
+        initial_groups.extend(family_context.mode_tracks)
+        initial_edges.extend(classified_edges)
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
-            groups=refinement.family_context.mode_tracks,
+            groups=family_context.mode_tracks,
             sample_assessments=assessments,
             alignment_config=alignment_config,
             recovery_assessments_by_group={
@@ -624,7 +598,7 @@ def compose_untargeted_cid_nl_production_result(
                     group.group_hypothesis_id,
                     sample.identity.sample_identity_id,
                 ): recovery.assessment
-                for group in refinement.family_context.mode_tracks
+                for group in family_context.mode_tracks
                 for sample in batch.context.samples
                 if group.group_center_rt is not None
                 and (
@@ -641,7 +615,7 @@ def compose_untargeted_cid_nl_production_result(
             group_id = cell.content.group_hypothesis_id
             cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
             cells_by_group.setdefault(group_id, []).append(cell)
-        repair_groups = refinement.predecessors
+        repair_groups = cross_sample_context.population
         no_request_proofs = {}
         for group in repair_groups:
             facts = assess_conservative_backfill_group(
@@ -763,7 +737,7 @@ def compose_untargeted_cid_nl_production_result(
                 ),
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
-                    completed_mode_track=(refinement, mode_track_context),
+                    completed_cross_sample=cross_sample_context,
                     mode_track=ModeTrackWorkflowArguments(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,

@@ -17,9 +17,11 @@ settings; the Alignment CLI supplies them through a bound preset. Unsupported
 discovery settings are rejected before acquisition or output creation.
 
 The retained Untargeted CID-NL production route carries initial groups directly
-into the CrossSample context without MT0 split/merge proposals or application.
-It preserves group identities, membership and empty lineage, along with the
-trajectory source and initial pair evidence used by downstream diagnostics.
+into the CrossSample context without model fitting, assignment, FitOnceSource
+construction, or MT0 split/merge proposals and application. Initial candidates
+retain their request, sample, acquisition, and physical-hypothesis bindings.
+The route preserves group identities, membership and empty lineage, along with
+the trajectory snapshot and initial pair evidence used by downstream diagnostics.
 Other workflow routes retain their refinement behavior, including a final
 ModeTrack pass when an actual repair changes the trajectory input.
 

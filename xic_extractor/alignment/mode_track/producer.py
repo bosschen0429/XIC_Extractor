@@ -19,8 +19,10 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignmentBatch,
+    ModeTrackCandidateObservation,
     ModeTrackFitOnceSource,
     ModeTrackModelSet,
+    ModeTrackSupportAnchor,
     ModeTrackTrajectoryPolicy,
     assign_mode_tracks,
     fit_mode_track_model_set,
@@ -73,14 +75,88 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     owners for one bounded CID-NL support universe.
     """
 
+    if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
+        raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
+    family_context, anchors, sample_candidates = bootstrap_cid_nl_initial_population(
+        processing_owners=processing_owners,
+        sample_assessments=sample_assessments,
+        alignment_config=alignment_config,
+        drift_lookup=drift_lookup,
+        retain_observation_only_candidates=retain_observation_only_candidates,
+    )
+    model_set = fit_mode_track_model_set(
+        processing_owners=processing_owners,
+        family_context=family_context,
+        direct_support_anchors=anchors,
+        policy=trajectory_policy,
+    )
+
+    batches = []
+    sample_sources = []
+    for sample, candidates in sample_candidates:
+        trajectory_assessment = assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(points=()),
+            (sample.metadata.raw_stem,),
+        )
+        batch = assign_mode_tracks(
+            processing_owners=processing_owners,
+            sample=sample,
+            model_set=model_set,
+            candidates=candidates,
+            trajectory_assessment=trajectory_assessment,
+        )
+        validate_mode_track_assignment_batch_for_consumption(
+            processing_owners=processing_owners,
+            model_set=model_set,
+            assignment_batch=batch,
+        )
+        batches.append(batch)
+        sample_sources.append(
+            mint_mode_track_fit_once_sample_source(
+                processing_owners=processing_owners,
+                sample=sample,
+                candidates=candidates,
+                trajectory_assessment=trajectory_assessment,
+            )
+        )
+    batches_tuple = tuple(sorted(batches, key=lambda batch: batch.assignment_batch_id))
+    source = mint_mode_track_fit_once_source(
+        processing_owners=processing_owners,
+        family_context=family_context,
+        model_set=model_set,
+        sample_sources=tuple(sample_sources),
+        initial_assignment_batches=batches_tuple,
+    )
+    return family_context, model_set, batches_tuple, source
+
+
+def bootstrap_cid_nl_initial_population(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None = None,
+    retain_observation_only_candidates: bool = False,
+) -> tuple[
+    FamilyContextRef,
+    tuple[ModeTrackSupportAnchor, ...],
+    tuple[
+        tuple[
+            ResolvedCanonicalSampleIdentity, tuple[ModeTrackCandidateObservation, ...]
+        ],
+        ...,
+    ],
+]:
+    """Build initial groups and their physical candidate bindings."""
+
     if not sample_assessments:
         raise ModeTrackProducerError("sample_assessments must not be empty")
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackProducerError("processing_owners must be owner-validated")
     if not isinstance(alignment_config, AlignmentConfig):
         raise ModeTrackProducerError("alignment_config must be explicit and typed")
-    if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
-        raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
     if not isinstance(retain_observation_only_candidates, bool):
         raise ModeTrackProducerError(
             "retain_observation_only_candidates must be boolean"
@@ -236,15 +312,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
         for hypothesis in hypotheses_by_sample[sample_id]
         if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
     )
-    model_set = fit_mode_track_model_set(
-        processing_owners=processing_owners,
-        family_context=family_context,
-        direct_support_anchors=anchors,
-        policy=trajectory_policy,
-    )
-
-    batches = []
-    sample_sources = []
+    sample_candidates = []
     for sample_id in sorted(hypotheses_by_sample):
         sample = sample_by_id[sample_id]
         candidates = tuple(
@@ -260,40 +328,8 @@ def bootstrap_mode_tracks_from_cid_nl_support(
             )
             for hypothesis in hypotheses_by_sample[sample_id]
         )
-        trajectory_assessment = assess_local_trajectory(
-            LocalTrajectoryEvidenceLookup(points=()),
-            (sample.metadata.raw_stem,),
-        )
-        batch = assign_mode_tracks(
-            processing_owners=processing_owners,
-            sample=sample,
-            model_set=model_set,
-            candidates=candidates,
-            trajectory_assessment=trajectory_assessment,
-        )
-        validate_mode_track_assignment_batch_for_consumption(
-            processing_owners=processing_owners,
-            model_set=model_set,
-            assignment_batch=batch,
-        )
-        batches.append(batch)
-        sample_sources.append(
-            mint_mode_track_fit_once_sample_source(
-                processing_owners=processing_owners,
-                sample=sample,
-                candidates=candidates,
-                trajectory_assessment=trajectory_assessment,
-            )
-        )
-    batches_tuple = tuple(sorted(batches, key=lambda batch: batch.assignment_batch_id))
-    source = mint_mode_track_fit_once_source(
-        processing_owners=processing_owners,
-        family_context=family_context,
-        model_set=model_set,
-        sample_sources=tuple(sample_sources),
-        initial_assignment_batches=batches_tuple,
-    )
-    return family_context, model_set, batches_tuple, source
+        sample_candidates.append((sample, candidates))
+    return family_context, anchors, tuple(sample_candidates)
 
 
 def bootstrap_mode_tracks_from_ms1_hypotheses(
