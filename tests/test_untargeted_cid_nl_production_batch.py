@@ -1722,9 +1722,27 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
     peak_config = _peak_config(tmp_path)
+
+    def observation_only_raw(peak_rts: tuple[float, ...]) -> _FakeRaw:
+        # MS1 stays usable, but each NL scan precedes its integration interval.
+        # The narrow peak fits inside the scan-centered discovery query.
+        raw = _FakeRaw(tuple(rt - 0.15 for rt in peak_rts))
+        raw.intensity[:] = [
+            sum(
+                1000.0 * math.exp(-0.5 * ((rt - center) / 0.015) ** 2)
+                for center in peak_rts
+            )
+            for rt in raw.rt
+        ]
+        return raw
+
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
-    if ambiguous:
-        source_raws[raw_paths[1]] = _FakeRaw((7.8, 8.2))
+    if scenario not in {"all_reject", "hold_reject", "other_support"}:
+        source_raws[raw_paths[1]] = observation_only_raw(
+            (7.8, 8.2) if ambiguous else (8.0,)
+        )
+    if scenario in {"all_hold", "hold_reject"}:
+        source_raws[raw_paths[0]] = observation_only_raw((8.0,))
     rejected_samples = (
         ("Support", "Hold")
         if scenario == "all_reject"
@@ -1748,38 +1766,39 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         peak_config=peak_config,
     )
     direct_hold = direct_hold_candidates[0]
-    inferred_hold = replace(
-        direct_hold,
-        precursor_mz_basis="product_plus_neutral_loss",
-    )
     candidates_by_sample = {
         "Support": (support,),
-        "Hold": (inferred_hold,),
+        "Hold": (direct_hold,),
     }
     if ambiguous:
-        candidates_by_sample["Hold"] = tuple(
-            replace(candidate, precursor_mz_basis="product_plus_neutral_loss")
-            for candidate in direct_hold_candidates
-        )
-    if scenario != "mixed" and not ambiguous:
-        candidates_by_sample["Support"] = (
-            replace(support, precursor_mz_basis="product_plus_neutral_loss"),
-        )
+        candidates_by_sample["Hold"] = direct_hold_candidates
     if scenario in {"all_reject", "hold_reject"}:
         for stem in rejected_samples:
             candidate = support if stem == "Support" else direct_hold
             candidates_by_sample[stem] = (candidate,)
     if scenario == "other_support":
         for raw_path in raw_paths:
-            source_raw, nearby = _nearby_subject_candidates(
-                raw_path, settings=settings, peak_config=peak_config
+            first_raw = observation_only_raw((7.98,))
+            second_raw = _FakeRaw(
+                (7.98,),
+                scan_precursor_mz=500.004,
+                neutral_loss_das=(116.0474,),
             )
+            second_raw.intensity = first_raw.intensity.copy()
+            nearby = tuple(
+                _current_candidates(
+                    raw,
+                    raw_file=raw_path,
+                    settings=settings,
+                    peak_config=peak_config,
+                )[0]
+                for raw in (first_raw, second_raw)
+            )
+            source_raw = second_raw
+            source_raw.scans = (first_raw.scans[0], second_raw.scans[0])
             source_raws[raw_path] = source_raw
             first, second = sorted(nearby, key=lambda item: item.precursor_mz)
-            candidates_by_sample[raw_path.stem] = (
-                replace(first, precursor_mz_basis="product_plus_neutral_loss"),
-                second,
-            )
+            candidates_by_sample[raw_path.stem] = (first, second)
     if above_threshold:
         candidates_by_sample["Support2"] = _current_candidates(
             source_raws[raw_paths[2]],

@@ -43,7 +43,7 @@ from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
-    read_complete_strict_scan_seeds,
+    read_complete_discovery_scan_seeds,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.peak_detection import capture as capture_owner
@@ -651,19 +651,24 @@ def adapt_current_discovery_sample_subject(
             "raw handle is not owner-bound to the resolved acquisition source"
         ) from exc
     try:
-        strict_scan_seeds = read_complete_strict_scan_seeds(
+        scan_seeds = read_complete_discovery_scan_seeds(
             bound_raw,
             candidates=tuple(
                 candidate
                 for candidate in bounded
                 if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
+                or (
+                    candidate.ms1_peak_found
+                    and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+                )
             ),
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
+            include_inferred=True,
         )
-        strict_scan_seeds = tuple(
+        scan_seeds = tuple(
             item
-            for item in strict_scan_seeds
+            for item in scan_seeds
             if _within_ppm(
                 item[1].precursor_mz,
                 method_subject.precursor_mz,
@@ -716,7 +721,7 @@ def adapt_current_discovery_sample_subject(
             key=lambda item: item.content.peak_observation_content_id,
         )
     )
-    for _scan, raw_seed in strict_scan_seeds:
+    for _scan, raw_seed in scan_seeds:
         seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
         evidence = mint_cid_nl_evidence_ref(
             processing_owners=processing_owners,
@@ -729,6 +734,13 @@ def adapt_current_discovery_sample_subject(
             observed_loss_error_ppm=seed.observed_loss_error_ppm,
             scan_rt_min=seed.rt,
             product_intensity=seed.product_intensity,
+            precursor_mz_basis=seed.precursor_mz_basis,
+            scan_precursor_mz=seed.scan_precursor_mz,
+            precursor_inference_tolerance_da=(
+                settings.ms2_precursor_tol_da
+                if seed.precursor_mz_basis == "product_plus_neutral_loss"
+                else None
+            ),
         )
         projection = mint_untargeted_cid_nl_projection_ref(
             processing_owners=processing_owners,
@@ -802,7 +814,13 @@ def adapt_current_discovery_sample_subject(
         acquisition=acquisition,
         captures=captures,
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
-        strict_scan_count=len({scan.scan_number for scan, _ in strict_scan_seeds}),
+        strict_scan_count=len(
+            {
+                scan.scan_number
+                for scan, seed in scan_seeds
+                if seed.precursor_mz_basis == "scan_precursor"
+            }
+        ),
         lineage_artifacts=lineage,
     )
 

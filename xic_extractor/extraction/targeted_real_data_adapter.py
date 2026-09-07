@@ -34,7 +34,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
-    read_complete_strict_scan_seeds,
+    read_complete_discovery_scan_seeds,
 )
 from xic_extractor.discovery.targeted_candidate_set import (
     complete_targeted_candidate_discovery,
@@ -156,19 +156,15 @@ class _TargetedRealDataWorkObserver:
             )
         attempt = self._processing_owners.attempt
         if (
-            artifact.producer_processing_request_id
-            != attempt.processing_request_id
-            or artifact.producer_processing_attempt_id
-            != attempt.processing_attempt_id
+            artifact.producer_processing_request_id != attempt.processing_request_id
+            or artifact.producer_processing_attempt_id != attempt.processing_attempt_id
         ):
             raise TargetedRealDataAdapterError(
                 "observer artifact must bind the current processing attempt"
             )
         existing = self._artifacts.get(artifact.evidence_artifact_id)
         if existing is not None and existing != artifact:
-            raise TargetedRealDataAdapterError(
-                "observer artifact identity was rebound"
-            )
+            raise TargetedRealDataAdapterError("observer artifact identity was rebound")
         self._artifacts[artifact.evidence_artifact_id] = artifact
 
     def artifact_closure(self) -> tuple[EvidenceArtifactRef, ...]:
@@ -676,7 +672,7 @@ def _read_complete_strict_scan_seeds(
     settings: DiscoverySettings,
 ) -> tuple[tuple[Ms2Scan, DiscoverySeed], ...]:
     try:
-        return read_complete_strict_scan_seeds(
+        return read_complete_discovery_scan_seeds(
             raw,
             candidates=candidates,
             settings=settings,
@@ -753,6 +749,4 @@ def _receipt_close(observed: float, receipt: float) -> bool:
     )
 
 
-__all__ = (
-    "TargetedRealDataAdapterError",
-)
+__all__ = ("TargetedRealDataAdapterError",)

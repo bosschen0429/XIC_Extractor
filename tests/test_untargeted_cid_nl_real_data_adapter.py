@@ -333,9 +333,16 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     assert result.strict_scan_count == len(strict_scan_ids)
     assert tuple(
         sorted(
-            evidence.observation.scan_number for evidence in assessment.evidence_refs
+            evidence.observation.scan_number
+            for evidence in assessment.evidence_refs
+            if evidence.observation.precursor_mz_basis == "scan_precursor"
         )
     ) == tuple(sorted(strict_scan_ids))
+    assert {
+        evidence.observation.scan_number
+        for evidence in assessment.evidence_refs
+        if evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
+    } == {inferred_scan.scan_number}
 
 
 def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
@@ -399,8 +406,105 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
     assert assessment.content.method_result == "SUPPORT"
     assert result.strict_scan_count == 2
     assert {
-        evidence.observation.scan_number for evidence in assessment.evidence_refs
+        evidence.observation.scan_number
+        for evidence in assessment.evidence_refs
+        if evidence.observation.precursor_mz_basis == "scan_precursor"
     } == {first.scan_number, representative.scan_number}
+
+
+@pytest.mark.parametrize("ms1_present", [True, False])
+def test_inferred_precursor_support_requires_a_physical_ms1_peak(
+    tmp_path: Path,
+    ms1_present: bool,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    source_raw.scans = tuple(
+        replace(scan, precursor_mz=scan.precursor_mz + 0.5) for scan in source_raw.scans
+    )
+    if not ms1_present:
+        source_raw.intensity = np.zeros_like(source_raw.intensity)
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert candidates
+    assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
+    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+    assessment = result.assessment_input.assessment
+    assert result.strict_scan_count == 0
+    if ms1_present:
+        assert assessment.content.method_result == "SUPPORT"
+        assert len(assessment.candidate_peaks) == 1
+        assert {ref.observation.scan_number for ref in assessment.evidence_refs} == {
+            scan.scan_number for scan in source_raw.scans
+        }
+        assert all(
+            ref.observation.precursor_mz_basis == "product_plus_neutral_loss"
+            and ref.observation.scan_precursor_mz == 500.5
+            and ref.observation.precursor_mz == 500.0
+            for ref in assessment.evidence_refs
+        )
+    else:
+        assert assessment.content.method_result != "SUPPORT"
+        assert not assessment.candidate_peaks
+        assert not assessment.individual_support_refs
+
+
+def test_merged_inferred_member_outside_final_mass_window_is_not_support(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_mz=scan.precursor_mz + 0.5,
+            masses=scan.masses + offset,
+            intensities=np.asarray((800.0 + index * 100.0, 200.0)),
+        )
+        for index, (scan, offset) in enumerate(
+            zip(source_raw.scans, (-0.012, -0.005, 0.002), strict=True)
+        )
+    )
+    settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.01)
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    assert len(candidate.seed_scan_ids) == 3
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate,),
+        settings=settings,
+        include_inferred=True,
+    )
+    assert {scan.scan_number for scan, _ in seeds} == {
+        scan.scan_number for scan in source_raw.scans[1:]
+    }
 
 
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
@@ -632,7 +736,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
         )
 
 
-def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
+def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     tmp_path: Path,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -641,6 +745,10 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
         thermo_raw_sources=True,
     )
     source_raw = _FakeRaw((7.8, 8.2))
+    source_raw.intensity = sum(
+        1000.0 * np.exp(-0.5 * ((source_raw.rt - center) / 0.035) ** 2)
+        for center in (7.8, 8.35)
+    )
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
@@ -650,13 +758,6 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
         peak_config=peak_config,
     )
     assert len(candidates) == 2
-    mixed = (
-        candidates[0],
-        replace(
-            candidates[1],
-            precursor_mz_basis="product_plus_neutral_loss",
-        ),
-    )
     raw, _vendor_raw = _open_bound_raw(
         fixture,
         "S1",
@@ -668,7 +769,7 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=mixed,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -678,7 +779,7 @@ def test_adapter_preserves_mixed_direct_and_observation_only_physical_peaks(
     assert assessment.content.method_result == "SUPPORT"
     assert len(assessment.candidate_peaks) == 2
     assert len(assessment.individual_support_refs) == 1
-    assert result.strict_scan_count == len(candidates[0].seed_scan_ids)
+    assert result.strict_scan_count == sum(len(c.seed_scan_ids) for c in candidates)
     hypotheses = compose_peak_hypotheses_from_assessment_universe(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),

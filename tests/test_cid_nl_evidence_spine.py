@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import fields, replace
 from pathlib import Path
 
@@ -27,12 +28,21 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.discovery.cid_nl_evidence_projection import (
+    UntargetedCidNlProjectionError,
+    mint_untargeted_cid_nl_projection_ref,
+)
+from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.peak_detection import cid_nl_method_assessment as assessment_module
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     resolve_dda_cid_nl_candidate_set_relation_ref,
 )
-from xic_extractor.peak_detection.cid_nl_evidence import mint_cid_nl_evidence_ref
+from xic_extractor.peak_detection.cid_nl_evidence import (
+    CidNlEvidenceContractError,
+    canonical_cid_nl_evidence_bytes,
+    mint_cid_nl_evidence_ref,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     CidNlMethodAssessmentContractError,
@@ -49,6 +59,127 @@ from xic_extractor.review_records import (
     mint_review_record_registry_snapshot,
     resolve_current_review_record,
 )
+
+
+def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    direct = cid_nl_evidence(fixture, "s1", scan_number=42, scan_rt_min=8.0)
+    observation = direct.observation
+    inferred = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        scan_number=observation.scan_number,
+        precursor_mz=observation.precursor_mz,
+        product_mz=observation.product_mz,
+        configured_neutral_loss_da=observation.configured_neutral_loss_da,
+        observed_neutral_loss_da=observation.observed_neutral_loss_da,
+        observed_loss_error_ppm=observation.observed_loss_error_ppm,
+        scan_rt_min=observation.scan_rt_min,
+        product_intensity=observation.product_intensity,
+        precursor_mz_basis="product_plus_neutral_loss",
+        scan_precursor_mz=observation.precursor_mz + 0.25,
+        precursor_inference_tolerance_da=0.25,
+    )
+    payload = json.loads(canonical_cid_nl_evidence_bytes(inferred.observation))
+    assert payload["schema_version"] == "cid_nl_evidence_observation_v4"
+    assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
+    assert payload["scan_precursor_mz"] == observation.precursor_mz + 0.25
+    assert payload["precursor_inference_tolerance_da"] == 0.25
+    assert direct.observation.precursor_mz_basis == "scan_precursor"
+    assert direct.observation.scan_precursor_mz == observation.precursor_mz
+    assert direct.observation.precursor_inference_tolerance_da is None
+    assert (
+        inferred.artifact.evidence_artifact_id != direct.artifact.evidence_artifact_id
+    )
+    with pytest.raises(CidNlEvidenceContractError, match="mismatches"):
+        replace(
+            inferred,
+            observation=replace(
+                inferred.observation, precursor_inference_tolerance_da=0.5
+            ),
+        )
+
+    seed = DiscoverySeed(
+        raw_file=Path("s1.raw"),
+        sample_stem="s1",
+        scan_number=observation.scan_number,
+        rt=observation.scan_rt_min,
+        precursor_mz=observation.precursor_mz,
+        product_mz=observation.product_mz,
+        product_intensity=observation.product_intensity,
+        neutral_loss_tag="DNA_dR",
+        configured_neutral_loss_da=observation.configured_neutral_loss_da,
+        observed_neutral_loss_da=observation.observed_neutral_loss_da,
+        observed_loss_error_ppm=observation.observed_loss_error_ppm,
+        precursor_mz_basis="product_plus_neutral_loss",
+        scan_precursor_mz=inferred.observation.scan_precursor_mz,
+        acquisition_source_id=observation.acquisition_source_id,
+    )
+    projection = mint_untargeted_cid_nl_projection_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        canonical_evidence=inferred,
+        discovery_seed=seed,
+    )
+    assert projection.canonical_evidence_artifact_id == (
+        inferred.artifact.evidence_artifact_id
+    )
+    for changed_seed, message in (
+        (replace(seed, precursor_mz_basis="scan_precursor"), "precursor_mz_basis"),
+        (
+            replace(seed, scan_precursor_mz=observation.precursor_mz),
+            "scan_precursor_mz",
+        ),
+    ):
+        with pytest.raises(UntargetedCidNlProjectionError, match=message):
+            mint_untargeted_cid_nl_projection_ref(
+                processing_owners=fixture.owners,
+                sample=fixture.sample("s1"),
+                canonical_evidence=inferred,
+                discovery_seed=changed_seed,
+            )
+
+
+@pytest.mark.parametrize(
+    ("changed", "message"),
+    (
+        ({"scan_precursor_mz": None}, "explicit scan_precursor_mz"),
+        ({"precursor_inference_tolerance_da": None}, "requires"),
+        ({"precursor_inference_tolerance_da": 0.0}, "positive"),
+        ({"precursor_inference_tolerance_da": float("nan")}, "finite"),
+        ({"precursor_inference_tolerance_da": 0.249}, "exceeds"),
+        ({"precursor_mz": PRECURSOR_MZ + 0.1}, "product_mz"),
+        ({"scan_precursor_mz": float("inf")}, "finite"),
+        ({"precursor_mz_basis": "scan_precursor"}, "must equal"),
+        (
+            {"precursor_mz_basis": "scan_precursor", "scan_precursor_mz": PRECURSOR_MZ},
+            "cannot declare",
+        ),
+    ),
+)
+def test_inferred_evidence_rejects_unbound_or_crossed_precursor_provenance(
+    tmp_path: Path, changed: dict, message: str
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    arguments = {
+        "processing_owners": fixture.owners,
+        "sample": fixture.sample("s1"),
+        "scan_number": 42,
+        "precursor_mz": PRECURSOR_MZ,
+        "product_mz": PRECURSOR_MZ - NEUTRAL_LOSS_DA,
+        "configured_neutral_loss_da": NEUTRAL_LOSS_DA,
+        "observed_neutral_loss_da": NEUTRAL_LOSS_DA,
+        "observed_loss_error_ppm": 0.0,
+        "scan_rt_min": 8.0,
+        "product_intensity": 400.0,
+        "precursor_mz_basis": "product_plus_neutral_loss",
+        "scan_precursor_mz": PRECURSOR_MZ + 0.25,
+        "precursor_inference_tolerance_da": 0.25,
+    }
+    with pytest.raises(CidNlEvidenceContractError, match=message):
+        mint_cid_nl_evidence_ref(**(arguments | changed))
 
 
 def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
