@@ -8,12 +8,71 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import run_discovery
+from xic_extractor.discovery.pipeline import (
+    DiscoveryProcessExecutionError,
+    DiscoverySampleProcessError,
+)
 from xic_extractor.presets import (
     PresetTag,
     bind_cid_nl_recipe,
     load_preset,
     save_preset,
 )
+from xic_extractor.raw_reader import RawReaderError
+
+
+@pytest.mark.parametrize("timing", [False, True])
+@pytest.mark.parametrize("workers", [1, 2])
+def test_discovery_cli_reports_batch_execution_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    timing: bool,
+    workers: int,
+) -> None:
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    for stem in ("A", "B"):
+        (raw_dir / f"{stem}.raw").write_bytes(stem.encode())
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    monkeypatch.setattr(run_discovery, "default_parallel_workers", lambda: workers)
+
+    def fail_batch(_paths, **kwargs):
+        assert kwargs["max_workers"] == workers
+        assert ("timing_recorder" in kwargs) is timing
+        if workers == 1:
+            raise RawReaderError("A.raw: unable to open RAW")
+        raise DiscoveryProcessExecutionError(
+            DiscoverySampleProcessError(
+                sample_index=0,
+                sample_stem="A",
+                raw_name="A.raw",
+                message="unable to open RAW",
+            ),
+            completed_sample_stems=(),
+            failed_sample_stems=("A",),
+            cancelled_job_count=0,
+            in_flight_job_count=1,
+            unsubmitted_job_count=0,
+        )
+
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", fail_batch)
+    args = [
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--output-dir",
+        str(tmp_path / "out"),
+    ]
+    if timing:
+        args.extend(("--timing-output", str(tmp_path / "timing.json")))
+
+    assert run_discovery.main(args) == 2
+    output = capsys.readouterr()
+    assert output.err == "A.raw: unable to open RAW\n"
+    assert output.out == ""
 
 
 @pytest.mark.parametrize("timing", [False, True])
@@ -72,7 +131,7 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
     if timing:
         args.extend(("--timing-output", str(tmp_path / "timing.json")))
     assert run_discovery.main(args) == 0
-    (paths, forwarded), = observed
+    ((paths, forwarded),) = observed
     assert paths == (raw_paths if input_mode == "raw-dir" else raw_paths[0])
     if expected_workers is None:
         assert "max_workers" not in forwarded

@@ -7,7 +7,11 @@ from pathlib import Path
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.pipeline import (
+    DiscoveryProcessExecutionError,
+    run_discovery,
+    run_discovery_batch,
+)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
@@ -128,7 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     timing_recorder=timing_recorder,
                 )
             print(f"Discovery batch index: {batch_outputs.batch_index_csv}")
-    except RawReaderError as exc:
+    except (RawReaderError, DiscoveryProcessExecutionError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
