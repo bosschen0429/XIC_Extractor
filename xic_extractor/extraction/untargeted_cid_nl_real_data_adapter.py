@@ -1357,22 +1357,22 @@ def _relation_kind(
     if not interval.rt_left_min < observation.scan_rt_min < interval.rt_right_min:
         return "set"
     if any(
-        peak is not selected and _intervals_touch_or_overlap(selected, peak)
+        peak is not selected and _intervals_overlap(selected, peak)
         for peak in mz_compatible
     ):
         return "set"
     return "individual"
 
 
-def _intervals_touch_or_overlap(
+def _intervals_overlap(
     left: PeakObservationRef,
     right: PeakObservationRef,
 ) -> bool:
     left_interval = left.content.integration
     right_interval = right.content.integration
     return (
-        left_interval.rt_left_min <= right_interval.rt_right_min
-        and right_interval.rt_left_min <= left_interval.rt_right_min
+        left_interval.rt_left_min < right_interval.rt_right_min
+        and right_interval.rt_left_min < left_interval.rt_right_min
     )
 
 

@@ -217,10 +217,16 @@ mean measured product m/z and observed neutral loss as one order-neutral
 chromatographic identity event. The exact per-scan evidence remains preserved
 upstream, and the aggregate does not create additional support votes.
 
-Only a scan strictly inside one non-overlapping candidate interval may retain
-the existing individual support relation. Boundary, touching, and overlapping
-cases use `DdaCidNlCandidateSetRelationRef`; that relation grants no individual
-vote or hypothesis. At least one strict unique relation makes the method result
+Only a scan strictly inside exactly one candidate interval, with no positive-width
+overlap with another m/z-compatible interval, may retain the existing individual
+support relation. Adjacent intervals may share a valley endpoint without blocking
+that interior support. A scan exactly on an interval boundary, or a selected
+interval with positive-width overlap even away from the scan, uses
+`DdaCidNlCandidateSetRelationRef`; that relation grants no individual vote or
+hypothesis. Set relations retain the connected boundary/overlap candidate set;
+an otherwise unique interior scan cannot be downgraded to a set relation merely
+because another interval shares an endpoint. At least one strict unique relation
+makes the method result
 SUPPORT for a single-loss method even when other scans retain set-level relations.
 For composite methods, OR requires a qualifying configured loss and AND requires
 every configured loss on the same physical peak in the same sample. Different
@@ -281,7 +287,7 @@ unlabeled tuple must not be guessed into method semantics.
 | `CidNlEvidenceRef` | Attempt-, sample-, acquisition-source-, and scan-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
 | `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact request-bound acquisition-source/generation provenance and request/attempt artifact binding; diagnostic only |
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
-| `DdaCidNlCandidateSetRelationRef` | One scan related conservatively to one or more boundary/touching/overlapping candidates; set-level only, zero individual votes and zero hypotheses |
+| `DdaCidNlCandidateSetRelationRef` | One scan with boundary ambiguity or positive-width candidate overlap; connected set only, zero individual votes and zero hypotheses |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
 | `CidNlMethodSubject` | Workflow-neutral CID-NL precursor/loss subject; Targeted retains exact configured-target identity while Untargeted is request-pinned without a fake Target |
 | `CidNlMethodAssessmentRef` | Complete method-subject-bound CID-NL attempt with a policy-bound completed-search receipt, unique measured-event keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |

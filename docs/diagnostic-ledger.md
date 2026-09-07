@@ -92,6 +92,12 @@ across eight RAW files reconstructed without receipt errors or duplicate
 scan/loss evidence. The inferred-evidence run completed runtime finalization,
 but timed out during batch composition at 1,800.011 seconds without a matrix.
 Full matrix retention remains unverified; the receipt is not a successful run.
+Captured hmdC assessments also show adjacent integration intervals sharing only
+a valley endpoint. Their strictly interior MS2 events have unique peak
+containment, but the previous method contract treated all touching intervals as
+set-level ambiguity. The operator authorized unique interior support when there
+is no positive-width overlap; exact-boundary events and genuine overlaps retain
+HOLD. The affected final matrix still requires validation under this rule.
 Task-local receipts are under
 `output/cid-nl-feature-loss-v10/`.
 

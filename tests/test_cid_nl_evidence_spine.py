@@ -327,6 +327,91 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
     assert assessment.individual_support_refs == ()
 
 
+@pytest.mark.parametrize(
+    ("right_start", "scan_rt", "expected_result"),
+    (
+        pytest.param(8.0, 7.9, "SUPPORT", id="adjacent-interior"),
+        pytest.param(8.0, 8.0, "HOLD", id="shared-endpoint"),
+        pytest.param(7.95, 7.9, "HOLD", id="positive-overlap-outside-scan"),
+    ),
+)
+def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
+    tmp_path: Path,
+    right_start: float,
+    scan_rt: float,
+    expected_result: str,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("adjacent",)
+    )
+    sample = fixture.sample("adjacent")
+    left = cid_nl_peak(
+        fixture, "adjacent", apex_rt=7.9, rt_left_min=7.8, rt_right_min=8.0
+    )
+    right = cid_nl_peak(
+        fixture,
+        "adjacent",
+        apex_rt=right_start + 0.1,
+        rt_left_min=right_start,
+        rt_right_min=right_start + 0.2,
+    )
+    evidence = cid_nl_evidence(fixture, "adjacent", scan_number=46, scan_rt_min=scan_rt)
+    for peaks in ((left, right), (right, left)):
+        individual_refs = ()
+        set_refs = ()
+        if expected_result == "SUPPORT":
+            individual_refs = (
+                cid_nl_unique_support(
+                    fixture,
+                    "adjacent",
+                    peak=left,
+                    evidence=evidence,
+                    candidate_peaks=peaks,
+                ),
+            )
+        else:
+            set_refs = (
+                resolve_dda_cid_nl_candidate_set_relation_ref(
+                    processing_owners=fixture.owners,
+                    sample=sample,
+                    canonical_evidence=evidence,
+                    candidate_peaks=peaks,
+                    policy=cid_nl_support_policy(),
+                ),
+            )
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id="adjacent-peaks:v1",
+            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            candidate_peaks=peaks,
+            evidence_refs=(evidence,),
+            individual_support_refs=individual_refs,
+            set_relation_refs=set_refs,
+        )
+        assert assessment.content.method_result == expected_result
+        if expected_result == "SUPPORT":
+            assert individual_refs[0].content.peak_observation_content_id == (
+                left.content.peak_observation_content_id
+            )
+            with pytest.raises(
+                DdaCidNlCandidateSetRelationContractError, match="individual support"
+            ):
+                resolve_dda_cid_nl_candidate_set_relation_ref(
+                    processing_owners=fixture.owners,
+                    sample=sample,
+                    canonical_evidence=evidence,
+                    candidate_peaks=peaks,
+                    policy=cid_nl_support_policy(),
+                )
+        else:
+            assert assessment.individual_support_refs == ()
+            assert set_refs[0].content.matched_candidate_content_ids == tuple(
+                sorted(peak.content.peak_observation_content_id for peak in peaks)
+            )
+
+
 def test_reference_spine_mints_once_and_fans_out_same_cell(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -678,30 +763,35 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         tmp_path, sample_stems=("mixed",)
     )
     sample = fixture.sample("mixed")
-    peak = cid_nl_peak(fixture, "mixed")
+    peak = cid_nl_peak(fixture, "mixed", apex_rt=7.9, rt_left_min=7.8, rt_right_min=8.0)
+    adjacent = cid_nl_peak(
+        fixture, "mixed", apex_rt=8.1, rt_left_min=8.0, rt_right_min=8.2
+    )
+    peaks = (peak, adjacent)
     interior = cid_nl_evidence(
         fixture,
         "mixed",
         scan_number=75,
-        scan_rt_min=8.0,
+        scan_rt_min=7.9,
     )
     boundary = cid_nl_evidence(
         fixture,
         "mixed",
         scan_number=76,
-        scan_rt_min=peak.content.integration.rt_left_min,
+        scan_rt_min=peak.content.integration.rt_right_min,
     )
     individual = cid_nl_unique_support(
         fixture,
         "mixed",
         peak=peak,
         evidence=interior,
+        candidate_peaks=peaks,
     )
     set_relation = resolve_dda_cid_nl_candidate_set_relation_ref(
         processing_owners=fixture.owners,
         sample=sample,
         canonical_evidence=boundary,
-        candidate_peaks=(peak,),
+        candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     )
 
@@ -711,7 +801,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         target=fixture.target,
         detector_invocation_id="gaussian15:mixed:v1",
         evaluation_receipt=_completed_receipt(scanned_event_count=2),
-        candidate_peaks=(peak,),
+        candidate_peaks=peaks,
         evidence_refs=(interior, boundary),
         individual_support_refs=(individual,),
         set_relation_refs=(set_relation,),
@@ -720,6 +810,9 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
     assert assessment.content.method_result == "SUPPORT"
     assert assessment.individual_support_refs == (individual,)
     assert assessment.set_relation_refs == (set_relation,)
+    assert set_relation.content.matched_candidate_content_ids == tuple(
+        sorted(item.content.peak_observation_content_id for item in peaks)
+    )
 
 
 def test_cell_identity_binds_full_provisional_group_membership(

@@ -801,7 +801,7 @@ def _validate_upstream_bindings(
             candidate_peaks=candidate_peaks,
         ):
             raise CidNlMethodAssessmentContractError(
-                "boundary, touching, or overlapping support requires a set-level "
+                "boundary or positive-width overlapping support requires a set-level "
                 "relation"
             )
         individual_evidence_ids.add(support.content.cid_nl_evidence_content_id)
@@ -926,8 +926,8 @@ def _is_strict_unique_support(
             continue
         interval = candidate.content.integration
         if (
-            selected_interval.rt_left_min <= interval.rt_right_min
-            and interval.rt_left_min <= selected_interval.rt_right_min
+            selected_interval.rt_left_min < interval.rt_right_min
+            and interval.rt_left_min < selected_interval.rt_right_min
         ):
             return False
     return True
