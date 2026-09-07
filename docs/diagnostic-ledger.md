@@ -88,13 +88,18 @@ full-run cost distribution. Current source identified duplicate ModeTrack
 bootstrap and CrossSample application on identical inputs, plus full binding
 and cell scans inside per-subject/per-group loops.
 
-Current production passes its completed ModeTrack run and CrossSample context
-directly to workflow, and indexes bindings/cells once. Assessment handoffs check
+Current production builds initial CrossSample groups and passes their context
+directly to workflow, without ModeTrack fitting, assignment, split/merge
+proposals, or FitOnceSource construction. It preserves initial pair diagnostics
+and indexes bindings/cells once. Assessment handoffs check
 request, attempt, sample, subject and acquisition bindings without reminting the
 method decision. Conservative Backfill carries its existing frozen decisions;
 position and coverage consumers do not reconstruct the proof, group facts or
 mapper result. Construction checks and current consumer cell/population bindings
-remain. Recovery with new observations retains its required later refinement.
+remain. Closed production cells bypass no-op repair authorization. Other
+workflow routes retain refinement when actual repair changes trajectory input.
+Changed physical acquisition questions are evaluated once at the capture owner;
+same-question comparisons and persisted physical-answer revalidation remain.
 
 The runtime uses the selected Alignment configuration consistently. Unresolved
 candidate assessments retain HOLD and blank quantities. No completion or
