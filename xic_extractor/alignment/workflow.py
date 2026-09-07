@@ -1140,14 +1140,15 @@ def _validate_untarget_batch_bundles(
             "Untarget batch child/exclusion candidate union is not exactly once"
         )
     excluded_id_set = set(excluded_ids)
+    included_subject_ids = {
+        method_subject_id
+        for candidate_id, method_subject_id in parent_memberships.items()
+        if candidate_id not in excluded_id_set
+    }
     expected_child_subject_ids = tuple(
         provider.method_subject_id
         for provider in request.scope.evidence_providers
-        if any(
-            method_subject_id == provider.method_subject_id
-            and candidate_id not in excluded_id_set
-            for candidate_id, method_subject_id in parent_memberships.items()
-        )
+        if provider.method_subject_id in included_subject_ids
     )
     if tuple(child_subject_ids) != expected_child_subject_ids:
         raise AlignmentWorkflowContractError(

@@ -117,7 +117,13 @@ class FinalizedScientificAlignment:
     def __post_init__(self, _mint_token: object) -> None:
         _require_finalizer_mint(_mint_token)
         _validate_finalized_alignment(self)
-        object.__setattr__(self, "_completion_seal", retained_owner_digest(self))
+        # The immutable request was validated at construction; retain its identity
+        # without rehashing the cohort input payload for every subject result.
+        object.__setattr__(
+            self,
+            "_completion_seal",
+            retained_owner_digest(self, identity_only=(self.processing_request,)),
+        )
 
     @property
     def processing_request_id(self) -> str:
@@ -237,9 +243,10 @@ def _validate_finalized_scientific_alignment_completion_receipt(
         raise FinalizedScientificAlignmentContractError(
             "scientific-core validation requires an exact finalized alignment"
         )
-    if (
-        type(result._completion_seal) is not bytes
-        or result._completion_seal != retained_owner_digest(result)
+    if type(
+        result._completion_seal
+    ) is not bytes or result._completion_seal != retained_owner_digest(
+        result, identity_only=(result.processing_request,)
     ):
         raise FinalizedScientificAlignmentContractError(
             "scientific core completion receipt was substituted or partial"
@@ -264,12 +271,9 @@ def _terminal_subject(
         raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     selected = capture.selected_hypothesis
     if selected is None:
-        if (
-            capture.detection.status != "not_detected"
-            or (
-                capture.detection.result is not None
-                and capture.detection.result.status == "WINDOW_TOO_SHORT"
-            )
+        if capture.detection.status != "not_detected" or (
+            capture.detection.result is not None
+            and capture.detection.result.status == "WINDOW_TOO_SHORT"
         ):
             raise FinalizedScientificAlignmentContractError(
                 "capture is not a closed searched-no-observation terminal"
@@ -281,10 +285,7 @@ def _terminal_subject(
             detection_status="not_detected",
             _mint_token=_FINALIZER_MINT_TOKEN,
         )
-    if (
-        type(selected) is not PeakHypothesis
-        or capture.detection.status != "detected"
-    ):
+    if type(selected) is not PeakHypothesis or capture.detection.status != "detected":
         raise FinalizedScientificAlignmentContractError(
             "observed capture lacks a closed detected PeakHypothesis"
         )
@@ -410,14 +411,11 @@ def _validate_observed_subject(subject: ObservedSearchSubject) -> None:
         canonical_sample_identity_id=subject.canonical_sample_identity_id,
         trace_group_id=subject.trace_group_id,
     )
-    if (
-        type(subject.hypothesis) is not PeakHypothesis
-        or (
-            subject.hypothesis.trace_group_id != subject.trace_group_id
-            and not (
-                subject.hypothesis.is_owner_backed
-                and subject.hypothesis.trace_group_id == ""
-            )
+    if type(subject.hypothesis) is not PeakHypothesis or (
+        subject.hypothesis.trace_group_id != subject.trace_group_id
+        and not (
+            subject.hypothesis.is_owner_backed
+            and subject.hypothesis.trace_group_id == ""
         )
     ):
         raise FinalizedScientificAlignmentContractError(

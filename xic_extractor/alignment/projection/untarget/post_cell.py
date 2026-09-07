@@ -296,7 +296,10 @@ def _untarget_completion_state(
         id(projection),
         retained_owner_digest(
             projection.pre_cell_projection,
-            identity_only=(projection.pre_cell_projection.finalized_alignment,),
+            identity_only=(
+                projection.pre_cell_projection.finalized_alignment,
+                projection.pre_cell_projection.processing_request,
+            ),
         ),
         retained_owner_digest(projection.rows),
     )

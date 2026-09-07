@@ -691,6 +691,8 @@ def _validate_untarget_batch_request(
     subject_by_id = {
         subject.method_subject_id: subject for subject in subject_batch.subjects
     }
+    # Rebuilding this shared binding would reparse the full request per candidate.
+    exclusion_owners: ProcessingOwnerReferences | None = None
     for exclusion in exclusions:
         exclusion.__post_init__()
         expected_sample_id = candidate_sample_ids.get(exclusion.candidate_id)
@@ -722,12 +724,13 @@ def _validate_untarget_batch_request(
                 raise ApplicationResultContractError(
                     "Method exclusion requires exact complete sample coverage"
                 )
-            owners = ProcessingOwnerReferences(
-                request=request.processing_request,
-                attempt=request.processing_attempt,
-                sample_snapshot=parent_samples[0].snapshot,
-                sample_resolutions=parent_samples,
-            )
+            if exclusion_owners is None:
+                exclusion_owners = ProcessingOwnerReferences(
+                    request=request.processing_request,
+                    attempt=request.processing_attempt,
+                    sample_snapshot=parent_samples[0].snapshot,
+                    sample_resolutions=parent_samples,
+                )
             for sample, assessment in zip(
                 sorted(
                     parent_samples, key=lambda item: item.identity.sample_identity_id
@@ -738,7 +741,7 @@ def _validate_untarget_batch_request(
                 try:
                     validate_cid_nl_method_assessment_binding(
                         assessment,
-                        processing_owners=owners,
+                        processing_owners=exclusion_owners,
                         sample=sample,
                         method_subject=subject_by_id[exclusion.method_subject_id],
                     )
@@ -861,13 +864,15 @@ def _validate_untarget_batch_request(
         raise ApplicationResultContractError(
             "Untarget batch child/exclusion candidate union is not exactly once"
         )
+    included_subject_ids = {
+        method_subject_id
+        for candidate_id, method_subject_id in parent_memberships.items()
+        if candidate_id not in excluded_id_set
+    }
     expected_child_subject_ids = tuple(
         subject_id
         for subject_id in parent_subject_ids
-        if any(
-            method_subject_id == subject_id and candidate_id not in excluded_id_set
-            for candidate_id, method_subject_id in parent_memberships.items()
-        )
+        if subject_id in included_subject_ids
     )
     if tuple(child_subject_ids) != expected_child_subject_ids:
         raise ApplicationResultContractError(
