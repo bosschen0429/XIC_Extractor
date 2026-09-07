@@ -69,7 +69,24 @@ dated productization control-plane path is compatibility lookup only.
 
 Evidence: `diagnostic_only`; the eight-RAW engineering completion target passed.
 This is not analytical parity or scientific/production readiness evidence.
-Reuse the retained run and compatible composition inputs before another RAW run.
+Feature-retention validation failed: the closest prior eight-RAW matrix has
+816 rows and six historical ISTD coordinate matches in all eight samples; this
+29-row matrix contains none of those matches, even within a diagnostic window
+of 50 ppm and three minutes. All eight RAW content identities match, but the
+prior runner and algorithm revision differ. Do not use the engineering
+completion receipt as acceptance of feature retention.
+
+The current direct-evidence adapter omitted every mixed Discovery candidate,
+including their measured direct scans. Its strict receipt reader also treated
+an MS1-merged inferred member as though it had to match the final representative
+product window. Both handoff defects are corrected. Direct evidence keeps its
+existing scientific thresholds; inferred members do not become strict support.
+The corrected reader reconstructed all 2,448 direct/mixed candidates across
+eight RAW files without errors. Matrix retention remains pending the corrected
+run. The prior d4-N6-2HE-dA row used inferred precursor evidence and MS1
+integration/rescue; restoring that acceptance path is a separate unresolved
+method-policy decision. Task-local receipts are under
+`output/cid-nl-feature-loss-v10/`.
 
 Clean `39cfa36ad3457febf85da49f1bfebe6ec5343759` completed fresh Discovery and
 Alignment on eight tissue validation RAW files with `dna_dr`, production output,
