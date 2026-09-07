@@ -369,13 +369,31 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
     completed_mode_track: (
         tuple[ModeTrackRefinementRun, CrossSamplePostMT0Context] | None
     ) = None
+    closed_cell_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
 
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
-        if self.repair is None:
+        if self.repair is None and self.closed_cell_coverage is None:
             raise AlignmentWorkflowContractError(
-                "Untarget adapter requires exact ObservationRepair arguments"
+                "Untarget adapter requires repair arguments or closed cell coverage"
             )
+        if self.closed_cell_coverage is not None:
+            coverage = self.closed_cell_coverage
+            if type(coverage) is not OwnerBackfillEvaluationCoverageBatch:
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage must be exact"
+                )
+            if self.repair is not None or self.completed_mode_track is None:
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage requires completed ModeTrack without repair"
+                )
+            if coverage.terminals or any(
+                position.planning_state != "not_planned"
+                for position in coverage.epoch.positions
+            ):
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage must contain only unplanned positions"
+                )
         if self.completed_mode_track is not None:
             if (
                 type(self.completed_mode_track) is not tuple
@@ -769,17 +787,40 @@ def _execute_composition_after_runtime(
                 run=run,
             )
         if adapter.repair is None:
-            if type(request) is not TargetWorkflowRequest:
+            closed_coverage = (
+                adapter.closed_cell_coverage
+                if type(adapter) is UntargetWorkflowAdapter
+                else None
+            )
+            if type(request) is not TargetWorkflowRequest and closed_coverage is None:
                 raise AlignmentWorkflowContractError(
-                    "only Targeted may omit optional ObservationRepair"
+                    "Untarget without ObservationRepair requires closed cell coverage"
+                )
+            if (
+                closed_coverage is not None
+                and closed_coverage.epoch.processing_owners is not owners
+            ):
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage crossed exact workflow processing owners"
                 )
             final_receipt = close_cross_sample_without_observation_repair(context)
+            handoff = None
+            if closed_coverage is not None:
+                stage = WorkflowStage.SCIENTIFIC_FINAL
+                handoff = build_cross_sample_association_lineage_handoff(
+                    coverage=closed_coverage,
+                    final_receipt=final_receipt,
+                )
             scientific = finalize_scientific_alignment(
                 scope=request.scope,
                 captures=captures,
                 final_cross_sample_receipt=final_receipt,
-                cell_observation_handoff=None,
-                predecessor_cell_observations=(),
+                cell_observation_handoff=handoff,
+                predecessor_cell_observations=(
+                    adapter.predecessor_cell_observations
+                    if closed_coverage is not None
+                    else ()
+                ),
             )
             return _finish_variant(
                 request=request,
@@ -1172,6 +1213,11 @@ def _validate_request_adapter(
         _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
     if adapter.repair is not None:
         owners = adapter.repair.coverage.epoch.processing_owners
+    elif (
+        type(adapter) is UntargetWorkflowAdapter
+        and adapter.closed_cell_coverage is not None
+    ):
+        owners = adapter.closed_cell_coverage.epoch.processing_owners
     elif type(request) is TargetWorkflowRequest:
         owners = compose_processing_owner_references(
             request=request.processing_request,

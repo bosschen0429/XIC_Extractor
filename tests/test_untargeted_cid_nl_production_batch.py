@@ -64,6 +64,18 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.sample_metadata import SampleMetadata
 
 
+def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
+    from xic_extractor.alignment import workflow
+
+    def unexpected_repair(*args, **kwargs):
+        raise AssertionError("closed production coverage must not authorize repair")
+
+    monkeypatch.setattr(workflow, "execute_observation_repair", unexpected_repair)
+    monkeypatch.setattr(
+        workflow, "consume_observation_repair_terminal", unexpected_repair
+    )
+
+
 def _assert_jobs_match_direct_construction(batch) -> None:
     from xic_extractor.extraction import (
         untargeted_cid_nl_real_data_runtime as runtime_owner,
@@ -674,6 +686,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     def unexpected_mt0(*args, **kwargs):
         raise AssertionError("retained production must not execute MT0 refinement")
 
+    _forbid_retained_production_repair(monkeypatch)
+
     monkeypatch.setattr(
         refinement_owner, "mint_mode_track_trajectory_input", unexpected_mt0
     )
@@ -691,7 +705,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     consumed_contexts = []
     bootstrap = production.bootstrap_mode_track_refinement_from_cid_nl_support
     retain_groups = production.retain_initial_mode_track_groups_for_workflow
-    consume_repair = workflow_owner.consume_observation_repair_terminal
+    close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
 
     def counted_bootstrap(**kwargs):
         run = bootstrap(**kwargs)
@@ -703,9 +717,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         retained_contexts.append(context)
         return context
 
-    def retain_consumed_context(**kwargs):
-        consumed_contexts.append(kwargs["context"])
-        return consume_repair(**kwargs)
+    def retain_consumed_context(context):
+        consumed_contexts.append(context)
+        return close_without_repair(context)
 
     for owner in (production, workflow_owner):
         monkeypatch.setattr(
@@ -722,7 +736,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
     )
     monkeypatch.setattr(
-        workflow_owner, "consume_observation_repair_terminal", retain_consumed_context
+        workflow_owner,
+        "close_cross_sample_without_observation_repair",
+        retain_consumed_context,
     )
 
     runtime_results = []
@@ -807,6 +823,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert run.transactions == ()
         assert child.scientific_core.final_population == run.predecessors
         assert child.scientific_core.lineage == ()
+        assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
     assert completed.initial_edges == tuple(
         edge for run in bootstrap_runs for edge in run.classified_edges
     )
@@ -1663,6 +1680,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     monkeypatch,
     scenario: str,
 ) -> None:
+    _forbid_retained_production_repair(monkeypatch)
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
@@ -2308,6 +2326,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     monkeypatch,
     recovery_case: str,
 ) -> None:
+    _forbid_retained_production_repair(monkeypatch)
     sample_stems = (
         ("Support1", "Hold")
         if recovery_case == "threshold"

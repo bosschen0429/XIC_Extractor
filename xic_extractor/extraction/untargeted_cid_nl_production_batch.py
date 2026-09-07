@@ -14,10 +14,6 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_owner_backfill_planning_epoch,
     mint_owner_backfill_position_id,
 )
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairCandidate,
-)
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cell_observations import (
     CellObservationRef,
     compose_cid_nl_predecessor_cells,
@@ -56,7 +52,6 @@ from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedUntargetBatchWorkflowResult,
     ModeTrackWorkflowArguments,
-    ObservationRepairWorkflowArguments,
     UntargetWorkflowAdapter,
     UntargetWorkflowBundle,
     UntargetWorkflowCompositionRequest,
@@ -775,11 +770,8 @@ def compose_untargeted_cid_nl_production_result(
                         trajectory_policy=trajectory_policy,
                         retain_observation_only_candidates=True,
                     ),
-                    repair=ObservationRepairWorkflowArguments(
-                        coverage=coverage,
-                        cell_observations=predecessor_cells,
-                        execute=_unexpected_repair,
-                    ),
+                    repair=None,
+                    closed_cell_coverage=coverage,
                     predecessor_cell_observations=predecessor_cells,
                 ),
             )
@@ -826,12 +818,6 @@ def _runtime_captures_by_candidate(
     if set(captures) != expected:
         raise RuntimeError("runtime capture does not close capture-eligible candidates")
     return captures
-
-
-def _unexpected_repair(
-    _candidate: ObservationRepairCandidate,
-) -> OwnerBackfillSampleResult:
-    raise RuntimeError("direct CID-NL production cannot request legacy Backfill")
 
 
 __all__ = [

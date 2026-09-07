@@ -92,6 +92,14 @@ artifacts and runtime result artifacts retain their existing formats. The
 runtime owner issues the completed-recovery projection; coverage never imports
 the extraction runtime or treats nearby trace coordinates as exact requests.
 
+Retained CID-NL production passes its closed coverage directly to CrossSample
+and final cell composition. It does not request another ObservationRepair
+authorization after runtime recovery has closed. The coverage still supplies
+the exact group/sample associations and `not_searched`, `unavailable`, or
+`unresolved` evidence; removing the extra authorization does not discard those
+facts. Workflow paths that request an actual repair retain the authorization
+and execution operations below.
+
 The result is a closed authorization union: no eligible cells produce
 `not_run`, one produces `repair(candidate)`, and more than one produces a
 typed `multiple_eligible` block. Missing, duplicate, extra, crossed, stale, or
