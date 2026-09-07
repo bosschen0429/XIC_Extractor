@@ -27,6 +27,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
+    CrossSamplePostMT0Context,
     CrossSamplePostRepairModeTrackInput,
     apply_mode_track_refinement_run_for_workflow,
     close_cross_sample_without_observation_repair,
@@ -36,6 +37,7 @@ from xic_extractor.alignment.cross_sample_reconciliation import (
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.refinement import (
+    ModeTrackRefinementRun,
     bootstrap_mode_track_refinement_from_cid_nl_support,
     bootstrap_mode_track_refinement_from_ms1_hypotheses,
     run_post_repair_mode_track_final_attempt,
@@ -364,12 +366,35 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
+    completed_mode_track: (
+        tuple[ModeTrackRefinementRun, CrossSamplePostMT0Context] | None
+    ) = None
+
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
         if self.repair is None:
             raise AlignmentWorkflowContractError(
                 "Untarget adapter requires exact ObservationRepair arguments"
             )
+        if self.completed_mode_track is not None:
+            if (
+                type(self.completed_mode_track) is not tuple
+                or len(self.completed_mode_track) != 2
+                or type(self.completed_mode_track[0]) is not ModeTrackRefinementRun
+                or type(self.completed_mode_track[1]) is not CrossSamplePostMT0Context
+            ):
+                raise AlignmentWorkflowContractError(
+                    "completed ModeTrack requires its exact run and CrossSample context"
+                )
+            run, context = self.completed_mode_track
+            if (
+                context.fit_once_source_id != run.fit_once_source.fit_once_source_id
+                or context.processing_owners
+                is not run.fit_once_source.processing_owners
+            ):
+                raise AlignmentWorkflowContractError(
+                    "completed ModeTrack crossed its CrossSample context"
+                )
 
 
 WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
@@ -685,7 +710,14 @@ def _execute_composition_after_runtime(
             and type(request.scope) is TargetSearchScope
             and request.scope.target.definition.target.neutral_loss_da is None
         )
-        if not ms1_only_target:
+        completed_mode_track = (
+            adapter.completed_mode_track
+            if type(adapter) is UntargetWorkflowAdapter
+            else None
+        )
+        if completed_mode_track is not None:
+            run, context = completed_mode_track
+        elif not ms1_only_target:
             run = bootstrap_mode_track_refinement_from_cid_nl_support(
                 processing_owners=owners,
                 sample_assessments=adapter.mode_track.sample_assessments,
@@ -730,11 +762,12 @@ def _execute_composition_after_runtime(
                 drift_lookup=adapter.drift_lookup,
             )
         stage = WorkflowStage.CROSS_SAMPLE_MT0
-        context = apply_mode_track_refinement_run_for_workflow(
-            processing_owners=owners,
-            captures=captures,
-            run=run,
-        )
+        if completed_mode_track is None:
+            context = apply_mode_track_refinement_run_for_workflow(
+                processing_owners=owners,
+                captures=captures,
+                run=run,
+            )
         if adapter.repair is None:
             if type(request) is not TargetWorkflowRequest:
                 raise AlignmentWorkflowContractError(
@@ -1135,7 +1168,7 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "workflow request crossed processing request or attempt"
         )
-    if type(request) is not UntargetWorkflowCompositionRequest:
+    if isinstance(request, (TargetWorkflowRequest, UntargetWorkflowRequest)):
         _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
     if adapter.repair is not None:
         owners = adapter.repair.coverage.epoch.processing_owners
@@ -1158,6 +1191,15 @@ def _validate_request_adapter(
     ):
         raise AlignmentWorkflowContractError(
             "workflow repair population crossed exact processing owners"
+        )
+    if (
+        type(adapter) is UntargetWorkflowAdapter
+        and adapter.completed_mode_track is not None
+        and adapter.completed_mode_track[0].fit_once_source.processing_owners
+        is not owners
+    ):
+        raise AlignmentWorkflowContractError(
+            "completed ModeTrack crossed the workflow processing owners"
         )
     for sample in request.scope.samples:
         validate_scope_owner_binding(

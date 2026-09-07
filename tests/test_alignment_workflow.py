@@ -49,7 +49,7 @@ def _exact_uninitialized(value_type, **fields):
     return value
 
 
-@pytest.mark.parametrize("variant", ["target", "untarget"])
+@pytest.mark.parametrize("variant", ["target", "untarget", "untarget-completed"])
 @pytest.mark.parametrize("crossed_result", [False, True])
 @pytest.mark.parametrize("changed_trajectory", [False, True])
 def test_workflow_forwards_exact_owner_objects_once(
@@ -92,8 +92,9 @@ def test_workflow_forwards_exact_owner_objects_once(
     repair_arguments = SimpleNamespace(
         coverage=object(),
         cell_observations=(),
-        execute=lambda candidate: calls.append(("repair_callback", candidate))
-        or callback_result,
+        execute=lambda candidate: (
+            calls.append(("repair_callback", candidate)) or callback_result
+        ),
     )
     adapter = _exact_uninitialized(
         TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
@@ -110,6 +111,12 @@ def test_workflow_forwards_exact_owner_objects_once(
     capture = object()
     run = SimpleNamespace(fit_once_source=object())
     context = object()
+    if variant != "target":
+        object.__setattr__(
+            adapter,
+            "completed_mode_track",
+            (run, context) if variant == "untarget-completed" else None,
+        )
     post_repair = _exact_uninitialized(CrossSamplePostRepairModeTrackInput)
     final_attempt = object()
     final_receipt = _exact_uninitialized(CrossSampleFinalReceipt)
@@ -117,9 +124,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     pre_cell = object()
     decisions = object()
     projection = _exact_uninitialized(
-        TargetPostCellProjection
-        if variant == "target"
-        else UntargetPostCellProjection
+        TargetPostCellProjection if variant == "target" else UntargetPostCellProjection
     )
     application_result = _exact_uninitialized(
         FinalizedTargetApplicationResult
@@ -178,8 +183,10 @@ def test_workflow_forwards_exact_owner_objects_once(
     monkeypatch.setattr(
         workflow_owner,
         "consume_observation_repair_terminal",
-        lambda **kwargs: calls.append(("cross_repair", kwargs))
-        or (post_repair if changed_trajectory else final_receipt),
+        lambda **kwargs: (
+            calls.append(("cross_repair", kwargs))
+            or (post_repair if changed_trajectory else final_receipt)
+        ),
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -257,32 +264,32 @@ def test_workflow_forwards_exact_owner_objects_once(
         "validate",
         "runtime",
         "capture",
-        "mt0",
-        "cross_mt0",
-        "repair",
-        "cross_repair",
-        "association",
-        "scientific",
     ]
+    if variant != "untarget-completed":
+        expected_calls.extend(("mt0", "cross_mt0"))
     if changed_trajectory:
-        expected_calls[5:5] = ["repair_callback"]
-        expected_calls[8:8] = ["mt1", "cross_final"]
+        expected_calls.append("repair_callback")
+    expected_calls.extend(("repair", "cross_repair"))
+    if changed_trajectory:
+        expected_calls.extend(("mt1", "cross_final"))
+    expected_calls.extend(("association", "scientific"))
     assert [item[0] for item in calls] == expected_calls
     cross_repair_kwargs = next(item[1] for item in calls if item[0] == "cross_repair")
+    assert cross_repair_kwargs["context"] is context
     assert cross_repair_kwargs["terminal"] is terminal
     assert cross_repair_kwargs["repair_result"] is (
         callback_result if changed_trajectory else None
     )
     if changed_trajectory:
-        cross_final_kwargs = next(
-            item[1] for item in calls if item[0] == "cross_final"
+        assert (
+            next(item[1] for item in calls if item[0] == "mt1")["source"]
+            is run.fit_once_source
         )
+        cross_final_kwargs = next(item[1] for item in calls if item[0] == "cross_final")
         assert cross_final_kwargs["terminal"] is terminal
         assert cross_final_kwargs["post_repair"] is post_repair
         assert cross_final_kwargs["final_attempt"] is final_attempt
     else:
-        scientific_kwargs = next(
-            item[1] for item in calls if item[0] == "scientific"
-        )
+        scientific_kwargs = next(item[1] for item in calls if item[0] == "scientific")
         assert scientific_kwargs["repair_receipts"] == ()
         assert scientific_kwargs["repaired_observations"] == ()

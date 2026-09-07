@@ -68,46 +68,46 @@ dated productization control-plane path is compatibility lookup only.
 ### 2026-09-07 CID-NL 8RAW Runtime and Composition
 
 Evidence: `diagnostic_only`; full production completion remains unverified.
-The operator removed a completed baseline/A-B run as an optimization prerequisite.
-Request/sample reuse, SearchScope indexes, physical-fact read reuse, batched
-runtime settlement and event indexes are applied in `e4424ba3`. Focused regression
-suites, independent source reviews and commit checks passed. These are engineering
-receipts, not full analytical parity or scientific/product readiness.
+The operator selected internal data-flow simplification and stopped repeated
+full-RAW runs. Reuse compatible Discovery and retained observations; focused
+behavior checks establish engineering coverage, not analytical parity or readiness.
 
 The input universe is eight tissue validation RAW files, `dna_dr`, 30,748
-Discovery candidates and 95,320 sample/subject runtime jobs. A clean run at
-`0d307078` completed Discovery in 59.482 s and failed Alignment after 998.257 s.
-All runtime jobs completed; ledger derivation took 8.410 s and full runtime
-finalization 24.376 s. Composition preparation took 344.042 s, followed by
-35.176 s in the final workflow before an ObservationRepair contract failure:
-`eligible cell has no planned owner Backfill request`. No matrix or explanation
-SQLite was produced. There is no completed end-to-end speedup or 85RAW result.
+Discovery candidates and 95,320 sample/subject runtime jobs. Discovery from
+`result-8raw-4/discovery` is retained. The latest full Alignment attempt,
+`alignment-family-3` at `7bdf3691`, stopped at its 1,800.008 s timeout with exit
+124 and no matrix or explanation SQLite. Its initial assessments totalled
+313.15 s, including 11.48 s of acquisition; recovery planning took 15.25 s and
+recovery attempts 8.10 s. Production composition began at 462.15 s and nested
+batch composition at 829.65 s; neither has a completion event. These nested
+measurements must not be added or interpreted as a completed-run speedup.
 
-Public no-RAW reproductions distinguish two missing handoff cases. The
-below-threshold, multiple-candidate HOLD case is corrected in `0d307078`, preserving
-the existing threshold proof, HOLD and blank quantity; 50 focused tests passed.
-With two SUPPORT samples and a multiple-candidate HOLD, runtime retains the local
-candidate assessment but production supplies neither a request nor a legal
-no-request proof. The shifted-support/empty-candidate control succeeds. A proposed
-positive-candidate handoff is not implemented; current eligibility and the
-completed-empty proof remain authoritative. The real8 failing cell identity was
-not correctly preserved, so its identity is not inferred from these reproductions.
+The retained composition profile has 228 weighted samples: 167 enter assessment
+binding and 40 enter completion-receipt digests. Its sampling window is not a
+full-run cost distribution. Current source identified duplicate ModeTrack
+bootstrap and CrossSample application on identical inputs, plus full binding
+and cell scans inside per-subject/per-group loops.
 
-Two diagnostic costs need separate treatment. A partial 100-subject/3-sample
-composition profile observed 5,319 assessment remints in an 8.015 s window;
-overlapping/interrupted cumulative values are not wall-time shares or a scaling
-proof. The run harness also enabled one live timing-file rewrite per terminal job.
-A 1,000-callback probe measured median 1.823 s with live writes versus 0.00214 s
-in memory; extrapolation to 95,320 callbacks is about 174 s, not an end-to-end
-measurement. The task harness now retains coarse progress and final timing while
-omitting this live-file flag; product timing behavior is unchanged.
+Current production passes its completed ModeTrack run and CrossSample context
+directly to workflow, and indexes bindings/cells once. Assessment handoffs check
+request, attempt, sample, subject and acquisition bindings without reminting the
+method decision. Conservative Backfill carries its existing frozen decisions;
+position and coverage consumers do not reconstruct the proof, group facts or
+mapper result. Construction checks and current consumer cell/population bindings
+remain. Recovery with new observations retains its required later refinement.
+
+The runtime uses the selected Alignment configuration consistently. Unresolved
+candidate assessments retain HOLD and blank quantities. No completion or
+end-to-end speedup is inferred from these handoff corrections. The task harness
+retains coarse progress and final timing without per-job live timing-file
+rewrites; product timing behavior is unchanged.
 
 Task-local evidence, commands, source/helper hashes and reproductions are under
-`output/cid-nl-end-to-end/`, especially `result-8raw-4`, `backfill-handoff-repro`,
+`output/cid-nl-end-to-end/`, especially `alignment-family-3`, `family_context_probe`,
 `composition-probe` and `heartbeat-probe`. These ignored host-local artifacts are
-not reusable clean-checkout inputs. Before another full run, close the applicable
-handoff with its existing semantic owners and preserve the actual inner failure
-context. Do not label a failed composition or a component timing as full success.
+not reusable clean-checkout inputs. The production/workflow, CID-NL evidence-spine
+and Backfill tests own the focused behavior oracles, including reuse without
+scientific reevaluation and preserved writer outputs.
 
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 

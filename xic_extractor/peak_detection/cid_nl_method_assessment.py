@@ -487,28 +487,47 @@ def validate_cid_nl_method_assessment_binding(
     target: ResolvedTargetDefinition | None = None,
     method_subject: CidNlMethodSubject | None = None,
 ) -> None:
-    """Reject request, attempt, sample, target, or upstream substitution."""
+    """Bind an already-validated assessment to its consuming request and sample."""
 
     if not isinstance(reference, CidNlMethodAssessmentRef):
         raise CidNlMethodAssessmentContractError(
             "reference must be an owner-minted CID-NL method assessment"
         )
-    expected = mint_cid_nl_method_assessment_ref(
-        processing_owners=processing_owners,
-        sample=sample,
+    subject = _resolve_method_subject(
         target=target,
         method_subject=method_subject,
-        detector_invocation_id=reference.content.detector_invocation_id,
-        evaluation_receipt=reference.content.evaluation_receipt,
-        candidate_peaks=reference.candidate_peaks,
-        evidence_refs=reference.evidence_refs,
-        individual_support_refs=reference.individual_support_refs,
-        set_relation_refs=reference.set_relation_refs,
-        technical_state=reference.content.technical_state,
     )
-    if reference != expected:
+    try:
+        source = resolve_request_acquisition_source(
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+    except IdentityContractError as exc:
+        raise CidNlMethodAssessmentContractError(str(exc)) from exc
+    # Construction pins content and upstream refs; minting settles the method.
+    # A handoff checks scope without re-running that scientific decision.
+    if (
+        reference.artifact.producer_processing_request_id
+        != processing_owners.request.processing_request_id
+    ):
         raise CidNlMethodAssessmentContractError(
-            "CID-NL method assessment binding was substituted"
+            "CID-NL method assessment references a different processing request"
+        )
+    if (
+        reference.artifact.producer_processing_attempt_id
+        != processing_owners.attempt.processing_attempt_id
+    ):
+        raise CidNlMethodAssessmentContractError(
+            "CID-NL method assessment references a different processing attempt"
+        )
+    if (
+        reference.content.canonical_sample_identity_id
+        != sample.identity.sample_identity_id
+        or reference.content.acquisition_source_id != source.acquisition_source_id
+        or reference.content.method_subject != subject
+    ):
+        raise CidNlMethodAssessmentContractError(
+            "CID-NL method assessment sample or subject binding was substituted"
         )
 
 

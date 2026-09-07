@@ -19,6 +19,7 @@ from xic_extractor.alignment.backfill.observation_repair import (
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cell_observations import (
+    CellObservationRef,
     compose_cid_nl_predecessor_cells,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -104,6 +105,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
@@ -469,12 +471,17 @@ def compose_untargeted_cid_nl_production_result(
     bundles = []
     initial_groups: list[CrossSamplePeakGroupHypothesis] = []
     initial_edges: list[CrossSampleNeighborhoodEdge] = []
+    bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
+    for binding in bindings:
+        bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
+    ordered_samples = tuple(
+        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
+    )
+    sample_by_id = {
+        sample.identity.sample_identity_id: sample for sample in batch.context.samples
+    }
     for subject in batch.subject_batch.subjects:
-        child_bindings = tuple(
-            binding
-            for binding in bindings
-            if binding.method_subject_id == subject.method_subject_id
-        )
+        child_bindings = tuple(bindings_by_subject.get(subject.method_subject_id, ()))
         if not child_bindings:
             continue
         child_scope = UntargetedSearchScope(
@@ -498,10 +505,7 @@ def compose_untargeted_cid_nl_production_result(
                 sample,
                 assessment,
             )
-            for sample in sorted(
-                batch.context.samples,
-                key=lambda item: item.identity.sample_identity_id,
-            )
+            for sample in ordered_samples
             for assessment in result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
@@ -519,10 +523,6 @@ def compose_untargeted_cid_nl_production_result(
             sample.identity.sample_identity_id: result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].adapter_result.assessment_input.assessment
-            for sample in batch.context.samples
-        }
-        sample_by_id = {
-            sample.identity.sample_identity_id: sample
             for sample in batch.context.samples
         }
         hypotheses_by_sample_id = {
@@ -613,7 +613,7 @@ def compose_untargeted_cid_nl_production_result(
                 "CID-NL capture/assessment owner mismatch: "
                 f"captures={selected_ids!r}; assessments={retained_ids!r}"
             )
-        apply_mode_track_refinement_run_for_workflow(
+        mode_track_context = apply_mode_track_refinement_run_for_workflow(
             processing_owners=batch.context.processing_owners,
             captures=captures,
             run=refinement,
@@ -639,22 +639,17 @@ def compose_untargeted_cid_nl_production_result(
                 is not None
             },
         )
-        cell_by_key = {
-            (
-                cell.content.group_hypothesis_id,
-                cell.content.canonical_sample_identity_id,
-            ): cell
-            for cell in predecessor_cells
-        }
+        cell_by_key = {}
+        cells_by_group: dict[str, list[CellObservationRef]] = {}
+        for cell in predecessor_cells:
+            group_id = cell.content.group_hypothesis_id
+            cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
+            cells_by_group.setdefault(group_id, []).append(cell)
         repair_groups = refinement.predecessors
         no_request_proofs = {}
         for group in repair_groups:
             facts = assess_conservative_backfill_group(
-                tuple(
-                    cell
-                    for cell in predecessor_cells
-                    if cell.content.group_hypothesis_id == group.group_hypothesis_id
-                ),
+                tuple(cells_by_group[group.group_hypothesis_id]),
                 sample_population=batch.context.samples,
             )
             for sample in batch.context.samples:
@@ -772,6 +767,7 @@ def compose_untargeted_cid_nl_production_result(
                 ),
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
+                    completed_mode_track=(refinement, mode_track_context),
                     mode_track=ModeTrackWorkflowArguments(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,

@@ -664,8 +664,43 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         alignment_adapter, "build_untargeted_cid_nl_production_batch", retain_batch
     )
+    from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
+    )
+
+    bootstrap_runs = []
+    applied_contexts = []
+    consumed_contexts = []
+    bootstrap = production.bootstrap_mode_track_refinement_from_cid_nl_support
+    apply_refinement = production.apply_mode_track_refinement_run_for_workflow
+    consume_repair = workflow_owner.consume_observation_repair_terminal
+
+    def counted_bootstrap(**kwargs):
+        run = bootstrap(**kwargs)
+        bootstrap_runs.append(run)
+        return run
+
+    def counted_apply(**kwargs):
+        context = apply_refinement(**kwargs)
+        applied_contexts.append(context)
+        return context
+
+    def retain_consumed_context(**kwargs):
+        consumed_contexts.append(kwargs["context"])
+        return consume_repair(**kwargs)
+
+    for owner in (production, workflow_owner):
+        monkeypatch.setattr(
+            owner,
+            "bootstrap_mode_track_refinement_from_cid_nl_support",
+            counted_bootstrap,
+        )
+        monkeypatch.setattr(
+            owner, "apply_mode_track_refinement_run_for_workflow", counted_apply
+        )
+    monkeypatch.setattr(
+        workflow_owner, "consume_observation_repair_terminal", retain_consumed_context
     )
 
     runtime_results = []
@@ -738,6 +773,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    assert len(bootstrap_runs) == len(completed.application_result.children)
+    assert len(applied_contexts) == len(consumed_contexts)
+    assert all(
+        applied is consumed
+        for applied, consumed in zip(applied_contexts, consumed_contexts, strict=True)
+    )
     if family_context:
         assert len(matrix_rows) == 1
         assert len(writer.matrix.cells) == len(sample_stems)
@@ -2124,26 +2165,30 @@ def _assert_conservative_proof_seals(
             ),
         )
 
-    forged = copy(proof)
-    object.__setattr__(forged, "proof_id", "changed-proof")
-    forged_position = copy(position)
-    object.__setattr__(forged_position, "conservative_no_request_proof", forged)
-    forged_epoch = copy(epoch)
-    object.__setattr__(
-        forged_epoch,
-        "positions",
-        tuple(
-            forged_position if item is position else item for item in epoch.positions
-        ),
-    )
-    forged_coverage = copy(coverage)
-    object.__setattr__(forged_coverage, "epoch", forged_epoch)
-    with pytest.raises(ValueError):
-        owner.validate_owner_backfill_evaluation_coverage(forged_coverage)
-    with pytest.raises(ValueError):
+    from xic_extractor.alignment import conservative_backfill as conservative_owner
+
+    def unexpected_reevaluation(*args, **kwargs):
+        raise AssertionError("completed Backfill decision was reevaluated")
+
+    with pytest.MonkeyPatch.context() as retained:
+        retained.setattr(
+            conservative_owner,
+            "assess_conservative_backfill_group",
+            unexpected_reevaluation,
+        )
+        retained.setattr(
+            conservative_owner,
+            "map_conservative_backfill_candidates",
+            unexpected_reevaluation,
+        )
+        owner.validate_owner_backfill_conservative_no_request_position(
+            position,
+            source_cell=proof.decision.target_cell,
+            source_population=proof.decision.group_facts.source_cells,
+        )
         authorize_observation_repair(
             processing_owners=batch.context.processing_owners,
-            coverage=forged_coverage,
+            coverage=coverage,
             cell_observations=proof.decision.group_facts.source_cells,
         )
     lane_args = dict(

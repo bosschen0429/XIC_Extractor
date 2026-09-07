@@ -354,8 +354,6 @@ def _validate_conservative_no_request(
     # These owners consume coverage types; defer their validation imports.
     from xic_extractor.alignment.conservative_backfill import (
         ConservativeBackfillCellDecision,
-        assess_conservative_backfill_group,
-        map_conservative_backfill_candidates,
     )
 
     owners = proof.processing_owners
@@ -367,7 +365,6 @@ def _validate_conservative_no_request(
     if type(decision) is not ConservativeBackfillCellDecision:
         raise TypeError("no-request proof requires a conservative owner decision")
     facts = decision.group_facts
-    replace(facts.group_context)
     canonical_samples = tuple(
         sorted(owners.sample_resolutions, key=lambda x: x.identity.sample_identity_id)
     )
@@ -377,7 +374,6 @@ def _validate_conservative_no_request(
     ):
         raise ValueError("no-request proof crossed its complete sample population")
     for cell in facts.source_cells:
-        replace(cell)
         source_sample = next(
             sample
             for sample in canonical_samples
@@ -395,10 +391,7 @@ def _validate_conservative_no_request(
             != owners.attempt.processing_attempt_id
         ):
             raise ValueError("no-request proof crossed its current source attempt")
-    derived = assess_conservative_backfill_group(
-        facts.source_cells, sample_population=canonical_samples
-    )
-    if facts != derived or not facts.group_frozen:
+    if not facts.group_frozen:
         raise ValueError("no-request proof requires exact frozen conservative facts")
     if proof.group_identity != validate_cross_sample_peak_group_identity(
         facts.group_context.group, require_canonical=True
@@ -428,7 +421,6 @@ def _validate_conservative_no_request(
         expected_reason = "direct_support_threshold_not_met"
     else:
         completion = proof.completion
-        replace(completion)
         if (
             not facts.may_attempt_recovery
             or universe is None
@@ -441,14 +433,10 @@ def _validate_conservative_no_request(
             or universe.candidate_peaks
         ):
             raise ValueError("empty recovery proof lost its exact completed epoch")
-        replace(universe)
         expected_reason = "recovery_candidate_universe_empty"
-    (expected,) = map_conservative_backfill_candidates(
-        (facts,),
-        sample=proof.sample,
-        candidate_universes=() if universe is None else (universe,),
-    )
-    if decision != expected or decision.reason_codes != (expected_reason,):
+    # The mapper already settled this immutable decision and its group facts.
+    # This projection binds that result; it does not evaluate the method again.
+    if decision.reason_codes != (expected_reason,):
         raise ValueError("no-request proof does not match the conservative mapper")
 
 
@@ -635,7 +623,8 @@ class OwnerBackfillPlanningPosition:
             raise ValueError("not-planned position cannot retain logical requests")
         proof = self.conservative_no_request_proof
         if proof is not None:
-            replace(proof)
+            if not isinstance(proof, OwnerBackfillConservativeNoRequestProof):
+                raise TypeError("position requires a conservative no-request proof")
             if (
                 self.planning_state != "not_planned"
                 or self.planning_reason != proof.planning_reason
@@ -689,7 +678,7 @@ def validate_owner_backfill_conservative_no_request_position(
     source_cell: CellObservationRef | None = None,
     source_population: tuple[CellObservationRef, ...] | None = None,
 ) -> OwnerBackfillConservativeNoRequestProof | None:
-    """Revalidate the proof and its exact current consumer population."""
+    """Bind the existing decision to its exact current consumer population."""
     proof = position.conservative_no_request_proof
     if proof is None:
         if position.planning_reason in {
@@ -698,7 +687,6 @@ def validate_owner_backfill_conservative_no_request_position(
         }:
             raise ValueError("conservative no-request reason requires its owner proof")
         return None
-    replace(position)
     if source_cell is not None and proof.decision.target_cell is not source_cell:
         raise ValueError("no-request proof crossed its consumer source cell")
     if source_population is not None:
@@ -1225,13 +1213,9 @@ def build_owner_backfill_evaluation_coverage(
 def validate_owner_backfill_evaluation_coverage(
     batch: OwnerBackfillEvaluationCoverageBatch,
 ) -> None:
+    """Require coverage whose constructor already checked epoch and terminals."""
     if not isinstance(batch, OwnerBackfillEvaluationCoverageBatch):
         raise TypeError("batch must be Owner Backfill evaluation coverage")
-    OwnerBackfillEvaluationCoverageBatch(
-        coverage_id=batch.coverage_id,
-        epoch=batch.epoch,
-        terminals=batch.terminals,
-    )
 
 
 def _validate_batch(
@@ -1240,11 +1224,6 @@ def _validate_batch(
 ) -> None:
     if not isinstance(epoch, OwnerBackfillEvaluationPlanningEpoch):
         raise TypeError("coverage requires an owner planning epoch")
-    if any(
-        position.conservative_no_request_proof is not None
-        for position in epoch.positions
-    ):
-        replace(epoch)
     if not isinstance(terminals, tuple) or any(
         not isinstance(item, OwnerBackfillAttemptTerminal) for item in terminals
     ):
