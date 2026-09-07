@@ -40,6 +40,202 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 )
 
 
+@pytest.mark.parametrize("fresh_available", [True, False])
+def test_changed_physical_query_evaluates_once_and_preserves_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_available: bool
+) -> None:
+    import json
+    from unittest.mock import Mock
+
+    from xic_extractor.discovery.grouping import group_discovery_seeds
+    from xic_extractor.discovery.ms1_backfill import (
+        _backfill_ms1_candidates_with_acquisition,
+    )
+    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter as adapter
+    from xic_extractor.peak_detection import capture as capture_owner
+    from xic_extractor.peak_detection.evidence_facts import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+    )
+    from xic_extractor.peak_detection.observations import (
+        physical_peak_observation_integration,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.peak_detection.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    center = 13.263299286133334
+    source_raw = _FakeRaw((8.0,))
+    source_raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521)
+    source_raw.rt[int(np.argmin(np.abs(source_raw.rt - center)))] = center
+    source_raw.scans = tuple(
+        replace(
+            source_raw.scans[0],
+            rt=rt,
+            scan_number=int(np.argmin(np.abs(source_raw.rt - rt))) + 1,
+        )
+        for rt in (center - 0.25, center + 0.05)
+    )
+    source_raw.intensity = 250.0 + 1000.0 * np.exp(
+        -0.5 * ((source_raw.rt - center) / 0.15) ** 2
+    )
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        seed_rt_gap_min=0.01,
+        rt_min=12.8,
+        rt_max=13.4,
+    )
+    peak_config = _peak_config(tmp_path)
+    profile = SignalProcessingProfile(window_points=15)
+    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    source = fixture.owners.request.acquisition_sources[0]
+    seeds = collect_strict_nl_seeds(
+        raw, raw_file=fixture.source_paths["S1"], settings=settings
+    )
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        group_discovery_seeds(seeds, settings=settings),
+        acquisition_source=source,
+        run_spec_id="processing-run.v1:" + "0" * 64,
+        settings=settings,
+        peak_config=peak_config,
+        signal_processing_profile=profile,
+    )
+    assert len(discovery.candidates) == 2
+    old_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
+                profile,
+                {r.candidate_id: r.evaluation for r in discovery.physical_evaluations},
+            )
+        },
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    if not fresh_available:
+        source_raw.intensity = np.zeros_like(source_raw.rt)
+    evaluate = Mock(wraps=evaluate_physical_peak)
+    prepare = Mock(wraps=prepare_physical_signal)
+    for module in (adapter, capture_owner):
+        for name, spy in (
+            ("evaluate_physical_peak", evaluate),
+            ("prepare_physical_signal", prepare),
+        ):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, spy)
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=discovery.candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+        signal_processing_profile=profile,
+        physical_records=discovery.physical_evaluations,
+    )
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == (
+        "SUPPORT" if fresh_available else "REJECT"
+    )
+    assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
+    assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
+    assert result.acquisition is not None
+    (acquired,) = result.acquisition.traces
+    states = []
+    changed_questions = 0
+    captures = {capture.candidate_id: capture for capture in result.captures}
+    assert len(captures) == 2
+    for record in discovery.physical_evaluations:
+        changed = acquired.coordinate.request.rt_min < record.work_item.xic_rt_min or (
+            acquired.coordinate.request.rt_max > record.work_item.xic_rt_max
+        )
+        changed_questions += changed
+        expected = evaluate_physical_peak(
+            prepare_physical_signal(
+                acquired.trace.rt, acquired.trace.intensity, profile=profile
+            ),
+            selection_subject_id=record.evaluation.question.selection_subject_id,
+            query_rt_min=record.evaluation.question.query_rt_min,
+            request_context_rt_start_min=acquired.coordinate.request.rt_min,
+            request_context_rt_end_min=acquired.coordinate.request.rt_max,
+        )
+        assert (expected != record.evaluation) == changed
+        capture = captures[record.candidate_id]
+        assert capture.physical_evaluation == expected
+        binding = next(
+            item
+            for item in capture.scope.capture_bindings
+            if item.candidate_id == record.candidate_id
+        )
+        assert binding.source_physical_evaluation is record.evaluation
+        assert binding.physical_evaluation is capture.physical_evaluation
+        assert binding.acquisition_source_id == source.acquisition_source_id
+        assert (
+            binding.sample_identity_id
+            == fixture.sample("S1").identity.sample_identity_id
+        )
+        states.append(expected.state)
+        if expected.state == "unavailable":
+            assert capture.selected_hypothesis is None
+            continue
+        observed = assessment.candidate_peaks[0]
+        integration = physical_peak_observation_integration(expected)
+        assert capture.selected_hypothesis.integration == integration
+        assert (
+            observed.content.integration.area_baseline_corrected
+            == integration.area_baseline_corrected
+        )
+        assert observed.content.integration.rt_apex_min == integration.rt_apex_min
+    assert states == (["available"] * 2 if fresh_available else ["unavailable"] * 2)
+    assert changed_questions == 2
+    assert evaluate.call_count == 2
+    assert prepare.call_count == 2
+    with pytest.raises(ValueError, match="trace_content_id"):
+        capture_owner.capture_reacquired_physical_peak(
+            scope=capture.scope,
+            candidate_id=capture.candidate_id,
+            trace=replace(capture.trace, intensity=capture.trace.intensity + 1.0),
+        )
+    with pytest.raises(
+        capture_owner.SampleLocalCaptureError, match="coordinates mismatch"
+    ):
+        capture_owner.capture_reacquired_physical_peak(
+            scope=capture.scope,
+            candidate_id=capture.candidate_id,
+            trace=replace(
+                capture.trace,
+                rt_min=capture.trace.rt_min - 0.01,
+                acquisition_source_id="xic.acquisition-source.v1:" + "0" * 64,
+            ),
+        )
+
+
 def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     tmp_path: Path,
 ) -> None:

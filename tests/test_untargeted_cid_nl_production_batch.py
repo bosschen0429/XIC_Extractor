@@ -659,6 +659,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.peak_detection import capture as capture_owner
 
     capture_peak = capture_owner.capture_peak_hypotheses
+    capture_reacquired = capture_owner.capture_reacquired_physical_peak
 
     def retain_capture(**kwargs):
         capture = capture_peak(**kwargs)
@@ -666,6 +667,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         return capture
 
     monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", retain_capture)
+
+    def retain_reacquired_capture(**kwargs):
+        capture = capture_reacquired(**kwargs)
+        captured_peaks.append(capture)
+        return capture
+
+    monkeypatch.setattr(
+        capture_owner, "capture_reacquired_physical_peak", retain_reacquired_capture
+    )
     build_batch = alignment_adapter.build_untargeted_cid_nl_production_batch
 
     def retain_batch(**kwargs):

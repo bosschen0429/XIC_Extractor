@@ -78,8 +78,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 )
 from xic_extractor.peak_detection.evidence_facts import (
     PhysicalPeakEvaluation,
-    evaluate_physical_peak,
-    prepare_physical_signal,
 )
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
@@ -1249,7 +1247,6 @@ def _reacquire_peak_observations(
             for item in search_scope.capture_bindings
             if item.candidate_id == candidate.candidate_id
         )
-        capture_scope = search_scope
         if binding.physical_evaluation is not None and (
             trace.mz != binding.query_mz
             or trace.rt_min != binding.query_rt_min
@@ -1257,41 +1254,22 @@ def _reacquire_peak_observations(
             or trace.ppm_tol != binding.query_ppm_tol
         ):
             _validate_physical_candidate_receipt(candidate, binding.physical_evaluation)
-            profile = search_scope.method_constraints.signal_processing_profile
-            assert profile is not None
-            prepared = prepare_physical_signal(
-                trace.rt,
-                trace.intensity,
-                profile=profile,
+            capture = capture_owner.capture_reacquired_physical_peak(
+                scope=search_scope,
+                candidate_id=candidate.candidate_id,
+                trace=trace,
             )
-            fresh = evaluate_physical_peak(
-                prepared,
-                selection_subject_id=binding.physical_evaluation.question.selection_subject_id,
-                query_rt_min=binding.preferred_rt,
-                request_context_rt_start_min=trace.rt_min,
-                request_context_rt_end_min=trace.rt_max,
+            binding = next(
+                item
+                for item in capture.scope.capture_bindings
+                if item.candidate_id == candidate.candidate_id
             )
-            binding = replace(
-                binding,
-                query_mz=trace.mz,
-                query_rt_min=trace.rt_min,
-                query_rt_max=trace.rt_max,
-                query_ppm_tol=trace.ppm_tol,
-                source_physical_evaluation=binding.physical_evaluation,
-                physical_evaluation=fresh,
+        else:
+            capture = capture_owner.capture_peak_hypotheses(
+                scope=search_scope,
+                candidate_id=candidate.candidate_id,
+                trace=trace,
             )
-            capture_scope = replace(
-                search_scope,
-                capture_bindings=tuple(
-                    binding if item.candidate_id == candidate.candidate_id else item
-                    for item in search_scope.capture_bindings
-                ),
-            )
-        capture = capture_owner.capture_peak_hypotheses(
-            scope=capture_scope,
-            candidate_id=candidate.candidate_id,
-            trace=trace,
-        )
         captures.append(capture)
         if (
             binding.source_physical_evaluation is not None
