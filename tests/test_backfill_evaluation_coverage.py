@@ -562,6 +562,7 @@ def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
         "insufficient_detected_samples",
         "raw_source_unavailable",
         "retained_local_owner",
+        "retained_unresolved_candidates",
         "local_owner_not_supersedable",
         "direct_support_threshold_not_met",
         "recovery_search_completed_empty",

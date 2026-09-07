@@ -719,10 +719,14 @@ def compose_untargeted_cid_nl_production_result(
                     if (group.group_hypothesis_id, sample.identity.sample_identity_id)
                     in no_request_proofs
                     else "local_owner_not_supersedable"
-                    if cell_by_key[
-                        (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                    ].content.outside_group
-                    is not None
+                    if cell.content.outside_group is not None
+                    else "retained_unresolved_candidates"
+                    if (
+                        cell.content.technical_state == "evaluated"
+                        and cell.content.method_result == "HOLD"
+                        and cell.peak_observation is None
+                        and len(cell.method_assessment.candidate_peaks) >= 2
+                    )
                     else "retained_local_owner"
                 ),
                 primary_logical_requests=(),
@@ -732,6 +736,11 @@ def compose_untargeted_cid_nl_production_result(
             )
             for group in repair_groups
             for sample in batch.context.samples
+            for cell in (
+                cell_by_key[
+                    (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                ],
+            )
         )
         epoch = mint_owner_backfill_planning_epoch(
             processing_owners=batch.context.processing_owners,

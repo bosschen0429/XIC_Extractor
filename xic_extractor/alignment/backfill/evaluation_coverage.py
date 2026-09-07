@@ -66,6 +66,7 @@ OwnerBackfillPlanningReason = Literal[
     "insufficient_detected_samples",
     "raw_source_unavailable",
     "retained_local_owner",
+    "retained_unresolved_candidates",
     "local_owner_not_supersedable",
     "direct_support_threshold_not_met",
     "recovery_search_completed_empty",
@@ -78,6 +79,7 @@ OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "insufficient_detected_samples",
     "raw_source_unavailable",
     "retained_local_owner",
+    "retained_unresolved_candidates",
     "local_owner_not_supersedable",
     "direct_support_threshold_not_met",
     "recovery_search_completed_empty",
@@ -656,6 +658,29 @@ class OwnerBackfillPlanningPosition:
                 raise ValueError("logical request crosses input group identity")
             if logical.item.sample_stem != self.sample.lookup_token:
                 raise ValueError("logical request crosses canonical sample lookup")
+
+
+def validate_owner_backfill_retained_candidate_position(
+    position: OwnerBackfillPlanningPosition,
+    *,
+    source_cell: CellObservationRef,
+) -> bool:
+    """Recognize a completed ambiguous source without creating a repair claim."""
+    if position.planning_reason != "retained_unresolved_candidates":
+        return False
+    assessment = source_cell.method_assessment
+    if (
+        position.planning_state != "not_planned"
+        or source_cell.content.technical_state != "evaluated"
+        or source_cell.content.method_result != "HOLD"
+        or assessment.content.method_subject.subject_kind != "untargeted_precursor"
+        or len(assessment.candidate_peaks) < 2
+        or source_cell.content.outside_group is not None
+        or source_cell.peak_observation is not None
+        or source_cell.peak_hypothesis is not None
+    ):
+        raise ValueError("retained candidate position lacks its unresolved source")
+    return True
 
 
 def validate_owner_backfill_conservative_no_request_position(
@@ -1669,4 +1694,5 @@ __all__ = [
     "mint_owner_backfill_selection_subject_id",
     "mint_owner_backfill_terminal_id",
     "validate_owner_backfill_evaluation_coverage",
+    "validate_owner_backfill_retained_candidate_position",
 ]

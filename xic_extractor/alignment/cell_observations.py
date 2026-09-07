@@ -13,6 +13,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillAttemptTerminal,
     OwnerBackfillPlanningPosition,
     validate_owner_backfill_conservative_no_request_position,
+    validate_owner_backfill_retained_candidate_position,
 )
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairReceipt,
@@ -2057,6 +2058,14 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "final CrossSample member cannot carry a HOLD or REJECT method lane"
         )
+    if validate_owner_backfill_retained_candidate_position(
+        association.position, source_cell=source_cell
+    ):
+        if coverage_terminals or repair_receipts or repaired_observations:
+            raise CellObservationContractError(
+                "retained unresolved candidates cannot claim acquisition or repair"
+            )
+        return "unresolved"
     if repair_receipts:
         receipt = repair_receipts[0]
         if receipt.outcome == "repaired":

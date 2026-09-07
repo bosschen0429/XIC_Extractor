@@ -1583,6 +1583,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "hold_reject",
         "other_support",
         "ambiguous_hold_below_threshold",
+        "ambiguous_hold_above_threshold",
     ),
 )
 def test_production_composition_closes_observation_only_hold_without_membership(
@@ -1608,7 +1609,10 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     monkeypatch.setattr(
         production, "execute_untargeted_cid_nl_real_data_runtime", checked_runtime
     )
-    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ("Support", "Hold"))
+    above_threshold = scenario == "ambiguous_hold_above_threshold"
+    ambiguous = scenario.startswith("ambiguous_hold_")
+    stems = ("Support", "Hold", "Support2") if above_threshold else ("Support", "Hold")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
     # The other-support case must keep its independently rejected workset.
@@ -1617,7 +1621,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     )
     peak_config = _peak_config(tmp_path)
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
-    if scenario == "ambiguous_hold_below_threshold":
+    if ambiguous:
         source_raws[raw_paths[1]] = _FakeRaw((7.8, 8.2))
     rejected_samples = (
         ("Support", "Hold")
@@ -1650,12 +1654,12 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         "Support": (support,),
         "Hold": (inferred_hold,),
     }
-    if scenario == "ambiguous_hold_below_threshold":
+    if ambiguous:
         candidates_by_sample["Hold"] = tuple(
             replace(candidate, precursor_mz_basis="product_plus_neutral_loss")
             for candidate in direct_hold_candidates
         )
-    if scenario not in {"mixed", "ambiguous_hold_below_threshold"}:
+    if scenario != "mixed" and not ambiguous:
         candidates_by_sample["Support"] = (
             replace(support, precursor_mz_basis="product_plus_neutral_loss"),
         )
@@ -1674,21 +1678,23 @@ def test_production_composition_closes_observation_only_hold_without_membership(
                 replace(first, precursor_mz_basis="product_plus_neutral_loss"),
                 second,
             )
+    if above_threshold:
+        candidates_by_sample["Support2"] = _current_candidates(
+            source_raws[raw_paths[2]],
+            raw_file=raw_paths[2],
+            settings=settings,
+            peak_config=peak_config,
+        )
     batch = build_untargeted_cid_nl_production_batch(
         raw_paths=raw_paths,
-        sample_metadata=(
+        sample_metadata=tuple(
             SampleMetadata(
-                sample_name="Support",
-                raw_stem="Support",
-                injection_order=1,
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
                 sample_role="study_sample",
-            ),
-            SampleMetadata(
-                sample_name="Hold",
-                raw_stem="Hold",
-                injection_order=2,
-                sample_role="study_sample",
-            ),
+            )
+            for index, stem in enumerate(stems, start=1)
         ),
         settings=settings,
         peak_config=peak_config,
@@ -1731,6 +1737,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             "hold_reject": 1,
             "other_support": 2,
             "ambiguous_hold_below_threshold": 2,
+            "ambiguous_hold_above_threshold": 2,
         }[scenario]
     )
 
@@ -1745,7 +1752,63 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         completed.application_result.physical_observation_ids
     )
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
-    assert writer_inputs.matrix.sample_order == ("Support", "Hold")
+    assert writer_inputs.matrix.sample_order == stems
+    if above_threshold:
+        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+        (child,) = completed.application_result.children
+        scientific = child.scientific_core
+        assert {subject.candidate_id for subject in scientific.terminal_subjects} == {
+            candidate.candidate_id
+            for values in candidates_by_sample.values()
+            for candidate in values
+        }
+        hold_cell = next(
+            cell
+            for cell in scientific.cell_observations
+            if cell.canonical_sample.metadata.raw_stem == "Hold"
+        )
+        (source,) = hold_cell.predecessor_cells
+        assessment = next(
+            result.effective_assessment
+            for result in runtime_result.sample_results
+            if result.job.sample.metadata.raw_stem == "Hold"
+        )
+        assert source.method_assessment is assessment
+        assert assessment.content.method_result == "HOLD"
+        assert len(assessment.candidate_peaks) == 2
+        assert source.peak_observation is source.peak_hypothesis is None
+        assert hold_cell.repair_receipts == hold_cell.repaired_observations == ()
+        position = next(
+            item
+            for item in scientific.cell_observation_handoff.coverage.epoch.positions
+            if item.sample.metadata.raw_stem == "Hold"
+        )
+        assert position.conservative_no_request_proof is None
+        assert position.primary_logical_requests == ()
+        assert all(
+            not result.recovery_attempts for result in runtime_result.sample_results
+        )
+        assert sum(map(len, opened.values())) == opens_before_composition == 3
+        cells = {cell.sample_stem: cell for cell in writer_inputs.matrix.cells}
+        assert cells["Hold"].status == "ambiguous_ms1_owner"
+        for stem in stems:
+            decision = writer_inputs.production_decisions.cell(
+                cells[stem].cluster_id, stem
+            )
+            assert decision.write_matrix_value is (stem != "Hold")
+            assert (decision.matrix_value is None) is (stem == "Hold")
+        matrix_path = tmp_path / "qualified-ambiguous-hold.tsv"
+        write_alignment_matrix_tsv(
+            matrix_path,
+            writer_inputs.matrix,
+            production_decisions=writer_inputs.production_decisions,
+        )
+        with matrix_path.open(encoding="utf-8", newline="") as handle:
+            (row,) = tuple(csv.DictReader(handle, delimiter="\t"))
+        assert row["Hold"] == ""
+        assert float(row["Support"]) > 0 and float(row["Support2"]) > 0
+        return
     if scenario == "ambiguous_hold_below_threshold":
         from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
