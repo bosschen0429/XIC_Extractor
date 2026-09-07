@@ -137,6 +137,7 @@ def complete_untargeted_cid_nl_alignment(
                 _RUNTIME_ARTIFACT_NAMESPACE,
             ),
             progress_callback=recorder.heartbeat_event,
+            alignment_config=alignment_config,
         )
     with recorder.stage("alignment.untargeted_cid_nl_compose"):
         return compose_untargeted_cid_nl_production_result(

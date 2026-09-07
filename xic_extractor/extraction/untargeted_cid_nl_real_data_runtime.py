@@ -20,6 +20,7 @@ from xic_extractor.alignment.cell_observations import (
     CidNlCellGroupContext,
     compose_cid_nl_predecessor_cells,
 )
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
     assess_conservative_backfill_group,
@@ -659,11 +660,16 @@ def execute_untargeted_cid_nl_real_data_runtime(
     telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
 ) -> UntargetedCidNlRealDataRuntimeApplicationResult:
     """Execute every request sample through one attempt and one finalization."""
 
     if not isinstance(runtime, AttemptRuntime):
         raise UntargetedCidNlRealDataRuntimeError("runtime must be an AttemptRuntime")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "alignment_config must be an AlignmentConfig"
+        )
     if not jobs or any(
         not isinstance(job, UntargetedCidNlRealDataRuntimeJob) for job in jobs
     ):
@@ -840,7 +846,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 for state in sample_states:
                     _execute_initial_assessment(state)
 
-        _prepare_owner_authorized_recoveries(states)
+        _prepare_owner_authorized_recoveries(states, alignment_config=alignment_config)
 
         for state in states:
             if (
@@ -1041,6 +1047,8 @@ def _execute_initial_assessment_batch(
 
 def _prepare_owner_authorized_recoveries(
     states: list[_RuntimeJobState],
+    *,
+    alignment_config: AlignmentConfig,
 ) -> None:
     by_subject: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
@@ -1049,11 +1057,15 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        _prepare_subject_authorized_recoveries(tuple(by_subject[method_subject_id]))
+        _prepare_subject_authorized_recoveries(
+            tuple(by_subject[method_subject_id]), alignment_config=alignment_config
+        )
 
 
 def _prepare_subject_authorized_recoveries(
     states: tuple[_RuntimeJobState, ...],
+    *,
+    alignment_config: AlignmentConfig,
 ) -> None:
     if any(state.error is not None or state.adapter_result is None for state in states):
         return
@@ -1086,7 +1098,7 @@ def _prepare_subject_authorized_recoveries(
         )
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(support_owners),
-        config=CID_NL_ALIGNMENT_CONFIG,
+        config=alignment_config,
     )
     first = states[0].job
     cells = compose_cid_nl_predecessor_cells(
@@ -1096,7 +1108,7 @@ def _prepare_subject_authorized_recoveries(
             (state.job.sample, result.assessment_input.assessment)
             for state, result in zip(states, adapter_results, strict=True)
         ),
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        alignment_config=alignment_config,
     )
     for group in groups:
         facts = assess_conservative_backfill_group(

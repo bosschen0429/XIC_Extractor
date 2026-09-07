@@ -48,6 +48,9 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
+from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedUntargetBatchWorkflowResult,
@@ -301,6 +304,7 @@ def execute_untargeted_cid_nl_production_batch(
     telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
 ) -> UntargetedCidNlRealDataRuntimeApplicationResult:
     """Execute the sealed universe once and enforce its per-sample phase bound."""
 
@@ -320,6 +324,7 @@ def execute_untargeted_cid_nl_production_batch(
         telemetry_provider=telemetry_provider,
         recovery_marker=recovery_marker,
         progress_callback=progress_callback,
+        alignment_config=alignment_config,
     )
     if not result.succeeded or len(result.sample_results) != len(batch.jobs):
         raise RuntimeError("Untargeted CID-NL production did not complete atomically")
