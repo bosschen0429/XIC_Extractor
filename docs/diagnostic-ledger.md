@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-08
+**Last updated:** 2026-09-09
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,29 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-09 Batch Finalization Reuses Owner Validation
+
+Evidence: `diagnostic_only`. `UntargetBatchApplicationResultRequest` validates
+the immutable batch once; the application-result finalizer transfers those
+validated fields under the existing exact-type and private mint gates. The
+finalizer and minted result do not repeat full cohort validation.
+
+One sequential replay pair of the same corrected eight-sample composition
+input reduced full batch validation calls from three to one and composition
+time from 392.690 to 324.718 seconds (17.3%). Both public CLI replays completed
+with zero RAW opens. Matrix bytes match each other and the corrected-input
+reference; public explanation reading and complete SQLite logical contents
+match, excluding only run-specific `matrix_path` and `processing_attempt_id`.
+All 78 related regression tests pass, including the production writer-path
+assertion that full batch validation runs once. Receipts are under
+`output/cid-nl-batch-validation-fix/verification.json`; this is a host-local
+evidence locator, not a portable input. The single pair does not establish
+whole-RAW speedup or production readiness.
+
+Reuse this conclusion while request immutability, direct field transfer, and
+the finalizer/mint boundary remain unchanged. Changed batch inputs or a new
+mutable handoff require reevaluating validation ownership.
 
 ### 2026-09-08 Discovery Physical Context And Known-ISTD Competition
 

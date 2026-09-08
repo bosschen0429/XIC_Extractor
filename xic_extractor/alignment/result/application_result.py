@@ -290,8 +290,8 @@ class FinalizedUntargetBatchApplicationResult:
     _mint_token: InitVar[object]
 
     def __post_init__(self, _mint_token: object) -> None:
+        # The owner transfers the validated request's exact immutable fields.
         _require_result_mint(_mint_token)
-        _validate_untarget_batch_request(self)
 
     @property
     def variant(self) -> Literal["untargeted_batch"]:
@@ -405,7 +405,7 @@ def finalize_alignment_result(
             _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
         )
     if type(request) is UntargetBatchApplicationResultRequest:
-        _validate_untarget_batch_request(request)
+        # Construction already closes the batch; this handoff adds no new input.
         return FinalizedUntargetBatchApplicationResult(
             scope=request.scope,
             processing_request=request.processing_request,

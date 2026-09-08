@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from openpyxl import load_workbook
 
+import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 from tests.runtime_telemetry_fixtures import (
@@ -1573,6 +1574,18 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert len(result.sample_results) == len(batch.jobs) == 2
     assert vendor_raw.chromatogram_request_counts == [2]
 
+    validated_batches = []
+    validate_batch = application_result_owner._validate_untarget_batch_request
+
+    def record_batch_validation(request):
+        validate_batch(request)
+        validated_batches.append(request)
+
+    monkeypatch.setattr(
+        application_result_owner,
+        "_validate_untarget_batch_request",
+        record_batch_validation,
+    )
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = compose_untargeted_cid_nl_production_result(
         batch,
@@ -1673,6 +1686,8 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "alignment_review.tsv",
         "review_report.html",
     }
+    # Full owner validation is cohort-sized; sealing the same batch must reuse it.
+    assert len(validated_batches) == 1
 
 
 @pytest.mark.parametrize(
