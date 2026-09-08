@@ -98,4 +98,3 @@ def encoded_graph(value, *, identity_only=()):
 
 def retained_owner_digest(value, *, identity_only=()):
     return sha256(encoded_graph(value, identity_only=identity_only)).digest()
-
