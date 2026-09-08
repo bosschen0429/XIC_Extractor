@@ -65,6 +65,49 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 Discovery Physical Context And Known-ISTD Competition
+
+Evidence: `diagnostic_only`; physical correction `481be6c3` and compatible-group
+ranking correction `ec17b55e`. The formal physical owner clamps negative AsLS
+background before subtraction and rejects selected intervals reaching an
+acquired-trace edge. Discovery applies its physical context minimum to inferred
+precursors and uses its existing single reacquisition pass for incomplete
+context. The fixed signal profile changes; old-profile physical artifacts do
+not establish corrected behavior. No merge-predicate or Matrix writer change
+was necessary.
+
+The original NormalBC2263 scan 14712 false peak was already published by
+Discovery, independently of main scan 14922. Exact retained original input
+replay reproduced all four relevant physical fact IDs. Fresh Discovery removes
+physical values for scans 14067/14291/14712 and preserves main apex 18.4559.
+BC1055 scans 32781/33151 consolidate at apex 38.1901; QC3's confirmed distinct
+apices 15.0077/15.2552 remain distinct. Portable numerical trace regressions
+live under `tests/fixtures/` and exercise the formal Discovery output path.
+
+The first eight-sample run exposed d3-N6-medA splitting despite intact unique
+reference bindings: grouping admitted corrected edges but ranked compatible
+groups by raw RT, allowing different tumor peaks to take the main peaks'
+places. The existing ranking owner now uses the already-bound known-ISTD pair
+distance; unbound pairs and admission gates are unchanged. A public three-owner
+regression is red before and green after this correction.
+
+Clean `ec17b55e` completed the public eight-sample Alignment CLI in 924.102
+seconds using fresh corrected Discovery, `dna_dr`, and the same source-hashed
+known-ISTD workbook. The Matrix has 1,387 rows / 5,189 numeric cells, SHA256
+`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`.
+All three manual controls and six baseline ISTD coverage/co-grouping checks
+pass; an independent source-membership check confirms all eight actual medA
+main peaks occupy the same final group. d3-5-hmdC already had two partial rows
+in the baseline; that pattern is unchanged. Public explanation reading,
+Matrix hash binding, and SQLite integrity pass. Receipts and the qualified
+report are under `output/cid-nl-discovery-fix/`; these are local evidence
+locators, not portable runtime inputs.
+
+Reuse this evidence unless physical selection/context, reference binding,
+group ranking, source identities, or named-control behavior changes. It does
+not classify every removed candidate as chemically false, decide 649/1060
+cross-sample grouping, or establish 85RAW/production readiness.
+
 ### 2026-09-08 Formal Native Receipt And Population Proof Reuse
 
 Evidence: `diagnostic_only`; engineering implementation `4152f1bc` applies the
