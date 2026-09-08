@@ -100,6 +100,18 @@ The new profile instead motivated the immutable-byte change above. Commands,
 code/input hashes, comparisons, and full parity receipts remain under
 `output/cid-nl-context-lifetime/`; no RAW rerun is needed for these conclusions.
 
+A complete stacked replay at clean revision `0c264e04` then applied the same
+formal byte cache on top of the unchanged native/population prototype below.
+Against that prototype's 559.197 seconds, the stacked run took 491.616 seconds:
+an observed additional 67.581-second (12.1%) reduction. This answers cumulative
+prototype improvement; the separate 4.6% product-only comparison does not.
+The original overlay source and binary hashes matched, and both runs recorded
+the same context-check/reuse counts. Matrix bytes, the public explanation
+reader, and every SQLite logical/schema/integrity oracle passed again, with
+zero RAW opens. Evidence is under `output/cid-nl-stacked-proof/`. This remains
+a single-run retained-input comparison, and the native/population components
+remain diagnostic prototypes rather than applied product changes.
+
 ### 2026-09-08 CID-NL Population And Native-Encoding Prototype
 
 Evidence: `diagnostic_only`; isolated prototype, not an applied product change.
