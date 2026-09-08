@@ -35,10 +35,10 @@ _FIXED_PROFILE_VALUES: dict[str, object] = {
     "baseline_lam": 100000,
     "baseline_p": 0.01,
     "baseline_n_iter": 10,
-    "physical_signal_formula": "gaussian_raw_minus_asls_raw_positive_v1",
+    "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_raw_positive_v2",
     "boundary_basis": "chrom_peak_segment_closed_subject_v1",
     "segment_universe_limit": 64,
-    "segment_selection_behavior": "closed_segment_contains_query_unique_only_v1",
+    "segment_selection_behavior": "closed_segment_contains_query_complete_context_v2",
     "area_basis": "trapezoid_counts_seconds_on_canonical_signal_v1",
     "relative_shape_basis": "own_max_canonical_signal_v1",
 }
@@ -58,10 +58,12 @@ class SignalProcessingProfile:
     baseline_lam: int = 100000
     baseline_p: float = 0.01
     baseline_n_iter: int = 10
-    physical_signal_formula: str = "gaussian_raw_minus_asls_raw_positive_v1"
+    physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_raw_positive_v2"
     boundary_basis: str = "chrom_peak_segment_closed_subject_v1"
     segment_universe_limit: int = 64
-    segment_selection_behavior: str = "closed_segment_contains_query_unique_only_v1"
+    segment_selection_behavior: str = (
+        "closed_segment_contains_query_complete_context_v2"
+    )
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal_v1"
     relative_shape_basis: str = "own_max_canonical_signal_v1"
 

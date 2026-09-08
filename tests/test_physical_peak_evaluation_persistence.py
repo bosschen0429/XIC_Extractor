@@ -22,6 +22,20 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 
+def test_truncated_physical_peak_has_no_numeric_facts() -> None:
+    rt = np.linspace(0.0, 1.0, 31)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 1.05) / 0.18) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="truncated-peak", query_rt_min=0.9
+    )
+
+    assert result.state == "unavailable"
+    assert result.reason == "incomplete_peak_context"
+    assert result.facts is None
+    assert result.integration is None
+
+
 @pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])
 def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
     terminal: str,

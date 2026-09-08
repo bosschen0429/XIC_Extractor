@@ -461,6 +461,7 @@ def prepare_physical_signal(
             p=profile.baseline_p,
             n_iter=profile.baseline_n_iter,
         )
+        baseline = np.maximum(baseline, 0.0)
     except (ValueError, FloatingPointError, ArithmeticError) as exc:
         projection = projection_for(
             state="failed",
@@ -824,6 +825,15 @@ def answer_physical_peak_question(
                 for segment in universe.segments
                 if segment.physical_segment_id == selected_id
             )
+            prepared = prepared_result.prepared
+            if prepared is None:
+                raise ValueError("available physical answer lacks worker-local signal")
+            if (
+                selected.start_index == 0
+                or selected.end_index == len(prepared.rt)
+            ):
+                state, reason = "unavailable", "incomplete_peak_context"
+                selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer_v1",
         "state": state,

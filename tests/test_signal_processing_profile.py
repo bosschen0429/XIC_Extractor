@@ -20,11 +20,11 @@ EXPECTED_DEFAULT_JSON = (
     b'"gaussian_kernel_normalization":"unit_sum_v1",'
     b'"gaussian_edge_policy":"zero_pad_same_v1","baseline_method":"asls",'
     b'"baseline_lam":100000,"baseline_p":0.01,"baseline_n_iter":10,'
-    b'"physical_signal_formula":"gaussian_raw_minus_asls_raw_positive_v1",'
+    b'"physical_signal_formula":"gaussian_raw_minus_nonnegative_asls_raw_positive_v2",'
     b'"boundary_basis":"chrom_peak_segment_closed_subject_v1",'
     b'"segment_universe_limit":64,'
     b'"segment_selection_behavior":'
-    b'"closed_segment_contains_query_unique_only_v1",'
+    b'"closed_segment_contains_query_complete_context_v2",'
     b'"area_basis":"trapezoid_counts_seconds_on_canonical_signal_v1",'
     b'"relative_shape_basis":"own_max_canonical_signal_v1"}'
 )
@@ -58,10 +58,23 @@ def test_default_profile_has_exact_canonical_bytes_hash_and_id() -> None:
     assert profile == SignalProcessingProfile()
     assert canonical_signal_processing_profile_bytes(profile) == EXPECTED_DEFAULT_JSON
     assert serialize_signal_processing_profile(profile) == EXPECTED_DEFAULT_JSON
-    expected_hash = "bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
+    expected_hash = "d382cf3811d2dba6b529167f48100496975c54eff6a3820289a66d792892fe45"
     assert profile.profile_hash == expected_hash
     assert profile.profile_id == f"signal-profile.v1:{expected_hash}"
     assert DEFAULT_SIGNAL_PROCESSING_PROFILE_ID == profile.profile_id
+
+
+def test_profile_reader_rejects_unconstrained_and_clipped_peak_semantics() -> None:
+    old_profile = EXPECTED_DEFAULT_JSON.replace(
+        b"gaussian_raw_minus_nonnegative_asls_raw_positive_v2",
+        b"gaussian_raw_minus_asls_raw_positive_v1",
+    ).replace(
+        b"closed_segment_contains_query_complete_context_v2",
+        b"closed_segment_contains_query_unique_only_v1",
+    )
+
+    with pytest.raises(ValueError, match="physical_signal_formula"):
+        deserialize_signal_processing_profile(old_profile)
 
 
 @pytest.mark.parametrize("window_points", [True, False, 2, 4, 1000, 3.0, "15"])

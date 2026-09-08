@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
@@ -10,8 +11,10 @@ import pytest
 from tests.test_discovery_ms1_backfill import (
     _group,
     _multi_tag_settings,
-    _OwnerBoundBatchRaw,
     _seed,
+)
+from tests.test_discovery_ms1_backfill import (
+    _OwnerBoundBatchRaw as _BatchRaw,
 )
 from tests.test_discovery_ms1_backfill import (
     _peak_config as _backfill_peak_config,
@@ -55,6 +58,124 @@ from xic_extractor.raw_reader import (
 from xic_extractor.xic_models import XICTrace
 
 _TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
+
+
+class _OwnerBoundBatchRaw(_BatchRaw):
+    def __init__(self, source, **kwargs) -> None:
+        super().__init__(source, **kwargs)
+        self.rt = np.asarray([7.6, 7.7, 7.8, 7.9, 8.0])
+        self.intensity = np.asarray([0.0, 10.0, 100.0, 10.0, 0.0])
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_apices", "representative_scan"),
+    (
+        ("discovery_normal_single_peak", (18.45591733148333,), 14922),
+        ("discovery_same_peak_seeds", (38.190113531483334,), None),
+        ("discovery_true_double_peak", (15.007716898666667, 15.25524139625), None),
+    ),
+)
+def test_discovery_retained_physical_peak_cardinality(
+    tmp_path: Path,
+    fixture_name: str,
+    expected_apices: tuple[float, ...],
+    representative_scan: int | None,
+) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / f"{fixture_name}.json").read_text()
+    )
+    rt = np.asarray([float.fromhex(v) for v in fixture["trace"]["rt"]])
+    intensity = np.asarray([float.fromhex(v) for v in fixture["trace"]["intensity"]])
+    raw_path = tmp_path / f"{fixture_name}.raw"
+    raw_path.write_bytes(b"retained exact numerical XIC fixture")
+    settings = _backfill_settings()
+    profile = SignalProcessingProfile()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings, signal_processing_profile=profile
+    )
+    source = spec.acquisition_inputs[0].acquisition_source
+
+    class RetainedTraceRaw(_OwnerBoundBatchRaw):
+        def scan_window_for_request(self, request):
+            return (
+                int(np.searchsorted(rt, request.rt_min)) + 1,
+                int(np.searchsorted(rt, request.rt_max, side="right")),
+            )
+
+        def extract_xic_many(self, requests):
+            self.request_batches.append(tuple(requests))
+            self.raw_chromatogram_call_count += len(requests)
+            return tuple(
+                XICTrace.from_arrays(
+                    rt[(rt >= request.rt_min) & (rt <= request.rt_max)],
+                    intensity[(rt >= request.rt_min) & (rt <= request.rt_max)],
+                )
+                for request in requests
+            )
+
+    groups = tuple(
+        replace(
+            _group(
+                (
+                    replace(
+                        _seed(
+                            scan_number=scan,
+                            rt=seed_rt,
+                            precursor_mz=mz,
+                            product_mz=product,
+                        ),
+                        raw_file=raw_path,
+                        sample_stem=raw_path.stem,
+                        precursor_mz_basis=fixture.get(
+                            "precursor_mz_basis", "product_plus_neutral_loss"
+                        ),
+                    ),
+                )
+            ),
+            precursor_mz_basis=fixture.get(
+                "precursor_mz_basis", "product_plus_neutral_loss"
+            ),
+        )
+        for scan, seed_rt, mz, product in zip(
+            fixture["seed_scans"],
+            fixture["seed_rt"],
+            fixture["precursor_mz"],
+            fixture.get(
+                "product_mz", [mz - 116.0474 for mz in fixture["precursor_mz"]]
+            ),
+            strict=True,
+        )
+    )
+    result = _backfill_ms1_candidates_with_acquisition(
+        RetainedTraceRaw(source),
+        groups,
+        acquisition_source=source,
+        run_spec_id=spec.run_spec_id,
+        settings=settings,
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+    path = write_discovery_candidates_csv(
+        tmp_path / "candidates.csv", result.candidates
+    )
+    valid = [c for c in read_discovery_candidates_csv(path) if c.ms1_peak_found]
+    assert sorted(c.ms1_apex_rt for c in valid) == [
+        round(apex, 4) for apex in expected_apices
+    ]
+    assert sorted(
+        c.ms1_apex_rt for c in result.candidates if c.ms1_peak_found
+    ) == pytest.approx(expected_apices)
+    assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
+    if representative_scan is not None:
+        assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
+        assert all(
+            record.evaluation.facts is None
+            for record in result.physical_evaluations
+            if record.work_item.best_ms2_scan_id != representative_scan
+        )
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -431,7 +552,7 @@ def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
-    full_rt = np.arange(11.55, 13.25, 0.10, dtype=float)
+    full_rt = np.arange(11.05, 13.25, 0.10, dtype=float)
     full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.08) ** 2)
 
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
@@ -573,8 +694,8 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
     candidate = result.candidates[0]
     assert candidate.ms1_peak_found is True
     assert candidate.ms1_trace_quality == "clean"
-    assert candidate.ms1_search_rt_min == pytest.approx(11.713)
-    assert candidate.ms1_search_rt_max == pytest.approx(12.413)
+    assert candidate.ms1_search_rt_min == pytest.approx(11.463)
+    assert candidate.ms1_search_rt_max == pytest.approx(12.663)
     assert candidate.ms1_apex_rt == pytest.approx(12.14)
 
 
@@ -622,8 +743,8 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     initial = result.measurements.acquisition_batches[0]
     assert initial.traces[0].coordinate.trace_point_count >= profile.window_points
     initial_request = initial.traces[0].coordinate.request
-    assert initial_request.rt_min == pytest.approx(11.713)
-    assert initial_request.rt_max == pytest.approx(12.450)
+    assert initial_request.rt_min == pytest.approx(11.463)
+    assert initial_request.rt_max == pytest.approx(12.700)
     work = result.physical_work_manifest[0]
     assert work.query_rt_min == pytest.approx(12.063)
     assert work.xic_rt_min == initial_request.rt_min
@@ -830,7 +951,7 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
         signal_processing_profile=profile,
     )
     foreign_raw = _OwnerBoundBatchRaw(foreign_source)
-    foreign_raw.intensity = np.asarray([5.0, 500.0, 5.0], dtype=float)
+    foreign_raw.intensity = np.asarray([0.0, 5.0, 500.0, 5.0, 0.0], dtype=float)
     foreign = _backfill_ms1_candidates_with_acquisition(
         foreign_raw,
         (group,),

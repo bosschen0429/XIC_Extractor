@@ -48,9 +48,15 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 
 - For profile-covered physical work, the canonical signal is exactly
   `max(Gaussian(raw; window_points, sigma=window_points/6, unit_sum,
-  zero_pad_same) - AsLS(raw; lam=100000, p=0.01, n_iter=10), 0)`. Gaussian and
+  zero_pad_same) - max(AsLS(raw; lam=100000, p=0.01, n_iter=10), 0), 0)`. Gaussian and
   AsLS are both computed from raw independently. AsLS is fixed baseline
-  estimation, not a second smoothing method.
+  estimation, not a second smoothing method. Its physical baseline is bounded
+  below by zero so a negative fitted baseline cannot manufacture peak signal.
+  A selected segment that reaches either acquired-trace edge is unavailable
+  (`incomplete_peak_context`) and carries no numeric physical facts. Discovery
+  uses its existing bounded reacquisition pass to recover missing context;
+  unresolved clipped segments remain unavailable. Formula and selection semantics
+  are versioned in the profile, so old results require fresh processing.
 - The canonical public profile fields are `signal_processing_method`
   (`gaussian` only) and `signal_processing_window_points` (default 15; non-bool
   odd integer 3–999). The legacy settings spelling
@@ -68,7 +74,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   product/NL/MS2 acquisition opportunity, and untargeted identity-coherence
   guards still decide whether a candidate is accepted, not counted, ambiguous,
   or excluded.
-- Canonical Gaussian(raw)-AsLS(raw) positive area is the selected product
+- Canonical Gaussian(raw)-nonnegative-AsLS(raw) positive area is the selected product
   direction for the bounded Owner Backfill migration, with profile/fact/value
   provenance. Numeric area differences from legacy integration are accepted
   quantitative expected differences; parity must not be manufactured by a

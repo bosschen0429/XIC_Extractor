@@ -21,13 +21,17 @@ integration, intensity measurement, scan support, and relative-shape comparison
 operate on one canonical positive signal:
 
 ```text
-baseline = AsLS(raw; lam=100000, p=0.01, n_iter=10)
+baseline = max(AsLS(raw; lam=100000, p=0.01, n_iter=10), 0)
 smoothed = Gaussian(raw; window_points,
                     sigma=window_points/6,
                     unit_sum=true,
                     edge_policy=zero_pad_same)
 positive_signal = max(smoothed - baseline, 0)
 ```
+
+The physical baseline cannot be negative: extrapolated negative background
+must not create positive peak signal. A selected interval reaching an acquired
+trace edge lacks observed boundary context and has no numeric physical answer.
 
 AsLS estimates background; it is not a smoothing method exposed alongside
 Gaussian. Raw vendor intensity remains an input to both fixed transforms and is

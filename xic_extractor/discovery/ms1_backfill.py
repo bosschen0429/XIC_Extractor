@@ -234,6 +234,7 @@ def _backfill_ms1_candidates_with_acquisition(
 
     batches: list[TraceAcquisitionBatch] = []
     acquired_traces: list[AcquiredTrace] = []
+    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
     for plan_chunk in _chunks(physical_plans, _DISCOVERY_MS1_BATCH_MAX_REQUESTS):
         batch = acquire_trace_batch(
             capability,
@@ -244,7 +245,26 @@ def _backfill_ms1_candidates_with_acquisition(
         batches.append(batch)
         acquired_traces.extend(batch.traces)
 
+    initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     if signal_processing_profile is not None:
+        for physical_index, (plan, acquired) in enumerate(
+            zip(physical_plans, acquired_traces, strict=True)
+        ):
+            records: list[DiscoveryPhysicalFactRecord] = []
+            _candidate_from_trace(
+                plan.group,
+                acquired.trace.rt,
+                acquired.trace.intensity,
+                settings=settings,
+                peak_config=peak_config,
+                signal_processing_profile=signal_processing_profile,
+                prepared_signal_cache=prepared_signal_cache,
+                physical_work_ordinal=physical_index,
+                physical_acquisition_source_id=acquisition_source.acquisition_source_id,
+                physical_acquired_trace=acquired,
+                physical_evaluation_observer=records.append,
+            )
+            (initial_physical_facts[physical_index],) = records
         reacquisition_plans = tuple(
             (physical_index, expanded_plan)
             for physical_index, (plan, acquired) in enumerate(
@@ -256,6 +276,9 @@ def _backfill_ms1_candidates_with_acquisition(
                     acquired,
                     profile=signal_processing_profile,
                     settings=settings,
+                    physical_evaluation=initial_physical_facts[
+                        physical_index
+                    ].evaluation,
                 )
             )
             is not None
@@ -279,6 +302,7 @@ def _backfill_ms1_candidates_with_acquisition(
             ):
                 physical_plans[physical_index] = expanded_plan
                 acquired_traces[physical_index] = acquired
+                del initial_physical_facts[physical_index]
 
     scan_windows_by_batch = tuple(
         tuple(
@@ -315,7 +339,6 @@ def _backfill_ms1_candidates_with_acquisition(
 
     if len(acquired_traces) != len(physical_plans):
         raise ValueError("Discovery MS1 acquisition lost a physical request")
-    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
     physical_work_manifest: list[DiscoveryPhysicalWorkItem] = []
     physical_evaluations: list[DiscoveryPhysicalFactRecord] = []
     physical_fact_by_index: dict[int, DiscoveryPhysicalFactRecord] = {}
@@ -323,6 +346,12 @@ def _backfill_ms1_candidates_with_acquisition(
     for plan, physical_index in zip(plans, physical_indices, strict=True):
         acquired = acquired_traces[physical_index]
         existing_fact = physical_fact_by_index.get(physical_index)
+        if existing_fact is None:
+            existing_fact = initial_physical_facts.get(physical_index)
+            if existing_fact is not None:
+                physical_fact_by_index[physical_index] = existing_fact
+                physical_work_manifest.append(existing_fact.work_item)
+                physical_evaluations.append(existing_fact)
         candidates.append(
             _candidate_from_trace(
                 plan.group,
@@ -406,9 +435,7 @@ def _discovery_ms1_request_plan(
     for input_ordinal, group in enumerate(groups):
         if not group.seeds:
             continue
-        padding_min = settings.ms1_search_padding_min
-        if group.precursor_mz_basis in {"scan_precursor", "mixed"}:
-            padding_min = max(padding_min, minimum_padding_min)
+        padding_min = max(settings.ms1_search_padding_min, minimum_padding_min)
         plans.append(
             _DiscoveryMs1RequestPlan(
                 input_ordinal=input_ordinal,
@@ -433,20 +460,12 @@ def _expanded_physical_request_plan(
     *,
     profile: SignalProcessingProfile,
     settings: DiscoverySettings,
+    physical_evaluation: PhysicalPeakEvaluation,
 ) -> _DiscoveryMs1RequestPlan | None:
-    precursor_mz_basis = plan.group.precursor_mz_basis
-    if precursor_mz_basis == "product_plus_neutral_loss":
-        if not _has_strong_inferred_precursor_support(
-            plan.group,
-            settings=settings,
-        ):
-            return None
-    elif precursor_mz_basis not in {"scan_precursor", "mixed"}:
-        return None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     point_count = len(rt)
-    if point_count < 2 or point_count >= profile.window_points:
+    if point_count < 2:
         return None
     if (
         rt.ndim != 1
@@ -461,6 +480,29 @@ def _expanded_physical_request_plan(
         return None
     cadence_min = float(np.median(deltas))
     if not math.isfinite(cadence_min) or cadence_min <= 0.0:
+        return None
+
+    if point_count >= profile.window_points:
+        if physical_evaluation.reason != "incomplete_peak_context":
+            return None
+        extra_context = max(
+            _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN,
+            cadence_min * (profile.window_points // 2),
+        )
+        return replace(
+            plan,
+            request=replace(
+                plan.request,
+                rt_min=max(0.0, plan.request.rt_min - extra_context),
+                rt_max=plan.request.rt_max + extra_context,
+            ),
+        )
+
+    precursor_mz_basis = plan.group.precursor_mz_basis
+    if precursor_mz_basis == "product_plus_neutral_loss":
+        if not _has_strong_inferred_precursor_support(plan.group, settings=settings):
+            return None
+    elif precursor_mz_basis not in {"scan_precursor", "mixed"}:
         return None
 
     extra_point_count = profile.window_points - point_count + 2

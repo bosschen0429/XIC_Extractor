@@ -15,6 +15,21 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 
+def test_canonical_signal_cannot_be_created_by_negative_baseline() -> None:
+    from xic_extractor.peak_detection.ms1_morphology import (
+        canonical_gaussian_signal_traces,
+    )
+
+    raw = np.zeros(31)
+    raw[20] = 100.0
+    smoothed, signal = canonical_gaussian_signal_traces(
+        raw, np.linspace(-500.0, 0.0, len(raw)), profile=SignalProcessingProfile()
+    )
+
+    assert np.all(signal <= smoothed)
+    assert signal[0] == 0.0
+
+
 def test_gaussian15_morphology_trace_preserves_centered_spike_area() -> None:
     residual = np.zeros(31)
     residual[15] = 100.0
