@@ -1219,10 +1219,14 @@ def _write_owner_closed_preflight_batch(
     return batch_index, raw_dir
 
 
+@pytest.mark.parametrize(
+    "reference_kind", [None, "valid", "missing", "schema", "corrupt"]
+)
 def test_run_alignment_cli_preflight_only_prints_launch_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    reference_kind: str | None,
 ) -> None:
     batch_index, raw_dir = _write_owner_closed_preflight_batch(
         tmp_path,
@@ -1236,6 +1240,21 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
         raise AssertionError("preflight-only should not run alignment")
 
     monkeypatch.setattr(run_alignment, "run_alignment", fail_run_alignment)
+
+    reference_args = []
+    reference_path = tmp_path / "reference.xlsx"
+    if reference_kind is not None:
+        from tests.test_alignment_drift_evidence import _known_reference_workbook
+
+        reference_args = ["--known-istd-reference-workbook", str(reference_path)]
+        if reference_kind in {"valid", "schema"}:
+            workbook = _known_reference_workbook(reference_path)
+            if reference_kind == "schema":
+                del workbook["Targets"]
+                workbook.save(reference_path)
+            workbook.close()
+        elif reference_kind == "corrupt":
+            reference_path.write_bytes(b"not an Excel workbook")
 
     code = run_alignment.main(
         [
@@ -1258,11 +1277,23 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
             "--timing-live-output",
             str(output_dir / "timing.live.json"),
             "--preflight-only",
+            *reference_args,
         ]
     )
 
+    if reference_kind in {"missing", "schema", "corrupt"}:
+        assert code == 2
+        captured = capsys.readouterr()
+        assert "preflight OK" not in captured.out
+        assert captured.err
+        return
     assert code == 0
     stdout = capsys.readouterr().out
+    if reference_kind == "valid":
+        import hashlib
+
+        assert f"Known ISTD reference workbook: {reference_path.resolve()}" in stdout
+        assert hashlib.sha256(reference_path.read_bytes()).hexdigest() in stdout
     assert (
         "Alignment launch preflight OK (diagnostic_only; no validation completed)"
         in stdout
