@@ -107,7 +107,7 @@ def mint_untargeted_cid_nl_projection_ref(
     canonical_evidence: CidNlEvidenceRef,
     discovery_seed: DiscoverySeed,
 ) -> UntargetedCidNlProjectionRef:
-    """Bind one direct measured Discovery seed without Matrix authority."""
+    """Bind one exact measured or inferred Discovery seed without Matrix authority."""
 
     if not isinstance(discovery_seed, DiscoverySeed):
         raise UntargetedCidNlProjectionError(
@@ -125,9 +125,13 @@ def mint_untargeted_cid_nl_projection_ref(
         )
     except CidNlEvidenceContractError as exc:
         raise UntargetedCidNlProjectionError(str(exc)) from exc
-    if discovery_seed.precursor_mz_basis != "scan_precursor":
+    if (
+        discovery_seed.precursor_mz_basis
+        != canonical_evidence.observation.precursor_mz_basis
+    ):
         raise UntargetedCidNlProjectionError(
-            "first tracer accepts only directly measured scan_precursor evidence"
+            "Discovery precursor_mz_basis mismatches canonical evidence: "
+            f"{canonical_evidence.observation.precursor_mz_basis}"
         )
     scan_precursor_mz = discovery_seed.scan_precursor_mz
     if (
@@ -168,7 +172,7 @@ def mint_untargeted_cid_nl_projection_ref(
         )
     _require_close(
         float(scan_precursor_mz),
-        observation.precursor_mz,
+        observation.scan_precursor_mz,
         field="scan_precursor_mz",
     )
     _require_close(

@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import InitVar, asdict, dataclass, field, replace
 from typing import Literal, TypeAlias
 
@@ -32,6 +33,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
     compose_peak_hypotheses_from_assessment_universe,
@@ -145,8 +147,28 @@ class CidNlCellGroupContext:
     supports: tuple[CidNlCellGroupSupport, ...]
     config: AlignmentConfig
     processing_attempt: ProcessingAttemptIdentity
+    sample_universe: frozenset[str] | None = None
+    injection_order: tuple[tuple[str, int], ...] | None = None
+    drift_lookup: DriftLookupProtocol | None = None
 
     def __post_init__(self) -> None:
+        if self.sample_universe is not None and not isinstance(
+            self.sample_universe, frozenset
+        ):
+            raise CellObservationContractError(
+                "group sample universe must be immutable"
+            )
+        if self.injection_order is not None and (
+            not isinstance(self.injection_order, tuple)
+            or any(
+                not isinstance(item, tuple) or len(item) != 2
+                for item in self.injection_order
+            )
+            or len(dict(self.injection_order)) != len(self.injection_order)
+        ):
+            raise CellObservationContractError(
+                "group injection order must be immutable and unique"
+            )
         if not isinstance(self.group, CrossSamplePeakGroupHypothesis) or not (
             self.group.owner_ids
         ):
@@ -205,6 +227,11 @@ class CidNlCellGroupContext:
         expected_groups = construct_cross_sample_peak_group_hypotheses(
             expected_owners,
             config=self.config,
+            drift_lookup=self.drift_lookup,
+            sample_universe=self.sample_universe,
+            injection_order=(
+                None if self.injection_order is None else dict(self.injection_order)
+            ),
         )
         validate_cross_sample_peak_group_identity(self.group, require_canonical=True)
         # Public family ordinals belong to the complete population's presentation.
@@ -810,6 +837,21 @@ def _terminal_trace_group_id(value: object) -> str:
     return value
 
 
+_population_group_context_validation: ContextVar[
+    tuple[dict[int, CidNlCellGroupContext], set[int]] | None
+] = ContextVar("population_group_context_validation", default=None)
+
+
+def _validate_relation_group_context(context: CidNlCellGroupContext) -> None:
+    scope = _population_group_context_validation.get()
+    if scope is None or scope[0].get(id(context)) is not context:
+        context.__post_init__()
+        return
+    if id(context) not in scope[1]:
+        context.__post_init__()
+        scope[1].add(id(context))
+
+
 def _outside_group_relation(
     *,
     group_context: CidNlCellGroupContext,
@@ -822,8 +864,8 @@ def _outside_group_relation(
         raise CellObservationContractError(
             "outside-group context has the wrong owner type"
         )
-    group_context.__post_init__()
-    outside_group_context.__post_init__()
+    _validate_relation_group_context(group_context)
+    _validate_relation_group_context(outside_group_context)
     if (
         method_assessment.content.method_result != "SUPPORT"
         or outside_group_context.method_subject != group_context.method_subject
@@ -1372,6 +1414,48 @@ def compose_final_group_cell_observation_population(
     group substitutions are rejected before a final object is minted.
     """
 
+    if isinstance(predecessor_cells, (str, bytes)):
+        raise CellObservationContractError(
+            "predecessor cells must be a finite owner-sealed sequence"
+        )
+    if isinstance(repair_receipts, (str, bytes)) or isinstance(
+        repaired_observations, (str, bytes)
+    ):
+        raise CellObservationContractError(
+            "repair evidence must be finite owner-sealed sequences"
+        )
+    # Consume caller sequences before borrowing the exact owner objects for this
+    # synchronous pass. Only contexts bound to these inputs may share a proof;
+    # cell/relation checks still run for every lane. No proof survives the call.
+    sources = tuple(predecessor_cells)
+    receipts = tuple(repair_receipts)
+    observations = tuple(repaired_observations)
+    contexts = {
+        id(context): context
+        for cell in sources
+        if type(cell) is CellObservationRef
+        for context in (cell.group_context, cell.outside_group_context)
+        if type(context) is CidNlCellGroupContext
+    }
+    token = _population_group_context_validation.set((contexts, set()))
+    try:
+        return _compose_final_group_cell_observation_population(
+            handoff=handoff,
+            predecessor_cells=sources,
+            repair_receipts=receipts,
+            repaired_observations=observations,
+        )
+    finally:
+        _population_group_context_validation.reset(token)
+
+
+def _compose_final_group_cell_observation_population(
+    *,
+    handoff: CrossSampleAssociationLineageHandoff,
+    predecessor_cells: tuple[CellObservationRef, ...],
+    repair_receipts: tuple[ObservationRepairReceipt, ...],
+    repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
+) -> tuple[FinalGroupCellObservation, ...]:
     request_id = _validate_final_handoff(handoff)
     positions = tuple(handoff.coverage.epoch.positions)
     source_by_position = _index_predecessor_cells(
@@ -2640,6 +2724,9 @@ def compose_cid_nl_predecessor_cells(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ],
     alignment_config: AlignmentConfig,
+    sample_universe: frozenset[str] | None = None,
+    drift_lookup: DriftLookupProtocol | None = None,
+    injection_order: Mapping[str, int] | None = None,
     recovery_assessments_by_group: Mapping[tuple[str, str], CidNlMethodAssessmentRef]
     | None = None,
 ) -> tuple[CellObservationRef, ...]:
@@ -2672,6 +2759,13 @@ def compose_cid_nl_predecessor_cells(
             ),
             config=alignment_config,
             processing_attempt=processing_owners.attempt,
+            sample_universe=sample_universe,
+            drift_lookup=drift_lookup,
+            injection_order=(
+                None
+                if injection_order is None
+                else tuple(sorted(injection_order.items()))
+            ),
         )
         for group in groups
     )

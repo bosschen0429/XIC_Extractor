@@ -222,6 +222,21 @@ unresolved and rejected groups remain AuditTrail facts.
   inside the Alignment grouping owner: it does not promote a rescued cell,
   write a Matrix value directly, infer unknown-family chemical identity, add a
   public knob, or create a second control plane.
+- Retained CID-NL Alignment can optionally use
+  `--known-istd-reference-workbook` for known-ISTD RT alignment. The report's
+  `Targets` sheet declares the ISTDs and its `XIC Results` sheet supplies their
+  measured per-sample RTs. Each target uses its own cohort median as the
+  reference coordinate. A correction binds only to a unique current supported
+  owner whose target matches and whose integration interval contains that
+  sample's reference RT. A pair receives correction only when both exact owners
+  bind to the same target; missing or ambiguous bindings stay uncorrected.
+  This is not a sample-wide shift for other peaks. The complete binding context
+  is retained through cell validation. The public explanation SQLite summary
+  records the input fingerprint, target snapshot, and policy, including at the
+  production output level. Existing mass/RT gates, current RAW integration
+  values, and cell decisions remain authoritative; report areas are not inputs.
+  Omitting the reference keeps the ordinary route. This context does not enable
+  the separate targeted-identity reconciliation rule above.
 - An `owner_bounded_continuity` family reaches the primary matrix only when at
   least two of its owners carry a resolved peak at or above the quantitation
   limit. Bounded continuity admits a group on detection-grade evidence, which is

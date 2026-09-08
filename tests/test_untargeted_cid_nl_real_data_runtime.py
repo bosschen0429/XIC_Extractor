@@ -195,7 +195,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     assert projection.input_quant_matrix_rows[0]["S2"] == ""
 
 
-def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
+def test_runtime_holds_inferred_precursor_without_physical_ms1_peak(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -204,13 +204,19 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raw = _FakeRaw((8.0,))
-    direct = _current_candidates(
+    source_raw.scans = tuple(
+        replace(scan, precursor_mz=scan.precursor_mz + 0.5)
+        for scan in source_raw.scans
+    )
+    source_raw.intensity.fill(0.0)
+    inferred = _current_candidates(
         source_raw,
         raw_file=raw_path,
         settings=settings,
         peak_config=peak_config,
     )[0]
-    inferred = replace(direct, precursor_mz_basis="product_plus_neutral_loss")
+    assert inferred.precursor_mz_basis == "product_plus_neutral_loss"
+    assert not inferred.ms1_peak_found
     subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=500.0,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
@@ -279,8 +285,9 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
     assert adapter.assessment_input.assessment.content.technical_state == "evaluated"
     assert adapter.assessment_input.assessment.content.method_result == "HOLD"
     assert adapter.source_candidate_ids == (inferred.candidate_id,)
-    assert len(adapter.assessment_input.assessment.candidate_peaks) == 1
-    assert adapter.acquisition is not None
+    assert adapter.assessment_input.assessment.candidate_peaks == ()
+    assert adapter.strict_scan_count == 0
+    assert adapter.acquisition is None
     assert vendor_raw.disposed is True
     assert result.sample_results[0].recovery_attempt is None
 

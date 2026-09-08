@@ -74,7 +74,8 @@ def _owner_run(tmp_path, monkeypatch, scenario):
     sources, candidates = {}, {}
     for path, loss in zip(paths, (116.0474, 132.0423), strict=True):
         path.write_bytes(path.stem.encode())
-        source = _FakeRaw((8.0,), neutral_loss_das=(loss,))
+        center = 8.12 if scenario == "review_only" and path.stem == "S2" else 8.0
+        source = _FakeRaw((center,), neutral_loss_das=(loss,))
         sources[path] = source
         candidates[path.stem] = _current_candidates(
             source, raw_file=path, settings=settings, peak_config=peak_config
@@ -106,7 +107,10 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         ),
     )
     config = AlignmentConfig(
-        anchor_min_seed_events=3 if scenario == "review_only" else 1
+        anchor_min_seed_events=3 if scenario == "review_only" else 1,
+        # Moderate support must also lie outside the preferred RT band;
+        # aligned moderate owners are eligible through batch continuity.
+        preferred_rt_sec=2.0 if scenario == "review_only" else 60.0,
     )
     completed = compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=config

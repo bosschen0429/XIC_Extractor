@@ -1,7 +1,7 @@
 """Set-level CID-NL scan relations that cannot grant individual SUPPORT.
 
 This owner is deliberately separate from ``DdaCidNlPeakSupportRef``.  It
-captures boundary, touching, and overlapping candidate cases without selecting
+captures boundary and positive-width overlapping cases without selecting
 one peak or minting one vote per candidate.
 """
 
@@ -387,6 +387,23 @@ def _set_level_members(
             "CID-NL scan does not relate to the declared candidate universe"
         )
 
+    if len(containing) == 1:
+        selected = containing[0]
+        interval = selected.content.integration
+        if (
+            interval.rt_left_min < observation.scan_rt_min < interval.rt_right_min
+            and not any(
+                candidate is not selected
+                and interval.rt_left_min < candidate.content.integration.rt_right_min
+                and candidate.content.integration.rt_left_min < interval.rt_right_min
+                for candidate in mz_compatible
+            )
+        ):
+            raise DdaCidNlCandidateSetRelationContractError(
+                "strictly unique relation belongs to individual support"
+            )
+
+    # Boundary sets retain touching neighbors after individual eligibility closes.
     component = set(containing)
     changed = True
     while changed:
@@ -400,16 +417,6 @@ def _set_level_members(
                 component.add(candidate)
                 changed = True
     matched = tuple(sorted(component, key=_candidate_sort_key))
-    if len(matched) == 1:
-        integration = matched[0].content.integration
-        if (
-            integration.rt_left_min
-            < observation.scan_rt_min
-            < (integration.rt_right_min)
-        ):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "strictly unique relation belongs to individual support"
-            )
     return matched
 
 

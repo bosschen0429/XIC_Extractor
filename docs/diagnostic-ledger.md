@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-08
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -65,28 +65,295 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 Formal Native Receipt And Population Proof Reuse
+
+Evidence: `diagnostic_only`; engineering implementation `4152f1bc` applies the
+combined optimization to the formal receipt and CellObservation owners. The
+receipt owner automatically selects the packaged native encoder, with the
+equivalent Python path retained for source/no-compiler consumers. The normal
+setuptools/uv build includes native source in its build inputs and cache keys.
+Clean wheel build/install checks require native activation on the verified
+Windows CPython 3.12 host.
+
+Population proof reuse is bound to the exact predecessor context objects of
+one synchronous owner call. Inputs are materialized before entering that scope;
+successful context checks are shared, per-cell relation and artifact checks
+remain live, and the scope is reset on success or failure. Nothing persists as
+a cross-call context proof. The existing canonical-byte proof cache remains
+active. No identity encoding, schema, scientific selection, or writer authority
+changed.
+
+The clean formal commit completed the same eight-sample retained public replay
+in 467.197 seconds, versus the stacked prototype's 491.616 seconds. This is a
+single-run observation, not a repeated benchmark or a RAW-acquisition time.
+The installed native encoder was selected with no experimental overlay. RAW
+opens were zero. The 1,499-row Matrix was byte-identical, preserving all 5,615
+numeric cells and 48 known-ISTD cells; the public explanation reader and all
+SQLite logical/schema/integrity oracles passed. Evidence and exact commands
+are under `output/cid-nl-formal-combined/`, with native build evidence under
+`output/cid-nl-native-product/`. The historical prototypes below are no longer
+needed to activate this optimization in the formal flow.
+
+### 2026-09-08 Canonical Identity Byte Proof Reuse
+
+Evidence: `diagnostic_only`; commit `de1e4bc8` applies the engineering change
+in `processing_identity`, without scientific or product-authority promotion.
+Repeated owner checks still rebuild and compare their live identity bases;
+only successful canonical-JSON validation and SHA-256 of equal built-in bytes
+are reused. Prefix checks remain per call. The bounded cache retains at most
+4,096 entries of at most 4,096 bytes each; larger inputs and bytes subclasses
+retain the original path. Identity bytes, schemas, and algorithms are unchanged.
+
+Three interleaved fresh-child repetitions with the original Python graph and
+context checks reduced the nine-case median from 18.333 to 14.446 seconds.
+All 54 results passed original validation and content/aliasing parity. The
+skewed sample's 21.2% reduction must not be extrapolated to the entire batch.
+The applied code passed 153 focused tests, Ruff, staged mypy, and shard checks.
+
+The clean product commit completed the same eight-sample public CLI retained
+replay in 788.555 seconds versus the P1 baseline's 826.857 seconds: an observed
+38.301-second (4.6%) reduction, not a breakthrough or repeated whole-run
+benchmark. Batch composition/finalization took 573.947 versus 616.613 seconds.
+RAW opens remained zero. The 1,499-row Matrix was byte-identical, preserving
+5,615 numeric cells and 48 known-ISTD cells; the public explanation reader and
+all SQLite logical/schema/integrity comparisons passed, excluding only existing
+path/attempt provenance. No native or population-validation overlay was applied.
+
+A separate lifetime experiment confirmed three population passes reuse the
+same predecessor cells. After the prior population-call prototype, extending
+reuse with full dependency fingerprints increased the nine-case median from
+9.568 to 15.882 seconds; that version was not adopted. The 86 sampled contexts
+used `KnownIstdOwnerLookup`, including its mutable `_by_owner` cache. Unchecked
+cross-pass reuse remains an optimistic diagnostic, not a valid owner proof.
+The new profile instead motivated the immutable-byte change above. Commands,
+code/input hashes, comparisons, and full parity receipts remain under
+`output/cid-nl-context-lifetime/`; no RAW rerun is needed for these conclusions.
+
+A complete stacked replay at clean revision `0c264e04` then applied the same
+formal byte cache on top of the unchanged native/population prototype below.
+Against that prototype's 559.197 seconds, the stacked run took 491.616 seconds:
+an observed additional 67.581-second (12.1%) reduction. This answers cumulative
+prototype improvement; the separate 4.6% product-only comparison does not.
+The original overlay source and binary hashes matched, and both runs recorded
+the same context-check/reuse counts. Matrix bytes, the public explanation
+reader, and every SQLite logical/schema/integrity oracle passed again, with
+zero RAW opens. Evidence is under `output/cid-nl-stacked-proof/`. This remains
+a single-run retained-input comparison, and the native/population components
+remain diagnostic prototypes rather than applied product changes.
+
+### 2026-09-08 CID-NL Population And Native-Encoding Prototype
+
+Evidence: `diagnostic_only`; isolated prototype, not an applied product change.
+The current retained child path has an actual repeated grouping calculation:
+`_validate_source_cell` reconstructs `CellObservationRef`, whose outside-group
+relation revalidates both local and sibling `CidNlCellGroupContext` objects.
+Those context checks recreate support owners and run peak-group construction.
+A 325-capture/408-cell case called that construction 3,150 times. This is
+distinct from the already-removed historical scientific-finalizer replay.
+Association/member joins were below 0.2% in nine profiled cases and did not
+justify a columnar rewrite.
+
+An experiment validated each exact context once within each synchronous
+population call while retaining per-cell relation checks. On nine structurally
+selected children, three interleaved runs reduced full context oracle calls
+from 6,588 to 258 per run and median composition from 16.908 to 11.553 seconds.
+Combining that with a native contiguous-buffer implementation of the exact
+existing receipt bytes reduced composition to 9.270 seconds. All 81 fresh child
+executions passed content/aliasing parity and the original owner validator.
+The sample is skewed (792 cells, including a 408-cell case); its speed ratio
+must not be extrapolated to the complete batch.
+
+The complete eight-sample public CLI replay with the separately hash-bound
+overlay took 559.197 seconds versus the P1 baseline's 826.857 seconds: an
+observed single-run reduction of 32.4%, not an order-of-magnitude result or a
+repeated whole-run benchmark. Batch composition took 347.480 versus 616.613
+seconds. RAW opens remained zero. The 1,499-row Matrix was byte-identical,
+preserving 5,615 numeric cells and all 48 known-ISTD cells; the public
+explanation reader, SQLite integrity/schema, and all candidate/record/link
+payloads passed exact parity, excluding only existing path/attempt provenance.
+The combined prototype also passed 114 existing owner/projection tests.
+
+The prototype does not establish a cross-call immutable proof. Drift lookup
+methods consume mutable cached dictionaries omitted by dataclass-field
+digests; production reuse would need an explicit population-owner input
+binding. Native packaging and cross-platform delivery were not implemented.
+No prototype hook, native backend, build dependency, or scientific change was
+applied to the product. Evidence and the executable prototype remain under
+`output/cid-nl-breakthrough/`; `experiment-report.md` records the adoption limits.
+
+### 2026-09-08 CID-NL Request Digest Optimization
+
+Evidence: `diagnostic_only`; engineering performance and persisted-output
+parity, with no scientific or product-authority promotion. Commit `f7c0762f`
+applies the existing immutable processing-request identity boundary to the
+Untarget post-cell rows receipt. Result content and retained owner identities
+remain checked. The 52 affected tests, scoped Ruff/mypy, and diff check pass.
+
+The fresh public CLI replay of the retained eight-sample inputs, including the
+same known-ISTD reference, completed in 826.857 seconds with zero RAW opens.
+The historical reference-enabled replay took 1,950.698 seconds: this observed
+single-run reduction is 57.6%, not a repeated whole-run benchmark. Batch
+composition/finalization took 616.613 versus 1,745.872 seconds. Three
+interleaved digest repetitions per mode support the local mechanism for median
+and late cases; the largest case showed no improvement. Host contention and
+filesystem cache were uncontrolled.
+
+Against the final writer baseline at `ca3b36e9`, the 1,499-row Matrix is byte
+identical, preserving 5,615 numeric cells and all 48 known-ISTD cells. The
+public explanation reader, SQLite integrity, schema, and all candidate,
+record, and link payloads pass exact parity. Only output-path and attempt-ID
+provenance are excluded from comparison. Source and candidate refs, checkpoint
+and reference hashes, commands, timings, and parity receipts are retained under
+`output/cid-nl-performance-v12/`.
+
+On six structurally selected children, three interleaved repetitions with
+1/2/4/6 threads took median 10.956/11.945/11.850/12.145 seconds. All 72 child
+executions passed the original owner validator and content/aliasing comparison;
+no thread setting was adopted. This skewed sample covers 0.1752% of children
+and 1.1951% of cells, so it does not establish general parallelism limits.
+Peak RSS was 2.590 GB with at least 9.363 GB available. A single input-bundle
+roundtrip took 18.887 seconds for 180.6 MB and lost parent request identity;
+a completed-result roundtrip failed the existing completion-seal validator.
+An ordinary process pool therefore cannot directly return these retained
+graphs; this experiment does not evaluate a redesigned computation boundary.
+
+### 2026-09-08 CID-NL Composition Cost After Retention Repair
+
+Evidence: `diagnostic_only`; diagnosis and plan only. The reference-enabled
+eight-sample retained-runtime replay at `17e41279` took 1,950.698 seconds with
+zero RAW opens. Batch composition/finalization accounts for 1,745.872 seconds
+(89.5%); explanation writing takes 61.327 seconds and Matrix writing 0.104
+seconds. These writer spans are nested, not additional wall time. The final
+writer-only commit `ca3b36e9` leaves that composition code unchanged.
+
+The 982.916 seconds after child 3,250 includes the remaining 174 children and
+batch closure; the original timing does not separate them. Retained results
+show those children contain only 1,912 of 38,824 cells, without a large-child
+concentration. Current source validates the complete batch three times during
+request/finalizer/result construction, and rebuilds each pre-cell projection
+at least four times. The current batch checks use retained graph digests; do
+not attribute already-removed historical policy replay to this run.
+
+An actual rows evidence chain reaches the shared processing request, including
+25,016,161 bytes of normalized scientific-input JSON. Unlike the scientific
+and pre-cell digests, its rows digest does not use the existing request
+identity-only boundary. Two bounded, interleaved traversal probes measured
+82.913–91.879 ms versus 6.039–10.056 ms, and 100.169–105.233 ms versus
+32.786–34.655 ms when applying that boundary. This prioritizes a small
+post-cell receipt slice; it is not correctness acceptance or a whole-run win.
+
+The explanation's per-subject global membership scan performs 265,609,180
+predicate comparisons for this artifact. A lookup-only experiment preserving
+every subject's candidate set took about 11.03 seconds for the current scan
+and 0.017 seconds including a subject index build. The output stage is a
+secondary target. There is no systematic peak-memory, GC, page-fault, or host
+contention trace; serialized payload size does not establish RAM pressure.
+
+Task-local evidence and the ordered exact-safe plan are under
+`output/cid-nl-performance-v11/`. Start with the rows request traversal, then
+remeasure before changing batch closure or projection construction. Preserve
+Matrix values, membership, reasons and persisted identities; writer-only
+validation can reuse the completed result. No product optimization or RAW
+rerun was performed for this diagnosis.
+
 ### 2026-09-07 CID-NL 8RAW Runtime and Composition
 
-Evidence: `diagnostic_only`; full production completion remains unverified.
-The operator selected internal data-flow simplification and stopped repeated
-full-RAW runs. Reuse compatible Discovery and retained observations; focused
-behavior checks establish engineering coverage, not analytical parity or readiness.
+Evidence: `diagnostic_only`; the eight-RAW engineering completion target passed.
+This is not analytical parity or scientific/production readiness evidence.
+Feature-retention validation failed: the closest prior eight-RAW matrix has
+816 rows and six historical ISTD coordinate matches in all eight samples; this
+29-row matrix contains none of those matches, even within a diagnostic window
+of 50 ppm and three minutes. All eight RAW content identities match, but the
+prior runner and algorithm revision differ. Do not use the engineering
+completion receipt as acceptance of feature retention.
 
-The input universe is eight tissue validation RAW files, `dna_dr`, 30,748
-Discovery candidates and 95,320 sample/subject runtime jobs. Discovery from
-`result-8raw-4/discovery` is retained. The latest full Alignment attempt,
-`alignment-family-3` at `7bdf3691`, stopped at its 1,800.008 s timeout with exit
-124 and no matrix or explanation SQLite. Its initial assessments totalled
-313.15 s, including 11.48 s of acquisition; recovery planning took 15.25 s and
-recovery attempts 8.10 s. Production composition began at 462.15 s and nested
-batch composition at 829.65 s; neither has a completion event. These nested
-measurements must not be added or interpreted as a completed-run speedup.
+The current direct-evidence adapter omitted every mixed Discovery candidate,
+including their measured direct scans. Its strict receipt reader also treated
+an MS1-merged inferred member as though it had to match the final representative
+product window. Both handoff defects are corrected. Direct evidence keeps its
+existing scientific thresholds; inferred members do not become strict support.
+The corrected reader reconstructed all 2,448 direct/mixed candidates across
+eight RAW files without errors. The direct/mixed-only run completed with 124
+matrix rows, but still failed six-ISTD sample-cell retention. The prior
+d4-N6-2HE-dA row used inferred precursor evidence and MS1 integration/rescue.
+The operator authorized restoring MS1-backed inferred evidence. That path now
+preserves the measured scan precursor separately from the product-plus-loss
+precursor and retains the existing mass/RT checks. All 9,925 eligible candidates
+across eight RAW files reconstructed without receipt errors or duplicate
+scan/loss evidence. The inferred-evidence run completed runtime finalization,
+but timed out during batch composition at 1,800.011 seconds without a matrix.
+That interrupted receipt did not establish matrix retention or a successful run.
+Captured hmdC assessments also show adjacent integration intervals sharing only
+a valley endpoint. Their strictly interior MS2 events have unique peak
+containment, but the previous method contract treated all touching intervals as
+set-level ambiguity. The operator authorized unique interior support when there
+is no positive-width overlap; exact-boundary events and genuine overlaps retain
+HOLD.
+The completed replay with that rule published 653 rows and 45 of 48 named ISTD
+cells. A further production handoff omitted the complete batch and injection
+context when forming groups and reconstructing their cell proofs. Commit
+`f1039945` preserves that context through the existing grouping owner. Its
+retained-runtime public CLI replay completed in 1,457.416 seconds without RAW
+opens and published 1,499 rows, 5,614 finite values, and 47 of 48 named ISTD
+cells. SQLite integrity and public artifact checks passed. Coordinate matches
+against the prior 816-row matrix increased from 444 to 744; this is a retention
+diagnostic, not chemical identity or area parity.
+Of the 72 coordinate-unmatched prior rows, six already have current Matrix
+lineage, seven lack current method support, one has no eligible source, and 58
+remain in the provisional/archive route. Those 58 comprise 27 with only one
+exact-source supported sample, 12 with a mass-envelope conflict in the connected
+population, 11 with an uncorrected RT gap, seven split across method subjects,
+and one with weak peak quality. These are queryable current-policy conditions,
+not authorization to align unknown compounds or restore old areas. One prior
+family, `FAM002914`, lacks baseline cell receipts for its eight published values.
 
-The retained composition profile has 228 weighted samples: 167 enter assessment
-binding and 40 enter completion-receipt digests. Its sampling window is not a
-full-run cost distribution. Current source identified duplicate ModeTrack
-bootstrap and CrossSample application on identical inputs, plus full binding
-and cell scans inside per-subject/per-group loops.
+The last missing named cell was TumorBC2263 N6-medA at 24.2694 minutes. The operator
+confirmed that the eight RAWs are a sparse sample of a smoothly drifting cohort
+and supplied the full targeted report. Its observed RT agrees with the current
+RAW peak. The existing local-jitter reader does not represent the between-sample
+RT trend. A per-target known-reference coordinate probe joined all eight N6
+owners with unchanged gates and kept two other RT peaks separate. The operator
+authorized formal use of that report only for known-ISTD alignment. The public
+CLI now accepts it explicitly, binds unique supported owners to the same declared
+target, and retains the complete binding context through cell proof. Reference
+areas are never inputs. Production explanation summaries retain the workbook
+fingerprint, target snapshot, and policy.
+
+The reference-enabled public CLI replay at `17e41279` completed in 1,950.698
+seconds without RAW opens. It published 1,499 rows and 5,615 finite values;
+all 48 named ISTD sample cells passed the original retention probe. Public
+artifact checks and SQLite integrity passed, with no orphan record links.
+The prior-matrix comparison still matches 744 of 816 rows, with 3,117 shared
+sample cells and 363 matched rows retaining every prior sample. The 72 unmatched
+rows retain the explanations above; this does not establish full historical
+algorithm parity. Exact comparison with the batch-context replay preserved
+unknown-owner partitions and all 8,969 owners' physical observations, areas,
+sources, and variants. Public Matrix changes trace only to formally bound
+known-ISTD owners. Two off-target singleton groups have 16 reminted cell receipt
+IDs from the updated context, with their grouping and values unchanged.
+Task-local receipts are under
+`output/cid-nl-feature-loss-v10/`.
+
+Clean `39cfa36ad3457febf85da49f1bfebe6ec5343759` completed fresh Discovery and
+Alignment on eight tissue validation RAW files with `dna_dr`, production output,
+four Discovery workers and the existing single-worker Alignment route. Discovery
+took 81.455 s and Alignment 663.566 s, totalling 745.021 s of sequential CLI wall
+time (12 min 25 s; excludes input hashing and harness setup). Both exited zero.
+The workload contained 30,748 Discovery candidates and 95,320 runtime jobs.
+Production composition took 200.721 s, including 184.236 s of nested batch
+composition; these overlapping spans must not be added.
+
+The decisive repeated cost was rebuilding `ProcessingOwnerReferences` for each
+of 27,926 method-excluded candidates. Each construction reparsed the same
+25,016,161-byte request, and batch validation ran three times. Five bounded
+construction measurements took 0.0619–0.0642 s each. The validator now retains
+one shared owner per invocation, and canonical-subject membership lookup uses
+one set instead of a full membership scan per subject. Completion receipts
+retain the identity of the already-validated frozen processing request without
+rehashing its contents for every child. The remaining binding checks are kept.
+Compatible historical eight-RAW inputs replayed without RAW opens in 217.505 s,
+with all 877 row/group/subject identities and routes preserved versus the
+owner-hoist-only replay. This replay is mechanism evidence, not full-run parity.
 
 Current production builds initial CrossSample groups and passes their context
 directly to workflow, without ModeTrack fitting, assignment, split/merge
@@ -102,17 +369,27 @@ Changed physical acquisition questions are evaluated once at the capture owner;
 same-question comparisons and persisted physical-answer revalidation remain.
 
 The runtime uses the selected Alignment configuration consistently. Unresolved
-candidate assessments retain HOLD and blank quantities. No completion or
-end-to-end speedup is inferred from these handoff corrections. The task harness
-retains coarse progress and final timing without per-job live timing-file
-rewrites; product timing behavior is unchanged.
+candidate assessments retain HOLD and blank quantities. Writer presentation
+includes physical observations only when they belong to the formal group;
+nonmember HOLD evidence remains queryable. The duplicate-observation guard
+remains enabled. This removes the old writer failure without promoting HOLD
+values or changing scientific thresholds.
 
-Task-local evidence, commands, source/helper hashes and reproductions are under
-`output/cid-nl-end-to-end/`, especially `alignment-family-3`, `family_context_probe`,
-`composition-probe` and `heartbeat-probe`. These ignored host-local artifacts are
-not reusable clean-checkout inputs. The production/workflow, CID-NL evidence-spine
-and Backfill tests own the focused behavior oracles, including reuse without
-scientific reevaluation and preserved writer outputs.
+The completed matrix contains 29 primary rows across eight sample columns,
+77 finite numeric values and 155 blanks. Explanation SQLite retains 877 groups,
+7,016 cell decisions and all 30,748 candidates. The public reader, matrix hash,
+exact matrix sample-column order, sample population, SQLite integrity and
+record-link checks passed. The explanation enumerates canonical samples, so its
+sample order need not match the Discovery index or matrix columns. The focused
+workflow, result, projection and production tests passed (133 tests); commit
+checks also passed. These checks establish engineering behavior coverage.
+
+Task-local evidence, commands and RAW/DLL/source hashes are under
+`output/cid-nl-end-to-end/composition-v9-e2e/` (`run.json`, `alignment.log`,
+`artifact-verification.json`) and `composition-cost-v9/`. These ignored host-local
+artifacts are not reusable clean-checkout inputs. The task harness retains
+coarse progress and final timing without per-job live timing-file rewrites;
+product timing behavior is unchanged.
 
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 

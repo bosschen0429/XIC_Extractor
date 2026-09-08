@@ -17,6 +17,155 @@ from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
 
+def _known_reference_workbook(path: Path) -> Workbook:
+    workbook = Workbook()
+    targets = workbook.active
+    targets.title = "Targets"
+    targets.append(
+        [
+            "Label",
+            "Role",
+            "m/z",
+            "RT min",
+            "RT max",
+            "ppm tol",
+            "NL (Da)",
+            "NL ppm warn",
+            "NL ppm max",
+        ]
+    )
+    targets.append([" known ", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
+    results = workbook.create_sheet("XIC Results")
+    results.append(["SampleName", "Target", "Role", "RT", "Area"])
+    results.append([" early ", "analyte", "Analyte", 8, 1])
+    results.append([None, "known", "ISTD", 8, "not evidence"])
+    results.append(["late", "analyte", "Analyte", 9, 1])
+    results.append(["", "known", "ISTD", 9, -999])
+    results.append(["missing", "analyte", "Analyte", "ND", 1])
+    results.append([None, "known", "ISTD", "ND", 100])
+    workbook.save(path)
+    return workbook
+
+
+def test_known_reference_uses_declared_targets_rt_and_source_bytes(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+
+    path = tmp_path / "reference.xlsx"
+    workbook = _known_reference_workbook(path)
+    reference = read_known_istd_reference(path)
+    assert reference.coordinates == (
+        ("known", "early", 8, -0.5),
+        ("known", "late", 9, 0.5),
+    )
+    assert reference.workbook_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    workbook["XIC Results"]["E3"] = 123456789
+    workbook.save(path)
+    changed = read_known_istd_reference(path)
+    assert changed.coordinates == reference.coordinates
+    assert changed.workbook_sha256 != reference.workbook_sha256
+    assert changed.anchor.target_snapshot == reference.anchor.target_snapshot
+
+
+@pytest.mark.parametrize(
+    "damage",
+    (
+        "duplicate_reference",
+        "duplicate_target",
+        "malformed_rt",
+        "malformed_mass",
+        "missing_header",
+        "undeclared_target",
+        "unbound_sample",
+    ),
+)
+def test_known_reference_rejects_invalid_consumed_input(
+    tmp_path: Path, damage: str
+) -> None:
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+
+    path = tmp_path / "reference.xlsx"
+    workbook = _known_reference_workbook(path)
+    if damage == "duplicate_reference":
+        workbook["XIC Results"].append(["early", "known", "ISTD", 8, 1])
+    elif damage == "duplicate_target":
+        workbook["Targets"].append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
+    elif damage == "malformed_rt":
+        workbook["XIC Results"]["D3"] = "broken"
+    elif damage == "malformed_mass":
+        workbook["Targets"]["C2"] = "broken"
+    elif damage == "missing_header":
+        workbook["XIC Results"]["D1"] = "time"
+    elif damage == "unbound_sample":
+        workbook["XIC Results"].delete_rows(2)
+    else:
+        workbook["XIC Results"]["B3"] = "undeclared"
+    workbook.save(path)
+    with pytest.raises(ValueError):
+        read_known_istd_reference(path)
+
+
+def test_known_reference_only_corrects_unique_same_target_support_pairs(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    from tests.test_alignment_edge_scoring import _owner
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+    from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
+
+    path = tmp_path / "reference.xlsx"
+    workbook = _known_reference_workbook(path)
+    reference = read_known_istd_reference(path)
+    early, late, other = tuple(_owner(
+        sample, precursor_mz=500, product_mz=383.9526,
+        observed_neutral_loss_da=116.0474, owner_apex_rt=rt,
+    ) for sample, rt in (("early", 8), ("late", 9), ("missing", 9.5)))
+    lookup = reference.bind((early, late, other))
+    config = AlignmentConfig()
+    edge = evaluate_owner_edge(early, late, config=config, drift_lookup=lookup)
+    assert edge.rt_drift_corrected_delta_sec == pytest.approx(0)
+    assert edge.decision == "strong_edge"
+    assert lookup.sample_delta_min("early") is None
+    assert lookup.istd_identity_anchor is None
+    no_event = replace(late, primary_identity_event=None)
+    wrong_nl = replace(late, primary_identity_event=replace(
+        late.primary_identity_event, observed_neutral_loss_da=132.0423,
+    ))
+    for invalid in (no_event, wrong_nl):
+        rejected = reference.bind((early, invalid))
+        assert rejected.corrected_pair_delta_sec(early, invalid) is None
+    assert evaluate_owner_edge(early, other, config=config, drift_lookup=lookup) == (
+        evaluate_owner_edge(early, other, config=config)
+    )
+    other_rt = replace(late, owner_id="different-peak", owner_apex_rt=9.5,
+                       owner_peak_start_rt=9.4, owner_peak_end_rt=9.6)
+    assert evaluate_owner_edge(early, other_rt, config=config, drift_lookup=lookup) == (
+        evaluate_owner_edge(early, other_rt, config=config)
+    )
+    # An overlapping SUPPORT owner prevents a unique binding; removing it later
+    # from a group must not recreate reference authority.
+    ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
+    assert evaluate_owner_edge(early, late, config=config, drift_lookup=ambiguous) == (
+        evaluate_owner_edge(early, late, config=config)
+    )
+    workbook["XIC Results"]["D5"] = "ND"
+    workbook.save(path)
+    partial = read_known_istd_reference(path).bind((early, late))
+    assert evaluate_owner_edge(early, late, config=config, drift_lookup=partial) == (
+        evaluate_owner_edge(early, late, config=config)
+    )
+    workbook["Targets"].append(["second", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
+    workbook["XIC Results"].append(["early", "second", "ISTD", 8, 1])
+    workbook.save(path)
+    two_targets = read_known_istd_reference(path).bind((early, late))
+    assert not two_targets.bindings
+
+
 def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
     lookup = DriftEvidenceLookup(
         points=(

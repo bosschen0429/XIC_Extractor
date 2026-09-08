@@ -55,6 +55,7 @@ def write_cid_nl_explanation(
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
+    known_istd_reference_provenance: Mapping[str, str] | None = None,
 ) -> Path:
     """Persist exact owner identities, reasons and Matrix publication provenance."""
     application = completed.application_result
@@ -429,6 +430,8 @@ def write_cid_nl_explanation(
             for name in ("method_assessments", "initial_groups", "initial_edges")
         },
     }
+    if known_istd_reference_provenance is not None:
+        summary["known_istd_reference"] = dict(known_istd_reference_provenance)
     return write_explanation_report(
         path,
         summary=summary,

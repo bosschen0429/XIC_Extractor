@@ -8,11 +8,13 @@ import pstats
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from zipfile import BadZipFile
 
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
 )
+from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import (
     _validate_untargeted_cid_nl_alignment_options,
@@ -132,7 +134,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 discovery_batch_index,
                 require_owner_closure=True,
             )
-        except ValueError as exc:
+            known_istd_reference = (
+                None
+                if args.known_istd_reference_workbook is None
+                else read_known_istd_reference(args.known_istd_reference_workbook)
+            )
+        except (ValueError, OSError, BadZipFile, KeyError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         _print_preflight_summary(
@@ -145,6 +152,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=output_dir,
             owner_build_xic_backend=owner_build_xic_backend,
         )
+        if known_istd_reference is not None:
+            print(
+                "Known ISTD reference workbook: "
+                f"{known_istd_reference.workbook_path}"
+            )
+            print(
+                "Known ISTD reference SHA-256: "
+                f"{known_istd_reference.workbook_sha256}"
+            )
         return 0
 
     timing_recorder = (
@@ -179,6 +195,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 signal_processing_profile=signal_processing_profile,
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
             ),
+            "known_istd_reference_workbook": args.known_istd_reference_workbook,
             "discovery_settings": recipe.discovery_settings,
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
@@ -303,6 +320,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Output directory for selected Alignment artifacts. The default "
             "writes only alignment_matrix.tsv."
         ),
+    )
+    parser.add_argument(
+        "--known-istd-reference-workbook",
+        type=Path,
+        help=("Report whose Targets ISTDs and XIC Results RT "
+              "align known SUPPORT owners."),
     )
     parser.add_argument(
         "--preset",

@@ -1,4 +1,4 @@
-"""Reconstruct complete strict Discovery scan receipts from one RAW handle."""
+"""Reconstruct declared Discovery scan receipts from one RAW handle."""
 
 from __future__ import annotations
 
@@ -32,16 +32,17 @@ class StrictSeedReceiptRaw(Protocol):
     ) -> Iterator[Ms2ScanEvent]: ...
 
 
-def read_complete_strict_scan_seeds(
+def read_complete_discovery_scan_seeds(
     raw: StrictSeedReceiptRaw,
     *,
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
+    include_inferred: bool = False,
 ) -> tuple[tuple[Ms2Scan, DiscoverySeed], ...]:
-    """Return every declared strict scan once, with its exact canonical seed."""
+    """Return declared seeds, retaining their direct or inferred precursor basis."""
 
-    by_scan: dict[tuple[int, float], tuple[Ms2Scan, DiscoverySeed]] = {}
+    by_scan: dict[tuple[int, float, float, float], tuple[Ms2Scan, DiscoverySeed]] = {}
     for candidate in candidates:
         for scan in _read_exact_scans(raw, candidate):
             seeds = _read_exact_seed(
@@ -50,6 +51,7 @@ def read_complete_strict_scan_seeds(
                 candidate=candidate,
                 settings=settings,
                 preserve_configured_losses=preserve_configured_losses,
+                include_inferred=include_inferred,
             )
             for seed in seeds:
                 key = (
@@ -57,6 +59,8 @@ def read_complete_strict_scan_seeds(
                     seed.configured_neutral_loss_da
                     if preserve_configured_losses
                     else 0.0,
+                    seed.precursor_mz if include_inferred else 0.0,
+                    seed.product_mz if include_inferred else 0.0,
                 )
                 existing = by_scan.get(key)
                 if existing is not None and existing[1] != seed:
@@ -104,27 +108,39 @@ def _read_exact_seed(
     candidate: DiscoveryCandidate,
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
+    include_inferred: bool = False,
 ) -> tuple[DiscoverySeed, ...]:
     representative = scan.scan_number == candidate.best_ms2_scan_id
     tag_product_receipts = _scan_tag_product_receipts(
         candidate,
         scan_number=scan.scan_number,
     )
+    scan_seeds = discovery_seeds_from_scan(
+        scan,
+        raw_file=raw_file,
+        settings=settings,
+    )
     matches = tuple(
         seed
-        for seed in discovery_seeds_from_scan(
-            scan,
-            raw_file=raw_file,
-            settings=settings,
-        )
+        for seed in scan_seeds
         if seed.scan_number in candidate.seed_scan_ids
-        and seed.precursor_mz_basis == "scan_precursor"
+        and (
+            seed.precursor_mz_basis == "scan_precursor"
+            or candidate.precursor_mz_basis == "mixed"
+            or include_inferred
+        )
         and any(
             seed.neutral_loss_tag == tag_name
-            and _within_ppm(
-                seed.product_mz,
-                product_mz,
-                settings.product_mz_tolerance_ppm,
+            and (
+                (
+                    not representative
+                    and seed.precursor_mz_basis == "product_plus_neutral_loss"
+                )
+                or _within_ppm(
+                    seed.product_mz,
+                    product_mz,
+                    settings.product_mz_tolerance_ppm,
+                )
             )
             for tag_name, product_mz in tag_product_receipts.items()
         )
@@ -143,6 +159,19 @@ def _read_exact_seed(
         )
     )
     if not matches:
+        if (
+            include_inferred
+            and not representative
+            and any(
+                seed.precursor_mz_basis == "product_plus_neutral_loss"
+                and seed.neutral_loss_tag in tag_product_receipts
+                for seed in scan_seeds
+            )
+        ):
+            # MS1 merging compares group representatives, so an older inferred
+            # member can fall outside the final precursor window. Its declared
+            # scan still reconstructs, but it cannot support this mass question.
+            return ()
         if representative:
             raise StrictSeedReceiptError(
                 f"{candidate.candidate_id}: exact canonical Discovery seed "
@@ -166,7 +195,28 @@ def _read_exact_seed(
                 f"{candidate.candidate_id}: "
                 "exact canonical Discovery seed is not unique"
             )
-        return matches
+        return tuple(
+            seed
+            for seed in matches
+            if include_inferred or seed.precursor_mz_basis == "scan_precursor"
+        )
+    if include_inferred:
+        selected_tag = min(
+            matches,
+            key=lambda seed: tag_precedence.get(
+                seed.neutral_loss_tag,
+                len(tag_precedence),
+            ),
+        ).neutral_loss_tag
+        return tuple(seed for seed in matches if seed.neutral_loss_tag == selected_tag)
+    # MS1 merging can retain inferred members beyond the final representative's
+    # product window. They only account for declared scans here; the direct
+    # product check still applies to every seed returned as strict evidence.
+    matches = tuple(
+        seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
+    )
+    if not matches:
+        return ()
     return (
         min(
             matches,
@@ -243,5 +293,5 @@ def _receipt_close(observed: float, receipt: float) -> bool:
 __all__ = [
     "StrictSeedReceiptError",
     "StrictSeedReceiptRaw",
-    "read_complete_strict_scan_seeds",
+    "read_complete_discovery_scan_seeds",
 ]

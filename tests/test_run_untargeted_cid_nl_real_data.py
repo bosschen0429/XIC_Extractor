@@ -160,22 +160,22 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     assert truncated_exit_code == 2
     assert len(opened[raw_path]) == 1
 
-    write_discovery_candidates_csv(
-        candidate_path,
-        tuple(
-            replace(
-                candidate,
-                precursor_mz_basis="product_plus_neutral_loss",
-            )
-            for candidate in candidates
-        ),
+    source_raw.scans = tuple(
+        replace(scan, precursor_mz=scan.precursor_mz + 0.5)
+        for scan in source_raw.scans
     )
-    unsupported_candidates = tuple(
-        replace(
-            candidate,
-            precursor_mz_basis="product_plus_neutral_loss",
-        )
-        for candidate in candidates
+    source_raw.intensity.fill(0.0)
+    unsupported_candidates = _current_candidates(
+        source_raw,
+        raw_file=raw_path,
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+    )
+    assert unsupported_candidates
+    assert all(
+        candidate.precursor_mz_basis == "product_plus_neutral_loss"
+        and not candidate.ms1_peak_found
+        for candidate in unsupported_candidates
     )
     unsupported_receipt = _discovery_receipts(
         tmp_path,
@@ -218,9 +218,9 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     assert unsupported_summary["samples"][0]["strict_scan_count"] == 0
     assert unsupported_summary["call_cost"] == {
         "raw_open_count": 1,
-        "logical_xic_request_count": 1,
-        "xic_batch_count": 1,
-        "adapter_chromatogram_call_count": 1,
+        "logical_xic_request_count": 0,
+        "xic_batch_count": 0,
+        "adapter_chromatogram_call_count": 0,
         "trace_point_count": unsupported_summary["samples"][0]["trace_point_count"],
     }
     assert len(opened[raw_path]) == 2

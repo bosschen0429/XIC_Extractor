@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.owner_area import owner_quantification_eligible
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -248,6 +249,8 @@ def _drift_corrected_delta_sec(
 ) -> float | None:
     if drift_lookup is None:
         return None
+    if isinstance(drift_lookup, KnownIstdOwnerLookup):
+        return drift_lookup.corrected_pair_delta_sec(left, right)
     left_delta = drift_lookup.sample_delta_min(left.sample_stem)
     right_delta = drift_lookup.sample_delta_min(right.sample_stem)
     if left_delta is None or right_delta is None:

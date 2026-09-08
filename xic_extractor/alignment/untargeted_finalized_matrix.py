@@ -266,7 +266,16 @@ def _presentation_facts(
 ) -> tuple[tuple[float, ...], tuple[float, ...], tuple[str, ...]]:
     facts: dict[str, tuple[float, float]] = {}
     for observation in observations:
+        member_physical_ids = {
+            physical_id
+            for member in observation.group.member_subjects
+            if member.canonical_sample_identity_id
+            == observation.canonical_sample_identity_id
+            for physical_id in member.physical_observation_ids
+        }
         for direct in observation.direct_observations:
+            if direct.content.peak_observation_content_id not in member_physical_ids:
+                continue
             _add_presentation_fact(
                 facts,
                 physical_id=direct.content.peak_observation_content_id,

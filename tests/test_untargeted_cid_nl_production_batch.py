@@ -1167,6 +1167,7 @@ def test_writer_projection_keeps_distinct_repaired_facts_with_shared_signal() ->
         for index, evaluation in enumerate(evaluations)
     )
     observation = SimpleNamespace(
+        group=SimpleNamespace(member_subjects=()),
         direct_observations=(),
         repaired_observations=repaired_observations,
     )
@@ -1721,9 +1722,27 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
     peak_config = _peak_config(tmp_path)
+
+    def observation_only_raw(peak_rts: tuple[float, ...]) -> _FakeRaw:
+        # MS1 stays usable, but each NL scan precedes its integration interval.
+        # The narrow peak fits inside the scan-centered discovery query.
+        raw = _FakeRaw(tuple(rt - 0.15 for rt in peak_rts))
+        raw.intensity[:] = [
+            sum(
+                1000.0 * math.exp(-0.5 * ((rt - center) / 0.015) ** 2)
+                for center in peak_rts
+            )
+            for rt in raw.rt
+        ]
+        return raw
+
     source_raws = {raw_path: _FakeRaw((8.0,)) for raw_path in raw_paths}
-    if ambiguous:
-        source_raws[raw_paths[1]] = _FakeRaw((7.8, 8.2))
+    if scenario not in {"all_reject", "hold_reject", "other_support"}:
+        source_raws[raw_paths[1]] = observation_only_raw(
+            (7.8, 8.2) if ambiguous else (8.0,)
+        )
+    if scenario in {"all_hold", "hold_reject"}:
+        source_raws[raw_paths[0]] = observation_only_raw((8.0,))
     rejected_samples = (
         ("Support", "Hold")
         if scenario == "all_reject"
@@ -1747,38 +1766,39 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         peak_config=peak_config,
     )
     direct_hold = direct_hold_candidates[0]
-    inferred_hold = replace(
-        direct_hold,
-        precursor_mz_basis="product_plus_neutral_loss",
-    )
     candidates_by_sample = {
         "Support": (support,),
-        "Hold": (inferred_hold,),
+        "Hold": (direct_hold,),
     }
     if ambiguous:
-        candidates_by_sample["Hold"] = tuple(
-            replace(candidate, precursor_mz_basis="product_plus_neutral_loss")
-            for candidate in direct_hold_candidates
-        )
-    if scenario != "mixed" and not ambiguous:
-        candidates_by_sample["Support"] = (
-            replace(support, precursor_mz_basis="product_plus_neutral_loss"),
-        )
+        candidates_by_sample["Hold"] = direct_hold_candidates
     if scenario in {"all_reject", "hold_reject"}:
         for stem in rejected_samples:
             candidate = support if stem == "Support" else direct_hold
             candidates_by_sample[stem] = (candidate,)
     if scenario == "other_support":
         for raw_path in raw_paths:
-            source_raw, nearby = _nearby_subject_candidates(
-                raw_path, settings=settings, peak_config=peak_config
+            first_raw = observation_only_raw((7.98,))
+            second_raw = _FakeRaw(
+                (7.98,),
+                scan_precursor_mz=500.004,
+                neutral_loss_das=(116.0474,),
             )
+            second_raw.intensity = first_raw.intensity.copy()
+            nearby = tuple(
+                _current_candidates(
+                    raw,
+                    raw_file=raw_path,
+                    settings=settings,
+                    peak_config=peak_config,
+                )[0]
+                for raw in (first_raw, second_raw)
+            )
+            source_raw = second_raw
+            source_raw.scans = (first_raw.scans[0], second_raw.scans[0])
             source_raws[raw_path] = source_raw
             first, second = sorted(nearby, key=lambda item: item.precursor_mz)
-            candidates_by_sample[raw_path.stem] = (
-                replace(first, precursor_mz_basis="product_plus_neutral_loss"),
-                second,
-            )
+            candidates_by_sample[raw_path.stem] = (first, second)
     if above_threshold:
         candidates_by_sample["Support2"] = _current_candidates(
             source_raws[raw_paths[2]],
@@ -1854,6 +1874,37 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     )
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
     assert writer_inputs.matrix.sample_order == stems
+    if scenario == "mixed":
+        (child,) = completed.application_result.children
+        (group,) = child.scientific_core.final_population
+        member_ids = {
+            physical_id
+            for member in group.member_subjects
+            for physical_id in member.physical_observation_ids
+        }
+        retained_observations = {
+            observation.content.peak_observation_content_id: observation
+            for cell in child.scientific_core.cell_observations
+            for observation in cell.direct_observations
+        }
+        assert set(hold_observation_ids) <= set(retained_observations)
+        assert not set(hold_observation_ids) & member_ids
+        (row,) = writer_inputs.matrix.clusters
+        assert row.physical_observation_ids == tuple(sorted(member_ids))
+        member_observations = tuple(
+            retained_observations[physical_id] for physical_id in sorted(member_ids)
+        )
+        assert row.family_center_mz == pytest.approx(
+            sum(observation.content.mz for observation in member_observations)
+            / len(member_observations)
+        )
+        assert row.family_center_rt == pytest.approx(
+            sum(
+                observation.content.integration.rt_apex_min
+                for observation in member_observations
+            )
+            / len(member_observations)
+        )
     if above_threshold:
         from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
@@ -1989,6 +2040,224 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     assert decisions.cell(cluster_id, "Support").write_matrix_value is True
     assert decisions.cell(cluster_id, "Hold").write_matrix_value is False
     assert decisions.cell(cluster_id, "Hold").blank_reason != ""
+
+
+@pytest.mark.parametrize("supported_samples", [2, 3])
+def test_production_initial_groups_use_complete_canonical_batch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    supported_samples: int,
+) -> None:
+    from xic_extractor.alignment.cell_observations import CellObservationContractError
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_production_batch as production,
+    )
+
+    stems = ("Early", "Middle", "Late")
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    settings = replace(_settings(), neutral_loss_profile=None)
+    peak_config = _peak_config(tmp_path)
+    raws = {path: _FakeRaw((8.0 + index * 0.1,)) for index, path in enumerate(paths)}
+    candidates = {}
+    for index, path in enumerate(paths):
+        path.write_bytes(f"canonical-batch:{path.stem}".encode())
+        if index >= supported_samples:
+            raws[path].intensity[:] = 0
+        candidates[path.stem] = _current_candidates(
+            raws[path], raw_file=path, settings=settings, peak_config=peak_config
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(stems, start=1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:canonical-batch",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
+        ),
+    )
+    assert runtime.succeeded
+    initial_contexts = []
+    initial_edges = []
+    cell_contexts = []
+    build_context = production.build_initial_cid_nl_cross_sample_context
+    compose_cells = production.compose_cid_nl_predecessor_cells
+
+    def retain_context(**kwargs):
+        result = build_context(**kwargs)
+        initial_contexts.append(result[0])
+        initial_edges.extend(result[2])
+        return result
+
+    monkeypatch.setattr(
+        production, "build_initial_cid_nl_cross_sample_context", retain_context
+    )
+
+    def retain_cells(**kwargs):
+        cells = compose_cells(**kwargs)
+        cell_contexts.extend(cell.group_context for cell in cells)
+        return cells
+
+    monkeypatch.setattr(production, "compose_cid_nl_predecessor_cells", retain_cells)
+    compose_untargeted_cid_nl_production_result(
+        batch, runtime, alignment_config=AlignmentConfig()
+    )
+    (context,) = initial_contexts
+    (group,) = context.mode_tracks
+    assert {owner.sample_stem for owner in group.owners} == set(
+        stems[:supported_samples]
+    )
+    policy = (
+        "owner_full_batch_continuity"
+        if supported_samples == len(stems)
+        else "owner_injection_trajectory"
+    )
+    assert group.evidence.startswith(f"{policy};")
+    assert initial_edges
+    assert all(edge.disposition == "eligible" for edge in initial_edges)
+    assert all(
+        edge.initial_evidence is not None
+        and edge.initial_evidence.seed_support_level == "moderate"
+        and edge.initial_evidence.score == 45
+        for edge in initial_edges
+    )
+    assert cell_contexts
+    for cell_context in cell_contexts:
+        assert cell_context.sample_universe == frozenset(stems)
+        assert dict(cell_context.injection_order) == dict(zip(stems, (1, 2, 3)))
+        if supported_samples == 2:
+            # Missing or duplicate order cannot reproduce an injection-trajectory
+            # group; the owner falls back to its different bounded policy.
+            for order in (None, tuple((stem, 1) for stem in stems)):
+                with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
+                    replace(cell_context, injection_order=order)
+        else:
+            # The full-batch policy does not require an injection trajectory.
+            replace(cell_context, injection_order=None)
+
+
+def test_known_istd_reference_closes_drifting_group_and_cell_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openpyxl import Workbook
+
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+
+    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(2))
+    settings = replace(_settings(), neutral_loss_profile=None, rt_max=10)
+    peak_config = _peak_config(tmp_path)
+    raws = {path: _FakeRaw((7.98, 8.0, 8.02)) for path in paths}
+    for i, raw in enumerate(raws.values()):
+        raw.rt += i * 1.067
+        raw.scans = tuple(replace(scan, rt=scan.rt + i * 1.067) for scan in raw.scans)
+    candidates = {}
+    for path, raw in raws.items():
+        path.write_bytes(path.stem.encode())
+        candidates[path.stem] = _current_candidates(
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=p.stem,
+                raw_stem=p.stem,
+                injection_order=i + 1,
+                sample_role="study_sample",
+            )
+            for i, p in enumerate(paths)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:known-istd",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
+    )
+    assert runtime.succeeded
+    workbook = Workbook()
+    targets = workbook.active
+    targets.title = "Targets"
+    targets.append(
+        [
+            "Label",
+            "Role",
+            "m/z",
+            "RT min",
+            "RT max",
+            "ppm tol",
+            "NL (Da)",
+            "NL ppm warn",
+            "NL ppm max",
+            "ISTD Pair",
+        ]
+    )
+    targets.append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50, ""])
+    results = workbook.create_sheet("XIC Results")
+    results.append(["SampleName", "Target", "Role", "RT", "Area"])
+    for i, path in enumerate(paths):
+        results.append([path.stem, "known", "ISTD", 8.0 + i * 1.067, -999])
+    reference_path = tmp_path / "reference.xlsx"
+    workbook.save(reference_path)
+    reference = read_known_istd_reference(reference_path)
+    plain = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime,
+        alignment_config=AlignmentConfig(),
+    )
+    corrected = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime,
+        alignment_config=AlignmentConfig(),
+        known_istd_reference=reference,
+    )
+    plain_matrix = project_completed_untarget_batch_writer_inputs(plain).matrix
+    corrected_matrix = project_completed_untarget_batch_writer_inputs(corrected).matrix
+    assert len(plain_matrix.clusters) == 2
+    assert len(corrected_matrix.clusters) == 1
+    assert {(cell.sample_stem, cell.apex_rt, cell.area)
+            for cell in corrected_matrix.cells} == {
+        (cell.sample_stem, cell.apex_rt, cell.area)
+        for cell in plain_matrix.cells if cell.area is not None
+    }
+    assert all(cell.area is not None and cell.area > 0
+               for cell in corrected_matrix.cells)
+    from xic_extractor.alignment.cell_observations import CellObservationContractError
+
+    (child,) = corrected.application_result.children
+    contexts = tuple(source.group_context
+                     for cell in child.scientific_core.cell_observations
+                     for source in cell.predecessor_cells)
+    assert contexts
+    assert all(context.drift_lookup is contexts[0].drift_lookup for context in contexts)
+    with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
+        replace(contexts[0], drift_lookup=None)
 
 
 def _assert_conservative_coverage_handoff(
@@ -2471,8 +2740,19 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     assert row.public_family_id == "FAM000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
+    diagnostic_observation_ids: set[str] = set()
     for child in completed.application_result.children:
         for projected in child.completed_projection.rows:
+            group = next(
+                group
+                for group in child.scientific_core.final_population
+                if group.group_hypothesis_id == projected.row_key.group_hypothesis_id
+            )
+            member_ids = {
+                physical_id
+                for member in group.member_subjects
+                for physical_id in member.physical_observation_ids
+            }
             for decision in projected.decisions:
                 direct_observations = decision.evidence.direct_observations
                 selected_repairs = tuple(
@@ -2492,9 +2772,15 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         decision.subject.canonical_sample.metadata.raw_stem
                     ] = selected_repairs[0].facts.integration.rt_apex_min
                 for direct in decision.evidence.direct_observations:
-                    expected_presentation_facts[
-                        direct.content.peak_observation_content_id
-                    ] = (
+                    physical_id = direct.content.peak_observation_content_id
+                    if physical_id not in member_ids:
+                        assert decision.subject.canonical_sample.metadata.raw_stem == (
+                            "Hold"
+                        )
+                        assert decision.value is None
+                        diagnostic_observation_ids.add(physical_id)
+                        continue
+                    expected_presentation_facts[physical_id] = (
                         direct.content.mz,
                         direct.content.integration.rt_apex_min,
                     )
@@ -2515,7 +2801,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                             repaired_observation.cell.backfill_seed_mz,
                             repaired_observation.cell.apex_rt,
                         )
-    assert len(expected_presentation_facts) == len(sample_stems)
+    assert len(diagnostic_observation_ids) == 1
+    assert not diagnostic_observation_ids & set(row.physical_observation_ids)
+    assert len(expected_presentation_facts) == len(sample_stems) - 1
     assert row.physical_observation_ids == tuple(sorted(expected_presentation_facts))
     assert row.family_center_mz == pytest.approx(
         sum(value[0] for value in expected_presentation_facts.values())
@@ -2536,7 +2824,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean_v1"
 
     base_cells = writer_inputs.production_decisions.cells
-    weighted_values = dict(zip(sample_stems, (1.0, 9.0, 1.0, 9.0), strict=True))
+    weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
         decisions = ProductionDecisionSet(
             cells={

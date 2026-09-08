@@ -42,6 +42,8 @@ triggered route; its owner carries detail.
   removal loss: abstraction needs two callers, configuration a second value,
   and compatibility a current consumer. [`testing.md`](docs/agent/testing.md)
   owns the test-worth gate.
+- 同一份未變更輸入，由正式 owner 完成計算或驗證後，下游重用結果，只檢查本次消費所需的身分與綁定；重算或深度重驗必須指出改變的輸入、新的信任邊界或可觸達的失效機制，不能只以「更保險」為由。
+- 批次路徑將共享準備移出迴圈，先以呼叫次數與小規模量測確認成本，再放大資料量。深度診斷、全圖重驗與審計預設按需執行；只有會影響本次輸出正確性、且沒有較便宜替代檢查時，才放進正常執行路徑。
 - **Final-state artifacts:** code, comments, tests, and docs describe current
   behavior and non-obvious constraints. Cleanup history and rejected options
   stay in Git/PR history unless a current consumer needs the rationale.

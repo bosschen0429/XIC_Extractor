@@ -87,11 +87,11 @@ _FROZEN_TRACE_ORACLE = {
 _FROZEN_HYPOTHESIS_ORACLE = {
     "observed-a": (
         "xic.peak-hypothesis.v1:"
-        "ed34d478098de9fa8a81c8b3dfa981515caeb3a090a29fc156d410dd2b545d67"
+        "c5cab413fd875f0f5133b1ae32963d34cb469578c1f64fc33972b7b14b7eb284"
     ),
     "observed-b": (
         "xic.peak-hypothesis.v1:"
-        "8309ef89dc366e418d42027850fa940d12003307f6468cb648766356033798b0"
+        "1ae834520fc0fd5efef0353c6da44fb89bcf1f2722cff574509486ecda4f90e8"
     ),
 }
 

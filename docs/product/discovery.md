@@ -57,6 +57,14 @@ lifecycle for each provider.
   pure inferred candidates stay in review output as
   `review_only_ambiguous_coisolation`. Direct or mixed-basis candidates do not
   enter this inferred-only competition.
+- Untargeted CID-NL carries eligible inferred evidence into the shared method
+  assessment alongside direct evidence. Canonical evidence retains the precursor
+  basis, actual scan precursor, and configured inference bound; an inferred
+  precursor and its derived loss are not reported as directly measured facts.
+  Inferred evidence requires a qualifying relation to a usable physical MS1
+  peak to support the method. CrossSample and cell-decision owners still decide
+  identity, recovery, and Matrix publication; candidate eligibility alone grants
+  none of these authorities.
 - CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
   methods when they are used to find features matching method-specific evidence
   settings. They produce feature candidates plus typed evidence, not

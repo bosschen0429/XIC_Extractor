@@ -63,10 +63,12 @@ def test_pure_single_provider_cid_nl_dispatches_with_route_receipt(
 
 
 @pytest.mark.parametrize("writer_fails", (False, True))
+@pytest.mark.parametrize("with_reference", (False, True))
 def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     writer_fails: bool,
+    with_reference: bool,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     completed = object()
@@ -86,6 +88,10 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     )
     captured_retained: dict[str, object] = {}
     captured_write: dict[str, object] = {}
+    reference = SimpleNamespace(provenance={"workbook_sha256": "a" * 64})
+    monkeypatch.setattr(
+        pipeline_module, "read_known_istd_reference", lambda _path: reference,
+    )
 
     def complete(**kwargs: object) -> object:
         captured_retained.update(kwargs)
@@ -116,6 +122,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         assert kwargs["completed"] is completed
         assert kwargs["writer_inputs"] is writer_inputs
         assert kwargs["matrix_path"].read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
+        assert kwargs["known_istd_reference_provenance"] == (
+            reference.provenance if with_reference else None
+        )
         path.write_text("published", encoding="utf-8")
         return path
 
@@ -148,11 +157,17 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         discovery_settings=_settings(),
         owner_build_xic_backend="raw_superwindow",
         sample_metadata=retained_sample_metadata,
+        known_istd_reference_workbook=(
+            tmp_path / "reference.xlsx" if with_reference else None
+        ),
     )
 
     assert report.read_text(encoding="utf-8") == "published"
     assert result.untargeted_cid_nl_result is completed
     assert captured_retained["sample_metadata"] is retained_sample_metadata
+    assert captured_retained["known_istd_reference"] is (
+        reference if with_reference else None
+    )
     assert result.owner_build_route_receipt is not None
     assert result.owner_build_route_receipt.as_dict() == {
         "configured_owner_build_xic_backend": "raw_superwindow",
@@ -475,3 +490,42 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
         )
 
     assert not output_dir.exists()
+
+
+def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
+    from tests.test_cid_nl_explanation import _owner_run
+    from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
+    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+        write_cid_nl_explanation,
+    )
+
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "positive"
+    )
+    arguments = dict(
+        completed=completed, writer_inputs=writer,
+        candidates_by_sample=candidates, matrix_path=matrix, alignment_config=config,
+    )
+    plain = write_cid_nl_explanation(tmp_path / "plain.sqlite", **arguments)
+    plain_summary = read_cid_nl_explanation(plain)
+    assert "known_istd_reference" not in plain_summary
+    matrix_bytes = matrix.read_bytes()
+    provenance = {
+        "workbook_path": "reference.xlsx",
+        "workbook_sha256":
+            "c0d6d3c20ff4a3e77e41f56da306a517274f59fd132bfcd474aea030a2308d50",
+        "target_snapshot_id": "xic.target-list-snapshot.v1:" + "a" * 64,
+        "policy": "known_istd_unique_support_same_target_reference_median_v1",
+    }
+    report = write_cid_nl_explanation(
+        tmp_path / "reference.sqlite", **arguments,
+        known_istd_reference_provenance=provenance,
+    )
+    assert read_cid_nl_explanation(report) == {
+        **plain_summary, "known_istd_reference": provenance,
+    }
+    candidate_id = candidates["S1"][0].candidate_id
+    assert read_cid_nl_explanation(report, candidate_id=candidate_id) == (
+        read_cid_nl_explanation(plain, candidate_id=candidate_id)
+    )
+    assert matrix.read_bytes() == matrix_bytes
