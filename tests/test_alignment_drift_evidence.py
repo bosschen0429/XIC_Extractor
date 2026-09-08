@@ -166,6 +166,38 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     assert not two_targets.bindings
 
 
+@pytest.mark.parametrize("use_reference", (False, True))
+def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
+    tmp_path: Path, use_reference: bool,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        construct_cross_sample_peak_group_hypotheses,
+    )
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+
+    path = tmp_path / "reference.xlsx"
+    _known_reference_workbook(path)
+    early = _owner("early", "main", apex_rt=8)
+    competitor = _owner("early", "other", apex_rt=8.8)
+    late = _owner("late", "main", apex_rt=9)
+    owners = (early, competitor, late)
+    lookup = read_known_istd_reference(path).bind(owners) if use_reference else None
+    groups = construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(),
+        sample_universe=frozenset({"early", "late"}),
+        drift_lookup=lookup,
+    )
+    paired = early if use_reference else competitor
+    separate = competitor if use_reference else early
+    assert {frozenset(group.owner_ids) for group in groups} == {
+        frozenset((paired.owner_id, late.owner_id)),
+        frozenset((separate.owner_id,)),
+    }
+
+
 def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
     lookup = DriftEvidenceLookup(
         points=(
