@@ -51,6 +51,7 @@ class FinalizedScientificAlignmentContractError(ValueError):
 
 
 _FINALIZER_MINT_TOKEN = object()
+_FRESH_CELL_POPULATION_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,8 +116,10 @@ class FinalizedScientificAlignment:
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
-        _require_finalizer_mint(_mint_token)
-        _validate_finalized_alignment(self)
+        fresh_cells = _mint_token is _FRESH_CELL_POPULATION_MINT_TOKEN
+        if not fresh_cells:
+            _require_finalizer_mint(_mint_token)
+        _validate_finalized_alignment(self, _reuse_fresh_cells=fresh_cells)
         # The immutable request was validated at construction; retain its identity
         # without rehashing the cohort input payload for every subject result.
         object.__setattr__(
@@ -229,7 +232,8 @@ def finalize_scientific_alignment(
         cell_observation_handoff=cell_observation_handoff,
         cell_observations=canonical_cells,
         final_cross_sample_receipt=final_cross_sample_receipt,
-        _mint_token=_FINALIZER_MINT_TOKEN,
+        # The composer just closed these cells; no callback precedes this mint.
+        _mint_token=_FRESH_CELL_POPULATION_MINT_TOKEN,
     )
     return result
 
@@ -298,7 +302,11 @@ def _terminal_subject(
     )
 
 
-def _validate_finalized_alignment(result: FinalizedScientificAlignment) -> None:
+def _validate_finalized_alignment(
+    result: FinalizedScientificAlignment,
+    *,
+    _reuse_fresh_cells: bool = False,
+) -> None:
     _validate_scope(result.scope)
     if result.processing_request is not result.scope.request:
         raise FinalizedScientificAlignmentContractError(
@@ -350,13 +358,38 @@ def _validate_finalized_alignment(result: FinalizedScientificAlignment) -> None:
             canonical_samples=result.canonical_samples,
             processing_request_id=result.processing_request_id,
         )
-        try:
-            canonical_cells = validate_final_group_cell_observation_population(
-                handoff=result.cell_observation_handoff,
-                cell_observations=result.cell_observations,
+        if _reuse_fresh_cells:
+            canonical_cells = result.cell_observations
+            expected_positions = tuple(
+                (group, sample)
+                for group in sorted(
+                    result.final_population, key=lambda item: item.group_hypothesis_id
+                )
+                for sample in result.canonical_samples
             )
-        except CellObservationContractError as exc:
-            raise FinalizedScientificAlignmentContractError(str(exc)) from exc
+            if (
+                type(canonical_cells) is not tuple
+                or len(canonical_cells) != len(expected_positions)
+                or any(
+                    type(cell) is not FinalGroupCellObservation
+                    or cell.group is not group
+                    or cell.canonical_sample is not sample
+                    for cell, (group, sample) in zip(
+                        canonical_cells, expected_positions, strict=True
+                    )
+                )
+            ):
+                raise FinalizedScientificAlignmentContractError(
+                    "fresh final cells crossed their exact canonical owner population"
+                )
+        else:
+            try:
+                canonical_cells = validate_final_group_cell_observation_population(
+                    handoff=result.cell_observation_handoff,
+                    cell_observations=result.cell_observations,
+                )
+            except CellObservationContractError as exc:
+                raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     if result.cell_observations != canonical_cells:
         raise FinalizedScientificAlignmentContractError(
             "final cell observations are not canonical-sorted"

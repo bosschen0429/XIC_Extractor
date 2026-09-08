@@ -65,6 +65,30 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Scientific Finalization Reuses Its Composed Cells
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The scientific finalizer transfers the formal cell composer's exact just-built
+population into its result. A private fresh-cell mint path checks canonical
+Group×sample cardinality, order and identities while retaining all scientific
+scope, terminal, handoff and sample-universe checks. Existing direct construction
+and public cell-population validation keep deep recomposition and nested-tamper
+rejection. There is no callback between composition and result mint.
+
+A bounded first-128 profile showed 256 composer calls before the change. The
+updated real-owner regression fixture proves one composition and exact tuple
+reuse. On the full same-input replay (3,127 children, no RAW), scientific result
+validation fell from 13.657 to 0.386 seconds; scientific finalization fell from
+40.395 to 26.680 seconds. Composition was 200.390 versus 187.218 seconds in one
+sequential pair. Matrix bytes, public explanation summaries and SQLite logical
+contents match with only the existing path/attempt provenance exclusions.
+Focused scientific, cell, projection, application and workflow coverage passed
+207 tests. Receipts: `output/cid-nl-resource-optimization/{fresh-closure,fresh-cells}/`,
+`scientific-profile-128/`, and `verification-fresh-closure-fresh-cells.json`.
+Revisit when the immediate composer-to-result handoff or cell-population
+contract changes; do not reintroduce full same-input construction downstream
+without a changed input or trust boundary.
+
 ### 2026-09-09 Fresh Application Closure Reuses Component Completion
 
 **Evidence:** `diagnostic_only`; no scientific or writer authority promotion.

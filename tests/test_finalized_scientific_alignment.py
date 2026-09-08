@@ -41,6 +41,20 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
         tmp_path, monkeypatch
     )
+    from xic_extractor.alignment import cell_observations as cell_owner
+
+    compose_cells = cell_owner.compose_final_group_cell_observation_population
+    composed_populations = []
+
+    def record_composition(**kwargs):
+        cells = compose_cells(**kwargs)
+        composed_populations.append(cells)
+        return cells
+
+    for owner in (cell_owner, finalizer_owner):
+        monkeypatch.setattr(
+            owner, "compose_final_group_cell_observation_population", record_composition
+        )
 
     result = finalize_scientific_alignment(
         scope=scope,
@@ -65,6 +79,8 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     assert result.lineage == receipt.final_application.lineage
     assert result.repair_receipt is receipt.repair_receipt
     assert result.cell_observation_handoff is handoff
+    assert len(composed_populations) == 1
+    assert result.cell_observations is composed_populations[0]
     assert len(result.cell_observations) == len(result.final_population) * len(
         result.canonical_samples
     )
