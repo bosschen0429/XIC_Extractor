@@ -46,6 +46,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackSupportAnchor,
@@ -143,6 +144,7 @@ class CrossSamplePostMT0Context:
     budget: CrossSampleNeighborhoodBudget
     trajectory_input: ModeTrackTrajectoryInput
     fit_once_source_id: str | None = None
+    drift_lookup: DriftLookupProtocol | None = None
 
     def __post_init__(self) -> None:
         _validate_post_mt0_context(self)
@@ -658,6 +660,7 @@ def build_initial_cid_nl_cross_sample_context(
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
+    known_istd_reference: KnownIstdReference | None = None,
 ) -> tuple[
     FamilyContextRef,
     CrossSamplePostMT0Context,
@@ -681,18 +684,23 @@ def build_initial_cid_nl_cross_sample_context(
             "initial CID-NL context requires an exact trajectory policy"
         )
     batch_samples = processing_owners.sample_resolutions
-    family_context, anchors, sample_candidates = bootstrap_cid_nl_initial_population(
-        processing_owners=processing_owners,
-        sample_assessments=sample_assessments,
-        alignment_config=alignment_config,
-        sample_universe=frozenset(sample.metadata.raw_stem for sample in batch_samples),
-        injection_order={
-            sample.metadata.raw_stem: sample.metadata.injection_order
-            for sample in batch_samples
-            if sample.metadata.injection_order is not None
-        },
-        drift_lookup=drift_lookup,
-        retain_observation_only_candidates=True,
+    family_context, anchors, sample_candidates, drift_lookup = (
+        bootstrap_cid_nl_initial_population(
+            processing_owners=processing_owners,
+            sample_assessments=sample_assessments,
+            alignment_config=alignment_config,
+            sample_universe=frozenset(
+                sample.metadata.raw_stem for sample in batch_samples
+            ),
+            injection_order={
+                sample.metadata.raw_stem: sample.metadata.injection_order
+                for sample in batch_samples
+                if sample.metadata.injection_order is not None
+            },
+            drift_lookup=drift_lookup,
+            retain_observation_only_candidates=True,
+            known_istd_reference=known_istd_reference,
+        )
     )
     groups = family_context.mode_tracks
     owners = tuple(owner for group in groups for owner in group.owners)
@@ -783,6 +791,7 @@ def build_initial_cid_nl_cross_sample_context(
         ),
         budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
     )
+    context = replace(context, drift_lookup=drift_lookup)
     return family_context, context, classified_edges
 
 

@@ -7,14 +7,19 @@ import statistics
 from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 from functools import cached_property
+from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
 from openpyxl import load_workbook
 
 from xic_extractor.alignment.identity_gates import is_dr_neutral_loss_tag
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import TargetListSnapshot
+from xic_extractor.configuration.target_identity import (
+    TargetListSnapshot,
+    mint_target_list_snapshot,
+)
 from xic_extractor.injection_rolling import read_injection_order, rolling_median_rt
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
@@ -31,6 +36,215 @@ LOCAL_TRAJECTORY_PRODUCT_AUTHORITY = "none"
 _LOCAL_TRAJECTORY_ASSESSMENT_MINT_TOKEN = object()
 _TARGETED_ISTD_ANCHOR_MINT_TOKEN = object()
 _DNA_DR_NEUTRAL_LOSS_DA = 116.0474
+
+
+@dataclass(frozen=True)
+class KnownIstdReference:
+    """Declared ISTD definitions and measured reference coordinates, never areas."""
+
+    workbook_path: str
+    workbook_sha256: str
+    anchor: TargetedIstdIdentityAnchor
+    coordinates: tuple[tuple[str, str, float, float], ...]
+
+    @property
+    def provenance(self) -> dict[str, str]:
+        return {
+            "workbook_path": self.workbook_path,
+            "workbook_sha256": self.workbook_sha256,
+            "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
+            "policy": "known_istd_unique_support_same_target_reference_median_v1",
+        }
+
+    def bind(
+        self, support_owners: tuple[SampleLocalMS1Owner, ...]
+    ) -> KnownIstdOwnerLookup:
+        targets = {target.label: target for target in self.anchor.targets}
+        candidates: list[tuple[str, str, float]] = []
+        counts: dict[str, int] = {}
+        for label, sample, rt, delta in self.coordinates:
+            target = targets[label]
+            matches = tuple(
+                owner
+                for owner in support_owners
+                if owner.sample_stem == sample
+                and owner.owner_peak_start_rt <= rt <= owner.owner_peak_end_rt
+                and owner.primary_identity_event is not None
+                and target.neutral_loss_da is not None
+                and target.nl_ppm_max is not None
+                and abs(owner.primary_identity_event.observed_neutral_loss_da
+                        - target.neutral_loss_da)
+                <= target.neutral_loss_da * target.nl_ppm_max / 1_000_000.0
+                and self.anchor.matches_observation(
+                    target,
+                    # SUPPORT projects a typed CID-NL method tag, while the
+                    # legacy target matcher accepts the DNA dR semantic tag.
+                    neutral_loss_tag="dR",
+                    precursor_mz=owner.precursor_mz,
+                    apex_rt=owner.owner_apex_rt,
+                )
+            )
+            for owner in matches:
+                counts[owner.owner_id] = counts.get(owner.owner_id, 0) + 1
+            if len(matches) == 1:
+                candidates.append((matches[0].owner_id, label, delta))
+        return KnownIstdOwnerLookup(
+            self, tuple(item for item in candidates if counts[item[0]] == 1)
+        )
+
+
+@dataclass(frozen=True)
+class KnownIstdOwnerLookup:
+    """Immutable full-population bindings reused by grouping and cell proof."""
+
+    reference: KnownIstdReference
+    bindings: tuple[tuple[str, str, float], ...]
+    istd_identity_anchor: None = None
+
+    @property
+    def source(self) -> Literal["targeted_istd_trend"]:
+        return "targeted_istd_trend"
+
+    def sample_delta_min(self, sample_stem: str) -> None:
+        return None
+
+    def injection_order(self, sample_stem: str) -> None:
+        return None
+
+    @cached_property
+    def _by_owner(self) -> dict[str, tuple[str, float]]:
+        return {owner: (label, delta) for owner, label, delta in self.bindings}
+
+    def corrected_pair_delta_sec(
+        self,
+        left: SampleLocalMS1Owner,
+        right: SampleLocalMS1Owner,
+    ) -> float | None:
+        a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
+        if a is None or b is None or a[0] != b[0]:
+            return None
+        return abs((left.owner_apex_rt - a[1]) - (right.owner_apex_rt - b[1])) * 60.0
+
+
+def read_known_istd_reference(path: Path) -> KnownIstdReference:
+    """Read the current report schema and validate declared targets at their owner."""
+    if not isinstance(path, Path):
+        raise TypeError("known ISTD reference workbook must be a Path")
+    payload = path.read_bytes()
+    workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+
+    def rows(sheet: str, required: tuple[str, ...]) -> Iterable[dict[str, object]]:
+        if sheet not in workbook.sheetnames:
+            raise ValueError(f"known ISTD reference requires sheet {sheet}")
+        values = iter(workbook[sheet].values)
+        headers = tuple(
+            str(value).strip() if value is not None else ""
+            for value in next(values, ())
+        )
+        if any(headers.count(key) != 1 for key in required):
+            raise ValueError(
+                f"{sheet}: missing or duplicate required headers {required}"
+            )
+        for row in values:
+            if any(value is not None for value in row):
+                yield dict(zip(headers, row))
+
+    def number(row: dict[str, object], key: str) -> float:
+        value = row[key]
+        parsed = _finite_float(value)
+        if isinstance(value, bool) or parsed is None:
+            raise ValueError(f"known ISTD reference: invalid required {key}: {value!r}")
+        return parsed
+
+    def text(row: dict[str, object], key: str) -> str:
+        value = row[key]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"known ISTD reference: invalid required {key}")
+        return value.strip()
+
+    try:
+        targets = []
+        for row in rows(
+            "Targets",
+            (
+                "Label",
+                "Role",
+                "m/z",
+                "RT min",
+                "RT max",
+                "ppm tol",
+                "NL (Da)",
+                "NL ppm warn",
+                "NL ppm max",
+            ),
+        ):
+            if str(row["Role"]).strip() != "ISTD":
+                continue
+            targets.append(
+                Target(
+                    label=text(row, "Label"),
+                    mz=number(row, "m/z"),
+                    rt_min=number(row, "RT min"),
+                    rt_max=number(row, "RT max"),
+                    ppm_tol=number(row, "ppm tol"),
+                    neutral_loss_da=number(row, "NL (Da)"),
+                    nl_ppm_warn=number(row, "NL ppm warn"),
+                    nl_ppm_max=number(row, "NL ppm max"),
+                    is_istd=True,
+                    istd_pair="",
+                )
+            )
+        if not targets or len({t.label for t in targets}) != len(targets):
+            raise ValueError("known ISTD reference requires unique ISTD target labels")
+        snapshot = mint_target_list_snapshot(
+            targets, identity_namespace="known-istd-reference-v1"
+        )
+        labels = {target.label for target in targets}
+        coordinates: dict[tuple[str, str], float] = {}
+        seen: set[tuple[str, str]] = set()
+        sample: str | None = None
+        for row in rows("XIC Results", ("SampleName", "Target", "Role", "RT")):
+            # The report carries SampleName across each sample block, whose
+            # first named row can be an analyte rather than an ISTD.
+            if row["SampleName"] is not None and str(row["SampleName"]).strip():
+                sample = text(row, "SampleName")
+            if str(row["Role"]).strip() != "ISTD":
+                continue
+            if sample is None:
+                raise ValueError(
+                    "XIC Results: ISTD reference has no preceding SampleName"
+                )
+            label = text(row, "Target")
+            if label not in labels:
+                raise ValueError(f"XIC Results: undeclared ISTD target {label}")
+            key = label, sample
+            if key in seen:
+                raise ValueError(f"XIC Results: duplicate ISTD reference {key}")
+            seen.add(key)
+            if row["RT"] is None or str(row["RT"]).strip() == "ND":
+                continue
+            rt = number(row, "RT")
+            if rt < 0:
+                raise ValueError("XIC Results: reference RT must be nonnegative")
+            coordinates[key] = rt
+        centers = {
+            label: statistics.median(
+                rt for (target, _), rt in coordinates.items() if target == label
+            )
+            for label in labels
+            if any(target == label for target, _ in coordinates)
+        }
+        return KnownIstdReference(
+            str(path.resolve()),
+            hashlib.sha256(payload).hexdigest(),
+            build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
+            tuple(
+                (label, sample, rt, rt - centers[label])
+                for (label, sample), rt in sorted(coordinates.items())
+            ),
+        )
+    finally:
+        workbook.close()
 
 
 @dataclass(frozen=True)

@@ -97,7 +97,33 @@ a valley endpoint. Their strictly interior MS2 events have unique peak
 containment, but the previous method contract treated all touching intervals as
 set-level ambiguity. The operator authorized unique interior support when there
 is no positive-width overlap; exact-boundary events and genuine overlaps retain
-HOLD. The affected final matrix still requires validation under this rule.
+HOLD.
+The completed replay with that rule published 653 rows and 45 of 48 named ISTD
+cells. A further production handoff omitted the complete batch and injection
+context when forming groups and reconstructing their cell proofs. Commit
+`f1039945` preserves that context through the existing grouping owner. Its
+retained-runtime public CLI replay completed in 1,457.416 seconds without RAW
+opens and published 1,499 rows, 5,614 finite values, and 47 of 48 named ISTD
+cells. SQLite integrity and public artifact checks passed. Coordinate matches
+against the prior 816-row matrix increased from 444 to 744; this is a retention
+diagnostic, not chemical identity or area parity.
+Of the 72 coordinate-unmatched prior rows, six already have current Matrix
+lineage, seven lack current method support, one has no eligible source, and 58
+remain in the provisional/archive route. Those 58 comprise 27 with only one
+exact-source supported sample, 12 with a mass-envelope conflict in the connected
+population, 11 with an uncorrected RT gap, seven split across method subjects,
+and one with weak peak quality. These are queryable current-policy conditions,
+not authorization to align unknown compounds or restore old areas. One prior
+family, `FAM002914`, lacks baseline cell receipts for its eight published values.
+
+The remaining named cell is TumorBC2263 N6-medA at 24.2694 minutes. The operator
+confirmed that the eight RAWs are a sparse sample of a smoothly drifting cohort
+and supplied the full targeted report. Its observed RT agrees with the current
+RAW peak. The existing local-jitter reader does not represent the between-sample
+RT trend. A per-target known-reference coordinate probe joined all eight N6
+owners with unchanged gates and kept two other RT peaks separate. The operator
+authorized formal use of that report only for known-ISTD alignment; production
+integration and final retention validation are pending.
 Task-local receipts are under
 `output/cid-nl-feature-loss-v10/`.
 

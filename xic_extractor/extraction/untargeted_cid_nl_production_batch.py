@@ -32,6 +32,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.cross_sample_reconciliation import (
     build_initial_cid_nl_cross_sample_context,
 )
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
@@ -341,6 +342,7 @@ def compose_untargeted_cid_nl_production_result(
     runtime_result: UntargetedCidNlRealDataRuntimeApplicationResult,
     *,
     alignment_config: AlignmentConfig,
+    known_istd_reference: KnownIstdReference | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Close exact subject-local workflows from the one completed runtime."""
 
@@ -584,6 +586,7 @@ def compose_untargeted_cid_nl_production_result(
                 sample_assessments=assessments,
                 alignment_config=alignment_config,
                 trajectory_policy=trajectory_policy,
+                known_istd_reference=known_istd_reference,
             )
         )
         initial_groups.extend(family_context.mode_tracks)
@@ -593,6 +596,7 @@ def compose_untargeted_cid_nl_production_result(
             groups=family_context.mode_tracks,
             sample_assessments=assessments,
             alignment_config=alignment_config,
+            drift_lookup=cross_sample_context.drift_lookup,
             sample_universe=frozenset(
                 sample.metadata.raw_stem
                 for sample in batch.context.processing_owners.sample_resolutions

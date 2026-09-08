@@ -14,6 +14,10 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.drift_evidence import (
+    KnownIstdReference,
+    read_known_istd_reference,
+)
 from xic_extractor.alignment.ms1_index_source import (
     OwnerBackfillXicBackend,
     OwnerBuildXicBackend,
@@ -88,6 +92,7 @@ def run_alignment(
     owner_backfill_superwindow_span_factor: int = 2,
     sample_column_injection_order: Path | None = None,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
+    known_istd_reference_workbook: Path | None = None,
     timing_recorder: TimingRecorder | None = None,
     capture_artifact_fingerprints: bool = False,
     backfill_scope: BackfillScope = "full-audit",
@@ -201,6 +206,11 @@ def run_alignment(
         owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
         sample_column_injection_order=sample_column_injection_order,
         sample_metadata=sample_metadata,
+        known_istd_reference=(
+            None
+            if known_istd_reference_workbook is None
+            else read_known_istd_reference(known_istd_reference_workbook)
+        ),
         backfill_scope=backfill_scope,
         audit_evidence_mode=audit_evidence_mode,
         selected_family_ids=selected_family_ids,
@@ -281,6 +291,7 @@ def _run_untargeted_cid_nl_alignment(
     owner_backfill_superwindow_span_factor: int,
     sample_column_injection_order: Path | None,
     sample_metadata: tuple[SampleMetadata, ...] | None,
+    known_istd_reference: KnownIstdReference | None,
     backfill_scope: BackfillScope,
     audit_evidence_mode: str,
     selected_family_ids: frozenset[str],
@@ -315,6 +326,7 @@ def _run_untargeted_cid_nl_alignment(
             peak_config=peak_config,
             alignment_config=alignment_config,
             sample_metadata=sample_metadata,
+            known_istd_reference=known_istd_reference,
             timing_recorder=timing_recorder,
             signal_processing_profile=signal_processing_profile,
         )
@@ -359,6 +371,9 @@ def _run_untargeted_cid_nl_alignment(
             "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean_v1",
         }
     )
+    if known_istd_reference is not None:
+        metadata.update({f"known_istd_reference_{key}": value
+                         for key, value in known_istd_reference.provenance.items()})
     with timing_recorder.stage("alignment.write_outputs"):
         artifact_fingerprint_batch = _write_outputs_atomic(
             outputs,

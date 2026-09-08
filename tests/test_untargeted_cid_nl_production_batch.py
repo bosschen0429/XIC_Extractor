@@ -2152,6 +2152,114 @@ def test_production_initial_groups_use_complete_canonical_batch(
             replace(cell_context, injection_order=None)
 
 
+def test_known_istd_reference_closes_drifting_group_and_cell_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openpyxl import Workbook
+
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+
+    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(2))
+    settings = replace(_settings(), neutral_loss_profile=None, rt_max=10)
+    peak_config = _peak_config(tmp_path)
+    raws = {path: _FakeRaw((7.98, 8.0, 8.02)) for path in paths}
+    for i, raw in enumerate(raws.values()):
+        raw.rt += i * 1.067
+        raw.scans = tuple(replace(scan, rt=scan.rt + i * 1.067) for scan in raw.scans)
+    candidates = {}
+    for path, raw in raws.items():
+        path.write_bytes(path.stem.encode())
+        candidates[path.stem] = _current_candidates(
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=p.stem,
+                raw_stem=p.stem,
+                injection_order=i + 1,
+                sample_role="study_sample",
+            )
+            for i, p in enumerate(paths)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:known-istd",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
+    )
+    assert runtime.succeeded
+    workbook = Workbook()
+    targets = workbook.active
+    targets.title = "Targets"
+    targets.append(
+        [
+            "Label",
+            "Role",
+            "m/z",
+            "RT min",
+            "RT max",
+            "ppm tol",
+            "NL (Da)",
+            "NL ppm warn",
+            "NL ppm max",
+            "ISTD Pair",
+        ]
+    )
+    targets.append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50, ""])
+    results = workbook.create_sheet("XIC Results")
+    results.append(["SampleName", "Target", "Role", "RT", "Area"])
+    for i, path in enumerate(paths):
+        results.append([path.stem, "known", "ISTD", 8.0 + i * 1.067, -999])
+    reference_path = tmp_path / "reference.xlsx"
+    workbook.save(reference_path)
+    reference = read_known_istd_reference(reference_path)
+    plain = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime,
+        alignment_config=AlignmentConfig(),
+    )
+    corrected = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime,
+        alignment_config=AlignmentConfig(),
+        known_istd_reference=reference,
+    )
+    plain_matrix = project_completed_untarget_batch_writer_inputs(plain).matrix
+    corrected_matrix = project_completed_untarget_batch_writer_inputs(corrected).matrix
+    assert len(plain_matrix.clusters) == 2
+    assert len(corrected_matrix.clusters) == 1
+    assert {(cell.sample_stem, cell.apex_rt, cell.area)
+            for cell in corrected_matrix.cells} == {
+        (cell.sample_stem, cell.apex_rt, cell.area)
+        for cell in plain_matrix.cells if cell.area is not None
+    }
+    assert all(cell.area is not None and cell.area > 0
+               for cell in corrected_matrix.cells)
+    from xic_extractor.alignment.cell_observations import CellObservationContractError
+
+    (child,) = corrected.application_result.children
+    contexts = tuple(source.group_context
+                     for cell in child.scientific_core.cell_observations
+                     for source in cell.predecessor_cells)
+    assert contexts
+    assert all(context.drift_lookup is contexts[0].drift_lookup for context in contexts)
+    with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
+        replace(contexts[0], drift_lookup=None)
+
+
 def _assert_conservative_coverage_handoff(
     completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
 ) -> None:

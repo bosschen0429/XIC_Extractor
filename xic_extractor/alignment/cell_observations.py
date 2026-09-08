@@ -32,6 +32,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
     compose_peak_hypotheses_from_assessment_universe,
@@ -147,6 +148,7 @@ class CidNlCellGroupContext:
     processing_attempt: ProcessingAttemptIdentity
     sample_universe: frozenset[str] | None = None
     injection_order: tuple[tuple[str, int], ...] | None = None
+    drift_lookup: DriftLookupProtocol | None = None
 
     def __post_init__(self) -> None:
         if self.sample_universe is not None and not isinstance(
@@ -224,6 +226,7 @@ class CidNlCellGroupContext:
         expected_groups = construct_cross_sample_peak_group_hypotheses(
             expected_owners,
             config=self.config,
+            drift_lookup=self.drift_lookup,
             sample_universe=self.sample_universe,
             injection_order=(
                 None if self.injection_order is None else dict(self.injection_order)
@@ -2664,6 +2667,7 @@ def compose_cid_nl_predecessor_cells(
     ],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
+    drift_lookup: DriftLookupProtocol | None = None,
     injection_order: Mapping[str, int] | None = None,
     recovery_assessments_by_group: Mapping[tuple[str, str], CidNlMethodAssessmentRef]
     | None = None,
@@ -2698,6 +2702,7 @@ def compose_cid_nl_predecessor_cells(
             config=alignment_config,
             processing_attempt=processing_owners.attempt,
             sample_universe=sample_universe,
+            drift_lookup=drift_lookup,
             injection_order=(
                 None
                 if injection_order is None

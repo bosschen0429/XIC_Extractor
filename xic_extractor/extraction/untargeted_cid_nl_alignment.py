@@ -9,6 +9,7 @@ from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.config import ExtractionConfig
@@ -60,6 +61,7 @@ def complete_untargeted_cid_nl_alignment(
     peak_config: ExtractionConfig,
     alignment_config: AlignmentConfig,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
+    known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
@@ -144,6 +146,7 @@ def complete_untargeted_cid_nl_alignment(
             batch,
             runtime_result,
             alignment_config=alignment_config,
+            known_istd_reference=known_istd_reference,
         )
 
 

@@ -179,6 +179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 signal_processing_profile=signal_processing_profile,
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
             ),
+            "known_istd_reference_workbook": args.known_istd_reference_workbook,
             "discovery_settings": recipe.discovery_settings,
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
@@ -303,6 +304,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Output directory for selected Alignment artifacts. The default "
             "writes only alignment_matrix.tsv."
         ),
+    )
+    parser.add_argument(
+        "--known-istd-reference-workbook",
+        type=Path,
+        help=("Report whose Targets ISTDs and XIC Results RT "
+              "align known SUPPORT owners."),
     )
     parser.add_argument(
         "--preset",

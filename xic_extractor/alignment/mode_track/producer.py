@@ -9,6 +9,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.drift_evidence import (
+    KnownIstdReference,
     LocalTrajectoryEvidenceLookup,
     assess_local_trajectory,
 )
@@ -79,7 +80,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
 
     if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
-    family_context, anchors, sample_candidates = bootstrap_cid_nl_initial_population(
+    family_context, anchors, sample_candidates, _ = bootstrap_cid_nl_initial_population(
         processing_owners=processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=alignment_config,
@@ -142,6 +143,7 @@ def bootstrap_cid_nl_initial_population(
     sample_universe: frozenset[str] | None = None,
     injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
+    known_istd_reference: KnownIstdReference | None = None,
     retain_observation_only_candidates: bool = False,
 ) -> tuple[
     FamilyContextRef,
@@ -152,6 +154,7 @@ def bootstrap_cid_nl_initial_population(
         ],
         ...,
     ],
+    DriftLookupProtocol | None,
 ]:
     """Build initial groups and their physical candidate bindings."""
 
@@ -228,6 +231,20 @@ def bootstrap_cid_nl_initial_population(
                 )
     if not owners:
         raise ModeTrackProducerError("bootstrap assessments have no peak observations")
+    if known_istd_reference is not None:
+        if drift_lookup is not None:
+            raise ValueError(
+                "known ISTD reference cannot be combined with generic drift"
+            )
+        support_ids = {
+            hypothesis.hypothesis_id
+            for hypotheses in hypotheses_by_sample.values()
+            for hypothesis in hypotheses
+            if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        }
+        drift_lookup = known_istd_reference.bind(
+            tuple(owner for owner in owners if owner.owner_id in support_ids)
+        )
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
@@ -335,7 +352,7 @@ def bootstrap_cid_nl_initial_population(
             for hypothesis in hypotheses_by_sample[sample_id]
         )
         sample_candidates.append((sample, candidates))
-    return family_context, anchors, tuple(sample_candidates)
+    return family_context, anchors, tuple(sample_candidates), drift_lookup
 
 
 def bootstrap_mode_tracks_from_ms1_hypotheses(
