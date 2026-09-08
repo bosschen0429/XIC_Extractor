@@ -231,8 +231,9 @@ unresolved and rejected groups remain AuditTrail facts.
   sample's reference RT. A pair receives correction only when both exact owners
   bind to the same target; missing or ambiguous bindings stay uncorrected.
   This is not a sample-wide shift for other peaks. The complete binding context
-  is retained through cell validation, and public run metadata records the
-  input fingerprint and policy. Existing mass/RT gates, current RAW integration
+  is retained through cell validation. The public explanation SQLite summary
+  records the input fingerprint, target snapshot, and policy, including at the
+  production output level. Existing mass/RT gates, current RAW integration
   values, and cell decisions remain authoritative; report areas are not inputs.
   Omitting the reference keeps the ordinary route. This context does not enable
   the separate targeted-identity reconciliation rule above.

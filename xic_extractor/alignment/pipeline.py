@@ -412,6 +412,11 @@ def _run_untargeted_cid_nl_alignment(
             candidates_by_sample=candidates_by_sample,
             matrix_path=outputs.matrix_tsv,
             alignment_config=alignment_config,
+            known_istd_reference_provenance=(
+                None
+                if known_istd_reference is None
+                else known_istd_reference.provenance
+            ),
         )
     return replace(
         outputs,

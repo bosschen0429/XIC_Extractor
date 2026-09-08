@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-08
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -91,7 +91,7 @@ precursor and retains the existing mass/RT checks. All 9,925 eligible candidates
 across eight RAW files reconstructed without receipt errors or duplicate
 scan/loss evidence. The inferred-evidence run completed runtime finalization,
 but timed out during batch composition at 1,800.011 seconds without a matrix.
-Full matrix retention remains unverified; the receipt is not a successful run.
+That interrupted receipt did not establish matrix retention or a successful run.
 Captured hmdC assessments also show adjacent integration intervals sharing only
 a valley endpoint. Their strictly interior MS2 events have unique peak
 containment, but the previous method contract treated all touching intervals as
@@ -116,14 +116,30 @@ and one with weak peak quality. These are queryable current-policy conditions,
 not authorization to align unknown compounds or restore old areas. One prior
 family, `FAM002914`, lacks baseline cell receipts for its eight published values.
 
-The remaining named cell is TumorBC2263 N6-medA at 24.2694 minutes. The operator
+The last missing named cell was TumorBC2263 N6-medA at 24.2694 minutes. The operator
 confirmed that the eight RAWs are a sparse sample of a smoothly drifting cohort
 and supplied the full targeted report. Its observed RT agrees with the current
 RAW peak. The existing local-jitter reader does not represent the between-sample
 RT trend. A per-target known-reference coordinate probe joined all eight N6
 owners with unchanged gates and kept two other RT peaks separate. The operator
-authorized formal use of that report only for known-ISTD alignment; production
-integration and final retention validation are pending.
+authorized formal use of that report only for known-ISTD alignment. The public
+CLI now accepts it explicitly, binds unique supported owners to the same declared
+target, and retains the complete binding context through cell proof. Reference
+areas are never inputs. Production explanation summaries retain the workbook
+fingerprint, target snapshot, and policy.
+
+The reference-enabled public CLI replay at `17e41279` completed in 1,950.698
+seconds without RAW opens. It published 1,499 rows and 5,615 finite values;
+all 48 named ISTD sample cells passed the original retention probe. Public
+artifact checks and SQLite integrity passed, with no orphan record links.
+The prior-matrix comparison still matches 744 of 816 rows, with 3,117 shared
+sample cells and 363 matched rows retaining every prior sample. The 72 unmatched
+rows retain the explanations above; this does not establish full historical
+algorithm parity. Exact comparison with the batch-context replay preserved
+unknown-owner partitions and all 8,969 owners' physical observations, areas,
+sources, and variants. Public Matrix changes trace only to formally bound
+known-ISTD owners. Two off-target singleton groups have 16 reminted cell receipt
+IDs from the updated context, with their grouping and values unchanged.
 Task-local receipts are under
 `output/cid-nl-feature-loss-v10/`.
 
