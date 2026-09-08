@@ -50,9 +50,7 @@ def test_multi_sample_alignment_preserves_selected_hypothesis_identity(
 
     assert groups == reversed_groups
     assert len(groups) == 1
-    assert groups[0].owner_ids == tuple(
-        sorted((first.hypothesis_id, second.hypothesis_id))
-    )
+    assert groups[0].owner_ids == (first.hypothesis_id, second.hypothesis_id)
     assert tuple(owner.owner_id for owner in groups[0].owners) == groups[0].owner_ids
     assert tuple(owner.sample_stem for owner in groups[0].owners) == (
         "sample-a",
