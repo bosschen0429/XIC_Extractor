@@ -416,12 +416,12 @@ def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
     assert spec.discovery_method.settings == settings
 
 
-def test_valid_canonical_hash_snapshots_are_unchanged(tmp_path: Path) -> None:
+def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) -> None:
     spec = _compile_paths(_raws(tmp_path))
 
     assert spec.discovery_method.method_hash == (
         "a941225d663a845f4acecc8cfda602bef7e75a8ac115a471772b8f94a84726bf"
     )
     assert spec.run_spec_hash == (
-        "47bd53ce47002c5ec286732d4542082761858787dc08d9832d24dcfbdcfd8292"
+        "8b2a7e362f16d62ac53e1aac132c452385edc81a30e85f1f7a6b8d392ad78778"
     )

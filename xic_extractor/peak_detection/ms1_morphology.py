@@ -141,7 +141,7 @@ def gaussian_raw_minus_asls_raw_positive_trace(
     *,
     profile: SignalProcessingProfile,
 ) -> np.ndarray:
-    """Apply the canonical Gaussian(raw) - AsLS(raw), clipped at zero."""
+    """Subtract a nonnegative AsLS baseline from Gaussian(raw), clipped at zero."""
 
     _smoothed, positive = canonical_gaussian_signal_traces(
         intensity_values,
@@ -157,7 +157,7 @@ def canonical_gaussian_signal_traces(
     *,
     profile: SignalProcessingProfile,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return Gaussian(raw) and max(Gaussian(raw) - AsLS(raw), 0)."""
+    """Return Gaussian(raw) and its positive residual over nonnegative AsLS."""
 
     if not isinstance(profile, SignalProcessingProfile):
         raise TypeError("profile must be a SignalProcessingProfile")
@@ -175,7 +175,7 @@ def canonical_gaussian_signal_traces(
         intensity,
         window_points=profile.window_points,
     )
-    return smoothed_raw, np.maximum(smoothed_raw - baseline, 0.0)
+    return smoothed_raw, np.maximum(smoothed_raw - np.maximum(baseline, 0.0), 0.0)
 
 
 def morphology_trace_effective_points(

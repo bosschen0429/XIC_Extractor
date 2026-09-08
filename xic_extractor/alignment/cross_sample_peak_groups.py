@@ -20,7 +20,10 @@ from itertools import combinations
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
+from xic_extractor.alignment.drift_evidence import (
+    KnownIstdOwnerLookup,
+    TargetedIstdIdentityAnchor,
+)
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     DriftPriorSource,
@@ -2600,7 +2603,9 @@ def _link_groups(
                 continue
         best_index = min(
             compatible_group_indexes,
-            key=lambda index: _group_match_score(owner, groups[index], config),
+            key=lambda index: _group_match_score(
+                owner, groups[index], config, drift_lookup=drift_lookup,
+            ),
         )
         groups[best_index].append(owner)
         envelopes[best_index] = _extend_group_envelope(envelopes[best_index], owner)
@@ -3704,21 +3709,36 @@ def _group_match_score(
     owner: SampleLocalMS1Owner,
     group: list[SampleLocalMS1Owner],
     config: AlignmentConfig,
+    *,
+    drift_lookup: DriftLookupProtocol | None,
 ) -> tuple[float, float, float]:
-    return max(_owner_match_score(owner, existing, config) for existing in group)
+    return max(
+        _owner_match_score(owner, existing, config, drift_lookup=drift_lookup)
+        for existing in group
+    )
 
 
 def _owner_match_score(
     left: SampleLocalMS1Owner,
     right: SampleLocalMS1Owner,
     config: AlignmentConfig,
+    *,
+    drift_lookup: DriftLookupProtocol | None,
 ) -> tuple[float, float, float]:
     mz_score = _ppm(left.precursor_mz, right.precursor_mz) / config.max_ppm
-    rt_score = (
-        abs(left.owner_apex_rt - right.owner_apex_rt)
-        * 60.0
-        / config.identity_rt_candidate_window_sec
+    corrected_delta = (
+        drift_lookup.corrected_pair_delta_sec(left, right)
+        if isinstance(drift_lookup, KnownIstdOwnerLookup)
+        else None
     )
+    # Rank an already-compatible ISTD pair in the same measured coordinates
+    # that admitted its edge, so a closer unbound peak cannot steal membership.
+    rt_delta = (
+        corrected_delta
+        if corrected_delta is not None
+        else abs(left.owner_apex_rt - right.owner_apex_rt) * 60.0
+    )
+    rt_score = rt_delta / config.identity_rt_candidate_window_sec
     left_event = left.primary_identity_event
     right_event = right.primary_identity_event
     product_score = (
