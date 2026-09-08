@@ -65,6 +65,42 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 CID-NL Request Digest Optimization
+
+Evidence: `diagnostic_only`; engineering performance and persisted-output
+parity, with no scientific or product-authority promotion. Commit `f7c0762f`
+applies the existing immutable processing-request identity boundary to the
+Untarget post-cell rows receipt. Result content and retained owner identities
+remain checked. The 52 affected tests, scoped Ruff/mypy, and diff check pass.
+
+The fresh public CLI replay of the retained eight-sample inputs, including the
+same known-ISTD reference, completed in 826.857 seconds with zero RAW opens.
+The historical reference-enabled replay took 1,950.698 seconds: this observed
+single-run reduction is 57.6%, not a repeated whole-run benchmark. Batch
+composition/finalization took 616.613 versus 1,745.872 seconds. Three
+interleaved digest repetitions per mode support the local mechanism for median
+and late cases; the largest case showed no improvement. Host contention and
+filesystem cache were uncontrolled.
+
+Against the final writer baseline at `ca3b36e9`, the 1,499-row Matrix is byte
+identical, preserving 5,615 numeric cells and all 48 known-ISTD cells. The
+public explanation reader, SQLite integrity, schema, and all candidate,
+record, and link payloads pass exact parity. Only output-path and attempt-ID
+provenance are excluded from comparison. Source and candidate refs, checkpoint
+and reference hashes, commands, timings, and parity receipts are retained under
+`output/cid-nl-performance-v12/`.
+
+On six structurally selected children, three interleaved repetitions with
+1/2/4/6 threads took median 10.956/11.945/11.850/12.145 seconds. All 72 child
+executions passed the original owner validator and content/aliasing comparison;
+no thread setting was adopted. This skewed sample covers 0.1752% of children
+and 1.1951% of cells, so it does not establish general parallelism limits.
+Peak RSS was 2.590 GB with at least 9.363 GB available. A single input-bundle
+roundtrip took 18.887 seconds for 180.6 MB and lost parent request identity;
+a completed-result roundtrip failed the existing completion-seal validator.
+An ordinary process pool therefore cannot directly return these retained
+graphs; this experiment does not evaluate a redesigned computation boundary.
+
 ### 2026-09-08 CID-NL Composition Cost After Retention Repair
 
 Evidence: `diagnostic_only`; diagnosis and plan only. The reference-enabled
