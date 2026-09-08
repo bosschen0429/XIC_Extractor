@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
+from copy import copy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import MappingProxyType
 
-from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     _COMPLETED_RECOVERY_CONTRACT,
     OwnerBackfillCompletedRecoveryProjection,
@@ -18,6 +20,7 @@ from xic_extractor.alignment.cell_observations import (
     CidNlCellGroupContext,
     compose_cid_nl_predecessor_cells,
 )
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
     assess_conservative_backfill_group,
@@ -174,6 +177,12 @@ class UntargetedCidNlRealDataRuntimeJob:
     _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
         init=False, repr=False, compare=False
     )
+    _request_candidates_by_subject: Mapping[
+        str, tuple[DiscoveryCandidate, ...]
+    ] = field(init=False, repr=False, compare=False)
+    _request_physical_records_by_subject: Mapping[
+        str, tuple[DiscoveryPhysicalFactRecord, ...]
+    ] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         expected = (
@@ -201,6 +210,81 @@ class UntargetedCidNlRealDataRuntimeJob:
         object.__setattr__(
             self, "_request_subjects", _validate_request_bound_inputs(self)
         )
+        object.__setattr__(
+            self,
+            "_request_candidates_by_subject",
+            _index_request_subject_candidates(self._request_subjects, self.candidates),
+        )
+        object.__setattr__(
+            self,
+            "_request_physical_records_by_subject",
+            _index_request_subject_physical_records(
+                self._request_subjects, self.physical_records
+            ),
+        )
+
+
+def build_untargeted_cid_nl_sample_runtime_jobs(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    subject_work_units: tuple[tuple[CidNlMethodSubject, str], ...],
+    candidates: tuple[DiscoveryCandidate, ...],
+    discovery_receipt: DiscoveryCandidateUniverseReceipt,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    raw_path: Path,
+    dll_dir: Path,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
+) -> tuple[UntargetedCidNlRealDataRuntimeJob, ...]:
+    """Validate a sample once, then bind each subject to those same inputs."""
+
+    if not subject_work_units:
+        return ()
+    first_subject, first_key = subject_work_units[0]
+    first = UntargetedCidNlRealDataRuntimeJob(
+        processing_owners=processing_owners,
+        sample=sample,
+        method_subject=first_subject,
+        candidates=candidates,
+        discovery_receipt=discovery_receipt,
+        settings=settings,
+        peak_config=peak_config,
+        raw_path=raw_path,
+        dll_dir=dll_dir,
+        work_unit_key=first_key,
+        signal_processing_profile=signal_processing_profile,
+        physical_records=physical_records,
+    )
+    pinned = first._request_subjects
+    subjects_by_id = (
+        {subject.method_subject_id: subject for subject in pinned.subjects}
+        if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
+        else None
+    )
+    jobs = [first]
+    for subject, work_unit_key in subject_work_units[1:]:
+        if not isinstance(subject, CidNlMethodSubject):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "method_subject has the wrong owner type"
+            )
+        _required_text(work_unit_key, field="work_unit_key")
+        if subjects_by_id is not None:
+            if subjects_by_id.get(subject.method_subject_id) != subject:
+                raise UntargetedCidNlRealDataRuntimeError(
+                    "method subject is not an exact member of the processing request"
+                )
+        elif pinned != subject:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "method subject does not match the processing request"
+            )
+        # Only these two fields vary; every shared field was validated above.
+        job = copy(first)
+        object.__setattr__(job, "method_subject", subject)
+        object.__setattr__(job, "work_unit_key", work_unit_key)
+        jobs.append(job)
+    return tuple(jobs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,8 +378,25 @@ def project_untargeted_cid_nl_completed_recovery(
     """Project an existing completed empty recovery without executing it again."""
     if type(result) is not UntargetedCidNlRuntimeSampleResult:
         raise UntargetedCidNlRealDataRuntimeError("recovery requires a runtime result")
+    replace(result.job)
+    return _project_completed_recovery(
+        result,
+        group_context=group_context,
+        acquisition_content=_canonical_acquisition_content,
+        exact_traces=_exact_acquisition_traces,
+    )
+
+
+def _project_completed_recovery(
+    result: UntargetedCidNlRuntimeSampleResult,
+    *,
+    group_context: CidNlCellGroupContext,
+    acquisition_content: Callable[[TraceAcquisitionBatch], tuple[bytes, str]],
+    exact_traces: Callable[
+        [TraceAcquisitionBatch, XICRequest, str], tuple[AcquiredTrace, ...]
+    ],
+) -> OwnerBackfillCompletedRecoveryProjection:
     job = result.job
-    replace(job)
     replace(group_context)
     group = validate_cross_sample_peak_group_identity(
         group_context.group, require_canonical=True
@@ -337,13 +438,14 @@ def project_untargeted_cid_nl_completed_recovery(
             "recovery is not a completed empty epoch"
         )
     replace(result.result_ref)
-    expected_result = mint_untargeted_cid_nl_sample_result_ref(
+    expected_result = _mint_sample_result_ref(
         job=job,
         result=result.adapter_result,
         recovery_input=result.recovery_input,
         recovery_attempt=None,
         recovery_attempts=result.recovery_attempts,
         acquisition=recovery.acquisition,
+        acquisition_content=acquisition_content,
     )
     if result.result_ref != expected_result:
         raise UntargetedCidNlRealDataRuntimeError(
@@ -355,12 +457,8 @@ def project_untargeted_cid_nl_completed_recovery(
         rt_max=center + job.peak_config.nl_rt_anchor_half_window_min,
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
     )
-    exact = tuple(
-        acquired
-        for acquired in recovery.acquisition.traces
-        if acquired.coordinate.request == expected_request
-        and acquired.coordinate.acquisition_source_id
-        == assessment.content.acquisition_source_id
+    exact = exact_traces(
+        recovery.acquisition, expected_request, assessment.content.acquisition_source_id
     )
     if len(exact) != 1 or (
         receipt.query_rt_min != expected_request.rt_min
@@ -402,6 +500,71 @@ def project_untargeted_cid_nl_completed_recovery(
         acquisition_sha256=digest,
         artifact=artifact,
     )
+
+
+class _RuntimeResultContext:
+    """Reuse completed adapter snapshots within one synchronous owner phase."""
+
+    def __init__(self, jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]) -> None:
+        self._jobs = {id(job): job for job in jobs}
+        self._content: dict[int, tuple[TraceAcquisitionBatch, bytes, str]] = {}
+        self._traces: dict[
+            int,
+            tuple[
+                TraceAcquisitionBatch,
+                dict[tuple[XICRequest, str], tuple[AcquiredTrace, ...]],
+            ],
+        ] = {}
+
+    def acquisition_content(
+        self, acquisition: TraceAcquisitionBatch
+    ) -> tuple[bytes, str]:
+        cached = self._content.get(id(acquisition))
+        if cached is None:
+            payload, digest = _canonical_acquisition_content(acquisition)
+            cached = (acquisition, payload, digest)
+            self._content[id(acquisition)] = cached
+        return cached[1], cached[2]
+
+    def exact_traces(
+        self, acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
+    ) -> tuple[AcquiredTrace, ...]:
+        cached = self._traces.get(id(acquisition))
+        if cached is None:
+            grouped: dict[tuple[XICRequest, str], list[AcquiredTrace]] = {}
+            for acquired in acquisition.traces:
+                key = (
+                    acquired.coordinate.request,
+                    acquired.coordinate.acquisition_source_id,
+                )
+                grouped.setdefault(key, []).append(acquired)
+            cached = (
+                acquisition,
+                {key: tuple(values) for key, values in grouped.items()},
+            )
+            self._traces[id(acquisition)] = cached
+        return cached[1].get((request, source_id), ())
+
+    def project_completed_recovery(
+        self,
+        result: UntargetedCidNlRuntimeSampleResult,
+        *,
+        group_context: CidNlCellGroupContext,
+    ) -> OwnerBackfillCompletedRecoveryProjection:
+        if type(result) is not UntargetedCidNlRuntimeSampleResult:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "recovery requires a runtime result"
+            )
+        if self._jobs.get(id(result.job)) is not result.job:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "recovery result does not reuse an exact runtime batch job"
+            )
+        return _project_completed_recovery(
+            result,
+            group_context=group_context,
+            acquisition_content=self.acquisition_content,
+            exact_traces=self.exact_traces,
+        )
 
 
 @dataclass(slots=True)
@@ -497,11 +660,16 @@ def execute_untargeted_cid_nl_real_data_runtime(
     telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
 ) -> UntargetedCidNlRealDataRuntimeApplicationResult:
     """Execute every request sample through one attempt and one finalization."""
 
     if not isinstance(runtime, AttemptRuntime):
         raise UntargetedCidNlRealDataRuntimeError("runtime must be an AttemptRuntime")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "alignment_config must be an AlignmentConfig"
+        )
     if not jobs or any(
         not isinstance(job, UntargetedCidNlRealDataRuntimeJob) for job in jobs
     ):
@@ -678,7 +846,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 for state in sample_states:
                     _execute_initial_assessment(state)
 
-        _prepare_owner_authorized_recoveries(states)
+        _prepare_owner_authorized_recoveries(states, alignment_config=alignment_config)
 
         for state in states:
             if (
@@ -692,6 +860,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
             _execute_recovery_batch(phase)
 
         acquisition_owner_keys = _batch_acquisition_owner_keys(batch_phases)
+        result_context = _RuntimeResultContext(jobs)
         for state in states:
             batch, sample_result, acquisition = _finalize_job_state(
                 state,
@@ -699,6 +868,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                     not _request_uses_subject_batch(state.job)
                     or state.job.work_unit_key in acquisition_owner_keys
                 ),
+                result_context=result_context,
             )
             settlements.extend(batch.settlements)
             resource_settlements.extend(batch.resource_settlements)
@@ -778,7 +948,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 raw=raw,
                 _observer=state.observer,
                 signal_processing_profile=job.signal_processing_profile,
-                physical_records=job.physical_records,
+                physical_records=_request_subject_physical_records(job),
             )
     except RawReaderOpenError as exc:
         state.cleanup_outcome = (
@@ -830,6 +1000,7 @@ def _execute_initial_assessment_batch(
                 candidates=job.candidates,
                 settings=job.settings,
                 raw=raw,
+                signal_processing_profile=job.signal_processing_profile,
             )
             phase.initial_acquisition = (
                 trace_batch.acquisition if trace_batch is not None else None
@@ -848,7 +1019,7 @@ def _execute_initial_assessment_batch(
                 _observer=state.observer,
                 _preacquired_traces=trace_batch,
                 signal_processing_profile=state.job.signal_processing_profile,
-                physical_records=state.job.physical_records,
+                physical_records=_request_subject_physical_records(state.job),
             )
     except RawReaderOpenError as exc:
         phase.initial_cleanup_outcome = (
@@ -876,6 +1047,8 @@ def _execute_initial_assessment_batch(
 
 def _prepare_owner_authorized_recoveries(
     states: list[_RuntimeJobState],
+    *,
+    alignment_config: AlignmentConfig,
 ) -> None:
     by_subject: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
@@ -884,11 +1057,15 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        _prepare_subject_authorized_recoveries(tuple(by_subject[method_subject_id]))
+        _prepare_subject_authorized_recoveries(
+            tuple(by_subject[method_subject_id]), alignment_config=alignment_config
+        )
 
 
 def _prepare_subject_authorized_recoveries(
     states: tuple[_RuntimeJobState, ...],
+    *,
+    alignment_config: AlignmentConfig,
 ) -> None:
     if any(state.error is not None or state.adapter_result is None for state in states):
         return
@@ -921,7 +1098,7 @@ def _prepare_subject_authorized_recoveries(
         )
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(support_owners),
-        config=CID_NL_ALIGNMENT_CONFIG,
+        config=alignment_config,
     )
     first = states[0].job
     cells = compose_cid_nl_predecessor_cells(
@@ -931,7 +1108,7 @@ def _prepare_subject_authorized_recoveries(
             (state.job.sample, result.assessment_input.assessment)
             for state, result in zip(states, adapter_results, strict=True)
         ),
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        alignment_config=alignment_config,
     )
     for group in groups:
         facts = assess_conservative_backfill_group(
@@ -1202,6 +1379,7 @@ def _finalize_job_state(
     state: _RuntimeJobState,
     *,
     include_acquisition_receipt: bool = True,
+    result_context: _RuntimeResultContext | None = None,
 ) -> tuple[
     RuntimeWorkerBatchReceipt,
     UntargetedCidNlRuntimeSampleResult | None,
@@ -1237,13 +1415,18 @@ def _finalize_job_state(
                 raise UntargetedCidNlRealDataRuntimeError(
                     "worker observer does not close the exact adapter/recovery result"
                 )
-            result_ref = mint_untargeted_cid_nl_sample_result_ref(
+            result_ref = _mint_sample_result_ref(
                 job=job,
                 result=adapter_result,
                 recovery_input=state.recovery_input,
                 recovery_attempt=None,
                 recovery_attempts=state.recovery_attempts,
                 acquisition=acquisition,
+                acquisition_content=(
+                    result_context.acquisition_content
+                    if result_context is not None
+                    else _canonical_acquisition_content
+                ),
             )
             registered_artifacts = canonical_current_attempt_artifact_closure(
                 producer_attempt=job.processing_owners.attempt,
@@ -1341,6 +1524,27 @@ def mint_untargeted_cid_nl_sample_result_ref(
     acquisition: TraceAcquisitionBatch | None,
     recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = (),
 ) -> UntargetedCidNlSampleResultRef:
+    return _mint_sample_result_ref(
+        job=job,
+        result=result,
+        recovery_input=recovery_input,
+        recovery_attempt=recovery_attempt,
+        acquisition=acquisition,
+        recovery_attempts=recovery_attempts,
+        acquisition_content=_canonical_acquisition_content,
+    )
+
+
+def _mint_sample_result_ref(
+    *,
+    job: UntargetedCidNlRealDataRuntimeJob,
+    result: UntargetedCidNlRealDataAdapterResult,
+    recovery_input: UntargetedCidNlRecoveryInput | None,
+    recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None,
+    acquisition: TraceAcquisitionBatch | None,
+    acquisition_content: Callable[[TraceAcquisitionBatch], tuple[bytes, str]],
+    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = (),
+) -> UntargetedCidNlSampleResultRef:
     if recovery_attempt is not None:
         if recovery_attempts:
             raise UntargetedCidNlRealDataRuntimeError(
@@ -1352,11 +1556,8 @@ def mint_untargeted_cid_nl_sample_result_ref(
     recovery_assessments = tuple(attempt.assessment for attempt in recovery_attempts)
     assessment = result.assessment_input.assessment
     projections = result.assessment_input.discovery_projections
-    acquisition_sha256 = (
-        hashlib.sha256(_canonical_acquisition_bytes(acquisition)).hexdigest()
-        if acquisition is not None
-        else None
-    )
+    content = acquisition_content(acquisition) if acquisition is not None else None
+    acquisition_sha256 = content[1] if content is not None else None
     if (
         recovery_attempt is not None
         and recovery_input != recovery_attempt.recovery_input
@@ -1371,9 +1572,10 @@ def mint_untargeted_cid_nl_sample_result_ref(
             sample=job.sample,
             method_subject=job.method_subject,
         )
-        if acquisition is None or _canonical_acquisition_bytes(
-            observed.acquisition
-        ) != _canonical_acquisition_bytes(acquisition):
+        if content is None or (
+            observed.acquisition is not acquisition
+            and acquisition_content(observed.acquisition)[0] != content[0]
+        ):
             raise UntargetedCidNlRealDataRuntimeError(
                 "recovery lost its sealed runtime result acquisition"
             )
@@ -1549,6 +1751,24 @@ def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:
     ).encode("utf-8")
 
 
+def _canonical_acquisition_content(
+    acquisition: TraceAcquisitionBatch,
+) -> tuple[bytes, str]:
+    payload = _canonical_acquisition_bytes(acquisition)
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
+def _exact_acquisition_traces(
+    acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
+) -> tuple[AcquiredTrace, ...]:
+    return tuple(
+        acquired
+        for acquired in acquisition.traces
+        if acquired.coordinate.request == request
+        and acquired.coordinate.acquisition_source_id == source_id
+    )
+
+
 def _validate_request_bound_inputs(
     job: UntargetedCidNlRealDataRuntimeJob,
 ) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
@@ -1678,26 +1898,61 @@ def _validate_request_bound_inputs(
     return pinned
 
 
+def _index_request_subject_candidates(
+    pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> Mapping[str, tuple[DiscoveryCandidate, ...]]:
+    grouped: dict[str, list[DiscoveryCandidate]] = {}
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
+        subject_by_candidate = dict(pinned.candidate_memberships)
+        # Preserve this sample's candidate order, independently of membership order.
+        for candidate in candidates:
+            subject_id = subject_by_candidate.get(candidate.candidate_id)
+            if subject_id is not None:
+                grouped.setdefault(subject_id, []).append(candidate)
+    return MappingProxyType(
+        {subject_id: tuple(values) for subject_id, values in grouped.items()}
+    )
+
+
 def _request_subject_candidates(
     job: UntargetedCidNlRealDataRuntimeJob,
 ) -> tuple[DiscoveryCandidate, ...]:
-    pinned = job._request_subjects
-    if not isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
+    if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
             job.candidates,
             sample=job.sample,
             method_subject=job.method_subject,
             settings=job.settings,
         )
-    member_ids = {
-        candidate_id
-        for candidate_id, method_subject_id in pinned.candidate_memberships
-        if method_subject_id == job.method_subject.method_subject_id
-    }
-    return tuple(
-        candidate
-        for candidate in job.candidates
-        if candidate.candidate_id in member_ids
+    return job._request_candidates_by_subject.get(
+        job.method_subject.method_subject_id, ()
+    )
+
+
+def _index_request_subject_physical_records(
+    pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    records: tuple[DiscoveryPhysicalFactRecord, ...],
+) -> Mapping[str, tuple[DiscoveryPhysicalFactRecord, ...]]:
+    grouped: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
+        subject_by_candidate = dict(pinned.candidate_memberships)
+        for record in records:
+            subject_id = subject_by_candidate.get(record.candidate_id)
+            if subject_id is not None:
+                grouped.setdefault(subject_id, []).append(record)
+    return MappingProxyType(
+        {subject_id: tuple(values) for subject_id, values in grouped.items()}
+    )
+
+
+def _request_subject_physical_records(
+    job: UntargetedCidNlRealDataRuntimeJob,
+) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+    if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
+        return job.physical_records
+    return job._request_physical_records_by_subject.get(
+        job.method_subject.method_subject_id, ()
     )
 
 

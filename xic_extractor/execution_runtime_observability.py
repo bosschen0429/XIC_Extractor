@@ -485,16 +485,13 @@ def _validate_work_event_lifecycle(
         raise RuntimeObservabilityContractError(
             "work lifecycle events must use the work_unit subject"
         )
+    event_positions = _index_event_positions(
+        events, RuntimeObservationSubject.WORK_UNIT
+    )
     for key in work_unit_keys:
         positions: list[int] = []
         for kind in _WORK_UNIT_LIFECYCLE_KINDS:
-            matches = [
-                index
-                for index, event in enumerate(events)
-                if event.subject is RuntimeObservationSubject.WORK_UNIT
-                and event.subject_key == key
-                and event.kind == kind
-            ]
+            matches = event_positions.get((key, kind), ())
             if len(matches) != 1:
                 raise RuntimeObservabilityContractError(
                     "each work unit requires exactly one submitted, started, "
@@ -626,14 +623,9 @@ def _validate_worker_event_lifecycle(
         for event in events
         if event.subject is RuntimeObservationSubject.WORKER
     }
+    event_positions = _index_event_positions(events, RuntimeObservationSubject.WORKER)
     for worker_key in worker_keys:
-        matches = tuple(
-            event
-            for event in events
-            if event.subject is RuntimeObservationSubject.WORKER
-            and event.subject_key == worker_key
-            and event.kind == "worker_started"
-        )
+        matches = event_positions.get((worker_key, "worker_started"), ())
         if len(matches) != 1:
             raise RuntimeObservabilityContractError(
                 "each observed worker requires exactly one worker_started event"
@@ -674,15 +666,12 @@ def _validate_resource_artifact_event_lifecycle(
         for event in events
         if event.subject is RuntimeObservationSubject.RESOURCE
     }
+    resource_positions = _index_event_positions(
+        events, RuntimeObservationSubject.RESOURCE
+    )
     for resource_key in resource_keys:
         positions = {
-            kind: tuple(
-                index
-                for index, event in enumerate(events)
-                if event.subject is RuntimeObservationSubject.RESOURCE
-                and event.subject_key == resource_key
-                and event.kind == kind
-            )
+            kind: resource_positions.get((resource_key, kind), ())
             for kind in _RESOURCE_LIFECYCLE_KINDS
         }
         reserved = positions["resource_reserved"]
@@ -706,20 +695,15 @@ def _validate_resource_artifact_event_lifecycle(
         for event in events
         if event.subject is RuntimeObservationSubject.ARTIFACT
     }
+    artifact_positions = _index_event_positions(
+        events, RuntimeObservationSubject.ARTIFACT
+    )
     for artifact_id in artifact_ids:
-        registered = tuple(
-            index
-            for index, event in enumerate(events)
-            if event.subject is RuntimeObservationSubject.ARTIFACT
-            and event.subject_key == artifact_id
-            and event.kind == "artifact_registered"
-        )
+        registered = artifact_positions.get((artifact_id, "artifact_registered"), ())
         disposed = tuple(
             index
-            for index, event in enumerate(events)
-            if event.subject is RuntimeObservationSubject.ARTIFACT
-            and event.subject_key == artifact_id
-            and event.kind in _ARTIFACT_DISPOSITION_EVENT_KINDS
+            for kind in _ARTIFACT_DISPOSITION_EVENT_KINDS
+            for index in artifact_positions.get((artifact_id, kind), ())
         )
         if len(registered) != 1 or len(disposed) != 1:
             raise RuntimeObservabilityContractError(
@@ -966,12 +950,10 @@ def _validate_elapsed_metrics(
     *,
     preflight_failed: bool,
 ) -> None:
+    event_offsets = _index_event_offsets(events)
+
     def offset(kind: str, subject_key: str = "attempt") -> int:
-        matches = tuple(
-            event.monotonic_offset_ns
-            for event in events
-            if event.kind == kind and event.subject_key == subject_key
-        )
+        matches = event_offsets.get((kind, subject_key), ())
         if len(matches) != 1:
             raise RuntimeObservabilityContractError(
                 "elapsed metrics require one matching lifecycle event"
@@ -1012,6 +994,27 @@ def _validate_elapsed_metrics(
             )
             / 1_000_000_000,
         )
+
+
+def _index_event_positions(
+    events: tuple[RuntimeObservationEvent, ...], subject: RuntimeObservationSubject
+) -> dict[tuple[str, str], tuple[int, ...]]:
+    positions: dict[tuple[str, str], list[int]] = {}
+    for index, event in enumerate(events):
+        if event.subject is subject:
+            positions.setdefault((event.subject_key, event.kind), []).append(index)
+    return {key: tuple(values) for key, values in positions.items()}
+
+
+def _index_event_offsets(
+    events: tuple[RuntimeObservationEvent, ...],
+) -> dict[tuple[str, str], tuple[int, ...]]:
+    offsets: dict[tuple[str, str], list[int]] = {}
+    for event in events:
+        offsets.setdefault((event.kind, event.subject_key), []).append(
+            event.monotonic_offset_ns
+        )
+    return {key: tuple(values) for key, values in offsets.items()}
 
 
 def _validate_preflight_metrics(

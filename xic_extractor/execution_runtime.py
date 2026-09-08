@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -790,6 +791,72 @@ def settle_work_unit(
         history=runtime.history,
         settlements=(*runtime.settlements, submitted),
         integrity_failure=runtime.integrity_failure,
+    )
+
+
+def _settle_work_units(
+    runtime: AttemptRuntime,
+    settlements: Iterable[WorkUnitSettlement],
+) -> AttemptRuntime:
+    """Reduce ordered owner submissions before validating the complete runtime."""
+
+    if not isinstance(runtime, AttemptRuntime):
+        raise AttemptLifecycleContractError("runtime must be an AttemptRuntime")
+    manifest_keys = set(runtime.manifest.work_unit_keys)
+    accepted_by_key = {item.work_unit_key: item for item in runtime.settlements}
+    accepted_settlements = list(runtime.settlements)
+    integrity_failure = runtime.integrity_failure
+    for settlement in settlements:
+        submitted = mint_work_unit_settlement(
+            attempt=runtime.manifest.attempt,
+            work_unit_key=settlement.work_unit_key,
+            outcome=settlement.outcome,
+            owner_result_ref=settlement.owner_result_ref,
+            failure_detail=settlement.failure_detail,
+        )
+        if (
+            submitted.outcome is WorkUnitTerminalOutcome.CANCELLED
+            and not runtime.history.cancellation_accepted
+        ):
+            raise AttemptLifecycleContractError(
+                "cancelled settlement requires accepted cancellation"
+            )
+        key = submitted.work_unit_key
+        accepted = accepted_by_key.get(key)
+        failure: WorkUnitSettlementIntegrityFailure | None = None
+        if key not in manifest_keys:
+            failure = WorkUnitSettlementIntegrityFailure(
+                attempt=runtime.manifest.attempt,
+                work_unit_key=key,
+                kind=WorkUnitSettlementIntegrityFailureKind.UNDECLARED_WORK_UNIT,
+                submitted_settlement=submitted,
+            )
+        elif accepted is not None:
+            if accepted == submitted:
+                continue
+            failure = WorkUnitSettlementIntegrityFailure(
+                attempt=runtime.manifest.attempt,
+                work_unit_key=key,
+                kind=WorkUnitSettlementIntegrityFailureKind.CONFLICTING_SETTLEMENT,
+                submitted_settlement=submitted,
+                accepted_settlement=accepted,
+            )
+        if failure is not None:
+            if integrity_failure is None:
+                integrity_failure = failure
+            continue
+        accepted_by_key[key] = submitted
+        accepted_settlements.append(submitted)
+    if (
+        len(accepted_settlements) == len(runtime.settlements)
+        and integrity_failure is runtime.integrity_failure
+    ):
+        return runtime
+    return AttemptRuntime(
+        manifest=runtime.manifest,
+        history=runtime.history,
+        settlements=tuple(accepted_settlements),
+        integrity_failure=integrity_failure,
     )
 
 

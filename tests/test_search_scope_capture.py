@@ -484,11 +484,12 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
 
 @pytest.mark.parametrize("query_offset", (0.0, 0.001))
 def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
-    tmp_path: Path, query_offset: float,
+    tmp_path: Path,
+    query_offset: float,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
-        sample_roles={"S1": "qc"},
+        sample_roles={"S1": "qc", "S2": "qc"},
     )
     subjects = tuple(
         sorted(
@@ -546,7 +547,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         request=request,
-        samples=fixture.samples,
+        samples=(sample,),
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
             peak_config=_peak_config(tmp_path),
@@ -565,7 +566,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     subject_view = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         request=request,
-        samples=fixture.samples,
+        samples=(sample,),
         method_constraints=scope.method_constraints,
         evidence_providers=(scope.evidence_providers[0],),
         declared_candidate_ids=(
@@ -583,7 +584,97 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         ),
     )
     assert len(subject_view.capture_bindings) == 1
+    for invalid_provider in (
+        replace(subject_view.evidence_providers[0], provider_id="other-provider"),
+        replace(subject_view.evidence_providers[0], method_subject_id="other-subject"),
+    ):
+        with pytest.raises(SearchScopeContractError, match="evidence providers"):
+            replace(subject_view, evidence_providers=(invalid_provider,))
     view_binding = subject_view.capture_bindings[0]
+    other_binding = next(
+        binding
+        for binding in bindings
+        if binding.candidate_id != view_binding.candidate_id
+    )
+    universe_samples = [
+        {
+            "sample_stem": sample.metadata.raw_stem,
+            "candidate_ids": [view_binding.candidate_id],
+        },
+        {"sample_stem": "S2", "candidate_ids": [other_binding.candidate_id]},
+    ]
+    sample_request = build_processing_request_identity(
+        acquisition_sources=request.acquisition_sources,
+        acquisition_bindings=request.acquisition_bindings,
+        scientific_input_schema_version=request.scientific_input_schema_version,
+        processing_algorithm_version=request.processing_algorithm_version,
+        processing_contract_version=request.processing_contract_version,
+        scientific_inputs={
+            REQUEST_INPUT_KEY: batch.request_payload(),
+            "current_discovery_candidate_universe": {"samples": universe_samples},
+        },
+    )
+    with pytest.raises(SearchScopeContractError, match="request subject memberships"):
+        replace(scope, request=sample_request)
+    assert replace(subject_view, request=sample_request).capture_bindings == (
+        view_binding,
+    )
+    other_sample = fixture.sample("S2")
+    other_source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners, sample=other_sample
+    )
+    other_binding = replace(
+        other_binding,
+        sample_identity_id=other_sample.identity.sample_identity_id,
+        sample_name=other_sample.metadata.sample_name,
+        acquisition_source_id=other_source.acquisition_source_id,
+    )
+    for _ in range(2):
+        assert replace(
+            scope,
+            request=sample_request,
+            samples=(other_sample,),
+            declared_candidate_ids=(other_binding.candidate_id,),
+            capture_bindings=(other_binding,),
+        ).capture_bindings == (other_binding,)
+        assert replace(subject_view, request=sample_request).capture_bindings == (
+            view_binding,
+        )
+    malformed_request = build_processing_request_identity(
+        acquisition_sources=request.acquisition_sources,
+        acquisition_bindings=request.acquisition_bindings,
+        scientific_input_schema_version=request.scientific_input_schema_version,
+        processing_algorithm_version=request.processing_algorithm_version,
+        processing_contract_version=request.processing_contract_version,
+        scientific_inputs={
+            REQUEST_INPUT_KEY: batch.request_payload(),
+            "current_discovery_candidate_universe": {
+                "samples": [
+                    universe_samples[0],
+                    {"sample_stem": "S2", "candidate_ids": [None]},
+                ]
+            },
+        },
+    )
+    assert replace(subject_view, request=malformed_request).capture_bindings == (
+        view_binding,
+    )
+    with pytest.raises(SearchScopeContractError, match="universe is malformed"):
+        replace(
+            scope,
+            request=malformed_request,
+            samples=(other_sample,),
+            declared_candidate_ids=(other_binding.candidate_id,),
+            capture_bindings=(other_binding,),
+        )
+    # Returning to the full request must restore its complete candidate authority.
+    assert replace(scope).capture_bindings == bindings
+    with pytest.raises(SearchScopeContractError, match="request subject memberships"):
+        replace(
+            scope, declared_candidate_ids=tuple(reversed(scope.declared_candidate_ids))
+        )
+    with pytest.raises(SearchScopeContractError, match="declared candidate order"):
+        replace(scope, capture_bindings=tuple(reversed(bindings)))
     rt = np.linspace(7.7, 8.3, 61)
     trace = Trace.from_arrays(
         sample_name=sample.metadata.sample_name,

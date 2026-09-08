@@ -300,20 +300,15 @@ def deserialize_discovery_physical_fact_sidecar(
             )
         )
     result = tuple(records)
-    _validate_work_population(
-        persisted_manifest,
-        result,
-        acquisition_input=expected_acquisition_input,
-    )
-    if (
-        serialize_discovery_physical_fact_sidecar(
-            run_spec=expected_run_spec,
-            acquisition_input=expected_acquisition_input,
-            work_manifest=expected_manifest,
-            records=result,
-        )
-        != raw
-    ):
+    # Nested decoders already enforce their canonical bytes, and each record
+    # constructor validates its exact work/trace/evaluation binding. Re-encode
+    # the checked envelope without serializing and validating all records again.
+    canonical_root = {
+        **root,
+        "sample": _sample_content(expected_acquisition_input),
+        "work_manifest": [_work_content(item) for item in persisted_manifest],
+    }
+    if _canonical_json_bytes(canonical_root) != raw:
         raise ValueError("Discovery physical sidecar is not canonical")
     return result
 

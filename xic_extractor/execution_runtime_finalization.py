@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Collection, Iterable
 from dataclasses import replace
 
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
@@ -254,20 +255,12 @@ def register_runtime_artifact(
     """Register a current-attempt artifact while it is runtime_temporary."""
 
     _require_mutable_state(state)
-    record = RuntimeArtifactRecord(work_unit_key=work_unit_key, artifact=artifact)
-    if (
-        artifact.producer_processing_request_id
-        != state.runtime.manifest.attempt.processing_request_id
-        or artifact.producer_processing_attempt_id
-        != state.runtime.manifest.attempt.processing_attempt_id
-    ):
-        raise RuntimeFinalizationContractError(
-            "runtime artifact must bind the runtime request and attempt"
-        )
-    if record.work_unit_key not in state.runtime.manifest.work_unit_keys:
-        raise RuntimeFinalizationContractError(
-            "runtime artifact must bind a declared manifest work unit"
-        )
+    record = _runtime_artifact_registration(
+        state,
+        work_unit_key=work_unit_key,
+        artifact=artifact,
+        manifest_keys=state.runtime.manifest.work_unit_keys,
+    )
     existing = next(
         (
             item
@@ -297,6 +290,85 @@ def register_runtime_artifact(
             ),
         ),
     )
+
+
+def _register_runtime_artifacts(
+    state: AttemptFinalizationState,
+    registrations: Iterable[tuple[str, EvidenceArtifactRef]],
+) -> AttemptFinalizationState:
+    """Register ordered artifacts with one complete, strictly validated state."""
+
+    artifacts_by_id = {
+        item.artifact.evidence_artifact_id: item for item in state.artifacts
+    }
+    manifest_keys = set(state.runtime.manifest.work_unit_keys)
+    artifacts = list(state.artifacts)
+    events: list[RuntimeLifecycleEvent] = []
+    failures = list(state.failures)
+    accepted_failures = set(state.failures)
+    for work_unit_key, artifact in registrations:
+        record = _runtime_artifact_registration(
+            state,
+            work_unit_key=work_unit_key,
+            artifact=artifact,
+            manifest_keys=manifest_keys,
+        )
+        artifact_id = artifact.evidence_artifact_id
+        existing = artifacts_by_id.get(artifact_id)
+        if existing is not None:
+            if existing != record:
+                failure = RuntimeLifecycleFailure(
+                    RuntimeLifecycleFailureKind.CONFLICTING_ARTIFACT_REGISTRATION,
+                    artifact_id,
+                    "artifact was registered against a different work unit",
+                )
+                if failure not in accepted_failures:
+                    failures.append(failure)
+                    accepted_failures.add(failure)
+            continue
+        artifacts_by_id[artifact_id] = record
+        artifacts.append(record)
+        events.append(
+            _event(
+                state,
+                RuntimeLifecycleEventKind.ARTIFACT_REGISTERED,
+                artifact_id,
+                offset=len(events),
+            )
+        )
+    if not events and len(failures) == len(state.failures):
+        return state
+    return replace(
+        state,
+        artifacts=tuple(artifacts),
+        events=(*state.events, *events),
+        failures=tuple(failures),
+    )
+
+
+def _runtime_artifact_registration(
+    state: AttemptFinalizationState,
+    *,
+    work_unit_key: str,
+    artifact: EvidenceArtifactRef,
+    manifest_keys: Collection[str],
+) -> RuntimeArtifactRecord:
+    _require_mutable_state(state)
+    record = RuntimeArtifactRecord(work_unit_key=work_unit_key, artifact=artifact)
+    if (
+        artifact.producer_processing_request_id
+        != state.runtime.manifest.attempt.processing_request_id
+        or artifact.producer_processing_attempt_id
+        != state.runtime.manifest.attempt.processing_attempt_id
+    ):
+        raise RuntimeFinalizationContractError(
+            "runtime artifact must bind the runtime request and attempt"
+        )
+    if record.work_unit_key not in manifest_keys:
+        raise RuntimeFinalizationContractError(
+            "runtime artifact must bind a declared manifest work unit"
+        )
+    return record
 
 
 def propose_attempt_terminal(

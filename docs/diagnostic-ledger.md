@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-08-26
+**Last updated:** 2026-09-06
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,55 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-07 CID-NL 8RAW Runtime and Composition
+
+Evidence: `diagnostic_only`; full production completion remains unverified.
+The operator selected internal data-flow simplification and stopped repeated
+full-RAW runs. Reuse compatible Discovery and retained observations; focused
+behavior checks establish engineering coverage, not analytical parity or readiness.
+
+The input universe is eight tissue validation RAW files, `dna_dr`, 30,748
+Discovery candidates and 95,320 sample/subject runtime jobs. Discovery from
+`result-8raw-4/discovery` is retained. The latest full Alignment attempt,
+`alignment-family-3` at `7bdf3691`, stopped at its 1,800.008 s timeout with exit
+124 and no matrix or explanation SQLite. Its initial assessments totalled
+313.15 s, including 11.48 s of acquisition; recovery planning took 15.25 s and
+recovery attempts 8.10 s. Production composition began at 462.15 s and nested
+batch composition at 829.65 s; neither has a completion event. These nested
+measurements must not be added or interpreted as a completed-run speedup.
+
+The retained composition profile has 228 weighted samples: 167 enter assessment
+binding and 40 enter completion-receipt digests. Its sampling window is not a
+full-run cost distribution. Current source identified duplicate ModeTrack
+bootstrap and CrossSample application on identical inputs, plus full binding
+and cell scans inside per-subject/per-group loops.
+
+Current production builds initial CrossSample groups and passes their context
+directly to workflow, without ModeTrack fitting, assignment, split/merge
+proposals, or FitOnceSource construction. It preserves initial pair diagnostics
+and indexes bindings/cells once. Assessment handoffs check
+request, attempt, sample, subject and acquisition bindings without reminting the
+method decision. Conservative Backfill carries its existing frozen decisions;
+position and coverage consumers do not reconstruct the proof, group facts or
+mapper result. Construction checks and current consumer cell/population bindings
+remain. Closed production cells bypass no-op repair authorization. Other
+workflow routes retain refinement when actual repair changes trajectory input.
+Changed physical acquisition questions are evaluated once at the capture owner;
+same-question comparisons and persisted physical-answer revalidation remain.
+
+The runtime uses the selected Alignment configuration consistently. Unresolved
+candidate assessments retain HOLD and blank quantities. No completion or
+end-to-end speedup is inferred from these handoff corrections. The task harness
+retains coarse progress and final timing without per-job live timing-file
+rewrites; product timing behavior is unchanged.
+
+Task-local evidence, commands, source/helper hashes and reproductions are under
+`output/cid-nl-end-to-end/`, especially `alignment-family-3`, `family_context_probe`,
+`composition-probe` and `heartbeat-probe`. These ignored host-local artifacts are
+not reusable clean-checkout inputs. The production/workflow, CID-NL evidence-spine
+and Backfill tests own the focused behavior oracles, including reuse without
+scientific reevaluation and preserved writer outputs.
 
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 

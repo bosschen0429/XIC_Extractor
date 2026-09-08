@@ -14,11 +14,8 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_owner_backfill_planning_epoch,
     mint_owner_backfill_position_id,
 )
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairCandidate,
-)
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cell_observations import (
+    CellObservationRef,
     compose_cid_nl_predecessor_cells,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -33,14 +30,13 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
-    apply_mode_track_refinement_run_for_workflow,
+    build_initial_cid_nl_cross_sample_context,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.alignment.mode_track import (
     ModeTrackTrajectoryPolicy,
-    bootstrap_mode_track_refinement_from_cid_nl_support,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
@@ -48,11 +44,13 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
+from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedUntargetBatchWorkflowResult,
     ModeTrackWorkflowArguments,
-    ObservationRepairWorkflowArguments,
     UntargetWorkflowAdapter,
     UntargetWorkflowBundle,
     UntargetWorkflowCompositionRequest,
@@ -80,8 +78,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeApplicationResult,
     UntargetedCidNlRealDataRuntimeJob,
+    _RuntimeResultContext,
+    build_untargeted_cid_nl_sample_runtime_jobs,
     execute_untargeted_cid_nl_real_data_runtime,
-    project_untargeted_cid_nl_completed_recovery,
     untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.capture import (
@@ -100,6 +99,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
@@ -251,11 +251,26 @@ def build_untargeted_cid_nl_production_batch(
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
     )
+    ordered_physical_records = tuple(
+        record
+        for _candidate_id, record in sorted(
+            context.physical_records_by_candidate.items()
+        )
+    )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        job
+        for sample in context.samples
+        for job in build_untargeted_cid_nl_sample_runtime_jobs(
             processing_owners=context.processing_owners,
             sample=sample,
-            method_subject=subject,
+            subject_work_units=tuple(
+                (
+                    subject,
+                    "untargeted-cid-nl:"
+                    f"{sample.metadata.raw_stem}:{subject.method_subject_id}",
+                )
+                for subject in subject_batch.subjects
+            ),
             candidates=context.candidates_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
@@ -264,21 +279,13 @@ def build_untargeted_cid_nl_production_batch(
             peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
             dll_dir=dll_dir,
-            work_unit_key=(
-                "untargeted-cid-nl:"
-                f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
-            ),
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
                 record
-                for _candidate_id, record in sorted(
-                    context.physical_records_by_candidate.items()
-                )
+                for record in ordered_physical_records
                 if record.work_item.sample_stem == sample.metadata.raw_stem
             ),
         )
-        for sample in context.samples
-        for subject in subject_batch.subjects
     )
     return UntargetedCidNlProductionBatch(
         subject_batch=subject_batch,
@@ -293,6 +300,7 @@ def execute_untargeted_cid_nl_production_batch(
     telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
 ) -> UntargetedCidNlRealDataRuntimeApplicationResult:
     """Execute the sealed universe once and enforce its per-sample phase bound."""
 
@@ -312,6 +320,7 @@ def execute_untargeted_cid_nl_production_batch(
         telemetry_provider=telemetry_provider,
         recovery_marker=recovery_marker,
         progress_callback=progress_callback,
+        alignment_config=alignment_config,
     )
     if not result.succeeded or len(result.sample_results) != len(batch.jobs):
         raise RuntimeError("Untargeted CID-NL production did not complete atomically")
@@ -339,6 +348,7 @@ def compose_untargeted_cid_nl_production_result(
         raise RuntimeError("CID-NL production cannot compose a partial runtime")
     if not isinstance(alignment_config, AlignmentConfig):
         raise TypeError("alignment_config must be an AlignmentConfig")
+    result_context = _RuntimeResultContext(batch.jobs)
     result_by_key = {
         (
             result.job.sample.metadata.raw_stem,
@@ -455,12 +465,17 @@ def compose_untargeted_cid_nl_production_result(
     bundles = []
     initial_groups: list[CrossSamplePeakGroupHypothesis] = []
     initial_edges: list[CrossSampleNeighborhoodEdge] = []
+    bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
+    for binding in bindings:
+        bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
+    ordered_samples = tuple(
+        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
+    )
+    sample_by_id = {
+        sample.identity.sample_identity_id: sample for sample in batch.context.samples
+    }
     for subject in batch.subject_batch.subjects:
-        child_bindings = tuple(
-            binding
-            for binding in bindings
-            if binding.method_subject_id == subject.method_subject_id
-        )
+        child_bindings = tuple(bindings_by_subject.get(subject.method_subject_id, ()))
         if not child_bindings:
             continue
         child_scope = UntargetedSearchScope(
@@ -484,10 +499,7 @@ def compose_untargeted_cid_nl_production_result(
                 sample,
                 assessment,
             )
-            for sample in sorted(
-                batch.context.samples,
-                key=lambda item: item.identity.sample_identity_id,
-            )
+            for sample in ordered_samples
             for assessment in result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
@@ -507,9 +519,15 @@ def compose_untargeted_cid_nl_production_result(
             ].adapter_result.assessment_input.assessment
             for sample in batch.context.samples
         }
-        sample_by_id = {
-            sample.identity.sample_identity_id: sample
-            for sample in batch.context.samples
+        hypotheses_by_sample_id = {
+            sample_id: compose_peak_hypotheses_from_assessment_universe(
+                processing_owners=batch.context.processing_owners,
+                sample=sample_by_id[sample_id],
+                assessment=assessment_by_sample_id[sample_id],
+            )
+            for sample_id in dict.fromkeys(
+                binding.sample_identity_id for binding in child_bindings
+            )
         }
         for binding in child_bindings:
             sample = sample_by_id[binding.sample_identity_id]
@@ -519,16 +537,21 @@ def compose_untargeted_cid_nl_production_result(
                 candidate_id=binding.candidate_id,
                 trace=trace,
             )
+            if captured.selected_hypothesis is None:
+                captures_list.append(captured)
+                capture_inputs_list.append(
+                    CaptureWorkflowArguments(
+                        candidate_id=binding.candidate_id,
+                        trace=trace,
+                    )
+                )
+                continue
             observation = mint_captured_peak_observation(
                 captured,
                 processing_owners=batch.context.processing_owners,
                 sample=sample,
             )
-            hypotheses = compose_peak_hypotheses_from_assessment_universe(
-                processing_owners=batch.context.processing_owners,
-                sample=sample,
-                assessment=assessment_by_sample_id[binding.sample_identity_id],
-            )
+            hypotheses = hypotheses_by_sample_id[binding.sample_identity_id]
             matches = tuple(
                 hypothesis
                 for hypothesis in hypotheses
@@ -554,42 +577,20 @@ def compose_untargeted_cid_nl_production_result(
             )
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
-        refinement = bootstrap_mode_track_refinement_from_cid_nl_support(
-            processing_owners=batch.context.processing_owners,
-            sample_assessments=assessments,
-            alignment_config=alignment_config,
-            trajectory_policy=trajectory_policy,
-            retain_observation_only_candidates=True,
-        )
-        initial_groups.extend(refinement.family_context.mode_tracks)
-        initial_edges.extend(refinement.classified_edges)
-        selected_ids = tuple(
-            sorted(
-                capture.selected_hypothesis.hypothesis_id
-                for capture in captures
-                if capture.selected_hypothesis is not None
+        family_context, cross_sample_context, classified_edges = (
+            build_initial_cid_nl_cross_sample_context(
+                processing_owners=batch.context.processing_owners,
+                captures=captures,
+                sample_assessments=assessments,
+                alignment_config=alignment_config,
+                trajectory_policy=trajectory_policy,
             )
         )
-        retained_ids = tuple(
-            sorted(
-                candidate.peak_hypothesis_id
-                for sample_source in refinement.fit_once_source.sample_sources
-                for candidate in sample_source.candidates
-            )
-        )
-        if not set(selected_ids).issubset(retained_ids):
-            raise RuntimeError(
-                "CID-NL capture/assessment owner mismatch: "
-                f"captures={selected_ids!r}; assessments={retained_ids!r}"
-            )
-        apply_mode_track_refinement_run_for_workflow(
-            processing_owners=batch.context.processing_owners,
-            captures=captures,
-            run=refinement,
-        )
+        initial_groups.extend(family_context.mode_tracks)
+        initial_edges.extend(classified_edges)
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
-            groups=refinement.family_context.mode_tracks,
+            groups=family_context.mode_tracks,
             sample_assessments=assessments,
             alignment_config=alignment_config,
             recovery_assessments_by_group={
@@ -597,7 +598,7 @@ def compose_untargeted_cid_nl_production_result(
                     group.group_hypothesis_id,
                     sample.identity.sample_identity_id,
                 ): recovery.assessment
-                for group in refinement.family_context.mode_tracks
+                for group in family_context.mode_tracks
                 for sample in batch.context.samples
                 if group.group_center_rt is not None
                 and (
@@ -608,22 +609,17 @@ def compose_untargeted_cid_nl_production_result(
                 is not None
             },
         )
-        cell_by_key = {
-            (
-                cell.content.group_hypothesis_id,
-                cell.content.canonical_sample_identity_id,
-            ): cell
-            for cell in predecessor_cells
-        }
-        repair_groups = refinement.predecessors
+        cell_by_key = {}
+        cells_by_group: dict[str, list[CellObservationRef]] = {}
+        for cell in predecessor_cells:
+            group_id = cell.content.group_hypothesis_id
+            cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
+            cells_by_group.setdefault(group_id, []).append(cell)
+        repair_groups = cross_sample_context.population
         no_request_proofs = {}
         for group in repair_groups:
             facts = assess_conservative_backfill_group(
-                tuple(
-                    cell
-                    for cell in predecessor_cells
-                    if cell.content.group_hypothesis_id == group.group_hypothesis_id
-                ),
+                tuple(cells_by_group[group.group_hypothesis_id]),
                 sample_population=batch.context.samples,
             )
             for sample in batch.context.samples:
@@ -632,7 +628,6 @@ def compose_untargeted_cid_nl_production_result(
                 if (
                     cell.content.technical_state != "evaluated"
                     or cell.content.method_result != "HOLD"
-                    or cell.method_assessment.candidate_peaks
                     or cell.peak_observation is not None
                 ):
                     continue
@@ -641,6 +636,8 @@ def compose_untargeted_cid_nl_production_result(
                     ConservativeBackfillRecoveryCandidateUniverse, ...
                 ] = ()
                 if facts.may_attempt_recovery:
+                    if cell.method_assessment.candidate_peaks:
+                        continue
                     sample_result = result_by_key[
                         (sample.metadata.raw_stem, subject.method_subject_id)
                     ]
@@ -652,7 +649,7 @@ def compose_untargeted_cid_nl_production_result(
                         is None
                     ):
                         continue
-                    completion = project_untargeted_cid_nl_completed_recovery(
+                    completion = result_context.project_completed_recovery(
                         sample_result, group_context=facts.group_context
                     )
                     universes = (
@@ -692,10 +689,14 @@ def compose_untargeted_cid_nl_production_result(
                     if (group.group_hypothesis_id, sample.identity.sample_identity_id)
                     in no_request_proofs
                     else "local_owner_not_supersedable"
-                    if cell_by_key[
-                        (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                    ].content.outside_group
-                    is not None
+                    if cell.content.outside_group is not None
+                    else "retained_unresolved_candidates"
+                    if (
+                        cell.content.technical_state == "evaluated"
+                        and cell.content.method_result == "HOLD"
+                        and cell.peak_observation is None
+                        and len(cell.method_assessment.candidate_peaks) >= 2
+                    )
                     else "retained_local_owner"
                 ),
                 primary_logical_requests=(),
@@ -705,6 +706,11 @@ def compose_untargeted_cid_nl_production_result(
             )
             for group in repair_groups
             for sample in batch.context.samples
+            for cell in (
+                cell_by_key[
+                    (group.group_hypothesis_id, sample.identity.sample_identity_id)
+                ],
+            )
         )
         epoch = mint_owner_backfill_planning_epoch(
             processing_owners=batch.context.processing_owners,
@@ -731,17 +737,15 @@ def compose_untargeted_cid_nl_production_result(
                 ),
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
+                    completed_cross_sample=cross_sample_context,
                     mode_track=ModeTrackWorkflowArguments(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,
                         trajectory_policy=trajectory_policy,
                         retain_observation_only_candidates=True,
                     ),
-                    repair=ObservationRepairWorkflowArguments(
-                        coverage=coverage,
-                        cell_observations=predecessor_cells,
-                        execute=_unexpected_repair,
-                    ),
+                    repair=None,
+                    closed_cell_coverage=coverage,
                     predecessor_cell_observations=predecessor_cells,
                 ),
             )
@@ -788,12 +792,6 @@ def _runtime_captures_by_candidate(
     if set(captures) != expected:
         raise RuntimeError("runtime capture does not close capture-eligible candidates")
     return captures
-
-
-def _unexpected_repair(
-    _candidate: ObservationRepairCandidate,
-) -> OwnerBackfillSampleResult:
-    raise RuntimeError("direct CID-NL production cannot request legacy Backfill")
 
 
 __all__ = [

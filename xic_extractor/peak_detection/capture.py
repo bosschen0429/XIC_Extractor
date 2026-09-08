@@ -18,6 +18,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.evidence_facts import (
     PhysicalPeakEvaluation,
+    PreparedSignalResult,
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -119,45 +120,7 @@ def capture_peak_hypotheses(
     trace: Trace,
 ) -> SampleLocalCapture:
     binding = require_capture_binding(scope, candidate_id)
-    candidate = binding.candidate_id
-    if not isinstance(trace, Trace):
-        raise SampleLocalCaptureError("capture trace must be an owner trace")
-    try:
-        validate_scope_trace_coordinates(
-            scope,
-            binding=binding,
-            sample_name=trace.sample_name,
-            acquisition_source_id=trace.acquisition_source_id,
-            mz=trace.mz,
-            rt_min=trace.rt_min,
-            rt_max=trace.rt_max,
-            ppm_tol=trace.ppm_tol,
-        )
-    except SearchScopeContractError as exc:
-        raise SampleLocalCaptureError(str(exc)) from exc
-    peak_config = scope.method_constraints.peak_config
-    label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
-        scope,
-        query_mz=binding.query_mz,
-        method_subject_id=binding.method_subject_id,
-    )
-    trace_group = TraceGroup(
-        trace_group_id="|".join(
-            (
-                scope.request.processing_request_id,
-                trace.sample_name,
-                candidate,
-            )
-        ),
-        sample_name=trace.sample_name,
-        analysis_mode=scope.variant,
-        context_id=label,
-        traces=(trace,),
-        expected_rt_min=binding.preferred_rt,
-        precursor_mz=trace.mz,
-        role=role,
-        istd_pair=istd_pair,
-    )
+    trace_group = _capture_trace_group(scope=scope, binding=binding, trace=trace)
     if scope.method_constraints.signal_processing_profile is not None:
         return _capture_physical_peak(
             scope=scope,
@@ -165,6 +128,11 @@ def capture_peak_hypotheses(
             trace=trace,
             trace_group=trace_group,
         )
+    candidate = binding.candidate_id
+    peak_config = scope.method_constraints.peak_config
+    label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
+        scope, query_mz=binding.query_mz, method_subject_id=binding.method_subject_id
+    )
     if (
         binding.selection_policy == "retained_only"
         and binding.retained_selected_integration is None
@@ -272,6 +240,48 @@ def capture_peak_hypotheses(
     )
 
 
+def _capture_trace_group(
+    *, scope: SearchScope, binding: CaptureCandidateBinding, trace: Trace
+) -> TraceGroup:
+    if not isinstance(trace, Trace):
+        raise SampleLocalCaptureError("capture trace must be an owner trace")
+    try:
+        validate_scope_trace_coordinates(
+            scope,
+            binding=binding,
+            sample_name=trace.sample_name,
+            acquisition_source_id=trace.acquisition_source_id,
+            mz=trace.mz,
+            rt_min=trace.rt_min,
+            rt_max=trace.rt_max,
+            ppm_tol=trace.ppm_tol,
+        )
+    except SearchScopeContractError as exc:
+        raise SampleLocalCaptureError(str(exc)) from exc
+    label, role, istd_pair, _ = _hypothesis_context(
+        scope,
+        query_mz=binding.query_mz,
+        method_subject_id=binding.method_subject_id,
+    )
+    return TraceGroup(
+        trace_group_id="|".join(
+            (
+                scope.request.processing_request_id,
+                trace.sample_name,
+                binding.candidate_id,
+            )
+        ),
+        sample_name=trace.sample_name,
+        analysis_mode=scope.variant,
+        context_id=label,
+        traces=(trace,),
+        expected_rt_min=binding.preferred_rt,
+        precursor_mz=trace.mz,
+        role=role,
+        istd_pair=istd_pair,
+    )
+
+
 def _capture_physical_peak(
     *,
     scope: SearchScope,
@@ -310,6 +320,92 @@ def _capture_physical_peak(
         raise SampleLocalCaptureError(
             "physical capture changed the retained owner answer"
         )
+    return _project_physical_capture(
+        scope=scope,
+        binding=binding,
+        trace=trace,
+        trace_group=trace_group,
+        prepared=prepared,
+        evaluation=evaluation,
+    )
+
+
+def capture_reacquired_physical_peak(
+    *, scope: SearchScope, candidate_id: str, trace: Trace
+) -> SampleLocalCapture:
+    """Evaluate a changed acquisition question at the capture owner once."""
+    binding = require_capture_binding(scope, candidate_id)
+    profile = scope.method_constraints.signal_processing_profile
+    source_evaluation = binding.physical_evaluation
+    if profile is None or source_evaluation is None:
+        raise SampleLocalCaptureError(
+            "physical capture requires its closed owner question"
+        )
+    if not isinstance(trace, Trace):
+        raise SampleLocalCaptureError("capture trace must be an owner trace")
+    if (
+        trace.mz == binding.query_mz
+        and trace.rt_min == binding.query_rt_min
+        and trace.rt_max == binding.query_rt_max
+        and trace.ppm_tol == binding.query_ppm_tol
+    ):
+        return capture_peak_hypotheses(
+            scope=scope, candidate_id=candidate_id, trace=trace
+        )
+    binding = replace(
+        binding,
+        query_mz=trace.mz,
+        query_rt_min=trace.rt_min,
+        query_rt_max=trace.rt_max,
+        query_ppm_tol=trace.ppm_tol,
+    )
+    scope = replace(
+        scope,
+        capture_bindings=tuple(
+            binding if item.candidate_id == candidate_id else item
+            for item in scope.capture_bindings
+        ),
+    )
+    trace_group = _capture_trace_group(scope=scope, binding=binding, trace=trace)
+    prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=source_evaluation.question.selection_subject_id,
+        query_rt_min=binding.preferred_rt,
+        request_context_rt_start_min=binding.query_rt_min,
+        request_context_rt_end_min=binding.query_rt_max,
+    )
+    binding = replace(
+        binding,
+        source_physical_evaluation=source_evaluation,
+        physical_evaluation=evaluation,
+    )
+    scope = replace(
+        scope,
+        capture_bindings=tuple(
+            binding if item.candidate_id == candidate_id else item
+            for item in scope.capture_bindings
+        ),
+    )
+    return _project_physical_capture(
+        scope=scope,
+        binding=binding,
+        trace=trace,
+        trace_group=trace_group,
+        prepared=prepared,
+        evaluation=evaluation,
+    )
+
+
+def _project_physical_capture(
+    *,
+    scope: SearchScope,
+    binding: CaptureCandidateBinding,
+    trace: Trace,
+    trace_group: TraceGroup,
+    prepared: PreparedSignalResult,
+    evaluation: PhysicalPeakEvaluation,
+) -> SampleLocalCapture:
     selected: PeakHypothesis | None = None
     selection_intensity: tuple[float, ...] | None = None
     if evaluation.state == "available":

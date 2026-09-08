@@ -361,6 +361,152 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
     assert scientific.repair_receipt is None
 
 
+def test_mt0_bridge_preserves_complete_interleaved_components(tmp_path: Path) -> None:
+    from tests.cid_nl_peak_support_no_raw_fixture import (
+        cid_nl_evidence,
+        cid_nl_peak,
+        cid_nl_support_policy,
+        cid_nl_unique_support,
+    )
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
+    from xic_extractor.alignment.mode_track.refinement import (
+        bootstrap_mode_track_refinement_from_cid_nl_support,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlEvaluationReceipt,
+        mint_cid_nl_method_assessment_ref,
+    )
+
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("early", "late", "remote")
+    )
+    assessments = []
+    for stem, apexes in (
+        ("early", (7.7, 8.1)),
+        ("late", (7.72, 8.12)),
+        ("remote", (8.91,)),
+    ):
+        peaks = tuple(
+            cid_nl_peak(
+                fixture, stem, apex_rt=rt, rt_left_min=rt - 0.1, rt_right_min=rt + 0.1
+            )
+            for rt in apexes
+        )
+        evidence = tuple(
+            cid_nl_evidence(fixture, stem, scan_number=index, scan_rt_min=rt)
+            for index, rt in enumerate(apexes, start=201)
+        )
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample(stem),
+            target=fixture.target,
+            detector_invocation_id=f"dual:{stem}",
+            evaluation_receipt=CidNlEvaluationReceipt(
+                query_rt_min=7.5,
+                query_rt_max=9.2,
+                support_policy=cid_nl_support_policy(),
+                acquisition_supported=True,
+                search_completed=True,
+                scanned_event_count=len(peaks),
+                reason_code=None,
+            ),
+            candidate_peaks=peaks,
+            evidence_refs=evidence,
+            individual_support_refs=tuple(
+                cid_nl_unique_support(
+                    fixture,
+                    stem,
+                    peak=peak,
+                    evidence=event,
+                    candidate_peaks=peaks,
+                )
+                for peak, event in zip(peaks, evidence, strict=True)
+            ),
+        )
+        assessments.append((fixture.sample(stem), assessment))
+    run = bootstrap_mode_track_refinement_from_cid_nl_support(
+        processing_owners=fixture.owners,
+        sample_assessments=tuple(assessments),
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1, preferred_rt_sec=30),
+        trajectory_policy=ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="anchor-trajectory-v1",
+            band_policy_version="fixed-band-v1",
+            prediction_half_width_min=0.1,
+            max_interpolation_gap=10,
+            max_extrapolation_gap=10,
+        ),
+        retain_observation_only_candidates=True,
+    )
+    components = tuple(
+        tuple(
+            group.group_hypothesis_id
+            for group in transaction.application_context.predecessors
+        )
+        for transaction in run.transactions
+    )
+    assert sorted(map(len, components)) == [1, 2]
+    flattened = tuple(group_id for component in components for group_id in component)
+    assert flattened != tuple(sorted(flattened))
+    captures = _captures_for_run(run, include_retained_candidates=True)
+    context = apply_mode_track_refinement_run_for_workflow(
+        processing_owners=fixture.owners,
+        captures=captures,
+        run=run,
+    )
+    assert context.application.predecessors == run.predecessors
+    assert {
+        member.member_subject_id
+        for group in context.population
+        for member in group.member_subjects
+    } == {
+        member.member_subject_id
+        for group in run.predecessors
+        for member in group.member_subjects
+    }
+    assert all(
+        owner.selected_integration
+        is next(
+            source.selected_integration
+            for source in run.owners
+            if source.owner_id == owner.owner_id
+        )
+        for owner in context.owners
+    )
+    first, second = run.transactions
+    for transactions in (
+        (first,),
+        (first, first, second),
+        (second, first),
+    ):
+        invalid = replace(
+            run, transactions=transactions, _mint_token=_REFINEMENT_RUN_MINT_TOKEN
+        )
+        with pytest.raises(
+            CrossSampleReconciliationContractError, match="canonical predecessor order"
+        ):
+            apply_mode_track_refinement_run_for_workflow(
+                processing_owners=fixture.owners,
+                captures=captures,
+                run=invalid,
+            )
+    crossed = replace(
+        run,
+        transactions=(
+            replace(second, application_context=first.application_context),
+            replace(first, application_context=second.application_context),
+        ),
+        _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
+    )
+    with pytest.raises(
+        CrossSampleReconciliationContractError, match="exact component context"
+    ):
+        apply_mode_track_refinement_run_for_workflow(
+            processing_owners=fixture.owners, captures=captures, run=crossed
+        )
+
+
 def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
     tmp_path: Path,
 ) -> None:

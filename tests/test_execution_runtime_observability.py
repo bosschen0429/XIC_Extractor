@@ -1,12 +1,14 @@
 import math
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
 )
+from xic_extractor import execution_runtime_observability as observability_owner
 from xic_extractor.execution_runtime_finalization_models import RuntimeResourceKind
 from xic_extractor.execution_runtime_observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
@@ -51,6 +53,92 @@ def test_runtime_observability_closes_work_offsets_and_metric_availability(
         ).value
         == 0
     )
+
+
+def test_runtime_event_indexes_preserve_scan_bytes_and_rejection_results(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ledger = build_runtime_observability_ledger(
+        _attempt(tmp_path),
+        work_unit_keys=("shared", "other"),
+        worker_keys=("shared", "other"),
+        resource_lifecycles=tuple(
+            (key, RuntimeResourceKind.ACQUISITION_SESSION, opened, cleaned)
+            for key, opened, cleaned in (
+                ("shared", "resource_opened", "resource_cleanup_succeeded"),
+                ("other", "resource_not_opened", "resource_cleanup_succeeded"),
+            )
+        ),
+        artifact_dispositions=(
+            ("shared", "artifact_offered_to_owner"),
+            ("other", "artifact_quarantined_diagnostic"),
+        ),
+    )
+
+    def scanned_positions(events, subject):
+        return SimpleNamespace(
+            get=lambda key, default=(): tuple(
+                index
+                for index, event in enumerate(events)
+                if event.subject is subject
+                and (event.subject_key, event.kind) == key
+            )
+        )
+
+    def scanned_offsets(events):
+        return SimpleNamespace(
+            get=lambda key, default=(): tuple(
+                event.monotonic_offset_ns
+                for event in events
+                if (event.kind, event.subject_key) == key
+            )
+        )
+
+    def observed(events):
+        try:
+            value = _mint_runtime_observability_ledger(
+                attempt=ledger.attempt,
+                work_unit_keys=ledger.work_unit_keys,
+                events=_resequence(events),
+                metrics=ledger.metrics,
+            )
+        except RuntimeObservabilityContractError as exc:
+            return type(exc), str(exc)
+        return canonical_runtime_observability_ledger_bytes(value)
+
+    variants = [ledger.events]
+    for kind in (
+        "work_unit_started",
+        "worker_started",
+        "resource_opened",
+        "artifact_registered",
+        "artifact_offered_to_owner",
+    ):
+        index = next(i for i, event in enumerate(ledger.events) if event.kind == kind)
+        variants.append((*ledger.events[:index], *ledger.events[index + 1 :]))
+        variants.append(
+            (
+                *ledger.events[:index],
+                *ledger.events[index : index + 1],
+                *ledger.events[index:],
+            )
+        )
+    reversed_work = list(ledger.events)
+    first = _event_index(ledger.events, "work_unit_submitted")
+    reversed_work[first], reversed_work[first + 1] = (
+        reversed_work[first + 1],
+        reversed_work[first],
+    )
+    variants.append(tuple(reversed_work))
+    for events in variants:
+        actual = observed(events)
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                observability_owner, "_index_event_positions", scanned_positions
+            )
+            patch.setattr(observability_owner, "_index_event_offsets", scanned_offsets)
+            expected = observed(events)
+        assert actual == expected
 
 
 def test_runtime_acquisition_metrics_treat_empty_projection_as_exact_zero(

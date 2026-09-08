@@ -27,6 +27,7 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.peak_detection import cid_nl_method_assessment as assessment_module
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     resolve_dda_cid_nl_candidate_set_relation_ref,
@@ -50,8 +51,15 @@ from xic_extractor.review_records import (
 )
 
 
-def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
+def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fixture, assessments = _truth_table_fixture(tmp_path)
+
+    def unexpected_reevaluation(**kwargs: object) -> None:
+        pytest.fail("assessment handoff must reuse the completed method decision")
+
+    monkeypatch.setattr(assessment_module, "_method_result", unexpected_reevaluation)
     by_sample = {
         assessment.content.canonical_sample_identity_id: assessment
         for assessment in assessments

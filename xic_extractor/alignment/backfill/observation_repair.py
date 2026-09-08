@@ -14,6 +14,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillPlanningPosition,
     validate_owner_backfill_conservative_no_request_position,
     validate_owner_backfill_evaluation_coverage,
+    validate_owner_backfill_retained_candidate_position,
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -649,8 +650,12 @@ def authorize_observation_repair(
             source_cell=cell,
             source_population=cell_observations,
         )
+        retained_candidates = validate_owner_backfill_retained_candidate_position(
+            position, source_cell=cell
+        )
         if (
             no_request_proof is None
+            and not retained_candidates
             and cell.content.technical_state == "evaluated"
             and cell.content.method_result == "HOLD"
             # A completed composite requirement cannot become SUPPORT through

@@ -39,12 +39,14 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,
+    build_untargeted_cid_nl_sample_runtime_jobs,
     execute_untargeted_cid_nl_real_data_runtime,
     untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
+    mint_untargeted_cid_nl_method_subject_batch,
 )
 from xic_extractor.processing_identity import (
     IdentityContractError,
@@ -515,6 +517,122 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
             raw_path=raw_path,
             dll_dir=tmp_path,
             work_unit_key="untargeted-cid-nl:S1",
+        )
+
+
+def test_batch_candidate_selection_preserves_order_and_request_sample_membership(
+    tmp_path: Path,
+) -> None:
+    raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates_by_sample = {}
+    for path in raw_paths:
+        path.write_bytes(path.stem.encode())
+        first = _current_candidates(
+            _FakeRaw((8.0,)), raw_file=path, settings=settings, peak_config=peak_config
+        )[0]
+        candidates_by_sample[path.stem] = tuple(
+            replace(first, candidate_id=f"{path.stem}:{suffix}")
+            for suffix in ("a", "b", "c")
+        )
+    receipts = _discovery_receipts(tmp_path, raw_paths, candidates_by_sample)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=mz,
+                    precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+                    neutral_loss_da=116.0474,
+                )
+                for mz in (500.0, 500.004)
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    requests_and_jobs = []
+    for swap in (False, True):
+        memberships = tuple(
+            sorted(
+                (
+                    candidate.candidate_id,
+                    subjects[
+                        int((stem == "S2" or index == 1) != swap)
+                    ].method_subject_id,
+                )
+                for stem, candidates in candidates_by_sample.items()
+                for index, candidate in enumerate(candidates)
+            )
+        )
+        subject_batch = mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects, candidate_memberships=memberships
+        )
+        context = build_untargeted_cid_nl_real_data_context(
+            raw_paths=raw_paths,
+            sample_metadata=tuple(
+                SampleMetadata(
+                    sample_name=path.stem,
+                    raw_stem=path.stem,
+                    injection_order=index,
+                    sample_role="study_sample",
+                )
+                for index, path in enumerate(raw_paths, start=1)
+            ),
+            method_subject=subject_batch,
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample=candidates_by_sample,
+            discovery_receipts_by_sample=receipts,
+            sample_identity_namespace="study:runtime-selection",
+        )
+        jobs = tuple(
+            job
+            for sample in context.samples
+            for job in build_untargeted_cid_nl_sample_runtime_jobs(
+                processing_owners=context.processing_owners,
+                sample=sample,
+                subject_work_units=tuple(
+                    (subject, f"{sample.metadata.raw_stem}:{subject.method_subject_id}")
+                    for subject in subjects
+                ),
+                candidates=tuple(
+                    reversed(context.candidates_by_sample[sample.metadata.raw_stem])
+                ),
+                discovery_receipt=receipts[sample.metadata.raw_stem],
+                settings=settings,
+                peak_config=peak_config,
+                raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+                dll_dir=tmp_path,
+            )
+        )
+        requests_and_jobs.append((memberships, jobs))
+    # Revisit the first request after the second has selected a different universe.
+    for memberships, jobs in (*requests_and_jobs, requests_and_jobs[0]):
+        for job in jobs:
+            member_ids = {
+                candidate_id
+                for candidate_id, subject_id in memberships
+                if subject_id == job.method_subject.method_subject_id
+            }
+            expected = tuple(c for c in job.candidates if c.candidate_id in member_ids)
+            selected = runtime_module._request_subject_candidates(job)
+            assert selected == expected
+            assert all(left is right for left, right in zip(selected, expected))
+            assert runtime_module._request_subject_candidates(replace(job)) == expected
+        assert any(not runtime_module._request_subject_candidates(job) for job in jobs)
+        assert any(
+            len(runtime_module._request_subject_candidates(job)) > 1 for job in jobs
+        )
+    with pytest.raises(
+        UntargetedCidNlRealDataRuntimeError, match="not an exact member"
+    ):
+        replace(
+            requests_and_jobs[0][1][0],
+            method_subject=mint_untargeted_cid_nl_method_subject(
+                precursor_mz=700.0,
+                precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+                neutral_loss_da=116.0474,
+            ),
         )
 
 

@@ -7,6 +7,7 @@ from typing import cast
 
 import pytest
 
+from tests.runtime_observability_fixtures import build_runtime_observability_ledger
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -15,23 +16,30 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.execution_runtime import (
+    AttemptLifecycleContractError,
     AttemptLifecycleEventKind,
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
+    settle_work_unit,
 )
 from xic_extractor.execution_runtime_finalization import (
+    AttemptFinalizationState,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     canonical_coordinator_terminal_record_bytes,
+    record_runtime_resource_cleanup,
+    record_runtime_resource_open,
+    register_runtime_artifact,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import (
     RuntimeMetricAvailability,
+    _index_event_offsets,
     canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.execution_runtime_owner import (
@@ -52,7 +60,9 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeWorkerBatchReceipt,
     _apply_runtime_worker_batch,
     _derive_runtime_observability_ledger,
+    _event_offset,
     _finalize_runtime_attempt,
+    _mint_runtime_attempt_aggregate,
     _prepare_runtime_attempt,
     derive_runtime_peak_fact_cost_metrics,
     derive_runtime_raw_open_metrics,
@@ -83,6 +93,46 @@ def test_runtime_peak_fact_operation_vocabulary_is_exact() -> None:
         "raw_descriptor_projection",
         "region_audit_projection",
     )
+
+
+def test_runtime_event_offsets_preserve_scan_values_and_exactly_one_errors(
+    tmp_path: Path,
+) -> None:
+    ledger = build_runtime_observability_ledger(
+        _attempt(tmp_path), work_unit_keys=("raw:a", "raw:b"), worker_keys=()
+    )
+    queried = next(
+        event for event in ledger.events if event.kind == "work_unit_started"
+    )
+    unqueried = next(
+        event for event in ledger.events if event.kind == "work_unit_submitted"
+    )
+    for events in (
+        ledger.events,
+        tuple(event for event in ledger.events if event is not queried),
+        (*ledger.events, queried),
+        (*ledger.events, unqueried),
+    ):
+        offsets = _index_event_offsets(events)
+        for kind, key in (
+            ("work_unit_started", "raw:a"),
+            ("work_unit_started", "raw:b"),
+            ("terminal_outcome", "attempt"),
+            ("work_unit_started", "missing"),
+        ):
+            expected = tuple(
+                event.monotonic_offset_ns
+                for event in events
+                if event.kind == kind and event.subject_key == key
+            )
+            if len(expected) == 1:
+                assert _event_offset(offsets, kind, key) == expected[0]
+            else:
+                with pytest.raises(
+                    RuntimeFinalizationContractError,
+                    match="owner-derived elapsed metric lacks one correlated event",
+                ):
+                    _event_offset(offsets, kind, key)
 
 
 def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
@@ -838,14 +888,20 @@ def test_runtime_phase_error_public_contract_is_closed_and_owner_bound(
         f"runtime attempt {attempt.processing_attempt_id} failed during "
         "worker_batch_provider",
     )
-    assert "RuntimeExecutionPhase" in __import__(
-        "xic_extractor.execution_runtime_owner",
-        fromlist=["__all__"],
-    ).__all__
-    assert "RuntimeExecutionPhaseError" in __import__(
-        "xic_extractor.execution_runtime_owner",
-        fromlist=["__all__"],
-    ).__all__
+    assert (
+        "RuntimeExecutionPhase"
+        in __import__(
+            "xic_extractor.execution_runtime_owner",
+            fromlist=["__all__"],
+        ).__all__
+    )
+    assert (
+        "RuntimeExecutionPhaseError"
+        in __import__(
+            "xic_extractor.execution_runtime_owner",
+            fromlist=["__all__"],
+        ).__all__
+    )
 
 
 def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
@@ -1304,6 +1360,253 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
     )
     assert worker_metric.availability is RuntimeMetricAvailability.MEASURED
     assert worker_metric.value == 0
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    (
+        "success",
+        "mixed",
+        "replay",
+        "conflict",
+        "undeclared",
+        "seeded_conflict",
+        "cancelled",
+        "unaccepted_cancellation",
+        "cancellation_before_foreign_attempt",
+        "foreign_attempt_before_cancellation",
+        "foreign_artifact",
+        "undeclared_artifact",
+    ),
+)
+def test_owner_worker_batch_matches_sequential_state_and_bytes(
+    tmp_path: Path,
+    scenario: str,
+) -> None:
+    attempt = _attempt(tmp_path, stem="batch-parity")
+    keys = ("raw:c", "raw:a", "raw:b")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=keys,
+        owner_completeness_attestation="runtime-owner-test:v1",
+        cancellation_request=(
+            RuntimeCancellationRequest(attempt=attempt)
+            if scenario == "cancelled"
+            else None
+        ),
+    )
+    artifacts = tuple(
+        mint_targeted_process_result_ref(
+            processing_attempt=attempt,
+            work_unit_key=key,
+            owner_result_payload=key.encode(),
+        ).artifact
+        for key in keys
+    )
+    settlements = [
+        mint_work_unit_settlement(
+            attempt=attempt,
+            work_unit_key=key,
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            owner_result_ref=artifact,
+        )
+        for key, artifact in zip(keys, artifacts, strict=True)
+    ]
+    registrations = [
+        RuntimeArtifactRegistrationReceipt(work_unit_key=key, artifact=artifact)
+        for key, artifact in zip(keys, artifacts, strict=True)
+    ]
+    failure_detail = WorkUnitFailureDetail(
+        category=WorkUnitFailureCategory.EXECUTION_ERROR,
+        stage="runtime-owner-test",
+        source_reference="no-raw:sample",
+        message="synthetic failure",
+    )
+    failed = mint_work_unit_settlement(
+        attempt=attempt,
+        work_unit_key=keys[0],
+        outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=failure_detail,
+    )
+    cancelled = replace(
+        failed,
+        outcome=WorkUnitTerminalOutcome.CANCELLED,
+        failure_detail=replace(
+            failure_detail,
+            category=WorkUnitFailureCategory.CANCELLATION,
+        ),
+    )
+    seeds: list[RuntimeWorkerBatchReceipt] = []
+    if scenario == "mixed":
+        settlements[1] = replace(failed, work_unit_key=keys[1])
+    elif scenario in {"conflict", "seeded_conflict"}:
+        if scenario == "seeded_conflict":
+            seeds.append(
+                RuntimeWorkerBatchReceipt(
+                    settlements=(settlements[0], failed),
+                    artifact_registrations=(registrations[0],),
+                )
+            )
+        settlements.extend((failed, replace(failed, work_unit_key=keys[1]), failed))
+        conflict = replace(registrations[0], work_unit_key=keys[1])
+        registrations.extend((conflict, registrations[0], conflict))
+    elif scenario == "undeclared":
+        settlements.extend(
+            (
+                replace(failed, work_unit_key="undeclared:first"),
+                replace(failed, work_unit_key="undeclared:second"),
+            )
+        )
+    elif scenario in {
+        "cancelled",
+        "unaccepted_cancellation",
+        "cancellation_before_foreign_attempt",
+        "foreign_attempt_before_cancellation",
+    }:
+        settlements[0] = cancelled
+        if "foreign_attempt" in scenario:
+            foreign = _attempt(tmp_path, stem="foreign-batch")
+            foreign_settlement = replace(failed, attempt=foreign, work_unit_key=keys[1])
+            if scenario == "foreign_attempt_before_cancellation":
+                settlements[0] = replace(foreign_settlement, work_unit_key=keys[0])
+                settlements[1] = replace(cancelled, work_unit_key=keys[1])
+            else:
+                settlements[1] = foreign_settlement
+    elif scenario == "foreign_artifact":
+        foreign = _attempt(tmp_path, stem="foreign-artifact")
+        registrations[0] = RuntimeArtifactRegistrationReceipt(
+            work_unit_key=keys[0],
+            artifact=mint_targeted_process_result_ref(
+                processing_attempt=foreign,
+                work_unit_key=keys[0],
+                owner_result_payload=b"foreign-result",
+            ).artifact,
+        )
+    elif scenario == "undeclared_artifact":
+        registrations[0] = replace(registrations[0], work_unit_key="undeclared")
+
+    # Stable sorting must retain the first submitted fact within each work key.
+    batch = RuntimeWorkerBatchReceipt(
+        settlements=tuple(sorted(settlements, key=lambda item: item.work_unit_key)),
+        artifact_registrations=tuple(reversed(registrations)),
+        resource_settlements=(
+            RuntimeResourceSettlementReceipt(
+                attempt=attempt,
+                resource_key="session:a",
+                open_outcome=RuntimeResourceOpenOutcome.OPENED,
+                cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            ),
+        ),
+    )
+    aggregate = _prepare_runtime_attempt(runtime, (_reservation(attempt),))
+    for seed in seeds:
+        expected_state = _sequential_worker_batch_state(aggregate, seed)
+        aggregate = _apply_runtime_worker_batch(aggregate, seed)
+        assert aggregate.state == expected_state
+
+    if scenario in {
+        "unaccepted_cancellation",
+        "cancellation_before_foreign_attempt",
+        "foreign_attempt_before_cancellation",
+        "foreign_artifact",
+        "undeclared_artifact",
+    }:
+        with pytest.raises(
+            (AttemptLifecycleContractError, RuntimeFinalizationContractError)
+        ) as expected_error:
+            _sequential_worker_batch_state(aggregate, batch)
+        with pytest.raises(type(expected_error.value)) as actual_error:
+            _apply_runtime_worker_batch(aggregate, batch)
+        assert str(actual_error.value) == str(expected_error.value)
+        return
+
+    for _ in range(2 if scenario == "replay" else 1):
+        expected_state = _sequential_worker_batch_state(aggregate, batch)
+        aggregate = _apply_runtime_worker_batch(aggregate, batch)
+        assert aggregate.state == expected_state
+    expected = _finalize_runtime_attempt(
+        _mint_runtime_attempt_aggregate(state=expected_state),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda proposed: proposed,
+    )
+    actual = _finalize_runtime_attempt(
+        aggregate,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda proposed: proposed,
+    )
+    assert canonical_coordinator_terminal_record_bytes(actual.coordinator) == (
+        canonical_coordinator_terminal_record_bytes(expected.coordinator)
+    )
+    assert canonical_runtime_observability_ledger_bytes(
+        actual.observability_ledger
+    ) == (canonical_runtime_observability_ledger_bytes(expected.observability_ledger))
+    assert actual.supervisor == expected.supervisor
+
+
+def _sequential_worker_batch_state(
+    aggregate: RuntimeAttemptAggregate,
+    batch: RuntimeWorkerBatchReceipt,
+) -> AttemptFinalizationState:
+    """Apply the singular reducers as the state/byte oracle for typed batches."""
+
+    assert not batch.acquisitions
+    state = aggregate.state
+    attempt = state.runtime.manifest.attempt
+    manifest_order = {
+        key: index for index, key in enumerate(state.runtime.manifest.work_unit_keys)
+    }
+    resource_order = {
+        record.reservation.resource_key: index
+        for index, record in enumerate(state.resources)
+    }
+    resources = sorted(
+        batch.resource_settlements,
+        key=lambda item: resource_order.get(item.resource_key, len(resource_order)),
+    )
+    for receipt in resources:
+        if receipt.attempt != attempt:
+            raise RuntimeFinalizationContractError(
+                "resource receipt references a different runtime attempt"
+            )
+    for receipt in resources:
+        state = record_runtime_resource_open(
+            state, resource_key=receipt.resource_key, outcome=receipt.open_outcome
+        )
+    for settlement in sorted(
+        batch.settlements,
+        key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
+    ):
+        if settlement.attempt != attempt:
+            raise RuntimeFinalizationContractError(
+                "work settlement references a different runtime attempt"
+            )
+        state = replace(
+            state,
+            runtime=settle_work_unit(
+                state.runtime,
+                work_unit_key=settlement.work_unit_key,
+                outcome=settlement.outcome,
+                owner_result_ref=settlement.owner_result_ref,
+                failure_detail=settlement.failure_detail,
+            ),
+        )
+    for registration in sorted(
+        batch.artifact_registrations,
+        key=lambda item: (
+            manifest_order.get(item.work_unit_key, len(manifest_order)),
+            item.artifact.evidence_artifact_id,
+        ),
+    ):
+        state = register_runtime_artifact(
+            state,
+            work_unit_key=registration.work_unit_key,
+            artifact=registration.artifact,
+        )
+    for receipt in resources:
+        state = record_runtime_resource_cleanup(
+            state, resource_key=receipt.resource_key, outcome=receipt.cleanup_outcome
+        )
+    return state
 
 
 def _failed_worker_batch(

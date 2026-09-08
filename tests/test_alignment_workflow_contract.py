@@ -88,7 +88,9 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         common_adapter_fields
     )
     assert tuple(field.name for field in fields(UntargetWorkflowAdapter)) == (
-        common_adapter_fields
+        *common_adapter_fields,
+        "completed_cross_sample",
+        "closed_cell_coverage",
     )
     assert tuple(field.name for field in fields(TargetWorkflowRequest)) == (
         "scope",

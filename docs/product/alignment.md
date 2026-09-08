@@ -16,6 +16,15 @@ and renders its finalized result. It requires explicit pure CID-NL discovery
 settings; the Alignment CLI supplies them through a bound preset. Unsupported
 discovery settings are rejected before acquisition or output creation.
 
+The retained Untargeted CID-NL production route carries initial groups directly
+into the CrossSample context without model fitting, assignment, FitOnceSource
+construction, or MT0 split/merge proposals and application. Initial candidates
+retain their request, sample, acquisition, and physical-hypothesis bindings.
+The route preserves group identities, membership and empty lineage, along with
+the trajectory snapshot and initial pair evidence used by downstream diagnostics.
+Other workflow routes retain their refinement behavior, including a final
+ModeTrack pass when an actual repair changes the trajectory input.
+
 Matrix and provisional review artifacts are projections of the finalized
 owner result. They do not run a separate Matrix-based scientific lifecycle.
 Delta Mass / Pt pattern retains its Discovery candidate, evidence, and review

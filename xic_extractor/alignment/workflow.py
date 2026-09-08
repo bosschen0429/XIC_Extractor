@@ -27,6 +27,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
+    CrossSamplePostMT0Context,
     CrossSamplePostRepairModeTrackInput,
     apply_mode_track_refinement_run_for_workflow,
     close_cross_sample_without_observation_repair,
@@ -364,12 +365,48 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
+    completed_cross_sample: CrossSamplePostMT0Context | None = None
+    closed_cell_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
+
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
-        if self.repair is None:
+        if self.repair is None and self.closed_cell_coverage is None:
             raise AlignmentWorkflowContractError(
-                "Untarget adapter requires exact ObservationRepair arguments"
+                "Untarget adapter requires repair arguments or closed cell coverage"
             )
+        if self.closed_cell_coverage is not None:
+            coverage = self.closed_cell_coverage
+            if type(coverage) is not OwnerBackfillEvaluationCoverageBatch:
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage must be exact"
+                )
+            if self.repair is not None or self.completed_cross_sample is None:
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage requires completed CrossSample without repair"
+                )
+            if coverage.terminals or any(
+                position.planning_state != "not_planned"
+                for position in coverage.epoch.positions
+            ):
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage must contain only unplanned positions"
+                )
+        if self.completed_cross_sample is not None:
+            if type(self.completed_cross_sample) is not CrossSamplePostMT0Context:
+                raise AlignmentWorkflowContractError(
+                    "completed CrossSample requires its exact owner context"
+                )
+            if self.closed_cell_coverage is None:
+                raise AlignmentWorkflowContractError(
+                    "completed CrossSample requires closed cell coverage"
+                )
+            if (
+                self.completed_cross_sample.processing_owners
+                is not self.closed_cell_coverage.epoch.processing_owners
+            ):
+                raise AlignmentWorkflowContractError(
+                    "completed CrossSample crossed its closed cell coverage owners"
+                )
 
 
 WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
@@ -685,7 +722,14 @@ def _execute_composition_after_runtime(
             and type(request.scope) is TargetSearchScope
             and request.scope.target.definition.target.neutral_loss_da is None
         )
-        if not ms1_only_target:
+        completed_cross_sample = (
+            adapter.completed_cross_sample
+            if type(adapter) is UntargetWorkflowAdapter
+            else None
+        )
+        if completed_cross_sample is not None:
+            context = completed_cross_sample
+        elif not ms1_only_target:
             run = bootstrap_mode_track_refinement_from_cid_nl_support(
                 processing_owners=owners,
                 sample_assessments=adapter.mode_track.sample_assessments,
@@ -730,23 +774,47 @@ def _execute_composition_after_runtime(
                 drift_lookup=adapter.drift_lookup,
             )
         stage = WorkflowStage.CROSS_SAMPLE_MT0
-        context = apply_mode_track_refinement_run_for_workflow(
-            processing_owners=owners,
-            captures=captures,
-            run=run,
-        )
+        if completed_cross_sample is None:
+            context = apply_mode_track_refinement_run_for_workflow(
+                processing_owners=owners,
+                captures=captures,
+                run=run,
+            )
         if adapter.repair is None:
-            if type(request) is not TargetWorkflowRequest:
+            closed_coverage = (
+                adapter.closed_cell_coverage
+                if type(adapter) is UntargetWorkflowAdapter
+                else None
+            )
+            if type(request) is not TargetWorkflowRequest and closed_coverage is None:
                 raise AlignmentWorkflowContractError(
-                    "only Targeted may omit optional ObservationRepair"
+                    "Untarget without ObservationRepair requires closed cell coverage"
+                )
+            if (
+                closed_coverage is not None
+                and closed_coverage.epoch.processing_owners is not owners
+            ):
+                raise AlignmentWorkflowContractError(
+                    "closed cell coverage crossed exact workflow processing owners"
                 )
             final_receipt = close_cross_sample_without_observation_repair(context)
+            handoff = None
+            if closed_coverage is not None:
+                stage = WorkflowStage.SCIENTIFIC_FINAL
+                handoff = build_cross_sample_association_lineage_handoff(
+                    coverage=closed_coverage,
+                    final_receipt=final_receipt,
+                )
             scientific = finalize_scientific_alignment(
                 scope=request.scope,
                 captures=captures,
                 final_cross_sample_receipt=final_receipt,
-                cell_observation_handoff=None,
-                predecessor_cell_observations=(),
+                cell_observation_handoff=handoff,
+                predecessor_cell_observations=(
+                    adapter.predecessor_cell_observations
+                    if closed_coverage is not None
+                    else ()
+                ),
             )
             return _finish_variant(
                 request=request,
@@ -1135,10 +1203,15 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "workflow request crossed processing request or attempt"
         )
-    if type(request) is not UntargetWorkflowCompositionRequest:
+    if isinstance(request, (TargetWorkflowRequest, UntargetWorkflowRequest)):
         _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
     if adapter.repair is not None:
         owners = adapter.repair.coverage.epoch.processing_owners
+    elif (
+        type(adapter) is UntargetWorkflowAdapter
+        and adapter.closed_cell_coverage is not None
+    ):
+        owners = adapter.closed_cell_coverage.epoch.processing_owners
     elif type(request) is TargetWorkflowRequest:
         owners = compose_processing_owner_references(
             request=request.processing_request,
@@ -1158,6 +1231,14 @@ def _validate_request_adapter(
     ):
         raise AlignmentWorkflowContractError(
             "workflow repair population crossed exact processing owners"
+        )
+    if (
+        type(adapter) is UntargetWorkflowAdapter
+        and adapter.completed_cross_sample is not None
+        and adapter.completed_cross_sample.processing_owners is not owners
+    ):
+        raise AlignmentWorkflowContractError(
+            "completed CrossSample crossed the workflow processing owners"
         )
     for sample in request.scope.samples:
         validate_scope_owner_binding(
