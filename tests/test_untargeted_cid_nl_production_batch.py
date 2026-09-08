@@ -694,6 +694,34 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
+    from xic_extractor.peak_detection import observations as observation_owner
+
+    bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
+    evaluate_physical = observation_owner.evaluate_physical_peak
+    binding_rechecks = []
+    bound_captures = []
+
+    def record_binding(capture, **kwargs):
+        rechecks = []
+
+        def record_evaluation(*args, **evaluation_kwargs):
+            rechecks.append(True)
+            return evaluate_physical(*args, **evaluation_kwargs)
+
+        with monkeypatch.context() as binding_patch:
+            for owner in (capture_owner, observation_owner):
+                binding_patch.setattr(
+                    owner, "evaluate_physical_peak", record_evaluation
+                )
+            bound = bind_capture(capture, **kwargs)
+        binding_rechecks.append(len(rechecks))
+        bound_captures.append((capture, kwargs))
+        return bound
+
+    for owner in (production, workflow_owner):
+        monkeypatch.setattr(
+            owner, "bind_owner_backed_capture_hypothesis", record_binding
+        )
 
     def unexpected_mt0(*args, **kwargs):
         raise AssertionError("retained production must not execute MT0 refinement")
@@ -839,6 +867,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
     assert completed.initial_edges == tuple(retained_initial_edges)
+    # Binding consumes the closed capture; it must not repeat physical selection.
+    assert not any(binding_rechecks)
+    if method_mode != "intersection":
+        assert binding_rechecks
     if family_context:
         assert len(matrix_rows) == 1
         assert len(writer.matrix.cells) == len(sample_stems)
@@ -951,6 +983,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     ):
         with pytest.raises((PeakObservationContractError, ValueError)):
             mint_peak_observation_ref(**(observation_args | substitution))
+
+    bound_capture, binding_args = bound_captures[0]
+    changed_source = capture_peak(
+        scope=bound_capture.scope,
+        candidate_id=bound_capture.candidate_id,
+        trace=replace(bound_capture.trace, source="different-capture-source"),
+    )
+    with pytest.raises(capture_owner.SampleLocalCaptureError):
+        bind_capture(changed_source, **binding_args)
+    mutable_capture = capture_peak(
+        scope=bound_capture.scope,
+        candidate_id=bound_capture.candidate_id,
+        trace=replace(
+            bound_capture.trace, intensity=bound_capture.trace.intensity.copy()
+        ),
+    )
+    mutable_capture.trace.intensity[-1] += 1.0
+    with pytest.raises(capture_owner.SampleLocalCaptureError):
+        bind_capture(mutable_capture, **binding_args)
     from xic_extractor.peak_detection.search_scope import SearchScopeContractError
 
     changed_answer = evaluate_physical_peak(

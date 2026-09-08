@@ -544,6 +544,28 @@ def _peak_observation_values(
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
     )
+    return _project_peak_observation_values(
+        canonical_sample_identity_id=canonical_sample_identity_id,
+        trace=trace,
+        integration=integration,
+        selection_values=selection_values,
+        selected_indices=selected_indices,
+        resolver_mode=resolver_mode,
+        proposal_sources=proposal_sources,
+    )
+
+
+def _project_peak_observation_values(
+    *,
+    canonical_sample_identity_id: str,
+    trace: Trace,
+    integration: IntegrationResult,
+    selection_values: np.ndarray,
+    selected_indices: tuple[int, ...],
+    resolver_mode: str,
+    proposal_sources: tuple[str, ...],
+) -> tuple[PeakObservationContent, PeakObservationGenerationProvenance]:
+    """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
         _finite_float(float(trace.rt[index]), field="selected_rt")
         for index in selected_indices

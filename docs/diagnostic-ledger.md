@@ -65,6 +65,34 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Physical Capture Binding Reuses Closed Facts
+
+Evidence: `diagnostic_only`. The physical branch of
+`peak_detection.capture.bind_owner_backed_capture_hypothesis` consumes the
+existing capture seal, checks current RT/raw content, and compares exact
+observation content/provenance through the observation owner's shared
+projection. It does not repeat physical selection. Public capture, observation
+mint, generic trace validation, and nonphysical binding retain their numerical
+validation; there is no new cache, public parameter, or persisted schema.
+
+For 128 reached captures, five warm binding repeats fell from median 0.222525
+seconds (0.210051–0.224202) to 0.047272 (0.046110–0.050236), with identical
+payload hashes. Each repeat removed 128 physical prepare/evaluate calls from
+binding; mint retained all 128. A same-input eight-sample CLI replay pair
+observed composition at 269.206 versus 239.510 seconds and all 8,171 production
+bindings at 14.934 versus 3.101 seconds. Whole-run host/cache variation remains
+uncontrolled; the repeated local measurements establish the binding gain.
+Both replays completed with zero RAW opens. Matrix bytes and complete SQLite
+logical contents match, excluding only `matrix_path` and `processing_attempt_id`.
+All 121 related regressions pass, including changed-source and mutable-trace
+rejection. Receipts: `output/cid-nl-preparation-cost/verification.json` and
+`*-capture-benchmark.json` (host-local evidence, not portable inputs).
+
+Reuse while the capture seal, immutable physical projection, current trace
+content check, and observation projection remain unchanged. A changed owner
+handoff or output contract invalidates this conclusion; it does not establish
+whole-RAW speedup or production readiness.
+
 ### 2026-09-09 Batch Finalization Reuses Owner Validation
 
 Evidence: `diagnostic_only`. `UntargetBatchApplicationResultRequest` validates
