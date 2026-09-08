@@ -65,6 +65,34 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Fresh Application Closure Reuses Component Completion
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The application-result owner consumes freshly completed scientific/post-cell
+owners inside the synchronous `_finish_variant` chain. It retains exact type,
+request, sample, core and projection bindings without recomputing their seals.
+Public finalization and batch aggregation after all adapter callbacks still
+perform full completion checks; later callbacks prevent reusing the earlier
+proof at the batch boundary.
+
+On the same corrected eight-sample input (3,127 children, zero RAW opens),
+scientific and post-cell receipt checks each fell from 6,254 to 3,127. Their
+combined measured time fell from 43.920 to 20.549 seconds. Composition wall time
+was 240.447 versus 200.390 seconds in one sequential pair; other stages also
+varied, so the entire 40.056-second difference is not attributed to this edit.
+Exact Matrix bytes, public explanation summaries and SQLite logical contents
+match; only existing output-path/attempt provenance is excluded. Relevant
+ordinary-CI coverage passed 110 tests, including public tamper rejection and
+real runtime/writer checks of one deep completion pass per batch child.
+
+Receipts: `output/cid-nl-resource-optimization/{baseline,fresh-closure}/`,
+`verification-baseline-fresh-closure.json`, and `plan.md`. Revisit when the
+callback-free owner handoff, component mutability, inputs or completion contract
+changes. The same investigation rejected a single-root post-cell digest merge
+(five interleaved 128-result medians 0.39345/0.39236 seconds, overlapping ranges)
+and child threads (128-child medians serial/2/4 threads 4.983/5.124/5.294 seconds,
+same observable signatures); do not re-propose them without changed evidence.
+
 ### 2026-09-09 Physical Capture Binding Reuses Closed Facts
 
 Evidence: `diagnostic_only`. The physical branch of

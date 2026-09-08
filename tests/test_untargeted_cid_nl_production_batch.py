@@ -691,10 +691,38 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
     from xic_extractor.alignment.mode_track import refinement as refinement_owner
+    from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
+    from xic_extractor.alignment.result import application_result as result_owner
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
     from xic_extractor.peak_detection import observations as observation_owner
+
+    completion_checks = {"scientific": [], "post_cell": []}
+    scientific_check = (
+        result_owner._validate_finalized_scientific_alignment_completion_receipt
+    )
+
+    def record_scientific_check(value):
+        completion_checks["scientific"].append(value)
+        return scientific_check(value)
+
+    post_cell_check = post_cell_owner.validate_untarget_post_cell_completion_receipt
+
+    def record_post_cell_check(value):
+        completion_checks["post_cell"].append(value)
+        return post_cell_check(value)
+
+    monkeypatch.setattr(
+        result_owner,
+        "_validate_finalized_scientific_alignment_completion_receipt",
+        record_scientific_check,
+    )
+    monkeypatch.setattr(
+        post_cell_owner,
+        "validate_untarget_post_cell_completion_receipt",
+        record_post_cell_check,
+    )
 
     bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
     evaluate_physical = observation_owner.evaluate_physical_peak
@@ -867,6 +895,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
     assert completed.initial_edges == tuple(retained_initial_edges)
+    # Fresh owners transfer completion once; the batch checks after all callbacks.
+    children = completed.application_result.children
+    assert tuple(completion_checks["scientific"]) == tuple(
+        child.scientific_core for child in children
+    )
+    assert tuple(completion_checks["post_cell"]) == tuple(
+        child.completed_projection for child in children
+    )
     # Binding consumes the closed capture; it must not repeat physical selection.
     assert not any(binding_rechecks)
     if method_mode != "intersection":

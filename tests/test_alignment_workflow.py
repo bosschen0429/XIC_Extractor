@@ -240,7 +240,9 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
     monkeypatch.setattr(
         workflow_owner,
-        "finalize_alignment_result",
+        "finalize_alignment_result"
+        if variant == "target"
+        else "_finalize_fresh_untarget_result",
         lambda value: application_result,
     )
 
