@@ -37,6 +37,16 @@ metadata_output = Path(sys.argv[3])
 sys.path.insert(0, str(target))
 
 from xic_extractor.alignment import quantitative_projection_authority as owner
+from xic_extractor.alignment import _completion_receipt as receipt
+from xic_extractor.alignment import _completion_receipt_native as native
+
+if not Path(native.__file__).resolve().is_relative_to(target):
+    raise RuntimeError("native receipt was not loaded from installed wheel")
+if receipt._native_digest is not native.retained_owner_digest:
+    raise RuntimeError("installed receipt did not select native encoder")
+graph = [None, "receipt", {"a": (1, 2)}]
+if receipt.retained_owner_digest(graph) != receipt._python_retained_owner_digest(graph):
+    raise RuntimeError("installed native receipt differs from Python encoding")
 
 authority = owner.load_quantitative_projection_authority_for_diagnostic()
 module_file = Path(owner.__file__).resolve()
@@ -141,13 +151,13 @@ def authority_packaging_source() -> Iterator[Path]:
         source_root = temp_root / "source"
         source_root.mkdir()
 
-        for filename in ("pyproject.toml", "xic_extractor.spec"):
+        for filename in ("pyproject.toml", "setup.py", "xic_extractor.spec"):
             shutil.copy2(PROJECT_ROOT / filename, source_root / filename)
         for directory in PACKAGING_SOURCE_DIRECTORIES:
             shutil.copytree(
                 PROJECT_ROOT / directory,
                 source_root / directory,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyd", "*.so"),
             )
 
         yield source_root
@@ -270,7 +280,6 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             "--cache-dir",
             str(uv_cache_root),
             "--wheel",
-            "--no-build-isolation",
             "--out-dir",
             str(artifact_root),
             "--python",
@@ -356,7 +365,6 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
             "--cache-dir",
             str(uv_cache_root),
             "--wheel",
-            "--no-build-isolation",
             "--out-dir",
             str(artifact_root),
             "--python",

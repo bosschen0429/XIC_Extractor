@@ -7,6 +7,12 @@ from dataclasses import fields, is_dataclass
 from hashlib import sha256
 from typing import Any
 
+try:
+    from ._completion_receipt_native import retained_owner_digest as _native_digest
+except ImportError:
+    # Source-only checkouts and platforms without a compiler retain this route.
+    _native_digest = None
+
 
 def retained_owner_digest(
     value: object,
@@ -15,6 +21,16 @@ def retained_owner_digest(
 ) -> bytes:
     """Digest exact retained identities and fields without invoking owner policy."""
 
+    if _native_digest is not None:
+        return _native_digest(value, identity_only=identity_only)
+    return _python_retained_owner_digest(value, identity_only=identity_only)
+
+
+def _python_retained_owner_digest(
+    value: object,
+    *,
+    identity_only: tuple[object, ...] = (),
+) -> bytes:
     digest = sha256()
     seen: dict[int, int] = {}
     identity_only_ids = {id(item) for item in identity_only}

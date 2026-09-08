@@ -88,10 +88,9 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 
-@pytest.mark.parametrize("support_centers", [(8.0,), (8.0, 12.0)])
-def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
+def _outside_group_fixture(
     tmp_path: Path, support_centers: tuple[float, ...],
-) -> None:
+):
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"Multi": "study_sample", "Third": "study_sample"}
     )
@@ -143,6 +142,14 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         owners, config=CID_NL_ALIGNMENT_CONFIG
     )
     assert len(groups) == len(support_centers) + 1
+    return fixture, tuple(assessments), groups
+
+
+@pytest.mark.parametrize("support_centers", [(8.0,), (8.0, 12.0)])
+def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
+    tmp_path: Path, support_centers: tuple[float, ...],
+) -> None:
+    fixture, assessments, groups = _outside_group_fixture(tmp_path, support_centers)
     original_contents = None
     for ordered_groups in (groups, tuple(reversed(groups))):
         cells = cell_owner.compose_cid_nl_predecessor_cells(
@@ -212,6 +219,116 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             sample_assessments=tuple(assessments),
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
         )
+
+
+def _outside_population_handoff(tmp_path: Path):
+    fixture, assessments, groups = _outside_group_fixture(tmp_path, (8.0, 12.0))
+    cells = cell_owner.compose_cid_nl_predecessor_cells(
+        processing_owners=fixture.owners,
+        groups=groups,
+        sample_assessments=assessments,
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
+    )
+    identities = tuple(
+        validate_cross_sample_peak_group_identity(group, require_canonical=True)
+        for group in groups
+    )
+    binding = SimpleNamespace(
+        samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
+    )
+    coverage = _coverage_for_groups(binding, identities, fixture.samples, planned=False)
+    epoch = coverage.epoch
+    coverage = build_owner_backfill_evaluation_coverage(
+        mint_owner_backfill_planning_epoch(
+            **{
+                item.name: getattr(epoch, item.name)
+                for item in fields(epoch)
+                if item.name not in {"epoch_id", "positions"}
+            },
+            positions=tuple(
+                replace(
+                    position,
+                    planning_reason=(
+                        "retained_local_owner"
+                        if any(
+                            member.canonical_sample_identity_id
+                            == position.sample.identity.sample_identity_id
+                            for member in position.group_identity.member_subjects
+                        )
+                        else "local_owner_not_supersedable"
+                    ),
+                )
+                for position in epoch.positions
+            ),
+        ),
+        (),
+    )
+    receipt = _final_receipt(
+        _receipt_fixture(binding, fixture.samples),
+        predecessors=identities,
+        successors=identities,
+    )
+    return cells, build_cross_sample_association_lineage_handoff(
+        coverage=coverage, final_receipt=receipt
+    )
+
+
+def test_population_reuses_group_construction_within_each_exact_input_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sources, handoff = _outside_population_handoff(tmp_path)
+    original = cell_owner.construct_cross_sample_peak_group_hypotheses
+    constructions = []
+
+    def counted(*args, **kwargs):
+        constructions.append(args[0])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        cell_owner, "construct_cross_sample_peak_group_hypotheses", counted
+    )
+    expected_context_count = len({id(cell.group_context) for cell in sources})
+    first = compose_final_group_cell_observation_population(
+        handoff=handoff, predecessor_cells=sources,
+    )
+    assert len(constructions) == expected_context_count
+    constructions.clear()
+    second = compose_final_group_cell_observation_population(
+        handoff=handoff, predecessor_cells=sources,
+    )
+    assert second == first
+    assert len(constructions) == expected_context_count
+    assert validate_final_group_cell_observation_population(
+        handoff=handoff, cell_observations=second,
+    ) == first
+
+
+def test_population_revalidates_after_failure_and_changed_group_context(
+    tmp_path: Path,
+) -> None:
+    sources, handoff = _outside_population_handoff(tmp_path)
+    forged = copy(sources[-1])
+    object.__setattr__(forged, "artifact", sources[0].artifact)
+    with pytest.raises(CellObservationContractError):
+        compose_final_group_cell_observation_population(
+            handoff=handoff, predecessor_cells=(*sources[:-1], forged),
+        )
+    expected = compose_final_group_cell_observation_population(
+        handoff=handoff, predecessor_cells=sources,
+    )
+    context = sources[0].group_context
+    config = context.config
+    object.__setattr__(context, "config", None)
+    try:
+        with pytest.raises(CellObservationContractError, match="exact AlignmentConfig"):
+            compose_final_group_cell_observation_population(
+                handoff=handoff, predecessor_cells=sources,
+            )
+    finally:
+        object.__setattr__(context, "config", config)
+    assert compose_final_group_cell_observation_population(
+        handoff=handoff, predecessor_cells=sources,
+    ) == expected
 
 
 def _owner_handoff(tmp_path: Path):

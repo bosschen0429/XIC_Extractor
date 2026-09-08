@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import InitVar, asdict, dataclass, field, replace
 from typing import Literal, TypeAlias
 
@@ -836,6 +837,21 @@ def _terminal_trace_group_id(value: object) -> str:
     return value
 
 
+_population_group_context_validation: ContextVar[
+    tuple[dict[int, CidNlCellGroupContext], set[int]] | None
+] = ContextVar("population_group_context_validation", default=None)
+
+
+def _validate_relation_group_context(context: CidNlCellGroupContext) -> None:
+    scope = _population_group_context_validation.get()
+    if scope is None or scope[0].get(id(context)) is not context:
+        context.__post_init__()
+        return
+    if id(context) not in scope[1]:
+        context.__post_init__()
+        scope[1].add(id(context))
+
+
 def _outside_group_relation(
     *,
     group_context: CidNlCellGroupContext,
@@ -848,8 +864,8 @@ def _outside_group_relation(
         raise CellObservationContractError(
             "outside-group context has the wrong owner type"
         )
-    group_context.__post_init__()
-    outside_group_context.__post_init__()
+    _validate_relation_group_context(group_context)
+    _validate_relation_group_context(outside_group_context)
     if (
         method_assessment.content.method_result != "SUPPORT"
         or outside_group_context.method_subject != group_context.method_subject
@@ -1398,6 +1414,48 @@ def compose_final_group_cell_observation_population(
     group substitutions are rejected before a final object is minted.
     """
 
+    if isinstance(predecessor_cells, (str, bytes)):
+        raise CellObservationContractError(
+            "predecessor cells must be a finite owner-sealed sequence"
+        )
+    if isinstance(repair_receipts, (str, bytes)) or isinstance(
+        repaired_observations, (str, bytes)
+    ):
+        raise CellObservationContractError(
+            "repair evidence must be finite owner-sealed sequences"
+        )
+    # Consume caller sequences before borrowing the exact owner objects for this
+    # synchronous pass. Only contexts bound to these inputs may share a proof;
+    # cell/relation checks still run for every lane. No proof survives the call.
+    sources = tuple(predecessor_cells)
+    receipts = tuple(repair_receipts)
+    observations = tuple(repaired_observations)
+    contexts = {
+        id(context): context
+        for cell in sources
+        if type(cell) is CellObservationRef
+        for context in (cell.group_context, cell.outside_group_context)
+        if type(context) is CidNlCellGroupContext
+    }
+    token = _population_group_context_validation.set((contexts, set()))
+    try:
+        return _compose_final_group_cell_observation_population(
+            handoff=handoff,
+            predecessor_cells=sources,
+            repair_receipts=receipts,
+            repaired_observations=observations,
+        )
+    finally:
+        _population_group_context_validation.reset(token)
+
+
+def _compose_final_group_cell_observation_population(
+    *,
+    handoff: CrossSampleAssociationLineageHandoff,
+    predecessor_cells: tuple[CellObservationRef, ...],
+    repair_receipts: tuple[ObservationRepairReceipt, ...],
+    repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
+) -> tuple[FinalGroupCellObservation, ...]:
     request_id = _validate_final_handoff(handoff)
     positions = tuple(handoff.coverage.epoch.positions)
     source_by_position = _index_predecessor_cells(

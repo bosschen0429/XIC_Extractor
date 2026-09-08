@@ -7,6 +7,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.egg-info/
+/build/
 
 # Test / lint caches
 .coverage
