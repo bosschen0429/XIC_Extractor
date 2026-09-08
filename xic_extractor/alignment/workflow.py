@@ -1377,10 +1377,10 @@ def _finish_variant(
         untarget_pre_cell = project_untarget_pre_cell(scientific)
         stage = WorkflowStage.CELL_DECISION
         from xic_extractor.alignment.cell_decision.owner import (
-            decide_group_cell_population,
+            _decide_fresh_group_cell_population,
         )
 
-        untarget_decisions = decide_group_cell_population(
+        untarget_decisions = _decide_fresh_group_cell_population(
             untarget_pre_cell,
             scientific,
         )

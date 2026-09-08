@@ -65,6 +65,28 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Group Decisions Reuse Fresh Scientific Owners
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The synchronous workflow uses a private cell-decision owner handoff over its
+just-finalized scientific core and just-projected pre-cell population. It skips
+reprojection/recomposition while keeping exact request/owner bindings, immutable
+typed populations, unique/equal Group×sample key sets, sealed decision selection,
+basis/ID mint and canonical ordering. Public decision methods still deep-validate.
+
+The existing real runtime/Matrix/writer fixture first reproduced repeated owner
+calls, then passed with both expensive cell-decision aliases called zero times.
+Public cell-decision, workflow and production tests passed 69 cases. On the same
+3,127-child input with no RAW opens, pre-cell projection calls fell from 12,508
+to 9,381, `_finish_variant` from 52.282 to 35.428 seconds, and composition from
+187.218 to 168.885 seconds. Preparation remained similar (64.959/65.303 seconds).
+Complete Matrix/explanation/SQLite parity passes under the existing path/attempt
+provenance exclusions. Receipts:
+`output/cid-nl-resource-optimization/{fresh-cells,fresh-decisions}/` and
+`verification-fresh-cells-fresh-decisions.json`. Revisit if a callback/new input
+enters the immediate scientific→pre-cell→decision handoff or decision semantics
+change; retained public inputs remain a deep-validation boundary.
+
 ### 2026-09-09 Scientific Finalization Reuses Its Composed Cells
 
 **Evidence:** `diagnostic_only`; no scientific or writer authority promotion.

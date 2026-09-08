@@ -1608,6 +1608,8 @@ def test_production_batch_executes_one_atomic_sample_phase(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    import xic_extractor.alignment.cell_decision.owner as cell_decision_owner
+
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     # The atomic phase must contain two disjoint method worksets.
@@ -1673,6 +1675,31 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "_validate_untarget_batch_request",
         record_batch_validation,
     )
+    projected_pre_cells = []
+    validated_observation_populations = []
+    project_pre_cell = cell_decision_owner.project_untarget_pre_cell
+    validate_observation_population = (
+        cell_decision_owner.validate_final_group_cell_observation_population
+    )
+
+    def record_pre_cell_projection(finalized_alignment):
+        projected_pre_cells.append(finalized_alignment)
+        return project_pre_cell(finalized_alignment)
+
+    def record_observation_population_validation(**kwargs):
+        validated_observation_populations.append(kwargs)
+        return validate_observation_population(**kwargs)
+
+    monkeypatch.setattr(
+        cell_decision_owner,
+        "project_untarget_pre_cell",
+        record_pre_cell_projection,
+    )
+    monkeypatch.setattr(
+        cell_decision_owner,
+        "validate_final_group_cell_observation_population",
+        record_observation_population_validation,
+    )
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = compose_untargeted_cid_nl_production_result(
         batch,
@@ -1734,6 +1761,8 @@ def test_production_batch_executes_one_atomic_sample_phase(
         is not None
         for cell in writer_inputs.matrix.cells
     )
+    assert projected_pre_cells == []
+    assert validated_observation_populations == []
     writer_dir = tmp_path / "writer"
     outputs = output_paths(
         writer_dir,
