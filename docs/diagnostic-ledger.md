@@ -65,6 +65,35 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 Formal Native Receipt And Population Proof Reuse
+
+Evidence: `diagnostic_only`; engineering implementation `4152f1bc` applies the
+combined optimization to the formal receipt and CellObservation owners. The
+receipt owner automatically selects the packaged native encoder, with the
+equivalent Python path retained for source/no-compiler consumers. The normal
+setuptools/uv build includes native source in its build inputs and cache keys.
+Clean wheel build/install checks require native activation on the verified
+Windows CPython 3.12 host.
+
+Population proof reuse is bound to the exact predecessor context objects of
+one synchronous owner call. Inputs are materialized before entering that scope;
+successful context checks are shared, per-cell relation and artifact checks
+remain live, and the scope is reset on success or failure. Nothing persists as
+a cross-call context proof. The existing canonical-byte proof cache remains
+active. No identity encoding, schema, scientific selection, or writer authority
+changed.
+
+The clean formal commit completed the same eight-sample retained public replay
+in 467.197 seconds, versus the stacked prototype's 491.616 seconds. This is a
+single-run observation, not a repeated benchmark or a RAW-acquisition time.
+The installed native encoder was selected with no experimental overlay. RAW
+opens were zero. The 1,499-row Matrix was byte-identical, preserving all 5,615
+numeric cells and 48 known-ISTD cells; the public explanation reader and all
+SQLite logical/schema/integrity oracles passed. Evidence and exact commands
+are under `output/cid-nl-formal-combined/`, with native build evidence under
+`output/cid-nl-native-product/`. The historical prototypes below are no longer
+needed to activate this optimization in the formal flow.
+
 ### 2026-09-08 Canonical Identity Byte Proof Reuse
 
 Evidence: `diagnostic_only`; commit `de1e4bc8` applies the engineering change
