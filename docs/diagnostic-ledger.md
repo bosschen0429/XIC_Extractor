@@ -65,6 +65,45 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 CID-NL Composition Cost After Retention Repair
+
+Evidence: `diagnostic_only`; diagnosis and plan only. The reference-enabled
+eight-sample retained-runtime replay at `17e41279` took 1,950.698 seconds with
+zero RAW opens. Batch composition/finalization accounts for 1,745.872 seconds
+(89.5%); explanation writing takes 61.327 seconds and Matrix writing 0.104
+seconds. These writer spans are nested, not additional wall time. The final
+writer-only commit `ca3b36e9` leaves that composition code unchanged.
+
+The 982.916 seconds after child 3,250 includes the remaining 174 children and
+batch closure; the original timing does not separate them. Retained results
+show those children contain only 1,912 of 38,824 cells, without a large-child
+concentration. Current source validates the complete batch three times during
+request/finalizer/result construction, and rebuilds each pre-cell projection
+at least four times. The current batch checks use retained graph digests; do
+not attribute already-removed historical policy replay to this run.
+
+An actual rows evidence chain reaches the shared processing request, including
+25,016,161 bytes of normalized scientific-input JSON. Unlike the scientific
+and pre-cell digests, its rows digest does not use the existing request
+identity-only boundary. Two bounded, interleaved traversal probes measured
+82.913–91.879 ms versus 6.039–10.056 ms, and 100.169–105.233 ms versus
+32.786–34.655 ms when applying that boundary. This prioritizes a small
+post-cell receipt slice; it is not correctness acceptance or a whole-run win.
+
+The explanation's per-subject global membership scan performs 265,609,180
+predicate comparisons for this artifact. A lookup-only experiment preserving
+every subject's candidate set took about 11.03 seconds for the current scan
+and 0.017 seconds including a subject index build. The output stage is a
+secondary target. There is no systematic peak-memory, GC, page-fault, or host
+contention trace; serialized payload size does not establish RAM pressure.
+
+Task-local evidence and the ordered exact-safe plan are under
+`output/cid-nl-performance-v11/`. Start with the rows request traversal, then
+remeasure before changing batch closure or projection construction. Preserve
+Matrix values, membership, reasons and persisted identities; writer-only
+validation can reuse the completed result. No product optimization or RAW
+rerun was performed for this diagnosis.
+
 ### 2026-09-07 CID-NL 8RAW Runtime and Composition
 
 Evidence: `diagnostic_only`; the eight-RAW engineering completion target passed.
