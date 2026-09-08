@@ -65,6 +65,46 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 CID-NL Population And Native-Encoding Prototype
+
+Evidence: `diagnostic_only`; isolated prototype, not an applied product change.
+The current retained child path has an actual repeated grouping calculation:
+`_validate_source_cell` reconstructs `CellObservationRef`, whose outside-group
+relation revalidates both local and sibling `CidNlCellGroupContext` objects.
+Those context checks recreate support owners and run peak-group construction.
+A 325-capture/408-cell case called that construction 3,150 times. This is
+distinct from the already-removed historical scientific-finalizer replay.
+Association/member joins were below 0.2% in nine profiled cases and did not
+justify a columnar rewrite.
+
+An experiment validated each exact context once within each synchronous
+population call while retaining per-cell relation checks. On nine structurally
+selected children, three interleaved runs reduced full context oracle calls
+from 6,588 to 258 per run and median composition from 16.908 to 11.553 seconds.
+Combining that with a native contiguous-buffer implementation of the exact
+existing receipt bytes reduced composition to 9.270 seconds. All 81 fresh child
+executions passed content/aliasing parity and the original owner validator.
+The sample is skewed (792 cells, including a 408-cell case); its speed ratio
+must not be extrapolated to the complete batch.
+
+The complete eight-sample public CLI replay with the separately hash-bound
+overlay took 559.197 seconds versus the P1 baseline's 826.857 seconds: an
+observed single-run reduction of 32.4%, not an order-of-magnitude result or a
+repeated whole-run benchmark. Batch composition took 347.480 versus 616.613
+seconds. RAW opens remained zero. The 1,499-row Matrix was byte-identical,
+preserving 5,615 numeric cells and all 48 known-ISTD cells; the public
+explanation reader, SQLite integrity/schema, and all candidate/record/link
+payloads passed exact parity, excluding only existing path/attempt provenance.
+The combined prototype also passed 114 existing owner/projection tests.
+
+The prototype does not establish a cross-call immutable proof. Drift lookup
+methods consume mutable cached dictionaries omitted by dataclass-field
+digests; production reuse would need an explicit population-owner input
+binding. Native packaging and cross-platform delivery were not implemented.
+No prototype hook, native backend, build dependency, or scientific change was
+applied to the product. Evidence and the executable prototype remain under
+`output/cid-nl-breakthrough/`; `experiment-report.md` records the adoption limits.
+
 ### 2026-09-08 CID-NL Request Digest Optimization
 
 Evidence: `diagnostic_only`; engineering performance and persisted-output
