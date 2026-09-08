@@ -65,6 +65,41 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-08 Canonical Identity Byte Proof Reuse
+
+Evidence: `diagnostic_only`; commit `de1e4bc8` applies the engineering change
+in `processing_identity`, without scientific or product-authority promotion.
+Repeated owner checks still rebuild and compare their live identity bases;
+only successful canonical-JSON validation and SHA-256 of equal built-in bytes
+are reused. Prefix checks remain per call. The bounded cache retains at most
+4,096 entries of at most 4,096 bytes each; larger inputs and bytes subclasses
+retain the original path. Identity bytes, schemas, and algorithms are unchanged.
+
+Three interleaved fresh-child repetitions with the original Python graph and
+context checks reduced the nine-case median from 18.333 to 14.446 seconds.
+All 54 results passed original validation and content/aliasing parity. The
+skewed sample's 21.2% reduction must not be extrapolated to the entire batch.
+The applied code passed 153 focused tests, Ruff, staged mypy, and shard checks.
+
+The clean product commit completed the same eight-sample public CLI retained
+replay in 788.555 seconds versus the P1 baseline's 826.857 seconds: an observed
+38.301-second (4.6%) reduction, not a breakthrough or repeated whole-run
+benchmark. Batch composition/finalization took 573.947 versus 616.613 seconds.
+RAW opens remained zero. The 1,499-row Matrix was byte-identical, preserving
+5,615 numeric cells and 48 known-ISTD cells; the public explanation reader and
+all SQLite logical/schema/integrity comparisons passed, excluding only existing
+path/attempt provenance. No native or population-validation overlay was applied.
+
+A separate lifetime experiment confirmed three population passes reuse the
+same predecessor cells. After the prior population-call prototype, extending
+reuse with full dependency fingerprints increased the nine-case median from
+9.568 to 15.882 seconds; that version was not adopted. The 86 sampled contexts
+used `KnownIstdOwnerLookup`, including its mutable `_by_owner` cache. Unchecked
+cross-pass reuse remains an optimistic diagnostic, not a valid owner proof.
+The new profile instead motivated the immutable-byte change above. Commands,
+code/input hashes, comparisons, and full parity receipts remain under
+`output/cid-nl-context-lifetime/`; no RAW rerun is needed for these conclusions.
+
 ### 2026-09-08 CID-NL Population And Native-Encoding Prototype
 
 Evidence: `diagnostic_only`; isolated prototype, not an applied product change.
