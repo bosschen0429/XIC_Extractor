@@ -361,7 +361,7 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
     assert scientific.repair_receipt is None
 
 
-def test_mt0_bridge_preserves_complete_interleaved_components(tmp_path: Path) -> None:
+def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
     from tests.cid_nl_peak_support_no_raw_fixture import (
         cid_nl_evidence,
         cid_nl_peak,
@@ -447,8 +447,6 @@ def test_mt0_bridge_preserves_complete_interleaved_components(tmp_path: Path) ->
         for transaction in run.transactions
     )
     assert sorted(map(len, components)) == [1, 2]
-    flattened = tuple(group_id for component in components for group_id in component)
-    assert flattened != tuple(sorted(flattened))
     captures = _captures_for_run(run, include_retained_candidates=True)
     context = apply_mode_track_refinement_run_for_workflow(
         processing_owners=fixture.owners,

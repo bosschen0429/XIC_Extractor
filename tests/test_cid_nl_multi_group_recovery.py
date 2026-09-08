@@ -439,7 +439,11 @@ def _assert_alignment_uses_configured_recovery_groups(
         output_dir=tmp_path / "alignment",
         settings=settings,
         peak_config=peak_config,
-        alignment_config=AlignmentConfig(anchor_min_seed_events=2),
+        # Keep the 7.2-second S3 offset outside the configured RT group;
+        # default continuity tolerances would legitimately include S3.
+        alignment_config=AlignmentConfig(
+            anchor_min_seed_events=2, preferred_rt_sec=2.0, max_rt_sec=5.0
+        ),
     )
     assert sorted(len(group.owners) for group in completed.initial_groups) == [1, 2]
     missing = next(
