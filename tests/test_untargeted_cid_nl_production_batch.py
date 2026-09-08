@@ -698,6 +698,59 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.peak_detection import observations as observation_owner
 
+    mint_captured = production.mint_captured_peak_observation
+    mint_rechecks = []
+    mint_args = []
+
+    def record_captured_mint(capture, *args, **kwargs):
+        counts = {"prepare": 0, "evaluate": 0}
+        real_capture_prepare = capture_owner.prepare_physical_signal
+        real_capture_evaluate = capture_owner.evaluate_physical_peak
+        real_observation_prepare = observation_owner.prepare_physical_signal
+        real_observation_evaluate = observation_owner.evaluate_physical_peak
+
+        def count_capture_prepare(*call_args, **call_kwargs):
+            counts["prepare"] += 1
+            return real_capture_prepare(*call_args, **call_kwargs)
+
+        def count_capture_evaluate(*call_args, **call_kwargs):
+            counts["evaluate"] += 1
+            return real_capture_evaluate(*call_args, **call_kwargs)
+
+        def count_observation_prepare(*call_args, **call_kwargs):
+            counts["prepare"] += 1
+            return real_observation_prepare(*call_args, **call_kwargs)
+
+        def count_observation_evaluate(*call_args, **call_kwargs):
+            counts["evaluate"] += 1
+            return real_observation_evaluate(*call_args, **call_kwargs)
+
+        with monkeypatch.context() as mint_patch:
+            mint_patch.setattr(
+                capture_owner, "prepare_physical_signal", count_capture_prepare
+            )
+            mint_patch.setattr(
+                capture_owner, "evaluate_physical_peak", count_capture_evaluate
+            )
+            mint_patch.setattr(
+                observation_owner,
+                "prepare_physical_signal",
+                count_observation_prepare,
+            )
+            mint_patch.setattr(
+                observation_owner,
+                "evaluate_physical_peak",
+                count_observation_evaluate,
+            )
+            result = mint_captured(capture, *args, **kwargs)
+        mint_args.append((capture, args, kwargs))
+        mint_rechecks.append(counts)
+        return result
+
+    monkeypatch.setattr(
+        production, "mint_captured_peak_observation", record_captured_mint
+    )
+
     completion_checks = {"scientific": [], "post_cell": []}
     scientific_check = (
         result_owner._validate_finalized_scientific_alignment_completion_receipt
@@ -907,6 +960,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert not any(binding_rechecks)
     if method_mode != "intersection":
         assert binding_rechecks
+        assert mint_rechecks
+        assert mint_args
+    assert len(mint_rechecks) == len(mint_args)
+    assert all(
+        counts == {"prepare": 0, "evaluate": 0} for counts in mint_rechecks
+    )
     if family_context:
         assert len(matrix_rows) == 1
         assert len(writer.matrix.cells) == len(sample_stems)
@@ -1038,6 +1097,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     mutable_capture.trace.intensity[-1] += 1.0
     with pytest.raises(capture_owner.SampleLocalCaptureError):
         bind_capture(mutable_capture, **binding_args)
+    with pytest.raises((capture_owner.SampleLocalCaptureError, ValueError)):
+        capture_owner.mint_captured_peak_observation(
+            mutable_capture,
+            processing_owners=captured_batches[0].jobs[0].processing_owners,
+            sample=captured_batches[0].jobs[0].sample,
+        )
     from xic_extractor.peak_detection.search_scope import SearchScopeContractError
 
     changed_answer = evaluate_physical_peak(

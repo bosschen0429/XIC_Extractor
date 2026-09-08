@@ -65,6 +65,36 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Captured Observation Mint Reuses Closed Physical Facts
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The physical branch of `peak_detection.capture.mint_captured_peak_observation`
+shares the capture binder's seal, current trace-content hash and selected
+integration receipt checks, then projects the already computed selection facts.
+The observation owner retains processing/sample/trace/acquisition/integration
+input validation and artifact mint. Public observation mint still performs full
+numerical validation; the nonphysical capture path is unchanged.
+
+Five repeats over the same 128 reached captures reduced mint median from
+0.233861 to 0.063112 seconds, with nonoverlapping ranges. Prepare/evaluate calls
+fell from 128 each to zero; canonical observation payload hashes match. The
+binder control still performs zero reevaluations. Focused capture, observation,
+runtime, adapter and production coverage passed 118 tests, including real writer
+output and rejection after an in-place mutable trace change.
+
+The complete 3,127-child no-RAW CLI pair passed exact Matrix bytes, public
+explanation and SQLite logical parity with only the existing path/attempt
+provenance exclusions. Composition was 168.885 versus 160.760 seconds;
+preparation fell from 65.303 to 57.388 seconds while batch composition remained
+similar. Full-run timing is one sequential pair with uncontrolled host/cache
+variance; repeated micro timing and eliminated calls support the local gain.
+Receipts: `output/cid-nl-preparation-cost/{candidate,mint-reuse}-capture-benchmark.json`,
+`output/cid-nl-resource-optimization/{fresh-decisions,fresh-mint}/` and
+`verification-fresh-decisions-fresh-mint.json`. Revisit if the capture seal,
+trace-content binding or observation contract changes. Runtime-to-composition
+recapture under a new child scope is a separate input boundary; this conclusion
+does not authorize reusing a completed graph across that boundary.
+
 ### 2026-09-09 Group Decisions Reuse Fresh Scientific Owners
 
 **Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
