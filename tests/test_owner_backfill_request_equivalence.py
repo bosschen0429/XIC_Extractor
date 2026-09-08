@@ -1505,9 +1505,13 @@ def _acquisition_source(
 
 def _trace_for_request(request: XICRequest, *, height: float) -> XICTrace:
     center = (request.rt_min + request.rt_max) / 2.0
+    # Baseline context keeps the smoothed peak clear of both trace boundaries.
     return XICTrace.from_arrays(
-        [center - 0.10, center - 0.01, center, center + 0.01, center + 0.10],
-        [0.0, height / 2.0, height, height / 2.0, 0.0],
+        [
+            center + offset
+            for offset in (-0.30, -0.20, -0.10, -0.01, 0.0, 0.01, 0.10, 0.20, 0.30)
+        ],
+        [0.0, 0.0, 0.0, height / 2.0, height, height / 2.0, 0.0, 0.0, 0.0],
     )
 
 

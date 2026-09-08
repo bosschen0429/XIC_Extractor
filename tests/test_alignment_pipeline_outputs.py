@@ -71,7 +71,7 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
     assert metadata["signal_processing_method"] == "gaussian"
     assert metadata["signal_processing_window_points"] == "15"
     assert metadata["physical_signal_formula"] == (
-        "gaussian_raw_minus_asls_raw_positive_v1"
+        "gaussian_raw_minus_nonnegative_asls_raw_positive_v2"
     )
     assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
         "alignment_owner_backfill_peak_fact_provenance_v2"

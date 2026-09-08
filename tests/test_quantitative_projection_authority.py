@@ -158,8 +158,10 @@ def test_package_hold_authority_has_exact_contract() -> None:
     )
     assert authority.consumer_id == _CONSUMER_ID
     assert authority.signal_processing_profile_id == _PROFILE_ID
+    # The pending authority remains bound to its frozen profile; a new runtime
+    # profile does not activate or reseal quantitative projection authority.
     assert (
-        authority.signal_processing_profile_id == DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
+        authority.signal_processing_profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
     )
     assert authority.decision == "HOLD_PENDING_VALIDATION"
     assert authority.requires_existing_registered_write_scope is True
