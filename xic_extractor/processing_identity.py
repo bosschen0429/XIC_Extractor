@@ -10,6 +10,7 @@ import stat
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -83,6 +84,18 @@ def typed_identity_digest(prefix: str, basis_bytes: bytes) -> str:
         )
     if not isinstance(basis_bytes, bytes) or not basis_bytes:
         raise IdentityContractError("identity basis must be non-empty UTF-8 bytes")
+    # Repeated owner checks rebuild equal immutable basis bytes. Reuse only
+    # their canonical-byte proof; callers still rebuild and compare live bases.
+    # The entry/size limits retain at most 16 MiB of basis payloads. Subclasses
+    # keep the original path because they may override decode or equality.
+    if type(basis_bytes) is bytes and len(basis_bytes) <= 4096:
+        digest = _cached_canonical_basis_digest(basis_bytes)
+    else:
+        digest = _canonical_basis_digest(basis_bytes)
+    return f"{prefix}{digest}"
+
+
+def _canonical_basis_digest(basis_bytes: bytes) -> str:
     try:
         parsed = json.loads(basis_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -93,7 +106,10 @@ def typed_identity_digest(prefix: str, basis_bytes: bytes) -> str:
         raise IdentityContractError("identity basis must be a JSON object")
     if canonical_identity_basis_bytes(parsed) != basis_bytes:
         raise IdentityContractError("identity basis bytes are not canonical JSON")
-    return f"{prefix}{hashlib.sha256(basis_bytes).hexdigest()}"
+    return hashlib.sha256(basis_bytes).hexdigest()
+
+
+_cached_canonical_basis_digest = lru_cache(maxsize=4096)(_canonical_basis_digest)
 
 
 def validate_typed_identity_basis(

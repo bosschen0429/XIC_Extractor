@@ -40,6 +40,37 @@ from xic_extractor.sample_metadata import (
 )
 
 
+def test_typed_identity_reuse_preserves_prefix_and_byte_content() -> None:
+    digest = processing_identity_module.typed_identity_digest
+    basis = b'{"value":1}'
+    first = digest("first:", basis)
+
+    assert digest("first:", bytes(bytearray(basis))) == first
+    assert digest("second:", basis) == "second:" + first.removeprefix("first:")
+    assert digest("first:", b'{"value":2}') != first
+    with pytest.raises(IdentityContractError, match="prefix"):
+        digest("missing-colon", basis)
+
+
+@pytest.mark.parametrize(
+    "basis",
+    [
+        b'{ "value":1}',
+        b'{"value":1.0}',
+        b'{"value":1,"value":1}',
+        b'{"value":1e0}',
+    ],
+)
+def test_typed_identity_reuse_does_not_normalize_distinct_bytes(basis) -> None:
+    digest = processing_identity_module.typed_identity_digest
+    integer_id = digest("typed:", b'{"value":1}')
+    if basis == b'{"value":1.0}':
+        assert digest("typed:", basis) != integer_id
+    else:
+        with pytest.raises(IdentityContractError, match="not canonical JSON"):
+            digest("typed:", basis)
+
+
 def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
     source = AcquisitionSourceIdentity(
         acquisition_source_id=(
