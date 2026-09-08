@@ -593,6 +593,15 @@ def compose_untargeted_cid_nl_production_result(
             groups=family_context.mode_tracks,
             sample_assessments=assessments,
             alignment_config=alignment_config,
+            sample_universe=frozenset(
+                sample.metadata.raw_stem
+                for sample in batch.context.processing_owners.sample_resolutions
+            ),
+            injection_order={
+                sample.metadata.raw_stem: sample.metadata.injection_order
+                for sample in batch.context.processing_owners.sample_resolutions
+                if sample.metadata.injection_order is not None
+            },
             recovery_assessments_by_group={
                 (
                     group.group_hypothesis_id,

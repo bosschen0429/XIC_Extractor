@@ -680,10 +680,17 @@ def build_initial_cid_nl_cross_sample_context(
         raise CrossSampleReconciliationContractError(
             "initial CID-NL context requires an exact trajectory policy"
         )
+    batch_samples = processing_owners.sample_resolutions
     family_context, anchors, sample_candidates = bootstrap_cid_nl_initial_population(
         processing_owners=processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=alignment_config,
+        sample_universe=frozenset(sample.metadata.raw_stem for sample in batch_samples),
+        injection_order={
+            sample.metadata.raw_stem: sample.metadata.injection_order
+            for sample in batch_samples
+            if sample.metadata.injection_order is not None
+        },
         drift_lookup=drift_lookup,
         retain_observation_only_candidates=True,
     )
@@ -710,11 +717,29 @@ def build_initial_cid_nl_cross_sample_context(
     predecessors = validate_cross_sample_group_population(
         tuple(identity for identity in identities if identity is not None)
     )
+    continuity_group_by_owner = {
+        owner.owner_id: group.group_hypothesis_id
+        for group in groups
+        if group.evidence.startswith(
+            (
+                "owner_full_batch_continuity;",
+                "owner_injection_trajectory;",
+                "owner_bounded_continuity;",
+            )
+        )
+        for owner in group.owners
+    }
     classified_edges = tuple(
         classify_cross_sample_initial_neighborhood_edge(
             left_owner=owners[left_index],
             right_owner=owners[right_index],
-            context="complete_link",
+            context=(
+                "full_batch_continuity"
+                if owners[left_index].owner_id in continuity_group_by_owner
+                and continuity_group_by_owner[owners[left_index].owner_id]
+                == continuity_group_by_owner.get(owners[right_index].owner_id)
+                else "complete_link"
+            ),
             config=alignment_config,
             drift_lookup=drift_lookup,
         )

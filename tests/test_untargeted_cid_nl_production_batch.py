@@ -2042,6 +2042,116 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     assert decisions.cell(cluster_id, "Hold").blank_reason != ""
 
 
+@pytest.mark.parametrize("supported_samples", [2, 3])
+def test_production_initial_groups_use_complete_canonical_batch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    supported_samples: int,
+) -> None:
+    from xic_extractor.alignment.cell_observations import CellObservationContractError
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_production_batch as production,
+    )
+
+    stems = ("Early", "Middle", "Late")
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    settings = replace(_settings(), neutral_loss_profile=None)
+    peak_config = _peak_config(tmp_path)
+    raws = {path: _FakeRaw((8.0 + index * 0.1,)) for index, path in enumerate(paths)}
+    candidates = {}
+    for index, path in enumerate(paths):
+        path.write_bytes(f"canonical-batch:{path.stem}".encode())
+        if index >= supported_samples:
+            raws[path].intensity[:] = 0
+        candidates[path.stem] = _current_candidates(
+            raws[path], raw_file=path, settings=settings, peak_config=peak_config
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(stems, start=1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:canonical-batch",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
+        ),
+    )
+    assert runtime.succeeded
+    initial_contexts = []
+    initial_edges = []
+    cell_contexts = []
+    build_context = production.build_initial_cid_nl_cross_sample_context
+    compose_cells = production.compose_cid_nl_predecessor_cells
+
+    def retain_context(**kwargs):
+        result = build_context(**kwargs)
+        initial_contexts.append(result[0])
+        initial_edges.extend(result[2])
+        return result
+
+    monkeypatch.setattr(
+        production, "build_initial_cid_nl_cross_sample_context", retain_context
+    )
+
+    def retain_cells(**kwargs):
+        cells = compose_cells(**kwargs)
+        cell_contexts.extend(cell.group_context for cell in cells)
+        return cells
+
+    monkeypatch.setattr(production, "compose_cid_nl_predecessor_cells", retain_cells)
+    compose_untargeted_cid_nl_production_result(
+        batch, runtime, alignment_config=AlignmentConfig()
+    )
+    (context,) = initial_contexts
+    (group,) = context.mode_tracks
+    assert {owner.sample_stem for owner in group.owners} == set(
+        stems[:supported_samples]
+    )
+    policy = (
+        "owner_full_batch_continuity"
+        if supported_samples == len(stems)
+        else "owner_injection_trajectory"
+    )
+    assert group.evidence.startswith(f"{policy};")
+    assert initial_edges
+    assert all(edge.disposition == "eligible" for edge in initial_edges)
+    assert all(
+        edge.initial_evidence is not None
+        and edge.initial_evidence.seed_support_level == "moderate"
+        and edge.initial_evidence.score == 45
+        for edge in initial_edges
+    )
+    assert cell_contexts
+    for cell_context in cell_contexts:
+        assert cell_context.sample_universe == frozenset(stems)
+        assert dict(cell_context.injection_order) == dict(zip(stems, (1, 2, 3)))
+        if supported_samples == 2:
+            # Missing or duplicate order cannot reproduce an injection-trajectory
+            # group; the owner falls back to its different bounded policy.
+            for order in (None, tuple((stem, 1) for stem in stems)):
+                with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
+                    replace(cell_context, injection_order=order)
+        else:
+            # The full-batch policy does not require an injection trajectory.
+            replace(cell_context, injection_order=None)
+
+
 def _assert_conservative_coverage_handoff(
     completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
 ) -> None:

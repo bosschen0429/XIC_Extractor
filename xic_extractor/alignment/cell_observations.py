@@ -145,8 +145,27 @@ class CidNlCellGroupContext:
     supports: tuple[CidNlCellGroupSupport, ...]
     config: AlignmentConfig
     processing_attempt: ProcessingAttemptIdentity
+    sample_universe: frozenset[str] | None = None
+    injection_order: tuple[tuple[str, int], ...] | None = None
 
     def __post_init__(self) -> None:
+        if self.sample_universe is not None and not isinstance(
+            self.sample_universe, frozenset
+        ):
+            raise CellObservationContractError(
+                "group sample universe must be immutable"
+            )
+        if self.injection_order is not None and (
+            not isinstance(self.injection_order, tuple)
+            or any(
+                not isinstance(item, tuple) or len(item) != 2
+                for item in self.injection_order
+            )
+            or len(dict(self.injection_order)) != len(self.injection_order)
+        ):
+            raise CellObservationContractError(
+                "group injection order must be immutable and unique"
+            )
         if not isinstance(self.group, CrossSamplePeakGroupHypothesis) or not (
             self.group.owner_ids
         ):
@@ -205,6 +224,10 @@ class CidNlCellGroupContext:
         expected_groups = construct_cross_sample_peak_group_hypotheses(
             expected_owners,
             config=self.config,
+            sample_universe=self.sample_universe,
+            injection_order=(
+                None if self.injection_order is None else dict(self.injection_order)
+            ),
         )
         validate_cross_sample_peak_group_identity(self.group, require_canonical=True)
         # Public family ordinals belong to the complete population's presentation.
@@ -2640,6 +2663,8 @@ def compose_cid_nl_predecessor_cells(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ],
     alignment_config: AlignmentConfig,
+    sample_universe: frozenset[str] | None = None,
+    injection_order: Mapping[str, int] | None = None,
     recovery_assessments_by_group: Mapping[tuple[str, str], CidNlMethodAssessmentRef]
     | None = None,
 ) -> tuple[CellObservationRef, ...]:
@@ -2672,6 +2697,12 @@ def compose_cid_nl_predecessor_cells(
             ),
             config=alignment_config,
             processing_attempt=processing_owners.attempt,
+            sample_universe=sample_universe,
+            injection_order=(
+                None
+                if injection_order is None
+                else tuple(sorted(injection_order.items()))
+            ),
         )
         for group in groups
     )

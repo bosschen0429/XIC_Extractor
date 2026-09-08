@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
@@ -137,6 +139,8 @@ def bootstrap_cid_nl_initial_population(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ],
     alignment_config: AlignmentConfig,
+    sample_universe: frozenset[str] | None = None,
+    injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     retain_observation_only_candidates: bool = False,
 ) -> tuple[
@@ -227,6 +231,8 @@ def bootstrap_cid_nl_initial_population(
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
         drift_lookup=drift_lookup,
     )
     if not provisional_groups or any(track.review_only for track in provisional_groups):
