@@ -142,10 +142,8 @@ PACKAGING_SOURCE_DIRECTORIES = (
 def authority_packaging_source() -> Iterator[Path]:
     task_output_root = PROJECT_ROOT / "output"
     task_output_root.mkdir(exist_ok=True)
-    temp_root = (
-        task_output_root
-        / f"xic-quantitative-projection-packaging-artifacts-{uuid.uuid4().hex}"
-    )
+    # Leave room for isolated build environments and native extension paths.
+    temp_root = task_output_root / f"pkg-{uuid.uuid4().hex}"
     temp_root.mkdir()
     try:
         source_root = temp_root / "source"
@@ -164,9 +162,7 @@ def authority_packaging_source() -> Iterator[Path]:
     finally:
         resolved_temp_root = temp_root.resolve()
         assert resolved_temp_root.parent == task_output_root.resolve()
-        assert resolved_temp_root.name.startswith(
-            "xic-quantitative-projection-packaging-artifacts-"
-        )
+        assert resolved_temp_root.name.startswith("pkg-")
         shutil.rmtree(resolved_temp_root)
 
 
@@ -356,7 +352,7 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
     artifact_root = (
         authority_packaging_source.parent / "public-activation-wheel-artifacts"
     )
-    uv_cache_root = authority_packaging_source.parent / "public-activation-uv-cache"
+    uv_cache_root = authority_packaging_source.parent / "uv-public"
     artifact_root.mkdir()
     _run_packaging_command(
         (
