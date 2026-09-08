@@ -301,7 +301,10 @@ def _untarget_completion_state(
                 projection.pre_cell_projection.processing_request,
             ),
         ),
-        retained_owner_digest(projection.rows),
+        retained_owner_digest(
+            projection.rows,
+            identity_only=(projection.pre_cell_projection.processing_request,),
+        ),
     )
 
 
