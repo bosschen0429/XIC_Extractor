@@ -610,6 +610,11 @@ def _build_production_composition_inputs(
         not in MS1_FEATURE_BACKED_STATES
         or method_subject_id in unsupported_subjects
     )
+    # Partitioning changes execution ownership. Scientific composition keeps
+    # the global request scope and closes the exact subject views below.
+    request_batch = cast(
+        UntargetedCidNlMethodSubjectBatch, batch.context.method_subject
+    )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         request=batch.context.processing_owners.request,
@@ -624,12 +629,12 @@ def _build_production_composition_inputs(
                 provider_id=CID_NL_PROVIDER_ID,
                 method_subject_id=subject.method_subject_id,
             )
-            for subject in batch.subject_batch.subjects
+            for subject in request_batch.subjects
         ),
         declared_candidate_ids=tuple(
             candidate_id
             for candidate_id, _method_subject_id in (
-                batch.subject_batch.candidate_memberships
+                request_batch.candidate_memberships
             )
         ),
         capture_bindings=bindings,

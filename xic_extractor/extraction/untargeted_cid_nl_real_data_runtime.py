@@ -1022,7 +1022,7 @@ def _prepare_runtime_work(
             if acquisition is not None:
                 observed_acquisitions.append(acquisition)
             report_phase("partition_seal", completed, len(states))
-            if progress_callback is not None:
+            if progress_callback is not None and partition_key is None:
                 progress_callback(
                     {
                         "event": "sample_terminal",

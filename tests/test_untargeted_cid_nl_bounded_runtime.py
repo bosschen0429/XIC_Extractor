@@ -17,6 +17,7 @@ from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidate
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
     _discovery_receipts,
+    _FakeRaw,
     _install_runtime_raws,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -50,6 +51,27 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
         raw, sample_candidates = _nearby_subject_candidates(
             path, settings=settings, peak_config=peak_config
         )
+        third_raw = _FakeRaw(
+            (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
+        )
+        third_scan_number = raw.scans[-1].scan_number + 1
+        third_raw.scans = (
+            replace(
+                third_raw.scans[0],
+                scan_number=third_scan_number,
+                rt=float(raw.rt[third_scan_number - 1]),
+            ),
+        )
+        third_candidates = _current_candidates(
+            third_raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
+        sample_candidates = tuple(
+            sorted(
+                (*sample_candidates, *third_candidates),
+                key=lambda item: item.candidate_id,
+            )
+        )
+        raw.scans = (*raw.scans, *third_raw.scans)
         if scenario == "unsupported":
             raw.intensity[:] = 0.0
             sample_candidates = _current_candidates(
@@ -105,14 +127,16 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
         reference_path = tmp_path / "reference.xlsx"
         workbook.save(reference_path)
         reference = read_known_istd_reference(reference_path)
-    assert len(plan.subject_batch.subjects) == 2
+    assert len(plan.subject_batch.subjects) == 3
     return plan, reference
 
 
+@pytest.mark.parametrize("subjects_per_partition", [1, 2])
 @pytest.mark.parametrize("scenario", ["positive", "recovery", "unsupported", "istd"])
 def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
-    tmp_path: Path, monkeypatch, scenario: str
+    tmp_path: Path, monkeypatch, scenario: str, subjects_per_partition: int
 ):
+    import xic_extractor.diagnostics.timing as timing_owner
     from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
         execute_bounded_untargeted_cid_nl,
@@ -133,21 +157,31 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     progress_events = []
     live_path = tmp_path / "alignment-live.json"
     recorder = TimingRecorder("alignment", live_output_path=live_path)
+    monkeypatch.setattr(timing_owner, "perf_counter", lambda: 1.0)
+    writes = []
+    write_live = recorder._write_live
+
+    def record_write():
+        writes.append(dict(recorder._heartbeat))
+        write_live()
+
+    monkeypatch.setattr(recorder, "_write_live", record_write)
 
     def report_progress(event):
         recorder.heartbeat_event(event)
         progress_events.append(event)
 
-    bounded = execute_bounded_untargeted_cid_nl(
-        plan,
-        output_dir=tmp_path / "bounded-output",
-        alignment_config=config,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
-        known_istd_reference=reference,
-        progress_callback=report_progress,
-        max_partition_jobs=len(plan.context.samples),
-    )
+    with recorder.stage("alignment.untargeted_cid_nl_runtime"):
+        bounded = execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=tmp_path / "bounded-output",
+            alignment_config=config,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            known_istd_reference=reference,
+            progress_callback=report_progress,
+            max_partition_jobs=subjects_per_partition * len(plan.context.samples),
+        )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
     assert type(bounded.application_result.children) is ImmutableSequence
     assert project_completed_untarget_batch_writer_inputs(bounded).matrix == (
@@ -197,25 +231,29 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             "batch_completed",
         }
     ]
+    partition_count = (
+        len(plan.subject_batch.subjects) + subjects_per_partition - 1
+    ) // subjects_per_partition
     assert partition_stages == [
-        ("partition_start", 0),
-        ("partition_compose", 0),
-        ("partition_released", 1),
-        ("partition_start", 1),
-        ("partition_compose", 1),
-        ("partition_released", 2),
-        ("global_closure", 2),
-        ("batch_completed", 2),
-    ]
+        event
+        for index in range(partition_count)
+        for event in (
+            ("partition_start", index),
+            ("partition_compose", index),
+            ("partition_released", index + 1),
+        )
+    ] + [("global_closure", partition_count), ("batch_completed", partition_count)]
+    seal_writes = [row for row in writes if row.get("stage") == "partition_seal"]
+    assert len(seal_writes) <= 2 * partition_count
     heartbeat = json.loads(live_path.read_text(encoding="utf-8"))["heartbeat"]
     assert heartbeat["stage"] == "batch_completed"
-    assert heartbeat["completed"] == heartbeat["total"] == 2
+    assert heartbeat["completed"] == heartbeat["total"] == partition_count
     eager_manifest = eager_runtime.finalization.coordinator.state.runtime.manifest
     assert len(eager_manifest.work_unit_keys) == len(batch.jobs)
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
     assert len(snapshot.manifest_work_unit_keys) == (
-        len(plan.subject_batch.subjects) * len(plan.context.samples) * 2
+        partition_count * len(plan.context.samples) * 2
     )
     if scenario == "unsupported":
         assert not actual.children
