@@ -238,8 +238,8 @@ def _validate_untargeted_cid_nl_alignment_options(
 ) -> None:
     """Reject legacy Alignment options unsupported by the retained CID-NL route."""
     unsupported: list[str] = []
-    if raw_workers != 1:
-        unsupported.append("raw_workers")
+    if type(raw_workers) is not int or raw_workers < 1:
+        raise ValueError("raw_workers must be a positive integer")
     if raw_xic_batch_size != 1:
         unsupported.append("raw_xic_batch_size")
     if owner_backfill_xic_backend != "raw":
@@ -329,6 +329,8 @@ def _run_untargeted_cid_nl_alignment(
             known_istd_reference=known_istd_reference,
             timing_recorder=timing_recorder,
             signal_processing_profile=signal_processing_profile,
+            raw_workers=raw_workers,
+            should_cancel=should_cancel,
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
@@ -417,6 +419,7 @@ def _run_untargeted_cid_nl_alignment(
                 if known_istd_reference is None
                 else known_istd_reference.provenance
             ),
+            progress_callback=timing_recorder.heartbeat_event,
         )
     return replace(
         outputs,

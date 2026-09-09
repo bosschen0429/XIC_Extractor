@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from dataclasses import fields, replace
 from pathlib import Path
@@ -44,6 +45,11 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
+from xic_extractor.diagnostics.process_memory import (
+    ProcessMemorySample,
+    ProcessTreeMemorySampler,
+)
+from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     build_untargeted_cid_nl_production_batch,
@@ -1030,7 +1036,27 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         peak_config=peak_config,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         signal_processing_profile=profile,
+        timing_recorder=TimingRecorder.disabled(
+            "alignment",
+            process_memory_sampler=ProcessTreeMemorySampler(
+                sample_reader=lambda: ProcessMemorySample(123456, 654321, "measured"),
+            ),
+        ),
     )
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "alignment" / ".cid_nl_runtime.json",
+        "untargeted-cid-nl-alignment-v1",
+    ).read_optional()
+    assert marker is not None and marker.observability_ledger_bytes is not None
+    persisted_ledger = json.loads(marker.observability_ledger_bytes)
+    rss = [
+        metric
+        for metric in persisted_ledger["metrics"]
+        if metric["name"] == "process_tree_peak_rss_bytes"
+    ]
+    assert len(rss) == 1
+    assert rss[0]["availability"] == "measured"
+    assert rss[0]["value"] == 123456
     _assert_jobs_match_direct_construction(captured_batches[0])
     writer = project_completed_untarget_batch_writer_inputs(completed)
     from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv

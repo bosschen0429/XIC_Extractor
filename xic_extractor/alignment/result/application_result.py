@@ -323,8 +323,8 @@ class FinalizedUntargetBatchApplicationResult:
     def canonical_samples(
         self,
     ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-        if self.children:
-            return self.children[0].canonical_samples
+        # Batch closure already checked every child's exact sample universe.
+        # Sample metadata does not require restoring a stored scientific child.
         return tuple(sorted(self.scope.samples, key=_sample_sort_key))
 
     @property

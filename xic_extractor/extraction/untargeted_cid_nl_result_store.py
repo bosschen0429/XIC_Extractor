@@ -85,6 +85,7 @@ class PartitionResultStore:
         }
         self._partitions: list[SealedPartition] = []
         self._field_lengths: list[dict[str, int]] = []
+        self._field_records: list[dict[str, tuple[tuple[int, int], ...]]] = []
         self._keys: set[str] = set()
         self._sealed = False
 
@@ -112,6 +113,8 @@ class PartitionResultStore:
             if is_dataclass(payload) and not isinstance(payload, type)
             else {}
         )
+        if not is_dataclass(payload) or isinstance(payload, type):
+            raise TypeError("partition payload requires a dataclass result")
         index = len(self._partitions)
         path = self._path(index)
         temporary = path.with_suffix(".tmp")
@@ -123,7 +126,29 @@ class PartitionResultStore:
         try:
             with stream:
                 writer = _HashingWriter(stream)
-                _OwnerPickler(writer, self._shared_ids).dump(payload)
+                # The small header has no child graphs. Independent records let
+                # consumers restore only the facts they actually consume.
+                header = (
+                    type(payload),
+                    {
+                        item.name: getattr(payload, item.name)
+                        for item in fields(payload)
+                        if item.name not in lengths
+                    },
+                )
+                _OwnerPickler(writer, self._shared_ids).dump(header)
+                records = {}
+                for name in lengths:
+                    values = getattr(payload, name)
+                    # Children need independent identity-safe graph restoration;
+                    # exclusions are addressed by canonical candidate position.
+                    width = 1 if name in {"children", "excluded_candidates"} else 2048
+                    entries = []
+                    for start in range(0, len(values), width):
+                        chunk = values[start : start + width]
+                        entries.append((writer.size_bytes, len(chunk)))
+                        _OwnerPickler(writer, self._shared_ids).dump(chunk)
+                    records[name] = tuple(entries)
             entry = SealedPartition(
                 index, partition_key, writer.digest.hexdigest(), writer.size_bytes
             )
@@ -134,6 +159,7 @@ class PartitionResultStore:
             temporary.unlink(missing_ok=True)
         self._partitions.append(entry)
         self._field_lengths.append(lengths)
+        self._field_records.append(records)
         self._keys.add(partition_key)
         return entry
 
@@ -141,7 +167,44 @@ class PartitionResultStore:
         if type(index) is not int or not 0 <= index < len(self._partitions):
             raise IndexError("partition index out of range")
         with self._path(self._partitions[index].index).open("rb") as stream:
-            return _OwnerUnpickler(stream, self._shared_objects).load()
+            payload_type, values = _OwnerUnpickler(stream, self._shared_objects).load()
+            for name, records in self._field_records[index].items():
+                values[name] = tuple(
+                    item
+                    for offset, length in records
+                    for item in self._read_record(stream, offset, length)
+                )
+        payload = object.__new__(payload_type)
+        for name, value in values.items():
+            object.__setattr__(payload, name, value)
+        return payload
+
+    def _read_record(self, stream: BinaryIO, offset: int, length: int) -> tuple:
+        stream.seek(offset)
+        values = _OwnerUnpickler(stream, self._shared_objects).load()
+        if type(values) is not tuple or len(values) != length:
+            raise ValueError("stored result record changed its sealed cardinality")
+        return values
+
+    def read_selected(
+        self, index: int, field_name: str, positions: tuple[int, ...]
+    ) -> tuple[Any, ...]:
+        """Read selected elements of an independently addressable owner field."""
+        if type(index) is not int or not 0 <= index < len(self._partitions):
+            raise IndexError("partition index out of range")
+        if field_name not in {"children", "excluded_candidates"}:
+            raise ValueError("field does not have individually addressable results")
+        records = self._field_records[index][field_name]
+        if any(
+            type(position) is not int or not 0 <= position < len(records)
+            for position in positions
+        ):
+            raise IndexError("field position out of range")
+        with self._path(index).open("rb") as stream:
+            return tuple(
+                self._read_record(stream, *records[position])[0]
+                for position in positions
+            )
 
     def seal(self) -> None:
         self._sealed = True
@@ -159,9 +222,15 @@ class PartitionResultStore:
                 "sequence requires a public tuple field in every partition"
             )
 
-        def load_chunk(index: int) -> tuple[Any, ...]:
-            return getattr(self.read(index), field_name)
-
-        return ImmutableSequence(
-            tuple(lengths[field_name] for lengths in self._field_lengths), load_chunk
+        chunks = tuple(
+            (partition, offset, length)
+            for partition, fields_by_name in enumerate(self._field_records)
+            for offset, length in fields_by_name[field_name]
         )
+
+        def load_chunk(index: int) -> tuple[Any, ...]:
+            partition, offset, length = chunks[index]
+            with self._path(partition).open("rb") as stream:
+                return self._read_record(stream, offset, length)
+
+        return ImmutableSequence(tuple(length for _, _, length in chunks), load_chunk)

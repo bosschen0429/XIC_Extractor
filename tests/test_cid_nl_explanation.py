@@ -5,7 +5,7 @@ import json
 import sqlite3
 import subprocess
 import sys
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 
 import pytest
 
@@ -22,6 +22,10 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raws,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.result.application_result import (
+    UntargetBatchApplicationResultRequest,
+    finalize_alignment_result,
+)
 from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
@@ -41,6 +45,8 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     compose_untargeted_cid_nl_production_result,
     execute_untargeted_cid_nl_production_batch,
 )
+from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -269,6 +275,177 @@ def test_partial_write_never_publishes_complete_report(tmp_path):
     with pytest.raises(OSError, match="interrupted write"):
         write_explanation_report(
             report, summary={}, candidates=interrupted(), records={}, links=()
+        )
+    assert not report.exists()
+    assert not report.with_name(report.name + ".tmp").exists()
+
+
+@dataclass(frozen=True)
+class _AssessmentBatch:
+    method_assessments: tuple
+
+
+def test_exclusions_load_once_with_restored_duplicate_assessments(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.diagnostics.timing import TimingRecorder
+
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "all_hold"
+    )
+    kwargs = dict(
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    original = write_cid_nl_explanation(
+        tmp_path / "original.sqlite", completed=completed, **kwargs
+    )
+    store = PartitionResultStore(tmp_path / "assessment-store", ())
+    store.append("one", _AssessmentBatch(completed.method_assessments))
+    restored = store.read(0).method_assessments
+    assert restored[0] is not completed.method_assessments[0]
+    assert restored[0] == completed.method_assessments[0]
+    application = completed.application_result
+    excluded = tuple(application.excluded_candidates)
+    loads = 0
+
+    def load_exclusions(_index):
+        nonlocal loads
+        loads += 1
+        return excluded
+
+    application = finalize_alignment_result(
+        UntargetBatchApplicationResultRequest(
+            scope=application.scope,
+            processing_request=application.processing_request,
+            processing_attempt=application.processing_attempt,
+            children=application.children,
+            excluded_candidates=ImmutableSequence((len(excluded),), load_exclusions),
+        )
+    )
+    duplicated = replace(
+        completed,
+        application_result=application,
+        method_assessments=(*completed.method_assessments, *restored),
+    )
+    loads = 0
+    events = []
+    live = tmp_path / "writer-live.json"
+    recorder = TimingRecorder("alignment", live_output_path=live)
+
+    def progress(event):
+        events.append(event)
+        recorder.heartbeat_event(event)
+
+    with recorder.stage("alignment.write_cid_nl_explanation"):
+        report = write_cid_nl_explanation(
+            tmp_path / "duplicated.sqlite",
+            completed=duplicated,
+            progress_callback=progress,
+            **kwargs,
+        )
+    assert loads == 1
+    assert read_cid_nl_explanation(report) == read_cid_nl_explanation(original)
+    assert any(event["stage"] == "alignment.explanation.exclusions" for event in events)
+    assert [event["records_written"] for event in events] == sorted(
+        event["records_written"] for event in events
+    )
+    heartbeat = json.loads(live.read_text())["heartbeat"]
+    assert heartbeat["stage"] == "alignment.explanation.finalizing"
+    assert heartbeat["records_written"] == sum(
+        read_cid_nl_explanation(report)["record_counts"].values()
+    )
+    for values in candidates.values():
+        for candidate in values:
+            assert read_cid_nl_explanation(
+                report, candidate_id=candidate.candidate_id
+            ) == read_cid_nl_explanation(original, candidate_id=candidate.candidate_id)
+
+
+@dataclass(frozen=True)
+class _ChildBatch:
+    children: tuple
+
+
+@pytest.mark.parametrize("scenario", ("positive", "review_only"))
+def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, scenario):
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, scenario
+    )
+    application = completed.application_result
+    kwargs = dict(
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    original = write_cid_nl_explanation(
+        tmp_path / "memory.sqlite", completed=completed, **kwargs
+    )
+    store = PartitionResultStore(
+        tmp_path / "child-store",
+        (
+            application.processing_request,
+            application.processing_attempt,
+            *application.canonical_samples,
+        ),
+    )
+    store.append("one", _ChildBatch(tuple(application.children)))
+    store.seal()
+    loads = 0
+    read_record = store._read_record
+
+    def counted_read(*args):
+        nonlocal loads
+        loads += 1
+        return read_record(*args)
+
+    monkeypatch.setattr(store, "_read_record", counted_read)
+    restored = finalize_alignment_result(
+        UntargetBatchApplicationResultRequest(
+            scope=application.scope,
+            processing_request=application.processing_request,
+            processing_attempt=application.processing_attempt,
+            children=store.sequence("children"),
+            excluded_candidates=application.excluded_candidates,
+        )
+    )
+    loads = 0
+    report = write_cid_nl_explanation(
+        tmp_path / "stored.sqlite",
+        completed=replace(completed, application_result=restored),
+        **kwargs,
+    )
+    assert loads == len(application.children), (loads, len(application.children))
+    assert read_cid_nl_explanation(report) == read_cid_nl_explanation(original)
+    for values in candidates.values():
+        for candidate in values:
+            assert read_cid_nl_explanation(
+                report, candidate_id=candidate.candidate_id
+            ) == read_cid_nl_explanation(original, candidate_id=candidate.candidate_id)
+
+
+def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypatch):
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "all_hold"
+    )
+    report = tmp_path / "interrupted.sqlite"
+
+    def interrupted(event):
+        if event["stage"] == "alignment.explanation.method_assessments":
+            raise OSError("progress unavailable")
+
+    with pytest.raises(OSError, match="progress unavailable"):
+        write_cid_nl_explanation(
+            report,
+            completed=completed,
+            writer_inputs=writer,
+            candidates_by_sample=candidates,
+            matrix_path=matrix,
+            alignment_config=config,
+            progress_callback=interrupted,
         )
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()

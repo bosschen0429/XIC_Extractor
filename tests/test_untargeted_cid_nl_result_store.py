@@ -10,11 +10,24 @@ import pytest
 
 from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
 
+_restored_children = []
+
+
+def _restore_child(value):
+    _restored_children.append(value)
+    return value
+
+
+class _ObservedChild:
+    def __reduce__(self):
+        return _restore_child, ("scientific-child",)
+
 
 @dataclass(frozen=True)
 class Payload:
     children: tuple
     method_assessments: tuple = ()
+    excluded_candidates: tuple = ()
     label: str = "partition"
 
 
@@ -63,6 +76,24 @@ def test_empty_sealed_store_has_empty_sequence(tmp_path):
     store = PartitionResultStore(tmp_path, ())
     store.seal()
     assert tuple(store.sequence("children")) == ()
+
+
+def test_diagnostic_field_read_does_not_restore_unrelated_scientific_children(tmp_path):
+    store = PartitionResultStore(tmp_path, ())
+    store.append(
+        "one", Payload((_ObservedChild(),), tuple(range(5000)), tuple(range(5000)))
+    )
+    store.seal()
+    _restored_children.clear()
+    values = store.sequence("method_assessments")
+    assert tuple(values) == tuple(range(5000))
+    assert values[2048] == 2048
+    assert store.read_selected(0, "excluded_candidates", (4999, 0, 2048)) == (
+        4999,
+        0,
+        2048,
+    )
+    assert _restored_children == []
 
 
 def test_append_does_not_retain_payload_and_reads_do_not_cache(tmp_path):

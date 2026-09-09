@@ -26,6 +26,7 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 )
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     is_pure_single_provider_cid_nl,
@@ -74,6 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         _validate_untargeted_cid_nl_alignment_options(
             signal_processing_profile=signal_processing_profile,
+            raw_workers=args.raw_workers,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -166,6 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     timing_recorder = (
         TimingRecorder(
             "alignment",
+            process_memory_sampler=ProcessTreeMemorySampler(),
             live_output_path=(
                 args.timing_live_output.resolve()
                 if args.timing_live_output is not None
@@ -178,12 +181,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     timing_kwargs = (
         {"timing_recorder": timing_recorder} if timing_recorder is not None else {}
     )
+    if timing_recorder is not None:
+        timing_recorder.start_process_memory()
     try:
         run_kwargs = {
             "discovery_batch_index": discovery_batch_index,
             "raw_dir": raw_dir,
             "dll_dir": dll_dir,
             "output_dir": output_dir,
+            "raw_workers": args.raw_workers,
             "alignment_config": recipe.alignment_config,
             "peak_config": _peak_config(
                 raw_dir,
@@ -240,6 +246,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    finally:
+        if timing_recorder is not None:
+            timing_recorder.stop_process_memory(scope="foreground")
 
     if outputs.workbook is not None:
         print(f"Alignment workbook: {outputs.workbook}")
@@ -332,6 +341,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Required built-in pure CID-NL preset name or TOML path. Use "
             "dna_dr for the DNA CID-NL recipe."
+        ),
+    )
+    parser.add_argument(
+        "--raw-workers",
+        type=_positive_int,
+        default=1,
+        help=(
+            "Concurrent CID-NL partitions sharing the bounded fine-job budget "
+            "(default: 1)."
         ),
     )
     parser.add_argument(

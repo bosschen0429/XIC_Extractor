@@ -8,6 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter, sleep
 
+from xic_extractor.diagnostics.process_memory import (
+    ProcessMemoryCollector,
+    ProcessMemoryPeak,
+    ProcessTreeMemorySampler,
+)
+
 JsonMetric = str | int | float | bool | None
 TimingObserver = Callable[[Mapping[str, object]], None]
 
@@ -45,6 +51,7 @@ class TimingRecorder:
         live_history_limit: int = 32,
         live_observation_limit: int = 64,
         instrument_writers: bool = False,
+        process_memory_sampler: ProcessMemoryCollector | None = None,
         timer: Callable[[], float] = perf_counter,
     ) -> None:
         if live_history_limit < 1 or live_observation_limit < 1:
@@ -56,6 +63,9 @@ class TimingRecorder:
         self.live_history_limit = live_history_limit
         self.live_observation_limit = live_observation_limit
         self.instrument_writers = instrument_writers
+        self._process_memory_sampler = (
+            process_memory_sampler or ProcessTreeMemorySampler()
+        )
         self._timer = timer
         self._records: list[TimingRecord] = []
         self._exclusive_elapsed: list[float | None] = []
@@ -71,9 +81,15 @@ class TimingRecorder:
         cls,
         pipeline: str,
         *,
+        process_memory_sampler: ProcessMemoryCollector | None = None,
         timer: Callable[[], float] = perf_counter,
     ) -> TimingRecorder:
-        return cls(pipeline, enabled=False, timer=timer)
+        return cls(
+            pipeline,
+            enabled=False,
+            process_memory_sampler=process_memory_sampler,
+            timer=timer,
+        )
 
     @property
     def records(self) -> tuple[TimingRecord, ...]:
@@ -82,6 +98,45 @@ class TimingRecorder:
     @property
     def measurement_observations(self) -> tuple[dict[str, object], ...]:
         return tuple(dict(row) for row in self._measurement_observations)
+
+    def start_process_memory(self) -> None:
+        self._process_memory_sampler.start()
+
+    def stop_process_memory(self, *, scope: str) -> ProcessMemoryPeak:
+        peak = self._process_memory_sampler.stop()
+        self._observe_process_memory_peak(peak, scope=scope)
+        return peak
+
+    @contextmanager
+    def process_memory_scope(self, scope: str) -> Iterator[ProcessMemoryPeak]:
+        peak: ProcessMemoryPeak | None = None
+        try:
+            with self._process_memory_sampler.scope() as peak:
+                yield peak
+        finally:
+            if peak is not None:
+                self._observe_process_memory_peak(peak, scope=scope)
+
+    def _observe_process_memory_peak(
+        self,
+        peak: ProcessMemoryPeak,
+        *,
+        scope: str,
+    ) -> None:
+        for metric, value in (
+            ("process_tree_sampled_peak_rss_bytes", peak.rss_bytes),
+            ("process_tree_sampled_peak_private_bytes", peak.private_bytes),
+        ):
+            self.observe(
+                metric,
+                value=value,
+                scope=scope,
+                unit="bytes",
+                aggregation="max",
+                source=peak.source,
+                availability=peak.availability,
+                reason=peak.reason,
+            )
 
     def record(
         self,

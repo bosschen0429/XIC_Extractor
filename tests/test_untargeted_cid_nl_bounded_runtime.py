@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from threading import Barrier, Event, Lock, get_ident
+from time import perf_counter, sleep
 
 import pytest
 from openpyxl import Workbook
@@ -18,6 +20,7 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,
     _discovery_receipts,
     _FakeRaw,
+    _FakeThermoRaw,
     _install_runtime_raws,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -27,6 +30,10 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
+from xic_extractor.execution_runtime_finalization import (
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceOpenOutcome,
+)
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     compose_untargeted_cid_nl_production_result,
@@ -132,9 +139,14 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
 
 
 @pytest.mark.parametrize("subjects_per_partition", [1, 2])
+@pytest.mark.parametrize("raw_workers", [1, 2])
 @pytest.mark.parametrize("scenario", ["positive", "recovery", "unsupported", "istd"])
 def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
-    tmp_path: Path, monkeypatch, scenario: str, subjects_per_partition: int
+    tmp_path: Path,
+    monkeypatch,
+    scenario: str,
+    subjects_per_partition: int,
+    raw_workers: int,
 ):
     import xic_extractor.diagnostics.timing as timing_owner
     from xic_extractor.diagnostics.timing import TimingRecorder
@@ -143,6 +155,16 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     )
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+
+    coordinator_thread = get_ident()
+    warm_threads = []
+    monkeypatch.setattr(
+        bounded_owner,
+        "_ensure_assemblies_loaded",
+        lambda *_args: warm_threads.append(get_ident()),
+        raising=False,
+    )
     config = AlignmentConfig(anchor_min_seed_events=1)
     batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
     eager_runtime = execute_untargeted_cid_nl_production_batch(
@@ -168,6 +190,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     monkeypatch.setattr(recorder, "_write_live", record_write)
 
     def report_progress(event):
+        assert get_ident() == coordinator_thread
         recorder.heartbeat_event(event)
         progress_events.append(event)
 
@@ -180,9 +203,13 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             recovery_marker=marker,
             known_istd_reference=reference,
             progress_callback=report_progress,
-            max_partition_jobs=subjects_per_partition * len(plan.context.samples),
+            max_partition_jobs=(
+                subjects_per_partition * len(plan.context.samples) * raw_workers
+            ),
+            raw_workers=raw_workers,
         )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
+    assert warm_threads == ([coordinator_thread] if raw_workers > 1 else [])
     assert type(bounded.application_result.children) is ImmutableSequence
     assert project_completed_untarget_batch_writer_inputs(bounded).matrix == (
         project_completed_untarget_batch_writer_inputs(eager).matrix
@@ -342,4 +369,230 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert snapshot.processing_attempt_id == (
         plan.context.processing_owners.attempt.processing_attempt_id
+    )
+
+
+@pytest.mark.parametrize("managed_call", [False, True])
+def test_parallel_partitions_overlap_with_one_job_budget_and_writer(
+    tmp_path: Path, monkeypatch, managed_call: bool
+):
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+
+    if managed_call:
+        pytest.importorskip("clr")
+        from System.Threading import Thread
+
+        def pause():
+            Thread.Sleep(100)
+    else:
+
+        def pause():
+            sleep(0.1)
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
+    monkeypatch.setattr(owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    barrier = Barrier(2)
+    lock = Lock()
+    coordinator = get_ident()
+    intervals = {}
+    handle_threads = {}
+    disposed = set()
+    live_jobs = 0
+    peak_jobs = 0
+    admitted = 0
+    append_order = []
+    original_materialize = owner.materialize_untargeted_cid_nl_partition
+    original_chromatogram = _FakeThermoRaw.GetChromatogramData
+    original_init = _FakeThermoRaw.__init__
+    original_dispose = _FakeThermoRaw.Dispose
+    original_append = owner.PartitionResultStore.append
+
+    def materialize(*args):
+        nonlocal live_jobs, peak_jobs, admitted
+        batch = original_materialize(*args)
+        assert len(batch.jobs) == len(plan.context.samples)
+        assert {job.sample for job in batch.jobs} == set(plan.context.samples)
+        assert all(
+            job.processing_owners is plan.context.processing_owners
+            for job in batch.jobs
+        )
+        with lock:
+            admitted += 1
+            live_jobs += len(batch.jobs)
+            peak_jobs = max(peak_jobs, live_jobs)
+        return batch
+
+    def initialize(handle, *args):
+        original_init(handle, *args)
+        handle_threads[id(handle)] = get_ident()
+
+    def dispose(handle):
+        assert handle_threads[id(handle)] == get_ident()
+        disposed.add(id(handle))
+        original_dispose(handle)
+
+    def chromatogram(handle, *args):
+        thread = get_ident()
+        assert handle_threads[id(handle)] == thread
+        if thread not in intervals:
+            intervals[thread] = None
+            barrier.wait(timeout=10)
+            start = perf_counter()
+            pause()
+            intervals[thread] = (start, perf_counter())
+        return original_chromatogram(handle, *args)
+
+    def append(store, partition_key, payload):
+        assert get_ident() == coordinator
+        if not append_order:
+            assert admitted == 2
+        append_order.append(partition_key)
+        return original_append(store, partition_key, payload)
+
+    def progress(event):
+        nonlocal live_jobs
+        assert get_ident() == coordinator
+        if event["stage"] == "partition_released":
+            with lock:
+                live_jobs -= len(plan.context.samples)
+
+    monkeypatch.setattr(owner, "materialize_untargeted_cid_nl_partition", materialize)
+    monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
+    monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
+    monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
+    monkeypatch.setattr(owner.PartitionResultStore, "append", append)
+    result = owner.execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=tmp_path / "parallel",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "parallel.json", "parallel"),
+        max_partition_jobs=8,
+        raw_workers=2,
+        progress_callback=progress,
+    )
+    assert type(result) is CompletedUntargetBatchWorkflowResult
+    assert peak_jobs == 8 and live_jobs == 0
+    assert append_order == [f"partition-{index:05d}" for index in range(3)]
+    assert len(intervals) == 2
+    assert min(end for _, end in intervals.values()) > max(
+        start for start, _ in intervals.values()
+    )
+    assert set(handle_threads) == disposed
+    assert coordinator not in handle_threads.values()
+
+
+@pytest.mark.parametrize("failure_mode", ["cancel", "vendor_failure", "spool_failure"])
+def test_parallel_failure_drains_launched_leaves_without_replacement_or_publication(
+    tmp_path: Path, monkeypatch, failure_mode: str
+):
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    monkeypatch.setattr(owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    barrier = Barrier(2)
+    caller_cancel = Event()
+    caller_observed_cancel = Event()
+    threads = {}
+    entered = set()
+    opened = {}
+    closed = set()
+    batches = []
+    original_leaf = owner.execute_untargeted_cid_nl_runtime_partition
+    original_chromatogram = _FakeThermoRaw.GetChromatogramData
+    original_init = _FakeThermoRaw.__init__
+    original_dispose = _FakeThermoRaw.Dispose
+    original_execute = owner.execute_runtime_attempt
+
+    def leaf(*args, **kwargs):
+        threads[get_ident()] = (kwargs["partition_key"], kwargs["should_cancel"])
+        entered.add(kwargs["partition_key"])
+        return original_leaf(*args, **kwargs)
+
+    def initialize(handle, *args):
+        original_init(handle, *args)
+        opened[id(handle)] = get_ident()
+
+    def dispose(handle):
+        assert opened[id(handle)] == get_ident()
+        closed.add(id(handle))
+        original_dispose(handle)
+
+    first_calls = set()
+
+    def chromatogram(handle, *args):
+        thread = get_ident()
+        partition, stopped = threads[thread]
+        if thread not in first_calls:
+            first_calls.add(thread)
+            barrier.wait(timeout=10)
+            if failure_mode == "cancel":
+                caller_cancel.set()
+                assert caller_observed_cancel.wait(timeout=10)
+            elif failure_mode == "vendor_failure":
+                if partition.endswith("00001"):
+                    raise OSError("injected vendor failure")
+                for _ in range(1000):
+                    if stopped():
+                        break
+                    sleep(0.01)
+                assert stopped(), "Peer failure must reach the running leaf"
+        return original_chromatogram(handle, *args)
+
+    def should_cancel():
+        if caller_cancel.is_set():
+            caller_observed_cancel.set()
+            return True
+        return False
+
+    def execute(*args, worker_batch_provider, **kwargs):
+        def observe(aggregate):
+            batch = worker_batch_provider(aggregate)
+            assert set(opened) == closed
+            batches.append(batch)
+            return batch
+
+        return original_execute(*args, worker_batch_provider=observe, **kwargs)
+
+    def fail_spool(*_args):
+        raise OSError("injected spool failure")
+
+    monkeypatch.setattr(owner, "execute_untargeted_cid_nl_runtime_partition", leaf)
+    monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
+    monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
+    monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
+    monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
+    if failure_mode == "spool_failure":
+        monkeypatch.setattr(owner.PartitionResultStore, "append", fail_spool)
+    marker = OwnerPathRuntimeMarker(tmp_path / "failure.json", "parallel-failure")
+    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
+        owner.execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=tmp_path / "failed",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            raw_workers=2,
+            max_partition_jobs=8,
+            should_cancel=should_cancel,
+        )
+    if failure_mode == "vendor_failure":
+        assert "injected vendor failure" in str(error.value)
+    assert entered == {"partition-00000", "partition-00001"}
+    assert set(opened) == closed and len(opened) >= 2
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert len(batches) == 1
+    resources = batches[0].resource_settlements
+    assert all(
+        receipt.cleanup_outcome is RuntimeResourceCleanupOutcome.SUCCEEDED
+        for receipt in resources
+    )
+    assert sum(
+        receipt.open_outcome is RuntimeResourceOpenOutcome.OPENED
+        for receipt in resources
+    ) == len(opened)
+    assert all(
+        receipt.open_outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+        for receipt in resources
+        if "partition-00002:" in receipt.resource_key
     )

@@ -6,9 +6,8 @@ import csv
 import hashlib
 import json
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Sized
 from dataclasses import asdict
-from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +23,10 @@ if TYPE_CHECKING:
     )
     from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
     from xic_extractor.discovery.models import DiscoveryCandidate
+    from xic_extractor.evidence_artifacts import EvidenceArtifactRef
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlMethodAssessmentRef,
+    )
 
 
 def _fields(value: Any, *names: str) -> dict[str, Any]:
@@ -57,6 +60,7 @@ def write_cid_nl_explanation(
     matrix_path: Path,
     alignment_config: AlignmentConfig,
     known_istd_reference_provenance: Mapping[str, str] | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> Path:
     """Persist exact owner identities, reasons and Matrix publication provenance."""
     with ExplanationReportWriter(path) as sink:
@@ -82,6 +86,38 @@ def write_cid_nl_explanation(
             set
         )
 
+        assessment_bindings: dict[
+            str, tuple[EvidenceArtifactRef, tuple[EvidenceArtifactRef, ...]]
+        ] = {}
+
+        def report_progress(stage: str, completed: int, total: int | None) -> None:
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "cid_nl_explanation_progress",
+                        "stage": f"alignment.explanation.{stage}",
+                        "completed": completed,
+                        "total": total,
+                        "records_written": sum(sink.record_counts.values()),
+                        "candidates_written": sink.candidate_count,
+                    }
+                )
+
+        def phase_items(stage: str, values: Iterable[Any]) -> Iterator[Any]:
+            if progress_callback is None:
+                yield from values
+                return
+            total = len(values) if isinstance(values, Sized) else None
+            report_progress(stage, 0, total)
+            completed_count = 0
+            for item in values:
+                yield item
+                completed_count += 1
+                if completed_count % 256 == 0:
+                    report_progress(stage, completed_count, total)
+            if completed_count % 256:
+                report_progress(stage, completed_count, total)
+
         def add(
             kind: str, identity: str, payload: dict[str, Any], related: Any
         ) -> None:
@@ -97,7 +133,7 @@ def write_cid_nl_explanation(
 
         for stem, declared in candidates_by_sample.items():
             sid = samples[stem].identity.sample_identity_id
-            for candidate in declared:
+            for candidate in phase_items("candidates", declared):
                 key = candidate.candidate_id, sid
                 subject_id = memberships[candidate.candidate_id]
                 method_candidates[subject_id, sid].add(key)
@@ -125,7 +161,7 @@ def write_cid_nl_explanation(
                     },
                 )
 
-        for subject in subjects.subjects:
+        for subject in phase_items("method_subjects", subjects.subjects):
             related = subject_candidates[subject.method_subject_id]
             add(
                 "method_subjects",
@@ -146,42 +182,22 @@ def write_cid_nl_explanation(
                 related,
             )
 
-        for excluded in application.excluded_candidates:
-            key = excluded.candidate_id, excluded.canonical_sample_identity_id
-            refs = (*excluded.method_assessments, *excluded.composite_assessments)
-            add(
-                "exclusions",
-                _key(*key),
-                {
-                    **_fields(
-                        excluded,
-                        "candidate_id",
-                        "canonical_sample_identity_id",
-                        "method_subject_id",
-                        "discovery_candidate_state",
-                        "reason_code",
-                    ),
-                    "assessment_artifact_ids": [
-                        ref.artifact.evidence_artifact_id for ref in refs
-                    ],
-                },
-                (key,),
+        def emit_assessment(assessment: CidNlMethodAssessmentRef) -> None:
+            identity = assessment.artifact.evidence_artifact_id
+            binding = (
+                assessment.artifact,
+                tuple(ref.artifact for ref in assessment.evidence_refs),
             )
-            sink.update_availability(key, terminal="excluded")
-
-        assessments = chain(
-            completed.method_assessments,
-            (
-                ref
-                for excluded in application.excluded_candidates
-                for refs in (
-                    excluded.method_assessments,
-                    excluded.composite_assessments,
-                )
-                for ref in refs
-            ),
-        )
-        for assessment in assessments:
+            if identity in assessment_bindings:
+                if assessment_bindings[identity] != binding:
+                    raise ValueError(
+                        "conflicting diagnostic owner identity: "
+                        f"{('method_assessments', identity)}"
+                    )
+                return
+            # The typed assessment owner already verified content against its
+            # immutable artifact. Retain only its diagnostic identity bindings,
+            # not the assessment's peak/evidence graph or another projection.
             content = assessment.content
             related = method_candidates[
                 content.method_subject.method_subject_id,
@@ -218,8 +234,92 @@ def write_cid_nl_explanation(
             )
             for key in related:
                 sink.update_availability(key, method_assessments="recorded")
+            assessment_bindings[identity] = binding
 
-        for child in application.children:
+        for assessment in phase_items(
+            "method_assessments", completed.method_assessments
+        ):
+            emit_assessment(assessment)
+
+        for excluded in phase_items("exclusions", application.excluded_candidates):
+            key = excluded.candidate_id, excluded.canonical_sample_identity_id
+            refs = (*excluded.method_assessments, *excluded.composite_assessments)
+            add(
+                "exclusions",
+                _key(*key),
+                {
+                    **_fields(
+                        excluded,
+                        "candidate_id",
+                        "canonical_sample_identity_id",
+                        "method_subject_id",
+                        "discovery_candidate_state",
+                        "reason_code",
+                    ),
+                    "assessment_artifact_ids": [
+                        ref.artifact.evidence_artifact_id for ref in refs
+                    ],
+                },
+                (key,),
+            )
+            sink.update_availability(key, terminal="excluded")
+            for assessment in refs:
+                emit_assessment(assessment)
+
+        def emit_group(stage: str, group: Any, methods: set[str]) -> None:
+            related = set()
+            if stage == "initial_groups":
+                methods = {
+                    memberships[key[0]]
+                    for member in group.member_subjects
+                    for key in hypothesis_candidates[
+                        member.canonical_sample_identity_id, member.subject_id
+                    ]
+                }
+            for member in group.member_subjects:
+                if member.processing_request_id != request_id:
+                    raise ValueError("diagnostic group crossed processing request")
+                sid = member.canonical_sample_identity_id
+                keys = (
+                    hypothesis_candidates[sid, member.subject_id]
+                    if member.subject_kind == "peak_hypothesis"
+                    else physical_candidates[sid, member.subject_id]
+                )
+                # Exact physical bindings survive successor hypothesis identities;
+                # provider scope prevents a shared peak crossing method subjects.
+                for pid in member.physical_observation_ids:
+                    keys = keys | physical_candidates[sid, pid]
+                keys = {key for key in keys if memberships[key[0]] in methods}
+                member_candidates[member.member_subject_id].update(keys)
+                related.update(keys)
+            if stage == "final_groups":
+                group_candidates[group.group_hypothesis_id].update(related)
+            add(
+                stage,
+                group.group_hypothesis_id,
+                {
+                    **_fields(
+                        group,
+                        "group_hypothesis_id",
+                        "processing_request_id",
+                        "disposition",
+                    ),
+                    "member_subjects": [
+                        _fields(
+                            member,
+                            "member_subject_id",
+                            "canonical_sample_identity_id",
+                            "subject_kind",
+                            "subject_id",
+                            "physical_observation_ids",
+                        )
+                        for member in group.member_subjects
+                    ],
+                },
+                related,
+            )
+
+        for child in phase_items("children", application.children):
             core = child.scientific_core
             for terminal in core.terminal_subjects:
                 key = terminal.candidate_id, terminal.canonical_sample_identity_id
@@ -250,100 +350,12 @@ def write_cid_nl_explanation(
                 if completed.initial_groups:
                     sink.update_availability(key, initial_groups="recorded")
 
-        final_groups = (
-            group
-            for child in application.children
-            for group in child.scientific_core.final_population
-        )
-        final_methods = {
-            group.group_hypothesis_id: {
-                provider.method_subject_id
-                for provider in child.scientific_core.scope.evidence_providers
+            methods = {
+                provider.method_subject_id for provider in core.scope.evidence_providers
             }
-            for child in application.children
-            for group in child.scientific_core.final_population
-        }
-        for stage, groups in (
-            ("initial_groups", completed.initial_groups),
-            ("final_groups", final_groups),
-        ):
-            for group in groups:
-                related = set()
-                methods = final_methods.get(group.group_hypothesis_id, set())
-                if stage == "initial_groups":
-                    methods = {
-                        memberships[key[0]]
-                        for member in group.member_subjects
-                        for key in hypothesis_candidates[
-                            member.canonical_sample_identity_id, member.subject_id
-                        ]
-                    }
-                for member in group.member_subjects:
-                    if member.processing_request_id != request_id:
-                        raise ValueError("diagnostic group crossed processing request")
-                    sid = member.canonical_sample_identity_id
-                    keys = (
-                        hypothesis_candidates[sid, member.subject_id]
-                        if member.subject_kind == "peak_hypothesis"
-                        else physical_candidates[sid, member.subject_id]
-                    )
-                    # Exact physical bindings survive successor hypothesis identities;
-                    # provider scope prevents a shared peak crossing method subjects.
-                    for pid in member.physical_observation_ids:
-                        keys = keys | physical_candidates[sid, pid]
-                    keys = {key for key in keys if memberships[key[0]] in methods}
-                    member_candidates[member.member_subject_id].update(keys)
-                    related.update(keys)
-                if stage == "final_groups":
-                    group_candidates[group.group_hypothesis_id].update(related)
-                add(
-                    stage,
-                    group.group_hypothesis_id,
-                    {
-                        **_fields(
-                            group,
-                            "group_hypothesis_id",
-                            "processing_request_id",
-                            "disposition",
-                        ),
-                        "member_subjects": [
-                            _fields(
-                                member,
-                                "member_subject_id",
-                                "canonical_sample_identity_id",
-                                "subject_kind",
-                                "subject_id",
-                                "physical_observation_ids",
-                            )
-                            for member in group.member_subjects
-                        ],
-                    },
-                    related,
-                )
+            for group in core.final_population:
+                emit_group("final_groups", group, methods)
 
-        for edge in completed.initial_edges:
-            related = (
-                member_candidates[edge.left_member_subject_id]
-                | member_candidates[edge.right_member_subject_id]
-            )
-            add(
-                "initial_edges",
-                _key(edge.left_member_subject_id, edge.right_member_subject_id),
-                {
-                    **_fields(
-                        edge,
-                        "left_member_subject_id",
-                        "right_member_subject_id",
-                        "disposition",
-                    ),
-                    "initial_evidence": asdict(edge.initial_evidence),
-                    "initial_context": edge.initial_context,
-                    "alignment_config": asdict(edge.config),
-                },
-                related,
-            )
-
-        for child in application.children:
             for observation in child.scientific_core.cell_observations:
                 related = group_candidates[observation.group.group_hypothesis_id]
                 add(
@@ -401,6 +413,32 @@ def write_cid_nl_explanation(
                         related,
                     )
 
+        for group in phase_items("initial_groups", completed.initial_groups):
+            emit_group("initial_groups", group, set())
+
+        for edge in phase_items("initial_edges", completed.initial_edges):
+            related = (
+                member_candidates[edge.left_member_subject_id]
+                | member_candidates[edge.right_member_subject_id]
+            )
+            add(
+                "initial_edges",
+                _key(edge.left_member_subject_id, edge.right_member_subject_id),
+                {
+                    **_fields(
+                        edge,
+                        "left_member_subject_id",
+                        "right_member_subject_id",
+                        "disposition",
+                    ),
+                    "initial_evidence": asdict(edge.initial_evidence),
+                    "initial_context": edge.initial_context,
+                    "alignment_config": asdict(edge.config),
+                },
+                related,
+            )
+
+        report_progress("finalizing", sum(sink.record_counts.values()), None)
         with Path(matrix_path).open("rb") as handle:
             matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
         with Path(matrix_path).open(encoding="utf-8-sig", newline="") as matrix_handle:

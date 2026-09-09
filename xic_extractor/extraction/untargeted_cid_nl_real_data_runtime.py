@@ -742,6 +742,7 @@ def execute_untargeted_cid_nl_runtime_partition(
     partition_key: str,
     alignment_config: AlignmentConfig,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> UntargetedCidNlRuntimePartitionResult:
     """Execute one complete subject partition under the caller's runtime attempt."""
     _required_text(partition_key, field="partition_key")
@@ -773,6 +774,7 @@ def execute_untargeted_cid_nl_runtime_partition(
         alignment_config=alignment_config,
         progress_callback=progress_callback,
         partition_key=partition_key,
+        should_cancel=should_cancel,
     )
     batch = work.provide_worker_batch(None)
     return UntargetedCidNlRuntimePartitionResult(
@@ -794,6 +796,7 @@ def _prepare_runtime_work(
     alignment_config: AlignmentConfig,
     progress_callback: Callable[[Mapping[str, object]], None] | None,
     partition_key: str | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> _RuntimeWork:
     attempt = jobs[0].processing_owners.attempt
 
@@ -952,11 +955,24 @@ def _prepare_runtime_work(
         resource_settlements: list[RuntimeResourceSettlementReceipt] = []
         artifact_registrations: list[RuntimeArtifactRegistrationReceipt] = []
         acquisitions: list[RuntimeAcquisitionReceipt] = []
+        cancelled = False
+
+        def observe_cancellation() -> bool:
+            nonlocal cancelled
+            if not cancelled and should_cancel is not None and should_cancel():
+                cancelled = True
+                for state in states:
+                    if state.error is None:
+                        state.error = InterruptedError("CID-NL partition cancelled")
+            return cancelled
+
         phases_by_sample = {
             phase.states[0].job.sample.identity.sample_identity_id: phase
             for phase in batch_phases
         }
         for completed, sample_states in enumerate(sample_groups, 1):
+            if observe_cancellation():
+                break
             if partition_key is not None or _request_uses_subject_batch(
                 sample_states[0].job
             ):
@@ -972,9 +988,10 @@ def _prepare_runtime_work(
             report_phase("partition_initial", completed, len(sample_groups))
 
         try:
-            _prepare_owner_authorized_recoveries(
-                states, alignment_config=alignment_config
-            )
+            if not observe_cancellation():
+                _prepare_owner_authorized_recoveries(
+                    states, alignment_config=alignment_config
+                )
         except Exception as exc:
             if partition_key is None:
                 raise
@@ -992,6 +1009,8 @@ def _prepare_runtime_work(
                     state,
                 )
         for completed, phase in enumerate(batch_phases, 1):
+            if observe_cancellation():
+                break
             _execute_recovery_batch(phase)
             report_phase("partition_recovery", completed, len(batch_phases))
 
@@ -1002,6 +1021,7 @@ def _prepare_runtime_work(
         )
         result_context = _RuntimeResultContext(jobs)
         for completed, state in enumerate(states, 1):
+            observe_cancellation()
             batch, sample_result, acquisition = _finalize_job_state(
                 state,
                 include_acquisition_receipt=(

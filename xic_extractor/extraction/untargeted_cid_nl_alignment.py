@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
@@ -65,6 +66,8 @@ def complete_untargeted_cid_nl_alignment(
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
+    raw_workers: int = 1,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
@@ -131,11 +134,16 @@ def complete_untargeted_cid_nl_alignment(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
-    with recorder.stage("alignment.untargeted_cid_nl_runtime"):
+    with (
+        recorder.stage("alignment.untargeted_cid_nl_runtime"),
+        recorder.process_memory_scope("retained_runtime") as runtime_peak,
+    ):
         return execute_bounded_untargeted_cid_nl(
             plan,
             output_dir=output_dir,
-            telemetry_provider=_coarse_runtime_telemetry,
+            telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
+                coordinator, runtime_peak
+            ),
             recovery_marker=OwnerPathRuntimeMarker(
                 output_dir / ".cid_nl_runtime.json",
                 _RUNTIME_ARTIFACT_NAMESPACE,
@@ -143,6 +151,8 @@ def complete_untargeted_cid_nl_alignment(
             progress_callback=recorder.heartbeat_event,
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
+            raw_workers=raw_workers,
+            should_cancel=should_cancel,
         )
 
 
@@ -228,10 +238,12 @@ def _restore_physical_candidate(
     return replace(candidate, **values)
 
 
-def _coarse_runtime_telemetry(coordinator: Any) -> RuntimeTelemetrySamples:
+def _coarse_runtime_telemetry(
+    coordinator: Any, peak: ProcessMemoryPeak
+) -> RuntimeTelemetrySamples:
     event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
-    reason = "not_collected_by_alignment_foreground_runner"
+    measured = peak.availability == "measured" and peak.rss_bytes is not None
     return RuntimeTelemetrySamples(
         event_monotonic_offsets_ns=(0,) * event_count,
         artifact_io=RuntimeArtifactIoSample(
@@ -241,14 +253,21 @@ def _coarse_runtime_telemetry(coordinator: Any) -> RuntimeTelemetrySamples:
             write_bytes=0,
         ),
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
-            availability=RuntimeMetricAvailability.UNSUPPORTED,
-            reason=reason,
+            availability=(
+                RuntimeMetricAvailability.MEASURED
+                if measured
+                else RuntimeMetricAvailability.UNSUPPORTED
+            ),
+            value=peak.rss_bytes if measured else None,
+            reason=(
+                None if measured else (peak.reason or "process_tree_sample_unavailable")
+            ),
         ),
         worker_peak_rss=tuple(
             RuntimeWorkerPeakRssSample(
                 worker_key=worker_key,
                 availability=RuntimeMetricAvailability.UNSUPPORTED,
-                reason=reason,
+                reason="not_applicable_shared_process_partition_workers",
             )
             for worker_key in worker_keys
         ),

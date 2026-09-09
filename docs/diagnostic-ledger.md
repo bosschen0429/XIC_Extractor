@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-09
+**Last updated:** 2026-09-10
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,39 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-10 CID-NL Stored-Result Read And Digest Costs
+
+**Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
+`PartitionResultStore` now reads field records and selected exclusions without
+restoring unrelated scientific children. The explanation projection consumes
+each child once and reuses typed artifact bindings. Native completion digests
+retain the exact token stream while buffering at most 64 KiB of token bytes.
+
+The final no-RAW replay reused eight-sample historical results with 3,127
+children. Matrix bytes matched SHA-256
+`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`;
+all SQLite rows matched the retained pre-change writer: 30,570 candidates,
+263,841 records, and 341,721 links. Eight official reader queries also matched.
+The writer restored 3,127 scientific children, versus 12,509 for the old writer
+on the same field store. Final replay writer elapsed was 68.124 s, versus the
+retained old-writer observation of 339.919 s in an earlier process. These are
+source-qualified observations, not a controlled end-to-end RAW speed ratio.
+Peak sampled private memory for the final replay was 2,702,323,712 bytes.
+
+Evidence locators are `output/cid-nl-bounded-runtime/correction-report.md`,
+`stored-replay-v1/receipt.json`, and `stored-replay-final/receipt.json` beneath
+that task output directory. They are local diagnostic receipts, not shipped
+fixtures or a public spool-reopen contract. Field records increase the two
+partition files from 368,767,337 to 663,826,992 bytes by dropping cross-record
+pickle memo sharing; this trades disk size for bounded, selective reads.
+
+The formal Alignment CLI accepts bounded partition concurrency through
+`--raw-workers` (default 1), and its process-tree sampler supplies the runtime
+RSS receipt plus foreground RSS/private timing observations. Thread overlap,
+cleanup, and persisted telemetry have non-RAW coverage; actual RAW speedup is
+unverified. New 8RAW and 85RAW runs remain paused by the operator. Do not infer
+the outstanding full-run speed target from stored-result replay.
 
 ### 2026-09-09 Full-Cohort Runtime Resource Pressure
 
