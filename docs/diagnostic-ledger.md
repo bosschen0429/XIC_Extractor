@@ -65,6 +65,34 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Physical Recovery Request/Profile Reuse
+
+**Evidence:** `diagnostic_only`; output-preserving binding optimization, no
+scientific or writer-authority promotion. `search_scope` owns the existing
+latest-exact-JSON parsed-input cache and shared physical-profile predicate;
+recovery capture consumes the predicate while retaining full subject, profile,
+trace and scientific checks. No new cache or configuration was added.
+
+Fresh official reconstruction reproduced the corrected eight-sample request,
+11,915 subjects and 95,320 jobs with zero RAW opens. The physical recovery
+predicate reparsed the same 24,786,542-byte request on each call. Three
+interleaved 128-check pairs against `d0e6acc7` reduced median binding time from
+7.104811 to 0.001378 seconds (ranges 7.093051–7.144369 and 0.001274–0.001390).
+The first candidate check retained one cache miss and cost 0.058256 seconds;
+warm whole-request parsing fell from 128 calls to zero. Small profile parsing
+and changed-profile rejection remain. The five affected suites passed 87 tests,
+including physical recovery values, empty signal and profile rejection; scoped
+Ruff, format, mypy and diff checks passed.
+
+These are exact request/profile suboperation measurements, not whole-recovery
+or runtime timings. Full recovery replay cannot use this checkpoint alone:
+the original `group_center_rt` is absent and subtracting the half-window from
+stored bounds fails exact floating-point reconstruction. Do not approximate it
+or infer current runtime totals from the earlier full run. Reuse the established
+binding result; any later complete replay needs the actual recovery centers.
+Receipts: `output/cid-nl-recovery-cost/` (`plan.md`, `binding-baseline.json`,
+`binding-paired.json`, `report.md`, `verification.md`).
+
 ### 2026-09-09 Indexed CID-NL Request Subject Binding
 
 **Evidence:** `diagnostic_only`; output-preserving owner lookup, no scientific

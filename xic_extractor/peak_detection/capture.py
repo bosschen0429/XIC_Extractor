@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, replace
 from typing import cast
 
@@ -51,18 +50,17 @@ from xic_extractor.peak_detection.observations import (
     validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.search_scope import (
-    PHYSICAL_CAPTURE_INPUT_KEY,
     CaptureCandidateBinding,
     SearchScope,
     SearchScopeContractError,
     TargetSearchScope,
+    request_binds_physical_capture_profile,
     require_capture_binding,
     validate_scope_owner_binding,
     validate_scope_trace_coordinates,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
 from xic_extractor.processing_identity import ProcessingOwnerReferences
@@ -513,13 +511,8 @@ def capture_physical_recovery_observation(
     validate_cid_nl_method_subject_binding(
         method_subject, processing_owners=processing_owners
     )
-    payload = json.loads(processing_owners.request.normalized_scientific_inputs_json)
-    physical_inputs = payload.get(PHYSICAL_CAPTURE_INPUT_KEY)
     if (
-        not isinstance(physical_inputs, dict)
-        or physical_inputs.get("schema_version") != "physical_capture_inputs_v1"
-        or physical_inputs.get("profile")
-        != json.loads(canonical_signal_processing_profile_bytes(profile))
+        not request_binds_physical_capture_profile(processing_owners.request, profile)
         or trace.mz != method_subject.precursor_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
         or not trace.rt_min <= group_center_rt <= trace.rt_max

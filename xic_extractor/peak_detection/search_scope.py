@@ -306,6 +306,20 @@ def _physical_evaluation_identity(evaluation: PhysicalPeakEvaluation) -> dict[st
     }
 
 
+def request_binds_physical_capture_profile(
+    request: ProcessingRequestIdentity,
+    profile: SignalProcessingProfile,
+) -> bool:
+    """Check the physical profile using the owner's exact parsed request."""
+    payload = _request_inputs(request).get(PHYSICAL_CAPTURE_INPUT_KEY)
+    return (
+        isinstance(payload, dict)
+        and payload.get("schema_version") == "physical_capture_inputs_v1"
+        and payload.get("profile")
+        == json.loads(canonical_signal_processing_profile_bytes(profile))
+    )
+
+
 def _validate_physical_capture_scope(scope: UntargetedSearchScope) -> None:
     profile = scope.method_constraints.signal_processing_profile
     payload = _request_inputs(scope.request).get(PHYSICAL_CAPTURE_INPUT_KEY)
@@ -320,9 +334,7 @@ def _validate_physical_capture_scope(scope: UntargetedSearchScope) -> None:
         return
     if (
         not isinstance(payload, dict)
-        or payload.get("schema_version") != "physical_capture_inputs_v1"
-        or payload.get("profile")
-        != json.loads(canonical_signal_processing_profile_bytes(profile))
+        or not request_binds_physical_capture_profile(scope.request, profile)
         or not isinstance(payload.get("candidates"), dict)
     ):
         raise SearchScopeContractError("physical capture profile is not request-bound")
