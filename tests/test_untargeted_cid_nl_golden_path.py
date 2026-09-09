@@ -421,6 +421,60 @@ def test_untargeted_method_subject_binding_rejects_json_boolean_numeric_alias(
         validate_cid_nl_method_subject_binding(subject, processing_owners=owners)
 
 
+def test_batch_subject_binding_keeps_exact_content_and_request_scope(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "qc"}
+    )
+    first = fixture.method_subject
+    second = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=first.precursor_mz + 1.0,
+        precursor_tolerance_ppm=first.precursor_tolerance_ppm,
+        neutral_loss_da=first.neutral_loss_da,
+    )
+    base = fixture.owners.request
+
+    def owners_for(subjects):
+        batch = mint_untargeted_cid_nl_method_subject_batch(
+            subjects=tuple(sorted(subjects, key=lambda s: s.method_subject_id)),
+            candidate_memberships=tuple(
+                (f"candidate-{index}", subject.method_subject_id)
+                for index, subject in enumerate(subjects)
+            ),
+        )
+        request = build_processing_request_identity(
+            acquisition_sources=base.acquisition_sources,
+            acquisition_bindings=base.acquisition_bindings,
+            scientific_input_schema_version=base.scientific_input_schema_version,
+            processing_algorithm_version=base.processing_algorithm_version,
+            processing_contract_version=base.processing_contract_version,
+            scientific_inputs={"cid_nl_method_subject": batch.request_payload()},
+        )
+        return compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=fixture.owners.sample_snapshot,
+            sample_resolutions=fixture.owners.sample_resolutions,
+        )
+
+    both = owners_for((first, second))
+    only_second = owners_for((second,))
+    validate_cid_nl_method_subject_binding(replace(first), processing_owners=both)
+    validate_cid_nl_method_subject_binding(second, processing_owners=only_second)
+    with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
+        validate_cid_nl_method_subject_binding(first, processing_owners=only_second)
+    validate_cid_nl_method_subject_binding(first, processing_owners=both)
+    changed_content = replace(first)
+    object.__setattr__(changed_content, "precursor_mz", first.precursor_mz + 1.0)
+    with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
+        validate_cid_nl_method_subject_binding(changed_content, processing_owners=both)
+
+
 @pytest.mark.parametrize("form", ("scalar", "composite", "batch"))
 def test_request_subject_reader_preserves_formats_and_strict_rejection(
     tmp_path: Path,

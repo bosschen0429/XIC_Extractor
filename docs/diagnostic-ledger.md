@@ -65,6 +65,36 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Indexed CID-NL Request Subject Binding
+
+**Evidence:** `diagnostic_only`; output-preserving owner lookup, no scientific
+or writer-authority promotion. `cid_nl_method_subject` keeps the strict parsed
+configuration and immutable subject-ID index in its existing latest-exact-input
+LRU entry. Lookup still compares the complete subject, preserves strict parsing
+on request change, and does not alter Targeted binding or canonical payloads.
+
+Fresh reconstruction through the official production builder reproduced the
+current eight-sample request, 11,915 subjects and 95,320 jobs without RAW
+acquisition. There were 73,037 empty-candidate jobs. A 256-job empty-branch probe
+matched the original assessment contents and showed two linear subject-binding
+checks per job dominating its profile (0.967229 of 1.096706 instrumented seconds).
+
+Against frozen `9d4c440e` binding, all 95,320 real adapter-input validations
+remained accepted and summed wall time fell from 112.831309 to 0.261387 seconds
+in sample-interleaved pairs. Three interleaved 256-job full empty-adapter pairs
+fell from median 0.649267 to 0.045170 seconds; ranges were 0.643945–0.650129 and
+0.044003–0.047905. Complete returned results and artifact IDs were identical.
+These are actual component measurements, not scaled estimates or a new whole
+runtime time. No RAW was opened; populated adapter branches were not replayed.
+
+The six related golden-path/adapter/runtime/batch/Targeted suites passed 94
+tests; scoped Ruff, format and mypy passed. New preservation coverage verifies
+same-ID/different-content rejection and request-switch isolation. Source/hash,
+fresh-input and paired receipts: `output/cid-nl-adapter-cost/` (`plan.md`,
+`probe.json`, `paired.json`, `report.md`). Reuse the indexed binding when
+diagnosing remaining runtime cost; do not repeat the already-measured full
+validation scan or infer new RAW requirements from the old adapter remainder.
+
 ### 2026-09-09 Stage-Local Live Heartbeat Coalescing
 
 **Evidence:** `diagnostic_only`; timing publication optimization, no scientific
