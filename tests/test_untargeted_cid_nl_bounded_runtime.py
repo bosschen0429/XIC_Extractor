@@ -139,7 +139,7 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
 
 
 @pytest.mark.parametrize("subjects_per_partition", [1, 2])
-@pytest.mark.parametrize("raw_workers", [1, 2])
+@pytest.mark.parametrize("raw_workers", [1, 2, 4])
 @pytest.mark.parametrize("scenario", ["positive", "recovery", "unsupported", "istd"])
 def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     tmp_path: Path,
@@ -155,12 +155,12 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     )
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
-    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
 
     coordinator_thread = get_ident()
     warm_threads = []
     monkeypatch.setattr(
-        bounded_owner,
+        runtime_owner,
         "_ensure_assemblies_loaded",
         lambda *_args: warm_threads.append(get_ident()),
         raising=False,
@@ -203,13 +203,12 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             recovery_marker=marker,
             known_istd_reference=reference,
             progress_callback=report_progress,
-            max_partition_jobs=(
-                subjects_per_partition * len(plan.context.samples) * raw_workers
-            ),
+            max_partition_jobs=subjects_per_partition * len(plan.context.samples),
             raw_workers=raw_workers,
         )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
-    assert warm_threads == ([coordinator_thread] if raw_workers > 1 else [])
+    assert bool(warm_threads) is (raw_workers > 1)
+    assert all(thread == coordinator_thread for thread in warm_threads)
     assert type(bounded.application_result.children) is ImmutableSequence
     assert project_completed_untarget_batch_writer_inputs(bounded).matrix == (
         project_completed_untarget_batch_writer_inputs(eager).matrix
@@ -372,11 +371,13 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     )
 
 
+@pytest.mark.parametrize("raw_workers", [1, 2, 4])
 @pytest.mark.parametrize("managed_call", [False, True])
-def test_parallel_partitions_overlap_with_one_job_budget_and_writer(
-    tmp_path: Path, monkeypatch, managed_call: bool
+def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
+    tmp_path: Path, monkeypatch, managed_call: bool, raw_workers: int
 ):
     import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
 
     if managed_call:
         pytest.importorskip("clr")
@@ -390,62 +391,78 @@ def test_parallel_partitions_overlap_with_one_job_budget_and_writer(
             sleep(0.1)
 
     plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
-    monkeypatch.setattr(owner, "_ensure_assemblies_loaded", lambda *_args: None)
-    barrier = Barrier(2)
+    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    overlap_count = min(raw_workers, 3)  # Three samples have initial candidates.
+    barrier = Barrier(overlap_count)
     lock = Lock()
     coordinator = get_ident()
-    intervals = {}
+    intervals = []
+    selected_calls = 0
     handle_threads = {}
+    active_handles = set()
     disposed = set()
+    peak_handles = 0
     live_jobs = 0
-    peak_jobs = 0
-    admitted = 0
+    job_counts = []
     append_order = []
+    barrier_checks = []
+    acquisitions = []
     original_materialize = owner.materialize_untargeted_cid_nl_partition
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
     original_append = owner.PartitionResultStore.append
+    original_prepare = runtime_owner._prepare_owner_authorized_recoveries
+    original_execute = owner.execute_runtime_attempt
 
     def materialize(*args):
-        nonlocal live_jobs, peak_jobs, admitted
+        nonlocal live_jobs
+        assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args)
-        assert len(batch.jobs) == len(plan.context.samples)
         assert {job.sample for job in batch.jobs} == set(plan.context.samples)
         assert all(
             job.processing_owners is plan.context.processing_owners
             for job in batch.jobs
         )
-        with lock:
-            admitted += 1
-            live_jobs += len(batch.jobs)
-            peak_jobs = max(peak_jobs, live_jobs)
+        live_jobs = len(batch.jobs)
+        job_counts.append(live_jobs)
         return batch
 
     def initialize(handle, *args):
+        nonlocal peak_handles
         original_init(handle, *args)
-        handle_threads[id(handle)] = get_ident()
+        with lock:
+            handle_threads[handle] = get_ident()
+            active_handles.add(handle)
+            peak_handles = max(peak_handles, len(active_handles))
 
     def dispose(handle):
-        assert handle_threads[id(handle)] == get_ident()
-        disposed.add(id(handle))
+        assert handle_threads[handle] == get_ident()
         original_dispose(handle)
+        with lock:
+            disposed.add(handle)
+            active_handles.remove(handle)
 
     def chromatogram(handle, *args):
-        thread = get_ident()
-        assert handle_threads[id(handle)] == thread
-        if thread not in intervals:
-            intervals[thread] = None
+        nonlocal selected_calls
+        assert handle_threads[handle] == get_ident()
+        with lock:
+            selected = selected_calls < overlap_count
+            selected_calls += 1
+        if selected:
             barrier.wait(timeout=10)
             start = perf_counter()
             pause()
-            intervals[thread] = (start, perf_counter())
+            intervals.append((start, perf_counter()))
         return original_chromatogram(handle, *args)
 
+    def prepare(*args, **kwargs):
+        assert get_ident() == coordinator and not active_handles
+        barrier_checks.append(len(disposed))
+        return original_prepare(*args, **kwargs)
+
     def append(store, partition_key, payload):
-        assert get_ident() == coordinator
-        if not append_order:
-            assert admitted == 2
+        assert get_ident() == coordinator and not active_handles
         append_order.append(partition_key)
         return original_append(store, partition_key, payload)
 
@@ -453,10 +470,19 @@ def test_parallel_partitions_overlap_with_one_job_budget_and_writer(
         nonlocal live_jobs
         assert get_ident() == coordinator
         if event["stage"] == "partition_released":
-            with lock:
-                live_jobs -= len(plan.context.samples)
+            live_jobs = 0
+
+    def execute(*args, worker_batch_provider, **kwargs):
+        def observe(aggregate):
+            batch = worker_batch_provider(aggregate)
+            acquisitions.extend(batch.acquisitions)
+            return batch
+
+        return original_execute(*args, worker_batch_provider=observe, **kwargs)
 
     monkeypatch.setattr(owner, "materialize_untargeted_cid_nl_partition", materialize)
+    monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
+    monkeypatch.setattr(runtime_owner, "_prepare_owner_authorized_recoveries", prepare)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
@@ -468,32 +494,40 @@ def test_parallel_partitions_overlap_with_one_job_budget_and_writer(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(tmp_path / "parallel.json", "parallel"),
         max_partition_jobs=8,
-        raw_workers=2,
+        raw_workers=raw_workers,
         progress_callback=progress,
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
-    assert peak_jobs == 8 and live_jobs == 0
-    assert append_order == [f"partition-{index:05d}" for index in range(3)]
-    assert len(intervals) == 2
-    assert min(end for _, end in intervals.values()) > max(
-        start for start, _ in intervals.values()
-    )
-    assert set(handle_threads) == disposed
-    assert coordinator not in handle_threads.values()
+    assert job_counts == [8, 4] and live_jobs == 0
+    assert append_order == ["partition-00000", "partition-00001"]
+    assert len(handle_threads) == len(acquisitions) == 8
+    assert barrier_checks == [3, 7]
+    assert overlap_count <= peak_handles <= raw_workers
+    assert len(intervals) == overlap_count
+    if raw_workers > 1:
+        assert min(end for _, end in intervals) > max(start for start, _ in intervals)
+        assert coordinator not in handle_threads.values()
+    else:
+        assert set(handle_threads.values()) == {coordinator}
+    assert set(handle_threads) == disposed and not active_handles
 
 
-@pytest.mark.parametrize("failure_mode", ["cancel", "vendor_failure", "spool_failure"])
-def test_parallel_failure_drains_launched_leaves_without_replacement_or_publication(
+@pytest.mark.parametrize(
+    "failure_mode", ["cancel", "vendor_failure", "cleanup_failure", "spool_failure"]
+)
+def test_sample_failure_drains_without_more_samples_or_partition_publication(
     tmp_path: Path, monkeypatch, failure_mode: str
 ):
     import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    monkeypatch.setattr(owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
     barrier = Barrier(2)
+    lock = Lock()
     caller_cancel = Event()
     caller_observed_cancel = Event()
-    threads = {}
+    failed_sample_observed = Event()
     entered = set()
     opened = {}
     closed = set()
@@ -505,39 +539,40 @@ def test_parallel_failure_drains_launched_leaves_without_replacement_or_publicat
     original_execute = owner.execute_runtime_attempt
 
     def leaf(*args, **kwargs):
-        threads[get_ident()] = (kwargs["partition_key"], kwargs["should_cancel"])
         entered.add(kwargs["partition_key"])
         return original_leaf(*args, **kwargs)
 
     def initialize(handle, *args):
         original_init(handle, *args)
-        opened[id(handle)] = get_ident()
+        with lock:
+            opened[handle] = (get_ident(), len(opened))
 
     def dispose(handle):
-        assert opened[id(handle)] == get_ident()
-        closed.add(id(handle))
+        thread, ordinal = opened[handle]
+        assert thread == get_ident()
         original_dispose(handle)
-
-    first_calls = set()
+        closed.add(handle)
+        if failure_mode == "cleanup_failure" and ordinal == 1:
+            raise OSError("injected cleanup failure")
 
     def chromatogram(handle, *args):
-        thread = get_ident()
-        partition, stopped = threads[thread]
-        if thread not in first_calls:
-            first_calls.add(thread)
+        thread, ordinal = opened[handle]
+        assert thread == get_ident()
+        if ordinal < 2:
             barrier.wait(timeout=10)
             if failure_mode == "cancel":
                 caller_cancel.set()
                 assert caller_observed_cancel.wait(timeout=10)
-            elif failure_mode == "vendor_failure":
-                if partition.endswith("00001"):
+            elif failure_mode in {"vendor_failure", "cleanup_failure"}:
+                if ordinal == 1 and failure_mode == "vendor_failure":
                     raise OSError("injected vendor failure")
-                for _ in range(1000):
-                    if stopped():
-                        break
-                    sleep(0.01)
-                assert stopped(), "Peer failure must reach the running leaf"
+                if ordinal == 0:
+                    assert failed_sample_observed.wait(timeout=10)
         return original_chromatogram(handle, *args)
+
+    def progress(event):
+        if event["stage"] == "partition_initial" and event["completed"]:
+            failed_sample_observed.set()
 
     def should_cancel():
         if caller_cancel.is_set():
@@ -575,18 +610,20 @@ def test_parallel_failure_drains_launched_leaves_without_replacement_or_publicat
             raw_workers=2,
             max_partition_jobs=8,
             should_cancel=should_cancel,
+            progress_callback=progress,
         )
-    if failure_mode == "vendor_failure":
-        assert "injected vendor failure" in str(error.value)
-    assert entered == {"partition-00000", "partition-00001"}
-    assert set(opened) == closed and len(opened) >= 2
+    if failure_mode in {"vendor_failure", "cleanup_failure"}:
+        assert "injected " + failure_mode.replace("_", " ") in str(error.value)
+    assert entered == {"partition-00000"}
+    assert set(opened) == closed
+    assert len(opened) == (4 if failure_mode == "spool_failure" else 2)
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
     assert len(batches) == 1
     resources = batches[0].resource_settlements
-    assert all(
-        receipt.cleanup_outcome is RuntimeResourceCleanupOutcome.SUCCEEDED
+    assert sum(
+        receipt.cleanup_outcome is RuntimeResourceCleanupOutcome.FAILED
         for receipt in resources
-    )
+    ) == (1 if failure_mode == "cleanup_failure" else 0)
     assert sum(
         receipt.open_outcome is RuntimeResourceOpenOutcome.OPENED
         for receipt in resources
@@ -594,5 +631,5 @@ def test_parallel_failure_drains_launched_leaves_without_replacement_or_publicat
     assert all(
         receipt.open_outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
         for receipt in resources
-        if "partition-00002:" in receipt.resource_key
+        if "partition-00001:" in receipt.resource_key
     )

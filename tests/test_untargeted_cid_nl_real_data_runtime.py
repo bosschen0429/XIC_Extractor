@@ -612,8 +612,26 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 peak_config=peak_config,
                 raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
                 dll_dir=tmp_path,
+                acquisition_source_expectation=context.acquisition_sources_by_sample[
+                    sample.metadata.raw_stem
+                ],
             )
         )
+        assert all(
+            job.acquisition_source_expectation
+            is context.acquisition_sources_by_sample[job.sample.metadata.raw_stem]
+            for job in jobs
+        )
+        with pytest.raises(
+            UntargetedCidNlRealDataRuntimeError,
+            match="acquisition source expectation must match the request sample",
+        ):
+            replace(
+                jobs[0],
+                acquisition_source_expectation=context.acquisition_sources_by_sample[
+                    "S2"
+                ],
+            )
         requests_and_jobs.append((memberships, jobs))
     # Revisit the first request after the second has selected a different universe.
     for memberships, jobs in (*requests_and_jobs, requests_and_jobs[0]):
@@ -904,12 +922,15 @@ def _install_runtime_raw(
         (tmp_path / filename).write_bytes(b"dll")
     vendor_raw = _FakeThermoRaw(source_raw)
 
-    def _open_runtime_raw(path, dll_dir, *, expected_acquisition_source):
+    def _open_runtime_raw(
+        path, dll_dir, *, expected_acquisition_source, _expected_path_identity=None
+    ):
         assert path == raw_path
         return open_raw(
             path,
             dll_dir,
             expected_acquisition_source=expected_acquisition_source,
+            _expected_path_identity=_expected_path_identity,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -941,13 +962,16 @@ def _install_runtime_raws(
         (tmp_path / filename).write_bytes(b"dll")
     opened: dict[Path, list[_FakeThermoRaw]] = {}
 
-    def _open_runtime_raw(path, dll_dir, *, expected_acquisition_source):
+    def _open_runtime_raw(
+        path, dll_dir, *, expected_acquisition_source, _expected_path_identity=None
+    ):
         vendor_raw = _FakeThermoRaw(sources_by_path[path])
         opened.setdefault(path, []).append(vendor_raw)
         return open_raw(
             path,
             dll_dir,
             expected_acquisition_source=expected_acquisition_source,
+            _expected_path_identity=_expected_path_identity,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(

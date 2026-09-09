@@ -348,7 +348,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=_positive_int,
         default=1,
         help=(
-            "Concurrent CID-NL partitions sharing the bounded fine-job budget "
+            "Concurrent RAW sample phases within each bounded CID-NL partition "
             "(default: 1)."
         ),
     )

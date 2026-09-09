@@ -65,6 +65,33 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-10 CID-NL Source Verification And Sample Parallelism
+
+- Evidence: `diagnostic_only`; synthetic file-backed and runtime integration.
+- `untargeted_cid_nl_real_data_inputs` fingerprints each source once and binds
+  the verified path state into the production jobs. Runtime opens reuse the
+  existing `raw_reader` source-expectation contract; source edits/replacements
+  still reject, including changes during fingerprinting or vendor open.
+- `untargeted_cid_nl_bounded_runtime` keeps partition sizing independent of
+  workers. `untargeted_cid_nl_real_data_runtime` parallelizes samples within
+  each phase, with a complete initial barrier before Recovery. The fixture
+  retains 2 partitions and 8 opens/acquisitions for workers 1, 2, and 4;
+  simultaneous handles stay at or below workers. Default workers remains 1.
+- Handles remain phase-scoped and close on their owning thread. Cancellation
+  and failure drain admitted work before returning resource receipts. Persistent
+  cross-phase handles are not required for this correction: they would require
+  a different thread-affinity and cohort resource lifecycle.
+- Verification: 41 production tests, 46 runtime/bounded/batch tests, 58
+  pipeline/reader tests, and 7 current architecture census checks passed;
+  changed-file Ruff/mypy, import contracts, and shard coverage also passed.
+  Production checks cover persisted outcomes and source mutation rejection;
+  bounded checks cover Matrix/explanation parity and cancellation cleanup.
+- Evidence locators: `output/cid-nl-bounded-runtime/source-reuse-report.md`,
+  `source-reuse-tests.xml`, and `source-reuse-integration.xml` in that directory.
+- No new RAW run was launched. Full analysis completion, peak memory, and total
+  elapsed-time acceptance remain unverified for this code. Existing RAW timings
+  cannot establish the benefit of the new scheduler/source-verification path.
+
 ### 2026-09-10 CID-NL Stored-Result Read And Digest Costs
 
 **Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.

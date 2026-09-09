@@ -296,6 +296,9 @@ def prepare_untargeted_cid_nl_production_plan(
             settings=context.settings,
             peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            acquisition_source_expectation=context.acquisition_sources_by_sample[
+                sample.metadata.raw_stem
+            ],
             dll_dir=dll_dir,
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(

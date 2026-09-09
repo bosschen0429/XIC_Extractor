@@ -13,6 +13,9 @@ from openpyxl import load_workbook
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
+import xic_extractor.extraction.untargeted_cid_nl_real_data_inputs as input_owner
+import xic_extractor.processing_identity as identity_owner
+import xic_extractor.raw_reader as raw_reader_owner
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -50,12 +53,18 @@ from xic_extractor.diagnostics.process_memory import (
     ProcessTreeMemorySampler,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+    execute_bounded_untargeted_cid_nl,
+)
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     build_untargeted_cid_nl_production_batch,
     compose_untargeted_cid_nl_partition,
     compose_untargeted_cid_nl_production_result,
     execute_untargeted_cid_nl_production_batch,
+    materialize_untargeted_cid_nl_partition,
+    prepare_untargeted_cid_nl_production_plan,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeError,
@@ -1026,6 +1035,16 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         bounded_owner, "execute_untargeted_cid_nl_runtime_partition", checked_runtime
     )
+    runtime_fingerprints = []
+    fingerprint = raw_reader_owner.fingerprint_file_content
+
+    def count_runtime_fingerprint(path):
+        runtime_fingerprints.append(path)
+        return fingerprint(path)
+
+    monkeypatch.setattr(
+        raw_reader_owner, "fingerprint_file_content", count_runtime_fingerprint
+    )
     completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,
         candidates_by_sample=candidates,
@@ -1042,6 +1061,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 sample_reader=lambda: ProcessMemorySample(123456, 654321, "measured"),
             ),
         ),
+    )
+    assert runtime_fingerprints == [], (
+        "RAW opens must reuse the input owner's source verification",
+        runtime_fingerprints,
     )
     marker = OwnerPathRuntimeMarker(
         tmp_path / "alignment" / ".cid_nl_runtime.json",
@@ -1579,6 +1602,114 @@ def test_production_batch_preserves_bounded_subject_membership(
         job.candidates is batch.context.candidates_by_sample["S1"] for job in batch.jobs
     )
     _assert_jobs_match_direct_construction(batch)
+
+
+def _source_verification_inputs(tmp_path: Path):
+    path = tmp_path / "S1.synthetic"
+    path.write_bytes(b"source-verification:S1")
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
+    peak_config = _peak_config(tmp_path)
+    raw, candidates = _nearby_subject_candidates(
+        path, settings=settings, peak_config=peak_config
+    )
+    return path, raw, dict(
+        raw_paths=(path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path, (path,), {"S1": candidates}
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:source-verification",
+    )
+
+
+def test_production_reuses_source_verification_across_runtime_opens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, raw, arguments = _source_verification_inputs(tmp_path)
+    fingerprints = []
+    fingerprint = identity_owner.fingerprint_file_content
+
+    def count_fingerprint(source, **kwargs):
+        fingerprints.append(source)
+        return fingerprint(source, **kwargs)
+
+    monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
+    monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
+    plan = prepare_untargeted_cid_nl_production_plan(**arguments)
+    opened = _install_runtime_raws(
+        monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "runtime.json", "source")
+    execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=tmp_path / "out",
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=1,
+    )
+    snapshot = marker.read_optional()
+    assert snapshot is not None
+    assert snapshot.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
+    assert len(opened[path]) == len(plan.subject_batch.subjects) > 1
+    assert fingerprints == [path]
+
+
+def test_production_rejects_source_change_during_expectation_mint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    build_source = input_owner.build_acquisition_source_identity
+
+    def change_after_fingerprint(source_path, **kwargs):
+        source = build_source(source_path, **kwargs)
+        path.write_bytes(b"changed-after-fingerprint")
+        return source
+
+    monkeypatch.setattr(
+        input_owner, "build_acquisition_source_identity", change_after_fingerprint
+    )
+    with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
+        prepare_untargeted_cid_nl_production_plan(**arguments)
+
+
+@pytest.mark.parametrize("change", ["edit", "replace"])
+def test_production_rejects_source_change_after_input_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    path, raw, arguments = _source_verification_inputs(tmp_path)
+    plan = prepare_untargeted_cid_nl_production_plan(**arguments)
+    if change == "edit":
+        path.write_bytes(b"changed-before-runtime")
+    else:
+        replacement = tmp_path / "replacement.synthetic"
+        replacement.write_bytes(path.read_bytes())
+        replacement.replace(path)
+    _install_runtime_raws(monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path)
+    marker = OwnerPathRuntimeMarker(tmp_path / "runtime.json", "source")
+    with pytest.raises(RuntimeError, match="did not complete atomically"):
+        execute_untargeted_cid_nl_production_batch(
+            materialize_untargeted_cid_nl_partition(plan, plan.subject_batch),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            alignment_config=AlignmentConfig(),
+        )
+    snapshot = marker.read_optional()
+    assert snapshot is not None
+    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_sample_job_builder_rejects_changed_request_bound_inputs(
