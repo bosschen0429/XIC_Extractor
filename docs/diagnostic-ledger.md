@@ -65,6 +65,32 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Final Eight-Sample Alignment Acceptance
+
+**Evidence:** `diagnostic_only`; no scientific or writer-authority promotion.
+At `a3c5f793459bb667550cb475f8308c833c7c7385`, the unprofiled official
+Alignment CLI completed in 528.418216 seconds (exit 0), using the accepted
+corrected eight-sample Discovery batch, `dna_dr`, RAW backend, full-audit and
+production output. Discovery was reused, not rerun. Input hashes were unchanged.
+Recorded spans were runtime 203.826137 seconds, compose 174.721 seconds and
+explanation writing 37.658 seconds; these spans do not cover all CLI wall time.
+
+The final 1,387-row/eight-sample Matrix was byte-identical to the prior full run
+(`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`).
+The public explanation summary matched after excluding only output path and
+attempt ID; SQLite integrity/schema passed, with the same request ID and a new
+attempt ID. All 96,383 assessment sample/subject/content bindings matched.
+Strict SQLite logical parity remained **FAIL** in records and links; all table
+counts matched. Fresh attempt-bound artifact references can change nested
+content identities, but the supplemental checks do not prove complete
+cross-attempt graph equivalence. Do not report full explanation parity or
+repeat RAW merely to obtain identical fresh-attempt IDs.
+
+Formal execution owner: `scripts.run_alignment`; acceptance receipts:
+`output/cid-nl-final-acceptance/` (`run.json`, `alignment-timing.json`,
+`verification.json`, `report.md`). This run includes the predecessor context
+reuse below and supersedes its missing whole-Alignment timing observation.
+
 ### 2026-09-09 Predecessor Group-Context Validation Reuse
 
 **Evidence:** `diagnostic_only`; output-preserving owner reuse, no scientific
