@@ -65,6 +65,33 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Unrecorded Alignment Preparation Costs
+
+**Evidence:** `diagnostic_only`; diagnosis only, no product change. The final
+CLI's 109.818505-second stage-coverage gap includes work before the runtime
+timer: physical replay loading and production-batch construction. An unchanged
+CLI preparation replay at `5f406d64` stopped before runtime execution with the
+same request ID, eight samples, 30,570 physical records and 95,320 jobs.
+Preparation took 90.226132 seconds, including 68.610764 seconds in physical
+load/restore and 19.129912 in batch construction (nested context 14.038702,
+sample-job builders 4.409692). Imports took another 1.894250 seconds; candidate
+reading inside preparation took 2.251868 seconds and was already stage-timed.
+These separate-run observations identify the missing category, not an exact
+allocation of every second of the prior run.
+
+One 4,375-record / 41.26 MB sidecar read took 9.173092 seconds normally and
+19.333716 under cProfile, with identical returned records and unchanged input
+SHA. Profiled file reading was 0.0124 seconds; decoding, canonical float/JSON
+conversion, content checks and live-owner physical rehydration dominated.
+Prioritize exact-output reader experiments that reuse unchanged parsed/canonical
+representations while preserving corruption rejection and rehydration. This
+does not justify changing SQLite format or dropping persisted-input validation.
+Final writer-input projection remains untimed; prior retained checkpoints are
+pre-compose, so measure it during a future otherwise-needed CLI run instead of
+rerunning composition solely for that timer. Receipts and source locators:
+`output/cid-nl-unassigned-diagnosis/` (`report.md`, `preparation.json`,
+`sidecar-profile.json`, `sidecar.pstats`, `probe.py`, `profile_sidecar.py`).
+
 ### 2026-09-09 Final Eight-Sample Alignment Acceptance
 
 **Evidence:** `diagnostic_only`; no scientific or writer-authority promotion.
