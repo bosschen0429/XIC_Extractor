@@ -2,6 +2,8 @@
 # distutils: language=c++
 from libcpp.vector cimport vector
 from libc.string cimport memcpy
+from cpython.buffer cimport PyBUF_READ
+from cpython.memoryview cimport PyMemoryView_FromMemory
 from cpython.unicode cimport PyUnicode_AsUTF8AndSize
 from cpython.bytes cimport PyBytes_FromStringAndSize
 """Native traversal of the retained owner's exact length-prefixed token stream."""
@@ -18,23 +20,58 @@ cdef class Walker:
     cdef dict seen
     cdef set identity_only_ids
     cdef vector[char] buffer
+    cdef object digest
     cdef Py_ssize_t remaining_depth
 
-    def __cinit__(self, identities):
+    def __cinit__(self, identities, digest=None):
         self.seen = {}
         self.identity_only_ids = {id(item) for item in identities}
-        self.buffer.reserve(8192)
+        self.digest = digest
+        self.buffer.reserve(8192 if digest is None else 64 * 1024)
         self.remaining_depth = getrecursionlimit()
+
+    cdef void flush_digest(self) except *:
+        if self.buffer.size():
+            self.digest.update(
+                PyMemoryView_FromMemory(
+                    self.buffer.data(), self.buffer.size(), PyBUF_READ
+                )
+            )
+            self.buffer.clear()
 
     cdef void feed(self, str text) except *:
         cdef Py_ssize_t length
         cdef const char* encoded = PyUnicode_AsUTF8AndSize(text, &length)
-        cdef size_t start = self.buffer.size()
         cdef unsigned long long size = length
+        cdef unsigned char prefix[8]
+        cdef Py_ssize_t offset = 0
+        cdef Py_ssize_t chunk_size
+        cdef size_t start
         cdef int i
-        self.buffer.resize(start + 8 + length)
         for i in range(8):
-            self.buffer[start + i] = <char>((size >> (56 - 8*i)) & 255)
+            prefix[i] = <unsigned char>((size >> (56 - 8*i)) & 255)
+        if self.digest is not None:
+            if length + 8 > 64 * 1024:
+                self.flush_digest()
+                self.digest.update(PyBytes_FromStringAndSize(<char*>prefix, 8))
+                while offset < length:
+                    chunk_size = min(length - offset, 64 * 1024)
+                    self.digest.update(
+                        PyMemoryView_FromMemory(
+                            <char*>encoded + offset,
+                            chunk_size,
+                            PyBUF_READ,
+                        )
+                    )
+                    offset += chunk_size
+                return
+            # Owner graphs mostly contain short identity/field/scalar tokens.
+            # Batch these instead of crossing Python/hashlib twice per token.
+            if self.buffer.size() + 8 + length > 64 * 1024:
+                self.flush_digest()
+        start = self.buffer.size()
+        self.buffer.resize(start + 8 + length)
+        memcpy(self.buffer.data() + start, prefix, 8)
         if length:
             memcpy(self.buffer.data() + start + 8, encoded, length)
 
@@ -97,4 +134,8 @@ def encoded_graph(value, *, identity_only=()):
     return PyBytes_FromStringAndSize(walker.buffer.data(), walker.buffer.size())
 
 def retained_owner_digest(value, *, identity_only=()):
-    return sha256(encoded_graph(value, identity_only=identity_only)).digest()
+    digest = sha256()
+    cdef Walker walker = Walker(identity_only, digest)
+    walker.visit(value)
+    walker.flush_digest()
+    return digest.digest()
