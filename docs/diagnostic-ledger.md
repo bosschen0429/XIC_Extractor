@@ -57,13 +57,38 @@ dated productization control-plane path is compatibility lookup only.
 | Purpose | Stable path |
 | --- | --- |
 | Accepted 8RAW discovery input (v2) | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` |
-| Accepted 85RAW discovery input | none; no v2 index exists yet. |
+| Accepted 85RAW discovery input | none; a diagnostic v2 run exists, but full-cohort Alignment remains incomplete (see the 2026-09-09 resource-pressure result below). |
 | Retired v1 discovery inputs | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/`; `scripts.run_alignment` rejects them with `discovery_batch_index_v2 owner closure is required` |
 | Targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx`, SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7` |
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-09 Full-Cohort Runtime Resource Pressure
+
+**Evidence:** `diagnostic_only`; no product or scientific-readiness promotion.
+At clean `82d06563`, native `dna_dr` Discovery with four workers completed
+85RAW in 914.494892 seconds and published 306,619 candidates. Source hashes and
+all 85 candidate artifact hashes passed post-run checks. The overlapping eight
+samples had identical review bytes and 30,570 candidate rows differing only in
+the `raw_file` location; all other CSV fields matched.
+
+Canonical 85RAW Alignment required `validation-minimal`; its corrected preflight
+passed. Runtime expanded to 3,671,150 work units. The run was deliberately stopped
+after 8,073.131497 seconds because private allocated memory exceeded 65 GB on a
+roughly 32 GB physical-memory host, with observed system paging and delayed
+status queries. This was a controlled resource stop, not a spontaneous CLI error
+or the four-hour timeout. No Matrix or explanation database was published.
+
+The runtime marker existed roughly 16 minutes after launch and later emitted
+successful work-unit heartbeats. Missing completed spans do not justify labeling
+the entire remaining time as preparation. Full Alignment timing and output parity
+remain unestablished. Do not extrapolate the 8RAW timings or repeat full RAW
+Discovery to diagnose this memory problem; retain the completed Discovery and
+first isolate runtime memory costs with a bounded measurement.
+Receipts: `output/cid-nl-85raw-20260909/` (`report.md`, `stop-receipt.json`,
+`partial-verification.json`, and the stage run/timing files).
 
 ### 2026-09-09 Remaining Context/Formatting Work Deferred
 
