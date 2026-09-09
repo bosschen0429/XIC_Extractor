@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -112,6 +113,7 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
 def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     tmp_path: Path, monkeypatch, scenario: str
 ):
+    from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
         execute_bounded_untargeted_cid_nl,
     )
@@ -129,6 +131,13 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     )
     marker = OwnerPathRuntimeMarker(tmp_path / "bounded.json", "bounded")
     progress_events = []
+    live_path = tmp_path / "alignment-live.json"
+    recorder = TimingRecorder("alignment", live_output_path=live_path)
+
+    def report_progress(event):
+        recorder.heartbeat_event(event)
+        progress_events.append(event)
+
     bounded = execute_bounded_untargeted_cid_nl(
         plan,
         output_dir=tmp_path / "bounded-output",
@@ -136,7 +145,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=marker,
         known_istd_reference=reference,
-        progress_callback=progress_events.append,
+        progress_callback=report_progress,
         max_partition_jobs=len(plan.context.samples),
     )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
@@ -198,6 +207,9 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         ("global_closure", 2),
         ("batch_completed", 2),
     ]
+    heartbeat = json.loads(live_path.read_text(encoding="utf-8"))["heartbeat"]
+    assert heartbeat["stage"] == "batch_completed"
+    assert heartbeat["completed"] == heartbeat["total"] == 2
     eager_manifest = eager_runtime.finalization.coordinator.state.runtime.manifest
     assert len(eager_manifest.work_unit_keys) == len(batch.jobs)
     snapshot = marker.read()

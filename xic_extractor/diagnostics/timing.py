@@ -159,16 +159,17 @@ class TimingRecorder:
         event_name = event.get("event")
         if not isinstance(event_name, str):
             return
+        stage = event.get("stage", event_name)
         sample = event.get("sample_stem", "")
         completed = event.get("completed")
         total = event.get("total")
         extras = {
             str(key): value
             for key, value in event.items()
-            if key not in {"event", "sample_stem", "completed", "total"}
+            if key not in {"event", "stage", "sample_stem", "completed", "total"}
         }
         self.heartbeat(
-            stage=event_name,
+            stage=stage if isinstance(stage, str) else event_name,
             sample_stem=sample if isinstance(sample, str) else "",
             completed=completed if isinstance(completed, int) else None,
             total=total if isinstance(total, int) else None,

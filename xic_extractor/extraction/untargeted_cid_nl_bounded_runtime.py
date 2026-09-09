@@ -357,7 +357,7 @@ def execute_bounded_untargeted_cid_nl(
     )
     if failure is not None:
         raise RuntimeError(
-            "CID-NL bounded execution failed before batch publication"
+            f"CID-NL bounded execution failed before batch publication: {failure}"
         ) from failure
     if (
         finalization.supervisor.terminal_outcome is not AttemptTerminalOutcome.SUCCEEDED
