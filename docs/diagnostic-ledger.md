@@ -105,7 +105,12 @@ population includes records beyond the 30,570 selected Alignment candidates.
 The 103 related tests passed, including canonical numeric spelling, reordered
 envelopes, whitespace and resealed-tamper rejection. Scoped Ruff and mypy
 passed. These are reader measurements; no new full CLI or RAW extraction was
-run. Reuse this proof before repeating expensive validation. Receipts:
+run. The 26.85% reduction applies only to summed sidecar reads, not to the
+528.418216-second Alignment CLI below, which predates this decoder change.
+Whole-Alignment and continuous Discovery-plus-Alignment wall time after this
+change remain unmeasured; capture them during a future otherwise-needed run,
+not by subtracting this reader delta from an earlier CLI time.
+Reuse this proof before repeating expensive validation. Receipts:
 `output/cid-nl-reader-optimization/` (`report.md`, `benchmark.py`,
 `paired-final.json`, `full-pair.json`).
 
@@ -145,6 +150,10 @@ corrected eight-sample Discovery batch, `dna_dr`, RAW backend, full-audit and
 production output. Discovery was reused, not rerun. Input hashes were unchanged.
 Recorded spans were runtime 203.826137 seconds, compose 174.721 seconds and
 explanation writing 37.658 seconds; these spans do not cover all CLI wall time.
+The 528.418216 seconds excludes Discovery execution and precedes the decoder
+optimization above. It is not a speedup pair with the historical 467.197-second
+native-receipt replay below: that replay opened no RAW and produced a different
+1,499-row Matrix, whereas this run used the RAW backend and produced 1,387 rows.
 
 The final 1,387-row/eight-sample Matrix was byte-identical to the prior full run
 (`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`).
