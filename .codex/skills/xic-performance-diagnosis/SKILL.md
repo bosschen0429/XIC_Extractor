@@ -25,6 +25,12 @@ new measurement path. Read
 `docs/agent/parameter-settings.md#alignment-and-handoff` for the current
 RAW/preset command and 85RAW launch/timing constraints.
 
+For successive optimizations, carry forward the accepted changes in the next
+baseline. If the operator selected a validated prototype as the cumulative
+baseline, bind that exact state; a comparison against an older formal version
+answers a separate integration question, not the stack's remaining speedup.
+Keep rollback scoped to the current unaccepted delta.
+
 Completion criterion: one branch is selected; every run has a workload,
 artifact state, timing coverage, and producing state or an explicit `unknown`.
 

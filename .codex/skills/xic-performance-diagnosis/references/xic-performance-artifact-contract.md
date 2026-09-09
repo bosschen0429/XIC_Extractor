@@ -18,6 +18,14 @@ Prefer timing sources in this order:
 When sources disagree on the top bottleneck, classify the result as
 `inconclusive` and choose a narrower measurement.
 
+When reporting elapsed time, put the producing state, workload, and timed
+entry/exit scope beside the number. For Discovery/Alignment work, state whether
+Discovery was rerun or reused, whether RAW acquisition was included or results
+were replayed, and whether the number is one continuous wall time or a sum of
+separate runs. Name excluded stages; reserve "end-to-end" for the stated scope.
+Report a local speedup within its measured scope. A later stage optimization
+does not update an earlier whole-run time without a corresponding observation.
+
 ## Narrow Artifact Inventory
 
 Inspect or name the absence of only the artifacts needed for the decision:
