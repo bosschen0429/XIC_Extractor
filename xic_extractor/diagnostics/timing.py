@@ -62,6 +62,7 @@ class TimingRecorder:
         self._span_semantics: list[dict[str, str]] = []
         self._span_stack: list[list[float | int]] = []
         self._heartbeat: dict[str, object] = {}
+        self._last_heartbeat_publish: float | None = None
         self._measurement_observations: list[dict[str, object]] = []
         self._measurement_contract: dict[str, object] = {}
 
@@ -113,7 +114,11 @@ class TimingRecorder:
         total: int | None = None,
         **values: object,
     ) -> None:
-        """Publish bounded progress without replacing the final timing history."""
+        """Keep latest progress; coalesce stage-local bursts until the next second.
+
+        Stage exit flushes the latest heartbeat, including on exceptions.
+        Unscoped updates, transitions, failures and completion publish immediately.
+        """
 
         if not self.enabled:
             return
@@ -126,8 +131,24 @@ class TimingRecorder:
         if total is not None:
             progress["total"] = total
         progress.update(values)
+        previous_stage = self._heartbeat.get("stage")
         self._heartbeat = progress
+        if self.live_output_path is None:
+            return
+        # Use a separate monotonic clock so progress cannot consume an injected
+        # stage-duration timer. Only active stages guarantee a final flush.
+        now = perf_counter()
+        if (
+            self._span_stack
+            and self._last_heartbeat_publish is not None
+            and previous_stage == stage
+            and values.get("succeeded") is not False
+            and not (completed is not None and total is not None and completed >= total)
+            and now - self._last_heartbeat_publish < 1.0
+        ):
+            return
         self._write_live()
+        self._last_heartbeat_publish = now
 
     def heartbeat_event(self, event: Mapping[str, object]) -> None:
         """Accept a workflow progress mapping while keeping kwargs typed."""
@@ -219,6 +240,8 @@ class TimingRecorder:
             yield scope
             return
 
+        if not self._span_stack:
+            self._last_heartbeat_publish = None
         start = self._timer()
         parent_start = self._span_stack[-1][1] if self._span_stack else None
         record_index = len(self._records)

@@ -65,6 +65,33 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Stage-Local Live Heartbeat Coalescing
+
+**Evidence:** `diagnostic_only`; timing publication optimization, no scientific
+or writer-authority promotion. The existing `TimingRecorder` retains every
+latest heartbeat in memory while coalescing repeated updates within active
+stages to the next callback after one second. First updates, stage transitions,
+explicit failures and completed counts publish immediately. Unscoped updates
+remain immediate, and stage exit flushes on success or exception. Abrupt process
+termination can leave sub-second progress unpublished; no timer thread exists.
+
+Three interleaved, warmed 5,000-event real-file replays against `1e8bb6c9` reduced
+median callback/stage-flush wall time from 9.281337 to 0.014635 seconds. Baseline
+range was 9.047228–9.840014; candidate range was 0.011993–0.014919. Replacement
+attempts including transient retries were 5,040/5,047/5,039 versus 2/2/2. The
+candidate loop completes within one second, so its writes are first and final;
+clock-controlled tests separately verify interval refresh. All final live and
+full timing payloads were identical. No RAW was opened and this is not a measured
+whole-runtime speedup. The prior 158.681-second real-runtime callback cost is
+motivation, not a quantity that can simply be subtracted from pipeline time.
+
+The timing, Alignment CLI and provisional-matrix CLI suites passed 82 tests,
+including new baseline-red real-file coverage for coalescing and final/latest
+state preservation. Scoped Ruff/mypy passed. Receipts and source bindings:
+`output/cid-nl-live-progress/{plan.md,report.md,benchmark.json,benchmark.py}`.
+Keep this optimization within the timing owner; no scientific identity or
+runtime-owner validation changes are needed to retain its benefit.
+
 ### 2026-09-09 Current Eight-Sample Runtime Owner Timing
 
 **Evidence:** `diagnostic_only`; measured at `f50d5ed7`, with no product change.
