@@ -65,6 +65,50 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Current Eight-Sample Runtime Owner Timing
+
+**Evidence:** `diagnostic_only`; measured at `f50d5ed7`, with no product change.
+One instrumented real Alignment run reused corrected Discovery inputs and
+verified the source RAW/DLL/reference hashes. The runtime completed 95,320 work
+units in 701.894 seconds (267.438 process CPU seconds). This is a single-run
+owner diagnosis, not a paired speedup result.
+
+The initial Discovery adapter accounted for 331.715 seconds, including 38.598
+seconds across 22,283 complete-seed reads. Its 282.882-second exclusive remainder
+still needs internal attribution before changing validation or assessment mint.
+Live-progress callbacks consumed 158.681 seconds across 95,320 events, including
+157.465 seconds rewriting JSON and 15.685 seconds in file-replacement retry
+sleeps. These quantities overlap. This run enabled live output; the earlier
+502.517-second runtime did not, so progress I/O cannot explain that earlier cost.
+
+Other disjoint costs were recovery-adapter exclusive work (67.994 seconds),
+RAW XIC extraction (30.929), recovery preparation (30.075), per-job finalization
+exclusive work (29.967), and runtime-attempt finalization exclusive work (20.208).
+Remaining measured work and enclosing residual account for 32.325 seconds.
+The formal call-cost projection reports 16 RAW opens, 16 XIC batches, 8,565
+logical XIC requests, 8,388 adapter chromatogram calls and 390,262 trace points.
+
+Next candidates are bounded live-progress publication in the existing timing
+owner and a faithful fresh-input profile of the existing Discovery adapter.
+Do not infer removable work from the adapter remainder, extrapolate synthetic
+jobs to this workload, or prioritize a RAW/parallelism rewrite from these data.
+No optimization is applied or claimed here. Whole-runtime RAW replay needs a
+named missing-input or changed-behavior reason; the post-runtime composition
+checkpoint alone does not establish faithful runtime replay.
+
+Receipts: `output/cid-nl-runtime-diagnosis/` contains `run.json`,
+`instrumentation.json`, `runtime-spans.json`, `runtime-result-summary.json` and
+`report.md`. Exclusive spans sum to the runtime root; uninstrumented work remains
+inside the corresponding owner's exclusive time. Host/cache and wrapper costs
+are uncontrolled, so historical totals are not comparable speedup evidence.
+
+The full CLI completed in 1,037.371 seconds. Matrix bytes and the public
+explanation summary matched the prior fresh-mint replay, and SQLite integrity
+passed. Exact SQLite logical parity did not pass: the new runtime has fresh
+attempt-bound assessment and downstream IDs, while all 96,383 assessment content
+IDs with sample/subject bindings match. `verification.json` preserves the failed
+strict verdict; it is not a relaxed optimization acceptance oracle.
+
 ### 2026-09-09 Captured Observation Mint Reuses Closed Physical Facts
 
 **Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
