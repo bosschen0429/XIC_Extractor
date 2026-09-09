@@ -65,6 +65,30 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Physical-Record Decoder Canonical Reuse
+
+**Evidence:** `diagnostic_only`; exact-output decoder optimization, no scientific
+or writer-authority promotion. The acquisition decoder reuses its checked
+canonical content and ID for the final byte comparison, and checks Python
+float finiteness with `math.isfinite`. The physical evaluation decoder reuses
+checked profile/trace envelopes while rebuilding evaluation from its live-owner
+rehydrated result. All identity/profile/trace checks, live prepare/evaluate
+equality and canonical-byte rejection remain; no schema or cross-call cache
+was added.
+
+Three interleaved, warmed 4,375-record sidecar pairs against `8aed27f2` reduced
+median reader time from 9.198867 to 6.902826 seconds (ranges 9.081716–9.991312
+and 6.881034–6.960742). An eight-sample pair with alternating version order
+reduced summed reads from 69.501646 to 50.843587 seconds (26.85%). All 31,819
+sidecar records matched completely and input hashes were unchanged; this
+population includes records beyond the 30,570 selected Alignment candidates.
+The 103 related tests passed, including canonical numeric spelling, reordered
+envelopes, whitespace and resealed-tamper rejection. Scoped Ruff and mypy
+passed. These are reader measurements; no new full CLI or RAW extraction was
+run. Reuse this proof before repeating expensive validation. Receipts:
+`output/cid-nl-reader-optimization/` (`report.md`, `benchmark.py`,
+`paired-final.json`, `full-pair.json`).
+
 ### 2026-09-09 Unrecorded Alignment Preparation Costs
 
 **Evidence:** `diagnostic_only`; diagnosis only, no product change. The final

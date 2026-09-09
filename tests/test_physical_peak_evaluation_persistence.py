@@ -80,9 +80,33 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
     assert rehydrated_profile == profile
     assert rehydrated == evaluation
     assert rehydrated.state == terminal
+    with pytest.raises(ValueError, match="not canonical"):
+        deserialize_physical_peak_evaluation(payload + b" ")
 
 
-def test_physical_evaluation_persistence_rejects_resealed_owner_tamper() -> None:
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value["evaluation"]["answer"].__setitem__(
+            "physical_answer_id", "physical-answer.v1:" + "0" * 64
+        ),
+        lambda value: value["trace"]["rt"].__setitem__(0, "-0x0.0p+0"),
+        lambda value: value["trace"]["rt"].__setitem__(0, "0x0p+0"),
+        lambda value: value["trace"].__setitem__("trace_content_id", "wrong-trace"),
+        lambda value: value["profile"].__setitem__("profile_hash", "0" * 64),
+        lambda value: value["profile"]["content"].__setitem__("window_points", 3.0),
+        lambda value: value.__setitem__(
+            "profile", dict(reversed(tuple(value["profile"].items())))
+        ),
+        lambda value: value.__setitem__(
+            "trace", dict(reversed(tuple(value["trace"].items())))
+        ),
+        lambda value: value.__setitem__(
+            "evaluation", dict(reversed(tuple(value["evaluation"].items())))
+        ),
+    ],
+)
+def test_physical_evaluation_persistence_rejects_resealed_owner_tamper(mutate) -> None:
     profile = SignalProcessingProfile(window_points=3)
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.full(31, 10.0)
@@ -100,9 +124,7 @@ def test_physical_evaluation_persistence_rejects_resealed_owner_tamper() -> None
             evaluation=evaluation,
         )
     )
-    value["evaluation"]["answer"]["physical_answer_id"] = (
-        "physical-answer.v1:" + "0" * 64
-    )
+    mutate(value)
 
     with pytest.raises(ValueError):
         deserialize_physical_peak_evaluation(

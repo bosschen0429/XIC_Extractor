@@ -828,10 +828,7 @@ def answer_physical_peak_question(
             prepared = prepared_result.prepared
             if prepared is None:
                 raise ValueError("available physical answer lacks worker-local signal")
-            if (
-                selected.start_index == 0
-                or selected.end_index == len(prepared.rt)
-            ):
+            if selected.start_index == 0 or selected.end_index == len(prepared.rt):
                 state, reason = "unavailable", "incomplete_peak_context"
                 selected = None
     answer_basis = {
@@ -1321,15 +1318,18 @@ def deserialize_physical_peak_evaluation(
         request_context_rt_start_min=evaluation.question.context_rt_start_min,
         request_context_rt_end_min=evaluation.question.context_rt_end_min,
     )
-    if (
-        serialize_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            evaluation=rehydrated,
-        )
-        != raw_payload
-    ):
+    # Profile and trace tokens are already canonical and identity-checked.
+    # Keep the live-owner evaluation check above and rebuild its payload, but
+    # reuse the checked inputs instead of converting and hashing them again.
+    canonical = _canonical_physical_json_bytes(
+        {
+            "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
+            "profile": profile_envelope,
+            "trace": trace,
+            "evaluation": _physical_evaluation_payload(rehydrated),
+        }
+    )
+    if canonical != raw_payload:
         raise ValueError("physical evaluation payload is not canonical")
     return rt, raw, profile, rehydrated
 
