@@ -65,6 +65,38 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Predecessor Group-Context Validation Reuse
+
+**Evidence:** `diagnostic_only`; output-preserving owner reuse, no scientific
+or writer-authority promotion. `alignment.cell_observations` reuses its existing
+synchronous validation scope for the exact contexts it just constructed before
+minting predecessor cells. Constructor validation and per-cell subject, attempt,
+SUPPORT, sibling and artifact checks remain. The prior scope is restored after
+success/error; no cached proof survives the call.
+
+A fresh official runtime at `9c009c85` completed the corrected eight-sample,
+95,320-job universe in 210.971554 seconds. Initial/recovery assessment contents
+and observation contents/provenance matched the original results; the canonical
+receipt retained 16 RAW opens/XIC batches, 8,565 logical requests, 8,388 adapter
+calls and 390,262 trace points. Recovery preparation still cost 29.520 seconds.
+This runtime observation predates the context-reuse candidate and is not its
+whole-runtime timing. Exact recovery centers were retained for later replay.
+
+No-RAW preparation profiling found repeated reconstruction of already-validated
+contexts. Three interleaved 128-subject pairs reduced median time from 1.289269
+to 0.728087 seconds (ranges 1.283881–1.292316 and 0.717954–0.743617). Context
+validation calls fell from 3,282 to 266. A complete 11,915-subject pair took
+31.307167 versus 18.147998 seconds; all 50,760 cell contents/artifacts and recovery
+outputs/centers were identical. These are actual component measurements, not
+scaled runtime estimates. Eighty related tests and scoped Ruff/format/mypy passed;
+an existing-fixture smoke also preserved sibling rejection and nested-scope cleanup.
+
+The smallest scan-window cache was not pursued: only 158 of 8,713 exact windows
+repeat (1.81%). Do not infer broader scan-cache benefit from this count. Reuse the
+new runtime ranking and preparation proof before another RAW run. Artifacts:
+`output/cid-nl-runtime-remaining/` (`report.md`, `run.json`, `runtime-spans.json`,
+`prepare-profile.json`, `prepare-paired.json`, `scope-smoke.json`).
+
 ### 2026-09-09 Physical Recovery Request/Profile Reuse
 
 **Evidence:** `diagnostic_only`; output-preserving binding optimization, no
