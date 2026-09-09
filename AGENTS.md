@@ -52,7 +52,9 @@ triggered route; its owner carries detail.
   tracked artifacts require a current runtime, CI, or public consumer.
 - **Git boundary:** run one direct Git command per shell step. Parallelize
   independent reads inside one orchestrator call and return bounded summaries,
-  anomalies, counts, and locators. Routine sync uses
+  anomalies, counts, and locators. Read-only `diff`/`log`/`show` may end with
+  `| Select-Object -First N` or `| head -n N`, where N is a positive literal;
+  this is an output excerpt, not proof of complete inspection. Routine sync uses
   `git pull --ff-only --no-stat` after inspecting only the current branch.
 - **Specialized gates:** performance work first uses
   `xic-performance-diagnosis`; RAW launch or artifact acceptance uses

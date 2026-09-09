@@ -48,7 +48,8 @@ AMBIGUOUS_GIT_REASON = (
     "path-qualified executable, command expansion, redirection, or unsupported "
     "global option. Batch independent read steps as parallel executor calls and "
     "summarize their outputs before returning them to the model. If Git text is "
-    "data, use a supported top-level search/output command."
+    "data, use a supported top-level search/output command. Read-only diff/log/show "
+    "may end with `| Select-Object -First N` or `| head -n N` for a positive literal N."
 )
 UNSUPPORTED_WRAPPER_CODE = "unsupported_shell_wrapper"
 UNSUPPORTED_WRAPPER_REASON = (
@@ -118,6 +119,10 @@ _INERT_TEXT_CONSUMERS = frozenset(
 _RIPGREP_TEXT_CONSUMERS = frozenset({"rg", "rg.exe", "ripgrep", "ripgrep.exe"})
 _RIPGREP_EXECUTING_OPTIONS = frozenset({"--hostname-bin", "--pre"})
 _GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull", "push"})
+_BOUNDED_GIT_OUTPUT = re.compile(
+    r"(?P<source>.+?)\s*\|\s*(?:Select-Object\s+-First|head\s+-n)\s+[1-9][0-9]*",
+    re.IGNORECASE,
+)
 
 
 class GitPolicyPrefix(str, Enum):
@@ -172,8 +177,9 @@ def analyze_command(command: str) -> CommandAnalysis:
 
     Explicit nested command wrappers always require a rewrite. Outside a
     wrapper, only one canonical lowercase bare ``git`` invocation is parsed.
-    Git-bearing compound expressions, assignments, malformed quoting, path-qualified
-    executables, executable aliases, and unsupported global options also
+    Read-only diff/log/show may feed one terminal line-limit consumer.
+    Other Git-bearing compound expressions, assignments, malformed quoting,
+    path-qualified executables, executable aliases, and unsupported global options also
     require a rewrite. Quoted Git phrases passed to a simple non-wrapper
     command remain ordinary text only for bounded inert search/output consumers
     and only without shell command-expansion syntax. A wrapper token in the
@@ -184,6 +190,26 @@ def analyze_command(command: str) -> CommandAnalysis:
     stripped = command.strip()
     if not stripped:
         return CommandAnalysis()
+
+    # Reuse the direct-command parser for the producer. The exact terminal
+    # consumer is inert and bounded; another pipe or control expression in the
+    # producer still fails the ordinary grammar.
+    bounded = _BOUNDED_GIT_OUTPUT.fullmatch(stripped)
+    if bounded is not None:
+        source = bounded.group("source")
+        if "|" not in _lexical_facts(source).unquoted_text:
+            analysis = analyze_command(source)
+            invocation = analysis.git_invocation
+            if (
+                not analysis.requires_rewrite
+                and invocation is not None
+                and invocation.subcommand in {"diff", "log", "show"}
+                and not any(
+                    token == "--output" or token.startswith("--output=")
+                    for token in invocation.tail
+                )
+            ):
+                return analysis
 
     words = _split_outer_words(stripped)
     first_token = words[0] if words else ""

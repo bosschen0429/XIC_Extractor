@@ -486,6 +486,45 @@ def test_pre_hook_denies_ambiguous_git_bearing_commands(command: str) -> None:
 @pytest.mark.parametrize(
     "command",
     [
+        "git diff -- README.md | Select-Object -First 120",
+        "git --no-pager log -5 | head -n 20",
+        "git show HEAD | select-object -first 40",
+        "git diff -- 'file with spaces.txt' | Select-Object -First 30",
+    ],
+)
+def test_pre_hook_allows_bounded_read_only_git_output(command: str) -> None:
+    completed = _run_pre_hook(command)
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git push origin HEAD | Select-Object -First 20",
+        "git reset --hard | head -n 20",
+        "git diff --output=patch.txt | head -n 20",
+        "git log --output patch.txt | Select-Object -First 20",
+        "git diff | Select-Object -First 0",
+        "git diff | Select-Object -First $limit",
+        "git diff | Select-Object -First 20; git push origin HEAD",
+        "git diff | Select-Object -First 20 | Set-Content patch.txt",
+        "git diff; git status | head -n 20",
+        "git diff | Invoke-Expression",
+    ],
+)
+def test_pre_hook_keeps_mutation_and_unbounded_git_pipelines_blocked(
+    command: str,
+) -> None:
+    completed = _run_pre_hook(command)
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "bash -lc " + json.dumps("if true; then git -C C:\\repo status --short; fi"),
         "pwsh -Command " + json.dumps("if ($true) { git -C C:\\repo status --short }"),
         "bash -lc " + json.dumps("echo then git -C C:\\repo push origin HEAD"),
