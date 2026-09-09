@@ -64,6 +64,7 @@ from xic_extractor.alignment.result.application_result import (
     UntargetApplicationResultRequest,
     UntargetBatchApplicationResultRequest,
     UntargetedCandidateExclusion,
+    _finalize_fresh_untarget_result,
     finalize_alignment_result,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
@@ -1376,10 +1377,10 @@ def _finish_variant(
         untarget_pre_cell = project_untarget_pre_cell(scientific)
         stage = WorkflowStage.CELL_DECISION
         from xic_extractor.alignment.cell_decision.owner import (
-            decide_group_cell_population,
+            _decide_fresh_group_cell_population,
         )
 
-        untarget_decisions = decide_group_cell_population(
+        untarget_decisions = _decide_fresh_group_cell_population(
             untarget_pre_cell,
             scientific,
         )
@@ -1389,7 +1390,8 @@ def _finish_variant(
             untarget_decisions,
         )
         stage = WorkflowStage.APPLICATION_RESULT
-        result = finalize_alignment_result(
+        # No adapter callback intervenes between these owner completions.
+        result = _finalize_fresh_untarget_result(
             UntargetApplicationResultRequest(
                 scientific_core=scientific,
                 completed_projection=untarget_projection,

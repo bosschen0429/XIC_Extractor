@@ -246,8 +246,8 @@ class FinalizedUntargetApplicationResult:
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
+        # Application owner entry points close the result before returning it.
         _require_result_mint(_mint_token)
-        _validate_untarget_result(self)
 
     @property
     def variant(self) -> Literal["untargeted"]:
@@ -290,8 +290,8 @@ class FinalizedUntargetBatchApplicationResult:
     _mint_token: InitVar[object]
 
     def __post_init__(self, _mint_token: object) -> None:
+        # The owner transfers the validated request's exact immutable fields.
         _require_result_mint(_mint_token)
-        _validate_untarget_batch_request(self)
 
     @property
     def variant(self) -> Literal["untargeted_batch"]:
@@ -399,13 +399,15 @@ def finalize_alignment_result(
     if type(request) is UntargetApplicationResultRequest:
         _validate_untarget_request(request)
         core = request.scientific_core
-        return FinalizedUntargetApplicationResult(
+        result = FinalizedUntargetApplicationResult(
             scientific_core=core,
             completed_projection=request.completed_projection,
             _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
         )
+        _validate_untarget_result(result)
+        return result
     if type(request) is UntargetBatchApplicationResultRequest:
-        _validate_untarget_batch_request(request)
+        # Construction already closes the batch; this handoff adds no new input.
         return FinalizedUntargetBatchApplicationResult(
             scope=request.scope,
             processing_request=request.processing_request,
@@ -417,6 +419,21 @@ def finalize_alignment_result(
     raise ApplicationResultContractError(
         "application result requires an exact discriminated request variant"
     )
+
+
+def _finalize_fresh_untarget_result(
+    request: UntargetApplicationResultRequest,
+) -> FinalizedUntargetApplicationResult:
+    """Transfer owners just completed in the callback-free workflow closure."""
+
+    _validate_untarget_request(request)
+    result = FinalizedUntargetApplicationResult(
+        scientific_core=request.scientific_core,
+        completed_projection=request.completed_projection,
+        _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
+    )
+    _validate_untarget_result(result, _reuse_fresh_completion=True)
+    return result
 
 
 def _validate_target_request(request: TargetApplicationResultRequest) -> None:
@@ -452,11 +469,13 @@ def _validate_untarget_request(request: UntargetApplicationResultRequest) -> Non
 def _validate_common_result(
     *,
     scientific_core: FinalizedScientificAlignment,
+    _reuse_fresh_completion: bool = False,
 ) -> None:
-    try:
-        _validate_finalized_scientific_alignment_completion_receipt(scientific_core)
-    except FinalizedScientificAlignmentContractError as exc:
-        raise ApplicationResultContractError(str(exc)) from exc
+    if not _reuse_fresh_completion:
+        try:
+            _validate_finalized_scientific_alignment_completion_receipt(scientific_core)
+        except FinalizedScientificAlignmentContractError as exc:
+            raise ApplicationResultContractError(str(exc)) from exc
     if scientific_core.processing_request is not scientific_core.scope.request:
         raise ApplicationResultContractError(
             "application result scientific core substituted its processing request"
@@ -534,7 +553,11 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
         )
 
 
-def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> None:
+def _validate_untarget_result(
+    result: FinalizedUntargetApplicationResult,
+    *,
+    _reuse_fresh_completion: bool = False,
+) -> None:
     from xic_extractor.alignment.projection.untarget.post_cell import (
         UntargetPostCellProjection,
         validate_untarget_post_cell_completion_receipt,
@@ -545,6 +568,7 @@ def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> Non
 
     _validate_common_result(
         scientific_core=result.scientific_core,
+        _reuse_fresh_completion=_reuse_fresh_completion,
     )
     if type(result.scientific_core.scope) is not UntargetedSearchScope:
         raise ApplicationResultContractError(
@@ -555,10 +579,11 @@ def _validate_untarget_result(result: FinalizedUntargetApplicationResult) -> Non
             "Untarget application result requires an exact completed "
             "Untarget projection"
         )
-    try:
-        validate_untarget_post_cell_completion_receipt(result.completed_projection)
-    except UntargetProjectionContractError as exc:
-        raise ApplicationResultContractError(str(exc)) from exc
+    if not _reuse_fresh_completion:
+        try:
+            validate_untarget_post_cell_completion_receipt(result.completed_projection)
+        except UntargetProjectionContractError as exc:
+            raise ApplicationResultContractError(str(exc)) from exc
     projection = result.completed_projection
     pre_cell = projection.pre_cell_projection
     if pre_cell.finalized_alignment is not result.scientific_core:

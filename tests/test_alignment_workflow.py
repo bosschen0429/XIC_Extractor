@@ -225,7 +225,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
     monkeypatch.setattr(
         decision_owner,
-        "decide_group_cell_population",
+        "_decide_fresh_group_cell_population",
         lambda before, scientific_core: decisions,
     )
     monkeypatch.setattr(
@@ -240,7 +240,9 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
     monkeypatch.setattr(
         workflow_owner,
-        "finalize_alignment_result",
+        "finalize_alignment_result"
+        if variant == "target"
+        else "_finalize_fresh_untarget_result",
         lambda value: application_result,
     )
 

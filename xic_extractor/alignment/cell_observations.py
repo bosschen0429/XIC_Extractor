@@ -2778,71 +2778,82 @@ def compose_cid_nl_predecessor_cells(
         if assessment not in refs:
             refs.append(assessment)
     cells = []
-    for context in contexts:
-        for sample_id, refs in assessments_by_sample.items():
-            sample = samples[sample_id]
-            local_refs = tuple(
-                support.assessment
-                for support in context.supports
-                if support.sample.identity.sample_identity_id == sample_id
-            )
-            recovered = (recovery_assessments_by_group or {}).get(
-                (context.group.group_hypothesis_id, sample_id)
-            )
-            if recovered is not None and not any(recovered is ref for ref in refs):
-                raise CellObservationContractError(
-                    "group recovery is outside the assessment population"
+    # These exact contexts were fully validated during construction above.
+    # Reuse that proof only within this synchronous cell-minting pass.
+    validated_contexts = {id(context): context for context in contexts}
+    token = _population_group_context_validation.set(
+        (validated_contexts, set(validated_contexts))
+    )
+    try:
+        for context in contexts:
+            for sample_id, refs in assessments_by_sample.items():
+                sample = samples[sample_id]
+                local_refs = tuple(
+                    support.assessment
+                    for support in context.supports
+                    if support.sample.identity.sample_identity_id == sample_id
                 )
-            assessment = (
-                local_refs[0]
-                if local_refs
-                else recovered
-                if recovered is not None
-                else refs[0]
-            )
-            local = tuple(
-                support
-                for support in context.supports
-                if support.sample is sample and support.assessment is assessment
-            )
-            outside_context = None
-            observation = None
-            hypothesis = None
-            if local:
-                (support,) = local
-                hypothesis = support.hypothesis
-                (observation,) = hypothesis.peak_observation_refs
-            elif assessment.content.method_result == "SUPPORT":
-                siblings = tuple(
-                    sibling
-                    for sibling in contexts
-                    if sibling is not context
-                    and any(
-                        support.sample is sample and support.assessment is assessment
-                        for support in sibling.supports
+                recovered = (recovery_assessments_by_group or {}).get(
+                    (context.group.group_hypothesis_id, sample_id)
+                )
+                if recovered is not None and not any(recovered is ref for ref in refs):
+                    raise CellObservationContractError(
+                        "group recovery is outside the assessment population"
+                    )
+                assessment = (
+                    local_refs[0]
+                    if local_refs
+                    else recovered
+                    if recovered is not None
+                    else refs[0]
+                )
+                local = tuple(
+                    support
+                    for support in context.supports
+                    if support.sample is sample and support.assessment is assessment
+                )
+                outside_context = None
+                observation = None
+                hypothesis = None
+                if local:
+                    (support,) = local
+                    hypothesis = support.hypothesis
+                    (observation,) = hypothesis.peak_observation_refs
+                elif assessment.content.method_result == "SUPPORT":
+                    siblings = tuple(
+                        sibling
+                        for sibling in contexts
+                        if sibling is not context
+                        and any(
+                            support.sample is sample
+                            and support.assessment is assessment
+                            for support in sibling.supports
+                        )
+                    )
+                    if not siblings:
+                        raise ValueError(
+                            "outside-group cell requires one exact sibling "
+                            "SUPPORT context"
+                        )
+                    outside_context = min(
+                        siblings, key=lambda sibling: sibling.group.group_hypothesis_id
+                    )
+                elif (
+                    assessment.content.method_result == "HOLD"
+                    and len(assessment.candidate_peaks) == 1
+                ):
+                    observation = assessment.candidate_peaks[0]
+                cells.append(
+                    mint_cell_observation_ref(
+                        processing_owners=processing_owners,
+                        sample=sample,
+                        group_context=context,
+                        method_assessment=assessment,
+                        peak_observation=observation,
+                        peak_hypothesis=hypothesis,
+                        outside_group_context=outside_context,
                     )
                 )
-                if not siblings:
-                    raise ValueError(
-                        "outside-group cell requires one exact sibling SUPPORT context"
-                    )
-                outside_context = min(
-                    siblings, key=lambda sibling: sibling.group.group_hypothesis_id
-                )
-            elif (
-                assessment.content.method_result == "HOLD"
-                and len(assessment.candidate_peaks) == 1
-            ):
-                observation = assessment.candidate_peaks[0]
-            cells.append(
-                mint_cell_observation_ref(
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    group_context=context,
-                    method_assessment=assessment,
-                    peak_observation=observation,
-                    peak_hypothesis=hypothesis,
-                    outside_group_context=outside_context,
-                )
-            )
+    finally:
+        _population_group_context_validation.reset(token)
     return tuple(cells)

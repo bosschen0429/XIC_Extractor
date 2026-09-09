@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-08
+**Last updated:** 2026-09-09
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,419 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-09 Remaining Context/Formatting Work Deferred
+
+**Evidence:** `diagnostic_only`; no product change. At `b4c3c669`, a fresh context
+rebuilt from the bound eight-sample checkpoint in 13.398067 seconds, with the
+same request identity and canonical samples. Profiling identified repeated
+candidate-universe and physical-evaluation validation, but the entire context
+is only about 2.5% of the prior full CLI. Keep the current-acquisition/receipt
+binding and defer new validation-cache or proof mechanisms for this small
+remaining surface.
+
+A process-local physical-float formatting simplification failed its performance
+gate: three interleaved reader pairs had medians 6.792880 versus 6.821382 seconds,
+with overlapping ranges (6.764442–6.908842 versus 6.732014–7.056653). All 4,375
+records matched and input hashes were unchanged; two pairs regressed. The
+experiment was not applied to product source. Reuse this rejection before
+retrying the same scalar-format change. No RAW extraction or full CLI rerun was
+performed. Receipts: `output/cid-nl-context-optimization/` (`report.md`,
+`context-profile.json`, `context.pstats`, `paired-final.json`,
+`profile_context.py`, `format_trial.py`).
+
+### 2026-09-09 Physical-Record Decoder Canonical Reuse
+
+**Evidence:** `diagnostic_only`; exact-output decoder optimization, no scientific
+or writer-authority promotion. The acquisition decoder reuses its checked
+canonical content and ID for the final byte comparison, and checks Python
+float finiteness with `math.isfinite`. The physical evaluation decoder reuses
+checked profile/trace envelopes while rebuilding evaluation from its live-owner
+rehydrated result. All identity/profile/trace checks, live prepare/evaluate
+equality and canonical-byte rejection remain; no schema or cross-call cache
+was added.
+
+Three interleaved, warmed 4,375-record sidecar pairs against `8aed27f2` reduced
+median reader time from 9.198867 to 6.902826 seconds (ranges 9.081716–9.991312
+and 6.881034–6.960742). An eight-sample pair with alternating version order
+reduced summed reads from 69.501646 to 50.843587 seconds (26.85%). All 31,819
+sidecar records matched completely and input hashes were unchanged; this
+population includes records beyond the 30,570 selected Alignment candidates.
+The 103 related tests passed, including canonical numeric spelling, reordered
+envelopes, whitespace and resealed-tamper rejection. Scoped Ruff and mypy
+passed. These are reader measurements; no new full CLI or RAW extraction was
+run. Reuse this proof before repeating expensive validation. Receipts:
+`output/cid-nl-reader-optimization/` (`report.md`, `benchmark.py`,
+`paired-final.json`, `full-pair.json`).
+
+### 2026-09-09 Unrecorded Alignment Preparation Costs
+
+**Evidence:** `diagnostic_only`; diagnosis only, no product change. The final
+CLI's 109.818505-second stage-coverage gap includes work before the runtime
+timer: physical replay loading and production-batch construction. An unchanged
+CLI preparation replay at `5f406d64` stopped before runtime execution with the
+same request ID, eight samples, 30,570 physical records and 95,320 jobs.
+Preparation took 90.226132 seconds, including 68.610764 seconds in physical
+load/restore and 19.129912 in batch construction (nested context 14.038702,
+sample-job builders 4.409692). Imports took another 1.894250 seconds; candidate
+reading inside preparation took 2.251868 seconds and was already stage-timed.
+These separate-run observations identify the missing category, not an exact
+allocation of every second of the prior run.
+
+One 4,375-record / 41.26 MB sidecar read took 9.173092 seconds normally and
+19.333716 under cProfile, with identical returned records and unchanged input
+SHA. Profiled file reading was 0.0124 seconds; decoding, canonical float/JSON
+conversion, content checks and live-owner physical rehydration dominated.
+Prioritize exact-output reader experiments that reuse unchanged parsed/canonical
+representations while preserving corruption rejection and rehydration. This
+does not justify changing SQLite format or dropping persisted-input validation.
+Final writer-input projection remains untimed; prior retained checkpoints are
+pre-compose, so measure it during a future otherwise-needed CLI run instead of
+rerunning composition solely for that timer. Receipts and source locators:
+`output/cid-nl-unassigned-diagnosis/` (`report.md`, `preparation.json`,
+`sidecar-profile.json`, `sidecar.pstats`, `probe.py`, `profile_sidecar.py`).
+
+### 2026-09-09 Final Eight-Sample Alignment Acceptance
+
+**Evidence:** `diagnostic_only`; no scientific or writer-authority promotion.
+At `a3c5f793459bb667550cb475f8308c833c7c7385`, the unprofiled official
+Alignment CLI completed in 528.418216 seconds (exit 0), using the accepted
+corrected eight-sample Discovery batch, `dna_dr`, RAW backend, full-audit and
+production output. Discovery was reused, not rerun. Input hashes were unchanged.
+Recorded spans were runtime 203.826137 seconds, compose 174.721 seconds and
+explanation writing 37.658 seconds; these spans do not cover all CLI wall time.
+
+The final 1,387-row/eight-sample Matrix was byte-identical to the prior full run
+(`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`).
+The public explanation summary matched after excluding only output path and
+attempt ID; SQLite integrity/schema passed, with the same request ID and a new
+attempt ID. All 96,383 assessment sample/subject/content bindings matched.
+Strict SQLite logical parity remained **FAIL** in records and links; all table
+counts matched. Fresh attempt-bound artifact references can change nested
+content identities, but the supplemental checks do not prove complete
+cross-attempt graph equivalence. Do not report full explanation parity or
+repeat RAW merely to obtain identical fresh-attempt IDs.
+
+Formal execution owner: `scripts.run_alignment`; acceptance receipts:
+`output/cid-nl-final-acceptance/` (`run.json`, `alignment-timing.json`,
+`verification.json`, `report.md`). This run includes the predecessor context
+reuse below and supersedes its missing whole-Alignment timing observation.
+
+### 2026-09-09 Predecessor Group-Context Validation Reuse
+
+**Evidence:** `diagnostic_only`; output-preserving owner reuse, no scientific
+or writer-authority promotion. `alignment.cell_observations` reuses its existing
+synchronous validation scope for the exact contexts it just constructed before
+minting predecessor cells. Constructor validation and per-cell subject, attempt,
+SUPPORT, sibling and artifact checks remain. The prior scope is restored after
+success/error; no cached proof survives the call.
+
+A fresh official runtime at `9c009c85` completed the corrected eight-sample,
+95,320-job universe in 210.971554 seconds. Initial/recovery assessment contents
+and observation contents/provenance matched the original results; the canonical
+receipt retained 16 RAW opens/XIC batches, 8,565 logical requests, 8,388 adapter
+calls and 390,262 trace points. Recovery preparation still cost 29.520 seconds.
+This runtime observation predates the context-reuse candidate and is not its
+whole-runtime timing. Exact recovery centers were retained for later replay.
+
+No-RAW preparation profiling found repeated reconstruction of already-validated
+contexts. Three interleaved 128-subject pairs reduced median time from 1.289269
+to 0.728087 seconds (ranges 1.283881–1.292316 and 0.717954–0.743617). Context
+validation calls fell from 3,282 to 266. A complete 11,915-subject pair took
+31.307167 versus 18.147998 seconds; all 50,760 cell contents/artifacts and recovery
+outputs/centers were identical. These are actual component measurements, not
+scaled runtime estimates. Eighty related tests and scoped Ruff/format/mypy passed;
+an existing-fixture smoke also preserved sibling rejection and nested-scope cleanup.
+
+The smallest scan-window cache was not pursued: only 158 of 8,713 exact windows
+repeat (1.81%). Do not infer broader scan-cache benefit from this count. Reuse the
+new runtime ranking and preparation proof before another RAW run. Artifacts:
+`output/cid-nl-runtime-remaining/` (`report.md`, `run.json`, `runtime-spans.json`,
+`prepare-profile.json`, `prepare-paired.json`, `scope-smoke.json`).
+
+### 2026-09-09 Physical Recovery Request/Profile Reuse
+
+**Evidence:** `diagnostic_only`; output-preserving binding optimization, no
+scientific or writer-authority promotion. `search_scope` owns the existing
+latest-exact-JSON parsed-input cache and shared physical-profile predicate;
+recovery capture consumes the predicate while retaining full subject, profile,
+trace and scientific checks. No new cache or configuration was added.
+
+Fresh official reconstruction reproduced the corrected eight-sample request,
+11,915 subjects and 95,320 jobs with zero RAW opens. The physical recovery
+predicate reparsed the same 24,786,542-byte request on each call. Three
+interleaved 128-check pairs against `d0e6acc7` reduced median binding time from
+7.104811 to 0.001378 seconds (ranges 7.093051–7.144369 and 0.001274–0.001390).
+The first candidate check retained one cache miss and cost 0.058256 seconds;
+warm whole-request parsing fell from 128 calls to zero. Small profile parsing
+and changed-profile rejection remain. The five affected suites passed 87 tests,
+including physical recovery values, empty signal and profile rejection; scoped
+Ruff, format, mypy and diff checks passed.
+
+These are exact request/profile suboperation measurements, not whole-recovery
+or runtime timings. Full recovery replay cannot use this checkpoint alone:
+the original `group_center_rt` is absent and subtracting the half-window from
+stored bounds fails exact floating-point reconstruction. Do not approximate it
+or infer current runtime totals from the earlier full run. Reuse the established
+binding result; any later complete replay needs the actual recovery centers.
+Receipts: `output/cid-nl-recovery-cost/` (`plan.md`, `binding-baseline.json`,
+`binding-paired.json`, `report.md`, `verification.md`).
+
+### 2026-09-09 Indexed CID-NL Request Subject Binding
+
+**Evidence:** `diagnostic_only`; output-preserving owner lookup, no scientific
+or writer-authority promotion. `cid_nl_method_subject` keeps the strict parsed
+configuration and immutable subject-ID index in its existing latest-exact-input
+LRU entry. Lookup still compares the complete subject, preserves strict parsing
+on request change, and does not alter Targeted binding or canonical payloads.
+
+Fresh reconstruction through the official production builder reproduced the
+current eight-sample request, 11,915 subjects and 95,320 jobs without RAW
+acquisition. There were 73,037 empty-candidate jobs. A 256-job empty-branch probe
+matched the original assessment contents and showed two linear subject-binding
+checks per job dominating its profile (0.967229 of 1.096706 instrumented seconds).
+
+Against frozen `9d4c440e` binding, all 95,320 real adapter-input validations
+remained accepted and summed wall time fell from 112.831309 to 0.261387 seconds
+in sample-interleaved pairs. Three interleaved 256-job full empty-adapter pairs
+fell from median 0.649267 to 0.045170 seconds; ranges were 0.643945–0.650129 and
+0.044003–0.047905. Complete returned results and artifact IDs were identical.
+These are actual component measurements, not scaled estimates or a new whole
+runtime time. No RAW was opened; populated adapter branches were not replayed.
+
+The six related golden-path/adapter/runtime/batch/Targeted suites passed 94
+tests; scoped Ruff, format and mypy passed. New preservation coverage verifies
+same-ID/different-content rejection and request-switch isolation. Source/hash,
+fresh-input and paired receipts: `output/cid-nl-adapter-cost/` (`plan.md`,
+`probe.json`, `paired.json`, `report.md`). Reuse the indexed binding when
+diagnosing remaining runtime cost; do not repeat the already-measured full
+validation scan or infer new RAW requirements from the old adapter remainder.
+
+### 2026-09-09 Stage-Local Live Heartbeat Coalescing
+
+**Evidence:** `diagnostic_only`; timing publication optimization, no scientific
+or writer-authority promotion. The existing `TimingRecorder` retains every
+latest heartbeat in memory while coalescing repeated updates within active
+stages to the next callback after one second. First updates, stage transitions,
+explicit failures and completed counts publish immediately. Unscoped updates
+remain immediate, and stage exit flushes on success or exception. Abrupt process
+termination can leave sub-second progress unpublished; no timer thread exists.
+
+Three interleaved, warmed 5,000-event real-file replays against `1e8bb6c9` reduced
+median callback/stage-flush wall time from 9.281337 to 0.014635 seconds. Baseline
+range was 9.047228–9.840014; candidate range was 0.011993–0.014919. Replacement
+attempts including transient retries were 5,040/5,047/5,039 versus 2/2/2. The
+candidate loop completes within one second, so its writes are first and final;
+clock-controlled tests separately verify interval refresh. All final live and
+full timing payloads were identical. No RAW was opened and this is not a measured
+whole-runtime speedup. The prior 158.681-second real-runtime callback cost is
+motivation, not a quantity that can simply be subtracted from pipeline time.
+
+The timing, Alignment CLI and provisional-matrix CLI suites passed 82 tests,
+including new baseline-red real-file coverage for coalescing and final/latest
+state preservation. Scoped Ruff/mypy passed. Receipts and source bindings:
+`output/cid-nl-live-progress/{plan.md,report.md,benchmark.json,benchmark.py}`.
+Keep this optimization within the timing owner; no scientific identity or
+runtime-owner validation changes are needed to retain its benefit.
+
+### 2026-09-09 Current Eight-Sample Runtime Owner Timing
+
+**Evidence:** `diagnostic_only`; measured at `f50d5ed7`, with no product change.
+One instrumented real Alignment run reused corrected Discovery inputs and
+verified the source RAW/DLL/reference hashes. The runtime completed 95,320 work
+units in 701.894 seconds (267.438 process CPU seconds). This is a single-run
+owner diagnosis, not a paired speedup result.
+
+The initial Discovery adapter accounted for 331.715 seconds, including 38.598
+seconds across 22,283 complete-seed reads. Its 282.882-second exclusive remainder
+still needs internal attribution before changing validation or assessment mint.
+Live-progress callbacks consumed 158.681 seconds across 95,320 events, including
+157.465 seconds rewriting JSON and 15.685 seconds in file-replacement retry
+sleeps. These quantities overlap. This run enabled live output; the earlier
+502.517-second runtime did not, so progress I/O cannot explain that earlier cost.
+
+Other disjoint costs were recovery-adapter exclusive work (67.994 seconds),
+RAW XIC extraction (30.929), recovery preparation (30.075), per-job finalization
+exclusive work (29.967), and runtime-attempt finalization exclusive work (20.208).
+Remaining measured work and enclosing residual account for 32.325 seconds.
+The formal call-cost projection reports 16 RAW opens, 16 XIC batches, 8,565
+logical XIC requests, 8,388 adapter chromatogram calls and 390,262 trace points.
+
+Next candidates are bounded live-progress publication in the existing timing
+owner and a faithful fresh-input profile of the existing Discovery adapter.
+Do not infer removable work from the adapter remainder, extrapolate synthetic
+jobs to this workload, or prioritize a RAW/parallelism rewrite from these data.
+No optimization is applied or claimed here. Whole-runtime RAW replay needs a
+named missing-input or changed-behavior reason; the post-runtime composition
+checkpoint alone does not establish faithful runtime replay.
+
+Receipts: `output/cid-nl-runtime-diagnosis/` contains `run.json`,
+`instrumentation.json`, `runtime-spans.json`, `runtime-result-summary.json` and
+`report.md`. Exclusive spans sum to the runtime root; uninstrumented work remains
+inside the corresponding owner's exclusive time. Host/cache and wrapper costs
+are uncontrolled, so historical totals are not comparable speedup evidence.
+
+The full CLI completed in 1,037.371 seconds. Matrix bytes and the public
+explanation summary matched the prior fresh-mint replay, and SQLite integrity
+passed. Exact SQLite logical parity did not pass: the new runtime has fresh
+attempt-bound assessment and downstream IDs, while all 96,383 assessment content
+IDs with sample/subject bindings match. `verification.json` preserves the failed
+strict verdict; it is not a relaxed optimization acceptance oracle.
+
+### 2026-09-09 Captured Observation Mint Reuses Closed Physical Facts
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The physical branch of `peak_detection.capture.mint_captured_peak_observation`
+shares the capture binder's seal, current trace-content hash and selected
+integration receipt checks, then projects the already computed selection facts.
+The observation owner retains processing/sample/trace/acquisition/integration
+input validation and artifact mint. Public observation mint still performs full
+numerical validation; the nonphysical capture path is unchanged.
+
+Five repeats over the same 128 reached captures reduced mint median from
+0.233861 to 0.063112 seconds, with nonoverlapping ranges. Prepare/evaluate calls
+fell from 128 each to zero; canonical observation payload hashes match. The
+binder control still performs zero reevaluations. Focused capture, observation,
+runtime, adapter and production coverage passed 118 tests, including real writer
+output and rejection after an in-place mutable trace change.
+
+The complete 3,127-child no-RAW CLI pair passed exact Matrix bytes, public
+explanation and SQLite logical parity with only the existing path/attempt
+provenance exclusions. Composition was 168.885 versus 160.760 seconds;
+preparation fell from 65.303 to 57.388 seconds while batch composition remained
+similar. Full-run timing is one sequential pair with uncontrolled host/cache
+variance; repeated micro timing and eliminated calls support the local gain.
+Receipts: `output/cid-nl-preparation-cost/{candidate,mint-reuse}-capture-benchmark.json`,
+`output/cid-nl-resource-optimization/{fresh-decisions,fresh-mint}/` and
+`verification-fresh-decisions-fresh-mint.json`. Revisit if the capture seal,
+trace-content binding or observation contract changes. Runtime-to-composition
+recapture under a new child scope is a separate input boundary; this conclusion
+does not authorize reusing a completed graph across that boundary.
+
+### 2026-09-09 Group Decisions Reuse Fresh Scientific Owners
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The synchronous workflow uses a private cell-decision owner handoff over its
+just-finalized scientific core and just-projected pre-cell population. It skips
+reprojection/recomposition while keeping exact request/owner bindings, immutable
+typed populations, unique/equal Group×sample key sets, sealed decision selection,
+basis/ID mint and canonical ordering. Public decision methods still deep-validate.
+
+The existing real runtime/Matrix/writer fixture first reproduced repeated owner
+calls, then passed with both expensive cell-decision aliases called zero times.
+Public cell-decision, workflow and production tests passed 69 cases. On the same
+3,127-child input with no RAW opens, pre-cell projection calls fell from 12,508
+to 9,381, `_finish_variant` from 52.282 to 35.428 seconds, and composition from
+187.218 to 168.885 seconds. Preparation remained similar (64.959/65.303 seconds).
+Complete Matrix/explanation/SQLite parity passes under the existing path/attempt
+provenance exclusions. Receipts:
+`output/cid-nl-resource-optimization/{fresh-cells,fresh-decisions}/` and
+`verification-fresh-cells-fresh-decisions.json`. Revisit if a callback/new input
+enters the immediate scientific→pre-cell→decision handoff or decision semantics
+change; retained public inputs remain a deep-validation boundary.
+
+### 2026-09-09 Scientific Finalization Reuses Its Composed Cells
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The scientific finalizer transfers the formal cell composer's exact just-built
+population into its result. A private fresh-cell mint path checks canonical
+Group×sample cardinality, order and identities while retaining all scientific
+scope, terminal, handoff and sample-universe checks. Existing direct construction
+and public cell-population validation keep deep recomposition and nested-tamper
+rejection. There is no callback between composition and result mint.
+
+A bounded first-128 profile showed 256 composer calls before the change. The
+updated real-owner regression fixture proves one composition and exact tuple
+reuse. On the full same-input replay (3,127 children, no RAW), scientific result
+validation fell from 13.657 to 0.386 seconds; scientific finalization fell from
+40.395 to 26.680 seconds. Composition was 200.390 versus 187.218 seconds in one
+sequential pair. Matrix bytes, public explanation summaries and SQLite logical
+contents match with only the existing path/attempt provenance exclusions.
+Focused scientific, cell, projection, application and workflow coverage passed
+207 tests. Receipts: `output/cid-nl-resource-optimization/{fresh-closure,fresh-cells}/`,
+`scientific-profile-128/`, and `verification-fresh-closure-fresh-cells.json`.
+Revisit when the immediate composer-to-result handoff or cell-population
+contract changes; do not reintroduce full same-input construction downstream
+without a changed input or trust boundary.
+
+### 2026-09-09 Fresh Application Closure Reuses Component Completion
+
+**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
+The application-result owner consumes freshly completed scientific/post-cell
+owners inside the synchronous `_finish_variant` chain. It retains exact type,
+request, sample, core and projection bindings without recomputing their seals.
+Public finalization and batch aggregation after all adapter callbacks still
+perform full completion checks; later callbacks prevent reusing the earlier
+proof at the batch boundary.
+
+On the same corrected eight-sample input (3,127 children, zero RAW opens),
+scientific and post-cell receipt checks each fell from 6,254 to 3,127. Their
+combined measured time fell from 43.920 to 20.549 seconds. Composition wall time
+was 240.447 versus 200.390 seconds in one sequential pair; other stages also
+varied, so the entire 40.056-second difference is not attributed to this edit.
+Exact Matrix bytes, public explanation summaries and SQLite logical contents
+match; only existing output-path/attempt provenance is excluded. Relevant
+ordinary-CI coverage passed 110 tests, including public tamper rejection and
+real runtime/writer checks of one deep completion pass per batch child.
+
+Receipts: `output/cid-nl-resource-optimization/{baseline,fresh-closure}/`,
+`verification-baseline-fresh-closure.json`, and `plan.md`. Revisit when the
+callback-free owner handoff, component mutability, inputs or completion contract
+changes. The same investigation rejected a single-root post-cell digest merge
+(five interleaved 128-result medians 0.39345/0.39236 seconds, overlapping ranges)
+and child threads (128-child medians serial/2/4 threads 4.983/5.124/5.294 seconds,
+same observable signatures); do not re-propose them without changed evidence.
+
+### 2026-09-09 Physical Capture Binding Reuses Closed Facts
+
+Evidence: `diagnostic_only`. The physical branch of
+`peak_detection.capture.bind_owner_backed_capture_hypothesis` consumes the
+existing capture seal, checks current RT/raw content, and compares exact
+observation content/provenance through the observation owner's shared
+projection. It does not repeat physical selection. Public capture, observation
+mint, generic trace validation, and nonphysical binding retain their numerical
+validation; there is no new cache, public parameter, or persisted schema.
+
+For 128 reached captures, five warm binding repeats fell from median 0.222525
+seconds (0.210051–0.224202) to 0.047272 (0.046110–0.050236), with identical
+payload hashes. Each repeat removed 128 physical prepare/evaluate calls from
+binding; mint retained all 128. A same-input eight-sample CLI replay pair
+observed composition at 269.206 versus 239.510 seconds and all 8,171 production
+bindings at 14.934 versus 3.101 seconds. Whole-run host/cache variation remains
+uncontrolled; the repeated local measurements establish the binding gain.
+Both replays completed with zero RAW opens. Matrix bytes and complete SQLite
+logical contents match, excluding only `matrix_path` and `processing_attempt_id`.
+All 121 related regressions pass, including changed-source and mutable-trace
+rejection. Receipts: `output/cid-nl-preparation-cost/verification.json` and
+`*-capture-benchmark.json` (host-local evidence, not portable inputs).
+
+Reuse while the capture seal, immutable physical projection, current trace
+content check, and observation projection remain unchanged. A changed owner
+handoff or output contract invalidates this conclusion; it does not establish
+whole-RAW speedup or production readiness.
+
+### 2026-09-09 Batch Finalization Reuses Owner Validation
+
+Evidence: `diagnostic_only`. `UntargetBatchApplicationResultRequest` validates
+the immutable batch once; the application-result finalizer transfers those
+validated fields under the existing exact-type and private mint gates. The
+finalizer and minted result do not repeat full cohort validation.
+
+One sequential replay pair of the same corrected eight-sample composition
+input reduced full batch validation calls from three to one and composition
+time from 392.690 to 324.718 seconds (17.3%). Both public CLI replays completed
+with zero RAW opens. Matrix bytes match each other and the corrected-input
+reference; public explanation reading and complete SQLite logical contents
+match, excluding only run-specific `matrix_path` and `processing_attempt_id`.
+All 78 related regression tests pass, including the production writer-path
+assertion that full batch validation runs once. Receipts are under
+`output/cid-nl-batch-validation-fix/verification.json`; this is a host-local
+evidence locator, not a portable input. The single pair does not establish
+whole-RAW speedup or production readiness.
+
+Reuse this conclusion while request immutability, direct field transfer, and
+the finalizer/mint boundary remain unchanged. Changed batch inputs or a new
+mutable handoff require reevaluating validation ownership.
 
 ### 2026-09-08 Discovery Physical Context And Known-ISTD Competition
 

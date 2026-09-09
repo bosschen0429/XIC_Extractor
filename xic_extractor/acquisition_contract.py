@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass
@@ -420,7 +421,8 @@ def deserialize_acquired_trace(
         ),
     )
     acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
-    content_id = acquired_trace_content_id(acquired)
+    content = _acquired_trace_content(acquired)
+    content_id = _typed_id("xic.acquired-trace-content.v1:", content)
     persisted_content_id = _required_text(
         root["acquired_trace_content_id"], "acquired_trace_content_id"
     )
@@ -441,7 +443,16 @@ def deserialize_acquired_trace(
     ):
         if expected is not None and actual != expected:
             raise AcquisitionContractError(f"acquired trace crosses expected {label}")
-    if serialize_acquired_trace(acquired) != raw:
+    # The content and its ID were just checked above; reuse that exact
+    # representation for the canonical envelope rather than rebuilding it.
+    canonical = _canonical_json_bytes(
+        {
+            "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
+            "acquired_trace_content_id": content_id,
+            **content,
+        }
+    )
+    if canonical != raw:
         raise AcquisitionContractError("acquired trace payload is not canonical")
     return acquired
 
@@ -517,9 +528,7 @@ class TraceAcquisitionBatch:
             raise AcquisitionContractError(
                 "all trace coordinates must bind the batch capability"
             )
-        expected_source_id = (
-            self.capability.acquisition_source.acquisition_source_id
-        )
+        expected_source_id = self.capability.acquisition_source.acquisition_source_id
         if any(
             trace.coordinate.acquisition_source_id != expected_source_id
             for trace in self.traces
@@ -547,9 +556,7 @@ def mint_trace_acquisition_capability(
             "acquisition_source must be an owner-minted identity"
         )
     if not isinstance(coordinate_kind, TraceCoordinateKind):
-        raise AcquisitionContractError(
-            "coordinate_kind must be a TraceCoordinateKind"
-        )
+        raise AcquisitionContractError("coordinate_kind must be a TraceCoordinateKind")
     namespace = _required_text(adapter_namespace, "adapter_namespace")
     capability_id = _typed_id(
         "xic.trace-acquisition-capability.v1:",
@@ -698,7 +705,7 @@ def _float_text(value: object) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, float, np.floating)):
         raise AcquisitionContractError("trace numeric values must be numbers")
     number = float(value)
-    if not np.isfinite(number):
+    if not math.isfinite(number):
         raise AcquisitionContractError("trace numeric values must be finite")
     return (0.0 if number == 0.0 else number).hex()
 
@@ -710,7 +717,7 @@ def _float_from_text(value: object, *, field: str) -> float:
         number = float.fromhex(value)
     except ValueError as exc:
         raise AcquisitionContractError(f"{field} must be hexadecimal text") from exc
-    if not np.isfinite(number) or _float_text(number) != value:
+    if not math.isfinite(number) or _float_text(number) != value:
         raise AcquisitionContractError(f"{field} must be canonical finite text")
     return number
 
@@ -775,9 +782,7 @@ def _adapter_chromatogram_call_count(adapter: object) -> int:
 
 def _nonnegative_integer(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise AcquisitionContractError(
-            f"{field} must be a non-negative integer"
-        )
+        raise AcquisitionContractError(f"{field} must be a non-negative integer")
     return value
 
 

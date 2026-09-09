@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, replace
 from typing import cast
 
@@ -21,6 +20,7 @@ from xic_extractor.peak_detection.evidence_facts import (
     PreparedSignalResult,
     evaluate_physical_peak,
     prepare_physical_signal,
+    validate_physical_trace_content_id,
 )
 from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import (
@@ -38,25 +38,29 @@ from xic_extractor.peak_detection.ms1_trace_detection import (
     detect_ms1_trace_peak,
 )
 from xic_extractor.peak_detection.observations import (
+    PeakObservationContent,
     PeakObservationContractError,
+    PeakObservationGenerationProvenance,
     PeakObservationRef,
+    _mint_peak_observation_artifact,
+    _project_peak_observation_values,
+    _validate_peak_observation_inputs,
     mint_peak_observation_ref,
     physical_peak_observation_integration,
     validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.search_scope import (
-    PHYSICAL_CAPTURE_INPUT_KEY,
     CaptureCandidateBinding,
     SearchScope,
     SearchScopeContractError,
     TargetSearchScope,
+    request_binds_physical_capture_profile,
     require_capture_binding,
     validate_scope_owner_binding,
     validate_scope_trace_coordinates,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
 from xic_extractor.processing_identity import ProcessingOwnerReferences
@@ -507,13 +511,8 @@ def capture_physical_recovery_observation(
     validate_cid_nl_method_subject_binding(
         method_subject, processing_owners=processing_owners
     )
-    payload = json.loads(processing_owners.request.normalized_scientific_inputs_json)
-    physical_inputs = payload.get(PHYSICAL_CAPTURE_INPUT_KEY)
     if (
-        not isinstance(physical_inputs, dict)
-        or physical_inputs.get("schema_version") != "physical_capture_inputs_v1"
-        or physical_inputs.get("profile")
-        != json.loads(canonical_signal_processing_profile_bytes(profile))
+        not request_binds_physical_capture_profile(processing_owners.request, profile)
         or trace.mz != method_subject.precursor_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
         or not trace.rt_min <= group_center_rt <= trace.rt_max
@@ -598,6 +597,25 @@ def mint_captured_peak_observation(
         raise SampleLocalCaptureError(
             "observation hypothesis bypasses the captured selection identity"
         )
+    if capture.physical_evaluation is not None:
+        _validate_peak_observation_inputs(
+            processing_owners=processing_owners,
+            sample=sample,
+            trace=capture.trace,
+            integration=selected.integration,
+        )
+        canonical_sample_identity_id, content, provenance = (
+            _project_captured_physical_observation(capture, selected)
+        )
+        if canonical_sample_identity_id != sample.identity.sample_identity_id:
+            raise PeakObservationContractError(
+                "capture observation references a different sample"
+            )
+        return _mint_peak_observation_artifact(
+            processing_owners=processing_owners,
+            content=content,
+            generation_provenance=provenance,
+        )
     return mint_peak_observation_ref(
         processing_owners=processing_owners,
         sample=sample,
@@ -609,6 +627,50 @@ def mint_captured_peak_observation(
         physical_evaluation=capture.physical_evaluation,
         signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
     )
+
+
+def _project_captured_physical_observation(
+    capture: SampleLocalCapture,
+    selected: PeakHypothesis,
+) -> tuple[
+    str,
+    PeakObservationContent,
+    PeakObservationGenerationProvenance,
+]:
+    """Reuse a capture-owner physical answer after rebinding its live trace."""
+
+    binding = require_capture_binding(capture.scope, capture.candidate_id)
+    capture.__post_init__()
+    evaluation = capture.physical_evaluation
+    if evaluation is None:
+        raise PeakObservationContractError(
+            "physical observation requires the capture owner answer"
+        )
+    try:
+        validate_physical_trace_content_id(
+            evaluation.prepared.trace_content_id,
+            capture.trace.rt,
+            capture.trace.intensity,
+        )
+    except ValueError as exc:
+        raise PeakObservationContractError(str(exc)) from exc
+    if (
+        capture.receipt_hypothesis is None
+        or selected.integration != capture.receipt_hypothesis.integration
+    ):
+        raise PeakObservationContractError("capture selection changed")
+    content, provenance = _project_peak_observation_values(
+        canonical_sample_identity_id=binding.sample_identity_id,
+        trace=capture.trace,
+        integration=selected.integration,
+        selection_values=np.asarray(
+            capture._owner_seal.physical_selection_intensity, dtype=float
+        ),
+        selected_indices=selected.integration.raw_scan_indices,
+        resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
+        proposal_sources=selected.audit.proposal_sources,
+    )
+    return binding.sample_identity_id, content, provenance
 
 
 def bind_owner_backed_capture_hypothesis(
@@ -638,18 +700,27 @@ def bind_owner_backed_capture_hypothesis(
             "owner hypothesis does not bind the captured physical selection"
         )
     try:
-        binding = require_capture_binding(capture.scope, capture.candidate_id)
-        validate_peak_observation_trace_binding(
-            observation,
-            canonical_sample_identity_id=binding.sample_identity_id,
-            trace=capture.trace,
-            integration=selected.integration,
-            selection_intensity=_captured_selection_intensity(capture),
-            resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
-            proposal_sources=selected.audit.proposal_sources,
-            physical_evaluation=capture.physical_evaluation,
-            signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
-        )
+        if capture.physical_evaluation is None:
+            binding = require_capture_binding(capture.scope, capture.candidate_id)
+            validate_peak_observation_trace_binding(
+                observation,
+                canonical_sample_identity_id=binding.sample_identity_id,
+                trace=capture.trace,
+                integration=selected.integration,
+                selection_intensity=_captured_selection_intensity(capture),
+                resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
+                proposal_sources=selected.audit.proposal_sources,
+                signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
+            )
+        else:
+            _canonical_sample_identity_id, content, provenance = (
+                _project_captured_physical_observation(capture, selected)
+            )
+            if (
+                observation.content != content
+                or observation.generation_provenance != provenance
+            ):
+                raise PeakObservationContractError("capture observation changed")
     except (PeakObservationContractError, SearchScopeContractError) as exc:
         raise SampleLocalCaptureError(
             "owner hypothesis does not bind the captured physical selection"

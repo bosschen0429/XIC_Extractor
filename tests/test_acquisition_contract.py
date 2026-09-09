@@ -117,9 +117,9 @@ def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
-    acquired = acquire_trace_batch(
-        capability, (request,), _NoRawBatchAdapter()
-    ).traces[0]
+    acquired = acquire_trace_batch(capability, (request,), _NoRawBatchAdapter()).traces[
+        0
+    ]
     payload = serialize_acquired_trace(acquired)
 
     restored = deserialize_acquired_trace(
@@ -148,6 +148,11 @@ def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
         lambda value: value.__setitem__(
             "acquired_trace_content_id", "xic.acquired-trace-content.v1:" + "0" * 64
         ),
+        lambda value: value["trace"]["intensity"].__setitem__(0, "-0x0.0p+0"),
+        lambda value: value["trace"]["intensity"].__setitem__(0, "0x0p+0"),
+        lambda value: value["trace"]["intensity"].__setitem__(0, "nan"),
+        lambda value: value["trace"]["intensity"].__setitem__(0, "inf"),
+        lambda value: value["coordinate"].__setitem__("first_scan", 100.0),
     ],
 )
 def test_acquired_trace_owner_rejects_resealed_tamper(

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from openpyxl import load_workbook
 
+import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 from tests.runtime_telemetry_fixtures import (
@@ -690,9 +691,118 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
     from xic_extractor.alignment.mode_track import refinement as refinement_owner
+    from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
+    from xic_extractor.alignment.result import application_result as result_owner
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
+    from xic_extractor.peak_detection import observations as observation_owner
+
+    mint_captured = production.mint_captured_peak_observation
+    mint_rechecks = []
+    mint_args = []
+
+    def record_captured_mint(capture, *args, **kwargs):
+        counts = {"prepare": 0, "evaluate": 0}
+        real_capture_prepare = capture_owner.prepare_physical_signal
+        real_capture_evaluate = capture_owner.evaluate_physical_peak
+        real_observation_prepare = observation_owner.prepare_physical_signal
+        real_observation_evaluate = observation_owner.evaluate_physical_peak
+
+        def count_capture_prepare(*call_args, **call_kwargs):
+            counts["prepare"] += 1
+            return real_capture_prepare(*call_args, **call_kwargs)
+
+        def count_capture_evaluate(*call_args, **call_kwargs):
+            counts["evaluate"] += 1
+            return real_capture_evaluate(*call_args, **call_kwargs)
+
+        def count_observation_prepare(*call_args, **call_kwargs):
+            counts["prepare"] += 1
+            return real_observation_prepare(*call_args, **call_kwargs)
+
+        def count_observation_evaluate(*call_args, **call_kwargs):
+            counts["evaluate"] += 1
+            return real_observation_evaluate(*call_args, **call_kwargs)
+
+        with monkeypatch.context() as mint_patch:
+            mint_patch.setattr(
+                capture_owner, "prepare_physical_signal", count_capture_prepare
+            )
+            mint_patch.setattr(
+                capture_owner, "evaluate_physical_peak", count_capture_evaluate
+            )
+            mint_patch.setattr(
+                observation_owner,
+                "prepare_physical_signal",
+                count_observation_prepare,
+            )
+            mint_patch.setattr(
+                observation_owner,
+                "evaluate_physical_peak",
+                count_observation_evaluate,
+            )
+            result = mint_captured(capture, *args, **kwargs)
+        mint_args.append((capture, args, kwargs))
+        mint_rechecks.append(counts)
+        return result
+
+    monkeypatch.setattr(
+        production, "mint_captured_peak_observation", record_captured_mint
+    )
+
+    completion_checks = {"scientific": [], "post_cell": []}
+    scientific_check = (
+        result_owner._validate_finalized_scientific_alignment_completion_receipt
+    )
+
+    def record_scientific_check(value):
+        completion_checks["scientific"].append(value)
+        return scientific_check(value)
+
+    post_cell_check = post_cell_owner.validate_untarget_post_cell_completion_receipt
+
+    def record_post_cell_check(value):
+        completion_checks["post_cell"].append(value)
+        return post_cell_check(value)
+
+    monkeypatch.setattr(
+        result_owner,
+        "_validate_finalized_scientific_alignment_completion_receipt",
+        record_scientific_check,
+    )
+    monkeypatch.setattr(
+        post_cell_owner,
+        "validate_untarget_post_cell_completion_receipt",
+        record_post_cell_check,
+    )
+
+    bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
+    evaluate_physical = observation_owner.evaluate_physical_peak
+    binding_rechecks = []
+    bound_captures = []
+
+    def record_binding(capture, **kwargs):
+        rechecks = []
+
+        def record_evaluation(*args, **evaluation_kwargs):
+            rechecks.append(True)
+            return evaluate_physical(*args, **evaluation_kwargs)
+
+        with monkeypatch.context() as binding_patch:
+            for owner in (capture_owner, observation_owner):
+                binding_patch.setattr(
+                    owner, "evaluate_physical_peak", record_evaluation
+                )
+            bound = bind_capture(capture, **kwargs)
+        binding_rechecks.append(len(rechecks))
+        bound_captures.append((capture, kwargs))
+        return bound
+
+    for owner in (production, workflow_owner):
+        monkeypatch.setattr(
+            owner, "bind_owner_backed_capture_hypothesis", record_binding
+        )
 
     def unexpected_mt0(*args, **kwargs):
         raise AssertionError("retained production must not execute MT0 refinement")
@@ -838,6 +948,24 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
     assert completed.initial_edges == tuple(retained_initial_edges)
+    # Fresh owners transfer completion once; the batch checks after all callbacks.
+    children = completed.application_result.children
+    assert tuple(completion_checks["scientific"]) == tuple(
+        child.scientific_core for child in children
+    )
+    assert tuple(completion_checks["post_cell"]) == tuple(
+        child.completed_projection for child in children
+    )
+    # Binding consumes the closed capture; it must not repeat physical selection.
+    assert not any(binding_rechecks)
+    if method_mode != "intersection":
+        assert binding_rechecks
+        assert mint_rechecks
+        assert mint_args
+    assert len(mint_rechecks) == len(mint_args)
+    assert all(
+        counts == {"prepare": 0, "evaluate": 0} for counts in mint_rechecks
+    )
     if family_context:
         assert len(matrix_rows) == 1
         assert len(writer.matrix.cells) == len(sample_stems)
@@ -950,6 +1078,31 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     ):
         with pytest.raises((PeakObservationContractError, ValueError)):
             mint_peak_observation_ref(**(observation_args | substitution))
+
+    bound_capture, binding_args = bound_captures[0]
+    changed_source = capture_peak(
+        scope=bound_capture.scope,
+        candidate_id=bound_capture.candidate_id,
+        trace=replace(bound_capture.trace, source="different-capture-source"),
+    )
+    with pytest.raises(capture_owner.SampleLocalCaptureError):
+        bind_capture(changed_source, **binding_args)
+    mutable_capture = capture_peak(
+        scope=bound_capture.scope,
+        candidate_id=bound_capture.candidate_id,
+        trace=replace(
+            bound_capture.trace, intensity=bound_capture.trace.intensity.copy()
+        ),
+    )
+    mutable_capture.trace.intensity[-1] += 1.0
+    with pytest.raises(capture_owner.SampleLocalCaptureError):
+        bind_capture(mutable_capture, **binding_args)
+    with pytest.raises((capture_owner.SampleLocalCaptureError, ValueError)):
+        capture_owner.mint_captured_peak_observation(
+            mutable_capture,
+            processing_owners=captured_batches[0].jobs[0].processing_owners,
+            sample=captured_batches[0].jobs[0].sample,
+        )
     from xic_extractor.peak_detection.search_scope import SearchScopeContractError
 
     changed_answer = evaluate_physical_peak(
@@ -1520,6 +1673,8 @@ def test_production_batch_executes_one_atomic_sample_phase(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    import xic_extractor.alignment.cell_decision.owner as cell_decision_owner
+
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     # The atomic phase must contain two disjoint method worksets.
@@ -1573,6 +1728,43 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert len(result.sample_results) == len(batch.jobs) == 2
     assert vendor_raw.chromatogram_request_counts == [2]
 
+    validated_batches = []
+    validate_batch = application_result_owner._validate_untarget_batch_request
+
+    def record_batch_validation(request):
+        validate_batch(request)
+        validated_batches.append(request)
+
+    monkeypatch.setattr(
+        application_result_owner,
+        "_validate_untarget_batch_request",
+        record_batch_validation,
+    )
+    projected_pre_cells = []
+    validated_observation_populations = []
+    project_pre_cell = cell_decision_owner.project_untarget_pre_cell
+    validate_observation_population = (
+        cell_decision_owner.validate_final_group_cell_observation_population
+    )
+
+    def record_pre_cell_projection(finalized_alignment):
+        projected_pre_cells.append(finalized_alignment)
+        return project_pre_cell(finalized_alignment)
+
+    def record_observation_population_validation(**kwargs):
+        validated_observation_populations.append(kwargs)
+        return validate_observation_population(**kwargs)
+
+    monkeypatch.setattr(
+        cell_decision_owner,
+        "project_untarget_pre_cell",
+        record_pre_cell_projection,
+    )
+    monkeypatch.setattr(
+        cell_decision_owner,
+        "validate_final_group_cell_observation_population",
+        record_observation_population_validation,
+    )
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = compose_untargeted_cid_nl_production_result(
         batch,
@@ -1634,6 +1826,8 @@ def test_production_batch_executes_one_atomic_sample_phase(
         is not None
         for cell in writer_inputs.matrix.cells
     )
+    assert projected_pre_cells == []
+    assert validated_observation_populations == []
     writer_dir = tmp_path / "writer"
     outputs = output_paths(
         writer_dir,
@@ -1673,6 +1867,8 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "alignment_review.tsv",
         "review_report.html",
     }
+    # Full owner validation is cohort-sized; sealing the same batch must reuse it.
+    assert len(validated_batches) == 1
 
 
 @pytest.mark.parametrize(

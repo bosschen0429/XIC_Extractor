@@ -12,8 +12,10 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from functools import lru_cache
+from types import MappingProxyType
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
@@ -320,6 +322,15 @@ def cid_nl_method_subjects_from_request(
 ) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
     """Rehydrate the request's singular or batch subject configuration."""
 
+    return _request_subject_context(request)[0]
+
+
+def _request_subject_context(
+    request: ProcessingRequestIdentity,
+) -> tuple[
+    CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    Mapping[str, CidNlMethodSubject],
+]:
     if not isinstance(request, ProcessingRequestIdentity):
         raise CidNlMethodSubjectContractError(
             "request must be an owner-minted processing request"
@@ -330,14 +341,27 @@ def cid_nl_method_subjects_from_request(
 @lru_cache(maxsize=1)
 def _subjects_from_normalized_inputs(
     normalized_inputs_json: str,
-) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
-    # Every job used to retain another full copy of the request's immutable
-    # subject/membership batch. Reuse only the latest exact payload; a different
-    # payload still goes through the same strict reader before it can be shared.
+) -> tuple[
+    CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    Mapping[str, CidNlMethodSubject],
+]:
+    # Keep the strict parse and its lookup in one latest-exact-payload cache.
+    # Binding still compares the full subject; the index only avoids scanning
+    # every other subject for each sample/subject job.
     payload = _cid_nl_payload_from_normalized_inputs(normalized_inputs_json)
-    if payload.get("schema_version") == BATCH_SCHEMA_VERSION:
-        return _batch_from_payload(payload)
-    return _subject_from_payload(payload)
+    pinned = (
+        _batch_from_payload(payload)
+        if payload.get("schema_version") == BATCH_SCHEMA_VERSION
+        else _subject_from_payload(payload)
+    )
+    subjects = (
+        pinned.subjects
+        if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
+        else (pinned,)
+    )
+    return pinned, MappingProxyType(
+        {subject.method_subject_id: subject for subject in subjects}
+    )
 
 
 def cid_nl_method_subject_from_request(
@@ -456,17 +480,12 @@ def validate_cid_nl_method_subject_binding(
             "Untargeted method subject cannot be paired with a configured Target"
         )
     try:
-        pinned = cid_nl_method_subjects_from_request(processing_owners.request)
+        _pinned, subjects_by_id = _request_subject_context(processing_owners.request)
     except CidNlMethodSubjectContractError as exc:
         raise CidNlMethodSubjectContractError(
             "Untargeted method subject is not pinned by the processing request"
         ) from exc
-    subjects = (
-        pinned.subjects
-        if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
-        else (pinned,)
-    )
-    if subject not in subjects:
+    if subjects_by_id.get(subject.method_subject_id) != subject:
         raise CidNlMethodSubjectContractError(
             "Untargeted method subject is not pinned by the processing request"
         )

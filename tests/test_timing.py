@@ -160,9 +160,7 @@ def test_live_output_replace_failure_preserves_last_good_artifact(
     with pytest.raises(PermissionError, match="replace blocked"):
         recorder.record("alignment.run_config", elapsed_sec=0.0)
 
-    assert json.loads(live_path.read_text(encoding="utf-8")) == {
-        "last_good": True
-    }
+    assert json.loads(live_path.read_text(encoding="utf-8")) == {"last_good": True}
     assert replace_attempts == 5
 
 
@@ -274,7 +272,7 @@ def test_timing_recorder_separates_nested_and_exclusive_wall() -> None:
             "record_count": 1,
             "total_exclusive_elapsed_sec": pytest.approx(1.0),
             "max_exclusive_elapsed_sec": pytest.approx(1.0),
-        }
+        },
     ]
 
 
@@ -331,6 +329,77 @@ def test_timing_recorder_live_history_is_bounded_and_heartbeat_is_latest(
         "completed": 4,
         "total": 4,
     }
+
+
+@pytest.mark.parametrize("fail_stage", [False, True])
+def test_live_heartbeat_coalesces_bursts_and_flushes_at_stage_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_stage: bool
+) -> None:
+    now = 0.0
+    monkeypatch.setattr("xic_extractor.diagnostics.timing.perf_counter", lambda: now)
+    live_path = tmp_path / "live.json"
+    recorder = TimingRecorder(
+        "alignment", live_output_path=live_path, timer=_Timer([10.0, 11.0])
+    )
+
+    def publish(index: int) -> None:
+        recorder.heartbeat_event(
+            {"event": "sample_terminal", "work_unit_key": str(index), "succeeded": True}
+        )
+
+    def run_stage() -> None:
+        nonlocal now
+        with recorder.stage("runtime"):
+            publish(1)
+            first = live_path.read_bytes()
+            now = 0.5
+            publish(2)
+            assert live_path.read_bytes() == first
+            now = 1.0
+            publish(3)
+            assert (
+                json.loads(live_path.read_text())["heartbeat"]["work_unit_key"] == "3"
+            )
+            now = 1.1
+            publish(4)
+            assert (
+                json.loads(live_path.read_text())["heartbeat"]["work_unit_key"] == "3"
+            )
+            if fail_stage:
+                raise ValueError("stage failed")
+
+    if fail_stage:
+        with pytest.raises(ValueError, match="stage failed"):
+            run_stage()
+    else:
+        run_stage()
+    payload = json.loads(live_path.read_text())
+    assert payload["heartbeat"]["work_unit_key"] == "4"
+    assert [row["stage"] for row in payload["recent_records"]] == ["runtime"]
+    assert len(recorder.to_json_dict()["records"]) == 1
+    assert recorder.records[0].elapsed_sec == 1.0
+
+
+def test_live_heartbeat_publishes_transitions_failures_completion_and_unscoped_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("xic_extractor.diagnostics.timing.perf_counter", lambda: 0.0)
+    live_path = tmp_path / "live.json"
+    recorder = TimingRecorder("alignment", live_output_path=live_path)
+    with recorder.stage("runtime"):
+        recorder.heartbeat(stage="initial", completed=1, total=3)
+        recorder.heartbeat(stage="recovery", completed=1, total=3)
+        assert json.loads(live_path.read_text())["heartbeat"]["stage"] == "recovery"
+        recorder.heartbeat(stage="recovery", completed=2, total=3, succeeded=False)
+        assert json.loads(live_path.read_text())["heartbeat"]["succeeded"] is False
+        recorder.heartbeat(stage="recovery", completed=3, total=3)
+        assert json.loads(live_path.read_text())["heartbeat"]["completed"] == 3
+    with recorder.stage("next_runtime"):
+        recorder.heartbeat(stage="recovery", completed=1, total=3)
+        assert json.loads(live_path.read_text())["heartbeat"]["completed"] == 1
+    recorder.heartbeat(stage="unscoped", completed=1)
+    recorder.heartbeat(stage="unscoped", completed=2)
+    assert json.loads(live_path.read_text())["heartbeat"]["completed"] == 2
 
 
 def test_timing_recorder_measurement_contract_and_unavailable_observation() -> None:

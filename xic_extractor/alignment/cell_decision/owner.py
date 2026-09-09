@@ -260,6 +260,33 @@ def decide_group_cell_population(
         subjects=subjects,
         observations=observations,
     )
+    return _decide_validated_group_cell_population(
+        ordered_subjects,
+        observation_by_key,
+    )
+
+
+def _decide_fresh_group_cell_population(
+    projection: UntargetPreCellProjection,
+    finalized_alignment: FinalizedScientificAlignment,
+) -> tuple[ProductionCellDecision, ...]:
+    """Decide owners completed immediately upstream by the shared workflow."""
+
+    ordered_subjects, observation_by_key = _validate_group_population_inputs(
+        projection,
+        finalized_alignment,
+        fresh=True,
+    )
+    return _decide_validated_group_cell_population(
+        ordered_subjects,
+        observation_by_key,
+    )
+
+
+def _decide_validated_group_cell_population(
+    ordered_subjects: tuple[GroupCellSubject, ...],
+    observation_by_key: dict[tuple[str, str], FinalGroupCellObservation],
+) -> tuple[ProductionCellDecision, ...]:
     decisions = tuple(
         _decide_sealed_subject(
             subject,
@@ -276,6 +303,7 @@ def _validate_group_population_inputs(
     *,
     subjects: Sequence[GroupCellSubject] | None = None,
     observations: Sequence[FinalGroupCellObservation] | None = None,
+    fresh: bool = False,
 ) -> tuple[
     tuple[GroupCellSubject, ...],
     dict[tuple[str, str], FinalGroupCellObservation],
@@ -292,12 +320,25 @@ def _validate_group_population_inputs(
         raise CellDecisionContractError(
             "Group projection crossed its exact finalized alignment"
         )
-    expected_projection = project_untarget_pre_cell(finalized_alignment)
-    if projection != expected_projection:
-        raise CellDecisionContractError(
-            "Group projection is partial, crossed, reordered, or substituted"
-        )
-    owner_subjects = tuple(projection.cell_subjects)
+    if fresh:
+        if projection.processing_request is not finalized_alignment.processing_request:
+            raise CellDecisionContractError(
+                "Group projection crossed its exact processing request"
+            )
+        if (
+            type(projection.cell_subjects) is not tuple
+            or type(finalized_alignment.cell_observations) is not tuple
+        ):
+            raise CellDecisionContractError(
+                "fresh Group populations require exact immutable tuples"
+            )
+    else:
+        expected_projection = project_untarget_pre_cell(finalized_alignment)
+        if projection != expected_projection:
+            raise CellDecisionContractError(
+                "Group projection is partial, crossed, reordered, or substituted"
+            )
+    owner_subjects = projection.cell_subjects
     requested_subjects = owner_subjects if subjects is None else tuple(subjects)
     ordered_subjects = cast(
         tuple[GroupCellSubject, ...],
@@ -313,13 +354,16 @@ def _validate_group_population_inputs(
         raise CellDecisionContractError(
             "Group population requires its Backfill association handoff"
         )
-    try:
-        owner_observations = validate_final_group_cell_observation_population(
-            handoff=handoff,
-            cell_observations=finalized_alignment.cell_observations,
-        )
-    except (CellObservationContractError, TypeError, ValueError) as exc:
-        raise CellDecisionContractError(str(exc)) from exc
+    if fresh:
+        owner_observations = finalized_alignment.cell_observations
+    else:
+        try:
+            owner_observations = validate_final_group_cell_observation_population(
+                handoff=handoff,
+                cell_observations=finalized_alignment.cell_observations,
+            )
+        except (CellObservationContractError, TypeError, ValueError) as exc:
+            raise CellDecisionContractError(str(exc)) from exc
     requested_observations = (
         owner_observations if observations is None else tuple(observations)
     )
@@ -327,6 +371,23 @@ def _validate_group_population_inputs(
         requested_observations,
         owner_observations=owner_observations,
     )
+    if fresh:
+        subject_keys = tuple(_group_subject_key(item) for item in ordered_subjects)
+        observation_keys = tuple(
+            _group_observation_key(item) for item in ordered_observations
+        )
+        if len(subject_keys) != len(set(subject_keys)):
+            raise CellDecisionContractError(
+                "fresh Group subject population contains a duplicate position"
+            )
+        if len(observation_keys) != len(set(observation_keys)):
+            raise CellDecisionContractError(
+                "fresh Group observation population contains a duplicate position"
+            )
+        if set(subject_keys) != set(observation_keys):
+            raise CellDecisionContractError(
+                "fresh Group subject and observation populations do not match"
+            )
     observation_by_key = {
         _group_observation_key(item): item for item in ordered_observations
     }

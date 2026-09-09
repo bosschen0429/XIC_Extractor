@@ -430,6 +430,37 @@ def mint_peak_observation_ref(
     identity.
     """
 
+    _validate_peak_observation_inputs(
+        processing_owners=processing_owners,
+        sample=sample,
+        trace=trace,
+        integration=integration,
+    )
+
+    content, generation_provenance = _peak_observation_values(
+        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        trace=trace,
+        integration=integration,
+        selection_intensity=selection_intensity,
+        resolver_mode=resolver_mode,
+        proposal_sources=proposal_sources,
+        physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
+    )
+    return _mint_peak_observation_artifact(
+        processing_owners=processing_owners,
+        content=content,
+        generation_provenance=generation_provenance,
+    )
+
+
+def _validate_peak_observation_inputs(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    trace: Trace,
+    integration: IntegrationResult,
+) -> None:
     _validate_processing_owner_sample(processing_owners, sample)
     if not isinstance(trace, Trace):
         raise PeakObservationContractError("trace must be an owner-produced Trace")
@@ -449,16 +480,13 @@ def mint_peak_observation_ref(
             "integration must be an IntegrationResult value"
         )
 
-    content, generation_provenance = _peak_observation_values(
-        canonical_sample_identity_id=sample.identity.sample_identity_id,
-        trace=trace,
-        integration=integration,
-        selection_intensity=selection_intensity,
-        resolver_mode=resolver_mode,
-        proposal_sources=proposal_sources,
-        physical_evaluation=physical_evaluation,
-        signal_processing_profile=signal_processing_profile,
-    )
+
+def _mint_peak_observation_artifact(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    content: PeakObservationContent,
+    generation_provenance: PeakObservationGenerationProvenance,
+) -> PeakObservationRef:
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
@@ -544,6 +572,28 @@ def _peak_observation_values(
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
     )
+    return _project_peak_observation_values(
+        canonical_sample_identity_id=canonical_sample_identity_id,
+        trace=trace,
+        integration=integration,
+        selection_values=selection_values,
+        selected_indices=selected_indices,
+        resolver_mode=resolver_mode,
+        proposal_sources=proposal_sources,
+    )
+
+
+def _project_peak_observation_values(
+    *,
+    canonical_sample_identity_id: str,
+    trace: Trace,
+    integration: IntegrationResult,
+    selection_values: np.ndarray,
+    selected_indices: tuple[int, ...],
+    resolver_mode: str,
+    proposal_sources: tuple[str, ...],
+) -> tuple[PeakObservationContent, PeakObservationGenerationProvenance]:
+    """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
         _finite_float(float(trace.rt[index]), field="selected_rt")
         for index in selected_indices
