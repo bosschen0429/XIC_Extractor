@@ -65,6 +65,26 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-09 Remaining Context/Formatting Work Deferred
+
+**Evidence:** `diagnostic_only`; no product change. At `b4c3c669`, a fresh context
+rebuilt from the bound eight-sample checkpoint in 13.398067 seconds, with the
+same request identity and canonical samples. Profiling identified repeated
+candidate-universe and physical-evaluation validation, but the entire context
+is only about 2.5% of the prior full CLI. Keep the current-acquisition/receipt
+binding and defer new validation-cache or proof mechanisms for this small
+remaining surface.
+
+A process-local physical-float formatting simplification failed its performance
+gate: three interleaved reader pairs had medians 6.792880 versus 6.821382 seconds,
+with overlapping ranges (6.764442–6.908842 versus 6.732014–7.056653). All 4,375
+records matched and input hashes were unchanged; two pairs regressed. The
+experiment was not applied to product source. Reuse this rejection before
+retrying the same scalar-format change. No RAW extraction or full CLI rerun was
+performed. Receipts: `output/cid-nl-context-optimization/` (`report.md`,
+`context-profile.json`, `context.pstats`, `paired-final.json`,
+`profile_context.py`, `format_trial.py`).
+
 ### 2026-09-09 Physical-Record Decoder Canonical Reuse
 
 **Evidence:** `diagnostic_only`; exact-output decoder optimization, no scientific
