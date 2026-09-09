@@ -25,26 +25,24 @@ class CandidateNotFoundError(ExplanationError):
     """The exact candidate ID is absent from this run."""
 
 
-def write_explanation_report(
-    path: Path,
-    *,
-    summary: Mapping[str, Any],
-    candidates: Iterable[tuple[str, str, Mapping[str, Any]]],
-    records: Mapping[tuple[str, str], Mapping[str, Any]],
-    links: Iterable[tuple[str, str, str, str]],
-) -> Path:
-    """Publish one complete projection; never overwrite an existing artifact."""
-    path = Path(path)
-    temporary = path.with_name(path.name + ".tmp")
-    if path.exists() or temporary.exists():
-        raise FileExistsError(f"explanation artifact already exists: {path}")
-    with temporary.open("xb"):
-        pass
-    connection: sqlite3.Connection | None = None
-    try:
-        connection = sqlite3.connect(temporary)
-        with connection:
-            connection.executescript(
+class ExplanationReportWriter:
+    """One bounded SQLite transaction, published only by explicit finalization."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.temporary = self.path.with_name(self.path.name + ".tmp")
+        self.connection: sqlite3.Connection | None = None
+        self.candidate_count = 0
+        self.record_counts: dict[str, int] = {}
+
+    def __enter__(self) -> ExplanationReportWriter:
+        if self.path.exists() or self.temporary.exists():
+            raise FileExistsError(f"explanation artifact already exists: {self.path}")
+        with self.temporary.open("xb"):
+            pass
+        try:
+            self.connection = sqlite3.connect(self.temporary)
+            self.connection.executescript(
                 "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT NOT NULL);"
                 "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, "
                 "payload TEXT NOT NULL, PRIMARY KEY(candidate_id, sample_id));"
@@ -54,43 +52,128 @@ def write_explanation_report(
                 "CREATE TABLE links (candidate_id TEXT, sample_id TEXT, kind TEXT, "
                 "record_id TEXT, "
                 "PRIMARY KEY(candidate_id, sample_id, kind, record_id));"
+                "BEGIN;"
             )
-            connection.executemany(
-                "INSERT INTO candidates VALUES (?, ?, ?)",
-                ((cid, sid, _json(payload)) for cid, sid, payload in candidates),
+        except BaseException:
+            self.abort()
+            raise
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.abort()
+
+    def _connection(self) -> sqlite3.Connection:
+        if self.connection is None:
+            raise RuntimeError("explanation writer is not active")
+        return self.connection
+
+    def add_candidate(self, cid: str, sid: str, payload: Mapping[str, Any]) -> None:
+        try:
+            self._connection().execute(
+                "INSERT INTO candidates VALUES (?, ?, ?)", (cid, sid, _json(payload))
             )
-            connection.executemany(
-                "INSERT INTO records VALUES (?, ?, ?)",
-                (
-                    (kind, rid, _json(payload))
-                    for (kind, rid), payload in records.items()
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("duplicate diagnostic candidate/sample") from exc
+        self.candidate_count += 1
+
+    def update_availability(self, key: tuple[str, str], **values: str) -> None:
+        row = self._connection().execute(
+            "SELECT payload FROM candidates WHERE candidate_id=? AND sample_id=?", key
+        ).fetchone()
+        if row is None:
+            raise KeyError(key)
+        payload = _object(row[0])
+        payload["availability"].update(values)
+        self._connection().execute(
+            "UPDATE candidates SET payload=? WHERE candidate_id=? AND sample_id=?",
+            (_json(payload), *key),
+        )
+
+    def add_record(
+        self,
+        kind: str,
+        identity: str,
+        payload: Mapping[str, Any],
+        related: Iterable[tuple[str, str]],
+    ) -> bool:
+        encoded = _json(payload)
+        existing = self._connection().execute(
+            "SELECT payload FROM records WHERE kind=? AND record_id=?", (kind, identity)
+        ).fetchone()
+        if existing is not None and _object(existing[0]) != _object(encoded):
+            raise ValueError(
+                f"conflicting diagnostic owner identity: {(kind, identity)}"
+            )
+        if existing is None:
+            self._connection().execute(
+                "INSERT INTO records VALUES (?, ?, ?)", (kind, identity, encoded)
+            )
+            self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
+        self._connection().executemany(
+            "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)",
+            ((cid, sid, kind, identity) for cid, sid in related),
+        )
+        return existing is None
+
+    def candidate_examples(self) -> list[dict[str, Any]]:
+        return [
+            _object(row[0])
+            for row in self._connection().execute(
+                "SELECT payload FROM candidates "
+                "ORDER BY candidate_id, sample_id LIMIT 5"
+            )
+        ]
+
+    def finalize(self, summary: Mapping[str, Any]) -> Path:
+        self._connection().execute(
+            "INSERT INTO metadata VALUES ('summary', ?)",
+            (
+                _json(
+                    dict(
+                        summary,
+                        schema_version=SCHEMA_VERSION,
+                        diagnostic_only=True,
+                        completion="post_matrix_publication",
+                    )
                 ),
-            )
-            connection.executemany("INSERT INTO links VALUES (?, ?, ?, ?)", links)
-            connection.execute(
-                "INSERT INTO metadata VALUES ('summary', ?)",
-                (
-                    _json(
-                        dict(
-                            summary,
-                            schema_version=SCHEMA_VERSION,
-                            diagnostic_only=True,
-                            completion="post_matrix_publication",
-                        )
-                    ),
-                ),
-            )
-            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        connection.close()
-        connection = None
-        if path.exists():
-            raise FileExistsError(f"explanation artifact already exists: {path}")
-        os.replace(temporary, path)
-    finally:
-        if connection is not None:
-            connection.close()
-        temporary.unlink(missing_ok=True)
-    return path
+            ),
+        )
+        self._connection().execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        self._connection().commit()
+        self._connection().close()
+        self.connection = None
+        if self.path.exists():
+            raise FileExistsError(f"explanation artifact already exists: {self.path}")
+        os.replace(self.temporary, self.path)
+        return self.path
+
+    def abort(self) -> None:
+        if self.connection is not None:
+            self._connection().close()
+            self.connection = None
+        self.temporary.unlink(missing_ok=True)
+
+
+def write_explanation_report(
+    path: Path,
+    *,
+    summary: Mapping[str, Any],
+    candidates: Iterable[tuple[str, str, Mapping[str, Any]]],
+    records: Mapping[tuple[str, str], Mapping[str, Any]],
+    links: Iterable[tuple[str, str, str, str]],
+) -> Path:
+    """Publish one complete projection; never overwrite an existing artifact."""
+    with ExplanationReportWriter(path) as writer:
+        for cid, sid, payload in candidates:
+            writer.add_candidate(cid, sid, payload)
+            del payload
+        for (kind, identity), payload in records.items():
+            writer.add_record(kind, identity, payload, ())
+            del payload
+        writer._connection().executemany(
+            "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", links
+        )
+        return writer.finalize(summary)
 
 
 def _json(value: Mapping[str, Any]) -> str:

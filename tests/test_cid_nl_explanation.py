@@ -274,6 +274,75 @@ def test_partial_write_never_publishes_complete_report(tmp_path):
     assert not report.with_name(report.name + ".tmp").exists()
 
 
+def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
+    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
+
+    report = tmp_path / "stream.sqlite"
+    with ExplanationReportWriter(report) as writer:
+        writer.add_candidate("a", "s", {"candidate_id": "a", "availability": {}})
+        writer.update_availability(("a", "s"), terminal="excluded")
+        with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
+            writer.add_candidate("a", "s", {"candidate_id": "a"})
+        assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
+        assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
+        writer.finalize({})
+    detail = read_cid_nl_explanation(report, candidate_id="a")
+    assert detail["records"] == {"facts": [{"value": 1}]}
+    assert detail["candidates"][0]["availability"] == {"terminal": "excluded"}
+    failed = tmp_path / "conflict.sqlite"
+    with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
+        with ExplanationReportWriter(failed) as writer:
+            writer.add_record("facts", "one", {"value": 1}, ())
+            writer.add_record("facts", "one", {"value": 2}, ())
+    assert not failed.exists()
+    assert not failed.with_name(failed.name + ".tmp").exists()
+
+
+def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
+    import weakref
+
+    class Payload(dict):
+        pass
+
+    previous = None
+
+    def rows():
+        nonlocal previous
+        for index in range(200):
+            if previous is not None:
+                assert previous() is None, "writer retained a consumed producer row"
+            payload = Payload(candidate_id=str(index))
+            previous = weakref.ref(payload)
+            yield str(index), "s", payload
+            del payload
+
+    class Records(dict):
+        def items(self):
+            nonlocal previous
+            previous = None
+            for index in range(200):
+                if previous is not None:
+                    assert previous() is None, "writer retained a consumed record"
+                payload = Payload(value=index)
+                previous = weakref.ref(payload)
+                yield ("facts", str(index)), payload
+                del payload
+
+    report = write_explanation_report(
+        tmp_path / "bounded.sqlite",
+        summary={},
+        candidates=rows(),
+        records=Records(),
+        links=(("199", "s", "facts", "199"),),
+    )
+    assert read_cid_nl_explanation(report, candidate_id="199")["candidates"] == [
+        {"candidate_id": "199"}
+    ]
+    assert read_cid_nl_explanation(report, candidate_id="199")["records"] == {
+        "facts": [{"value": 199}]
+    }
+
+
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
     report = write_explanation_report(
         tmp_path / "indexed.sqlite",
