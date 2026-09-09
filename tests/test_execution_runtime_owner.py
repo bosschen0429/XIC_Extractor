@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import json
+import weakref
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -11,9 +13,13 @@ from tests.runtime_observability_fixtures import build_runtime_observability_led
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from tests.test_acquisition_contract import _NoRawBatchAdapter, _source
 from xic_extractor.acquisition_contract import (
+    TraceCoordinateKind,
     _mint_raw_acquisition_session_receipt,
+    acquire_trace_batch,
     mint_raw_acquisition_session_capability,
+    mint_trace_acquisition_capability,
 )
 from xic_extractor.execution_runtime import (
     AttemptLifecycleContractError,
@@ -43,6 +49,8 @@ from xic_extractor.execution_runtime_observability import (
     canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.execution_runtime_owner import (
+    RuntimeAcquisitionMetrics,
+    RuntimeAcquisitionReceipt,
     RuntimeArtifactIoSample,
     RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
@@ -64,6 +72,8 @@ from xic_extractor.execution_runtime_owner import (
     _finalize_runtime_attempt,
     _mint_runtime_attempt_aggregate,
     _prepare_runtime_attempt,
+    compact_runtime_acquisition_receipt,
+    derive_runtime_acquisition_metrics,
     derive_runtime_peak_fact_cost_metrics,
     derive_runtime_raw_open_metrics,
     execute_runtime_attempt,
@@ -1669,3 +1679,96 @@ def _attempt(
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
     return issue_processing_attempt(request)
+
+
+def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arrays(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.xic_models import XICRequest, XICTrace
+
+    capability = mint_trace_acquisition_capability(
+        _source(tmp_path),
+        adapter_namespace="tests.runtime.compaction",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    acquired = acquire_trace_batch(
+        capability,
+        (XICRequest(mz=500.0, rt_min=1.0, rt_max=2.0, ppm_tol=20.0),),
+        _NoRawBatchAdapter(),
+    )
+    array_ref = weakref.ref(acquired.traces[0].trace.intensity)
+    receipt = RuntimeAcquisitionReceipt("raw:a", acquired)
+    compact = compact_runtime_acquisition_receipt(receipt)
+    assert compact.work_unit_key == receipt.work_unit_key
+    assert type(compact.acquisition) is RuntimeAcquisitionMetrics
+    assert compact_runtime_acquisition_receipt(compact) is compact
+    assert derive_runtime_acquisition_metrics((compact.acquisition,)) == (
+        derive_runtime_acquisition_metrics((acquired,))
+    )
+    assert derive_runtime_acquisition_metrics((compact.acquisition, acquired)) == (
+        derive_runtime_acquisition_metrics((acquired, acquired))
+    )
+    with pytest.raises(
+        RuntimeFinalizationContractError, match="minted by the runtime owner"
+    ):
+        RuntimeAcquisitionReceipt("raw:a", compact.acquisition)
+
+    attempt = _attempt(tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-compaction-test:v1",
+    )
+    initial = _prepare_runtime_attempt(runtime, ())
+    worker = replace(_failed_worker_batch(attempt), acquisitions=(receipt,))
+    eager = _apply_runtime_worker_batch(initial, worker)
+    compressed = _apply_runtime_worker_batch(
+        initial, replace(worker, acquisitions=(compact,))
+    )
+    replayed = _apply_runtime_worker_batch(
+        eager, replace(worker, acquisitions=(compact,))
+    )
+    assert replayed.acquisitions == (compact,)
+    _apply_runtime_worker_batch(compressed, worker)
+    _apply_runtime_worker_batch(compressed, replace(worker, acquisitions=(compact,)))
+    expected = _finalize_runtime_attempt(
+        eager,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda receipt: receipt,
+    )
+    actual = _finalize_runtime_attempt(
+        compressed,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda receipt: receipt,
+    )
+    assert canonical_runtime_observability_ledger_bytes(
+        actual.observability_ledger
+    ) == (canonical_runtime_observability_ledger_bytes(expected.observability_ledger))
+    changed = replace(
+        acquired,
+        traces=(
+            replace(
+                acquired.traces[0],
+                trace=XICTrace.from_arrays([1.0, 2.0], [0.0, 99.0]),
+            ),
+        ),
+    )
+    conflicting = compact_runtime_acquisition_receipt(
+        RuntimeAcquisitionReceipt("raw:a", changed)
+    )
+    assert conflicting.acquisition == compact.acquisition
+    with pytest.raises(
+        RuntimeFinalizationContractError, match="conflicting acquisition"
+    ):
+        _apply_runtime_worker_batch(
+            compressed, replace(worker, acquisitions=(conflicting,))
+        )
+    with pytest.raises(RuntimeFinalizationContractError, match="submitted terminal"):
+        foreign = compact_runtime_acquisition_receipt(
+            RuntimeAcquisitionReceipt("raw:other", acquired)
+        )
+        _apply_runtime_worker_batch(initial, replace(worker, acquisitions=(foreign,)))
+    del receipt, acquired, worker, eager, expected
+    gc.collect()
+    assert array_ref() is None
+    assert compressed.acquisitions == (compact,)

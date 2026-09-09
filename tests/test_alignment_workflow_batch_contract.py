@@ -39,6 +39,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     CANDIDATE_UNIVERSE_INPUT_KEY,
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
 )
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
@@ -805,9 +806,15 @@ def test_batch_application_result_requires_owner_candidate_universe(
         )
 
 
-def test_batch_application_result_rejects_reversed_subject_order(
+@pytest.mark.parametrize("carrier", ["tuple", "chunks"])
+@pytest.mark.parametrize(
+    "case", ["valid", "reversed", "wrong_attempt", "duplicate_physical"]
+)
+def test_batch_application_result_preserves_order_and_binding_across_chunks(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
+    carrier: str,
+    case: str,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
@@ -877,7 +884,7 @@ def test_batch_application_result_rejects_reversed_subject_order(
             row_id=f"row:{candidate_id}",
             physical_id=f"physical:{candidate_id}",
         )
-        for candidate_id, method_subject_id in reversed(memberships)
+        for candidate_id, method_subject_id in memberships
     )
     monkeypatch.setattr(
         application_result_owner,
@@ -885,15 +892,101 @@ def test_batch_application_result_rejects_reversed_subject_order(
         lambda _child: None,
     )
 
-    with pytest.raises(
-        ApplicationResultContractError,
-        match="canonical order",
-    ):
-        finalize_alignment_result(
-            UntargetBatchApplicationResultRequest(
-                scope=parent_scope,
-                processing_request=request,
-                processing_attempt=attempt,
-                children=children,
-            )
+    if case == "reversed":
+        children = tuple(reversed(children))
+    elif case == "wrong_attempt":
+        handoff = children[1].scientific_core.cell_observation_handoff
+        handoff.coverage.epoch.processing_owners.attempt = issue_processing_attempt(
+            request
         )
+    elif case == "duplicate_physical":
+        children[1].scientific_core.final_population[0].member_subjects[
+            0
+        ].physical_observation_ids = (
+            children[0]
+            .scientific_core.final_population[0]
+            .member_subjects[0]
+            .physical_observation_ids
+        )
+    loads = []
+
+    def load_chunk(index):
+        loads.append(index)
+        return (children[index],)
+
+    supplied_children = (
+        ImmutableSequence(chunk_lengths=(1, 1), load_chunk=load_chunk)
+        if carrier == "chunks"
+        else children
+    )
+    kwargs = dict(
+        scope=parent_scope,
+        processing_request=request,
+        processing_attempt=attempt,
+        children=supplied_children,
+    )
+    if case == "valid":
+        result = finalize_alignment_result(
+            UntargetBatchApplicationResultRequest(**kwargs)
+        )
+        assert result.children is supplied_children
+        assert tuple(result.application_results) == children
+        assert result.rows == tuple(
+            child.completed_projection.rows[0] for child in children
+        )
+    else:
+        message = {
+            "reversed": "canonical order",
+            "wrong_attempt": "crossed its processing attempt",
+            "duplicate_physical": "share a physical observation",
+        }[case]
+        with pytest.raises(ApplicationResultContractError, match=message):
+            finalize_alignment_result(UntargetBatchApplicationResultRequest(**kwargs))
+    if carrier == "chunks":
+        assert 1 in loads
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
+    monkeypatch: pytest.MonkeyPatch,
+    fails: bool,
+) -> None:
+    request = _uninitialized(
+        UntargetWorkflowCompositionRequest,
+        scope=object(),
+        excluded_candidates=(),
+    )
+    adapter = object()
+    owners = object()
+    child = _uninitialized(FinalizedUntargetApplicationResult)
+    monkeypatch.setattr(workflow_owner, "_validate_request_adapter", lambda *_: owners)
+    monkeypatch.setattr(
+        workflow_owner,
+        "_untarget_scope_memberships",
+        lambda _: {"candidate": "subject"},
+    )
+
+    def forbidden_runtime(*args, **kwargs):
+        pytest.fail("Subject scientific closure must not construct or execute runtime")
+
+    monkeypatch.setattr(workflow_owner, "execute_runtime_attempt", forbidden_runtime)
+    monkeypatch.setattr(workflow_owner, "RuntimeFinalizationReceipt", forbidden_runtime)
+
+    def compose(supplied_request, supplied_adapter, *, owners):
+        assert supplied_request is request
+        assert supplied_adapter is adapter
+        if fails:
+            raise workflow_owner._WorkflowStageFailure(
+                WorkflowStage.CELL_DECISION, ValueError("selection failed")
+            )
+        return child
+
+    monkeypatch.setattr(workflow_owner, "_compose_application_result", compose)
+    if fails:
+        with pytest.raises(
+            workflow_owner.AlignmentWorkflowContractError,
+            match="cell_decision.*selection failed",
+        ):
+            workflow_owner.compose_untarget_subject(request, adapter)
+    else:
+        assert workflow_owner.compose_untarget_subject(request, adapter) is child

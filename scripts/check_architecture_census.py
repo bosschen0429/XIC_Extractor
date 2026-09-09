@@ -287,6 +287,7 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeWorkerBatchReceipt",
             "RuntimeWorkerPeakRssSample",
             "accept_runtime_finalization_receipt",
+            "compact_runtime_acquisition_receipt",
             "derive_runtime_acquisition_metrics",
             "derive_runtime_peak_fact_cost_metrics",
             "derive_runtime_raw_open_metrics",

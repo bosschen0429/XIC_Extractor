@@ -36,10 +36,11 @@ from xic_extractor.execution_runtime_owner import (
     runtime_observation_event_count,
     runtime_started_worker_keys,
 )
+from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+    execute_bounded_untargeted_cid_nl,
+)
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
-    execute_untargeted_cid_nl_production_batch,
+    prepare_untargeted_cid_nl_production_plan,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
@@ -115,7 +116,7 @@ def complete_untargeted_cid_nl_alignment(
             settings=settings,
             profile=signal_processing_profile,
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    plan = prepare_untargeted_cid_nl_production_plan(
         raw_paths=ordered_raw_paths,
         sample_metadata=retained_sample_metadata,
         settings=settings,
@@ -131,20 +132,15 @@ def complete_untargeted_cid_nl_alignment(
     output_dir.mkdir(parents=True, exist_ok=True)
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     with recorder.stage("alignment.untargeted_cid_nl_runtime"):
-        runtime_result = execute_untargeted_cid_nl_production_batch(
-            batch,
+        return execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=output_dir,
             telemetry_provider=_coarse_runtime_telemetry,
             recovery_marker=OwnerPathRuntimeMarker(
                 output_dir / ".cid_nl_runtime.json",
                 _RUNTIME_ARTIFACT_NAMESPACE,
             ),
             progress_callback=recorder.heartbeat_event,
-            alignment_config=alignment_config,
-        )
-    with recorder.stage("alignment.untargeted_cid_nl_compose"):
-        return compose_untargeted_cid_nl_production_result(
-            batch,
-            runtime_result,
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
         )

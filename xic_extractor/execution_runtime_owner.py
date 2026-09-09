@@ -9,6 +9,7 @@ live telemetry, choose storage, or acquire scientific/product authority.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import InitVar, dataclass, field, replace
@@ -19,6 +20,7 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
     TraceAcquisitionBatch,
+    acquired_trace_content_id,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
@@ -168,13 +170,30 @@ class RuntimeAcquisitionReceipt:
     """Observed acquisition facts correlated to one submitted terminal result."""
 
     work_unit_key: str
-    acquisition: TraceAcquisitionBatch
+    acquisition: TraceAcquisitionBatch | RuntimeAcquisitionMetrics
+    _acquisition_digest: str | None = field(default=None, repr=False, kw_only=True)
+    _mint_token: InitVar[object | None] = field(default=None, kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object | None) -> None:
         _required_text(self.work_unit_key, field="work_unit_key")
-        if not isinstance(self.acquisition, TraceAcquisitionBatch):
+        if type(self.acquisition) not in (
+            TraceAcquisitionBatch,
+            RuntimeAcquisitionMetrics,
+        ):
             raise RuntimeFinalizationContractError(
-                "acquisition must be an owner-produced TraceAcquisitionBatch"
+                "acquisition must be an owner-produced TraceAcquisitionBatch or metrics"
+            )
+        if isinstance(self.acquisition, RuntimeAcquisitionMetrics):
+            if (
+                _mint_token is not _RUNTIME_OWNER_MINT_TOKEN
+                or not self._acquisition_digest
+            ):
+                raise RuntimeFinalizationContractError(
+                    "compact acquisition receipts must be minted by the runtime owner"
+                )
+        elif self._acquisition_digest is not None:
+            raise RuntimeFinalizationContractError(
+                "full acquisition receipts cannot carry a compact digest"
             )
 
 
@@ -209,7 +228,7 @@ class RuntimeAcquisitionMetrics:
 
 
 def derive_runtime_acquisition_metrics(
-    acquisitions: Sequence[TraceAcquisitionBatch],
+    acquisitions: Sequence[TraceAcquisitionBatch | RuntimeAcquisitionMetrics],
 ) -> RuntimeAcquisitionMetrics:
     """Aggregate only acquisition-owner receipts into runtime-owned counts."""
 
@@ -223,7 +242,10 @@ def derive_runtime_acquisition_metrics(
         raise RuntimeFinalizationContractError(
             "acquisitions must contain TraceAcquisitionBatch receipts"
         ) from exc
-    if any(not isinstance(item, TraceAcquisitionBatch) for item in batch):
+    if any(
+        type(item) not in (TraceAcquisitionBatch, RuntimeAcquisitionMetrics)
+        for item in batch
+    ):
         raise RuntimeFinalizationContractError(
             "acquisitions must contain TraceAcquisitionBatch receipts"
         )
@@ -236,6 +258,45 @@ def derive_runtime_acquisition_metrics(
         trace_point_count=sum(item.trace_point_count for item in batch),
         _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
     )
+
+
+def compact_runtime_acquisition_receipt(
+    receipt: RuntimeAcquisitionReceipt,
+) -> RuntimeAcquisitionReceipt:
+    """Release scientific arrays after their consumer has sealed its result."""
+    if type(receipt) is not RuntimeAcquisitionReceipt:
+        raise RuntimeFinalizationContractError(
+            "compaction requires a runtime acquisition receipt"
+        )
+    if isinstance(receipt.acquisition, RuntimeAcquisitionMetrics):
+        return receipt
+    return RuntimeAcquisitionReceipt(
+        work_unit_key=receipt.work_unit_key,
+        acquisition=derive_runtime_acquisition_metrics((receipt.acquisition,)),
+        _acquisition_digest=_runtime_acquisition_digest(receipt.acquisition),
+        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+    )
+
+
+def _runtime_acquisition_digest(acquisition: TraceAcquisitionBatch) -> str:
+    # Batch has no cached content identity. Reuse the acquisition owner's exact
+    # trace identity codec and include the remaining replay-comparison facts.
+    digest = hashlib.sha256()
+    digest.update(
+        repr(
+            (
+                acquisition.capability,
+                acquisition.logical_xic_request_count,
+                acquisition.xic_batch_count,
+                acquisition.adapter_chromatogram_call_count,
+                acquisition.trace_point_count,
+                len(acquisition.traces),
+            )
+        ).encode("utf-8")
+    )
+    for trace in acquisition.traces:
+        digest.update(acquired_trace_content_id(trace).encode("ascii"))
+    return digest.hexdigest()
 
 
 @final
@@ -1959,6 +2020,20 @@ def _acquisition_receipts_match(
         return False
     left = first.acquisition
     right = second.acquisition
+    if isinstance(left, RuntimeAcquisitionMetrics) or isinstance(
+        right, RuntimeAcquisitionMetrics
+    ):
+        left_digest = (
+            first._acquisition_digest
+            if isinstance(left, RuntimeAcquisitionMetrics)
+            else _runtime_acquisition_digest(left)
+        )
+        right_digest = (
+            second._acquisition_digest
+            if isinstance(right, RuntimeAcquisitionMetrics)
+            else _runtime_acquisition_digest(right)
+        )
+        return left_digest == right_digest
     if (
         left.capability != right.capability
         or left.logical_xic_request_count != right.logical_xic_request_count
@@ -2002,6 +2077,7 @@ __all__ = [
     "RuntimeWorkerBatchProvider",
     "RuntimeWorkerPeakRssSample",
     "accept_runtime_finalization_receipt",
+    "compact_runtime_acquisition_receipt",
     "derive_runtime_acquisition_metrics",
     "derive_runtime_peak_fact_cost_metrics",
     "derive_runtime_raw_open_metrics",

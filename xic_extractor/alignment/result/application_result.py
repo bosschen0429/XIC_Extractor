@@ -23,6 +23,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     CANDIDATE_UNIVERSE_INPUT_KEY,
     validate_candidate_universe_payload,
 )
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     validate_cid_nl_method_assessment_binding,
@@ -187,8 +188,14 @@ class UntargetBatchApplicationResultRequest:
     scope: UntargetedSearchScope
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
-    children: tuple[FinalizedUntargetApplicationResult, ...]
-    excluded_candidates: tuple[UntargetedCandidateExclusion, ...] = ()
+    children: (
+        tuple[FinalizedUntargetApplicationResult, ...]
+        | ImmutableSequence[FinalizedUntargetApplicationResult]
+    )
+    excluded_candidates: (
+        tuple[UntargetedCandidateExclusion, ...]
+        | ImmutableSequence[UntargetedCandidateExclusion]
+    ) = ()
 
     def __post_init__(self) -> None:
         _validate_untarget_batch_request(self)
@@ -285,8 +292,14 @@ class FinalizedUntargetBatchApplicationResult:
     scope: UntargetedSearchScope
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
-    children: tuple[FinalizedUntargetApplicationResult, ...]
-    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
+    children: (
+        tuple[FinalizedUntargetApplicationResult, ...]
+        | ImmutableSequence[FinalizedUntargetApplicationResult]
+    )
+    excluded_candidates: (
+        tuple[UntargetedCandidateExclusion, ...]
+        | ImmutableSequence[UntargetedCandidateExclusion]
+    )
     _mint_token: InitVar[object]
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -300,7 +313,10 @@ class FinalizedUntargetBatchApplicationResult:
     @property
     def application_results(
         self,
-    ) -> tuple[FinalizedUntargetApplicationResult, ...]:
+    ) -> (
+        tuple[FinalizedUntargetApplicationResult, ...]
+        | ImmutableSequence[FinalizedUntargetApplicationResult]
+    ):
         return self.children
 
     @property
@@ -639,27 +655,17 @@ def _validate_untarget_batch_request(
             "Untarget batch result attempt crossed its processing request"
         )
     children = request.children
-    if type(children) is not tuple:
+    if type(children) not in (tuple, ImmutableSequence):
         raise ApplicationResultContractError(
             "Untarget batch result requires an immutable child population"
         )
-    if any(type(child) is not FinalizedUntargetApplicationResult for child in children):
-        raise ApplicationResultContractError(
-            "Untarget batch result requires exact finalized Untarget children"
-        )
     exclusions = request.excluded_candidates
-    if type(exclusions) is not tuple or any(
-        type(item) is not UntargetedCandidateExclusion for item in exclusions
-    ):
+    if type(exclusions) not in (tuple, ImmutableSequence):
         raise ApplicationResultContractError(
-            "Untarget batch exclusions must be an immutable typed tuple"
+            "Untarget batch exclusions must be an immutable typed sequence"
         )
-    excluded_ids = tuple(item.candidate_id for item in exclusions)
-    if len(excluded_ids) != len(set(excluded_ids)):
-        raise ApplicationResultContractError(
-            "Untarget batch exclusions contain duplicate candidates"
-        )
-    excluded_id_set = set(excluded_ids)
+    excluded_ids: list[str] = []
+    excluded_id_set: set[str] = set()
 
     parent_candidates = tuple(request.scope.declared_candidate_ids)
     if not parent_candidates or len(parent_candidates) != len(set(parent_candidates)):
@@ -703,15 +709,6 @@ def _validate_untarget_batch_request(
         raise ApplicationResultContractError(
             "Untarget batch result parent scope is not the complete request universe"
         )
-    if excluded_ids != tuple(
-        candidate_id
-        for candidate_id in parent_candidates
-        if candidate_id in excluded_id_set
-    ):
-        raise ApplicationResultContractError(
-            "Untarget batch exclusions are not in canonical candidate order"
-        )
-
     parent_sample_ids_set = set(parent_sample_ids)
     subject_by_id = {
         subject.method_subject_id: subject for subject in subject_batch.subjects
@@ -719,6 +716,16 @@ def _validate_untarget_batch_request(
     # Rebuilding this shared binding would reparse the full request per candidate.
     exclusion_owners: ProcessingOwnerReferences | None = None
     for exclusion in exclusions:
+        if type(exclusion) is not UntargetedCandidateExclusion:
+            raise ApplicationResultContractError(
+                "Untarget batch exclusions must be an immutable typed sequence"
+            )
+        if exclusion.candidate_id in excluded_id_set:
+            raise ApplicationResultContractError(
+                "Untarget batch exclusions contain duplicate candidates"
+            )
+        excluded_ids.append(exclusion.candidate_id)
+        excluded_id_set.add(exclusion.candidate_id)
         exclusion.__post_init__()
         expected_sample_id = candidate_sample_ids.get(exclusion.candidate_id)
         if (
@@ -775,12 +782,26 @@ def _validate_untarget_batch_request(
                         "Method exclusion crossed its assessment owner binding"
                     ) from exc
 
-    child_candidates: list[str] = []
+    if tuple(excluded_ids) != tuple(
+        candidate_id
+        for candidate_id in parent_candidates
+        if candidate_id in excluded_id_set
+    ):
+        raise ApplicationResultContractError(
+            "Untarget batch exclusions are not in canonical candidate order"
+        )
+
+    child_candidates: set[str] = set()
+    seen_subject_ids: set[str] = set()
     child_subject_ids: list[str] = []
     row_ids: set[str] = set()
     group_ids: set[str] = set()
     physical_ids: set[str] = set()
     for child in children:
+        if type(child) is not FinalizedUntargetApplicationResult:
+            raise ApplicationResultContractError(
+                "Untarget batch result requires exact finalized Untarget children"
+            )
         try:
             _validate_untarget_result(child)
         except ApplicationResultContractError:
@@ -843,15 +864,19 @@ def _validate_untarget_batch_request(
             raise ApplicationResultContractError(
                 "Untarget batch child must be subject-local"
             )
-        if subjects[0] in child_subject_ids:
+        if subjects[0] in seen_subject_ids:
             raise ApplicationResultContractError(
                 "Untarget batch result has duplicate subject-local children"
             )
-        child_candidates.extend(candidate_ids)
+        seen_subject_ids.add(subjects[0])
         child_subject_ids.append(subjects[0])
-        if len(child_candidates) != len(set(child_candidates)) or len(
-            child_candidates
-        ) > len(parent_candidates):
+        for candidate_id in candidate_ids:
+            if candidate_id in child_candidates or candidate_id in excluded_id_set:
+                raise ApplicationResultContractError(
+                    "Untarget batch child candidate union is not exactly once"
+                )
+            child_candidates.add(candidate_id)
+        if len(child_candidates) > len(parent_candidates):
             raise ApplicationResultContractError(
                 "Untarget batch child candidate union is not exactly once"
             )
@@ -885,7 +910,7 @@ def _validate_untarget_batch_request(
                     )
                 physical_ids.update(member_physical_ids)
 
-    if sorted((*child_candidates, *excluded_ids)) != sorted(parent_candidates):
+    if child_candidates | excluded_id_set != set(parent_candidates):
         raise ApplicationResultContractError(
             "Untarget batch child/exclusion candidate union is not exactly once"
         )

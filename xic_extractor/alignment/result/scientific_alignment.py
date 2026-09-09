@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment._completion_receipt import retained_owner_digest
@@ -122,6 +122,49 @@ class FinalizedScientificAlignment:
         _validate_finalized_alignment(self, _reuse_fresh_cells=fresh_cells)
         # The immutable request was validated at construction; retain its identity
         # without rehashing the cohort input payload for every subject result.
+        object.__setattr__(
+            self,
+            "_completion_seal",
+            retained_owner_digest(self, identity_only=(self.processing_request,)),
+        )
+
+    def __copy__(self) -> FinalizedScientificAlignment:
+        # A live clone is still a substitution, not an owner-restored spool read.
+        clone = object.__new__(type(self))
+        for owner_field in fields(self):
+            object.__setattr__(clone, owner_field.name, getattr(self, owner_field.name))
+        return clone
+
+    def __getstate__(self) -> tuple[object, ...]:
+        """Export a verified completion for private same-process storage."""
+        if not hasattr(self, "_completion_seal"):
+            raise FinalizedScientificAlignmentContractError(
+                "scientific core is unsealed"
+            )
+        _validate_finalized_scientific_alignment_completion_receipt(self)
+        return tuple(
+            getattr(self, owner_field.name)
+            for owner_field in fields(self)
+            if owner_field.name != "_completion_seal"
+        )
+
+    def __setstate__(self, state: tuple[object, ...]) -> None:
+        """Rebind only the process-local seal after restoring a verified graph."""
+        owner_fields = tuple(
+            owner_field
+            for owner_field in fields(self)
+            if owner_field.name != "_completion_seal"
+        )
+        if (
+            hasattr(self, "_completion_seal")
+            or type(state) is not tuple
+            or len(state) != len(owner_fields)
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "invalid scientific core restoration"
+            )
+        for owner_field, value in zip(owner_fields, state, strict=True):
+            object.__setattr__(self, owner_field.name, value)
         object.__setattr__(
             self,
             "_completion_seal",

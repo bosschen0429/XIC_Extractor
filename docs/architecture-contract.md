@@ -66,6 +66,12 @@ downstream decision core.
   work to the retained execution adapter in `extraction/` after Alignment's
   output-collision guard. Alignment may only consume the completed typed batch
   result; it must not duplicate that runtime or let the adapter write outputs.
+- Retained CID-NL execution partitions complete subjects across the sample cohort
+  under one runtime attempt. Its extraction-owned private result store spools
+  completed scientific results for same-process reuse; it grants no scientific,
+  activation, or writer authority. Scientific and projection owners restore their
+  own process-local completion seals, and the runtime owner compacts acquisition
+  facts after those scientific results have been stored.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,

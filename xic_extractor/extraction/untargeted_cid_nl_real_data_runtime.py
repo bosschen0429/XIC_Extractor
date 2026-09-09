@@ -177,9 +177,9 @@ class UntargetedCidNlRealDataRuntimeJob:
     _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
         init=False, repr=False, compare=False
     )
-    _request_candidates_by_subject: Mapping[
-        str, tuple[DiscoveryCandidate, ...]
-    ] = field(init=False, repr=False, compare=False)
+    _request_candidates_by_subject: Mapping[str, tuple[DiscoveryCandidate, ...]] = (
+        field(init=False, repr=False, compare=False)
+    )
     _request_physical_records_by_subject: Mapping[
         str, tuple[DiscoveryPhysicalFactRecord, ...]
     ] = field(init=False, repr=False, compare=False)
@@ -698,6 +698,117 @@ def execute_untargeted_cid_nl_real_data_runtime(
             "runtime manifest must exactly match the declared real-data work units"
         )
 
+    work = _prepare_runtime_work(
+        jobs, alignment_config=alignment_config, progress_callback=progress_callback
+    )
+    recovery_marker.record_launch(runtime)
+    finalization = execute_runtime_attempt(
+        runtime,
+        work.reservations,
+        worker_batch_provider=work.provide_worker_batch,
+        telemetry_provider=telemetry_provider,
+        persister=recovery_marker,
+    )
+    _validate_finalized_acquisition_metrics(
+        finalization,
+        tuple(work.acquisitions),
+    )
+    succeeded = (
+        finalization.supervisor.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
+    )
+    return UntargetedCidNlRealDataRuntimeApplicationResult(
+        finalization=finalization,
+        sample_results=(tuple(work.results) if succeeded else ()),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlRuntimePartitionResult:
+    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
+    worker_batch: RuntimeWorkerBatchReceipt
+    acquisitions: tuple[RuntimeAcquisitionReceipt, ...]
+
+    @property
+    def succeeded(self) -> bool:
+        return bool(self.worker_batch.settlements) and all(
+            settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
+            for settlement in self.worker_batch.settlements
+        )
+
+
+def execute_untargeted_cid_nl_runtime_partition(
+    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...],
+    *,
+    partition_key: str,
+    alignment_config: AlignmentConfig,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+) -> UntargetedCidNlRuntimePartitionResult:
+    """Execute one complete subject partition under the caller's runtime attempt."""
+    _required_text(partition_key, field="partition_key")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "alignment_config must be an AlignmentConfig"
+        )
+    if (
+        not isinstance(jobs, tuple)
+        or not jobs
+        or any(not isinstance(job, UntargetedCidNlRealDataRuntimeJob) for job in jobs)
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "jobs must contain Untargeted CID-NL runtime jobs"
+        )
+    if any(
+        job.processing_owners.attempt != jobs[0].processing_owners.attempt
+        for job in jobs
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "all runtime jobs must share one processing attempt"
+        )
+    if len({job.work_unit_key for job in jobs}) != len(jobs):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "partition work unit keys must be unique"
+        )
+    work = _prepare_runtime_work(
+        jobs,
+        alignment_config=alignment_config,
+        progress_callback=progress_callback,
+        partition_key=partition_key,
+    )
+    batch = work.provide_worker_batch(None)
+    return UntargetedCidNlRuntimePartitionResult(
+        tuple(work.results), batch, batch.acquisitions
+    )
+
+
+@dataclass(slots=True)
+class _RuntimeWork:
+    reservations: list[RuntimeResourceReservation]
+    provide_worker_batch: Callable[[object], RuntimeWorkerBatchReceipt]
+    results: list[UntargetedCidNlRuntimeSampleResult]
+    acquisitions: list[TraceAcquisitionBatch]
+
+
+def _prepare_runtime_work(
+    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...],
+    *,
+    alignment_config: AlignmentConfig,
+    progress_callback: Callable[[Mapping[str, object]], None] | None,
+    partition_key: str | None = None,
+) -> _RuntimeWork:
+    attempt = jobs[0].processing_owners.attempt
+
+    def report_phase(stage: str, completed: int, total: int) -> None:
+        if partition_key is not None and progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "partition_progress",
+                    "stage": stage,
+                    "partition_key": partition_key,
+                    "completed": completed,
+                    "total": total,
+                }
+            )
+
     direct_assessment_by_key: dict[str, bool] = {}
     initial_raw_by_key: dict[str, bool] = {}
     planning_errors: dict[str, Exception] = {}
@@ -743,8 +854,10 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 and not job.sample.metadata.excluded
                 and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
             )
-            if not _request_uses_subject_batch(job) and (
-                initial_requires_raw or recovery_may_need_raw
+            if (
+                partition_key is None
+                and not _request_uses_subject_batch(job)
+                and (initial_requires_raw or recovery_may_need_raw)
             ):
                 resource_key = f"acquisition-session:{job.work_unit_key}"
                 source = resolve_request_acquisition_source(
@@ -777,7 +890,9 @@ def execute_untargeted_cid_nl_real_data_runtime(
     sample_groups = _runtime_sample_groups(states)
     batch_phases: list[_BatchSamplePhaseState] = []
     for sample_states in sample_groups:
-        if not _request_uses_subject_batch(sample_states[0].job):
+        if partition_key is None and not _request_uses_subject_batch(
+            sample_states[0].job
+        ):
             continue
         first = sample_states[0].job
         sample_id = first.sample.identity.sample_identity_id
@@ -797,6 +912,13 @@ def execute_untargeted_cid_nl_real_data_runtime(
             and recovery_subject_ids
             else None
         )
+        if partition_key is not None:
+            initial_resource_key = (
+                f"acquisition-session:{partition_key}:{sample_id}:initial"
+            )
+            recovery_resource_key = (
+                f"acquisition-session:{partition_key}:{sample_id}:recovery"
+            )
         for resource_key, phase, owner_conditional in (
             (initial_resource_key, "initial", False),
             (recovery_resource_key, "recovery", True),
@@ -811,7 +933,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                     worker_key=f"inline-acquisition:{phase}:{first.work_unit_key}",
                     source_reference=source.acquisition_source_id,
                     compatibility_token=_RUNTIME_COMPATIBILITY_TOKEN,
-                    owner_conditional=owner_conditional,
+                    owner_conditional=owner_conditional or partition_key is not None,
                 )
             )
         batch_phases.append(
@@ -822,7 +944,6 @@ def execute_untargeted_cid_nl_real_data_runtime(
             )
         )
 
-    recovery_marker.record_launch(runtime)
     observed_results: list[UntargetedCidNlRuntimeSampleResult] = []
     observed_acquisitions: list[TraceAcquisitionBatch] = []
 
@@ -835,38 +956,60 @@ def execute_untargeted_cid_nl_real_data_runtime(
             phase.states[0].job.sample.identity.sample_identity_id: phase
             for phase in batch_phases
         }
-        for sample_states in sample_groups:
-            if _request_uses_subject_batch(sample_states[0].job):
+        for completed, sample_states in enumerate(sample_groups, 1):
+            if partition_key is not None or _request_uses_subject_batch(
+                sample_states[0].job
+            ):
                 _execute_initial_assessment_batch(
                     phases_by_sample[
                         sample_states[0].job.sample.identity.sample_identity_id
-                    ]
+                    ],
+                    partition_candidates=partition_key is not None,
                 )
             else:
                 for state in sample_states:
                     _execute_initial_assessment(state)
+            report_phase("partition_initial", completed, len(sample_groups))
 
-        _prepare_owner_authorized_recoveries(states, alignment_config=alignment_config)
+        try:
+            _prepare_owner_authorized_recoveries(
+                states, alignment_config=alignment_config
+            )
+        except Exception as exc:
+            if partition_key is None:
+                raise
+            for state in states:
+                if state.error is None:
+                    state.error = exc
 
         for state in states:
             if (
-                not _request_uses_subject_batch(state.job)
+                partition_key is None
+                and not _request_uses_subject_batch(state.job)
                 and state.recovery_group_center_rts
             ):
                 _execute_recovery(
                     state,
                 )
-        for phase in batch_phases:
+        for completed, phase in enumerate(batch_phases, 1):
             _execute_recovery_batch(phase)
+            report_phase("partition_recovery", completed, len(batch_phases))
 
-        acquisition_owner_keys = _batch_acquisition_owner_keys(batch_phases)
+        acquisition_owner_keys = (
+            _batch_acquisition_owner_keys(batch_phases)
+            if partition_key is None
+            else frozenset()
+        )
         result_context = _RuntimeResultContext(jobs)
-        for state in states:
+        for completed, state in enumerate(states, 1):
             batch, sample_result, acquisition = _finalize_job_state(
                 state,
                 include_acquisition_receipt=(
-                    not _request_uses_subject_batch(state.job)
-                    or state.job.work_unit_key in acquisition_owner_keys
+                    partition_key is None
+                    and (
+                        not _request_uses_subject_batch(state.job)
+                        or state.job.work_unit_key in acquisition_owner_keys
+                    )
                 ),
                 result_context=result_context,
             )
@@ -878,6 +1021,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 observed_results.append(sample_result)
             if acquisition is not None:
                 observed_acquisitions.append(acquisition)
+            report_phase("partition_seal", completed, len(states))
             if progress_callback is not None:
                 progress_callback(
                     {
@@ -890,6 +1034,19 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 )
         for phase in batch_phases:
             resource_settlements.extend(_batch_phase_resource_receipts(phase))
+            if partition_key is not None:
+                sample_id = phase.states[0].job.sample.identity.sample_identity_id
+                for name, acquisition in (
+                    ("initial", phase.initial_acquisition),
+                    ("recovery", phase.recovery_acquisition),
+                ):
+                    if acquisition is not None:
+                        acquisitions.append(
+                            RuntimeAcquisitionReceipt(
+                                work_unit_key=f"{partition_key}:{sample_id}:{name}",
+                                acquisition=acquisition,
+                            )
+                        )
         return RuntimeWorkerBatchReceipt(
             settlements=tuple(settlements),
             resource_settlements=tuple(resource_settlements),
@@ -897,23 +1054,8 @@ def execute_untargeted_cid_nl_real_data_runtime(
             acquisitions=tuple(acquisitions),
         )
 
-    finalization = execute_runtime_attempt(
-        runtime,
-        reservations,
-        worker_batch_provider=provide_worker_batch,
-        telemetry_provider=telemetry_provider,
-        persister=recovery_marker,
-    )
-    _validate_finalized_acquisition_metrics(
-        finalization,
-        tuple(observed_acquisitions),
-    )
-    succeeded = (
-        finalization.supervisor.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
-    )
-    return UntargetedCidNlRealDataRuntimeApplicationResult(
-        finalization=finalization,
-        sample_results=(tuple(observed_results) if succeeded else ()),
+    return _RuntimeWork(
+        reservations, provide_worker_batch, observed_results, observed_acquisitions
     )
 
 
@@ -971,6 +1113,8 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
 
 def _execute_initial_assessment_batch(
     phase: _BatchSamplePhaseState,
+    *,
+    partition_candidates: bool = False,
 ) -> None:
     states = phase.states
     leader = states[0]
@@ -994,10 +1138,23 @@ def _execute_initial_assessment_batch(
                 expected_acquisition_source=source,
             )
             phase.initial_opened = True
+            candidates = job.candidates
+            if partition_candidates:
+                candidate_ids = {
+                    candidate.candidate_id
+                    for state in states
+                    if state.error is None
+                    for candidate in _request_subject_candidates(state.job)
+                }
+                candidates = tuple(
+                    candidate
+                    for candidate in candidates
+                    if candidate.candidate_id in candidate_ids
+                )
             trace_batch = acquire_untargeted_cid_nl_sample_trace_batch(
                 processing_owners=job.processing_owners,
                 sample=job.sample,
-                candidates=job.candidates,
+                candidates=candidates,
                 settings=job.settings,
                 raw=raw,
                 signal_processing_profile=job.signal_processing_profile,

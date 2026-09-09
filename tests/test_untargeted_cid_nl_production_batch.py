@@ -47,6 +47,7 @@ from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResul
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     build_untargeted_cid_nl_production_batch,
+    compose_untargeted_cid_nl_partition,
     compose_untargeted_cid_nl_production_result,
     execute_untargeted_cid_nl_production_batch,
 )
@@ -75,6 +76,108 @@ def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         workflow, "consume_observation_repair_terminal", unexpected_repair
     )
+
+
+def _assert_partition_composition_parity(
+    batch, runtime_result, completed, *, alignment_config, known_istd_reference=None
+):
+    from xic_extractor.alignment.result.application_result import (
+        UntargetBatchApplicationResultRequest,
+        finalize_alignment_result,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    parts = []
+    for subject in batch.subject_batch.subjects:
+        subject_id = subject.method_subject_id
+        partition = replace(
+            batch,
+            subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+                subjects=(subject,),
+                candidate_memberships=tuple(
+                    item
+                    for item in batch.subject_batch.candidate_memberships
+                    if item[1] == subject_id
+                ),
+            ),
+            jobs=tuple(
+                job
+                for job in batch.jobs
+                if job.method_subject.method_subject_id == subject_id
+            ),
+        )
+        results = tuple(
+            result
+            for result in runtime_result.sample_results
+            if result.job.method_subject.method_subject_id == subject_id
+        )
+        with pytest.raises(RuntimeError, match="sample/subject results"):
+            compose_untargeted_cid_nl_partition(
+                partition,
+                results[:-1],
+                alignment_config=alignment_config,
+                known_istd_reference=known_istd_reference,
+            )
+        parts.append(
+            compose_untargeted_cid_nl_partition(
+                partition,
+                results,
+                alignment_config=alignment_config,
+                known_istd_reference=known_istd_reference,
+            )
+        )
+    original = completed.application_result
+    candidate_order = {
+        candidate_id: index
+        for index, candidate_id in enumerate(original.scope.declared_candidate_ids)
+    }
+    exclusions = tuple(
+        sorted(
+            (item for part in parts for item in part.excluded_candidates),
+            key=lambda item: candidate_order[item.candidate_id],
+        )
+    )
+    result = finalize_alignment_result(
+        UntargetBatchApplicationResultRequest(
+            scope=original.scope,
+            processing_request=original.processing_request,
+            processing_attempt=original.processing_attempt,
+            children=tuple(child for part in parts for child in part.children),
+            excluded_candidates=exclusions,
+        )
+    )
+    recomposed = replace(completed, application_result=result)
+    assert project_completed_untarget_batch_writer_inputs(recomposed).matrix == (
+        project_completed_untarget_batch_writer_inputs(completed).matrix
+    )
+    assert result.excluded_candidates == original.excluded_candidates
+    assert result.physical_observation_ids == original.physical_observation_ids
+    assert all(
+        child.processing_request is original.processing_request
+        for child in result.children
+    )
+    assert all(
+        left is right
+        for child in result.children
+        for left, right in zip(
+            child.canonical_samples, original.canonical_samples, strict=True
+        )
+    )
+    expected_assessments = {id(item) for item in completed.method_assessments}
+    assert {id(item) for part in parts for item in part.method_assessments} == (
+        expected_assessments
+    )
+    assert tuple(
+        group.group_hypothesis_id for part in parts for group in part.initial_groups
+    ) == tuple(group.group_hypothesis_id for group in completed.initial_groups)
+    assert tuple(edge for part in parts for edge in part.initial_edges) == (
+        completed.initial_edges
+    )
+    assert {
+        binding.candidate_id for part in parts for binding in part.capture_bindings
+    } == {binding.candidate_id for binding in original.scope.capture_bindings}
 
 
 def _assert_jobs_match_direct_construction(batch) -> None:
@@ -677,15 +780,19 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         capture_owner, "capture_reacquired_physical_peak", retain_reacquired_capture
     )
-    build_batch = alignment_adapter.build_untargeted_cid_nl_production_batch
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
 
-    def retain_batch(**kwargs):
-        batch = build_batch(**kwargs)
+    materialize_batch = bounded_owner.materialize_untargeted_cid_nl_partition
+
+    def retain_batch(*args, **kwargs):
+        batch = materialize_batch(*args, **kwargs)
         captured_batches.append(batch)
         return batch
 
     monkeypatch.setattr(
-        alignment_adapter, "build_untargeted_cid_nl_production_batch", retain_batch
+        bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
     from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment import workflow as workflow_owner
@@ -865,13 +972,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     runtime_results = []
-    runtime_execute = production.execute_untargeted_cid_nl_real_data_runtime
+    runtime_execute = bounded_owner.execute_untargeted_cid_nl_runtime_partition
 
     def checked_runtime(*args, **kwargs):
         result = runtime_execute(*args, **kwargs)
         assert result.succeeded, tuple(
             settlement.failure_detail.message
-            for settlement in result.finalization.coordinator.state.runtime.settlements
+            for settlement in result.worker_batch.settlements
             if settlement.failure_detail is not None
         )
         runtime_results.append(result)
@@ -911,7 +1018,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         return result
 
     monkeypatch.setattr(
-        production, "execute_untargeted_cid_nl_real_data_runtime", checked_runtime
+        bounded_owner, "execute_untargeted_cid_nl_runtime_partition", checked_runtime
     )
     completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,
@@ -947,14 +1054,17 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.final_population == context.population
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
-    assert completed.initial_edges == tuple(retained_initial_edges)
-    # Fresh owners transfer completion once; the batch checks after all callbacks.
+    assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
+    # Global closure checks the reloaded scientific completion once.
     children = completed.application_result.children
     assert tuple(completion_checks["scientific"]) == tuple(
         child.scientific_core for child in children
     )
-    assert tuple(completion_checks["post_cell"]) == tuple(
-        child.completed_projection for child in children
+    # Post-cell checks close two distinct graphs: pre-spool and global reload.
+    expected_projections = tuple(child.completed_projection for child in children)
+    assert tuple(completion_checks["post_cell"]) == expected_projections * 2
+    assert len({id(value) for value in completion_checks["post_cell"]}) == len(
+        completion_checks["post_cell"]
     )
     # Binding consumes the closed capture; it must not repeat physical selection.
     assert not any(binding_rechecks)
@@ -1247,7 +1357,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     keys = tuple(wrong_records)
     wrong_records[keys[0]] = wrong_records[keys[1]]
     with pytest.raises(IdentityContractError, match="crossed candidate"):
-        build_batch(
+        alignment_adapter.prepare_untargeted_cid_nl_production_plan(
             raw_paths=paths,
             sample_metadata=tuple(sample.metadata for sample in batch.context.samples),
             settings=settings,
@@ -1530,7 +1640,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
             )
 
 
-def test_alignment_adapter_builds_executes_and_composes_once(
+def test_alignment_adapter_prepares_and_executes_bounded_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1556,7 +1666,6 @@ def test_alignment_adapter_builds_executes_and_composes_once(
         candidate_receipts=receipts,
     )
     built = object()
-    executed = object()
     completed = object()
     calls: list[tuple[str, object]] = []
 
@@ -1567,28 +1676,17 @@ def test_alignment_adapter_builds_executes_and_composes_once(
     def execute(batch: object, **kwargs: object) -> object:
         assert batch is built
         calls.append(("execute", kwargs))
-        return executed
-
-    def compose(batch: object, runtime: object, **kwargs: object) -> object:
-        assert batch is built
-        assert runtime is executed
-        calls.append(("compose", kwargs))
         return completed
 
     monkeypatch.setattr(
         alignment_adapter,
-        "build_untargeted_cid_nl_production_batch",
+        "prepare_untargeted_cid_nl_production_plan",
         build,
     )
     monkeypatch.setattr(
         alignment_adapter,
-        "execute_untargeted_cid_nl_production_batch",
+        "execute_bounded_untargeted_cid_nl",
         execute,
-    )
-    monkeypatch.setattr(
-        alignment_adapter,
-        "compose_untargeted_cid_nl_production_result",
-        compose,
     )
 
     result = alignment_adapter.complete_untargeted_cid_nl_alignment(
@@ -1613,7 +1711,7 @@ def test_alignment_adapter_builds_executes_and_composes_once(
     )
 
     assert result is completed
-    assert [name for name, _kwargs in calls] == ["build", "execute", "compose"]
+    assert [name for name, _kwargs in calls] == ["build", "execute"]
     build_kwargs = calls[0][1]
     assert isinstance(build_kwargs, dict)
     assert build_kwargs["raw_paths"] == (raw_path,)
@@ -1869,6 +1967,12 @@ def test_production_batch_executes_one_atomic_sample_phase(
     }
     # Full owner validation is cohort-sized; sealing the same batch must reuse it.
     assert len(validated_batches) == 1
+    _assert_partition_composition_parity(
+        batch,
+        result,
+        completed,
+        alignment_config=alignment_config,
+    )
 
 
 @pytest.mark.parametrize(
@@ -2062,6 +2166,12 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     completed = compose_untargeted_cid_nl_production_result(
         batch,
         runtime_result,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+    _assert_partition_composition_parity(
+        batch,
+        runtime_result,
+        completed,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
 
@@ -2430,6 +2540,13 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     corrected = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
+        alignment_config=AlignmentConfig(),
+        known_istd_reference=reference,
+    )
+    _assert_partition_composition_parity(
+        batch,
+        runtime,
+        corrected,
         alignment_config=AlignmentConfig(),
         known_istd_reference=reference,
     )
@@ -2888,6 +3005,12 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         runtime_result,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
+    _assert_partition_composition_parity(
+        batch,
+        runtime_result,
+        completed,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
 
     assert completed.application_result.children
     writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
@@ -3204,6 +3327,12 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
     completed = compose_untargeted_cid_nl_production_result(
         batch,
         runtime_result,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
+    _assert_partition_composition_parity(
+        batch,
+        runtime_result,
+        completed,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
 

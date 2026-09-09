@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillEvaluationCoverageBatch,
@@ -82,6 +82,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeWorkerBatchProvider,
     execute_runtime_attempt,
 )
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -281,7 +282,7 @@ class UntargetWorkflowRequest:
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowCompositionRequest:
-    """One Untarget request whose owner runtime has already finalized."""
+    """Untarget scientific composition inputs independent of runtime closure."""
 
     scope: UntargetedSearchScope
     processing_request: ProcessingRequestIdentity
@@ -473,15 +474,18 @@ class CompletedUntargetBatchWorkflowResult:
     application_result: FinalizedUntargetBatchApplicationResult
     # Diagnostic handoff only; these retained owner facts grant no completion
     # or Matrix authority and do not change scientific result equality.
-    method_assessments: tuple[CidNlMethodAssessmentRef, ...] = field(
-        default=(), repr=False, compare=False
-    )
-    initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...] = field(
-        default=(), repr=False, compare=False
-    )
-    initial_edges: tuple[CrossSampleNeighborhoodEdge, ...] = field(
-        default=(), repr=False, compare=False
-    )
+    method_assessments: (
+        tuple[CidNlMethodAssessmentRef, ...]
+        | ImmutableSequence[CidNlMethodAssessmentRef]
+    ) = field(default=(), repr=False, compare=False)
+    initial_groups: (
+        tuple[CrossSamplePeakGroupHypothesis, ...]
+        | ImmutableSequence[CrossSamplePeakGroupHypothesis]
+    ) = field(default=(), repr=False, compare=False)
+    initial_edges: (
+        tuple[CrossSampleNeighborhoodEdge, ...]
+        | ImmutableSequence[CrossSampleNeighborhoodEdge]
+    ) = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.SUCCEEDED)
@@ -711,6 +715,58 @@ def _execute_composition_after_runtime(
 ) -> WorkflowTerminalResult:
     if owners is None:
         owners = _validate_request_adapter(request, adapter)
+    try:
+        result = _compose_application_result(request, adapter, owners=owners)
+        if type(result) is FinalizedTargetApplicationResult:
+            return CompletedTargetWorkflowResult(runtime_receipt, result)
+        return CompletedUntargetWorkflowResult(
+            runtime_receipt, cast(FinalizedUntargetApplicationResult, result)
+        )
+    except _WorkflowStageFailure as failure:
+        exc = failure.error
+        return FailedWorkflowResult(
+            runtime_receipt=runtime_receipt,
+            stage=failure.stage,
+            failure_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
+            failure_message=str(exc),
+        )
+
+
+def compose_untarget_subject(
+    request: UntargetWorkflowCompositionRequest,
+    adapter: UntargetWorkflowAdapter,
+) -> FinalizedUntargetApplicationResult:
+    """Close one subject scientifically without asserting runtime completion."""
+    if type(request) is not UntargetWorkflowCompositionRequest:
+        raise AlignmentWorkflowContractError(
+            "Subject composition requires exact inputs"
+        )
+    owners = _validate_request_adapter(request, adapter)
+    subjects = set(_untarget_scope_memberships(request.scope).values())
+    if len(subjects) != 1 or request.excluded_candidates:
+        raise AlignmentWorkflowContractError(
+            "Subject composition requires one included subject-local population"
+        )
+    try:
+        result = _compose_application_result(request, adapter, owners=owners)
+    except _WorkflowStageFailure as failure:
+        raise AlignmentWorkflowContractError(
+            f"Untarget subject composition failed at {failure.stage.value}: "
+            f"{failure.error}"
+        ) from failure.error
+    if type(result) is not FinalizedUntargetApplicationResult:
+        raise AlignmentWorkflowContractError(
+            "Subject composition returned crossed result"
+        )
+    return result
+
+
+def _compose_application_result(
+    request: WorkflowRequest | UntargetWorkflowCompositionRequest,
+    adapter: WorkflowAdapter,
+    *,
+    owners: ProcessingOwnerReferences,
+) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
     stage = WorkflowStage.CAPTURE
     try:
         captures = tuple(
@@ -820,7 +876,6 @@ def _execute_composition_after_runtime(
             return _finish_variant(
                 request=request,
                 scientific=scientific,
-                runtime_receipt=runtime_receipt,
             )
 
         repair = adapter.repair
@@ -904,23 +959,11 @@ def _execute_composition_after_runtime(
         return _finish_variant(
             request=request,
             scientific=scientific,
-            runtime_receipt=runtime_receipt,
         )
-    except _WorkflowStageFailure as failure:
-        exc = failure.error
-        return FailedWorkflowResult(
-            runtime_receipt=runtime_receipt,
-            stage=failure.stage,
-            failure_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
-            failure_message=str(exc),
-        )
+    except _WorkflowStageFailure:
+        raise
     except Exception as exc:
-        return FailedWorkflowResult(
-            runtime_receipt=runtime_receipt,
-            stage=stage,
-            failure_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
-            failure_message=str(exc),
-        )
+        raise _WorkflowStageFailure(stage, exc) from exc
 
 
 def _capture_workflow_input(
@@ -1341,8 +1384,7 @@ def _finish_variant(
     *,
     request: WorkflowRequest | UntargetWorkflowCompositionRequest,
     scientific: FinalizedScientificAlignment,
-    runtime_receipt: RuntimeFinalizationReceipt,
-) -> WorkflowTerminalResult:
+) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
     stage = WorkflowStage.PRE_CELL_PROJECTION
     try:
         if type(request) is TargetWorkflowRequest:
@@ -1373,7 +1415,7 @@ def _finish_variant(
                 raise AlignmentWorkflowContractError(
                     "application_result returned a crossed Target result"
                 )
-            return CompletedTargetWorkflowResult(runtime_receipt, result)
+            return result
         untarget_pre_cell = project_untarget_pre_cell(scientific)
         stage = WorkflowStage.CELL_DECISION
         from xic_extractor.alignment.cell_decision.owner import (
@@ -1405,7 +1447,7 @@ def _finish_variant(
             raise AlignmentWorkflowContractError(
                 "application_result returned a crossed Untarget result"
             )
-        return CompletedUntargetWorkflowResult(runtime_receipt, result)
+        return result
     except Exception as exc:
         raise _WorkflowStageFailure(stage, exc) from exc
 
@@ -1434,6 +1476,7 @@ __all__ = (
     "WorkflowStage",
     "WorkflowTerminalResult",
     "compose_untarget_batch_after_runtime",
+    "compose_untarget_subject",
     "execute_untarget_batch_workflow",
     "execute_alignment_workflow",
 )
