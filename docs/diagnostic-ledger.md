@@ -65,6 +65,41 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-10 Runtime Optimization Experiments
+
+- Evidence: `diagnostic_only`; no new RAW acquisition. Historical first-128
+  subject / 1,024-job composition replay produced 37 children. This is local
+  phase evidence, not a replacement full8 timing or scientific promotion.
+- Paired sequential store reads reduced opens from 37 to 1 and median iteration
+  from 0.312702 to 0.301611 seconds. Native scalar-token specialization reduced
+  historical graph digest median from 77.6742 to 67.4535 ms with exact native/
+  Python token and digest parity. Same-partition streaming compose/persist
+  reduced median from 2.227870 to 2.061405 seconds across three uninstrumented
+  pairs; all spool byte counts and SHA-256 comparisons matched.
+- The integrated production compose/persist API was then compared against
+  eager + append with the rebuilt native extension on both sides: median
+  1.944615 to 1.845387 seconds, two of three candidate observations lower. Exact
+  spool SHA/bytes, formal child validation, owner identity, order, indexed
+  reads and metadata fields passed; zero RAW opens. This 5.1% phase result
+  supersedes the prototype percentage for claims about the integrated path.
+- Applied locally in `bd525b8d` (native scalar labels) and `5d23426c` (streaming
+  composition/store and sequential iteration). The native extension rebuilt;
+  42 receipt/finalization and 108 store/runtime tests passed. Final staged-file
+  Ruff, mypy, tests, shard coverage and diff check passed. This is engineering
+  regression evidence only.
+- The eight-direction disposition report defers compact closure receipts,
+  process composition, acquisition/composition overlap, query cache, sparse
+  job integration and a larger default partition budget. Actual CPU-process
+  and cross-partition overlap schedulers were not benchmarked. Zero duplicate
+  exact queries in the fixture is not evidence about every RAW workload.
+- Locator: `output/cid-nl-bounded-runtime/experiments/report.md`, especially
+  `representative/sequential/receipt.json`, `representative/variants/receipt.json`
+  and `representative/integrated-final/receipt.json`.
+  Reopen deferred directions only for their named falsifiers and cost evidence.
+- The latest real full8 run remains 624.844 seconds; its 528.418-second target
+  remains unmet. Do not sum local percentage improvements or launch another
+  RAW run merely to refresh this record. 85 RAW remains unverified.
+
 ### 2026-09-10 Eight-Sample Source-Reuse Run
 
 - Evidence: `diagnostic_only`; producing SHA `0bc02c91`, clean code, retained
