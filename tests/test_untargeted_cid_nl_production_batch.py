@@ -954,18 +954,26 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     retained_contexts = []
     retained_initial_edges = []
     consumed_contexts = []
+    retained_captures = []
+    consumed_captures = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_context
     close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
+    finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
         family, context, edges = build_initial_context(**kwargs)
         retained_contexts.append(context)
         retained_initial_edges.extend(edges)
+        retained_captures.extend(kwargs["captures"])
         return family, context, edges
 
     def retain_consumed_context(context):
         consumed_contexts.append(context)
         return close_without_repair(context)
+
+    def retain_scientific_captures(**kwargs):
+        consumed_captures.extend(kwargs["captures"])
+        return finalize_scientific(**kwargs)
 
     monkeypatch.setattr(
         workflow_owner,
@@ -984,6 +992,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         workflow_owner,
         "close_cross_sample_without_observation_repair",
         retain_consumed_context,
+    )
+    monkeypatch.setattr(
+        workflow_owner, "finalize_scientific_alignment", retain_scientific_captures
     )
 
     runtime_results = []
@@ -1095,6 +1106,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert all(
         retained is consumed
         for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
+    )
+    assert all(
+        retained is consumed
+        for retained, consumed in zip(retained_captures, consumed_captures, strict=True)
     )
     for context, child in zip(
         retained_contexts, completed.application_result.children, strict=True

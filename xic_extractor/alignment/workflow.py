@@ -735,6 +735,8 @@ def _execute_composition_after_runtime(
 def compose_untarget_subject(
     request: UntargetWorkflowCompositionRequest,
     adapter: UntargetWorkflowAdapter,
+    *,
+    completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedUntargetApplicationResult:
     """Close one subject scientifically without asserting runtime completion."""
     if type(request) is not UntargetWorkflowCompositionRequest:
@@ -748,7 +750,12 @@ def compose_untarget_subject(
             "Subject composition requires one included subject-local population"
         )
     try:
-        result = _compose_application_result(request, adapter, owners=owners)
+        if completed_captures is None:
+            result = _compose_application_result(request, adapter, owners=owners)
+        else:
+            result = _compose_application_result(
+                request, adapter, owners=owners, completed_captures=completed_captures
+            )
     except _WorkflowStageFailure as failure:
         raise AlignmentWorkflowContractError(
             f"Untarget subject composition failed at {failure.stage.value}: "
@@ -766,13 +773,42 @@ def _compose_application_result(
     adapter: WorkflowAdapter,
     *,
     owners: ProcessingOwnerReferences,
+    completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
     stage = WorkflowStage.CAPTURE
     try:
-        captures = tuple(
-            _capture_workflow_input(request.scope, item)
-            for item in adapter.capture_inputs
-        )
+        if completed_captures is None:
+            captures = tuple(
+                _capture_workflow_input(request.scope, item)
+                for item in adapter.capture_inputs
+            )
+        else:
+            if type(completed_captures) is not tuple:
+                raise AlignmentWorkflowContractError(
+                    "completed captures require an immutable owner population"
+                )
+            for capture, item in zip(
+                completed_captures, adapter.capture_inputs, strict=True
+            ):
+                if (
+                    type(capture) is not SampleLocalCapture
+                    or capture.scope is not request.scope
+                    or capture.candidate_id != item.candidate_id
+                    or capture.trace is not item.trace
+                ):
+                    raise AlignmentWorkflowContractError(
+                        "completed capture crossed its workflow scope or input"
+                    )
+                capture.__post_init__()
+                if item.owner_hypothesis is not None and (
+                    capture.selected_hypothesis is not item.owner_hypothesis
+                    or item.owner_observation
+                    not in item.owner_hypothesis.peak_observation_refs
+                ):
+                    raise AlignmentWorkflowContractError(
+                        "completed capture crossed its owner binding"
+                    )
+            captures = completed_captures
         stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
         ms1_only_target = (
             type(request) is TargetWorkflowRequest

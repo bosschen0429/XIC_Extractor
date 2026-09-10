@@ -469,11 +469,14 @@ def compose_and_persist_untargeted_cid_nl_partition(
 
     def children():
         nonlocal child_count
-        for bundle in inputs.bundles:
+        for bundle, captures in zip(
+            inputs.bundles, inputs.completed_captures, strict=True
+        ):
             check_cancellation()
             child = compose_untarget_subject(
                 cast(UntargetWorkflowCompositionRequest, bundle.request),
                 bundle.adapter,
+                completed_captures=captures,
             )
             child_count += 1
             yield child
@@ -509,6 +512,7 @@ class _ProductionCompositionInputs:
     method_assessments: tuple[CidNlMethodAssessmentRef, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    completed_captures: tuple[tuple[SampleLocalCapture, ...], ...]
 
 
 def compose_untargeted_cid_nl_production_result(
@@ -564,9 +568,13 @@ def compose_untargeted_cid_nl_partition(
     return UntargetedCidNlPartitionComposition(
         children=tuple(
             compose_untarget_subject(
-                cast(UntargetWorkflowCompositionRequest, bundle.request), bundle.adapter
+                cast(UntargetWorkflowCompositionRequest, bundle.request),
+                bundle.adapter,
+                completed_captures=captures,
             )
-            for bundle in inputs.bundles
+            for bundle, captures in zip(
+                inputs.bundles, inputs.completed_captures, strict=True
+            )
         ),
         excluded_candidates=inputs.request.excluded_candidates,
         capture_bindings=inputs.request.scope.capture_bindings,
@@ -729,6 +737,7 @@ def _build_production_composition_inputs(
     )
 
     bundles = []
+    completed_captures = []
     initial_groups: list[CrossSamplePeakGroupHypothesis] = []
     initial_edges: list[CrossSampleNeighborhoodEdge] = []
     bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
@@ -1027,6 +1036,7 @@ def _build_production_composition_inputs(
                 ),
             )
         )
+        completed_captures.append(captures)
     return _ProductionCompositionInputs(
         request=parent_request,
         bundles=tuple(bundles),
@@ -1037,6 +1047,7 @@ def _build_production_composition_inputs(
         ),
         initial_groups=tuple(initial_groups),
         initial_edges=tuple(initial_edges),
+        completed_captures=tuple(completed_captures),
     )
 
 

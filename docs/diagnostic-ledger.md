@@ -180,6 +180,30 @@ dated productization control-plane path is compatibility lookup only.
   elapsed-time acceptance remain unverified for this code. Existing RAW timings
   cannot establish the benefit of the new scheduler/source-verification path.
 
+### 2026-09-10 CID-NL Composition Capture Reuse
+
+**Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
+The production composition owner passes its completed, hypothesis-bound
+captures to subject composition. The workflow checks their scope and input
+bindings and reuses them; standalone workflows retain their capture path.
+The public capture-argument field schema is unchanged.
+
+A no-RAW replay compared base `e939063b` with this change on the same historical
+eight-sample slice: 16 subjects, 128 jobs, six children, and 13 included bindings.
+After one explicit warmup per variant, seven interleaved pairs all favored
+reuse. Composition medians were 247.165 ms before and 230.319 ms after;
+paired reductions ranged from 12.728 to 35.132 ms. Capture calls fell from 26
+to 13, and hypothesis binds from 20 to 10. Every pair preserved all scientific
+values, IDs, arrays, and complete sealed-store bytes (1,421,996 bytes;
+SHA-256 `6718508ab5a434dfc7f6518ee38c53f9a0678191d604ba960d2a4eba4ef57359`).
+Process-local completion seals passed their formal owner validators.
+
+Evidence locators: `output/cid-nl-next-runtime/paired-warm-final/receipt.json`
+and `capture-focused-final.xml` under the same task directory. The 118 focused
+tests cover workflow contracts, production and bounded execution, including
+Matrix and explanation interfaces. This is a warmed composition-slice result;
+it does not update full 8RAW or 85RAW elapsed-time or memory claims.
+
 ### 2026-09-10 CID-NL Stored-Result Read And Digest Costs
 
 **Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
