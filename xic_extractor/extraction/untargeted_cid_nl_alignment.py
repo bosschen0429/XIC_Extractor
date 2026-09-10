@@ -161,6 +161,7 @@ def complete_untargeted_cid_nl_alignment(
             raw_worker_backend=raw_worker_backend,
             should_cancel=should_cancel,
             retain_partition_memory=retain_partition_memory,
+            pipeline_overlap=True,
         )
 
 

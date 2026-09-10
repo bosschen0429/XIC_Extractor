@@ -178,10 +178,11 @@ class RuntimeCancellationIngress:
             self._event.set()
             return True
 
-    def close(self) -> None:
+    def close(self) -> RuntimeCancellationRequest | None:
         """Mark terminal cutoff; late cancellation requests are ignored."""
         with self._lock:
             self._cutoff = True
+            return self._request
 
 
 @dataclass(frozen=True, slots=True)
@@ -1468,13 +1469,17 @@ def execute_runtime_attempt(
         try:
             worker_batch = worker_batch_provider(aggregate)
         except Exception as exc:
+            if cancellation_ingress is not None:
+                cancellation_ingress.close()
             raise RuntimeExecutionPhaseError(
                 aggregate.runtime.manifest.attempt,
                 RuntimeExecutionPhase.WORKER_BATCH_PROVIDER,
             ) from exc
+        accepted_cancel: RuntimeCancellationRequest | None = None
+        if cancellation_ingress is not None:
+            accepted_cancel = cancellation_ingress.close()
         if (
-            cancellation_ingress is not None
-            and cancellation_ingress.accepted_request is not None
+            accepted_cancel is not None
             and not aggregate.runtime.history.cancellation_accepted
         ):
             aggregate = _accept_cancellation_into_aggregate(aggregate)
