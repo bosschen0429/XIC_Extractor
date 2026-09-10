@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,7 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.processing_run_spec import ProcessingAcquisitionInput
 from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl-v1"
@@ -67,6 +69,7 @@ def complete_untargeted_cid_nl_alignment(
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     raw_workers: int = 1,
+    raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
@@ -110,15 +113,18 @@ def complete_untargeted_cid_nl_alignment(
     ordered_raw_paths = tuple(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
+    recorder = timing_recorder or TimingRecorder.disabled("alignment")
     physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
     if signal_processing_profile is not None:
-        candidates_by_sample, physical_records = _load_physical_replay_inputs(
-            discovery_batch=discovery_batch,
-            candidates_by_sample=candidates_by_sample,
-            raw_paths=ordered_raw_paths,
-            settings=settings,
-            profile=signal_processing_profile,
-        )
+        with recorder.stage("alignment.load_physical_facts"):
+            candidates_by_sample, physical_records = _load_physical_replay_inputs(
+                discovery_batch=discovery_batch,
+                candidates_by_sample=candidates_by_sample,
+                raw_paths=ordered_raw_paths,
+                settings=settings,
+                profile=signal_processing_profile,
+                raw_workers=raw_workers,
+            )
     plan = prepare_untargeted_cid_nl_production_plan(
         raw_paths=ordered_raw_paths,
         sample_metadata=retained_sample_metadata,
@@ -133,7 +139,6 @@ def complete_untargeted_cid_nl_alignment(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    recorder = timing_recorder or TimingRecorder.disabled("alignment")
     with (
         recorder.stage("alignment.untargeted_cid_nl_runtime"),
         recorder.process_memory_scope("retained_runtime") as runtime_peak,
@@ -152,6 +157,7 @@ def complete_untargeted_cid_nl_alignment(
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
             raw_workers=raw_workers,
+            raw_worker_backend=raw_worker_backend,
             should_cancel=should_cancel,
         )
 
@@ -163,6 +169,7 @@ def _load_physical_replay_inputs(
     raw_paths: tuple[Path, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
+    raw_workers: int = 1,
 ) -> tuple[
     dict[str, tuple[DiscoveryCandidate, ...]],
     dict[str, DiscoveryPhysicalFactRecord],
@@ -172,9 +179,14 @@ def _load_physical_replay_inputs(
         discovery_settings=settings,
         signal_processing_profile=profile,
     )
-    restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
-    selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
-    for acquisition_input in spec.acquisition_inputs:
+
+    def _load_sample_input(
+        acquisition_input: ProcessingAcquisitionInput,
+    ) -> tuple[
+        str,
+        tuple[DiscoveryCandidate, ...],
+        dict[str, DiscoveryPhysicalFactRecord],
+    ]:
         stem = acquisition_input.sample_stem
         records = read_discovery_physical_fact_records(
             discovery_batch.candidate_csvs[stem].parent
@@ -187,16 +199,47 @@ def _load_physical_replay_inputs(
             raise ValueError(
                 "Discovery physical sidecar has ambiguous candidate identity"
             )
-        candidates: list[DiscoveryCandidate] = []
+        sample_candidates: list[DiscoveryCandidate] = []
+        sample_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         for candidate in candidates_by_sample[stem]:
             record = by_id.get(candidate.candidate_id)
             if record is None:
                 raise ValueError("Discovery candidate lacks its exact physical record")
-            candidates.append(_restore_physical_candidate(candidate, record))
-            if candidate.candidate_id in selected_records:
+            sample_candidates.append(_restore_physical_candidate(candidate, record))
+            if candidate.candidate_id in sample_records:
                 raise ValueError("Discovery physical candidate identity is duplicated")
-            selected_records[candidate.candidate_id] = record
-        restored[stem] = tuple(candidates)
+            sample_records[candidate.candidate_id] = record
+        return stem, tuple(sample_candidates), sample_records
+
+    restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+
+    workers = min(raw_workers, len(spec.acquisition_inputs))
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for stem, sample_candidates, sample_records in executor.map(
+                _load_sample_input, spec.acquisition_inputs
+            ):
+                restored[stem] = sample_candidates
+                for cid, rec in sample_records.items():
+                    if cid in selected_records:
+                        raise ValueError(
+                            "Discovery physical candidate identity is duplicated"
+                        )
+                    selected_records[cid] = rec
+    else:
+        for acquisition_input in spec.acquisition_inputs:
+            stem, sample_candidates, sample_records = _load_sample_input(
+                acquisition_input
+            )
+            restored[stem] = sample_candidates
+            for cid, rec in sample_records.items():
+                if cid in selected_records:
+                    raise ValueError(
+                        "Discovery physical candidate identity is duplicated"
+                    )
+                selected_records[cid] = rec
+
     return restored, selected_records
 
 

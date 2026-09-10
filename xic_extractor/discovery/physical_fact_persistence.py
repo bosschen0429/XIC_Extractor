@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from xic_extractor.acquisition_contract import (
     deserialize_acquired_trace,
@@ -194,17 +194,21 @@ def read_discovery_physical_fact_records(
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
     """Recover the declared manifest and verify every record against its run."""
     payload = path.read_bytes()
-    root = _mapping(
-        json.loads(payload, object_pairs_hook=_unique_mapping),
-        label="Discovery physical sidecar",
-    )
+    try:
+        value = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique_mapping)
+    except UnicodeDecodeError as exc:
+        raise ValueError("Discovery physical sidecar must be UTF-8") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError("Discovery physical sidecar must be valid JSON") from exc
+    root = _mapping(value, label="Discovery physical sidecar")
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
     manifest = tuple(
         _work_from_content(item)
         for item in _list(root["work_manifest"], label="work_manifest")
     )
-    return deserialize_discovery_physical_fact_sidecar(
-        payload,
+    return _deserialize_discovery_physical_fact_sidecar_from_root(
+        root,
+        raw=payload,
         expected_run_spec=expected_run_spec,
         expected_acquisition_input=expected_acquisition_input,
         expected_work_manifest=manifest,
@@ -218,11 +222,6 @@ def deserialize_discovery_physical_fact_sidecar(
     expected_acquisition_input: ProcessingAcquisitionInput,
     expected_work_manifest: Sequence[DiscoveryPhysicalWorkItem],
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-    if not isinstance(expected_run_spec, ProcessingRunSpec):
-        raise TypeError("expected_run_spec must be a ProcessingRunSpec")
-    _validate_acquisition_input(expected_run_spec, expected_acquisition_input)
-    expected_manifest = tuple(expected_work_manifest)
-    _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     raw = payload.encode("utf-8") if isinstance(payload, str) else payload
     if not isinstance(raw, bytes):
         raise TypeError("Discovery physical sidecar payload must be bytes or str")
@@ -235,6 +234,28 @@ def deserialize_discovery_physical_fact_sidecar(
     except json.JSONDecodeError as exc:
         raise ValueError("Discovery physical sidecar must be valid JSON") from exc
     root = _mapping(value, label="Discovery physical sidecar")
+    return _deserialize_discovery_physical_fact_sidecar_from_root(
+        root,
+        raw=raw,
+        expected_run_spec=expected_run_spec,
+        expected_acquisition_input=expected_acquisition_input,
+        expected_work_manifest=expected_work_manifest,
+    )
+
+
+def _deserialize_discovery_physical_fact_sidecar_from_root(
+    root: Mapping[str, Any],
+    *,
+    raw: bytes,
+    expected_run_spec: ProcessingRunSpec,
+    expected_acquisition_input: ProcessingAcquisitionInput,
+    expected_work_manifest: Sequence[DiscoveryPhysicalWorkItem],
+) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+    if not isinstance(expected_run_spec, ProcessingRunSpec):
+        raise TypeError("expected_run_spec must be a ProcessingRunSpec")
+    _validate_acquisition_input(expected_run_spec, expected_acquisition_input)
+    expected_manifest = tuple(expected_work_manifest)
+    _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
     if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
         raise ValueError("unsupported Discovery physical sidecar schema_version")

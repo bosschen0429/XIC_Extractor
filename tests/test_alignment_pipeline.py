@@ -351,6 +351,30 @@ def test_pure_cid_nl_rejects_invalid_worker_budget_before_acquisition(
         )
 
 
+def test_pure_cid_nl_rejects_invalid_worker_backend_before_acquisition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
+    )
+
+    with pytest.raises(ValueError, match="raw_worker_backend"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            raw_worker_backend="invalid_backend",
+        )
+
+
 def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -85,6 +85,7 @@ def run_alignment(
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
     raw_workers: int = 1,
+    raw_worker_backend: str = "process",
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
@@ -141,6 +142,7 @@ def run_alignment(
         elapsed_sec=0.0,
         metrics={
             "raw_workers": raw_workers,
+            "raw_worker_backend": raw_worker_backend,
             "raw_xic_batch_size": raw_xic_batch_size,
             "owner_build_xic_backend": owner_build_xic_backend,
             "owner_backfill_xic_backend": owner_backfill_xic_backend,
@@ -199,6 +201,7 @@ def run_alignment(
         timing_recorder=recorder,
         capture_artifact_fingerprints=capture_artifact_fingerprints,
         raw_workers=raw_workers,
+        raw_worker_backend=raw_worker_backend,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_build_xic_backend=owner_build_xic_backend,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
@@ -223,6 +226,7 @@ def run_alignment(
 def _validate_untargeted_cid_nl_alignment_options(
     *,
     raw_workers: int = 1,
+    raw_worker_backend: str = "process",
     raw_xic_batch_size: int = 1,
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
@@ -240,6 +244,8 @@ def _validate_untargeted_cid_nl_alignment_options(
     unsupported: list[str] = []
     if type(raw_workers) is not int or raw_workers < 1:
         raise ValueError("raw_workers must be a positive integer")
+    if raw_worker_backend not in {"process", "thread"}:
+        raise ValueError("raw_worker_backend must be 'process' or 'thread'")
     if raw_xic_batch_size != 1:
         unsupported.append("raw_xic_batch_size")
     if owner_backfill_xic_backend != "raw":
@@ -284,6 +290,7 @@ def _run_untargeted_cid_nl_alignment(
     timing_recorder: TimingRecorder,
     capture_artifact_fingerprints: bool,
     raw_workers: int,
+    raw_worker_backend: str = "process",
     raw_xic_batch_size: int,
     owner_build_xic_backend: OwnerBuildXicBackend,
     owner_backfill_xic_backend: OwnerBackfillXicBackend,
@@ -302,6 +309,7 @@ def _run_untargeted_cid_nl_alignment(
     """Run the retained CID-NL owner and project its completed result once."""
     _validate_untargeted_cid_nl_alignment_options(
         raw_workers=raw_workers,
+        raw_worker_backend=raw_worker_backend,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
@@ -330,6 +338,7 @@ def _run_untargeted_cid_nl_alignment(
             timing_recorder=timing_recorder,
             signal_processing_profile=signal_processing_profile,
             raw_workers=raw_workers,
+            raw_worker_backend=raw_worker_backend,
             should_cancel=should_cancel,
         )
     except RuntimeError as exc:

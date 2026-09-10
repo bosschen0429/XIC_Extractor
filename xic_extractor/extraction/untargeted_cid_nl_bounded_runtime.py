@@ -89,8 +89,9 @@ def execute_bounded_untargeted_cid_nl(
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
-    max_partition_jobs: int = 50_000,
+    max_partition_jobs: int = 100_000,
     raw_workers: int = 1,
+    raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
@@ -105,6 +106,8 @@ def execute_bounded_untargeted_cid_nl(
         raise ValueError("partition job budget must be a positive integer")
     if type(raw_workers) is not int or raw_workers < 1:
         raise ValueError("raw_workers must be a positive integer")
+    if raw_worker_backend not in {"process", "thread"}:
+        raise ValueError("raw_worker_backend must be 'process' or 'thread'")
     context = plan.context
     owners = context.processing_owners
     subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
@@ -206,6 +209,7 @@ def execute_bounded_untargeted_cid_nl(
                     progress_callback=progress_callback,
                     should_cancel=should_cancel,
                     raw_workers=raw_workers,
+                    raw_worker_backend=raw_worker_backend,
                 )
                 resources.update(
                     (receipt.resource_key, receipt)

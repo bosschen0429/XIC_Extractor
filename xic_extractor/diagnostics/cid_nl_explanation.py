@@ -34,6 +34,10 @@ class ExplanationReportWriter:
         self.connection: sqlite3.Connection | None = None
         self.candidate_count = 0
         self.record_counts: dict[str, int] = {}
+        self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        self._records: dict[tuple[str, str], str] = {}
+        self._buffered_records: list[tuple[str, str, str]] = []
+        self._buffered_links: list[tuple[str, str, str, str]] = []
 
     def __enter__(self) -> ExplanationReportWriter:
         if self.path.exists() or self.temporary.exists():
@@ -42,6 +46,10 @@ class ExplanationReportWriter:
             pass
         try:
             self.connection = sqlite3.connect(self.temporary)
+            self.connection.execute("PRAGMA synchronous = OFF;")
+            self.connection.execute("PRAGMA journal_mode = MEMORY;")
+            self.connection.execute("PRAGMA cache_size = -64000;")
+            self.connection.execute("PRAGMA temp_store = MEMORY;")
             self.connection.executescript(
                 "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT NOT NULL);"
                 "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, "
@@ -68,26 +76,21 @@ class ExplanationReportWriter:
         return self.connection
 
     def add_candidate(self, cid: str, sid: str, payload: Mapping[str, Any]) -> None:
-        try:
-            self._connection().execute(
-                "INSERT INTO candidates VALUES (?, ?, ?)", (cid, sid, _json(payload))
-            )
-        except sqlite3.IntegrityError as exc:
-            raise ValueError("duplicate diagnostic candidate/sample") from exc
+        key = (cid, sid)
+        if key in self._candidates:
+            raise ValueError("duplicate diagnostic candidate/sample")
+        p = dict(payload)
+        if "availability" in p and isinstance(p["availability"], Mapping):
+            p["availability"] = dict(p["availability"])
+        self._candidates[key] = p
         self.candidate_count += 1
 
     def update_availability(self, key: tuple[str, str], **values: str) -> None:
-        row = self._connection().execute(
-            "SELECT payload FROM candidates WHERE candidate_id=? AND sample_id=?", key
-        ).fetchone()
-        if row is None:
+        if key not in self._candidates:
             raise KeyError(key)
-        payload = _object(row[0])
-        payload["availability"].update(values)
-        self._connection().execute(
-            "UPDATE candidates SET payload=? WHERE candidate_id=? AND sample_id=?",
-            (_json(payload), *key),
-        )
+        payload = self._candidates[key]
+        avail = payload.setdefault("availability", {})
+        avail.update(values)
 
     def add_record(
         self,
@@ -97,25 +100,43 @@ class ExplanationReportWriter:
         related: Iterable[tuple[str, str]],
     ) -> bool:
         encoded = _json(payload)
-        existing = self._connection().execute(
-            "SELECT payload FROM records WHERE kind=? AND record_id=?", (kind, identity)
-        ).fetchone()
-        if existing is not None and _object(existing[0]) != _object(encoded):
+        key = (kind, identity)
+        existing = self._records.get(key)
+        if existing is not None and _object(existing) != _object(encoded):
             raise ValueError(
                 f"conflicting diagnostic owner identity: {(kind, identity)}"
             )
-        if existing is None:
-            self._connection().execute(
-                "INSERT INTO records VALUES (?, ?, ?)", (kind, identity, encoded)
-            )
+        is_new = existing is None
+        if is_new:
+            self._records[key] = encoded
+            self._buffered_records.append((kind, identity, encoded))
             self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
-        self._connection().executemany(
-            "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)",
-            ((cid, sid, kind, identity) for cid, sid in related),
-        )
-        return existing is None
+            if len(self._buffered_records) >= 5000:
+                self._flush_records()
+        for cid, sid in related:
+            self._buffered_links.append((cid, sid, kind, identity))
+        if len(self._buffered_links) >= 10000:
+            self._flush_links()
+        return is_new
+
+    def _flush_records(self) -> None:
+        if self._buffered_records:
+            self._connection().executemany(
+                "INSERT INTO records VALUES (?, ?, ?)", self._buffered_records
+            )
+            self._buffered_records.clear()
+
+    def _flush_links(self) -> None:
+        if self._buffered_links:
+            self._connection().executemany(
+                "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", self._buffered_links
+            )
+            self._buffered_links.clear()
 
     def candidate_examples(self) -> list[dict[str, Any]]:
+        if self._candidates:
+            sorted_keys = sorted(self._candidates.keys())[:5]
+            return [_object(_json(self._candidates[k])) for k in sorted_keys]
         return [
             _object(row[0])
             for row in self._connection().execute(
@@ -125,6 +146,17 @@ class ExplanationReportWriter:
         ]
 
     def finalize(self, summary: Mapping[str, Any]) -> Path:
+        self._flush_records()
+        self._flush_links()
+        if self._candidates:
+            self._connection().executemany(
+                "INSERT INTO candidates VALUES (?, ?, ?)",
+                (
+                    (cid, sid, _json(payload))
+                    for (cid, sid), payload in self._candidates.items()
+                ),
+            )
+            self._candidates.clear()
         self._connection().execute(
             "INSERT INTO metadata VALUES ('summary', ?)",
             (
@@ -151,6 +183,10 @@ class ExplanationReportWriter:
         if self.connection is not None:
             self._connection().close()
             self.connection = None
+        self._candidates.clear()
+        self._records.clear()
+        self._buffered_records.clear()
+        self._buffered_links.clear()
         self.temporary.unlink(missing_ok=True)
 
 

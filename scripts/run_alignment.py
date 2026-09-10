@@ -76,6 +76,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _validate_untargeted_cid_nl_alignment_options(
             signal_processing_profile=signal_processing_profile,
             raw_workers=args.raw_workers,
+            raw_worker_backend=args.raw_worker_backend,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -190,6 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "dll_dir": dll_dir,
             "output_dir": output_dir,
             "raw_workers": args.raw_workers,
+            "raw_worker_backend": args.raw_worker_backend,
             "alignment_config": recipe.alignment_config,
             "peak_config": _peak_config(
                 raw_dir,
@@ -350,6 +352,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Concurrent RAW sample phases within each bounded CID-NL partition "
             "(default: 1)."
+        ),
+    )
+    parser.add_argument(
+        "--raw-worker-backend",
+        choices=("process", "thread"),
+        default="process",
+        help=(
+            "Worker backend for concurrent RAW sample execution within each "
+            "partition ('process' or 'thread', default: 'process')."
         ),
     )
     parser.add_argument(
