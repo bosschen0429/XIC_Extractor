@@ -65,6 +65,33 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-10 Eight-Sample Streaming Measurement
+
+- Evidence: `diagnostic_only`; producing SHA `bfd23198`, clean code, one real
+  Alignment run using the accepted eight-sample Discovery, `dna_dr`, production
+  output and four RAW workers. No Discovery rerun or 85 RAW run.
+- Completed with exit 0 in 605.015 supervised seconds (10m05s). Compared with
+  `full8-source-reuse-w4` at 624.844 seconds, the observed difference is 19.829
+  seconds / 3.17% shorter. The 528.418-second target remains unmet.
+- Sampled peak private memory was 2,441,687,040 bytes (2.274 GiB), versus
+  2.201 GiB previously. No memory guard fired. Both runs use the same supervisor
+  wall scope, timeout, memory guard, command except output paths, and all 25
+  input hashes. Filesystem cache and single-run variation remain uncontrolled;
+  this is not a noise-qualified causal speedup claim.
+- Matrix remained byte-identical (1,387 rows, zero changed cells). SQLite
+  integrity and table counts matched; all 16 official candidate-reader probes
+  passed. Runtime completed 32 coarse work units. Full cross-attempt semantic
+  graph parity is not claimed.
+- Formal stage times: runtime 434.543 seconds (previously 438.768), explanation
+  writer 54.610 seconds (previously 65.021), read candidates 2.238 seconds,
+  Matrix writer 0.059 seconds. Do not sum nested spans or assign remaining wall
+  time to RAW acquisition without a measured span.
+- Locator: `output/cid-nl-bounded-runtime/full8-streaming-w4/report.md`, with
+  `preflight.json`, `run.json`, `verification.json`, `alignment-timing.json`
+  and `memory.jsonl`. Completion/parity pass; speed threshold fails;
+  optimization causality remains `inconclusive`. No automatic rerun is needed
+  for this requested one-run measurement. 85 RAW remains unverified.
+
 ### 2026-09-10 Runtime Optimization Experiments
 
 - Evidence: `diagnostic_only`; no new RAW acquisition. Historical first-128
