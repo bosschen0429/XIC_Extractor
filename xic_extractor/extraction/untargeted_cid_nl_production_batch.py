@@ -750,6 +750,24 @@ def _build_production_composition_inputs(
     sample_by_id = {
         sample.identity.sample_identity_id: sample for sample in batch.context.samples
     }
+    trajectory_policy = ModeTrackTrajectoryPolicy(
+        trajectory_policy_version="anchor-trajectory-v1",
+        band_policy_version="fixed-band-v1",
+        prediction_half_width_min=2 / 60,
+        max_interpolation_gap=10,
+        max_extrapolation_gap=10,
+    )
+    sample_universe = frozenset(
+        sample.metadata.raw_stem
+        for sample in batch.context.processing_owners.sample_resolutions
+    )
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in batch.context.processing_owners.sample_resolutions
+        if sample.metadata.injection_order is not None
+    }
+    raw_sample_stems = frozenset(batch.context.raw_paths_by_sample)
+    empty_family_ids: frozenset[str] = frozenset()
     for subject in batch.subject_batch.subjects:
         child_bindings = tuple(bindings_by_subject.get(subject.method_subject_id, ()))
         if not child_bindings:
@@ -779,13 +797,6 @@ def _build_production_composition_inputs(
             for assessment in result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
-        )
-        trajectory_policy = ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=2 / 60,
-            max_interpolation_gap=10,
-            max_extrapolation_gap=10,
         )
         capture_inputs_list = []
         captures_list = []
@@ -871,15 +882,8 @@ def _build_production_composition_inputs(
             sample_assessments=assessments,
             alignment_config=alignment_config,
             drift_lookup=cross_sample_context.drift_lookup,
-            sample_universe=frozenset(
-                sample.metadata.raw_stem
-                for sample in batch.context.processing_owners.sample_resolutions
-            ),
-            injection_order={
-                sample.metadata.raw_stem: sample.metadata.injection_order
-                for sample in batch.context.processing_owners.sample_resolutions
-                if sample.metadata.injection_order is not None
-            },
+            sample_universe=sample_universe,
+            injection_order=injection_order,
             recovery_assessments_by_group={
                 (
                     group.group_hypothesis_id,
@@ -1003,7 +1007,7 @@ def _build_production_composition_inputs(
             processing_owners=batch.context.processing_owners,
             group_identities=repair_groups,
             samples=batch.context.samples,
-            raw_sample_stems=frozenset(batch.context.raw_paths_by_sample),
+            raw_sample_stems=raw_sample_stems,
             alignment_config=alignment_config,
             backend="raw",
             window_strategy="exact",
@@ -1011,7 +1015,7 @@ def _build_production_composition_inputs(
             validation_mode="primary",
             result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
             scope="full-audit",
-            selected_family_ids=frozenset(),
+            selected_family_ids=empty_family_ids,
             positions=positions,
         )
         coverage = build_owner_backfill_evaluation_coverage(epoch, ())
