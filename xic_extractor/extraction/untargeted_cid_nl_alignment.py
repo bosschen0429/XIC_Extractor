@@ -71,6 +71,7 @@ def complete_untargeted_cid_nl_alignment(
     raw_workers: int = 1,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
+    retain_partition_memory: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
@@ -159,6 +160,7 @@ def complete_untargeted_cid_nl_alignment(
             raw_workers=raw_workers,
             raw_worker_backend=raw_worker_backend,
             should_cancel=should_cancel,
+            retain_partition_memory=retain_partition_memory,
         )
 
 

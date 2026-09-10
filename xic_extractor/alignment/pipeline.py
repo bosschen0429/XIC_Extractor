@@ -340,6 +340,7 @@ def _run_untargeted_cid_nl_alignment(
             raw_workers=raw_workers,
             raw_worker_backend=raw_worker_backend,
             should_cancel=should_cancel,
+            retain_partition_memory=True,
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc

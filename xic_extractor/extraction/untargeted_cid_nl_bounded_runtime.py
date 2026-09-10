@@ -93,6 +93,7 @@ def execute_bounded_untargeted_cid_nl(
     raw_workers: int = 1,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
+    retain_partition_memory: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
 
@@ -239,7 +240,7 @@ def execute_bounded_untargeted_cid_nl(
                     alignment_config=alignment_config,
                     known_istd_reference=known_istd_reference,
                     should_cancel=check_cancellation,
-                    retain_memory=len(partitions) == 1,
+                    retain_memory=retain_partition_memory and len(partitions) == 1,
                 )
                 check_cancellation()
                 sealed = persisted.sealed
