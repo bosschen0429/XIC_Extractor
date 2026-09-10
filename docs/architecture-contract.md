@@ -67,8 +67,9 @@ downstream decision core.
   output-collision guard. Alignment may only consume the completed typed batch
   result; it must not duplicate that runtime or let the adapter write outputs.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
-  under one runtime attempt. Its extraction-owned private result store spools
-  completed scientific results for same-process reuse; it grants no scientific,
+  under one runtime attempt. It adapts method acquisition and composition to the
+  generic execution engine in `execution_engine/`. The engine's private result store
+  spools completed scientific results for same-process reuse; it grants no scientific,
   activation, or writer authority. Scientific and projection owners restore their
   own process-local completion seals, and the runtime owner compacts acquisition
   facts after those scientific results have been stored.
@@ -94,7 +95,8 @@ Use this map to choose the reason a package changes. File placement is owned by
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
-| `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination, and retained Untargeted CID-NL execution | GUI, workbook rendering, or Alignment decisions |
+| `execution_engine/` | generic partition scheduling, worker-pool admission/concurrency, streamed result store, and bounded spool lifecycle | method-specific science, subject splitting, or writer authority |
+| `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination, and retained Untargeted CID-NL execution adapter | GUI, workbook rendering, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |
