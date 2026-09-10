@@ -65,6 +65,32 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-10 Eight-Sample Source-Reuse Run
+
+- Evidence: `diagnostic_only`; producing SHA `0bc02c91`, clean code, retained
+  eight-sample Discovery, `dna_dr`, production output and four RAW workers.
+- One real RAW Alignment completed with exit 0 in 624.844 supervised seconds.
+  The 528.418-second whole-run target was not met. Sampled private memory peaked
+  at approximately 2.20 GiB; the existing memory stop condition did not trigger.
+- Matrix is byte-identical to the accepted 1,387-row baseline. SQLite integrity,
+  baseline table counts and 16 official candidate-reader probes passed. Summary
+  differences are limited to Matrix path and processing attempt ID; full
+  cross-attempt semantic-graph parity is not claimed. All 25 retained input
+  hashes match the accepted baseline.
+- Formal timing: runtime 438.768 seconds; explanation writer 65.021 seconds.
+  The non-overlapping recorded stages total 506.528 seconds; remaining wall time
+  is outside those spans and must not be silently attributed to RAW acquisition.
+- Historical `full8-v3` took 2,279.765 supervised seconds, but its overlapping
+  replay, worker setting, code changes and uncontrolled cache prevent an isolated
+  speedup claim. The current one-run result does not characterize timing noise.
+- Locator: `output/cid-nl-bounded-runtime/full8-source-reuse-w4/report.md`, with
+  `preflight.json`, `run.json`, `verification.json`, `memory.jsonl` and formal
+  timing in that directory. This supersedes the unverified full-8 status below
+  for `0bc02c91`; 85 RAW completion remains unverified.
+- No automatic rerun is needed to answer this one-run request. Any follow-up
+  optimization should use these timings before deciding whether another RAW
+  run is necessary.
+
 ### 2026-09-10 CID-NL Source Verification And Sample Parallelism
 
 - Evidence: `diagnostic_only`; synthetic file-backed and runtime integration.
