@@ -87,16 +87,21 @@ class PartitionResultStore:
         self._partitions: list[SealedPartition] = []
         self._field_lengths: list[dict[str, int]] = []
         self._field_records: list[dict[str, tuple[tuple[int, int], ...]]] = []
+        self._field_caches: list[dict[str, tuple[tuple[Any, ...], ...]]] = []
         self._keys: set[str] = set()
         self._sealed = False
 
     def _path(self, index: int) -> Path:
         return self._directory / f"{index:08d}.pickle"
 
-    def append(self, partition_key: str, payload: object) -> SealedPartition:
+    def append(
+        self, partition_key: str, payload: object, retain_memory: bool = False
+    ) -> SealedPartition:
         if not is_dataclass(payload) or isinstance(payload, type):
             raise TypeError("partition payload requires a dataclass result")
-        return self._append_payload(partition_key, payload)
+        return self._append_payload(
+            partition_key, payload, retain_memory=retain_memory
+        )
 
     def append_children(
         self,
@@ -104,6 +109,7 @@ class PartitionResultStore:
         metadata_payload: object,
         children: Iterable[object],
         before_publish: Callable[[], None] | None = None,
+        retain_memory: bool = False,
     ) -> SealedPartition:
         """Atomically append children while composing them one at a time."""
 
@@ -118,6 +124,7 @@ class PartitionResultStore:
             metadata_payload,
             children=children,
             before_publish=before_publish,
+            retain_memory=retain_memory,
         )
 
     def _append_payload(
@@ -127,6 +134,7 @@ class PartitionResultStore:
         *,
         children: Iterable[object] | None = None,
         before_publish: Callable[[], None] | None = None,
+        retain_memory: bool = False,
     ) -> SealedPartition:
         if self._sealed:
             raise ValueError("partition store is sealed")
@@ -172,15 +180,23 @@ class PartitionResultStore:
                 )
                 _OwnerPickler(writer, self._shared_ids).dump(header)
                 records = {}
+                cached_fields: dict[str, tuple[tuple[Any, ...], ...]] = {}
                 for name in field_names:
                     if name == "children" and children is not None:
                         entries = []
+                        cached_items: list[tuple[Any, ...]] | None = (
+                            [] if retain_memory else None
+                        )
                         for value in children:
                             entries.append((writer.size_bytes, 1))
                             _OwnerPickler(writer, self._shared_ids).dump((value,))
+                            if cached_items is not None:
+                                cached_items.append((value,))
                             del value
                         lengths["children"] = len(entries)
                         records["children"] = tuple(entries)
+                        if cached_items is not None:
+                            cached_fields["children"] = tuple(cached_items)
                         continue
                     if name not in lengths:
                         continue
@@ -189,11 +205,18 @@ class PartitionResultStore:
                     # exclusions are addressed by canonical candidate position.
                     width = 1 if name in {"children", "excluded_candidates"} else 2048
                     entries = []
+                    cached_chunks: list[tuple[Any, ...]] | None = (
+                        [] if retain_memory else None
+                    )
                     for start in range(0, len(values), width):
                         chunk = values[start : start + width]
                         entries.append((writer.size_bytes, len(chunk)))
                         _OwnerPickler(writer, self._shared_ids).dump(chunk)
+                        if cached_chunks is not None:
+                            cached_chunks.append(chunk)
                     records[name] = tuple(entries)
+                    if cached_chunks is not None:
+                        cached_fields[name] = tuple(cached_chunks)
                 if before_publish is not None:
                     before_publish()
             entry = SealedPartition(
@@ -207,6 +230,7 @@ class PartitionResultStore:
         self._partitions.append(entry)
         self._field_lengths.append(lengths)
         self._field_records.append(records)
+        self._field_caches.append(cached_fields)
         self._keys.add(partition_key)
         return entry
 
@@ -247,6 +271,12 @@ class PartitionResultStore:
             for position in positions
         ):
             raise IndexError("field position out of range")
+        if (
+            index < len(self._field_caches)
+            and field_name in self._field_caches[index]
+        ):
+            cached = self._field_caches[index][field_name]
+            return tuple(cached[position][0] for position in positions)
         with self._path(index).open("rb") as stream:
             return tuple(
                 self._read_record(stream, *records[position])[0]
@@ -267,6 +297,21 @@ class PartitionResultStore:
         ):
             raise ValueError(
                 "sequence requires a public tuple field in every partition"
+            )
+
+        all_cached = len(self._field_caches) == len(self._partitions) and all(
+            field_name in caches for caches in self._field_caches
+        )
+        if all_cached:
+            cached_chunks = tuple(
+                chunk
+                for caches in self._field_caches
+                for chunk in caches[field_name]
+            )
+            return ImmutableSequence(
+                tuple(len(chunk) for chunk in cached_chunks),
+                load_chunk=lambda index: cached_chunks[index],
+                load_chunks=lambda: iter(cached_chunks),
             )
 
         chunks = tuple(

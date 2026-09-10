@@ -446,6 +446,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
+    retain_memory: bool = False,
 ) -> UntargetedCidNlPersistedPartition:
     """Compose one child at a time and publish only after the full partition.
 
@@ -491,6 +492,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
         children=children(),
         before_publish=check_cancellation,
         metadata_payload=metadata_payload,
+        retain_memory=retain_memory,
     )
     return UntargetedCidNlPersistedPartition(
         sealed=sealed,

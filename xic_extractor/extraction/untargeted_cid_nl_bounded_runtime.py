@@ -239,6 +239,7 @@ def execute_bounded_untargeted_cid_nl(
                     alignment_config=alignment_config,
                     known_istd_reference=known_istd_reference,
                     should_cancel=check_cancellation,
+                    retain_memory=len(partitions) == 1,
                 )
                 check_cancellation()
                 sealed = persisted.sealed

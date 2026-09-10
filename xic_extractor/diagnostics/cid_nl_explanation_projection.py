@@ -47,6 +47,35 @@ def _artifact(value: Any) -> dict[str, Any]:
     }
 
 
+def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
+    return {
+        "canonical_sample_identity_id": content.canonical_sample_identity_id,
+        "group_hypothesis_id": content.group_hypothesis_id,
+        "group_owner_ids": list(content.group_owner_ids),
+        "group_method_subject_id": content.group_method_subject_id,
+        "group_target_key_id": content.group_target_key_id,
+        "group_target_definition_id": content.group_target_definition_id,
+        "group_support_assessment_artifact_content_ids": list(
+            content.group_support_assessment_artifact_content_ids
+        ),
+        "technical_state": content.technical_state,
+        "method_result": content.method_result,
+        "peak_observation_content_id": content.peak_observation_content_id,
+        "peak_hypothesis_id": content.peak_hypothesis_id,
+        "method_assessment_artifact_content_id": (
+            content.method_assessment_artifact_content_id
+        ),
+        "evidence_artifact_ids": list(content.evidence_artifact_ids),
+        "reason_codes": list(content.reason_codes),
+        "human_disposition_ref_id": content.human_disposition_ref_id,
+        "outside_group": (
+            asdict(content.outside_group)
+            if content.outside_group is not None
+            else None
+        ),
+    }
+
+
 def _key(*parts: str) -> str:
     return json.dumps(parts, separators=(",", ":"))
 
@@ -374,7 +403,9 @@ def write_cid_nl_explanation(
                         ),
                         "predecessor_cells": [
                             {
-                                "content": asdict(ref.content),
+                                "content": _cell_observation_content_payload(
+                                    ref.content
+                                ),
                                 "artifact": _artifact(ref.artifact),
                             }
                             for ref in observation.predecessor_cells
@@ -391,7 +422,10 @@ def write_cid_nl_explanation(
                     {
                         "row_key_id": row.row_key.untarget_row_key_id,
                         "group_hypothesis_id": group_id,
-                        "route": asdict(row.route),
+                        "route": {
+                            "destination": row.route.destination,
+                            "reason": row.route.reason,
+                        },
                     },
                     related,
                 )

@@ -313,3 +313,47 @@ def test_partition_keys_cannot_escape_owner_directory(tmp_path, key):
     with pytest.raises(ValueError, match="partition key"):
         store.append(key, Payload(()))
     assert list(tmp_path.iterdir()) == []
+
+
+def test_retained_memory_sequence_and_selected_bypass_file_reads(tmp_path, monkeypatch):
+    payload = Payload(
+        (10, 20, 30),
+        method_assessments=(100, 200),
+        excluded_candidates=(1000, 2000),
+        label="retained",
+    )
+    store = PartitionResultStore(tmp_path, ())
+    entry = store.append_children(
+        "part-0",
+        Payload(
+            (),
+            payload.method_assessments,
+            payload.excluded_candidates,
+            payload.label,
+        ),
+        children=(10, 20, 30),
+        retain_memory=True,
+    )
+    assert entry.size_bytes > 0
+    store.seal()
+
+    opened = []
+    original_open = Path.open
+
+    def tracking_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+
+    # Reading sequence and selected should not open any files
+    seq = store.sequence("children")
+    assert tuple(seq) == (10, 20, 30)
+    assert seq[1] == 20
+    assert len(opened) == 0
+
+    selected = store.read_selected(0, "excluded_candidates", (1, 0))
+    assert selected == (2000, 1000)
+    assert len(opened) == 0
+

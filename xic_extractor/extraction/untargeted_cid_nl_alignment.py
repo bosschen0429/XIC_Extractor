@@ -272,8 +272,10 @@ def _restore_physical_candidate(
             ms1_seed_delta_min=facts.apex_rt_min - work.query_rt_min,
         )
     for name, value in values.items():
-        if format_discovery_csv_value(name, getattr(candidate, name)) != (
-            format_discovery_csv_value(name, value)
+        candidate_val = getattr(candidate, name)
+        if candidate_val != value and (
+            format_discovery_csv_value(name, candidate_val)
+            != format_discovery_csv_value(name, value)
         ):
             raise ValueError(
                 f"{candidate.candidate_id}: physical {name} crossed its CSV receipt"
