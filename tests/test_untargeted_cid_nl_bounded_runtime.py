@@ -279,7 +279,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
     assert len(snapshot.manifest_work_unit_keys) == (
-        partition_count * len(plan.context.samples) * 2
+        partition_count * len(plan.context.samples) * 2 + 1
     )
     if scenario == "unsupported":
         assert not actual.children

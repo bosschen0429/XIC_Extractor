@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import threading
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import InitVar, dataclass, field, replace
 from enum import Enum
@@ -123,6 +124,64 @@ class RuntimeCancellationRequest:
             raise RuntimeFinalizationContractError(
                 "cancellation request attempt must be owner-issued"
             )
+
+
+class RuntimeCancellationIngress:
+    """Thread-safe, attempt-bound cancellation ingress for one runtime attempt."""
+
+    def __init__(self, attempt: ProcessingAttemptIdentity) -> None:
+        if not isinstance(attempt, ProcessingAttemptIdentity):
+            raise RuntimeFinalizationContractError(
+                "cancellation ingress attempt must be owner-issued"
+            )
+        self._attempt = attempt
+        self._lock = threading.Lock()
+        self._event = threading.Event()
+        self._request: RuntimeCancellationRequest | None = None
+        self._cutoff = False
+
+    @property
+    def attempt(self) -> ProcessingAttemptIdentity:
+        return self._attempt
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()
+
+    @property
+    def accepted_request(self) -> RuntimeCancellationRequest | None:
+        with self._lock:
+            return self._request
+
+    def request_cancellation(
+        self,
+        request: RuntimeCancellationRequest,
+    ) -> bool:
+        """Submit one cancellation request.
+
+        Raises RuntimeFinalizationContractError if request references a
+        different attempt.  Returns True if this call transitioned state to
+        cancelled, False if already cancelled or past cutoff.
+        """
+        if not isinstance(request, RuntimeCancellationRequest):
+            raise RuntimeFinalizationContractError(
+                "cancellation request must be a RuntimeCancellationRequest"
+            )
+        if request.attempt != self._attempt:
+            raise RuntimeFinalizationContractError(
+                "cancellation request references a different runtime attempt"
+            )
+        with self._lock:
+            if self._cutoff or self._request is not None:
+                return False
+            self._request = request
+            self._event.set()
+            return True
+
+    def close(self) -> None:
+        """Mark terminal cutoff; late cancellation requests are ignored."""
+        with self._lock:
+            self._cutoff = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -1308,6 +1367,31 @@ def _finalize_runtime_attempt(
     return accept_runtime_finalization_receipt(proposed, submitted)
 
 
+def _accept_cancellation_into_aggregate(
+    aggregate: RuntimeAttemptAggregate,
+) -> RuntimeAttemptAggregate:
+    new_history = append_attempt_lifecycle_event(
+        aggregate.runtime.history,
+        AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+    )
+    first_sequence = len(new_history.events) + 1
+    shifted_events = tuple(
+        replace(ev, sequence=first_sequence + idx)
+        for idx, ev in enumerate(aggregate.state.events)
+    )
+    return _mint_runtime_attempt_aggregate(
+        state=replace(
+            aggregate.state,
+            runtime=replace(
+                aggregate.runtime,
+                history=new_history,
+            ),
+            events=shifted_events,
+        ),
+        acquisitions=aggregate.acquisitions,
+    )
+
+
 def execute_runtime_attempt(
     runtime: AttemptRuntime,
     reservations: Sequence[RuntimeResourceReservation],
@@ -1315,6 +1399,7 @@ def execute_runtime_attempt(
     worker_batch_provider: RuntimeWorkerBatchProvider,
     telemetry_provider: RuntimeTelemetryProvider,
     persister: RuntimeFinalizationPersister,
+    cancellation_ingress: RuntimeCancellationIngress | None = None,
 ) -> RuntimeFinalizationReceipt:
     """Prepare, optionally dispatch, settle, and finalize one runtime attempt.
 
@@ -1329,7 +1414,22 @@ def execute_runtime_attempt(
 
     if not callable(worker_batch_provider):
         raise RuntimeFinalizationContractError("worker_batch_provider must be callable")
+    if cancellation_ingress is not None:
+        if not isinstance(cancellation_ingress, RuntimeCancellationIngress):
+            raise RuntimeFinalizationContractError(
+                "cancellation_ingress must be a RuntimeCancellationIngress or None"
+            )
+        if cancellation_ingress.attempt != runtime.manifest.attempt:
+            raise RuntimeFinalizationContractError(
+                "cancellation ingress references a different runtime attempt"
+            )
     aggregate = _prepare_runtime_attempt(runtime, reservations)
+    if (
+        cancellation_ingress is not None
+        and cancellation_ingress.accepted_request is not None
+        and not aggregate.runtime.history.cancellation_accepted
+    ):
+        aggregate = _accept_cancellation_into_aggregate(aggregate)
     if aggregate.runtime.history.cancellation_accepted:
         attempt = aggregate.runtime.manifest.attempt
         aggregate = _apply_runtime_worker_batch(
@@ -1372,10 +1472,18 @@ def execute_runtime_attempt(
                 aggregate.runtime.manifest.attempt,
                 RuntimeExecutionPhase.WORKER_BATCH_PROVIDER,
             ) from exc
+        if (
+            cancellation_ingress is not None
+            and cancellation_ingress.accepted_request is not None
+            and not aggregate.runtime.history.cancellation_accepted
+        ):
+            aggregate = _accept_cancellation_into_aggregate(aggregate)
         aggregate = _apply_runtime_worker_batch(
             aggregate,
             worker_batch,
         )
+    if cancellation_ingress is not None:
+        cancellation_ingress.close()
     return _finalize_runtime_attempt(
         aggregate,
         telemetry_provider=telemetry_provider,
@@ -2059,6 +2167,7 @@ __all__ = [
     "RuntimeArtifactIoSample",
     "RuntimeArtifactRegistrationReceipt",
     "RuntimeAttemptAggregate",
+    "RuntimeCancellationIngress",
     "RuntimeCancellationRequest",
     "RuntimeExecutionPhase",
     "RuntimeExecutionPhaseError",

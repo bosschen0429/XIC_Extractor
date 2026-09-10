@@ -116,6 +116,21 @@ class PartitionPipelineAdapter(
         composition_outputs: Sequence[PartitionCompositionOutput[TCompositionResult]],
     ) -> TApplicationResult: ...
 
+    @property
+    def global_closure_work_unit_key(self) -> str | None:
+        """Optional declared manifest work-unit key for global closure."""
+        return None
+
+    def create_global_closure_artifacts(
+        self,
+        application_result: TApplicationResult,
+    ) -> tuple[
+        Sequence[RuntimeArtifactRegistrationReceipt],
+        Sequence[WorkUnitSettlement],
+    ]:
+        """Mint artifact registrations and work settlements for global closure."""
+        return (), ()
+
     def build_workflow_result(
         self,
         runtime_receipt: RuntimeFinalizationReceipt,

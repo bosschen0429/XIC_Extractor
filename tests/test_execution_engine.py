@@ -35,6 +35,7 @@ from xic_extractor.execution_engine import (
 )
 from xic_extractor.execution_engine.streamed_result_store import _OwnerUnpickler
 from xic_extractor.execution_runtime import (
+    AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitSettlement,
@@ -49,9 +50,14 @@ from xic_extractor.execution_runtime_finalization import (
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
+    RuntimeCancellationIngress,
+    RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
     RuntimeResourceSettlementReceipt,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
     mint_work_unit_settlement,
+    start_runtime_attempt,
 )
 
 _TEST_CONTRACT = _mint_artifact_semantic_contract_ref(
@@ -244,6 +250,11 @@ class MockAdapter:
         fail_acquisition_index: int | None = None,
         fail_composition_index: int | None = None,
         fail_finalize: bool = False,
+        acquisition_delay: float = 0.0,
+        composition_delay: float = 0.0,
+        declare_global_closure: bool = False,
+        on_acquisition: Any = None,
+        on_composition: Any = None,
     ):
         self._owners = owners
         self._partitions = tuple(
@@ -254,8 +265,18 @@ class MockAdapter:
             )
             for i in range(num_partitions)
         )
-        self._work_unit_keys = tuple(
-            f"wu:{p.partition_key}" for p in self._partitions
+        self._global_closure_work_unit_key = (
+            f"global-closure:{owners.request.processing_request_id}"
+            if declare_global_closure
+            else None
+        )
+        self._work_unit_keys = (
+            *(f"wu:{p.partition_key}" for p in self._partitions),
+            *(
+                (self._global_closure_work_unit_key,)
+                if self._global_closure_work_unit_key
+                else ()
+            ),
         )
         self._resource_reservations = tuple(
             RuntimeResourceReservation(
@@ -272,6 +293,10 @@ class MockAdapter:
         self.fail_acquisition_index = fail_acquisition_index
         self.fail_composition_index = fail_composition_index
         self.fail_finalize = fail_finalize
+        self.acquisition_delay = acquisition_delay
+        self.composition_delay = composition_delay
+        self.on_acquisition = on_acquisition
+        self.on_composition = on_composition
         self.retained_memory_seen: list[bool] = []
 
     @property
@@ -285,6 +310,10 @@ class MockAdapter:
     @property
     def work_unit_keys(self) -> tuple[str, ...]:
         return self._work_unit_keys
+
+    @property
+    def global_closure_work_unit_key(self) -> str | None:
+        return self._global_closure_work_unit_key
 
     @property
     def resource_reservations(self) -> tuple[RuntimeResourceReservation, ...]:
@@ -304,6 +333,10 @@ class MockAdapter:
         should_cancel=None,
         progress_callback=None,
     ) -> PartitionAcquisitionOutput[dict[str, Any]]:
+        if self.acquisition_delay > 0:
+            time.sleep(self.acquisition_delay)
+        if self.on_acquisition is not None:
+            self.on_acquisition(partition.index)
         if self.fail_acquisition_index == partition.index:
             return PartitionAcquisitionOutput(
                 result={},
@@ -339,6 +372,10 @@ class MockAdapter:
         should_cancel=None,
     ) -> PartitionCompositionOutput[dict[str, Any]]:
         self.retained_memory_seen.append(retain_memory)
+        if self.composition_delay > 0:
+            time.sleep(self.composition_delay)
+        if self.on_composition is not None:
+            self.on_composition(partition.index)
         if self.fail_composition_index == partition.index:
             raise RuntimeError("simulated composition exception")
         payload = MockPayload(
@@ -367,6 +404,38 @@ class MockAdapter:
             {
                 "work_unit_key": key,
                 "sha256": composition_output.sealed.sha256,
+            }
+        ).encode("utf-8")
+        artifact = _mint_evidence_artifact_ref(
+            producer_processing_request_id=self._owners.request.processing_request_id,
+            producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
+            semantic_contract=_TEST_CONTRACT,
+            payload_bytes=payload_bytes,
+            upstream_artifacts=(),
+        )
+        art_receipt = RuntimeArtifactRegistrationReceipt(key, artifact)
+        wu_settlement = mint_work_unit_settlement(
+            attempt=self._owners.attempt,
+            work_unit_key=key,
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            owner_result_ref=artifact,
+        )
+        return (art_receipt,), (wu_settlement,)
+
+    def create_global_closure_artifacts(
+        self,
+        application_result: dict[str, Any],
+    ) -> tuple[
+        tuple[RuntimeArtifactRegistrationReceipt, ...],
+        tuple[WorkUnitSettlement, ...],
+    ]:
+        if self._global_closure_work_unit_key is None:
+            return (), ()
+        key = self._global_closure_work_unit_key
+        payload_bytes = json.dumps(
+            {
+                "work_unit_key": key,
+                "total_children": application_result.get("total_children", 0),
             }
         ).encode("utf-8")
         artifact = _mint_evidence_artifact_ref(
@@ -424,13 +493,18 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
         recovery_marker=marker,
         progress_callback=progress_events.append,
         retain_partition_memory=False,
+        pipeline_overlap=False,
     )
 
     assert result["application_result"]["total_children"] == 2
     assert result["children"] == ("child-0", "child-1")
 
     # Verify progress event sequence
-    stages = [ev["stage"] for ev in progress_events]
+    stages = [
+        ev["stage"]
+        for ev in progress_events
+        if ev.get("event") == "partition_progress"
+    ]
     assert stages == [
         "partition_start",
         "partition_compose",
@@ -572,6 +646,302 @@ def test_scheduler_execute_finalize_failure_cleans_up(tmp_path: Path) -> None:
     # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
+
+
+def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
+    """Prove acquire(P1) and compose(P0) overlap temporally (> 0)."""
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=2,
+        acquisition_delay=0.04,
+        composition_delay=0.04,
+    )
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-overlap")
+    events: list[dict[str, Any]] = []
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=output_dir,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        progress_callback=events.append,
+        pipeline_overlap=True,
+    )
+    assert result["application_result"]["total_children"] == 2
+
+    timelines = [
+        ev["timeline"]
+        for ev in events
+        if ev.get("event") == "partition_timeline"
+    ]
+    assert len(timelines) == 1
+    timeline = timelines[0]
+    assert len(timeline) == 2
+
+    p0 = timeline[0]
+    p1 = timeline[1]
+    overlap = max(
+        0.0,
+        min(p1["acquire_end"], p0["compose_end"])
+        - max(p1["acquire_start"], p0["compose_start"]),
+    )
+    assert overlap > 0.0
+    assert p1.get("overlap_with_previous", 0.0) > 0.0
+
+
+def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
+    """Verify single partition executes serially with no overlap overhead."""
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=1)
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-single")
+    events: list[dict[str, Any]] = []
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=output_dir,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        progress_callback=events.append,
+        pipeline_overlap=True,
+    )
+    assert result["application_result"]["total_children"] == 1
+    timelines = [
+        ev["timeline"]
+        for ev in events
+        if ev.get("event") == "partition_timeline"
+    ]
+    assert len(timelines) == 1
+    assert len(timelines[0]) == 1
+    assert "overlap_with_previous" not in timelines[0][0]
+
+
+def test_pipeline_overlap_backpressure(tmp_path: Path) -> None:
+    """Slow consumer holds 2 credits, blocking producer before partition 2."""
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2", "sample-3")
+    )
+    p0_compose_ended: list[float] = []
+    p2_acquire_started: list[float] = []
+
+    def on_comp(idx: int) -> None:
+        if idx == 0:
+            time.sleep(0.08)
+            p0_compose_ended.append(time.perf_counter())
+
+    def on_acq(idx: int) -> None:
+        if idx == 2:
+            p2_acquire_started.append(time.perf_counter())
+
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=3,
+        on_acquisition=on_acq,
+        on_composition=on_comp,
+    )
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-backpressure")
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=output_dir,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        pipeline_overlap=True,
+    )
+    assert result["application_result"]["total_children"] == 3
+    assert len(p0_compose_ended) == 1
+    assert len(p2_acquire_started) == 1
+    assert p2_acquire_started[0] >= p0_compose_ended[0] - 0.02
+
+
+def test_pipeline_bilateral_abort_consumer_failure(tmp_path: Path) -> None:
+    """Consumer composition error triggers cancellation, stops producer,
+    cleans spool.
+    """
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=2,
+        fail_composition_index=0,
+        acquisition_delay=0.03,
+    )
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-comp-abort")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Partition pipeline execution failed before batch publication",
+    ):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            pipeline_overlap=True,
+        )
+
+    spool_dirs = list(output_dir.glob(".partition_spool-*"))
+    assert len(spool_dirs) == 0
+
+
+def test_pipeline_bilateral_abort_producer_failure(tmp_path: Path) -> None:
+    """Producer acquisition error stops consumer, cleans spool."""
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=2,
+        fail_acquisition_index=1,
+    )
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-prod-abort")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Partition pipeline execution failed before batch publication",
+    ):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            pipeline_overlap=True,
+        )
+
+    spool_dirs = list(output_dir.glob(".partition_spool-*"))
+    assert len(spool_dirs) == 0
+
+
+def test_r386_01_in_flight_cancellation_ingress(tmp_path: Path) -> None:
+    """In-flight cancellation ingress acceptance transitions attempt to CANCELLED."""
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    attempt = fixture.owners.attempt
+    ingress = RuntimeCancellationIngress(attempt=attempt)
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("wu:1", "wu:2"),
+        owner_completeness_attestation="test-attestation",
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-ingress")
+    marker.record_launch(runtime)
+
+    def provide_worker_batch(aggregate: object) -> RuntimeWorkerBatchReceipt:
+        accepted = ingress.request_cancellation(
+            RuntimeCancellationRequest(attempt=attempt)
+        )
+        assert accepted is True
+        return RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=attempt,
+                    work_unit_key="wu:1",
+                    outcome=WorkUnitTerminalOutcome.CANCELLED,
+                    failure_detail=WorkUnitFailureDetail(
+                        category=WorkUnitFailureCategory.CANCELLATION,
+                        stage="test-cancel",
+                        source_reference="wu:1",
+                        message="cancelled in flight",
+                    ),
+                ),
+                mint_work_unit_settlement(
+                    attempt=attempt,
+                    work_unit_key="wu:2",
+                    outcome=WorkUnitTerminalOutcome.CANCELLED,
+                    failure_detail=WorkUnitFailureDetail(
+                        category=WorkUnitFailureCategory.CANCELLATION,
+                        stage="test-cancel",
+                        source_reference="wu:2",
+                        message="cancelled in flight",
+                    ),
+                ),
+            ),
+            resource_settlements=(),
+            artifact_registrations=(),
+            acquisitions=(),
+        )
+
+    receipt = execute_runtime_attempt(
+        runtime,
+        reservations=(),
+        worker_batch_provider=provide_worker_batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=marker,
+        cancellation_ingress=ingress,
+    )
+    assert receipt.supervisor.terminal_outcome is AttemptTerminalOutcome.CANCELLED
+    snapshot = marker.read()
+    assert snapshot.terminal_outcome is AttemptTerminalOutcome.CANCELLED
+
+
+def test_r386_01_global_closure_failure_retains_prior_success(
+    tmp_path: Path,
+) -> None:
+    """Closure failure marks only closure unit FAILED; partition units stay
+    SUCCEEDED.
+    """
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=2,
+        declare_global_closure=True,
+        fail_finalize=True,
+    )
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-closure-fail")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Partition pipeline execution failed before batch publication",
+    ):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            pipeline_overlap=True,
+        )
+
+    snapshot = marker.read()
+    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert snapshot.coordinator_record_bytes is not None
+    record = json.loads(snapshot.coordinator_record_bytes)
+    settlements = record["work_settlements"]
+    assert len(settlements) == 3
+
+    p0_settlement = next(
+        s for s in settlements if s["work_unit_key"] == "wu:partition-00000"
+    )
+    p1_settlement = next(
+        s for s in settlements if s["work_unit_key"] == "wu:partition-00001"
+    )
+    closure_settlement = next(
+        s
+        for s in settlements
+        if s["work_unit_key"].startswith("global-closure:")
+    )
+
+    assert p0_settlement["outcome"] == "succeeded"
+    assert p1_settlement["outcome"] == "succeeded"
+    assert closure_settlement["outcome"] == "failed"
+    assert closure_settlement["failure_detail"] is not None
+    assert (
+        closure_settlement["failure_detail"]["stage"]
+        == "partition-pipeline-completion"
+    )
 
 
 def test_worker_admission_pool_validation() -> None:
