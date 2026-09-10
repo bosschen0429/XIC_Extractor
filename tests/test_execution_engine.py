@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import pickle
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,7 @@ from xic_extractor.execution_engine import (
     PartitionResultStore,
     ProcessingOwners,
     StreamedResultStore,
+    WorkerAdmissionPool,
     WorkPartition,
 )
 from xic_extractor.execution_engine.streamed_result_store import _OwnerUnpickler
@@ -569,3 +572,148 @@ def test_scheduler_execute_finalize_failure_cleans_up(tmp_path: Path) -> None:
     # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
+
+
+def test_worker_admission_pool_validation() -> None:
+    with pytest.raises(ValueError, match="max_workers"):
+        WorkerAdmissionPool(max_workers=0)
+    with pytest.raises(ValueError, match="backend"):
+        WorkerAdmissionPool(backend="invalid")
+
+
+def test_worker_admission_pool_thread_single_worker_inline() -> None:
+    pool = WorkerAdmissionPool(max_workers=1, backend="thread")
+    items = [1, 2, 3, 4]
+    results: list[tuple[int, int, int, int]] = []
+
+    coordinator_thread = threading.get_ident()
+    execution_threads: list[int] = []
+
+    def work(val: int) -> int:
+        execution_threads.append(threading.get_ident())
+        return val * 10
+
+    def on_comp(comp: int, tot: int, item: int, res: int) -> None:
+        results.append((comp, tot, item, res))
+
+    with pool:
+        pool.run_windowed(items, work, on_completed=on_comp)
+
+    assert results == [(1, 4, 1, 10), (2, 4, 2, 20), (3, 4, 3, 30), (4, 4, 4, 40)]
+    assert all(t == coordinator_thread for t in execution_threads)
+
+
+def test_worker_admission_pool_thread_multi_worker_bounded() -> None:
+    warmed: list[int] = []
+    pool = WorkerAdmissionPool(
+        max_workers=3,
+        backend="thread",
+        thread_name_prefix="test-worker",
+        initializer=lambda: warmed.append(threading.get_ident()),
+    )
+    items = list(range(10))
+    results: list[int] = []
+    lock = threading.Lock()
+    active_count = 0
+    max_concurrent = 0
+
+    def work(val: int) -> int:
+        nonlocal active_count, max_concurrent
+        with lock:
+            active_count += 1
+            if active_count > max_concurrent:
+                max_concurrent = active_count
+        time.sleep(0.01)
+        with lock:
+            active_count -= 1
+        return val * 2
+
+    def on_comp(comp: int, tot: int, item: int, res: int) -> None:
+        with lock:
+            results.append(res)
+
+    with pool:
+        pool.run_windowed(items, work, on_completed=on_comp)
+
+    assert len(warmed) == 1
+    assert len(results) == 10
+    assert sorted(results) == [x * 2 for x in range(10)]
+    assert max_concurrent <= 3
+
+
+def test_worker_admission_pool_skip_and_task_arg_fn() -> None:
+    pool = WorkerAdmissionPool(max_workers=2, backend="thread")
+    items = [1, 2, 3, 4, 5]
+    completed_events: list[tuple[int, int, Any]] = []
+
+    def work(val: str) -> str:
+        return f"done-{val}"
+
+    with pool:
+        pool.run_windowed(
+            items,
+            work,
+            task_arg_fn=lambda x: str(x * 10),
+            skip_fn=lambda x: x % 2 == 0,
+            on_completed=(
+                lambda c, t, item, res: completed_events.append((c, item, res))
+            ),
+        )
+
+    assert len(completed_events) == 5
+    skipped = [item for _, item, res in completed_events if res is None]
+    processed = [(item, res) for _, item, res in completed_events if res is not None]
+    assert sorted(skipped) == [2, 4]
+    assert sorted(processed) == [(1, "done-10"), (3, "done-30"), (5, "done-50")]
+
+
+def test_worker_admission_pool_cancellation() -> None:
+    pool = WorkerAdmissionPool(max_workers=2, backend="thread")
+    items = list(range(20))
+    processed: list[int] = []
+    lock = threading.Lock()
+    cancelled = False
+
+    def check_cancel() -> bool:
+        return cancelled
+
+    def work(val: int) -> int:
+        nonlocal cancelled
+        time.sleep(0.02)
+        with lock:
+            processed.append(val)
+            if len(processed) >= 2:
+                cancelled = True
+        return val
+
+    with pool:
+        pool.run_windowed(items, work, should_cancel=check_cancel)
+
+    assert pool.stopped
+    assert isinstance(pool.first_error, InterruptedError)
+    assert len(processed) < 20
+
+
+def test_worker_admission_pool_stop_on_error() -> None:
+    pool = WorkerAdmissionPool(max_workers=2, backend="thread")
+    items = list(range(10))
+    errors: list[Exception] = []
+
+    def work(val: int) -> int:
+        if val == 3:
+            raise ValueError(f"failure at {val}")
+        time.sleep(0.01)
+        return val
+
+    with pool:
+        pool.run_windowed(
+            items,
+            work,
+            on_error=lambda item, exc: errors.append(exc),
+            stop_on_error=True,
+        )
+
+    assert pool.stopped
+    assert isinstance(pool.first_error, ValueError)
+    assert len(errors) >= 1
+

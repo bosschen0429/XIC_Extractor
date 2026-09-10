@@ -7,18 +7,9 @@ import hashlib
 import importlib
 import json
 from collections.abc import Callable, Mapping
-from concurrent.futures import (
-    FIRST_COMPLETED,
-    Future,
-    ProcessPoolExecutor,
-    ThreadPoolExecutor,
-    wait,
-)
 from copy import copy
 from dataclasses import dataclass, field, replace
-from multiprocessing import get_context
 from pathlib import Path
-from threading import Event, Lock
 from types import MappingProxyType
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
@@ -62,6 +53,7 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
+from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
     AttemptTerminalOutcome,
@@ -797,17 +789,22 @@ def execute_untargeted_cid_nl_runtime_partition(
     should_cancel: Callable[[], bool] | None = None,
     raw_workers: int = 1,
     raw_worker_backend: str = "thread",
+    pool: WorkerAdmissionPool | None = None,
 ) -> UntargetedCidNlRuntimePartitionResult:
     """Execute one complete subject partition under the caller's runtime attempt."""
     _required_text(partition_key, field="partition_key")
-    if type(raw_workers) is not int or raw_workers < 1:
-        raise UntargetedCidNlRealDataRuntimeError(
-            "raw_workers must be a positive integer"
-        )
-    if raw_worker_backend not in {"process", "thread"}:
-        raise UntargetedCidNlRealDataRuntimeError(
-            "raw_worker_backend must be 'process' or 'thread'"
-        )
+    if pool is not None:
+        raw_workers = pool.max_workers
+        raw_worker_backend = pool.backend
+    else:
+        if type(raw_workers) is not int or raw_workers < 1:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "raw_workers must be a positive integer"
+            )
+        if raw_worker_backend not in {"process", "thread"}:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "raw_worker_backend must be 'process' or 'thread'"
+            )
     if not isinstance(alignment_config, AlignmentConfig):
         raise UntargetedCidNlRealDataRuntimeError(
             "alignment_config must be an AlignmentConfig"
@@ -839,6 +836,7 @@ def execute_untargeted_cid_nl_runtime_partition(
         should_cancel=should_cancel,
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
+        pool=pool,
     )
     batch = work.provide_worker_batch(None)
     return UntargetedCidNlRuntimePartitionResult(
@@ -863,8 +861,12 @@ def _prepare_runtime_work(
     should_cancel: Callable[[], bool] | None = None,
     raw_workers: int = 1,
     raw_worker_backend: str = "thread",
+    pool: WorkerAdmissionPool | None = None,
 ) -> _RuntimeWork:
-    if raw_worker_backend not in {"process", "thread"}:
+    if pool is not None:
+        raw_workers = pool.max_workers
+        raw_worker_backend = pool.backend
+    elif raw_worker_backend not in {"process", "thread"}:
         raise UntargetedCidNlRealDataRuntimeError(
             "raw_worker_backend must be 'process' or 'thread'"
         )
@@ -1025,34 +1027,35 @@ def _prepare_runtime_work(
         resource_settlements: list[RuntimeResourceSettlementReceipt] = []
         artifact_registrations: list[RuntimeArtifactRegistrationReceipt] = []
         acquisitions: list[RuntimeAcquisitionReceipt] = []
-        stopped = Event()
-        stop_lock = Lock()
-        first_error: Exception | None = None
+        worker_pool = pool or WorkerAdmissionPool(
+            max_workers=raw_workers,
+            backend=raw_worker_backend,
+            thread_name_prefix="cid-nl-sample",
+            initializer=lambda: _ensure_assemblies_loaded(
+                jobs[0].dll_dir, importlib.import_module
+            ),
+        )
+        if worker_pool.initializer is None:
+            worker_pool.set_initializer(
+                lambda: _ensure_assemblies_loaded(
+                    jobs[0].dll_dir, importlib.import_module
+                )
+            )
         stop_applied = False
-        executor: ThreadPoolExecutor | ProcessPoolExecutor | None = None
-        workers = min(raw_workers, len(sample_groups))
 
         def stop(error: Exception) -> None:
-            nonlocal first_error
-            with stop_lock:
-                if first_error is None:
-                    first_error = error
-                stopped.set()
+            worker_pool.stop(error)
 
         def observe_cancellation() -> bool:
-            if should_cancel is not None and should_cancel():
-                stop(InterruptedError("CID-NL partition cancelled"))
-            return stopped.is_set()
+            return worker_pool.observe_cancellation(should_cancel)
 
         def apply_stop() -> None:
             nonlocal stop_applied
-            if stopped.is_set() and not stop_applied:
-                # Called only after the sample workers have drained, so no
-                # coordinator mutation races a sample's scientific owner.
+            if worker_pool.stopped and not stop_applied:
                 stop_applied = True
                 for state in states:
                     if state.error is None:
-                        state.error = first_error
+                        state.error = worker_pool.first_error
 
         phases_by_sample = {
             phase.states[0].job.sample.identity.sample_identity_id: phase
@@ -1087,319 +1090,213 @@ def _prepare_runtime_work(
             if phase is not None:
                 _execute_recovery_batch(phase)
 
-        def run_process_initial() -> None:
-            assert executor is not None
-            pending: dict[
-                Future[_SampleInitialWorkerResponse],
-                tuple[tuple[_RuntimeJobState, ...], _BatchSamplePhaseState],
-            ] = {}
-            remaining = iter(sample_groups)
-            completed = 0
-
-            def fill_window() -> None:
-                while len(pending) < workers and not observe_cancellation():
-                    sample_states = next(remaining, None)
-                    if sample_states is None:
-                        break
-                    sample_id = sample_states[0].job.sample.identity.sample_identity_id
-                    phase = phases_by_sample[sample_id]
-                    req = _SampleInitialWorkerRequest(
-                        jobs=tuple(s.job for s in sample_states),
-                        initial_resource_key=phase.initial_resource_key,
-                        partition_candidates=partition_key is not None,
-                    )
-                    assert executor is not None
-                    fut = executor.submit(_execute_sample_initial_worker, req)
-                    pending[fut] = (sample_states, phase)
-
-            try:
-                fill_window()
-                while pending:
-                    observe_cancellation()
-                    done, _ = wait(
-                        set(pending.keys()), timeout=0.1, return_when=FIRST_COMPLETED
-                    )
-                    for future in done:
-                        sample_states, phase = pending.pop(future)
-                        try:
-                            resp = future.result()
-                            phase.initial_open_attempted = resp.initial_open_attempted
-                            phase.initial_opened = resp.initial_opened
-                            phase.initial_cleanup_outcome = resp.initial_cleanup_outcome
-                            phase.initial_acquisition = resp.initial_acquisition
-                            for state, adapter_res, obs_artifacts, has_acq, err in zip(
-                                sample_states,
-                                resp.adapter_results,
-                                resp.observer_artifacts,
-                                resp.observer_has_acquisitions,
-                                resp.errors,
-                                strict=True,
-                            ):
-                                state.adapter_result = adapter_res
-                                for art in obs_artifacts:
-                                    state.observer.record_artifact(art)
-                                if (
-                                    has_acq
-                                    and resp.initial_acquisition is not None
-                                    and state.observer.acquisition is None
-                                ):
-                                    state.observer.record_acquisition(resp.initial_acquisition)
-                                if err is not None and state.error is None:
-                                    state.error = err
-                            if partition_key is not None:
-                                err = next(
-                                    (
-                                        s.error
-                                        for s in sample_states
-                                        if s.error is not None
-                                    ),
-                                    None,
-                                )
-                                if err is not None:
-                                    stop(err)
-                        except Exception as exc:
-                            for state in sample_states:
-                                if state.error is None:
-                                    state.error = exc
-                            if partition_key is not None:
-                                stop(exc)
-                        completed += 1
-                        report_phase(
-                            "partition_initial", completed, len(sample_groups)
-                        )
-                    fill_window()
-            except Exception as exc:
-                stop(exc)
-            finally:
-                for future in list(pending.keys()):
-                    try:
-                        future.result()
-                    except Exception:
-                        pass
-
-        def run_process_recovery() -> None:
-            assert executor is not None
-            pending: dict[
-                Future[_SampleRecoveryWorkerResponse],
-                tuple[tuple[_RuntimeJobState, ...], _BatchSamplePhaseState],
-            ] = {}
-            remaining = iter(sample_groups)
-            completed = 0
-
-            def fill_window() -> None:
-                nonlocal completed
-                while len(pending) < workers and not observe_cancellation():
-                    sample_states = next(remaining, None)
-                    if sample_states is None:
-                        break
-                    sample_id = sample_states[0].job.sample.identity.sample_identity_id
-                    phase = phases_by_sample[sample_id]
-                    needs_recovery = any(
-                        state.error is None and state.recovery_group_center_rts
-                        for state in sample_states
-                    )
-                    if not needs_recovery:
-                        completed += 1
-                        report_phase(
-                            "partition_recovery", completed, len(sample_groups)
-                        )
-                        continue
-                    req = _SampleRecoveryWorkerRequest(
-                        jobs=tuple(s.job for s in sample_states),
-                        recovery_group_center_rts_by_key={
-                            s.job.work_unit_key: s.recovery_group_center_rts
-                            for s in sample_states
-                            if s.recovery_group_center_rts
-                        },
-                        recovery_inputs_by_key={
-                            s.job.work_unit_key: s.recovery_input
-                            for s in sample_states
-                            if s.recovery_input is not None
-                        },
-                        adapter_results_by_key={
-                            s.job.work_unit_key: s.adapter_result
-                            for s in sample_states
-                            if s.adapter_result is not None
-                        },
-                        recovery_resource_key=phase.recovery_resource_key,
-                    )
-                    assert executor is not None
-                    fut = executor.submit(_execute_sample_recovery_worker, req)
-                    pending[fut] = (sample_states, phase)
-
-            try:
-                fill_window()
-                while pending:
-                    observe_cancellation()
-                    done, _ = wait(
-                        set(pending.keys()), timeout=0.1, return_when=FIRST_COMPLETED
-                    )
-                    for future in done:
-                        sample_states, phase = pending.pop(future)
-                        try:
-                            resp = future.result()
-                            phase.recovery_open_attempted = resp.recovery_open_attempted
-                            phase.recovery_opened = resp.recovery_opened
-                            phase.recovery_cleanup_outcome = (
-                                resp.recovery_cleanup_outcome
-                            )
-                            phase.recovery_acquisition = resp.recovery_acquisition
-                            for state, obs_artifacts, has_acq, err in zip(
-                                sample_states,
-                                resp.observer_artifacts,
-                                resp.observer_has_acquisitions,
-                                resp.errors,
-                                strict=True,
-                            ):
-                                key = state.job.work_unit_key
-                                if key in resp.recovery_attempts_by_key:
-                                    state.recovery_attempts = (
-                                        resp.recovery_attempts_by_key[key]
-                                    )
-                                if key in resp.recovery_inputs_by_key:
-                                    state.recovery_input = (
-                                        resp.recovery_inputs_by_key[key]
-                                    )
-                                for art in obs_artifacts:
-                                    state.observer.record_artifact(art)
-                                if (
-                                    has_acq
-                                    and resp.recovery_acquisition is not None
-                                    and state.observer.acquisition is None
-                                ):
-                                    state.observer.record_acquisition(
-                                        resp.recovery_acquisition
-                                    )
-                                if err is not None and state.error is None:
-                                    state.error = err
-                            if partition_key is not None:
-                                err = next(
-                                    (
-                                        s.error
-                                        for s in sample_states
-                                        if s.error is not None
-                                    ),
-                                    None,
-                                )
-                                if err is not None:
-                                    stop(err)
-                        except Exception as exc:
-                            for state in sample_states:
-                                if state.error is None:
-                                    state.error = exc
-                            if partition_key is not None:
-                                stop(exc)
-                        completed += 1
-                        report_phase(
-                            "partition_recovery", completed, len(sample_groups)
-                        )
-                    fill_window()
-            except Exception as exc:
-                stop(exc)
-            finally:
-                for future in list(pending.keys()):
-                    try:
-                        future.result()
-                    except Exception:
-                        pass
-
-        def run_sample_phase(
-            stage: str,
-            operation: Callable[[tuple[_RuntimeJobState, ...]], None],
+        def on_sample_error(
+            sample_states: tuple[_RuntimeJobState, ...], exc: Exception
         ) -> None:
-            def execute_sample(sample_states: tuple[_RuntimeJobState, ...]) -> None:
-                if stopped.is_set():
-                    return
-                try:
-                    operation(sample_states)
-                except Exception as exc:
-                    for state in sample_states:
-                        if state.error is None:
-                            state.error = exc
+            for state in sample_states:
+                if state.error is None:
+                    state.error = exc
+            if partition_key is not None:
+                worker_pool.stop(exc)
+
+        def on_sample_thread_completed(
+            stage: str,
+            comp: int,
+            tot: int,
+            sample_states: tuple[_RuntimeJobState, ...],
+            _res: object,
+        ) -> None:
+            if partition_key is not None:
+                err = next(
+                    (s.error for s in sample_states if s.error is not None),
+                    None,
+                )
+                if err is not None:
+                    worker_pool.stop(err)
+            report_phase(stage, comp, tot)
+
+        def make_process_initial_req(
+            sample_states: tuple[_RuntimeJobState, ...],
+        ) -> _SampleInitialWorkerRequest:
+            sample_id = sample_states[0].job.sample.identity.sample_identity_id
+            phase = phases_by_sample[sample_id]
+            return _SampleInitialWorkerRequest(
+                jobs=tuple(s.job for s in sample_states),
+                initial_resource_key=phase.initial_resource_key,
+                partition_candidates=partition_key is not None,
+            )
+
+        def handle_process_initial_resp(
+            comp: int,
+            tot: int,
+            sample_states: tuple[_RuntimeJobState, ...],
+            resp: _SampleInitialWorkerResponse,
+        ) -> None:
+            sample_id = sample_states[0].job.sample.identity.sample_identity_id
+            phase = phases_by_sample[sample_id]
+            phase.initial_open_attempted = resp.initial_open_attempted
+            phase.initial_opened = resp.initial_opened
+            phase.initial_cleanup_outcome = resp.initial_cleanup_outcome
+            phase.initial_acquisition = resp.initial_acquisition
+            for state, adapter_res, obs_artifacts, has_acq, err in zip(
+                sample_states,
+                resp.adapter_results,
+                resp.observer_artifacts,
+                resp.observer_has_acquisitions,
+                resp.errors,
+                strict=True,
+            ):
+                state.adapter_result = adapter_res
+                for art in obs_artifacts:
+                    state.observer.record_artifact(art)
+                if (
+                    has_acq
+                    and resp.initial_acquisition is not None
+                    and state.observer.acquisition is None
+                ):
+                    state.observer.record_acquisition(resp.initial_acquisition)
+                if err is not None and state.error is None:
+                    state.error = err
+            if partition_key is not None:
+                err = next(
+                    (s.error for s in sample_states if s.error is not None),
+                    None,
+                )
+                if err is not None:
+                    worker_pool.stop(err)
+            report_phase("partition_initial", comp, tot)
+
+        def skip_recovery(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
+            return not any(
+                state.error is None and state.recovery_group_center_rts
+                for state in sample_states
+            )
+
+        def make_process_recovery_req(
+            sample_states: tuple[_RuntimeJobState, ...],
+        ) -> _SampleRecoveryWorkerRequest:
+            sample_id = sample_states[0].job.sample.identity.sample_identity_id
+            phase = phases_by_sample[sample_id]
+            return _SampleRecoveryWorkerRequest(
+                jobs=tuple(s.job for s in sample_states),
+                recovery_group_center_rts_by_key={
+                    s.job.work_unit_key: s.recovery_group_center_rts
+                    for s in sample_states
+                    if s.recovery_group_center_rts
+                },
+                recovery_inputs_by_key={
+                    s.job.work_unit_key: s.recovery_input
+                    for s in sample_states
+                    if s.recovery_input is not None
+                },
+                adapter_results_by_key={
+                    s.job.work_unit_key: s.adapter_result
+                    for s in sample_states
+                    if s.adapter_result is not None
+                },
+                recovery_resource_key=phase.recovery_resource_key,
+            )
+
+        def handle_process_recovery_resp(
+            comp: int,
+            tot: int,
+            sample_states: tuple[_RuntimeJobState, ...],
+            resp: _SampleRecoveryWorkerResponse | None,
+        ) -> None:
+            if resp is not None:
+                sample_id = sample_states[0].job.sample.identity.sample_identity_id
+                phase = phases_by_sample[sample_id]
+                phase.recovery_open_attempted = resp.recovery_open_attempted
+                phase.recovery_opened = resp.recovery_opened
+                phase.recovery_cleanup_outcome = resp.recovery_cleanup_outcome
+                phase.recovery_acquisition = resp.recovery_acquisition
+                for state, obs_artifacts, has_acq, err in zip(
+                    sample_states,
+                    resp.observer_artifacts,
+                    resp.observer_has_acquisitions,
+                    resp.errors,
+                    strict=True,
+                ):
+                    key = state.job.work_unit_key
+                    if key in resp.recovery_attempts_by_key:
+                        state.recovery_attempts = resp.recovery_attempts_by_key[key]
+                    if key in resp.recovery_inputs_by_key:
+                        state.recovery_input = resp.recovery_inputs_by_key[key]
+                    for art in obs_artifacts:
+                        state.observer.record_artifact(art)
+                    if (
+                        has_acq
+                        and resp.recovery_acquisition is not None
+                        and state.observer.acquisition is None
+                    ):
+                        state.observer.record_acquisition(resp.recovery_acquisition)
+                    if err is not None and state.error is None:
+                        state.error = err
                 if partition_key is not None:
-                    error = next(
-                        (
-                            state.error
-                            for state in sample_states
-                            if state.error is not None
-                        ),
+                    err = next(
+                        (s.error for s in sample_states if s.error is not None),
                         None,
                     )
-                    if error is not None:
-                        stop(error)
-
-            pool = executor
-            if pool is None:
-                for completed, sample_states in enumerate(sample_groups, 1):
-                    if observe_cancellation():
-                        break
-                    execute_sample(sample_states)
-                    report_phase(stage, completed, len(sample_groups))
-                return
-
-            pending: set[Future[None]] = set()
-            remaining = iter(sample_groups)
-            completed = 0
-
-            def fill_window() -> None:
-                while len(pending) < workers and not observe_cancellation():
-                    sample_states = next(remaining, None)
-                    if sample_states is None:
-                        break
-                    pending.add(pool.submit(execute_sample, sample_states))
-
-            try:
-                fill_window()
-                while pending:
-                    observe_cancellation()
-                    done, pending = wait(
-                        pending, timeout=0.1, return_when=FIRST_COMPLETED
-                    )
-                    for future in done:
-                        future.result()
-                        completed += 1
-                        report_phase(stage, completed, len(sample_groups))
-                    fill_window()
-            except Exception as exc:
-                stop(exc)
-            finally:
-                # Never return resource receipts before every admitted sample
-                # has run its same-thread RAW cleanup, including on cancellation.
-                for future in pending:
-                    future.result()
+                    if err is not None:
+                        worker_pool.stop(err)
+            report_phase("partition_recovery", comp, tot)
 
         try:
             if not observe_cancellation():
                 if raw_worker_backend == "process":
-                    executor = ProcessPoolExecutor(
-                        max_workers=workers,
-                        mp_context=get_context("spawn"),
+                    worker_pool.run_windowed(
+                        sample_groups,
+                        _execute_sample_initial_worker,
+                        task_arg_fn=make_process_initial_req,
+                        on_completed=handle_process_initial_resp,
+                        on_error=on_sample_error,
+                        should_cancel=should_cancel,
+                        stop_on_error=partition_key is not None,
                     )
-                    run_process_initial()
                 else:
-                    if workers > 1:
-                        _ensure_assemblies_loaded(
-                            jobs[0].dll_dir, importlib.import_module
-                        )
-                        executor = ThreadPoolExecutor(
-                            max_workers=workers, thread_name_prefix="cid-nl-sample"
-                        )
-                    run_sample_phase("partition_initial", initial)
+                    worker_pool.run_windowed(
+                        sample_groups,
+                        initial,
+                        on_completed=lambda c, t, s, r: on_sample_thread_completed(
+                            "partition_initial", c, t, s, r
+                        ),
+                        on_error=on_sample_error,
+                        should_cancel=should_cancel,
+                        stop_on_error=partition_key is not None,
+                    )
             if not observe_cancellation():
                 _prepare_owner_authorized_recoveries(
                     states, alignment_config=alignment_config
                 )
                 if raw_worker_backend == "process":
-                    run_process_recovery()
+                    worker_pool.run_windowed(
+                        sample_groups,
+                        _execute_sample_recovery_worker,
+                        task_arg_fn=make_process_recovery_req,
+                        skip_fn=skip_recovery,
+                        on_completed=handle_process_recovery_resp,
+                        on_error=on_sample_error,
+                        should_cancel=should_cancel,
+                        stop_on_error=partition_key is not None,
+                    )
                 else:
-                    run_sample_phase("partition_recovery", recovery)
+                    worker_pool.run_windowed(
+                        sample_groups,
+                        recovery,
+                        on_completed=lambda c, t, s, r: on_sample_thread_completed(
+                            "partition_recovery", c, t, s, r
+                        ),
+                        on_error=on_sample_error,
+                        should_cancel=should_cancel,
+                        stop_on_error=partition_key is not None,
+                    )
         except Exception as exc:
             if partition_key is None:
                 raise
             stop(exc)
         finally:
-            if executor is not None:
-                executor.shutdown(wait=True)
+            if pool is None:
+                worker_pool.shutdown()
         apply_stop()
 
         acquisition_owner_keys = (

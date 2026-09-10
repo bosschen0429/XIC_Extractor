@@ -27,6 +27,7 @@ from xic_extractor.execution_engine import (
     PartitionPipelineScheduler,
     ProcessingOwners,
     StreamedResultStore,
+    WorkerAdmissionPool,
     WorkPartition,
 )
 from xic_extractor.execution_runtime import (
@@ -212,15 +213,21 @@ class CidNlPartitionPipelineAdapter:
         batch = materialize_untargeted_cid_nl_partition(
             self._plan, subject_batch
         )
-        leaf = execute_untargeted_cid_nl_runtime_partition(
-            batch.jobs,
-            partition_key=partition.partition_key,
-            alignment_config=self._alignment_config,
-            progress_callback=progress_callback,
-            should_cancel=should_cancel,
-            raw_workers=self._raw_workers,
-            raw_worker_backend=self._raw_worker_backend,
-        )
+        with WorkerAdmissionPool(
+            max_workers=self._raw_workers,
+            backend=self._raw_worker_backend,
+            thread_name_prefix="cid-nl-sample",
+        ) as pool:
+            leaf = execute_untargeted_cid_nl_runtime_partition(
+                batch.jobs,
+                partition_key=partition.partition_key,
+                alignment_config=self._alignment_config,
+                progress_callback=progress_callback,
+                should_cancel=should_cancel,
+                raw_workers=self._raw_workers,
+                raw_worker_backend=self._raw_worker_backend,
+                pool=pool,
+            )
         failure_detail = None
         if not leaf.succeeded:
             failed = next(

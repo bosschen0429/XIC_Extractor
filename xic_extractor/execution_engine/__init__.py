@@ -17,6 +17,9 @@ from xic_extractor.execution_engine.streamed_result_store import (
     SealedPartition,
     StreamedResultStore,
 )
+from xic_extractor.execution_engine.worker_pool import (
+    WorkerAdmissionPool,
+)
 
 __all__ = [
     "PartitionAcquisitionOutput",
@@ -28,4 +31,5 @@ __all__ = [
     "SealedPartition",
     "StreamedResultStore",
     "WorkPartition",
+    "WorkerAdmissionPool",
 ]
