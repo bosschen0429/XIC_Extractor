@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, replace
@@ -223,12 +224,16 @@ class _ProcessMemoryCountersEx(ctypes.Structure):
 
 
 class _WindowsProcessMemoryApi:
+    _kernel32: ctypes.CDLL
+    _psapi: ctypes.CDLL
     _TH32CS_SNAPPROCESS = 0x00000002
     _PROCESS_QUERY_INFORMATION = 0x0400
     _PROCESS_VM_READ = 0x0010
     _INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
     def __init__(self) -> None:
+        if sys.platform != "win32":
+            raise OSError("Win32 process memory APIs are unavailable")
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         psapi = ctypes.WinDLL("psapi", use_last_error=True)
         handle = ctypes.c_void_p
@@ -312,7 +317,10 @@ class _WindowsProcessMemoryApi:
             0,
         )
         if snapshot == self._INVALID_HANDLE_VALUE:
-            raise OSError(ctypes.get_last_error(), "CreateToolhelp32Snapshot failed")
+            error: int | None = None
+            if sys.platform == "win32":
+                error = ctypes.get_last_error()
+            raise OSError(error, "CreateToolhelp32Snapshot failed")
         parents: dict[int, int] = {}
         try:
             entry = _ProcessEntry32W()
