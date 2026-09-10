@@ -25,26 +25,33 @@ class CandidateNotFoundError(ExplanationError):
     """The exact candidate ID is absent from this run."""
 
 
-def write_explanation_report(
-    path: Path,
-    *,
-    summary: Mapping[str, Any],
-    candidates: Iterable[tuple[str, str, Mapping[str, Any]]],
-    records: Mapping[tuple[str, str], Mapping[str, Any]],
-    links: Iterable[tuple[str, str, str, str]],
-) -> Path:
-    """Publish one complete projection; never overwrite an existing artifact."""
-    path = Path(path)
-    temporary = path.with_name(path.name + ".tmp")
-    if path.exists() or temporary.exists():
-        raise FileExistsError(f"explanation artifact already exists: {path}")
-    with temporary.open("xb"):
-        pass
-    connection: sqlite3.Connection | None = None
-    try:
-        connection = sqlite3.connect(temporary)
-        with connection:
-            connection.executescript(
+class ExplanationReportWriter:
+    """One bounded SQLite transaction, published only by explicit finalization."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.temporary = self.path.with_name(self.path.name + ".tmp")
+        self.connection: sqlite3.Connection | None = None
+        self.candidate_count = 0
+        self.record_counts: dict[str, int] = {}
+        self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        self._records: dict[tuple[str, str], str] = {}
+        self._buffered_records: list[tuple[str, str, str]] = []
+        self._buffered_links: list[tuple[str, str, str, str]] = []
+
+    def __enter__(self) -> ExplanationReportWriter:
+        if self.path.exists() or self.temporary.exists():
+            raise FileExistsError(f"explanation artifact already exists: {self.path}")
+        with self.temporary.open("xb"):
+            pass
+        try:
+            self.connection = sqlite3.connect(self.temporary)
+            self.connection.execute("PRAGMA page_size = 32768;")
+            self.connection.execute("PRAGMA synchronous = OFF;")
+            self.connection.execute("PRAGMA journal_mode = MEMORY;")
+            self.connection.execute("PRAGMA cache_size = -64000;")
+            self.connection.execute("PRAGMA temp_store = MEMORY;")
+            self.connection.executescript(
                 "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT NOT NULL);"
                 "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, "
                 "payload TEXT NOT NULL, PRIMARY KEY(candidate_id, sample_id));"
@@ -54,43 +61,160 @@ def write_explanation_report(
                 "CREATE TABLE links (candidate_id TEXT, sample_id TEXT, kind TEXT, "
                 "record_id TEXT, "
                 "PRIMARY KEY(candidate_id, sample_id, kind, record_id));"
+                "BEGIN;"
             )
-            connection.executemany(
+        except BaseException:
+            self.abort()
+            raise
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.abort()
+
+    def _connection(self) -> sqlite3.Connection:
+        if self.connection is None:
+            raise RuntimeError("explanation writer is not active")
+        return self.connection
+
+    def add_candidate(self, cid: str, sid: str, payload: Mapping[str, Any]) -> None:
+        key = (cid, sid)
+        if key in self._candidates:
+            raise ValueError("duplicate diagnostic candidate/sample")
+        p = dict(payload)
+        if "availability" in p and isinstance(p["availability"], Mapping):
+            p["availability"] = dict(p["availability"])
+        self._candidates[key] = p
+        self.candidate_count += 1
+
+    def update_availability(self, key: tuple[str, str], **values: str) -> None:
+        if key not in self._candidates:
+            raise KeyError(key)
+        payload = self._candidates[key]
+        avail = payload.setdefault("availability", {})
+        avail.update(values)
+
+    def add_record(
+        self,
+        kind: str,
+        identity: str,
+        payload: Mapping[str, Any],
+        related: Iterable[tuple[str, str]],
+    ) -> bool:
+        encoded = _json(payload)
+        key = (kind, identity)
+        existing = self._records.get(key)
+        if (
+            existing is not None
+            and existing != encoded
+            and _object(existing) != _object(encoded)
+        ):
+            raise ValueError(
+                f"conflicting diagnostic owner identity: {(kind, identity)}"
+            )
+        is_new = existing is None
+        if is_new:
+            self._records[key] = encoded
+            self._buffered_records.append((kind, identity, encoded))
+            self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
+            if len(self._buffered_records) >= 20000:
+                self._flush_records()
+        for cid, sid in related:
+            self._buffered_links.append((cid, sid, kind, identity))
+        if len(self._buffered_links) >= 50000:
+            self._flush_links()
+        return is_new
+
+    def _flush_records(self) -> None:
+        if self._buffered_records:
+            self._connection().executemany(
+                "INSERT INTO records VALUES (?, ?, ?)", self._buffered_records
+            )
+            self._buffered_records.clear()
+
+    def _flush_links(self) -> None:
+        if self._buffered_links:
+            self._connection().executemany(
+                "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", self._buffered_links
+            )
+            self._buffered_links.clear()
+
+    def candidate_examples(self) -> list[dict[str, Any]]:
+        if self._candidates:
+            sorted_keys = sorted(self._candidates.keys())[:5]
+            return [_object(_json(self._candidates[k])) for k in sorted_keys]
+        return [
+            _object(row[0])
+            for row in self._connection().execute(
+                "SELECT payload FROM candidates "
+                "ORDER BY candidate_id, sample_id LIMIT 5"
+            )
+        ]
+
+    def finalize(self, summary: Mapping[str, Any]) -> Path:
+        self._flush_records()
+        self._flush_links()
+        if self._candidates:
+            self._connection().executemany(
                 "INSERT INTO candidates VALUES (?, ?, ?)",
-                ((cid, sid, _json(payload)) for cid, sid, payload in candidates),
-            )
-            connection.executemany(
-                "INSERT INTO records VALUES (?, ?, ?)",
                 (
-                    (kind, rid, _json(payload))
-                    for (kind, rid), payload in records.items()
+                    (cid, sid, _json(payload))
+                    for (cid, sid), payload in self._candidates.items()
                 ),
             )
-            connection.executemany("INSERT INTO links VALUES (?, ?, ?, ?)", links)
-            connection.execute(
-                "INSERT INTO metadata VALUES ('summary', ?)",
-                (
-                    _json(
-                        dict(
-                            summary,
-                            schema_version=SCHEMA_VERSION,
-                            diagnostic_only=True,
-                            completion="post_matrix_publication",
-                        )
-                    ),
+            self._candidates.clear()
+        self._connection().execute(
+            "INSERT INTO metadata VALUES ('summary', ?)",
+            (
+                _json(
+                    dict(
+                        summary,
+                        schema_version=SCHEMA_VERSION,
+                        diagnostic_only=True,
+                        completion="post_matrix_publication",
+                    )
                 ),
-            )
-            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        connection.close()
-        connection = None
-        if path.exists():
-            raise FileExistsError(f"explanation artifact already exists: {path}")
-        os.replace(temporary, path)
-    finally:
-        if connection is not None:
-            connection.close()
-        temporary.unlink(missing_ok=True)
-    return path
+            ),
+        )
+        self._connection().execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        self._connection().commit()
+        self._connection().close()
+        self.connection = None
+        if self.path.exists():
+            raise FileExistsError(f"explanation artifact already exists: {self.path}")
+        os.replace(self.temporary, self.path)
+        return self.path
+
+    def abort(self) -> None:
+        if self.connection is not None:
+            self._connection().close()
+            self.connection = None
+        self._candidates.clear()
+        self._records.clear()
+        self._buffered_records.clear()
+        self._buffered_links.clear()
+        self.temporary.unlink(missing_ok=True)
+
+
+def write_explanation_report(
+    path: Path,
+    *,
+    summary: Mapping[str, Any],
+    candidates: Iterable[tuple[str, str, Mapping[str, Any]]],
+    records: Mapping[tuple[str, str], Mapping[str, Any]],
+    links: Iterable[tuple[str, str, str, str]],
+) -> Path:
+    """Publish one complete projection; never overwrite an existing artifact."""
+    with ExplanationReportWriter(path) as writer:
+        for cid, sid, payload in candidates:
+            writer.add_candidate(cid, sid, payload)
+            del payload
+        for (kind, identity), payload in records.items():
+            writer.add_record(kind, identity, payload, ())
+            del payload
+        writer._connection().executemany(
+            "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", links
+        )
+        return writer.finalize(summary)
 
 
 def _json(value: Mapping[str, Any]) -> str:

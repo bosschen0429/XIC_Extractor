@@ -1,8 +1,14 @@
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
+from xic_extractor.diagnostics.process_memory import (
+    ProcessMemoryPeak,
+    ProcessMemorySample,
+    ProcessTreeMemorySampler,
+)
 from xic_extractor.diagnostics.timing import TimingRecorder
 
 
@@ -421,6 +427,85 @@ def test_timing_recorder_measurement_contract_and_unavailable_observation() -> N
     assert payload["measurement_observations"][0]["availability"] == "unavailable"
 
 
+def test_process_memory_scope_is_available_when_timing_is_disabled() -> None:
+    sampler = _FakeProcessMemorySampler()
+    recorder = TimingRecorder.disabled("workflow", process_memory_sampler=sampler)
+
+    recorder.start_process_memory()
+    sampler.current = (100, 80)
+    with recorder.process_memory_scope("retained_runtime") as runtime_peak:
+        pass
+    sampler.current = (900, 700)
+    foreground_peak = recorder.stop_process_memory(scope="foreground")
+
+    assert runtime_peak.rss_bytes == 100
+    assert runtime_peak.private_bytes == 80
+    assert foreground_peak.rss_bytes == 900
+    assert foreground_peak.private_bytes == 700
+    assert sampler.start_count == 1
+    assert sampler.stop_count == 1
+    assert recorder.measurement_observations == ()
+
+
+def test_process_memory_scope_stops_owned_sampler_on_exception() -> None:
+    sampler = _FakeProcessMemorySampler()
+    recorder = TimingRecorder("workflow", process_memory_sampler=sampler)
+    sampler.current = (120, 90)
+
+    with pytest.raises(RuntimeError, match="runtime failed"):
+        with recorder.process_memory_scope("retained_runtime"):
+            raise RuntimeError("runtime failed")
+
+    assert not sampler.running
+    assert (sampler.start_count, sampler.stop_count) == (1, 1)
+    assert {row["value"] for row in recorder.measurement_observations} == {120, 90}
+
+
+def test_unavailable_process_memory_is_never_reported_as_zero() -> None:
+    sampler = ProcessTreeMemorySampler(
+        sample_reader=lambda: ProcessMemorySample(
+            rss_bytes=None,
+            private_bytes=None,
+            availability="unavailable",
+            reason="unsupported platform",
+        )
+    )
+    recorder = TimingRecorder("workflow", process_memory_sampler=sampler)
+
+    with recorder.process_memory_scope("retained_runtime") as peak:
+        pass
+
+    assert peak.rss_bytes is None
+    assert peak.private_bytes is None
+    observations = recorder.measurement_observations
+    assert {row["value"] for row in observations} == {None}
+    assert {row["availability"] for row in observations} == {"unavailable"}
+
+
+def test_nested_memory_scopes_sample_edges_once_and_remove_by_identity() -> None:
+    current = [10]
+    sample_count = 0
+
+    def read_sample() -> ProcessMemorySample:
+        nonlocal sample_count
+        sample_count += 1
+        return ProcessMemorySample(
+            rss_bytes=current[0],
+            private_bytes=current[0],
+            availability="measured",
+        )
+
+    sampler = ProcessTreeMemorySampler(interval_sec=60, sample_reader=read_sample)
+    with sampler.scope() as outer_peak:
+        with sampler.scope() as inner_peak:
+            current[0] = 20
+        current[0] = 30
+
+    assert sample_count == 4
+    assert inner_peak.private_bytes == 20
+    assert outer_peak.private_bytes == 30
+
+
 def test_timing_recorder_live_observations_are_bounded(tmp_path: Path) -> None:
     live_path = tmp_path / "timing.live.json"
     recorder = TimingRecorder(
@@ -624,3 +709,44 @@ class _Timer:
         value = self._values[self._index]
         self._index += 1
         return value
+
+
+class _FakeProcessMemorySampler:
+    def __init__(self) -> None:
+        self.current = (0, 0)
+        self.running = False
+        self.start_count = 0
+        self.stop_count = 0
+
+    def start(self) -> bool:
+        self.running = True
+        self.start_count += 1
+        return True
+
+    def stop(self) -> ProcessMemoryPeak:
+        self.running = False
+        self.stop_count += 1
+        return self._peak()
+
+    @contextmanager
+    def scope(self):
+        started_here = not self.running
+        if started_here:
+            self.start()
+        peak = ProcessMemoryPeak()
+        try:
+            yield peak
+        finally:
+            measured = self._peak()
+            peak.rss_bytes = measured.rss_bytes
+            peak.private_bytes = measured.private_bytes
+            peak.availability = measured.availability
+            if started_here:
+                self.stop()
+
+    def _peak(self) -> ProcessMemoryPeak:
+        return ProcessMemoryPeak(
+            rss_bytes=self.current[0],
+            private_bytes=self.current[1],
+            availability="measured",
+        )

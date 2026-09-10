@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
@@ -36,14 +38,16 @@ from xic_extractor.execution_runtime_owner import (
     runtime_observation_event_count,
     runtime_started_worker_keys,
 )
+from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+    execute_bounded_untargeted_cid_nl,
+)
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
-    execute_untargeted_cid_nl_production_batch,
+    prepare_untargeted_cid_nl_production_plan,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.processing_run_spec import ProcessingAcquisitionInput
 from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl-v1"
@@ -64,6 +68,10 @@ def complete_untargeted_cid_nl_alignment(
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
+    raw_workers: int = 1,
+    raw_worker_backend: str = "thread",
+    should_cancel: Callable[[], bool] | None = None,
+    retain_partition_memory: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
@@ -106,16 +114,19 @@ def complete_untargeted_cid_nl_alignment(
     ordered_raw_paths = tuple(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
+    recorder = timing_recorder or TimingRecorder.disabled("alignment")
     physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
     if signal_processing_profile is not None:
-        candidates_by_sample, physical_records = _load_physical_replay_inputs(
-            discovery_batch=discovery_batch,
-            candidates_by_sample=candidates_by_sample,
-            raw_paths=ordered_raw_paths,
-            settings=settings,
-            profile=signal_processing_profile,
-        )
-    batch = build_untargeted_cid_nl_production_batch(
+        with recorder.stage("alignment.load_physical_facts"):
+            candidates_by_sample, physical_records = _load_physical_replay_inputs(
+                discovery_batch=discovery_batch,
+                candidates_by_sample=candidates_by_sample,
+                raw_paths=ordered_raw_paths,
+                settings=settings,
+                profile=signal_processing_profile,
+                raw_workers=raw_workers,
+            )
+    plan = prepare_untargeted_cid_nl_production_plan(
         raw_paths=ordered_raw_paths,
         sample_metadata=retained_sample_metadata,
         settings=settings,
@@ -129,24 +140,27 @@ def complete_untargeted_cid_nl_alignment(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    recorder = timing_recorder or TimingRecorder.disabled("alignment")
-    with recorder.stage("alignment.untargeted_cid_nl_runtime"):
-        runtime_result = execute_untargeted_cid_nl_production_batch(
-            batch,
-            telemetry_provider=_coarse_runtime_telemetry,
+    with (
+        recorder.stage("alignment.untargeted_cid_nl_runtime"),
+        recorder.process_memory_scope("retained_runtime") as runtime_peak,
+    ):
+        return execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=output_dir,
+            telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
+                coordinator, runtime_peak
+            ),
             recovery_marker=OwnerPathRuntimeMarker(
                 output_dir / ".cid_nl_runtime.json",
                 _RUNTIME_ARTIFACT_NAMESPACE,
             ),
             progress_callback=recorder.heartbeat_event,
             alignment_config=alignment_config,
-        )
-    with recorder.stage("alignment.untargeted_cid_nl_compose"):
-        return compose_untargeted_cid_nl_production_result(
-            batch,
-            runtime_result,
-            alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
+            raw_workers=raw_workers,
+            raw_worker_backend=raw_worker_backend,
+            should_cancel=should_cancel,
+            retain_partition_memory=retain_partition_memory,
         )
 
 
@@ -157,6 +171,7 @@ def _load_physical_replay_inputs(
     raw_paths: tuple[Path, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
+    raw_workers: int = 1,
 ) -> tuple[
     dict[str, tuple[DiscoveryCandidate, ...]],
     dict[str, DiscoveryPhysicalFactRecord],
@@ -166,9 +181,14 @@ def _load_physical_replay_inputs(
         discovery_settings=settings,
         signal_processing_profile=profile,
     )
-    restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
-    selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
-    for acquisition_input in spec.acquisition_inputs:
+
+    def _load_sample_input(
+        acquisition_input: ProcessingAcquisitionInput,
+    ) -> tuple[
+        str,
+        tuple[DiscoveryCandidate, ...],
+        dict[str, DiscoveryPhysicalFactRecord],
+    ]:
         stem = acquisition_input.sample_stem
         records = read_discovery_physical_fact_records(
             discovery_batch.candidate_csvs[stem].parent
@@ -181,16 +201,47 @@ def _load_physical_replay_inputs(
             raise ValueError(
                 "Discovery physical sidecar has ambiguous candidate identity"
             )
-        candidates: list[DiscoveryCandidate] = []
+        sample_candidates: list[DiscoveryCandidate] = []
+        sample_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         for candidate in candidates_by_sample[stem]:
             record = by_id.get(candidate.candidate_id)
             if record is None:
                 raise ValueError("Discovery candidate lacks its exact physical record")
-            candidates.append(_restore_physical_candidate(candidate, record))
-            if candidate.candidate_id in selected_records:
+            sample_candidates.append(_restore_physical_candidate(candidate, record))
+            if candidate.candidate_id in sample_records:
                 raise ValueError("Discovery physical candidate identity is duplicated")
-            selected_records[candidate.candidate_id] = record
-        restored[stem] = tuple(candidates)
+            sample_records[candidate.candidate_id] = record
+        return stem, tuple(sample_candidates), sample_records
+
+    restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+
+    workers = min(raw_workers, len(spec.acquisition_inputs))
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for stem, sample_candidates, sample_records in executor.map(
+                _load_sample_input, spec.acquisition_inputs
+            ):
+                restored[stem] = sample_candidates
+                for cid, rec in sample_records.items():
+                    if cid in selected_records:
+                        raise ValueError(
+                            "Discovery physical candidate identity is duplicated"
+                        )
+                    selected_records[cid] = rec
+    else:
+        for acquisition_input in spec.acquisition_inputs:
+            stem, sample_candidates, sample_records = _load_sample_input(
+                acquisition_input
+            )
+            restored[stem] = sample_candidates
+            for cid, rec in sample_records.items():
+                if cid in selected_records:
+                    raise ValueError(
+                        "Discovery physical candidate identity is duplicated"
+                    )
+                selected_records[cid] = rec
+
     return restored, selected_records
 
 
@@ -223,8 +274,10 @@ def _restore_physical_candidate(
             ms1_seed_delta_min=facts.apex_rt_min - work.query_rt_min,
         )
     for name, value in values.items():
-        if format_discovery_csv_value(name, getattr(candidate, name)) != (
-            format_discovery_csv_value(name, value)
+        candidate_val = getattr(candidate, name)
+        if candidate_val != value and (
+            format_discovery_csv_value(name, candidate_val)
+            != format_discovery_csv_value(name, value)
         ):
             raise ValueError(
                 f"{candidate.candidate_id}: physical {name} crossed its CSV receipt"
@@ -232,10 +285,12 @@ def _restore_physical_candidate(
     return replace(candidate, **values)
 
 
-def _coarse_runtime_telemetry(coordinator: Any) -> RuntimeTelemetrySamples:
+def _coarse_runtime_telemetry(
+    coordinator: Any, peak: ProcessMemoryPeak
+) -> RuntimeTelemetrySamples:
     event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
-    reason = "not_collected_by_alignment_foreground_runner"
+    measured = peak.availability == "measured" and peak.rss_bytes is not None
     return RuntimeTelemetrySamples(
         event_monotonic_offsets_ns=(0,) * event_count,
         artifact_io=RuntimeArtifactIoSample(
@@ -245,14 +300,21 @@ def _coarse_runtime_telemetry(coordinator: Any) -> RuntimeTelemetrySamples:
             write_bytes=0,
         ),
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
-            availability=RuntimeMetricAvailability.UNSUPPORTED,
-            reason=reason,
+            availability=(
+                RuntimeMetricAvailability.MEASURED
+                if measured
+                else RuntimeMetricAvailability.UNSUPPORTED
+            ),
+            value=peak.rss_bytes if measured else None,
+            reason=(
+                None if measured else (peak.reason or "process_tree_sample_unavailable")
+            ),
         ),
         worker_peak_rss=tuple(
             RuntimeWorkerPeakRssSample(
                 worker_key=worker_key,
                 availability=RuntimeMetricAvailability.UNSUPPORTED,
-                reason=reason,
+                reason="not_applicable_shared_process_partition_workers",
             )
             for worker_key in worker_keys
         ),

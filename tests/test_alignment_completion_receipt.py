@@ -40,6 +40,47 @@ def test_native_receipt_encodes_exact_python_tokens(monkeypatch) -> None:
     assert actual == expected
 
 
+@pytest.mark.parametrize("size", [64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1])
+def test_native_receipt_streams_large_tokens_with_exact_digest(
+    monkeypatch, size
+) -> None:
+    native = pytest.importorskip("xic_extractor.alignment._completion_receipt_native")
+    updates = []
+
+    class Capture:
+        def update(self, data):
+            updates.append(bytes(data))
+
+        def digest(self):
+            return sha256(b"".join(updates)).digest()
+
+    monkeypatch.setattr(native, "sha256", Capture)
+    graph = ["非" + "x" * size]
+    expected = sha256(native.encoded_graph(graph)).digest()
+    assert native.retained_owner_digest(graph) == expected
+    assert max(map(len, updates)) <= 64 * 1024
+
+
+def test_native_receipt_batches_short_owner_tokens(monkeypatch) -> None:
+    native = pytest.importorskip("xic_extractor.alignment._completion_receipt_native")
+    updates = []
+
+    class Capture:
+        def update(self, data):
+            updates.append(bytes(data))
+
+        def digest(self):
+            return sha256(b"".join(updates)).digest()
+
+    graph = tuple(Owner((index, "selected")) for index in range(5000))
+    encoded = native.encoded_graph(graph)
+    monkeypatch.setattr(native, "sha256", Capture)
+    assert native.retained_owner_digest(graph) == sha256(encoded).digest()
+    assert max(map(len, updates)) <= 64 * 1024
+    # Hash calls must scale with encoded bytes, not the number of tiny tokens.
+    assert len(updates) <= len(encoded) // (64 * 1024 - 256) + 2
+
+
 @pytest.mark.parametrize("fallback", [False, True])
 def test_receipt_detects_changed_fields_identity_and_aliasing(monkeypatch, fallback):
     if fallback:

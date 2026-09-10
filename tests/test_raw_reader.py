@@ -499,7 +499,10 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
         pass
 
 
-def test_open_raw_rejects_stale_owner_verified_path_state(tmp_path: Path) -> None:
+@pytest.mark.parametrize("replacement_phase", ["before_open", "during_open"])
+def test_open_raw_rejects_stale_owner_verified_path_state(
+    tmp_path: Path, replacement_phase: str
+) -> None:
     import xic_extractor.raw_reader as raw_reader
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
@@ -522,11 +525,23 @@ def test_open_raw_rejects_stale_owner_verified_path_state(tmp_path: Path) -> Non
         stat.st_mtime_ns,
         stat.st_ctime_ns,
     )
-    replacement_path.replace(raw_path)
+    raw = _FakeRaw()
+    thermo = _fake_thermo(raw)
+    if replacement_phase == "before_open":
+        replacement_path.replace(raw_path)
+        message = "RAW path state does not match expected acquisition source"
+    else:
+
+        def replace_during_open(_path: str):
+            replacement_path.replace(raw_path)
+            return raw
+
+        thermo.raw_file_reader_adapter.FileFactory = replace_during_open
+        message = "RAW source path changed while the vendor handle was opening"
 
     with pytest.raises(
         raw_reader.RawReaderError,
-        match="RAW path state does not match expected acquisition source",
+        match=message,
     ):
         raw_reader.open_raw(
             raw_path,
@@ -534,8 +549,9 @@ def test_open_raw_rejects_stale_owner_verified_path_state(tmp_path: Path) -> Non
             expected_acquisition_source=source,
             _expected_path_identity=path_identity,
             _import_module=_working_imports(),
-            _thermo=_fake_thermo(_FakeRaw()),
+            _thermo=thermo,
         )
+    assert raw.disposed is (replacement_phase == "during_open")
 
 
 def test_open_raw_rechecks_content_after_vendor_open(

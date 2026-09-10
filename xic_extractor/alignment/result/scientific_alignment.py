@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment._completion_receipt import retained_owner_digest
@@ -128,6 +128,49 @@ class FinalizedScientificAlignment:
             retained_owner_digest(self, identity_only=(self.processing_request,)),
         )
 
+    def __copy__(self) -> FinalizedScientificAlignment:
+        # A live clone is still a substitution, not an owner-restored spool read.
+        clone = object.__new__(type(self))
+        for owner_field in fields(self):
+            object.__setattr__(clone, owner_field.name, getattr(self, owner_field.name))
+        return clone
+
+    def __getstate__(self) -> tuple[object, ...]:
+        """Export a verified completion for private same-process storage."""
+        if not hasattr(self, "_completion_seal"):
+            raise FinalizedScientificAlignmentContractError(
+                "scientific core is unsealed"
+            )
+        _validate_finalized_scientific_alignment_completion_receipt(self)
+        return tuple(
+            getattr(self, owner_field.name)
+            for owner_field in fields(self)
+            if owner_field.name != "_completion_seal"
+        )
+
+    def __setstate__(self, state: tuple[object, ...]) -> None:
+        """Rebind only the process-local seal after restoring a verified graph."""
+        owner_fields = tuple(
+            owner_field
+            for owner_field in fields(self)
+            if owner_field.name != "_completion_seal"
+        )
+        if (
+            hasattr(self, "_completion_seal")
+            or type(state) is not tuple
+            or len(state) != len(owner_fields)
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "invalid scientific core restoration"
+            )
+        for owner_field, value in zip(owner_fields, state, strict=True):
+            object.__setattr__(self, owner_field.name, value)
+        object.__setattr__(
+            self,
+            "_completion_seal",
+            retained_owner_digest(self, identity_only=(self.processing_request,)),
+        )
+
     @property
     def processing_request_id(self) -> str:
         return self.processing_request.processing_request_id
@@ -189,12 +232,24 @@ def finalize_scientific_alignment(
         )
     )
     _validate_terminal_population(scope, terminal_subjects)
-    canonical_samples = tuple(
-        sorted(
-            scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
+    canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    samples = scope.samples
+    if (
+        type(samples) is tuple
+        and all(
+            samples[i].identity.sample_identity_id
+            <= samples[i + 1].identity.sample_identity_id
+            for i in range(len(samples) - 1)
         )
-    )
+    ):
+        canonical_samples = samples
+    else:
+        canonical_samples = tuple(
+            sorted(
+                samples,
+                key=lambda sample: sample.identity.sample_identity_id,
+            )
+        )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if cell_observation_handoff is None:
         if (
@@ -307,21 +362,28 @@ def _validate_finalized_alignment(
     *,
     _reuse_fresh_cells: bool = False,
 ) -> None:
-    _validate_scope(result.scope)
+    if not _reuse_fresh_cells:
+        _validate_scope(result.scope)
     if result.processing_request is not result.scope.request:
         raise FinalizedScientificAlignmentContractError(
             "finalized result crossed its exact processing request"
         )
-    expected_samples = tuple(
-        sorted(
-            result.scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
+    if not _reuse_fresh_cells:
+        expected_samples = tuple(
+            sorted(
+                result.scope.samples,
+                key=lambda sample: sample.identity.sample_identity_id,
+            )
         )
-    )
-    if result.canonical_samples != expected_samples:
-        raise FinalizedScientificAlignmentContractError(
-            "finalized result crossed its canonical sample universe"
-        )
+        if result.canonical_samples != expected_samples:
+            raise FinalizedScientificAlignmentContractError(
+                "finalized result crossed its canonical sample universe"
+            )
+    else:
+        if len(result.canonical_samples) != len(result.scope.samples):
+            raise FinalizedScientificAlignmentContractError(
+                "finalized result crossed its canonical sample universe"
+            )
     if type(result.final_cross_sample_receipt) is not CrossSampleFinalReceipt:
         raise FinalizedScientificAlignmentContractError(
             "finalized result requires an exact CrossSample final receipt"
@@ -333,14 +395,15 @@ def _validate_finalized_alignment(
         raise FinalizedScientificAlignmentContractError(
             "finalized result crossed the processing request"
         )
-    expected_terminal_order = tuple(
-        sorted(result.terminal_subjects, key=_terminal_sort_key)
-    )
-    if result.terminal_subjects != expected_terminal_order:
-        raise FinalizedScientificAlignmentContractError(
-            "terminal subjects are not canonical-sorted"
+    if not _reuse_fresh_cells:
+        expected_terminal_order = tuple(
+            sorted(result.terminal_subjects, key=_terminal_sort_key)
         )
-    _validate_terminal_population(result.scope, result.terminal_subjects)
+        if result.terminal_subjects != expected_terminal_order:
+            raise FinalizedScientificAlignmentContractError(
+                "terminal subjects are not canonical-sorted"
+            )
+        _validate_terminal_population(result.scope, result.terminal_subjects)
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if result.cell_observation_handoff is None:
         if (
@@ -352,12 +415,13 @@ def _validate_finalized_alignment(
             )
         canonical_cells = ()
     else:
-        _validate_cell_observation_handoff(
-            handoff=result.cell_observation_handoff,
-            final_cross_sample_receipt=result.final_cross_sample_receipt,
-            canonical_samples=result.canonical_samples,
-            processing_request_id=result.processing_request_id,
-        )
+        if not _reuse_fresh_cells:
+            _validate_cell_observation_handoff(
+                handoff=result.cell_observation_handoff,
+                final_cross_sample_receipt=result.final_cross_sample_receipt,
+                canonical_samples=result.canonical_samples,
+                processing_request_id=result.processing_request_id,
+            )
         if _reuse_fresh_cells:
             canonical_cells = result.cell_observations
             expected_positions = tuple(
@@ -479,16 +543,17 @@ def _validate_cell_observation_handoff(
             "cell-observation handoff crossed the processing request"
         )
     handoff_samples = handoff.coverage.epoch.samples
-    handoff_sample_by_id = {
-        sample.identity.sample_identity_id: sample for sample in handoff_samples
-    }
-    if len(handoff_sample_by_id) != len(canonical_samples) or any(
-        handoff_sample_by_id.get(sample.identity.sample_identity_id) is not sample
-        for sample in canonical_samples
-    ):
-        raise FinalizedScientificAlignmentContractError(
-            "cell-observation handoff crossed the canonical sample universe"
-        )
+    if handoff_samples != canonical_samples:
+        handoff_sample_by_id = {
+            sample.identity.sample_identity_id: sample for sample in handoff_samples
+        }
+        if len(handoff_sample_by_id) != len(canonical_samples) or any(
+            handoff_sample_by_id.get(sample.identity.sample_identity_id) is not sample
+            for sample in canonical_samples
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "cell-observation handoff crossed the canonical sample universe"
+            )
 
 
 def _validate_searched_no_observation_subject(

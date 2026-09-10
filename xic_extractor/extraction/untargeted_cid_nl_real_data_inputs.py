@@ -34,6 +34,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
+    AcquisitionSourceExpectation,
     AcquisitionSourceIdentity,
     IdentityContractError,
     ProcessingOwnerReferences,
@@ -45,6 +46,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    _stat_identity,
 )
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
@@ -87,6 +89,9 @@ class UntargetedCidNlRealDataContext:
     signal_processing_profile: SignalProcessingProfile | None = None
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord] = field(
         default_factory=dict
+    )
+    acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation] = field(
+        default_factory=dict, repr=False, compare=False
     )
 
     def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
@@ -165,14 +170,23 @@ def build_untargeted_cid_nl_real_data_context(
             raise IdentityContractError(
                 "CID-NL subject batch must cover the exact Discovery candidate universe"
             )
-    sources_by_stem = {
-        stem: build_acquisition_source_identity(
+    sources_by_stem = {}
+    source_expectations = {}
+    for stem, path in paths_by_stem.items():
+        before = _stat_identity(path.stat())
+        source = build_acquisition_source_identity(
             path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
-        for stem, path in paths_by_stem.items()
-    }
+        if _stat_identity(path.stat()) != before:
+            raise IdentityContractError(
+                "CID-NL RAW source changed during fingerprinting"
+            )
+        sources_by_stem[stem] = source
+        source_expectations[stem] = AcquisitionSourceExpectation(
+            source=source, path_identity=before
+        )
     receipt_map = _discovery_receipt_map(
         discovery_receipts_by_sample,
         expected_sample_stems=tuple(paths_by_stem),
@@ -294,6 +308,7 @@ def build_untargeted_cid_nl_real_data_context(
         discovery_receipts_by_sample=dict(receipt_map),
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records,
+        acquisition_sources_by_sample=source_expectations,
     )
 
 

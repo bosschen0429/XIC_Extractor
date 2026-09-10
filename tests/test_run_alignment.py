@@ -15,6 +15,7 @@ from xic_extractor.alignment.pipeline import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
+from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
@@ -300,9 +301,11 @@ def test_run_alignment_env_enables_asls_baseline_audit(
     assert captured["peak_config"].baseline_audit_method == "asls"
 
 
+@pytest.mark.parametrize("raw_workers", [1, 2])
 def test_run_alignment_cli_accepts_output_level_debug(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    raw_workers: int,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
@@ -330,11 +333,55 @@ def test_run_alignment_cli_accepts_output_level_debug(
             str(dll_dir),
             "--output-level",
             "debug",
+            "--raw-workers",
+            str(raw_workers),
         ],
     )
 
     assert code == 0
     assert captured["output_level"] == "debug"
+    assert captured["raw_workers"] == raw_workers
+    assert captured["raw_worker_backend"] == "thread"
+
+
+def test_run_alignment_cli_accepts_raw_worker_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    captured = {}
+
+    def fake_run_alignment(**kwargs):
+        captured.update(kwargs)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--raw-workers",
+            "2",
+            "--raw-worker-backend",
+            "process",
+        ],
+    )
+
+    assert code == 0
+    assert captured["raw_workers"] == 2
+    assert captured["raw_worker_backend"] == "process"
 
 
 def test_run_alignment_cli_accepts_validation_minimal_output_level(
@@ -901,6 +948,115 @@ def test_run_alignment_cli_writes_timing_json(
     assert payload["records"][0]["stage"] == "alignment.read_candidates"
     assert payload["records"][0]["metrics"] == {"candidate_count": 0}
     assert "Timing JSON:" in capsys.readouterr().out
+
+
+def test_run_alignment_cli_records_foreground_memory_and_stops_sampler(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    timing_path = tmp_path / "timing.json"
+    sampler = _FakeCliMemorySampler()
+    monkeypatch.setattr(run_alignment, "ProcessTreeMemorySampler", lambda: sampler)
+
+    def fake_run_alignment(**_kwargs):
+        assert sampler.running
+        sampler.peak = (321, 123)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--timing-output",
+            str(timing_path),
+        ]
+    )
+
+    assert code == 0
+    assert (sampler.start_count, sampler.stop_count) == (1, 1)
+    observations = json.loads(timing_path.read_text())["measurement_observations"]
+    assert {
+        row["metric"]: row["value"]
+        for row in observations
+        if row["scope"] == "foreground"
+    } == {
+        "process_tree_sampled_peak_rss_bytes": 321,
+        "process_tree_sampled_peak_private_bytes": 123,
+    }
+
+
+def test_run_alignment_cli_stops_memory_sampler_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    sampler = _FakeCliMemorySampler()
+    monkeypatch.setattr(run_alignment, "ProcessTreeMemorySampler", lambda: sampler)
+
+    def fail_run_alignment(**_kwargs):
+        assert sampler.running
+        raise ValueError("failed in foreground")
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fail_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--timing-live-output",
+            str(tmp_path / "timing.live.json"),
+        ]
+    )
+
+    assert code == 2
+    assert (sampler.start_count, sampler.stop_count) == (1, 1)
+
+
+class _FakeCliMemorySampler:
+    def __init__(self) -> None:
+        self.running = False
+        self.start_count = 0
+        self.stop_count = 0
+        self.peak = (1, 1)
+
+    def start(self) -> bool:
+        self.running = True
+        self.start_count += 1
+        return True
+
+    def stop(self) -> ProcessMemoryPeak:
+        self.running = False
+        self.stop_count += 1
+        return ProcessMemoryPeak(
+            rss_bytes=self.peak[0],
+            private_bytes=self.peak[1],
+            availability="measured",
+        )
 
 
 def test_run_alignment_cli_writes_live_timing_json(

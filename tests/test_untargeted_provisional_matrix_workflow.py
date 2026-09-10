@@ -16,9 +16,11 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 
+@pytest.mark.parametrize("raw_workers", [1, 3])
 def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     tmp_path: Path,
     monkeypatch,
+    raw_workers: int,
 ) -> None:
     raw_dir = tmp_path / "raw"
     dll_dir = tmp_path / "dll"
@@ -68,7 +70,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         output_dir=tmp_path / "run",
         discovery_settings=discovery_settings,
         alignment_config=AlignmentConfig(),
-        raw_workers=1,
+        raw_workers=raw_workers,
         raw_xic_batch_size=1,
         timing_recorder=timing_recorder,
         capture_alignment_artifact_fingerprints=True,
@@ -78,7 +80,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     discovery = captured["discovery"]
     assert isinstance(discovery, dict)
     assert discovery["timing_recorder"] is timing_recorder
-    assert discovery["max_workers"] == 1
+    assert discovery["max_workers"] == raw_workers
     alignment = captured["alignment"]
     assert isinstance(alignment, dict)
     assert alignment["discovery_batch_index"] == discovery_index
@@ -87,7 +89,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert alignment["selected_family_ids"] == frozenset()
     assert alignment["emit_provisional_matrix"] is True
     assert alignment["require_discovery_owner_closure"] is True
-    assert alignment["raw_workers"] == 1
+    assert alignment["raw_workers"] == raw_workers
     assert alignment["raw_xic_batch_size"] == 1
     assert alignment["capture_artifact_fingerprints"] is True
     assert "signal_processing_profile" not in alignment
@@ -152,7 +154,7 @@ def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(
         ValueError,
         match=(
             "pure CID-NL retained route does not support legacy Alignment options: "
-            "raw_workers, raw_xic_batch_size"
+            "raw_xic_batch_size"
         ),
     ):
         workflow.run_untargeted_provisional_matrix_workflow(

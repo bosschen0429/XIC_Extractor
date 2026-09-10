@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-09
+**Last updated:** 2026-09-10
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -57,13 +57,210 @@ dated productization control-plane path is compatibility lookup only.
 | Purpose | Stable path |
 | --- | --- |
 | Accepted 8RAW discovery input (v2) | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` |
-| Accepted 85RAW discovery input | none; no v2 index exists yet. |
+| Accepted 85RAW discovery input | none; a diagnostic v2 run exists, but full-cohort Alignment remains incomplete (see the 2026-09-09 resource-pressure result below). |
 | Retired v1 discovery inputs | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/`; `scripts.run_alignment` rejects them with `discovery_batch_index_v2 owner closure is required` |
 | Targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx`, SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7` |
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-10 Eight-Sample Streaming Measurement
+
+- Evidence: `diagnostic_only`; producing SHA `bfd23198`, clean code, one real
+  Alignment run using the accepted eight-sample Discovery, `dna_dr`, production
+  output and four RAW workers. No Discovery rerun or 85 RAW run.
+- Completed with exit 0 in 605.015 supervised seconds (10m05s). Compared with
+  `full8-source-reuse-w4` at 624.844 seconds, the observed difference is 19.829
+  seconds / 3.17% shorter. The 528.418-second target remains unmet.
+- Sampled peak private memory was 2,441,687,040 bytes (2.274 GiB), versus
+  2.201 GiB previously. No memory guard fired. Both runs use the same supervisor
+  wall scope, timeout, memory guard, command except output paths, and all 25
+  input hashes. Filesystem cache and single-run variation remain uncontrolled;
+  this is not a noise-qualified causal speedup claim.
+- Matrix remained byte-identical (1,387 rows, zero changed cells). SQLite
+  integrity and table counts matched; all 16 official candidate-reader probes
+  passed. Runtime completed 32 coarse work units. Full cross-attempt semantic
+  graph parity is not claimed.
+- Formal stage times: runtime 434.543 seconds (previously 438.768), explanation
+  writer 54.610 seconds (previously 65.021), read candidates 2.238 seconds,
+  Matrix writer 0.059 seconds. Do not sum nested spans or assign remaining wall
+  time to RAW acquisition without a measured span.
+- Locator: `output/cid-nl-bounded-runtime/full8-streaming-w4/report.md`, with
+  `preflight.json`, `run.json`, `verification.json`, `alignment-timing.json`
+  and `memory.jsonl`. Completion/parity pass; speed threshold fails;
+  optimization causality remains `inconclusive`. No automatic rerun is needed
+  for this requested one-run measurement. 85 RAW remains unverified.
+
+### 2026-09-10 Runtime Optimization Experiments
+
+- Evidence: `diagnostic_only`; no new RAW acquisition. Historical first-128
+  subject / 1,024-job composition replay produced 37 children. This is local
+  phase evidence, not a replacement full8 timing or scientific promotion.
+- Paired sequential store reads reduced opens from 37 to 1 and median iteration
+  from 0.312702 to 0.301611 seconds. Native scalar-token specialization reduced
+  historical graph digest median from 77.6742 to 67.4535 ms with exact native/
+  Python token and digest parity. Same-partition streaming compose/persist
+  reduced median from 2.227870 to 2.061405 seconds across three uninstrumented
+  pairs; all spool byte counts and SHA-256 comparisons matched.
+- The integrated production compose/persist API was then compared against
+  eager + append with the rebuilt native extension on both sides: median
+  1.944615 to 1.845387 seconds, two of three candidate observations lower. Exact
+  spool SHA/bytes, formal child validation, owner identity, order, indexed
+  reads and metadata fields passed; zero RAW opens. This 5.1% phase result
+  supersedes the prototype percentage for claims about the integrated path.
+- Applied locally in `bd525b8d` (native scalar labels) and `5d23426c` (streaming
+  composition/store and sequential iteration). The native extension rebuilt;
+  42 receipt/finalization and 108 store/runtime tests passed. Final staged-file
+  Ruff, mypy, tests, shard coverage and diff check passed. This is engineering
+  regression evidence only.
+- The eight-direction disposition report defers compact closure receipts,
+  process composition, acquisition/composition overlap, query cache, sparse
+  job integration and a larger default partition budget. Actual CPU-process
+  and cross-partition overlap schedulers were not benchmarked. Zero duplicate
+  exact queries in the fixture is not evidence about every RAW workload.
+- Locator: `output/cid-nl-bounded-runtime/experiments/report.md`, especially
+  `representative/sequential/receipt.json`, `representative/variants/receipt.json`
+  and `representative/integrated-final/receipt.json`.
+  Reopen deferred directions only for their named falsifiers and cost evidence.
+- The latest real full8 run remains 624.844 seconds; its 528.418-second target
+  remains unmet. Do not sum local percentage improvements or launch another
+  RAW run merely to refresh this record. 85 RAW remains unverified.
+
+### 2026-09-10 Eight-Sample Source-Reuse Run
+
+- Evidence: `diagnostic_only`; producing SHA `0bc02c91`, clean code, retained
+  eight-sample Discovery, `dna_dr`, production output and four RAW workers.
+- One real RAW Alignment completed with exit 0 in 624.844 supervised seconds.
+  The 528.418-second whole-run target was not met. Sampled private memory peaked
+  at approximately 2.20 GiB; the existing memory stop condition did not trigger.
+- Matrix is byte-identical to the accepted 1,387-row baseline. SQLite integrity,
+  baseline table counts and 16 official candidate-reader probes passed. Summary
+  differences are limited to Matrix path and processing attempt ID; full
+  cross-attempt semantic-graph parity is not claimed. All 25 retained input
+  hashes match the accepted baseline.
+- Formal timing: runtime 438.768 seconds; explanation writer 65.021 seconds.
+  The non-overlapping recorded stages total 506.528 seconds; remaining wall time
+  is outside those spans and must not be silently attributed to RAW acquisition.
+- Historical `full8-v3` took 2,279.765 supervised seconds, but its overlapping
+  replay, worker setting, code changes and uncontrolled cache prevent an isolated
+  speedup claim. The current one-run result does not characterize timing noise.
+- Locator: `output/cid-nl-bounded-runtime/full8-source-reuse-w4/report.md`, with
+  `preflight.json`, `run.json`, `verification.json`, `memory.jsonl` and formal
+  timing in that directory. This supersedes the unverified full-8 status below
+  for `0bc02c91`; 85 RAW completion remains unverified.
+- No automatic rerun is needed to answer this one-run request. Any follow-up
+  optimization should use these timings before deciding whether another RAW
+  run is necessary.
+
+### 2026-09-10 CID-NL Source Verification And Sample Parallelism
+
+- Evidence: `diagnostic_only`; synthetic file-backed and runtime integration.
+- `untargeted_cid_nl_real_data_inputs` fingerprints each source once and binds
+  the verified path state into the production jobs. Runtime opens reuse the
+  existing `raw_reader` source-expectation contract; source edits/replacements
+  still reject, including changes during fingerprinting or vendor open.
+- `untargeted_cid_nl_bounded_runtime` keeps partition sizing independent of
+  workers. `untargeted_cid_nl_real_data_runtime` parallelizes samples within
+  each phase, with a complete initial barrier before Recovery. The fixture
+  retains 2 partitions and 8 opens/acquisitions for workers 1, 2, and 4;
+  simultaneous handles stay at or below workers. Default workers remains 1.
+- Handles remain phase-scoped and close on their owning thread. Cancellation
+  and failure drain admitted work before returning resource receipts. Persistent
+  cross-phase handles are not required for this correction: they would require
+  a different thread-affinity and cohort resource lifecycle.
+- Verification: 41 production tests, 46 runtime/bounded/batch tests, 58
+  pipeline/reader tests, and 7 current architecture census checks passed;
+  changed-file Ruff/mypy, import contracts, and shard coverage also passed.
+  Production checks cover persisted outcomes and source mutation rejection;
+  bounded checks cover Matrix/explanation parity and cancellation cleanup.
+- Evidence locators: `output/cid-nl-bounded-runtime/source-reuse-report.md`,
+  `source-reuse-tests.xml`, and `source-reuse-integration.xml` in that directory.
+- No new RAW run was launched. Full analysis completion, peak memory, and total
+  elapsed-time acceptance remain unverified for this code. Existing RAW timings
+  cannot establish the benefit of the new scheduler/source-verification path.
+
+### 2026-09-10 CID-NL Composition Capture Reuse
+
+**Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
+The production composition owner passes its completed, hypothesis-bound
+captures to subject composition. The workflow checks their scope and input
+bindings and reuses them; standalone workflows retain their capture path.
+The public capture-argument field schema is unchanged.
+
+A no-RAW replay compared base `e939063b` with this change on the same historical
+eight-sample slice: 16 subjects, 128 jobs, six children, and 13 included bindings.
+After one explicit warmup per variant, seven interleaved pairs all favored
+reuse. Composition medians were 247.165 ms before and 230.319 ms after;
+paired reductions ranged from 12.728 to 35.132 ms. Capture calls fell from 26
+to 13, and hypothesis binds from 20 to 10. Every pair preserved all scientific
+values, IDs, arrays, and complete sealed-store bytes (1,421,996 bytes;
+SHA-256 `6718508ab5a434dfc7f6518ee38c53f9a0678191d604ba960d2a4eba4ef57359`).
+Process-local completion seals passed their formal owner validators.
+
+Evidence locators: `output/cid-nl-next-runtime/paired-warm-final/receipt.json`
+and `capture-focused-final.xml` under the same task directory. The 118 focused
+tests cover workflow contracts, production and bounded execution, including
+Matrix and explanation interfaces. This is a warmed composition-slice result;
+it does not update full 8RAW or 85RAW elapsed-time or memory claims.
+
+### 2026-09-10 CID-NL Stored-Result Read And Digest Costs
+
+**Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
+`PartitionResultStore` now reads field records and selected exclusions without
+restoring unrelated scientific children. The explanation projection consumes
+each child once and reuses typed artifact bindings. Native completion digests
+retain the exact token stream while buffering at most 64 KiB of token bytes.
+
+The final no-RAW replay reused eight-sample historical results with 3,127
+children. Matrix bytes matched SHA-256
+`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`;
+all SQLite rows matched the retained pre-change writer: 30,570 candidates,
+263,841 records, and 341,721 links. Eight official reader queries also matched.
+The writer restored 3,127 scientific children, versus 12,509 for the old writer
+on the same field store. Final replay writer elapsed was 68.124 s, versus the
+retained old-writer observation of 339.919 s in an earlier process. These are
+source-qualified observations, not a controlled end-to-end RAW speed ratio.
+Peak sampled private memory for the final replay was 2,702,323,712 bytes.
+
+Evidence locators are `output/cid-nl-bounded-runtime/correction-report.md`,
+`stored-replay-v1/receipt.json`, and `stored-replay-final/receipt.json` beneath
+that task output directory. They are local diagnostic receipts, not shipped
+fixtures or a public spool-reopen contract. Field records increase the two
+partition files from 368,767,337 to 663,826,992 bytes by dropping cross-record
+pickle memo sharing; this trades disk size for bounded, selective reads.
+
+The formal Alignment CLI accepts bounded partition concurrency through
+`--raw-workers` (default 1), and its process-tree sampler supplies the runtime
+RSS receipt plus foreground RSS/private timing observations. Thread overlap,
+cleanup, and persisted telemetry have non-RAW coverage; actual RAW speedup is
+unverified. New 8RAW and 85RAW runs remain paused by the operator. Do not infer
+the outstanding full-run speed target from stored-result replay.
+
+### 2026-09-09 Full-Cohort Runtime Resource Pressure
+
+**Evidence:** `diagnostic_only`; no product or scientific-readiness promotion.
+At clean `82d06563`, native `dna_dr` Discovery with four workers completed
+85RAW in 914.494892 seconds and published 306,619 candidates. Source hashes and
+all 85 candidate artifact hashes passed post-run checks. The overlapping eight
+samples had identical review bytes and 30,570 candidate rows differing only in
+the `raw_file` location; all other CSV fields matched.
+
+Canonical 85RAW Alignment required `validation-minimal`; its corrected preflight
+passed. Runtime expanded to 3,671,150 work units. The run was deliberately stopped
+after 8,073.131497 seconds because private allocated memory exceeded 65 GB on a
+roughly 32 GB physical-memory host, with observed system paging and delayed
+status queries. This was a controlled resource stop, not a spontaneous CLI error
+or the four-hour timeout. No Matrix or explanation database was published.
+
+The runtime marker existed roughly 16 minutes after launch and later emitted
+successful work-unit heartbeats. Missing completed spans do not justify labeling
+the entire remaining time as preparation. Full Alignment timing and output parity
+remain unestablished. Do not extrapolate the 8RAW timings or repeat full RAW
+Discovery to diagnose this memory problem; retain the completed Discovery and
+first isolate runtime memory costs with a bounded measurement.
+Receipts: `output/cid-nl-85raw-20260909/` (`report.md`, `stop-receipt.json`,
+`partial-verification.json`, and the stage run/timing files).
 
 ### 2026-09-09 Remaining Context/Formatting Work Deferred
 

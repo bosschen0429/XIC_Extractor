@@ -64,14 +64,22 @@ def test_pure_single_provider_cid_nl_dispatches_with_route_receipt(
 
 @pytest.mark.parametrize("writer_fails", (False, True))
 @pytest.mark.parametrize("with_reference", (False, True))
+@pytest.mark.parametrize("raw_workers", (1, 2))
 def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     writer_fails: bool,
     with_reference: bool,
+    raw_workers: int,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
-    completed = object()
+    closed: list[bool] = []
+
+    class MockCompleted:
+        def close(self) -> None:
+            closed.append(True)
+
+    completed = MockCompleted()
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
@@ -143,8 +151,10 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                 alignment_config=AlignmentConfig(),
                 peak_config=_peak_config(),
                 discovery_settings=_settings(),
+                raw_workers=raw_workers,
             )
         assert not report.exists()
+        assert closed == [True]
         return
 
     result = pipeline_module.run_alignment(
@@ -156,6 +166,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         peak_config=_peak_config(),
         discovery_settings=_settings(),
         owner_build_xic_backend="raw_superwindow",
+        raw_workers=raw_workers,
         sample_metadata=retained_sample_metadata,
         known_istd_reference_workbook=(
             tmp_path / "reference.xlsx" if with_reference else None
@@ -165,6 +176,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     assert report.read_text(encoding="utf-8") == "published"
     assert result.untargeted_cid_nl_result is completed
     assert captured_retained["sample_metadata"] is retained_sample_metadata
+    assert captured_retained["raw_workers"] == raw_workers
     assert captured_retained["known_istd_reference"] is (
         reference if with_reference else None
     )
@@ -185,6 +197,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "retained_untargeted_cid_nl_batch"
     )
     assert metadata["effective_owner_build_xic_backend"] == "none"
+    assert closed == [True]
 
 
 def test_pure_cid_nl_cancellation_after_completion_skips_publication(
@@ -322,7 +335,7 @@ def test_pure_cid_nl_collision_rejects_before_retained_runtime(
         )
 
 
-def test_pure_cid_nl_rejects_legacy_raw_knobs_before_acquisition(
+def test_pure_cid_nl_rejects_invalid_worker_budget_before_acquisition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -342,7 +355,31 @@ def test_pure_cid_nl_rejects_legacy_raw_knobs_before_acquisition(
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
             discovery_settings=_settings(),
-            raw_workers=2,
+            raw_workers=0,
+        )
+
+
+def test_pure_cid_nl_rejects_invalid_worker_backend_before_acquisition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
+    )
+
+    with pytest.raises(ValueError, match="raw_worker_backend"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            raw_worker_backend="invalid_backend",
         )
 
 

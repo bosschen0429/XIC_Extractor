@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import io
+import pickle
 from copy import copy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, cast
 
 import pytest
@@ -562,3 +565,76 @@ def test_finalized_application_result_cannot_be_caller_minted(
             completed_projection=projection,
             _mint_token=object(),
         )
+
+
+def _restore_test_mapping_proxy(values):
+    return MappingProxyType(values)
+
+
+def _pickle_completed_owner(value):
+    stream = io.BytesIO()
+    pickler = pickle.Pickler(stream, protocol=pickle.HIGHEST_PROTOCOL)
+    pickler.dispatch_table = {
+        MappingProxyType: lambda mapping: (
+            _restore_test_mapping_proxy,
+            (dict(mapping),),
+        )
+    }
+    pickler.dump(value)
+    return pickle.loads(stream.getvalue())
+
+
+@pytest.mark.parametrize("tamper", ["core", "projection"])
+def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper: str,
+) -> None:
+    core, projection = _untarget_completion(tmp_path, monkeypatch)
+    restored_core, restored_projection = _pickle_completed_owner((core, projection))
+    assert restored_core is not core
+    assert restored_projection is not projection
+    assert restored_projection.pre_cell_projection.finalized_alignment is restored_core
+    result = finalize_alignment_result(
+        UntargetApplicationResultRequest(
+            scientific_core=restored_core,
+            completed_projection=restored_projection,
+        )
+    )
+    assert result.scientific_core is restored_core
+    assert result.completed_projection is restored_projection
+    assert (
+        restored_core.processing_request.processing_request_id
+        == core.processing_request.processing_request_id
+    )
+    assert restored_projection.rows[0].counts == projection.rows[0].counts
+    assert restored_projection.rows[0].route == projection.rows[0].route
+    if tamper == "core":
+        receipt = restored_core.final_cross_sample_receipt
+        object.__setattr__(
+            receipt, "final_application", copy(receipt.final_application)
+        )
+    else:
+        object.__setattr__(restored_projection, "rows", ())
+    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
+        finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=restored_core,
+                completed_projection=restored_projection,
+            )
+        )
+    with pytest.raises(ValueError, match="receipt|substituted"):
+        _pickle_completed_owner((restored_core, restored_projection))
+
+
+@pytest.mark.parametrize("owner", ["core", "projection"])
+def test_unsealed_completion_cannot_be_serialized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    owner: str,
+) -> None:
+    core, projection = _untarget_completion(tmp_path, monkeypatch)
+    value = core if owner == "core" else projection
+    object.__delattr__(value, "_completion_seal")
+    with pytest.raises(ValueError, match="unsealed"):
+        _pickle_completed_owner(value)

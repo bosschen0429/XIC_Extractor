@@ -193,6 +193,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     assert projection.matrix_header == ("Mz", "RT", "S1", "S2")
     assert projection.input_quant_matrix_rows[0]["S1"]
     assert projection.input_quant_matrix_rows[0]["S2"] == ""
+    _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_runtime_holds_inferred_precursor_without_physical_ms1_peak(
@@ -205,8 +206,7 @@ def test_runtime_holds_inferred_precursor_without_physical_ms1_peak(
     peak_config = _peak_config(tmp_path)
     source_raw = _FakeRaw((8.0,))
     source_raw.scans = tuple(
-        replace(scan, precursor_mz=scan.precursor_mz + 0.5)
-        for scan in source_raw.scans
+        replace(scan, precursor_mz=scan.precursor_mz + 0.5) for scan in source_raw.scans
     )
     source_raw.intensity.fill(0.0)
     inferred = _current_candidates(
@@ -466,6 +466,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     assert decisions[no_peak_id].disposition == "hold"
     assert decisions[blank_id].disposition == "hold"
     assert len(projection.pending_acceptance_rows) == 1
+    _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
@@ -529,6 +530,7 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
 
 def test_batch_candidate_selection_preserves_order_and_request_sample_membership(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     settings = _settings()
@@ -610,8 +612,26 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 peak_config=peak_config,
                 raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
                 dll_dir=tmp_path,
+                acquisition_source_expectation=context.acquisition_sources_by_sample[
+                    sample.metadata.raw_stem
+                ],
             )
         )
+        assert all(
+            job.acquisition_source_expectation
+            is context.acquisition_sources_by_sample[job.sample.metadata.raw_stem]
+            for job in jobs
+        )
+        with pytest.raises(
+            UntargetedCidNlRealDataRuntimeError,
+            match="acquisition source expectation must match the request sample",
+        ):
+            replace(
+                jobs[0],
+                acquisition_source_expectation=context.acquisition_sources_by_sample[
+                    "S2"
+                ],
+            )
         requests_and_jobs.append((memberships, jobs))
     # Revisit the first request after the second has selected a different universe.
     for memberships, jobs in (*requests_and_jobs, requests_and_jobs[0]):
@@ -641,6 +661,42 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 neutral_loss_da=116.0474,
             ),
         )
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path={path: _FakeRaw((8.0,)) for path in raw_paths},
+        tmp_path=tmp_path,
+    )
+    selected_jobs = tuple(
+        replace(job, candidates=tuple(reversed(job.candidates)))
+        for job in jobs
+        if job.method_subject == subjects[1] and job.sample.metadata.raw_stem == "S1"
+    )
+    acquired_candidates = []
+    real_acquire = runtime_module.acquire_untargeted_cid_nl_sample_trace_batch
+
+    def record_acquire(**kwargs):
+        acquired_candidates.append((kwargs["sample"], kwargs["candidates"]))
+        return real_acquire(**kwargs)
+
+    monkeypatch.setattr(
+        runtime_module, "acquire_untargeted_cid_nl_sample_trace_batch", record_acquire
+    )
+    partition = runtime_module.execute_untargeted_cid_nl_runtime_partition(
+        selected_jobs,
+        partition_key="subset",
+        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
+    )
+    assert partition.succeeded, partition.worker_batch.settlements
+    assert acquired_candidates
+    for sample, acquired in acquired_candidates:
+        job = next(job for job in selected_jobs if job.sample == sample)
+        assert acquired == runtime_module._request_subject_candidates(job)
+    assert any(
+        len(acquired) < len(job.candidates)
+        for sample, acquired in acquired_candidates
+        for job in selected_jobs
+        if job.sample == sample
+    )
 
 
 def test_context_rejects_same_stem_receipt_from_different_acquisition(
@@ -692,13 +748,15 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
             peak_config=peak_config,
             candidates_by_sample={"S1": candidates},
             discovery_receipts_by_sample={"S1": receipt},
-        sample_identity_namespace="study:real-data-runtime-crossed-acquisition-test",
+            sample_identity_namespace="study:real-data-runtime-crossed-acquisition-test",
         )
 
 
+@pytest.mark.parametrize("excluded", [False, True])
 def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    excluded: bool,
 ) -> None:
     stems = ("Support", "Reject", "Empty")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -740,6 +798,10 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
                 raw_stem=stem,
                 injection_order=index,
                 sample_role="study_sample",
+                excluded=excluded and stem == "Empty",
+                exclusion_reason="test exclusion"
+                if excluded and stem == "Empty"
+                else "",
             )
             for index, stem in enumerate(stems, start=1)
         ),
@@ -808,18 +870,20 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         for item in result.sample_results
     ] == ["SUPPORT", "REJECT", "HOLD"]
     assert raw_paths[2] not in opened
-    empty_resource = next(
-        resource
-        for resource in result.finalization.coordinator.state.resources
-        if resource.reservation.resource_key.endswith(":Empty")
-    )
-    assert empty_resource.open_outcome is (
-        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-    )
-    assert empty_resource.reservation.owner_conditional is True
+    if not excluded:
+        empty_resource = next(
+            resource
+            for resource in result.finalization.coordinator.state.resources
+            if resource.reservation.resource_key.endswith(":Empty")
+        )
+        assert empty_resource.open_outcome is (
+            RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+        )
+        assert empty_resource.reservation.owner_conditional is True
     assert (
         untargeted_cid_nl_runtime_call_cost(result.finalization)["raw_open_count"] == 2
     )
+    _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def _discovery_receipts(
@@ -858,12 +922,15 @@ def _install_runtime_raw(
         (tmp_path / filename).write_bytes(b"dll")
     vendor_raw = _FakeThermoRaw(source_raw)
 
-    def _open_runtime_raw(path, dll_dir, *, expected_acquisition_source):
+    def _open_runtime_raw(
+        path, dll_dir, *, expected_acquisition_source, _expected_path_identity=None
+    ):
         assert path == raw_path
         return open_raw(
             path,
             dll_dir,
             expected_acquisition_source=expected_acquisition_source,
+            _expected_path_identity=_expected_path_identity,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -895,13 +962,16 @@ def _install_runtime_raws(
         (tmp_path / filename).write_bytes(b"dll")
     opened: dict[Path, list[_FakeThermoRaw]] = {}
 
-    def _open_runtime_raw(path, dll_dir, *, expected_acquisition_source):
+    def _open_runtime_raw(
+        path, dll_dir, *, expected_acquisition_source, _expected_path_identity=None
+    ):
         vendor_raw = _FakeThermoRaw(sources_by_path[path])
         opened.setdefault(path, []).append(vendor_raw)
         return open_raw(
             path,
             dll_dir,
             expected_acquisition_source=expected_acquisition_source,
+            _expected_path_identity=_expected_path_identity,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -920,3 +990,93 @@ def _install_runtime_raws(
 
     monkeypatch.setattr(runtime_module, "open_raw", _open_runtime_raw)
     return opened
+
+
+def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("partition must not execute a runtime attempt")
+
+    monkeypatch.setattr(runtime_module, "execute_runtime_attempt", forbidden)
+    observed_batches = []
+    for name in (
+        "acquire_untargeted_cid_nl_sample_trace_batch",
+        "acquire_untargeted_cid_nl_recovery_trace_batch",
+    ):
+        original = getattr(runtime_module, name)
+
+        def observe(*args, _original=original, **kwargs):
+            batch = _original(*args, **kwargs)
+            if batch is not None:
+                observed_batches.append(batch.acquisition)
+            return batch
+
+        monkeypatch.setattr(runtime_module, name, observe)
+    events = []
+    result = runtime_module.execute_untargeted_cid_nl_runtime_partition(
+        jobs,
+        partition_key="part-1",
+        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
+        progress_callback=events.append,
+    )
+    assert result.succeeded
+    assert len(result.sample_results) == len(full_result.sample_results)
+    for actual, expected in zip(
+        result.sample_results, full_result.sample_results, strict=True
+    ):
+        actual_assessments = actual.effective_assessments
+        expected_assessments = expected.effective_assessments
+        assert len(actual_assessments) == len(expected_assessments)
+        for left, right in zip(actual_assessments, expected_assessments, strict=True):
+            assert left.content.method_result == right.content.method_result
+            assert left.content.technical_state == right.content.technical_state
+            assert left.candidate_peaks == right.candidate_peaks
+        assert (
+            actual.result_ref.source_candidate_ids
+            == expected.result_ref.source_candidate_ids
+        )
+        assert (
+            actual.result_ref.recovery_query_bounds
+            == expected.result_ref.recovery_query_bounds
+        )
+    expected_keys = {
+        f"part-1:{job.sample.identity.sample_identity_id}:{phase}"
+        for job in jobs
+        for phase in ("initial", "recovery")
+    }
+    resources = result.worker_batch.resource_settlements
+    assert {item.resource_key for item in resources} == {
+        "acquisition-session:" + key for key in expected_keys
+    }
+    assert len(resources) == len(expected_keys)
+    assert len({item.work_unit_key for item in result.acquisitions}) == len(
+        result.acquisitions
+    )
+    assert all(item.work_unit_key in expected_keys for item in result.acquisitions)
+    assert {item.work_unit_key for item in result.acquisitions} <= {
+        item.resource_key.removeprefix("acquisition-session:")
+        for item in resources
+        if item.open_outcome is RuntimeResourceOpenOutcome.OPENED
+    }
+    assert all(item.acquisition.traces for item in result.acquisitions)
+    assert len(observed_batches) == len(result.acquisitions)
+    assert all(
+        any(item.acquisition is batch for item in result.acquisitions)
+        for batch in observed_batches
+    )
+    for stage in ("partition_initial", "partition_recovery", "partition_seal"):
+        progress = [event for event in events if event.get("stage") == stage]
+        assert progress[-1]["completed"] == progress[-1]["total"]
+    # An acquisition failure must settle its jobs and return all resource cleanup facts.
+    monkeypatch.setattr(runtime_module, "open_raw", forbidden)
+    failed = runtime_module.execute_untargeted_cid_nl_runtime_partition(
+        jobs,
+        partition_key="part-error",
+        alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
+    )
+    assert not failed.succeeded
+    assert len(failed.worker_batch.settlements) == len(jobs)
+    assert len(failed.worker_batch.resource_settlements) == len(expected_keys)
+    assert any(
+        item.open_outcome is RuntimeResourceOpenOutcome.OPEN_FAILED
+        for item in failed.worker_batch.resource_settlements
+    )

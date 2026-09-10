@@ -183,6 +183,31 @@ def test_runtime_phase_exception_public_types_are_allowlisted() -> None:
     assert "RuntimeFinalizationReceipt" not in owner_allowlist
 
 
+def test_runtime_compaction_is_a_public_fact_projection_not_a_private_entry(
+    tmp_path: Path,
+) -> None:
+    adapter = Path("xic_extractor/extraction/adapter.py")
+    source = tmp_path / adapter
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from xic_extractor.execution_runtime_owner import "
+        "compact_runtime_acquisition_receipt as compact\n"
+        "def summarize(receipt):\n    return compact(receipt)\n",
+        encoding="utf-8",
+    )
+    assert census.validate_runtime_boundary_authority(tmp_path, (adapter,)) == []
+    source.write_text(
+        "from xic_extractor.execution_runtime_owner import "
+        "_runtime_acquisition_digest as digest\n"
+        "def summarize(receipt):\n    return digest(receipt)\n",
+        encoding="utf-8",
+    )
+    problems = census.validate_runtime_boundary_authority(tmp_path, (adapter,))
+    assert any(
+        "_runtime_acquisition_digest is owner-internal" in item for item in problems
+    )
+
+
 def test_runtime_boundary_authority_rejects_projection_and_reducer_bypasses(
     tmp_path: Path,
 ) -> None:
@@ -846,7 +871,8 @@ def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
         "run_alignment": set(),
         "complete_untargeted_cid_nl_alignment": set(),
-        "execute_untargeted_cid_nl_production_batch": set(),
+        "execute_bounded_untargeted_cid_nl": set(),
+        "execute_untargeted_cid_nl_runtime_partition": set(),
     }
     for path in census.repository_python_paths(ROOT):
         if not path.parts or path.parts[0] == "tests":
@@ -881,8 +907,11 @@ def test_default_production_activation_loci_are_exact() -> None:
     assert production_calls["complete_untargeted_cid_nl_alignment"] == {
         Path("xic_extractor/alignment/pipeline.py")
     }
-    assert production_calls["execute_untargeted_cid_nl_production_batch"] == {
+    assert production_calls["execute_bounded_untargeted_cid_nl"] == {
         Path("xic_extractor/extraction/untargeted_cid_nl_alignment.py")
+    }
+    assert production_calls["execute_untargeted_cid_nl_runtime_partition"] == {
+        Path("xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py")
     }
 
 

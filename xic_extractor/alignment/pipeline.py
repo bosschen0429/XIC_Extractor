@@ -85,6 +85,7 @@ def run_alignment(
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
     raw_workers: int = 1,
+    raw_worker_backend: str = "thread",
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
@@ -141,6 +142,7 @@ def run_alignment(
         elapsed_sec=0.0,
         metrics={
             "raw_workers": raw_workers,
+            "raw_worker_backend": raw_worker_backend,
             "raw_xic_batch_size": raw_xic_batch_size,
             "owner_build_xic_backend": owner_build_xic_backend,
             "owner_backfill_xic_backend": owner_backfill_xic_backend,
@@ -199,6 +201,7 @@ def run_alignment(
         timing_recorder=recorder,
         capture_artifact_fingerprints=capture_artifact_fingerprints,
         raw_workers=raw_workers,
+        raw_worker_backend=raw_worker_backend,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_build_xic_backend=owner_build_xic_backend,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
@@ -223,6 +226,7 @@ def run_alignment(
 def _validate_untargeted_cid_nl_alignment_options(
     *,
     raw_workers: int = 1,
+    raw_worker_backend: str = "thread",
     raw_xic_batch_size: int = 1,
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
@@ -238,8 +242,10 @@ def _validate_untargeted_cid_nl_alignment_options(
 ) -> None:
     """Reject legacy Alignment options unsupported by the retained CID-NL route."""
     unsupported: list[str] = []
-    if raw_workers != 1:
-        unsupported.append("raw_workers")
+    if type(raw_workers) is not int or raw_workers < 1:
+        raise ValueError("raw_workers must be a positive integer")
+    if raw_worker_backend not in {"process", "thread"}:
+        raise ValueError("raw_worker_backend must be 'process' or 'thread'")
     if raw_xic_batch_size != 1:
         unsupported.append("raw_xic_batch_size")
     if owner_backfill_xic_backend != "raw":
@@ -284,6 +290,7 @@ def _run_untargeted_cid_nl_alignment(
     timing_recorder: TimingRecorder,
     capture_artifact_fingerprints: bool,
     raw_workers: int,
+    raw_worker_backend: str = "thread",
     raw_xic_batch_size: int,
     owner_build_xic_backend: OwnerBuildXicBackend,
     owner_backfill_xic_backend: OwnerBackfillXicBackend,
@@ -302,6 +309,7 @@ def _run_untargeted_cid_nl_alignment(
     """Run the retained CID-NL owner and project its completed result once."""
     _validate_untargeted_cid_nl_alignment_options(
         raw_workers=raw_workers,
+        raw_worker_backend=raw_worker_backend,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
@@ -329,100 +337,109 @@ def _run_untargeted_cid_nl_alignment(
             known_istd_reference=known_istd_reference,
             timing_recorder=timing_recorder,
             signal_processing_profile=signal_processing_profile,
+            raw_workers=raw_workers,
+            raw_worker_backend=raw_worker_backend,
+            should_cancel=should_cancel,
+            retain_partition_memory=True,
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
-    if should_cancel is not None and should_cancel():
-        raise InterruptedError("Alignment cancelled before output publication")
-    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
-    if should_cancel is not None and should_cancel():
-        raise InterruptedError("Alignment cancelled before output publication")
-    metadata = _metadata(
-        discovery_batch_index=discovery_batch_index,
-        raw_dir=raw_dir,
-        dll_dir=dll_dir,
-        owner_build_xic_backend=owner_build_xic_backend,
-        owner_backfill_xic_backend=owner_backfill_xic_backend,
-        owner_backfill_window_strategy=owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
-        output_level=output_level,
-        peak_config=peak_config,
-        backfill_scope="full-audit",
-        output_scope="full-audit",
-        audit_evidence_mode="none",
-        requested_audit_evidence_mode=audit_evidence_mode,
-        heavy_audit_enabled=False,
-        audit_evidence_mode_reason="retained_untargeted_cid_nl_owner",
-        require_discovery_owner_closure=True,
-        signal_processing_profile=signal_processing_profile,
-        owner_backfill_peak_fact_provenance_row_count=len(
-            EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
-        ),
-    )
-    metadata.update(
-        {
-            "alignment_route": "untargeted_cid_nl_finalized_v1",
-            "effective_owner_build_route": (
-                owner_build_route_receipt.effective_owner_build_route
+    try:
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("Alignment cancelled before output publication")
+        writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("Alignment cancelled before output publication")
+        metadata = _metadata(
+            discovery_batch_index=discovery_batch_index,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            owner_build_xic_backend=owner_build_xic_backend,
+            owner_backfill_xic_backend=owner_backfill_xic_backend,
+            owner_backfill_window_strategy=owner_backfill_window_strategy,
+            owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
+            output_level=output_level,
+            peak_config=peak_config,
+            backfill_scope="full-audit",
+            output_scope="full-audit",
+            audit_evidence_mode="none",
+            requested_audit_evidence_mode=audit_evidence_mode,
+            heavy_audit_enabled=False,
+            audit_evidence_mode_reason="retained_untargeted_cid_nl_owner",
+            require_discovery_owner_closure=True,
+            signal_processing_profile=signal_processing_profile,
+            owner_backfill_peak_fact_provenance_row_count=len(
+                EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
             ),
-            "effective_owner_build_xic_backend": "none",
-            "owner_build_xic_backend_role": "configured_legacy_option",
-            "matrix_value_policy": "owner_finalized_cell_decision_v1",
-            "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean_v1",
-        }
-    )
-    if known_istd_reference is not None:
-        metadata.update({f"known_istd_reference_{key}": value
-                         for key, value in known_istd_reference.provenance.items()})
-    with timing_recorder.stage("alignment.write_outputs"):
-        artifact_fingerprint_batch = _write_outputs_atomic(
-            outputs,
-            writer_inputs.matrix,
-            metadata=metadata,
-            ownership=OwnershipBuildResult(
-                owners=(), assignments=(), ambiguous_records=()
-            ),
-            alignment_config=alignment_config,
-            owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-            production_decisions=writer_inputs.production_decisions,
-            baseline_integration_method=getattr(
-                peak_config, "baseline_integration_method", "asls"
-            ),
-            baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
-            timing_recorder=timing_recorder,
-            capture_artifact_fingerprints=capture_artifact_fingerprints,
         )
-    if capture_artifact_fingerprints:
-        if not isinstance(
-            artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
-        ):
-            raise TypeError(
-                "Alignment writer must return an owner-minted fingerprint batch"
+        metadata.update(
+            {
+                "alignment_route": "untargeted_cid_nl_finalized_v1",
+                "effective_owner_build_route": (
+                    owner_build_route_receipt.effective_owner_build_route
+                ),
+                "effective_owner_build_xic_backend": "none",
+                "owner_build_xic_backend_role": "configured_legacy_option",
+                "matrix_value_policy": "owner_finalized_cell_decision_v1",
+                "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean_v1",
+            }
+        )
+        if known_istd_reference is not None:
+            metadata.update({f"known_istd_reference_{key}": value
+                             for key, value in known_istd_reference.provenance.items()})
+        with timing_recorder.stage("alignment.write_outputs"):
+            artifact_fingerprint_batch = _write_outputs_atomic(
+                outputs,
+                writer_inputs.matrix,
+                metadata=metadata,
+                ownership=OwnershipBuildResult(
+                    owners=(), assignments=(), ambiguous_records=()
+                ),
+                alignment_config=alignment_config,
+                owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+                production_decisions=writer_inputs.production_decisions,
+                baseline_integration_method=getattr(
+                    peak_config, "baseline_integration_method", "asls"
+                ),
+                baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
+                timing_recorder=timing_recorder,
+                capture_artifact_fingerprints=capture_artifact_fingerprints,
             )
-        outputs = replace(
-            outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
+        if capture_artifact_fingerprints:
+            if not isinstance(
+                artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
+            ):
+                raise TypeError(
+                    "Alignment writer must return an owner-minted fingerprint batch"
+                )
+            outputs = replace(
+                outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
+            )
+        if outputs.matrix_tsv is None:
+            raise RuntimeError("CID-NL explanation requires the published Matrix")
+        with timing_recorder.stage("alignment.write_cid_nl_explanation"):
+            write_cid_nl_explanation(
+                output_dir / "cid_nl_explanation.sqlite",
+                completed=completed,
+                writer_inputs=writer_inputs,
+                candidates_by_sample=candidates_by_sample,
+                matrix_path=outputs.matrix_tsv,
+                alignment_config=alignment_config,
+                known_istd_reference_provenance=(
+                    None
+                    if known_istd_reference is None
+                    else known_istd_reference.provenance
+                ),
+                progress_callback=timing_recorder.heartbeat_event,
+            )
+        return replace(
+            outputs,
+            owner_build_route_receipt=owner_build_route_receipt,
+            untargeted_cid_nl_result=completed,
         )
-    if outputs.matrix_tsv is None:
-        raise RuntimeError("CID-NL explanation requires the published Matrix")
-    with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-        write_cid_nl_explanation(
-            output_dir / "cid_nl_explanation.sqlite",
-            completed=completed,
-            writer_inputs=writer_inputs,
-            candidates_by_sample=candidates_by_sample,
-            matrix_path=outputs.matrix_tsv,
-            alignment_config=alignment_config,
-            known_istd_reference_provenance=(
-                None
-                if known_istd_reference is None
-                else known_istd_reference.provenance
-            ),
-        )
-    return replace(
-        outputs,
-        owner_build_route_receipt=owner_build_route_receipt,
-        untargeted_cid_nl_result=completed,
-    )
+    finally:
+        if hasattr(completed, "close"):
+            completed.close()
 
 
 _output_paths = output_paths
