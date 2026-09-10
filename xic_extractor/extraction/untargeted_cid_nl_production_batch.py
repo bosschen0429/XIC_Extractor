@@ -89,6 +89,10 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     execute_untargeted_cid_nl_real_data_runtime,
     untargeted_cid_nl_runtime_call_cost,
 )
+from xic_extractor.extraction.untargeted_cid_nl_result_store import (
+    PartitionResultStore,
+    SealedPartition,
+)
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -421,6 +425,79 @@ class UntargetedCidNlPartitionComposition:
     method_assessments: tuple[CidNlMethodAssessmentRef, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlPersistedPartition:
+    """Metadata for one atomically persisted, streamed scientific partition."""
+
+    sealed: SealedPartition
+    child_count: int
+    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
+    capture_bindings: tuple[CaptureCandidateBinding, ...]
+
+
+def compose_and_persist_untargeted_cid_nl_partition(
+    batch: UntargetedCidNlProductionBatch,
+    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    *,
+    store: PartitionResultStore,
+    partition_key: str,
+    alignment_config: AlignmentConfig,
+    known_istd_reference: KnownIstdReference | None = None,
+    should_cancel: Callable[[], object] | None = None,
+) -> UntargetedCidNlPersistedPartition:
+    """Compose one child at a time and publish only after the full partition.
+
+    Composition inputs are prepared once.  The result store owns the trusted
+    owner references and atomic file publication while this owner controls
+    scientific child order and cancellation boundaries.
+    """
+
+    inputs = _build_production_composition_inputs(
+        batch,
+        sample_results,
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
+    )
+    child_count = 0
+
+    def check_cancellation() -> None:
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("CID-NL partition cancelled")
+
+    def children():
+        nonlocal child_count
+        for bundle in inputs.bundles:
+            check_cancellation()
+            child = compose_untarget_subject(
+                cast(UntargetWorkflowCompositionRequest, bundle.request),
+                bundle.adapter,
+            )
+            child_count += 1
+            yield child
+            del child
+
+    metadata_payload = UntargetedCidNlPartitionComposition(
+        children=(),
+        excluded_candidates=inputs.request.excluded_candidates,
+        capture_bindings=inputs.request.scope.capture_bindings,
+        method_assessments=inputs.method_assessments,
+        initial_groups=inputs.initial_groups,
+        initial_edges=inputs.initial_edges,
+    )
+    sealed = store.append_children(
+        partition_key,
+        children=children(),
+        before_publish=check_cancellation,
+        metadata_payload=metadata_payload,
+    )
+    return UntargetedCidNlPersistedPartition(
+        sealed=sealed,
+        child_count=child_count,
+        excluded_candidates=inputs.request.excluded_candidates,
+        capture_bindings=inputs.request.scope.capture_bindings,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -987,9 +1064,11 @@ def _runtime_captures_by_candidate(
 __all__ = [
     "UntargetedCidNlProductionBatch",
     "UntargetedCidNlPartitionComposition",
+    "UntargetedCidNlPersistedPartition",
     "build_untargeted_cid_nl_production_batch",
     "compose_untargeted_cid_nl_production_result",
     "compose_untargeted_cid_nl_partition",
+    "compose_and_persist_untargeted_cid_nl_partition",
     "execute_untargeted_cid_nl_production_batch",
     "is_pure_single_provider_cid_nl",
 ]

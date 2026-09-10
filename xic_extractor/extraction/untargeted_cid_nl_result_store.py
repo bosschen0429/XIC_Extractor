@@ -7,6 +7,7 @@ import hashlib
 import os
 import pickle
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -93,6 +94,40 @@ class PartitionResultStore:
         return self._directory / f"{index:08d}.pickle"
 
     def append(self, partition_key: str, payload: object) -> SealedPartition:
+        if not is_dataclass(payload) or isinstance(payload, type):
+            raise TypeError("partition payload requires a dataclass result")
+        return self._append_payload(partition_key, payload)
+
+    def append_children(
+        self,
+        partition_key: str,
+        metadata_payload: object,
+        children: Iterable[object],
+        before_publish: Callable[[], None] | None = None,
+    ) -> SealedPartition:
+        """Atomically append children while composing them one at a time."""
+
+        if not is_dataclass(metadata_payload) or isinstance(metadata_payload, type):
+            raise TypeError("partition payload requires a dataclass result")
+        if not hasattr(metadata_payload, "children"):
+            raise TypeError("streaming partition payload requires children")
+        if getattr(metadata_payload, "children") != ():
+            raise ValueError("streaming metadata payload must have empty children")
+        return self._append_payload(
+            partition_key,
+            metadata_payload,
+            children=children,
+            before_publish=before_publish,
+        )
+
+    def _append_payload(
+        self,
+        partition_key: str,
+        payload: Any,
+        *,
+        children: Iterable[object] | None = None,
+        before_publish: Callable[[], None] | None = None,
+    ) -> SealedPartition:
         if self._sealed:
             raise ValueError("partition store is sealed")
         if (
@@ -102,19 +137,18 @@ class PartitionResultStore:
             raise ValueError("invalid partition key")
         if partition_key in self._keys:
             raise ValueError("duplicate partition key")
-        lengths = (
-            {
-                item.name: len(value)
-                for item in fields(payload)
-                if not item.name.startswith("_")
-                for value in (getattr(payload, item.name),)
-                if type(value) is tuple
-            }
-            if is_dataclass(payload) and not isinstance(payload, type)
-            else {}
-        )
-        if not is_dataclass(payload) or isinstance(payload, type):
-            raise TypeError("partition payload requires a dataclass result")
+        field_names = tuple(item.name for item in fields(payload))
+        lengths = {
+            item.name: len(getattr(payload, item.name))
+            for item in fields(payload)
+            if not item.name.startswith("_")
+            and type(getattr(payload, item.name)) is tuple
+            and not (item.name == "children" and children is not None)
+        }
+        if children is not None:
+            if "children" not in field_names:
+                raise TypeError("streaming partition payload requires children")
+            lengths["children"] = 0
         index = len(self._partitions)
         path = self._path(index)
         temporary = path.with_suffix(".tmp")
@@ -138,7 +172,18 @@ class PartitionResultStore:
                 )
                 _OwnerPickler(writer, self._shared_ids).dump(header)
                 records = {}
-                for name in lengths:
+                for name in field_names:
+                    if name == "children" and children is not None:
+                        entries = []
+                        for value in children:
+                            entries.append((writer.size_bytes, 1))
+                            _OwnerPickler(writer, self._shared_ids).dump((value,))
+                            del value
+                        lengths["children"] = len(entries)
+                        records["children"] = tuple(entries)
+                        continue
+                    if name not in lengths:
+                        continue
                     values = getattr(payload, name)
                     # Children need independent identity-safe graph restoration;
                     # exclusions are addressed by canonical candidate position.
@@ -149,6 +194,8 @@ class PartitionResultStore:
                         entries.append((writer.size_bytes, len(chunk)))
                         _OwnerPickler(writer, self._shared_ids).dump(chunk)
                     records[name] = tuple(entries)
+                if before_publish is not None:
+                    before_publish()
             entry = SealedPartition(
                 index, partition_key, writer.digest.hexdigest(), writer.size_bytes
             )
@@ -233,4 +280,19 @@ class PartitionResultStore:
             with self._path(partition).open("rb") as stream:
                 return self._read_record(stream, offset, length)
 
-        return ImmutableSequence(tuple(length for _, _, length in chunks), load_chunk)
+        def load_chunks():
+            chunk_index = 0
+            while chunk_index < len(chunks):
+                partition = chunks[chunk_index][0]
+                with self._path(partition).open("rb") as stream:
+                    while (
+                        chunk_index < len(chunks)
+                        and chunks[chunk_index][0] == partition
+                    ):
+                        _, offset, length = chunks[chunk_index]
+                        yield self._read_record(stream, offset, length)
+                        chunk_index += 1
+
+        return ImmutableSequence(
+            tuple(length for _, _, length in chunks), load_chunk, load_chunks
+        )

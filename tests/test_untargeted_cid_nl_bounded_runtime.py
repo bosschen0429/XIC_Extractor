@@ -336,7 +336,7 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         seam_name = "execute_untargeted_cid_nl_runtime_partition"
     else:
         seam_owner = bounded_owner.PartitionResultStore
-        seam_name = "append"
+        seam_name = "append_children"
     original = getattr(seam_owner, seam_name)
 
     def fail_second(*args, **kwargs):
@@ -411,7 +411,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
-    original_append = owner.PartitionResultStore.append
+    original_append = owner.PartitionResultStore.append_children
     original_prepare = runtime_owner._prepare_owner_authorized_recoveries
     original_execute = owner.execute_runtime_attempt
 
@@ -461,10 +461,10 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         barrier_checks.append(len(disposed))
         return original_prepare(*args, **kwargs)
 
-    def append(store, partition_key, payload):
+    def append(store, partition_key, *args, **kwargs):
         assert get_ident() == coordinator and not active_handles
         append_order.append(partition_key)
-        return original_append(store, partition_key, payload)
+        return original_append(store, partition_key, *args, **kwargs)
 
     def progress(event):
         nonlocal live_jobs
@@ -486,7 +486,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
-    monkeypatch.setattr(owner.PartitionResultStore, "append", append)
+    monkeypatch.setattr(owner.PartitionResultStore, "append_children", append)
     result = owner.execute_bounded_untargeted_cid_nl(
         plan,
         output_dir=tmp_path / "parallel",
@@ -598,7 +598,9 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
     if failure_mode == "spool_failure":
-        monkeypatch.setattr(owner.PartitionResultStore, "append", fail_spool)
+        monkeypatch.setattr(
+            owner.PartitionResultStore, "append_children", fail_spool
+        )
     marker = OwnerPathRuntimeMarker(tmp_path / "failure.json", "parallel-failure")
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_bounded_untargeted_cid_nl(

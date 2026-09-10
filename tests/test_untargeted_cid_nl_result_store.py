@@ -4,11 +4,13 @@ import gc
 import hashlib
 import weakref
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 
 import pytest
 
 from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
+from xic_extractor.immutable_sequence import ImmutableSequence
 
 _restored_children = []
 
@@ -21,6 +23,15 @@ def _restore_child(value):
 class _ObservedChild:
     def __reduce__(self):
         return _restore_child, ("scientific-child",)
+
+
+def _restore_ephemeral_child():
+    return _EphemeralChild()
+
+
+class _EphemeralChild:
+    def __reduce__(self):
+        return _restore_ephemeral_child, ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +87,178 @@ def test_empty_sealed_store_has_empty_sequence(tmp_path):
     store = PartitionResultStore(tmp_path, ())
     store.seal()
     assert tuple(store.sequence("children")) == ()
+
+
+def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
+    payload = Payload(
+        (1, 2, 3), method_assessments=(4,), excluded_candidates=(5,), label="same"
+    )
+    tuple_store = PartitionResultStore(tmp_path / "tuple", ())
+    tuple_entry = tuple_store.append("partition", payload)
+    stream_store = PartitionResultStore(tmp_path / "stream", ())
+
+    def children():
+        yield from payload.children
+
+    stream_entry = stream_store.append_children(
+        "partition",
+        Payload(
+            (), payload.method_assessments, payload.excluded_candidates, payload.label
+        ),
+        children=children(),
+    )
+    assert stream_entry.sha256 == tuple_entry.sha256
+    assert stream_entry.size_bytes == tuple_entry.size_bytes
+    stream_store.seal()
+    assert stream_store.read(0) == payload
+    assert tuple(stream_store.sequence("children")) == payload.children
+
+
+def test_streaming_children_failure_does_not_publish_or_seal(tmp_path):
+    store = PartitionResultStore(tmp_path, ())
+
+    def failing_children():
+        yield 1
+        raise OSError("injected child failure")
+
+    with pytest.raises(OSError, match="injected child failure"):
+        store.append_children(
+            "partition",
+            Payload((), (), (), "partition"),
+            children=failing_children(),
+        )
+    assert not (tmp_path / "00000000.pickle").exists()
+    store.append("partition", Payload((2,)))
+
+
+def test_streaming_children_checks_cancellation_before_publication(tmp_path):
+    store = PartitionResultStore(tmp_path, ())
+
+    def cancel():
+        raise InterruptedError("cancel before publication")
+
+    with pytest.raises(InterruptedError, match="cancel before publication"):
+        store.append_children(
+            "partition",
+            Payload((), (), (), "partition"),
+            children=(1,),
+            before_publish=cancel,
+        )
+    assert not (tmp_path / "00000000.pickle").exists()
+    store.append("partition", Payload((2,)))
+
+
+def test_streaming_children_releases_previous_value_before_next_child(tmp_path):
+    store = PartitionResultStore(tmp_path, ())
+    references = []
+
+    def children():
+        value = _ObservedChild()
+        references.append(weakref.ref(value))
+        yield value
+        del value
+        gc.collect()
+        assert references[0]() is None
+        yield "second"
+
+    store.append_children(
+        "partition",
+        Payload((), (), (), "partition"),
+        children=children(),
+    )
+    gc.collect()
+    assert references[0]() is None
+
+
+def test_sequential_sequence_reuses_one_open_file_per_partition(tmp_path, monkeypatch):
+    store = PartitionResultStore(tmp_path, ())
+    store.append("one", Payload((1, 2)))
+    store.append("two", Payload((3,)))
+    store.seal()
+
+    opened = []
+    original_open = Path.open
+
+    def tracking_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    sequence = store.sequence("children")
+    assert tuple(sequence) == (1, 2, 3)
+    assert len(opened) == 2
+    assert all(stream.closed for stream in opened)
+    assert sequence[1] == 2
+    assert len(opened) == 3
+
+
+def test_sequential_sequence_closes_partition_on_early_close_and_error(
+    tmp_path, monkeypatch
+):
+    store = PartitionResultStore(tmp_path, ())
+    store.append("one", Payload((1,)))
+    store.seal()
+
+    opened = []
+    original_open = Path.open
+
+    def tracking_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    iterator = iter(store.sequence("children"))
+    assert next(iterator) == 1
+    assert not opened[0].closed
+    iterator.close()
+    assert opened[0].closed
+
+    def malformed_record(_stream, _offset, _length):
+        return ()
+
+    monkeypatch.setattr(store, "_read_record", malformed_record)
+    with pytest.raises(ValueError, match="sealed cardinality"):
+        tuple(store.sequence("children"))
+    assert opened[-1].closed
+
+
+def test_sequential_sequence_releases_previous_value_before_next_record(
+    tmp_path, monkeypatch
+):
+    store = PartitionResultStore(tmp_path, ())
+    first = _EphemeralChild()
+    second = _EphemeralChild()
+    store.append("one", Payload((first,)))
+    store.append("two", Payload((second,)))
+    store.seal()
+
+    previous = []
+    original_read = store._read_record
+
+    def observe_read(stream, offset, length):
+        if previous:
+            assert previous[0]() is None
+        values = original_read(stream, offset, length)
+        previous[:] = [weakref.ref(values[0])]
+        return values
+
+    monkeypatch.setattr(store, "_read_record", observe_read)
+    iterator = iter(store.sequence("children"))
+    value = next(iterator)
+    del value
+    assert isinstance(next(iterator), _EphemeralChild)
+
+
+def test_sequential_loader_rejects_changed_chunk_cardinality():
+    sequence = ImmutableSequence(
+        (1,),
+        lambda _index: (1,),
+        lambda: iter(((),)),
+    )
+    with pytest.raises(ValueError, match="sealed cardinality"):
+        tuple(sequence)
 
 
 def test_diagnostic_field_read_does_not_restore_unrelated_scientific_children(tmp_path):

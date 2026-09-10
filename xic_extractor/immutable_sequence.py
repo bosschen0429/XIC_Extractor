@@ -21,6 +21,9 @@ class ImmutableSequence(Sequence[T], Generic[T]):
 
     chunk_lengths: tuple[int, ...]
     load_chunk: Callable[[int], tuple[T, ...]] = field(repr=False, compare=False)
+    load_chunks: Callable[[], Iterator[tuple[T, ...]]] | None = field(
+        default=None, repr=False, compare=False
+    )
     _ends: tuple[int, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -30,6 +33,8 @@ class ImmutableSequence(Sequence[T], Generic[T]):
             raise ValueError("chunk lengths must be non-negative integers")
         if not callable(self.load_chunk):
             raise TypeError("result chunk loader must be callable")
+        if self.load_chunks is not None and not callable(self.load_chunks):
+            raise TypeError("sequential result chunk loader must be callable")
         total = 0
         ends = []
         for length in self.chunk_lengths:
@@ -47,6 +52,31 @@ class ImmutableSequence(Sequence[T], Generic[T]):
         return values
 
     def __iter__(self) -> Iterator[T]:
+        if self.load_chunks is not None:
+            chunks = iter(self.load_chunks())
+            chunk_index = 0
+            try:
+                for values in chunks:
+                    if (
+                        chunk_index >= len(self.chunk_lengths)
+                        or type(values) is not tuple
+                        or len(values) != self.chunk_lengths[chunk_index]
+                    ):
+                        raise ValueError(
+                            "stored result chunk changed its sealed cardinality"
+                        )
+                    yield from values
+                    del values
+                    chunk_index += 1
+                if chunk_index != len(self.chunk_lengths):
+                    raise ValueError(
+                        "stored result chunk changed its sealed cardinality"
+                    )
+            finally:
+                close = getattr(chunks, "close", None)
+                if callable(close):
+                    close()
+            return
         for index in range(len(self.chunk_lengths)):
             yield from self._chunk(index)
 

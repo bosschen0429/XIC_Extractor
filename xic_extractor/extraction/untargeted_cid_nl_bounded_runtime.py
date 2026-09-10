@@ -49,7 +49,7 @@ from xic_extractor.execution_runtime_owner import (
 )
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     UntargetedCidNlProductionPlan,
-    compose_untargeted_cid_nl_partition,
+    compose_and_persist_untargeted_cid_nl_partition,
     materialize_untargeted_cid_nl_partition,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
@@ -227,18 +227,21 @@ def execute_bounded_untargeted_cid_nl(
                     )
                 check_cancellation()
                 progress("partition_compose", index)
-                payload = compose_untargeted_cid_nl_partition(
+                persisted = compose_and_persist_untargeted_cid_nl_partition(
                     batch,
                     leaf.sample_results,
+                    store=store,
+                    partition_key=active_partition,
                     alignment_config=alignment_config,
                     known_istd_reference=known_istd_reference,
+                    should_cancel=check_cancellation,
                 )
                 check_cancellation()
-                sealed = store.append(active_partition, payload)
-                bindings.extend(payload.capture_bindings)
+                sealed = persisted.sealed
+                bindings.extend(persisted.capture_bindings)
                 exclusion_positions.extend(
                     (exclusion.candidate_id, index, offset)
-                    for offset, exclusion in enumerate(payload.excluded_candidates)
+                    for offset, exclusion in enumerate(persisted.excluded_candidates)
                 )
                 for sample in context.samples:
                     for phase in ("initial", "recovery"):
@@ -275,7 +278,7 @@ def execute_bounded_untargeted_cid_nl(
                                 owner_result_ref=artifact,
                             )
                         )
-                del payload, leaf, batch
+                del persisted, leaf, batch
                 gc.collect()
                 progress("partition_released", index + 1)
             check_cancellation()
