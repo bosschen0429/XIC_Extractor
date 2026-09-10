@@ -320,8 +320,33 @@ def _read_discovery_physical_fact_records_direct(
         acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
 
         phys_val = _mapping(record["physical_evaluation"], label="physical_evaluation")
+        _require_keys(
+            phys_val,
+            ("schema_version", "profile", "trace", "evaluation"),
+            label="physical_evaluation",
+        )
+        if phys_val["schema_version"] != "physical_peak_evaluation_persistence_v1":
+            raise ValueError("unsupported physical evaluation persistence schema")
+        profile_envelope = _mapping(phys_val["profile"], label="profile")
+        _require_keys(
+            profile_envelope,
+            ("profile_hash", "profile_id", "content"),
+            label="profile",
+        )
+        if (
+            _text(profile_envelope["profile_id"], field="profile_id")
+            != expected_run_spec.signal_processing_profile.profile_id
+            or _text(profile_envelope["profile_hash"], field="profile_hash")
+            != expected_run_spec.signal_processing_profile.profile_hash
+        ):
+            raise ValueError("Discovery physical sidecar crosses profile identity")
         eval_payload = _mapping(phys_val["evaluation"], label="evaluation")
         evaluation = _physical_evaluation_from_payload(eval_payload)
+        if (
+            evaluation.prepared.profile_id
+            != expected_run_spec.signal_processing_profile.profile_id
+        ):
+            raise ValueError("Discovery physical sidecar crosses profile identity")
 
         records.append(
             DiscoveryPhysicalFactRecord(

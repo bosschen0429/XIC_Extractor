@@ -528,3 +528,49 @@ def test_discovery_sidecar_writer_publishes_exact_serializer_bytes(
     assert path.read_bytes() == expected
     assert b"\r" not in path.read_bytes()
     assert not path.with_name(f"{path.name}.tmp").exists()
+
+
+def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
+    tmp_path: Path,
+) -> None:
+    _, spec, acquisition_input = _spec(tmp_path)
+    manifest, records = _population(spec, acquisition_input)
+    payload_str = serialize_discovery_physical_fact_sidecar(
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    )
+    sidecar_path = tmp_path / "normal.json"
+    sidecar_path.write_bytes(payload_str)
+
+    # Mismatched expected run spec profile
+    other_profile = replace(
+        spec.signal_processing_profile,
+        window_points=spec.signal_processing_profile.window_points + 2,
+    )
+    other_spec = replace(spec, signal_processing_profile=other_profile)
+    with pytest.raises(
+        ValueError, match="run_spec_hash does not match expected run"
+    ):
+        read_discovery_physical_fact_records(
+            sidecar_path,
+            expected_run_spec=other_spec,
+            expected_acquisition_input=acquisition_input,
+        )
+
+    # Tampered profile in sidecar record
+    data = json.loads(payload_str)
+    data["records"][0]["physical_evaluation"]["profile"]["profile_id"] = (
+        "different-profile-id"
+    )
+    tampered_path = tmp_path / "tampered.json"
+    tampered_path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(
+        ValueError, match="Discovery physical sidecar crosses profile identity"
+    ):
+        read_discovery_physical_fact_records(
+            tampered_path,
+            expected_run_spec=spec,
+            expected_acquisition_input=acquisition_input,
+        )

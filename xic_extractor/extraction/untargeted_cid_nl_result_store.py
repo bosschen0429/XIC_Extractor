@@ -7,6 +7,7 @@ import hashlib
 import os
 import pickle
 import re
+import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
@@ -341,3 +342,9 @@ class PartitionResultStore:
         return ImmutableSequence(
             tuple(length for _, _, length in chunks), load_chunk, load_chunks
         )
+
+    def cleanup(self) -> None:
+        """Remove private spool directory and release in-memory caches."""
+        self._field_caches.clear()
+        if self._directory.exists():
+            shutil.rmtree(self._directory, ignore_errors=True)

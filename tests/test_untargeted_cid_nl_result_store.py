@@ -356,3 +356,23 @@ def test_retained_memory_sequence_and_selected_bypass_file_reads(tmp_path, monke
     selected = store.read_selected(0, "excluded_candidates", (1, 0))
     assert selected == (2000, 1000)
     assert len(opened) == 0
+
+
+def test_partition_result_store_cleanup(tmp_path: Path) -> None:
+    spool_dir = tmp_path / "spool"
+    store = PartitionResultStore(spool_dir, ())
+    store.append(
+        "part-0",
+        Payload(children=(1, 2), method_assessments=("a", "b")),
+        retain_memory=True,
+    )
+    assert spool_dir.exists()
+    assert len(store._field_caches) == 1
+
+    store.cleanup()
+    assert not spool_dir.exists()
+    assert len(store._field_caches) == 0
+
+    # Idempotent cleanup
+    store.cleanup()
+    assert not spool_dir.exists()

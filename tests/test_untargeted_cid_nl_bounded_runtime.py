@@ -635,3 +635,4 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
         for receipt in resources
         if "partition-00001:" in receipt.resource_key
     )
+    assert list((tmp_path / "failed").glob(".cid_nl_partitions-*")) == []

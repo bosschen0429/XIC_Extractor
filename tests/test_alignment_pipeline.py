@@ -73,7 +73,13 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     raw_workers: int,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
-    completed = object()
+    closed: list[bool] = []
+
+    class MockCompleted:
+        def close(self) -> None:
+            closed.append(True)
+
+    completed = MockCompleted()
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
@@ -148,6 +154,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                 raw_workers=raw_workers,
             )
         assert not report.exists()
+        assert closed == [True]
         return
 
     result = pipeline_module.run_alignment(
@@ -190,6 +197,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "retained_untargeted_cid_nl_batch"
     )
     assert metadata["effective_owner_build_xic_backend"] == "none"
+    assert closed == [True]
 
 
 def test_pure_cid_nl_cancellation_after_completion_skips_publication(

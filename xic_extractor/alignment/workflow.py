@@ -486,6 +486,14 @@ class CompletedUntargetBatchWorkflowResult:
         tuple[CrossSampleNeighborhoodEdge, ...]
         | ImmutableSequence[CrossSampleNeighborhoodEdge]
     ) = field(default=(), repr=False, compare=False)
+    cleanup_action: Callable[[], None] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def close(self) -> None:
+        """Release underlying transient partition storage and resources."""
+        if self.cleanup_action is not None:
+            self.cleanup_action()
 
     def __post_init__(self) -> None:
         _require_runtime_outcome(self.runtime_receipt, AttemptTerminalOutcome.SUCCEEDED)

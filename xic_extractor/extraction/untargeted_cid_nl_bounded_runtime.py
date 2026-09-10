@@ -374,33 +374,40 @@ def execute_bounded_untargeted_cid_nl(
             acquisitions=tuple(acquisitions),
         )
 
-    recovery_marker.record_launch(runtime)
-    finalization = execute_runtime_attempt(
-        runtime,
-        reservations,
-        worker_batch_provider=provide_worker_batch,
-        telemetry_provider=telemetry_provider,
-        persister=recovery_marker,
-    )
-    if failure is not None:
-        raise RuntimeError(
-            f"CID-NL bounded execution failed before batch publication: {failure}"
-        ) from failure
-    if (
-        finalization.supervisor.terminal_outcome is not AttemptTerminalOutcome.SUCCEEDED
-        or application_result is None
-    ):
-        raise RuntimeError("CID-NL bounded runtime did not complete atomically")
-    progress("batch_completed", len(partitions))
-    return CompletedUntargetBatchWorkflowResult(
-        runtime_receipt=finalization,
-        application_result=cast(
-            FinalizedUntargetBatchApplicationResult, application_result
-        ),
-        method_assessments=store.sequence("method_assessments"),
-        initial_groups=store.sequence("initial_groups"),
-        initial_edges=store.sequence("initial_edges"),
-    )
+    try:
+        recovery_marker.record_launch(runtime)
+        finalization = execute_runtime_attempt(
+            runtime,
+            reservations,
+            worker_batch_provider=provide_worker_batch,
+            telemetry_provider=telemetry_provider,
+            persister=recovery_marker,
+        )
+        if failure is not None:
+            store.cleanup()
+            raise RuntimeError(
+                f"CID-NL bounded execution failed before batch publication: {failure}"
+            ) from failure
+        outcome = finalization.supervisor.terminal_outcome
+        if outcome is not AttemptTerminalOutcome.SUCCEEDED or (
+            application_result is None
+        ):
+            store.cleanup()
+            raise RuntimeError("CID-NL bounded runtime did not complete atomically")
+        progress("batch_completed", len(partitions))
+        return CompletedUntargetBatchWorkflowResult(
+            runtime_receipt=finalization,
+            application_result=cast(
+                FinalizedUntargetBatchApplicationResult, application_result
+            ),
+            method_assessments=store.sequence("method_assessments"),
+            initial_groups=store.sequence("initial_groups"),
+            initial_edges=store.sequence("initial_edges"),
+            cleanup_action=store.cleanup,
+        )
+    except Exception:
+        store.cleanup()
+        raise
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
