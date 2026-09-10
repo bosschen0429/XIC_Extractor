@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import gc
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import fields
 from pathlib import Path
-from tempfile import mkdtemp
 from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -23,42 +21,45 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
+from xic_extractor.execution_engine import (
+    PartitionAcquisitionOutput,
+    PartitionCompositionOutput,
+    PartitionPipelineScheduler,
+    ProcessingOwners,
+    StreamedResultStore,
+    WorkPartition,
+)
 from xic_extractor.execution_runtime import (
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
+    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution_runtime_finalization import (
-    RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
-    RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
-    RuntimeAcquisitionReceipt,
     RuntimeArtifactRegistrationReceipt,
-    RuntimeResourceSettlementReceipt,
+    RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
-    RuntimeWorkerBatchReceipt,
-    compact_runtime_acquisition_receipt,
     execute_runtime_attempt,
     mint_work_unit_settlement,
-    start_runtime_attempt,
 )
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    UntargetedCidNlPersistedPartition,
+    UntargetedCidNlProductionBatch,
     UntargetedCidNlProductionPlan,
     compose_and_persist_untargeted_cid_nl_partition,
     materialize_untargeted_cid_nl_partition,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+    UntargetedCidNlRuntimePartitionResult,
     execute_untargeted_cid_nl_runtime_partition,
 )
-from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
+    CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.peak_detection.search_scope import (
@@ -70,6 +71,8 @@ from xic_extractor.peak_detection.search_scope import (
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
+PartitionResultStore = StreamedResultStore
+
 _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_scientific_partition",
@@ -78,6 +81,323 @@ _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf-v1",
 )
+
+
+class CidNlPartitionPipelineAdapter:
+    """Adapts CID-NL partition acquisition, composition, and closure to the
+    generic execution engine.
+    """
+
+    def __init__(
+        self,
+        plan: UntargetedCidNlProductionPlan,
+        *,
+        alignment_config: AlignmentConfig,
+        known_istd_reference: KnownIstdReference | None = None,
+        max_partition_jobs: int = 100_000,
+        raw_workers: int = 1,
+        raw_worker_backend: str = "thread",
+    ) -> None:
+        self._plan = plan
+        self._alignment_config = alignment_config
+        self._known_istd_reference = known_istd_reference
+        self._max_partition_jobs = max_partition_jobs
+        self._raw_workers = raw_workers
+        self._raw_worker_backend = raw_worker_backend
+
+        context = plan.context
+        self._owners = context.processing_owners
+        subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
+        subject_partitions = tuple(
+            plan.subject_batch.subjects[start : start + subjects_per_partition]
+            for start in range(
+                0, len(plan.subject_batch.subjects), subjects_per_partition
+            )
+        )
+        self._partitions = tuple(
+            WorkPartition(
+                index=index,
+                partition_key=f"partition-{index:05d}",
+                payload=subjects,
+            )
+            for index, subjects in enumerate(subject_partitions)
+        )
+        self._work_unit_keys = tuple(
+            f"{partition.partition_key}:{sample.identity.sample_identity_id}:{phase}"
+            for partition in self._partitions
+            for sample in context.samples
+            for phase in ("initial", "recovery")
+        )
+        self._resource_reservations = tuple(
+            RuntimeResourceReservation(
+                attempt=self._owners.attempt,
+                kind=RuntimeResourceKind.ACQUISITION_SESSION,
+                resource_key=(
+                    f"acquisition-session:{partition.partition_key}:"
+                    f"{sample.identity.sample_identity_id}:{phase}"
+                ),
+                worker_key=(
+                    f"inline-acquisition:{partition.partition_key}:"
+                    f"{sample.identity.sample_identity_id}:{phase}"
+                ),
+                source_reference=resolve_request_acquisition_source(
+                    processing_owners=self._owners, sample=sample
+                ).acquisition_source_id,
+                compatibility_token="untargeted-cid-nl-real-data-runtime:v1",
+                owner_conditional=True,
+            )
+            for partition in self._partitions
+            for sample in context.samples
+            for phase in ("initial", "recovery")
+        )
+        self._owner_completeness_attestation = (
+            f"{self._owners.request.processing_request_id}:cid-nl-partitioned-v1"
+        )
+        self._memberships_by_subject: dict[str, list[tuple[str, str]]] = {}
+        for membership in plan.subject_batch.candidate_memberships:
+            self._memberships_by_subject.setdefault(membership[1], []).append(
+                membership
+            )
+
+    @property
+    def partitions(
+        self,
+    ) -> Sequence[WorkPartition[tuple[CidNlMethodSubject, ...]]]:
+        return self._partitions
+
+    @property
+    def processing_owners(self) -> ProcessingOwners:
+        return self._owners
+
+    @property
+    def work_unit_keys(self) -> Sequence[str]:
+        return self._work_unit_keys
+
+    @property
+    def resource_reservations(self) -> Sequence[RuntimeResourceReservation]:
+        return self._resource_reservations
+
+    @property
+    def owner_completeness_attestation(self) -> str:
+        return self._owner_completeness_attestation
+
+    def get_shared_objects(self) -> tuple[object, ...]:
+        return _shared_objects(self._plan)
+
+    def execute_acquisition(
+        self,
+        partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> PartitionAcquisitionOutput[
+        tuple[
+            UntargetedCidNlProductionBatch,
+            UntargetedCidNlRuntimePartitionResult,
+        ]
+    ]:
+        subjects = partition.payload
+        subject_batch = UntargetedCidNlMethodSubjectBatch(
+            subjects=subjects,
+            candidate_memberships=tuple(
+                sorted(
+                    membership
+                    for subject in subjects
+                    for membership in self._memberships_by_subject[
+                        subject.method_subject_id
+                    ]
+                )
+            ),
+        )
+        batch = materialize_untargeted_cid_nl_partition(
+            self._plan, subject_batch
+        )
+        leaf = execute_untargeted_cid_nl_runtime_partition(
+            batch.jobs,
+            partition_key=partition.partition_key,
+            alignment_config=self._alignment_config,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
+            raw_workers=self._raw_workers,
+            raw_worker_backend=self._raw_worker_backend,
+        )
+        failure_detail = None
+        if not leaf.succeeded:
+            failed = next(
+                receipt
+                for receipt in leaf.worker_batch.settlements
+                if receipt.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
+            )
+            failure_detail = failed.failure_detail
+        return PartitionAcquisitionOutput(
+            result=(batch, leaf),
+            resources=leaf.worker_batch.resource_settlements,
+            acquisitions=leaf.acquisitions,
+            succeeded=leaf.succeeded,
+            failure_detail=failure_detail,
+        )
+
+    def execute_composition(
+        self,
+        partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+        acquisition_output: PartitionAcquisitionOutput[
+            tuple[
+                UntargetedCidNlProductionBatch,
+                UntargetedCidNlRuntimePartitionResult,
+            ]
+        ],
+        store: StreamedResultStore,
+        *,
+        retain_memory: bool = False,
+        should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
+    ) -> PartitionCompositionOutput[UntargetedCidNlPersistedPartition]:
+        batch, leaf = acquisition_output.result
+
+        def cancel_check() -> None:
+            if should_cancel is not None and should_cancel():
+                raise InterruptedError("CID-NL batch cancelled")
+
+        persisted = compose_and_persist_untargeted_cid_nl_partition(
+            batch,
+            leaf.sample_results,
+            store=store,
+            partition_key=partition.partition_key,
+            alignment_config=self._alignment_config,
+            known_istd_reference=self._known_istd_reference,
+            should_cancel=cancel_check,
+            retain_memory=retain_memory,
+            raw_workers=self._raw_workers,
+        )
+        return PartitionCompositionOutput(
+            result=persisted, sealed=persisted.sealed
+        )
+
+    def create_partition_artifacts(
+        self,
+        partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
+        composition_output: PartitionCompositionOutput[
+            UntargetedCidNlPersistedPartition
+        ],
+    ) -> tuple[
+        Sequence[RuntimeArtifactRegistrationReceipt],
+        Sequence[WorkUnitSettlement],
+    ]:
+        sealed = composition_output.sealed
+        context = self._plan.context
+        artifacts: list[RuntimeArtifactRegistrationReceipt] = []
+        settlements: list[WorkUnitSettlement] = []
+        for sample in context.samples:
+            for phase in ("initial", "recovery"):
+                key = (
+                    f"{partition.partition_key}:"
+                    f"{sample.identity.sample_identity_id}:{phase}"
+                )
+                artifact = _mint_evidence_artifact_ref(
+                    producer_processing_request_id=(
+                        self._owners.request.processing_request_id
+                    ),
+                    producer_processing_attempt_id=(
+                        self._owners.attempt.processing_attempt_id
+                    ),
+                    semantic_contract=_PARTITION_CONTRACT,
+                    payload_bytes=(
+                        json.dumps(
+                            {
+                                "work_unit_key": key,
+                                "partition_sha256": sealed.sha256,
+                                "partition_bytes": sealed.size_bytes,
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    ).encode("utf-8"),
+                    upstream_artifacts=(),
+                )
+                artifacts.append(
+                    RuntimeArtifactRegistrationReceipt(key, artifact)
+                )
+                settlements.append(
+                    mint_work_unit_settlement(
+                        attempt=self._owners.attempt,
+                        work_unit_key=key,
+                        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                        owner_result_ref=artifact,
+                    )
+                )
+        return tuple(artifacts), tuple(settlements)
+
+    def finalize_application(
+        self,
+        store: StreamedResultStore,
+        composition_outputs: Sequence[
+            PartitionCompositionOutput[UntargetedCidNlPersistedPartition]
+        ],
+    ) -> FinalizedUntargetBatchApplicationResult:
+        context = self._plan.context
+        bindings: list[CaptureCandidateBinding] = []
+        exclusion_positions: list[tuple[str, int, int]] = []
+        for index, comp_out in enumerate(composition_outputs):
+            persisted = comp_out.result
+            bindings.extend(persisted.capture_bindings)
+            exclusion_positions.extend(
+                (exclusion.candidate_id, index, offset)
+                for offset, exclusion in enumerate(
+                    persisted.excluded_candidates
+                )
+            )
+        scope = UntargetedSearchScope(
+            schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+            request=self._owners.request,
+            samples=context.samples,
+            method_constraints=CaptureMethodConstraints(
+                boundary_policy="resolver_interval",
+                peak_config=context.peak_config,
+                signal_processing_profile=context.signal_processing_profile,
+            ),
+            evidence_providers=tuple(
+                EvidenceProviderBinding(
+                    CID_NL_PROVIDER_ID, subject.method_subject_id
+                )
+                for subject in self._plan.subject_batch.subjects
+            ),
+            declared_candidate_ids=tuple(
+                candidate_id
+                for candidate_id, _ in self._plan.subject_batch.candidate_memberships
+            ),
+            capture_bindings=tuple(
+                sorted(bindings, key=lambda binding: binding.candidate_id)
+            ),
+        )
+        return cast(
+            FinalizedUntargetBatchApplicationResult,
+            finalize_alignment_result(
+                UntargetBatchApplicationResultRequest(
+                    scope=scope,
+                    processing_request=self._owners.request,
+                    processing_attempt=self._owners.attempt,
+                    children=store.sequence("children"),
+                    excluded_candidates=_ordered_exclusions(
+                        store, exclusion_positions
+                    ),
+                )
+            ),
+        )
+
+    def build_workflow_result(
+        self,
+        runtime_receipt: RuntimeFinalizationReceipt,
+        application_result: FinalizedUntargetBatchApplicationResult,
+        store: StreamedResultStore,
+    ) -> CompletedUntargetBatchWorkflowResult:
+        return CompletedUntargetBatchWorkflowResult(
+            runtime_receipt=runtime_receipt,
+            application_result=application_result,
+            method_assessments=store.sequence("method_assessments"),
+            initial_groups=store.sequence("initial_groups"),
+            initial_edges=store.sequence("initial_edges"),
+            cleanup_action=store.cleanup,
+        )
 
 
 def execute_bounded_untargeted_cid_nl(
@@ -109,305 +429,26 @@ def execute_bounded_untargeted_cid_nl(
         raise ValueError("raw_workers must be a positive integer")
     if raw_worker_backend not in {"process", "thread"}:
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
-    context = plan.context
-    owners = context.processing_owners
-    subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
-    partitions = tuple(
-        plan.subject_batch.subjects[start : start + subjects_per_partition]
-        for start in range(0, len(plan.subject_batch.subjects), subjects_per_partition)
-    )
-    partition_keys = tuple(f"partition-{index:05d}" for index in range(len(partitions)))
-    phase_keys = tuple(
-        f"{partition}:{sample.identity.sample_identity_id}:{phase}"
-        for partition in partition_keys
-        for sample in context.samples
-        for phase in ("initial", "recovery")
-    )
-    reservations = tuple(
-        RuntimeResourceReservation(
-            attempt=owners.attempt,
-            kind=RuntimeResourceKind.ACQUISITION_SESSION,
-            resource_key=f"acquisition-session:{partition}:{sample.identity.sample_identity_id}:{phase}",
-            worker_key=f"inline-acquisition:{partition}:{sample.identity.sample_identity_id}:{phase}",
-            source_reference=resolve_request_acquisition_source(
-                processing_owners=owners, sample=sample
-            ).acquisition_source_id,
-            compatibility_token="untargeted-cid-nl-real-data-runtime:v1",
-            owner_conditional=True,
-        )
-        for partition in partition_keys
-        for sample in context.samples
-        for phase in ("initial", "recovery")
-    )
-    runtime = start_runtime_attempt(
-        attempt=owners.attempt,
-        work_unit_keys=phase_keys,
-        owner_completeness_attestation=(
-            f"{owners.request.processing_request_id}:cid-nl-partitioned-v1"
-        ),
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    store = PartitionResultStore(
-        Path(mkdtemp(prefix=".cid_nl_partitions-", dir=output_dir)),
-        shared_objects=_shared_objects(plan),
-    )
-    memberships_by_subject: dict[str, list[tuple[str, str]]] = {}
-    for membership in plan.subject_batch.candidate_memberships:
-        memberships_by_subject.setdefault(membership[1], []).append(membership)
-    failure: Exception | None = None
-    application_result = None
 
-    def progress(stage: str, completed: int) -> None:
-        if progress_callback is not None:
-            progress_callback(
-                {
-                    "event": "partition_progress",
-                    "stage": stage,
-                    "completed": completed,
-                    "total": len(partitions),
-                    "partition_job_budget": max_partition_jobs,
-                }
-            )
-
-    def provide_worker_batch(_aggregate: object) -> RuntimeWorkerBatchReceipt:
-        nonlocal failure, application_result
-        settlements = []
-        resources: dict[str, RuntimeResourceSettlementReceipt] = {}
-        artifacts = []
-        acquisitions: list[RuntimeAcquisitionReceipt] = []
-        bindings: list[CaptureCandidateBinding] = []
-        exclusion_positions: list[tuple[str, int, int]] = []
-        runtime_inflight = None
-
-        def check_cancellation() -> None:
-            if should_cancel is not None and should_cancel():
-                raise InterruptedError("CID-NL batch cancelled")
-
-        try:
-            check_cancellation()
-            for index, subjects in enumerate(partitions):
-                check_cancellation()
-                active_partition = partition_keys[index]
-                subject_batch = UntargetedCidNlMethodSubjectBatch(
-                    subjects=subjects,
-                    candidate_memberships=tuple(
-                        sorted(
-                            membership
-                            for subject in subjects
-                            for membership in memberships_by_subject[
-                                subject.method_subject_id
-                            ]
-                        )
-                    ),
-                )
-                batch = materialize_untargeted_cid_nl_partition(plan, subject_batch)
-                progress("partition_start", index)
-                runtime_inflight = active_partition
-                leaf = execute_untargeted_cid_nl_runtime_partition(
-                    batch.jobs,
-                    partition_key=active_partition,
-                    alignment_config=alignment_config,
-                    progress_callback=progress_callback,
-                    should_cancel=should_cancel,
-                    raw_workers=raw_workers,
-                    raw_worker_backend=raw_worker_backend,
-                )
-                resources.update(
-                    (receipt.resource_key, receipt)
-                    for receipt in leaf.worker_batch.resource_settlements
-                )
-                acquisitions.extend(
-                    compact_runtime_acquisition_receipt(receipt)
-                    for receipt in leaf.acquisitions
-                )
-                runtime_inflight = None
-                if not leaf.succeeded:
-                    failed = next(
-                        receipt
-                        for receipt in leaf.worker_batch.settlements
-                        if receipt.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
-                    )
-                    raise RuntimeError(
-                        f"CID-NL partition failed: {failed.failure_detail}"
-                    )
-                check_cancellation()
-                progress("partition_compose", index)
-                persisted = compose_and_persist_untargeted_cid_nl_partition(
-                    batch,
-                    leaf.sample_results,
-                    store=store,
-                    partition_key=active_partition,
-                    alignment_config=alignment_config,
-                    known_istd_reference=known_istd_reference,
-                    should_cancel=check_cancellation,
-                    retain_memory=retain_partition_memory and len(partitions) == 1,
-                    raw_workers=raw_workers,
-                )
-                check_cancellation()
-                sealed = persisted.sealed
-                bindings.extend(persisted.capture_bindings)
-                exclusion_positions.extend(
-                    (exclusion.candidate_id, index, offset)
-                    for offset, exclusion in enumerate(persisted.excluded_candidates)
-                )
-                for sample in context.samples:
-                    for phase in ("initial", "recovery"):
-                        key = (
-                            f"{active_partition}:"
-                            f"{sample.identity.sample_identity_id}:{phase}"
-                        )
-                        artifact = _mint_evidence_artifact_ref(
-                            producer_processing_request_id=owners.request.processing_request_id,
-                            producer_processing_attempt_id=owners.attempt.processing_attempt_id,
-                            semantic_contract=_PARTITION_CONTRACT,
-                            payload_bytes=(
-                                json.dumps(
-                                    {
-                                        "work_unit_key": key,
-                                        "partition_sha256": sealed.sha256,
-                                        "partition_bytes": sealed.size_bytes,
-                                    },
-                                    sort_keys=True,
-                                    separators=(",", ":"),
-                                )
-                                + "\n"
-                            ).encode("utf-8"),
-                            upstream_artifacts=(),
-                        )
-                        artifacts.append(
-                            RuntimeArtifactRegistrationReceipt(key, artifact)
-                        )
-                        settlements.append(
-                            mint_work_unit_settlement(
-                                attempt=owners.attempt,
-                                work_unit_key=key,
-                                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                                owner_result_ref=artifact,
-                            )
-                        )
-                del persisted, leaf, batch
-                gc.collect()
-                progress("partition_released", index + 1)
-            check_cancellation()
-            store.seal()
-            progress("global_closure", len(partitions))
-            scope = UntargetedSearchScope(
-                schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-                request=owners.request,
-                samples=context.samples,
-                method_constraints=CaptureMethodConstraints(
-                    boundary_policy="resolver_interval",
-                    peak_config=context.peak_config,
-                    signal_processing_profile=context.signal_processing_profile,
-                ),
-                evidence_providers=tuple(
-                    EvidenceProviderBinding(
-                        CID_NL_PROVIDER_ID, subject.method_subject_id
-                    )
-                    for subject in plan.subject_batch.subjects
-                ),
-                declared_candidate_ids=tuple(
-                    candidate_id
-                    for candidate_id, _ in plan.subject_batch.candidate_memberships
-                ),
-                capture_bindings=tuple(
-                    sorted(bindings, key=lambda binding: binding.candidate_id)
-                ),
-            )
-            application_result = finalize_alignment_result(
-                UntargetBatchApplicationResultRequest(
-                    scope=scope,
-                    processing_request=owners.request,
-                    processing_attempt=owners.attempt,
-                    children=store.sequence("children"),
-                    excluded_candidates=_ordered_exclusions(store, exclusion_positions),
-                )
-            )
-            check_cancellation()
-        except Exception as exc:
-            failure = exc
-            completed_keys = {receipt.work_unit_key for receipt in settlements}
-            # A closure failure invalidates the batch even if all parts finished.
-            if len(completed_keys) == len(phase_keys):
-                completed_keys.remove(settlements.pop().work_unit_key)
-            for key in phase_keys:
-                if key not in completed_keys:
-                    settlements.append(
-                        mint_work_unit_settlement(
-                            attempt=owners.attempt,
-                            work_unit_key=key,
-                            outcome=WorkUnitTerminalOutcome.FAILED,
-                            failure_detail=WorkUnitFailureDetail(
-                                category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                                stage="cid-nl-partition-completion",
-                                source_reference=key,
-                                message=(str(exc).strip() or type(exc).__name__)[:2000],
-                            ),
-                        )
-                    )
-        for reservation in reservations:
-            if reservation.resource_key not in resources:
-                unknown = (
-                    runtime_inflight is not None
-                    and reservation.resource_key.startswith(
-                        f"acquisition-session:{runtime_inflight}:"
-                    )
-                )
-                resources[reservation.resource_key] = RuntimeResourceSettlementReceipt(
-                    attempt=owners.attempt,
-                    resource_key=reservation.resource_key,
-                    open_outcome=(
-                        RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS
-                        if unknown
-                        else RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-                    ),
-                    cleanup_outcome=(
-                        RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS
-                        if unknown
-                        else RuntimeResourceCleanupOutcome.SUCCEEDED
-                    ),
-                )
-        return RuntimeWorkerBatchReceipt(
-            settlements=tuple(settlements),
-            resource_settlements=tuple(resources.values()),
-            artifact_registrations=tuple(artifacts),
-            acquisitions=tuple(acquisitions),
-        )
-
-    try:
-        recovery_marker.record_launch(runtime)
-        finalization = execute_runtime_attempt(
-            runtime,
-            reservations,
-            worker_batch_provider=provide_worker_batch,
-            telemetry_provider=telemetry_provider,
-            persister=recovery_marker,
-        )
-        if failure is not None:
-            store.cleanup()
-            raise RuntimeError(
-                f"CID-NL bounded execution failed before batch publication: {failure}"
-            ) from failure
-        outcome = finalization.supervisor.terminal_outcome
-        if outcome is not AttemptTerminalOutcome.SUCCEEDED or (
-            application_result is None
-        ):
-            store.cleanup()
-            raise RuntimeError("CID-NL bounded runtime did not complete atomically")
-        progress("batch_completed", len(partitions))
-        return CompletedUntargetBatchWorkflowResult(
-            runtime_receipt=finalization,
-            application_result=cast(
-                FinalizedUntargetBatchApplicationResult, application_result
-            ),
-            method_assessments=store.sequence("method_assessments"),
-            initial_groups=store.sequence("initial_groups"),
-            initial_edges=store.sequence("initial_edges"),
-            cleanup_action=store.cleanup,
-        )
-    except Exception:
-        store.cleanup()
-        raise
+    adapter = CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
+        max_partition_jobs=max_partition_jobs,
+        raw_workers=raw_workers,
+        raw_worker_backend=raw_worker_backend,
+    )
+    return PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=output_dir,
+        telemetry_provider=telemetry_provider,
+        recovery_marker=recovery_marker,
+        progress_callback=progress_callback,
+        should_cancel=should_cancel,
+        retain_partition_memory=retain_partition_memory,
+        execute_runtime_attempt=execute_runtime_attempt,
+        store_factory=PartitionResultStore,
+    )
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
@@ -431,7 +472,7 @@ def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
 
 
 def _ordered_exclusions(
-    store: PartitionResultStore, positions: list[tuple[str, int, int]]
+    store: StreamedResultStore, positions: list[tuple[str, int, int]]
 ) -> ImmutableSequence:
     """Restore canonical candidate order with finite result windows."""
     ordered = tuple(sorted(positions))
