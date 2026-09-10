@@ -232,12 +232,24 @@ def finalize_scientific_alignment(
         )
     )
     _validate_terminal_population(scope, terminal_subjects)
-    canonical_samples = tuple(
-        sorted(
-            scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
+    canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    samples = scope.samples
+    if (
+        type(samples) is tuple
+        and all(
+            samples[i].identity.sample_identity_id
+            <= samples[i + 1].identity.sample_identity_id
+            for i in range(len(samples) - 1)
         )
-    )
+    ):
+        canonical_samples = samples
+    else:
+        canonical_samples = tuple(
+            sorted(
+                samples,
+                key=lambda sample: sample.identity.sample_identity_id,
+            )
+        )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if cell_observation_handoff is None:
         if (
@@ -350,21 +362,28 @@ def _validate_finalized_alignment(
     *,
     _reuse_fresh_cells: bool = False,
 ) -> None:
-    _validate_scope(result.scope)
+    if not _reuse_fresh_cells:
+        _validate_scope(result.scope)
     if result.processing_request is not result.scope.request:
         raise FinalizedScientificAlignmentContractError(
             "finalized result crossed its exact processing request"
         )
-    expected_samples = tuple(
-        sorted(
-            result.scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
+    if not _reuse_fresh_cells:
+        expected_samples = tuple(
+            sorted(
+                result.scope.samples,
+                key=lambda sample: sample.identity.sample_identity_id,
+            )
         )
-    )
-    if result.canonical_samples != expected_samples:
-        raise FinalizedScientificAlignmentContractError(
-            "finalized result crossed its canonical sample universe"
-        )
+        if result.canonical_samples != expected_samples:
+            raise FinalizedScientificAlignmentContractError(
+                "finalized result crossed its canonical sample universe"
+            )
+    else:
+        if len(result.canonical_samples) != len(result.scope.samples):
+            raise FinalizedScientificAlignmentContractError(
+                "finalized result crossed its canonical sample universe"
+            )
     if type(result.final_cross_sample_receipt) is not CrossSampleFinalReceipt:
         raise FinalizedScientificAlignmentContractError(
             "finalized result requires an exact CrossSample final receipt"
@@ -376,14 +395,15 @@ def _validate_finalized_alignment(
         raise FinalizedScientificAlignmentContractError(
             "finalized result crossed the processing request"
         )
-    expected_terminal_order = tuple(
-        sorted(result.terminal_subjects, key=_terminal_sort_key)
-    )
-    if result.terminal_subjects != expected_terminal_order:
-        raise FinalizedScientificAlignmentContractError(
-            "terminal subjects are not canonical-sorted"
+    if not _reuse_fresh_cells:
+        expected_terminal_order = tuple(
+            sorted(result.terminal_subjects, key=_terminal_sort_key)
         )
-    _validate_terminal_population(result.scope, result.terminal_subjects)
+        if result.terminal_subjects != expected_terminal_order:
+            raise FinalizedScientificAlignmentContractError(
+                "terminal subjects are not canonical-sorted"
+            )
+        _validate_terminal_population(result.scope, result.terminal_subjects)
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if result.cell_observation_handoff is None:
         if (
@@ -395,12 +415,13 @@ def _validate_finalized_alignment(
             )
         canonical_cells = ()
     else:
-        _validate_cell_observation_handoff(
-            handoff=result.cell_observation_handoff,
-            final_cross_sample_receipt=result.final_cross_sample_receipt,
-            canonical_samples=result.canonical_samples,
-            processing_request_id=result.processing_request_id,
-        )
+        if not _reuse_fresh_cells:
+            _validate_cell_observation_handoff(
+                handoff=result.cell_observation_handoff,
+                final_cross_sample_receipt=result.final_cross_sample_receipt,
+                canonical_samples=result.canonical_samples,
+                processing_request_id=result.processing_request_id,
+            )
         if _reuse_fresh_cells:
             canonical_cells = result.cell_observations
             expected_positions = tuple(
@@ -522,16 +543,17 @@ def _validate_cell_observation_handoff(
             "cell-observation handoff crossed the processing request"
         )
     handoff_samples = handoff.coverage.epoch.samples
-    handoff_sample_by_id = {
-        sample.identity.sample_identity_id: sample for sample in handoff_samples
-    }
-    if len(handoff_sample_by_id) != len(canonical_samples) or any(
-        handoff_sample_by_id.get(sample.identity.sample_identity_id) is not sample
-        for sample in canonical_samples
-    ):
-        raise FinalizedScientificAlignmentContractError(
-            "cell-observation handoff crossed the canonical sample universe"
-        )
+    if handoff_samples != canonical_samples:
+        handoff_sample_by_id = {
+            sample.identity.sample_identity_id: sample for sample in handoff_samples
+        }
+        if len(handoff_sample_by_id) != len(canonical_samples) or any(
+            handoff_sample_by_id.get(sample.identity.sample_identity_id) is not sample
+            for sample in canonical_samples
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "cell-observation handoff crossed the canonical sample universe"
+            )
 
 
 def _validate_searched_no_observation_subject(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -447,6 +448,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
     retain_memory: bool = False,
+    raw_workers: int = 1,
 ) -> UntargetedCidNlPersistedPartition:
     """Compose one child at a time and publish only after the full partition.
 
@@ -469,18 +471,41 @@ def compose_and_persist_untargeted_cid_nl_partition(
 
     def children():
         nonlocal child_count
-        for bundle, captures in zip(
-            inputs.bundles, inputs.completed_captures, strict=True
-        ):
-            check_cancellation()
-            child = compose_untarget_subject(
+        items = tuple(
+            zip(inputs.bundles, inputs.completed_captures, strict=True)
+        )
+        if raw_workers <= 1 or len(items) <= 1:
+            for bundle, captures in items:
+                check_cancellation()
+                child = compose_untarget_subject(
+                    cast(UntargetWorkflowCompositionRequest, bundle.request),
+                    bundle.adapter,
+                    completed_captures=captures,
+                )
+                child_count += 1
+                yield child
+                del child
+            return
+
+        def _compose_item(item):
+            bundle, captures = item
+            return compose_untarget_subject(
                 cast(UntargetWorkflowCompositionRequest, bundle.request),
                 bundle.adapter,
                 completed_captures=captures,
             )
-            child_count += 1
-            yield child
-            del child
+
+        batch_size = 128
+        with ThreadPoolExecutor(
+            max_workers=raw_workers, thread_name_prefix="cid-nl-compose"
+        ) as pool:
+            for i in range(0, len(items), batch_size):
+                check_cancellation()
+                chunk = items[i : i + batch_size]
+                for child in pool.map(_compose_item, chunk):
+                    child_count += 1
+                    yield child
+                    del child
 
     metadata_payload = UntargetedCidNlPartitionComposition(
         children=(),

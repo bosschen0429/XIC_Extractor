@@ -241,6 +241,7 @@ def execute_bounded_untargeted_cid_nl(
                     known_istd_reference=known_istd_reference,
                     should_cancel=check_cancellation,
                     retain_memory=retain_partition_memory and len(partitions) == 1,
+                    raw_workers=raw_workers,
                 )
                 check_cancellation()
                 sealed = persisted.sealed
