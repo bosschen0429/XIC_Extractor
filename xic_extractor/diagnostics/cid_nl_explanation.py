@@ -46,6 +46,7 @@ class ExplanationReportWriter:
             pass
         try:
             self.connection = sqlite3.connect(self.temporary)
+            self.connection.execute("PRAGMA page_size = 32768;")
             self.connection.execute("PRAGMA synchronous = OFF;")
             self.connection.execute("PRAGMA journal_mode = MEMORY;")
             self.connection.execute("PRAGMA cache_size = -64000;")
@@ -102,7 +103,11 @@ class ExplanationReportWriter:
         encoded = _json(payload)
         key = (kind, identity)
         existing = self._records.get(key)
-        if existing is not None and _object(existing) != _object(encoded):
+        if (
+            existing is not None
+            and existing != encoded
+            and _object(existing) != _object(encoded)
+        ):
             raise ValueError(
                 f"conflicting diagnostic owner identity: {(kind, identity)}"
             )
@@ -111,11 +116,11 @@ class ExplanationReportWriter:
             self._records[key] = encoded
             self._buffered_records.append((kind, identity, encoded))
             self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
-            if len(self._buffered_records) >= 5000:
+            if len(self._buffered_records) >= 20000:
                 self._flush_records()
         for cid, sid in related:
             self._buffered_links.append((cid, sid, kind, identity))
-        if len(self._buffered_links) >= 10000:
+        if len(self._buffered_links) >= 50000:
             self._flush_links()
         return is_new
 

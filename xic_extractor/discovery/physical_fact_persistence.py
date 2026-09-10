@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from xic_extractor.acquisition_contract import (
+    AcquiredTrace,
+    TraceCoordinate,
+    TraceCoordinateKind,
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
@@ -18,6 +21,7 @@ from xic_extractor.discovery.physical_fact_record import (
     validate_discovery_physical_fact_record,
 )
 from xic_extractor.peak_detection.evidence_facts import (
+    _physical_evaluation_from_payload,
     deserialize_physical_peak_evaluation,
     serialize_physical_peak_evaluation,
 )
@@ -27,6 +31,7 @@ from xic_extractor.processing_run_spec import (
     deserialize_processing_run_spec,
     serialize_processing_run_spec,
 )
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar_v1"
 
@@ -206,13 +211,126 @@ def read_discovery_physical_fact_records(
         _work_from_content(item)
         for item in _list(root["work_manifest"], label="work_manifest")
     )
-    return _deserialize_discovery_physical_fact_sidecar_from_root(
+    return _read_discovery_physical_fact_records_direct(
         root,
-        raw=payload,
         expected_run_spec=expected_run_spec,
         expected_acquisition_input=expected_acquisition_input,
         expected_work_manifest=manifest,
     )
+
+
+def _read_discovery_physical_fact_records_direct(
+    root: Mapping[str, Any],
+    *,
+    expected_run_spec: ProcessingRunSpec,
+    expected_acquisition_input: ProcessingAcquisitionInput,
+    expected_work_manifest: Sequence[DiscoveryPhysicalWorkItem],
+) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+    if not isinstance(expected_run_spec, ProcessingRunSpec):
+        raise TypeError("expected_run_spec must be a ProcessingRunSpec")
+    _validate_acquisition_input(expected_run_spec, expected_acquisition_input)
+    expected_manifest = tuple(expected_work_manifest)
+    _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
+    _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
+    if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
+        raise ValueError("unsupported Discovery physical sidecar schema_version")
+    run_spec_value = _mapping(root["run_spec"], label="run_spec")
+    persisted_spec = deserialize_processing_run_spec(
+        _canonical_json_bytes(run_spec_value),
+        expected_run_spec_hash=expected_run_spec.run_spec_hash,
+        expected_run_spec_id=expected_run_spec.run_spec_id,
+    )
+    if persisted_spec != expected_run_spec:
+        raise ValueError("Discovery physical sidecar crosses expected run spec")
+    sample = _mapping(root["sample"], label="sample")
+    _require_keys(sample, _SAMPLE_KEYS, label="sample")
+    if sample != _sample_content(expected_acquisition_input):
+        raise ValueError("Discovery physical sidecar crosses sample input binding")
+
+    persisted_manifest = tuple(
+        _work_from_content(raw_item)
+        for raw_item in _list(root["work_manifest"], label="work_manifest")
+    )
+    _validate_manifest(
+        persisted_manifest,
+        acquisition_input=expected_acquisition_input,
+    )
+    if persisted_manifest != expected_manifest:
+        raise ValueError("Discovery physical sidecar work manifest changed")
+
+    raw_records = _list(root["records"], label="records")
+    if len(raw_records) != len(persisted_manifest):
+        raise ValueError("Discovery physical sidecar lost a physical work record")
+    records: list[DiscoveryPhysicalFactRecord] = []
+    for item, raw_record in zip(persisted_manifest, raw_records, strict=True):
+        record = _mapping(raw_record, label="record")
+        _require_keys(record, _RECORD_KEYS, label="record")
+        if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
+            raise ValueError("Discovery physical sidecar candidate ID changed")
+        if (
+            _text(record["selection_subject_id"], field="selection_subject_id")
+            != item.selection_subject_id
+        ):
+            raise ValueError("Discovery physical selection subject changed")
+
+        acq_val = _mapping(record["acquired_trace"], label="acquired_trace")
+        coord_val = _mapping(acq_val["coordinate"], label="coordinate")
+        req_val = _mapping(coord_val["request"], label="coordinate request")
+        request = XICRequest(
+            mz=_float_from_text(req_val["mz"], field="request.mz"),
+            rt_min=_float_from_text(req_val["rt_min"], field="request.rt_min"),
+            rt_max=_float_from_text(req_val["rt_max"], field="request.rt_max"),
+            ppm_tol=_float_from_text(req_val["ppm_tol"], field="request.ppm_tol"),
+        )
+        first_scan = coord_val.get("first_scan")
+        last_scan = coord_val.get("last_scan")
+        coordinate = TraceCoordinate(
+            trace_coordinate_id=_text(
+                coord_val["trace_coordinate_id"], field="trace_coordinate_id"
+            ),
+            capability_id=_text(coord_val["capability_id"], field="capability_id"),
+            acquisition_source_id=_text(
+                coord_val["acquisition_source_id"], field="acquisition_source_id"
+            ),
+            request=request,
+            coordinate_kind=TraceCoordinateKind(
+                _text(coord_val["coordinate_kind"], field="coordinate_kind")
+            ),
+            first_scan=_integer(first_scan, field="first_scan")
+            if first_scan is not None
+            else None,
+            last_scan=_integer(last_scan, field="last_scan")
+            if last_scan is not None
+            else None,
+            trace_point_count=_integer(
+                coord_val["trace_point_count"], field="trace_point_count"
+            ),
+        )
+        trace_val = _mapping(acq_val["trace"], label="trace")
+        trace = XICTrace.from_arrays(
+            tuple(
+                _float_from_text(x, field="trace.rt")
+                for x in _list(trace_val["rt"], label="trace.rt")
+            ),
+            tuple(
+                _float_from_text(x, field="trace.intensity")
+                for x in _list(trace_val["intensity"], label="trace.intensity")
+            ),
+        )
+        acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
+
+        phys_val = _mapping(record["physical_evaluation"], label="physical_evaluation")
+        eval_payload = _mapping(phys_val["evaluation"], label="evaluation")
+        evaluation = _physical_evaluation_from_payload(eval_payload)
+
+        records.append(
+            DiscoveryPhysicalFactRecord(
+                work_item=item,
+                acquired_trace=acquired,
+                evaluation=evaluation,
+            )
+        )
+    return tuple(records)
 
 
 def deserialize_discovery_physical_fact_sidecar(
