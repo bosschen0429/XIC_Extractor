@@ -357,10 +357,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--raw-worker-backend",
         choices=("process", "thread"),
-        default="process",
+        default="thread",
         help=(
             "Worker backend for concurrent RAW sample execution within each "
-            "partition ('process' or 'thread', default: 'process')."
+            "partition ('process' or 'thread', default: 'thread')."
         ),
     )
     parser.add_argument(
