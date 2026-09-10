@@ -750,3 +750,39 @@ meaning in the runtime core.
   runtime.
 - No integration evidence above `diagnostic_only` may be claimed until real
   consumer integration is separately implemented and artifact-validated.
+
+## Pipeline Overlap and Cancellation Protocols (Issue #386)
+
+### Pipeline Overlap Execution and Bounded Admission
+
+`PartitionPipelineScheduler` supports concurrent acquisition of partition \(P_{n+1}\)
+while composing partition \(P_n\) without multiplying RAW acquisition resources:
+
+- **Admission credits**: exactly 2 credits via a semaphore bound in-flight work
+  units (acquiring, in handoff queue, and composing).
+- **Handoff queue**: bounded queue with `maxsize=1` enforces backpressure so that
+  acquisition does not outrun composition.
+- **Bilateral abort**: producer acquisition failures immediately signal the
+  consumer thread to drain and abort; consumer composition failures signal the
+  producer to stop further acquisition, cancel pending tasks, and clean up spools.
+- **Serial fallback**: automatically falls back to single-threaded serial execution
+  when partition count is 1 or when `pipeline_overlap=False`.
+
+### In-Flight Cancellation Ingress (R386-01)
+
+`RuntimeCancellationIngress` provides thread-safe cancellation signaling to active
+runtime attempts:
+
+- Signals are atomically recorded and verified against attempt identity.
+- Accepted before terminalization proposal, transitioning the attempt cleanly to
+  `CANCELLED` without leaving dangling reservations or unmanaged resources.
+- Active work units are settled as `CANCELLED`, while un-opened resources transition
+  to `NOT_OPENED`.
+
+### Predeclared Global Closure Work Unit (R386-01)
+
+For workflows with post-partition global assembly (such as CID-NL composition):
+
+- The required-work manifest explicitly pre-declares a `global_closure_work_unit_key`.
+- If global closure fails, only the closure work unit is settled as `FAILED`,
+  leaving already settled partition units as `SUCCEEDED`.

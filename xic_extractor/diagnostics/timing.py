@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -75,6 +75,7 @@ class TimingRecorder:
         self._last_heartbeat_publish: float | None = None
         self._measurement_observations: list[dict[str, object]] = []
         self._measurement_contract: dict[str, object] = {}
+        self._partition_timeline: list[dict[str, object]] = []
 
     @classmethod
     def disabled(
@@ -214,6 +215,11 @@ class TimingRecorder:
         event_name = event.get("event")
         if not isinstance(event_name, str):
             return
+        if event_name == "partition_timeline":
+            timeline = event.get("timeline")
+            if isinstance(timeline, (list, tuple)):
+                self.record_partition_timeline(timeline)
+            return
         stage = event.get("stage", event_name)
         sample = event.get("sample_stem", "")
         completed = event.get("completed")
@@ -337,10 +343,17 @@ class TimingRecorder:
         )
         return path
 
+    def record_partition_timeline(
+        self,
+        timeline: Iterable[Mapping[str, object]],
+    ) -> None:
+        """Record partition timeline entries into the timing projection."""
+        self._partition_timeline = [dict(entry) for entry in timeline]
+
     def to_json_dict(self) -> dict[str, object]:
         from xic_extractor.diagnostics.timing_summary import summarize_timing_records
 
-        return {
+        result: dict[str, object] = {
             "schema_version": "timing.v1",
             "run_id": self.run_id,
             "pipeline": self.pipeline,
@@ -355,6 +368,11 @@ class TimingRecorder:
             "measurement_observations": list(self._measurement_observations),
             "span_semantics": list(self._span_semantics),
         }
+        if self._partition_timeline:
+            result["partition_timeline"] = [
+                dict(item) for item in self._partition_timeline
+            ]
+        return result
 
     def _append_record(
         self,

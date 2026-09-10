@@ -83,6 +83,15 @@ _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     serialization_format="canonical-json-utf8-lf-v1",
 )
 
+_GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
+    semantic_role="closed_application_result",
+    schema_version="cid_nl_global_closure_v1",
+    validation_status="diagnostic_only",
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf-v1",
+)
+
 
 class CidNlPartitionPipelineAdapter:
     """Adapts CID-NL partition acquisition, composition, and closure to the
@@ -123,11 +132,17 @@ class CidNlPartitionPipelineAdapter:
             )
             for index, subjects in enumerate(subject_partitions)
         )
-        self._work_unit_keys = tuple(
-            f"{partition.partition_key}:{sample.identity.sample_identity_id}:{phase}"
-            for partition in self._partitions
-            for sample in context.samples
-            for phase in ("initial", "recovery")
+        self._global_closure_work_unit_key = (
+            f"global-closure:{self._owners.request.processing_request_id}"
+        )
+        self._work_unit_keys = (
+            *(
+                f"{partition.partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                for partition in self._partitions
+                for sample in context.samples
+                for phase in ("initial", "recovery")
+            ),
+            self._global_closure_work_unit_key,
         )
         self._resource_reservations = tuple(
             RuntimeResourceReservation(
@@ -391,6 +406,48 @@ class CidNlPartitionPipelineAdapter:
             ),
         )
 
+    @property
+    def global_closure_work_unit_key(self) -> str:
+        return self._global_closure_work_unit_key
+
+    def create_global_closure_artifacts(
+        self,
+        application_result: FinalizedUntargetBatchApplicationResult,
+    ) -> tuple[
+        Sequence[RuntimeArtifactRegistrationReceipt],
+        Sequence[WorkUnitSettlement],
+    ]:
+        key = self._global_closure_work_unit_key
+        artifact = _mint_evidence_artifact_ref(
+            producer_processing_request_id=(
+                self._owners.request.processing_request_id
+            ),
+            producer_processing_attempt_id=(
+                self._owners.attempt.processing_attempt_id
+            ),
+            semantic_contract=_GLOBAL_CLOSURE_CONTRACT,
+            payload_bytes=(
+                json.dumps(
+                    {
+                        "work_unit_key": key,
+                        "completed_children_count": len(application_result.children),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            ).encode("utf-8"),
+            upstream_artifacts=(),
+        )
+        receipt = RuntimeArtifactRegistrationReceipt(key, artifact)
+        settlement = mint_work_unit_settlement(
+            attempt=self._owners.attempt,
+            work_unit_key=key,
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            owner_result_ref=artifact,
+        )
+        return (receipt,), (settlement,)
+
     def build_workflow_result(
         self,
         runtime_receipt: RuntimeFinalizationReceipt,
@@ -421,6 +478,7 @@ def execute_bounded_untargeted_cid_nl(
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
+    pipeline_overlap: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
 
@@ -453,6 +511,7 @@ def execute_bounded_untargeted_cid_nl(
         progress_callback=progress_callback,
         should_cancel=should_cancel,
         retain_partition_memory=retain_partition_memory,
+        pipeline_overlap=pipeline_overlap,
         execute_runtime_attempt=execute_runtime_attempt,
         store_factory=PartitionResultStore,
     )
