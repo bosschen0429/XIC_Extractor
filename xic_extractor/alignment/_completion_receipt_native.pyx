@@ -89,8 +89,28 @@ cdef class Walker:
 
     cdef void visit_item(self, object item) except *:
         cdef object owner_id, owner_field, member, key
-        if item is None or type(item) in {bool, int, float, str, bytes}:
-            self.feed(f'scalar:{type(item).__module__}.{type(item).__qualname__}')
+        if item is None:
+            self.feed('scalar:builtins.NoneType')
+            self.feed(repr(item))
+            return
+        if type(item) is bool:
+            self.feed('scalar:builtins.bool')
+            self.feed(repr(item))
+            return
+        if type(item) is int:
+            self.feed('scalar:builtins.int')
+            self.feed(repr(item))
+            return
+        if type(item) is float:
+            self.feed('scalar:builtins.float')
+            self.feed(repr(item))
+            return
+        if type(item) is str:
+            self.feed('scalar:builtins.str')
+            self.feed(repr(item))
+            return
+        if type(item) is bytes:
+            self.feed('scalar:builtins.bytes')
             self.feed(repr(item))
             return
         owner_id = id(item)
