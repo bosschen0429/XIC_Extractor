@@ -392,7 +392,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         project_completed_untarget_batch_writer_inputs,
     )
     from xic_extractor.extraction import (
-        untargeted_cid_nl_production_batch as production,
+        untargeted_cid_nl_bounded_runtime as bounded_runtime,
     )
     from xic_extractor.extraction.untargeted_cid_nl_alignment import (
         complete_untargeted_cid_nl_alignment,
@@ -400,7 +400,7 @@ def _assert_alignment_uses_configured_recovery_groups(
 
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_results = []
-    execute = production.execute_untargeted_cid_nl_real_data_runtime
+    execute = bounded_runtime.execute_untargeted_cid_nl_runtime_partition
 
     def retain_runtime(*args, **options):
         result = execute(*args, **options)
@@ -421,7 +421,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         return result
 
     monkeypatch.setattr(
-        production, "execute_untargeted_cid_nl_real_data_runtime", retain_runtime
+        bounded_runtime, "execute_untargeted_cid_nl_runtime_partition", retain_runtime
     )
     completed = complete_untargeted_cid_nl_alignment(
         discovery_batch=DiscoveryBatchInput(
@@ -464,7 +464,8 @@ def _assert_alignment_uses_configured_recovery_groups(
         for cell in missing_cells
         if cell.predecessor_cells[0].group_context.group.group_center_rt == 8.0
     )
-    assert recovered.predecessor_cells[0].method_assessment is recovery.assessment
+    # The partition store restores assessment values from the completed runtime.
+    assert recovered.predecessor_cells[0].method_assessment == recovery.assessment
     assert recovered.evidence_states == ("unavailable",)
     writer = project_completed_untarget_batch_writer_inputs(completed)
     assert all(
