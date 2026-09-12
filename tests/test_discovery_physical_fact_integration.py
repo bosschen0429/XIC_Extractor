@@ -63,14 +63,15 @@ _TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
 class _OwnerBoundBatchRaw(_BatchRaw):
     def __init__(self, source, **kwargs) -> None:
         super().__init__(source, **kwargs)
-        self.rt = np.asarray([7.6, 7.7, 7.8, 7.9, 8.0])
-        self.intensity = np.asarray([0.0, 10.0, 100.0, 10.0, 0.0])
+        # Include baseline-return samples and context beyond both peak boundaries.
+        self.rt = np.asarray([7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.0, 8.1, 8.2])
+        self.intensity = np.asarray([0.0, 0.0, 0.0, 10.0, 100.0, 10.0, 0.0, 0.0, 0.0])
 
 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_apices", "representative_scan"),
     (
-        ("discovery_normal_single_peak", (18.45591733148333,), 14922),
+        ("discovery_normal_single_peak", (18.45591733148333,), 14712),
         ("discovery_same_peak_seeds", (38.190113531483334,), None),
         ("discovery_true_double_peak", (15.007716898666667, 15.25524139625), None),
     ),
@@ -171,11 +172,18 @@ def test_discovery_retained_physical_peak_cardinality(
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
-        assert all(
-            record.evaluation.facts is None
+        # Baseline-return boundaries admit both supporting seeds. The merge
+        # owner selects the earlier seed when intensity and mass error tie.
+        assert {
+            record.work_item.best_ms2_scan_id
             for record in result.physical_evaluations
-            if record.work_item.best_ms2_scan_id != representative_scan
-        )
+            if record.evaluation.facts is not None
+        } == {14712, 14922}
+        assert {
+            record.work_item.best_ms2_scan_id: record.evaluation.reason
+            for record in result.physical_evaluations
+            if record.evaluation.facts is None
+        } == {14067: "no_selection", 14291: "no_selection"}
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -542,8 +550,13 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
     assert raw.raw_chromatogram_call_count == 1
 
 
-def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
+@pytest.mark.parametrize(
+    ("peak_sigma", "physical_state"), [(0.03, "available"), (0.08, "unavailable")]
+)
+def test_short_discovery_request_reacquires_points_without_assuming_complete_context(
     tmp_path: Path,
+    peak_sigma: float,
+    physical_state: str,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -553,7 +566,9 @@ def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.05, 13.25, 0.10, dtype=float)
-    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.08) ** 2)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / peak_sigma) ** 2
+    )
 
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
@@ -584,14 +599,22 @@ def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
     first, reacquired = result.measurements.acquisition_batches
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
-    assert result.physical_evaluations[0].evaluation.state == "available"
+    evaluation = result.physical_evaluations[0].evaluation
+    assert evaluation.state == physical_state
     assert (
         result.physical_evaluations[0].evaluation.prepared.profile_id
         == profile.profile_id
     )
     candidate = result.candidates[0]
-    assert candidate.ms1_peak_found is True
-    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+    if physical_state == "available":
+        assert candidate.ms1_peak_found is True
+        assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+    else:
+        assert evaluation.reason == "incomplete_peak_context"
+        assert evaluation.facts is None
+        assert candidate.ms1_peak_found is False
+        assert candidate.ms1_area is None
+        assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     final_request = reacquired.traces[0].coordinate.request
     assert candidate.ms1_search_rt_min == final_request.rt_min
     assert candidate.ms1_search_rt_max == final_request.rt_max
@@ -608,7 +631,9 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
-    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.15) ** 2)
+    # Keep the complete baseline-return peak inside the initial context so
+    # the full-trace comparison tests acquisition, not a changed baseline fit.
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.06) ** 2)
 
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
@@ -951,7 +976,9 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
         signal_processing_profile=profile,
     )
     foreign_raw = _OwnerBoundBatchRaw(foreign_source)
-    foreign_raw.intensity = np.asarray([0.0, 5.0, 500.0, 5.0, 0.0], dtype=float)
+    foreign_raw.intensity = np.asarray(
+        [0.0, 0.0, 0.0, 5.0, 500.0, 5.0, 0.0, 0.0, 0.0], dtype=float
+    )
     foreign = _backfill_ms1_candidates_with_acquisition(
         foreign_raw,
         (group,),
