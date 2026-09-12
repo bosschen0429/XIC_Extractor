@@ -285,10 +285,14 @@ def test_discovery_samples_section_file_dropped_imports_csv(
 @pytest.mark.parametrize(
     "transition", ["new_source", "unmatched_source", "new_batch", "clear"]
 )
-def test_sample_source_fields_follow_current_records(qtbot, tmp_path, transition):
+@pytest.mark.parametrize("raw_source", ["none", "empty", "populated"])
+def test_sample_source_fields_follow_current_records(
+    qtbot, tmp_path, transition, raw_source
+):
     raw_dir = tmp_path / "BatchA"
     raw_dir.mkdir()
-    (raw_dir / "Sample1.raw").touch()
+    if raw_source != "empty":
+        (raw_dir / "Sample1.raw").touch()
     source = tmp_path / "metadata.csv"
     source.write_text(
         "schema_version,sample_name,raw_stem,injection_order,sample_role,"
@@ -298,7 +302,8 @@ def test_sample_source_fields_follow_current_records(qtbot, tmp_path, transition
     )
     section = DiscoverySamplesSection()
     qtbot.addWidget(section)
-    section.set_sources(raw_dir, None)
+    if raw_source != "none":
+        section.set_sources(raw_dir, None)
     assert section.load_sequence_source(source)
     assert section.get_sample_metadata() == load_sample_metadata(source)
 
@@ -309,11 +314,18 @@ def test_sample_source_fields_follow_current_records(qtbot, tmp_path, transition
             f"Order,Raw File,Sample Name\n2,{name}.raw,{name}\n", encoding="utf-8"
         )
         assert section.load_sequence_source(replacement)
+        if raw_source != "populated":
+            assert section.get_sample_metadata() == load_sample_metadata(replacement)
+            assert (
+                section._status_label.text() == "已載入 1 筆上機資訊（尚無 RAW 可匹配）"
+            )
+            return
         expected_order = 2 if transition == "new_source" else None
     else:
         if transition == "clear":
             section.clear_all()
             assert section.get_sample_metadata() is None
+            (raw_dir / "Sample1.raw").touch()
         else:
             raw_dir = tmp_path / "BatchB"
             raw_dir.mkdir()

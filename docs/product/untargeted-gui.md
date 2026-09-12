@@ -72,6 +72,9 @@ does not create a separate product-authority lane.
   imported acquisition-information document supplies order through the shared
   sample-metadata loader and matcher. Its source is persisted and reloaded before
   explicit role corrections; folder changes clear the old sequence binding.
+  Matching uses the RAW files enumerated from the selected directory. Existing
+  sequence rows are never treated as RAW files; without enumerated RAW files,
+  importing another source replaces the sequence table.
 - The sample table edits a view of the complete imported metadata record.
   Undisplayed fields, including exclusions and their reasons, survive visible
   edits, filtering, request construction, and CSV export. Filters change only

@@ -69,6 +69,7 @@ class DiscoverySamplesSection(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._raw_dir: Path | None = None
+        self._raw_stems: tuple[str, ...] = ()
         self._custom_roles: dict[str, str] = {}
         self._sequence_source = ""
 
@@ -194,6 +195,7 @@ class DiscoverySamplesSection(QWidget):
         raw_dir_resolved = raw_dir.resolve() if raw_dir and raw_dir.is_dir() else None
 
         if raw_dir_resolved != self._raw_dir:
+            self._raw_stems = ()
             self._custom_roles.clear()
             self._sequence_source = ""
             self._show_sequence_source(None)
@@ -220,6 +222,7 @@ class DiscoverySamplesSection(QWidget):
             self._status_label.setText(f"資料夾中無 .raw 檔案：{self._raw_dir.name}")
             return
 
+        self._raw_stems = tuple(path.stem for path in raw_files)
         self._populate_fast_entries(raw_files)
         self._status_label.setText(
             f"已列出 {len(raw_files)} 個 RAW；請匯入 Word 上機資訊設定進樣順序"
@@ -229,6 +232,7 @@ class DiscoverySamplesSection(QWidget):
     def clear_all(self) -> None:
         self._custom_roles.clear()
         self._raw_dir = None
+        self._raw_stems = ()
         self._sequence_source = ""
         self._show_sequence_source(None)
         self._table.setRowCount(0)
@@ -534,11 +538,7 @@ class DiscoverySamplesSection(QWidget):
         show_error_dialog: bool,
         retain_source_on_failure: bool,
     ) -> bool:
-        current_stems = [
-            item.text()
-            for row in range(self._table.rowCount())
-            if (item := self._table.item(row, _COL_STEM)) is not None and item.text()
-        ]
+        current_stems = self._raw_stems
 
         try:
             if current_stems:
@@ -551,7 +551,7 @@ class DiscoverySamplesSection(QWidget):
             if retain_source_on_failure:
                 self._sequence_source = str(path)
                 self._clear_injection_orders()
-            raw_count = self._table.rowCount()
+            raw_count = len(current_stems)
             count_suffix = f"（{raw_count} 個 RAW）" if raw_count else ""
             message = f"無法載入上機資訊《{path.name}》{count_suffix}"
             self._status_label.setText(message)
