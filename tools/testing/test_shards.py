@@ -111,6 +111,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_discovery_worker.py",
             "tests/test_discovery_method_section.py",
             "tests/test_discovery_method_persistence.py",
+            "tests/test_discovery_samples_section.py",
             "tests/test_gui_*.py",
             "tests/test_main_window_layout.py",
             "tests/test_messages.py",

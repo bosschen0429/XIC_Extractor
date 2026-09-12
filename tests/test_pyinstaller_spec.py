@@ -1,6 +1,8 @@
 import hashlib
 import json
+import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -136,6 +138,33 @@ PACKAGING_SOURCE_DIRECTORIES = (
     "tools",
     "xic_extractor",
 )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows DLL search order")
+def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path):
+    from PyInstaller.depend.bindepend import resolve_library_path
+
+    system_dir = Path(os.environ["SystemRoot"]) / "System32"
+    # An unrelated but valid PE image reproduces a same-name foreign DLL on PATH.
+    foreign_dir = tmp_path / "foreign-tool"
+    foreign_dir.mkdir()
+    shutil.copy2(system_dir / "kernel32.dll", foreign_dir / "icuuc.dll")
+    monkeypatch.setenv("PATH", str(foreign_dir) + os.pathsep + os.environ["PATH"])
+
+    class AnalysisReached(Exception):
+        pass
+
+    def inspect_dependency_search(*args, **kwargs):
+        resolved = resolve_library_path("icuuc.dll")
+        assert resolved is not None
+        assert Path(resolved).resolve() == (system_dir / "icuuc.dll").resolve()
+        raise AnalysisReached
+
+    with pytest.raises(AnalysisReached):
+        runpy.run_path(
+            str(PROJECT_ROOT / "xic_extractor.spec"),
+            init_globals={"Analysis": inspect_dependency_search},
+        )
 
 
 @pytest.fixture(scope="module")

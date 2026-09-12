@@ -77,3 +77,8 @@ def _target_write_fieldnames(targets: list[dict[str, str]]) -> list[str]:
                 fieldnames.append(field)
                 seen.add(field)
     return fieldnames
+
+
+def targets_example_path() -> Path:
+    """Read-only shared template, including in frozen releases."""
+    return _BUNDLE_CONFIG / "targets.example.csv"

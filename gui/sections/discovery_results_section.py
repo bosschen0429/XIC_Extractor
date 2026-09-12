@@ -47,11 +47,17 @@ class DiscoveryResultsSection(QWidget):
         self._matrix = ""
         self._alignment_outputs: dict[str, str] = {}
         self._summary_text = "尚未執行"
+        self.hide()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
 
-        card, body = section_card("④ 結果", "候選統計與輸出")
+        card, body = section_card(
+            "分析結果",
+            "",
+        )
+        self._title = card.findChild(QLabel, "section_title")
+        assert self._title is not None
 
         self._empty = QLabel("尚未執行，完成後這裡會顯示候選統計與輸出。")
         self._empty.setObjectName("section_subtitle")
@@ -102,10 +108,10 @@ class DiscoveryResultsSection(QWidget):
         button_row.setSpacing(8)
         self._open_output = QPushButton("開啟輸出資料夾")
         self._open_output.clicked.connect(lambda: _open_path(self._output_dir))
-        self._open_gallery = QPushButton("開啟 gallery")
+        self._open_gallery = QPushButton("開啟審閱圖集")
         self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
         self._open_gallery.clicked.connect(lambda: _open_path(self._gallery))
-        self._open_matrix = QPushButton("開啟 matrix")
+        self._open_matrix = QPushButton("開啟定量矩陣")
         self._open_matrix.clicked.connect(lambda: _open_path(self._matrix))
         self._buttons = (self._open_output, self._open_gallery, self._open_matrix)
         for button in self._buttons:
@@ -123,6 +129,8 @@ class DiscoveryResultsSection(QWidget):
     # ── Public API ──────────────────────────────────────────────────────────
 
     def update_results(self, summary: dict[str, Any]) -> None:
+        self.show()
+        self._title.setText("本次分析結果")
         self._output_dir = str(summary.get("output_dir") or "")
         self._alignment_outputs = {
             str(key): str(path)
@@ -138,9 +146,7 @@ class DiscoveryResultsSection(QWidget):
             or ""
         )
         self._matrix = str(
-            summary.get("matrix_tsv")
-            or self._alignment_outputs.get("matrix_tsv")
-            or ""
+            summary.get("matrix_tsv") or self._alignment_outputs.get("matrix_tsv") or ""
         )
         gallery_error = str(summary.get("gallery_error") or "")
 
@@ -168,6 +174,8 @@ class DiscoveryResultsSection(QWidget):
         self._summary_text = self._build_text(summary)
 
     def show_error(self, message: str) -> None:
+        self.show()
+        self._title.setText("本次執行未完成")
         self._output_dir = ""
         self._gallery = ""
         self._matrix = ""
@@ -187,6 +195,25 @@ class DiscoveryResultsSection(QWidget):
         self._error.setVisible(True)
         self._summary_text = f"執行失敗：{message}"
 
+    def mark_previous(self) -> None:
+        if self._summary_text != "尚未執行":
+            self._title.setText("上次執行結果 · 設定已變更")
+
+    def clear_results(self) -> None:
+        self._output_dir = ""
+        self._gallery = ""
+        self._matrix = ""
+        self._alignment_outputs = {}
+        self._summary_text = "尚未執行"
+        self._sample_table.setRowCount(0)
+        for button in self._buttons:
+            button.setEnabled(False)
+        self._error.clear()
+        self._error.hide()
+        self._dashboard.hide()
+        self._empty.show()
+        self.hide()
+
     def summary_text(self) -> str:
         return self._summary_text
 
@@ -204,7 +231,9 @@ class DiscoveryResultsSection(QWidget):
             for col_index, value in enumerate(row):
                 item = QTableWidgetItem(value)
                 if col_index != 0:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                 self._sample_table.setItem(row_index, col_index, item)
         has_rows = bool(rows)
         self._sample_heading.setVisible(has_rows)
@@ -302,9 +331,7 @@ class _DistributionBar(QWidget):
         for tier, segment in self._segments.items():
             stretch = values[tier] if total else 0
             self._track_layout.setStretchFactor(segment, stretch)
-            color = (
-                styles.ACTIVE[_TIER_TOKENS[tier]] if values[tier] else "transparent"
-            )
+            color = styles.ACTIVE[_TIER_TOKENS[tier]] if values[tier] else "transparent"
             segment.setStyleSheet(f"background: {color}; border-radius: 8px;")
         muted = styles.ACTIVE["text_muted"]
         for tier, label in _TIER_LABELS:
@@ -323,6 +350,17 @@ class _DistributionBar(QWidget):
 def _build_sample_table() -> QTableWidget:
     table = QTableWidget(0, len(_PER_SAMPLE_HEADERS))
     table.setHorizontalHeaderLabels(list(_PER_SAMPLE_HEADERS))
+    for column in range(len(_PER_SAMPLE_HEADERS)):
+        item = table.horizontalHeaderItem(column)
+        if item is not None:
+            item.setTextAlignment(
+                (
+                    Qt.AlignmentFlag.AlignLeft
+                    if column == 0
+                    else Qt.AlignmentFlag.AlignRight
+                )
+                | Qt.AlignmentFlag.AlignVCenter
+            )
     vertical_header = table.verticalHeader()
     if vertical_header is not None:
         vertical_header.setVisible(False)
@@ -333,9 +371,7 @@ def _build_sample_table() -> QTableWidget:
     if header is not None:
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for column in range(1, len(_PER_SAMPLE_HEADERS)):
-            header.setSectionResizeMode(
-                column, QHeaderView.ResizeMode.ResizeToContents
-            )
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
     return table
 
 

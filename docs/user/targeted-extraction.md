@@ -11,9 +11,15 @@ and optional internal-standard pairs you want to review.
    checkout.
 2. Select **Targeted Extraction**.
 3. Set the RAW data directory and Thermo DLL directory.
-4. Review or import the target table.
-5. Press **Run**.
+4. Import targets or choose **檢視與編輯** to open the full-height target table.
+   **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
+5. Press **開始執行** below the workspace.
 6. Start review from the generated workbook in `output/`.
+
+**開始新批次** clears the RAW directory and displayed results while retaining
+targets, DLL, and analysis parameters. The environment and advanced settings
+remain available through their expandable summaries. Editing settings after a
+completed run labels the displayed results as previous results.
 
 The GUI and CLI use the same targeted pipeline. Packaged builds start from:
 

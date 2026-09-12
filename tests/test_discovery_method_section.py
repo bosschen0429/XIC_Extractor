@@ -58,6 +58,39 @@ def test_discovery_method_allows_zero_rt_lower_bound(qtbot) -> None:
     assert section.is_valid() is True
 
 
+def test_discovery_method_preset_display_names_and_preview(qtbot) -> None:
+    presets = (
+        "dna_dr",
+        "dna_dr_product_ready",
+        "rna_ribose",
+        "rna_mer",
+        "phosphorylation_h3po4",
+        "glucuronidation",
+        "hexose_glycosylation",
+    )
+    section = DiscoveryMethodSection(presets)
+    qtbot.addWidget(section)
+
+    combo = section._preset
+    assert combo.count() == 3
+
+    # Check that itemData has canonical keys and itemText has rich labels
+    for idx, key in enumerate(("dna_dr", "rna_ribose", "rna_mer")):
+        assert combo.itemData(idx) == key
+        assert len(combo.itemText(idx)) > len(key)
+
+    assert "DNA" in combo.itemText(0)
+    assert "116.0474 Da" in combo.itemText(0)
+
+    # Check preview badges
+    preview_text = section._preset_preview.text()
+    assert "DNA_dR" in preview_text
+    assert "116.047" in preview_text
+    assert "NL 容差" in preview_text
+    assert "Precursor 容差" in preview_text
+    assert "RT" in preview_text
+
+
 def _assert_discovery_accepts(section: DiscoveryMethodSection) -> None:
     apply_to_discovery(
         load_preset("dna_dr"),

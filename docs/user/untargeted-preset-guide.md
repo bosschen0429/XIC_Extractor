@@ -6,15 +6,22 @@ can be saved anywhere and selected in the GUI or passed to CLI scripts.
 
 ## Configure A Method In The GUI
 
-In **Untargeted Discovery → Discovery 方法**:
+![CID-NL method editor with an example dR/R configuration](../../assets/screenshots/method-editor.png)
+
+In **Untargeted Discovery → 分析方法**:
 
 1. Select a built-in preset, or choose **匯入方法…** to open a TOML file.
-2. Choose **編輯／另存方法…** to edit its name, description, neutral-loss tag
-   names/masses, and combination. **新增方法…** starts a new method.
-3. Choose **另存方法…** to write a TOML. The GUI selects the saved file. Cancel
-   leaves the previous method intact.
-4. Adjust Discovery tuning under **顯示進階覆寫** when needed. Use
-   **編輯／另存方法…** again to save those effective values with the method.
+2. Choose **編輯方法…** to select dR, R, and MeR, edit neutral-loss tag
+   names/masses, or add a custom NL. **新增方法…** starts a new method.
+3. Choose whether the same peak must match any or all selected tags. The method
+   summary updates as you edit; it describes the configuration, not a predicted
+   analytical result.
+4. Apply to use the edited method for the current run. Save As writes a reusable
+   TOML independently. Cancel leaves the previously applied method intact.
+5. Advanced parameters remain a secondary, collapsed control. GUI starting
+   methods explicitly use RT 0–60 minutes; Apply and Save As preserve this
+   effective value for CLI use. Imported values outside the GUI range are not
+   silently truncated.
 
 The saved file is accepted by the same CLI `--preset` input. It includes the
 effective Discovery values and preset-owned runtime option, so export does not
@@ -38,7 +45,12 @@ Presets do not expose a public workflow graph or `[workflow]` TOML section.
 | Name | Display name | Strategy | NL mass (Da) | Description |
 | --- | --- | --- | --- | --- |
 | `dna_dr` | DNA dR | CID neutral loss | 116.0474 | 2'-deoxyribose neutral-loss discovery |
+| `rna_ribose` | R | CID neutral loss | 132.0423 | Ribose neutral-loss starting method |
+| `rna_mer` | MeR | CID neutral loss | 146.0579 | MeR neutral-loss starting method |
 | `dna_dr_product_ready` | DNA dR Owner Backfill (compat) | CID neutral loss | 116.0474 | Historical compatibility profile; pure CID-NL execution uses the retained batch, and the preset ID is not a readiness assertion |
+
+The GUI starting list contains only dR, R, and MeR. Other CLI presets retain
+their existing support; GUI editing currently accepts only pure CID-NL methods.
 
 ---
 
