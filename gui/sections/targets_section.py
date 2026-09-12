@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from gui import config_io
 from gui.ui import DropTableWidget, titled_card
+from xic_extractor.configuration.csv_io import read_target_draft_rows
 
 _TABLE_HEADERS = [
     "名稱",
@@ -392,13 +393,12 @@ class TargetsSection(QWidget):
 
     def _import_csv_file(self, path: Path) -> None:
         try:
-            with path.open(newline="", encoding="utf-8-sig") as handle:
-                targets = list(csv.DictReader(handle))
+            targets = read_target_draft_rows(path)
             self.details_requested.emit()
             self.load(targets)
             self._set_dirty(True)
         except Exception as exc:
-            QMessageBox.warning(self, "匯入失敗", f"無法讀取 CSV 檔案：{exc}")
+            QMessageBox.warning(self, "匯入失敗", f"無法讀取目標檔案：{exc}")
 
     def _on_import_xlsx(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
