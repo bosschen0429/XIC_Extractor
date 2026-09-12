@@ -94,6 +94,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not dll_dir.is_dir():
         print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
         return 2
+    if args.targets_csv is not None and args.known_istd_reference_workbook is not None:
+        print(
+            "--targets-csv and --known-istd-reference-workbook are mutually exclusive",
+            file=sys.stderr,
+        )
+        return 2
+    if args.targets_csv is not None and not args.targets_csv.is_file():
+        print(f"{args.targets_csv}: targets CSV file does not exist", file=sys.stderr)
+        return 2
     try:
         discovery_batch = read_discovery_batch_index(discovery_batch_index)
     except ValueError as exc:
@@ -164,6 +173,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Known ISTD reference SHA-256: "
                 f"{known_istd_reference.workbook_sha256}"
             )
+        if args.targets_csv is not None:
+            try:
+                from xic_extractor.configuration.targets import read_istd_targets
+
+                selection = read_istd_targets(args.targets_csv)
+                print(
+                    f"Targets CSV: {args.targets_csv.resolve()} "
+                    f"({len(selection.targets)} ISTD loaded, "
+                    f"{selection.skipped_count} non-ISTD rows skipped)"
+                )
+            except Exception as exc:
+                print(f"Failed to read targets CSV: {exc}", file=sys.stderr)
+                return 2
         return 0
 
     timing_recorder = (
@@ -204,6 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
             ),
             "known_istd_reference_workbook": args.known_istd_reference_workbook,
+            "targets_csv": args.targets_csv,
             "discovery_settings": recipe.discovery_settings,
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
@@ -218,6 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             "owner_build_xic_backend": owner_build_xic_backend,
             "require_discovery_owner_closure": True,
+            "max_partition_jobs": args.max_partition_jobs,
             **timing_kwargs,
         }
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
@@ -339,6 +363,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
               "align known SUPPORT owners."),
     )
     parser.add_argument(
+        "--targets-csv",
+        type=Path,
+        help=(
+            "Targets CSV containing ISTD definitions. When provided, ISTD drift "
+            "anchors are extracted directly in-memory from RAW files without "
+            "requiring an external Excel workbook."
+        ),
+    )
+    parser.add_argument(
         "--preset",
         help=(
             "Required built-in pure CID-NL preset name or TOML path. Use "
@@ -361,6 +394,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Worker backend for concurrent RAW sample execution within each "
             "partition ('process' or 'thread', default: 'thread')."
+        ),
+    )
+    parser.add_argument(
+        "--max-partition-jobs",
+        type=_positive_int,
+        default=100_000,
+        help=(
+            "Maximum job budget per bounded CID-NL partition (default: 100000)."
         ),
     )
     parser.add_argument(
@@ -539,12 +580,11 @@ def _validate_expected_full_cohort_contract(args: argparse.Namespace) -> None:
         return
 
     failures: list[str] = []
-    _expect_arg(
-        failures,
-        "--output-level",
-        args.output_level,
-        "validation-minimal",
-    )
+    if args.output_level not in {"production", "validation-minimal"}:
+        failures.append(
+            "--output-level must be 'production' or 'validation-minimal'; "
+            f"got {args.output_level!r}"
+        )
     if args.timing_output is None:
         failures.append("--timing-output is required for canonical FULL COHORT runs")
     if args.timing_live_output is None:

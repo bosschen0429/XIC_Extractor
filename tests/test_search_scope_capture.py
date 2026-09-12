@@ -719,6 +719,173 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         )
 
 
+def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "qc"},
+    )
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=precursor_mz,
+                    precursor_tolerance_ppm=10.0,
+                    neutral_loss_da=neutral_loss_da,
+                )
+                for precursor_mz, neutral_loss_da in (
+                    (243.098, 116.0474),
+                    (243.099, 116.0474),
+                    (243.2, 116.0474),
+                    (243.0985, 114.0),
+                )
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    subject_by_mz_loss = {
+        (subject.precursor_mz, subject.neutral_loss_da): subject
+        for subject in subjects
+    }
+    memberships = tuple(
+        (
+            candidate_id,
+            subject_by_mz_loss[(precursor_mz, neutral_loss_da)].method_subject_id,
+        )
+        for candidate_id, precursor_mz, neutral_loss_da in (
+            ("candidate-a", 243.098, 116.0474),
+            ("candidate-b", 243.099, 116.0474),
+            ("candidate-c", 243.2, 116.0474),
+            ("candidate-d", 243.0985, 114.0),
+        )
+    )
+    batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=subjects,
+        candidate_memberships=memberships,
+    )
+    base_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=base_request.acquisition_sources,
+        acquisition_bindings=base_request.acquisition_bindings,
+        scientific_input_schema_version="untargeted-cid-nl-workset-test-v1",
+        processing_algorithm_version=base_request.processing_algorithm_version,
+        processing_contract_version=base_request.processing_contract_version,
+        scientific_inputs={REQUEST_INPUT_KEY: batch.request_payload()},
+    )
+    sample = fixture.sample("S1")
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    bindings = tuple(
+        _capture_binding(
+            candidate_id=candidate_id,
+            method_subject_id=method_subject_id,
+            sample=sample,
+            acquisition_source_id=source.acquisition_source_id,
+            mz=batch.subject_for_candidate(candidate_id).precursor_mz,
+            ppm_tol=batch.subject_for_candidate(candidate_id).precursor_tolerance_ppm,
+            rt_min=7.7,
+            rt_max=8.3,
+        )
+        for candidate_id, method_subject_id in memberships
+    )
+    parent_scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=request,
+        samples=(sample,),
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=_peak_config(tmp_path),
+        ),
+        evidence_providers=tuple(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=subject.method_subject_id,
+            )
+            for subject in subjects
+        ),
+        declared_candidate_ids=tuple(candidate_id for candidate_id, _ in memberships),
+        capture_bindings=bindings,
+    )
+    workset_subject_ids = {
+        subject_by_mz_loss[(243.098, 116.0474)].method_subject_id,
+        subject_by_mz_loss[(243.099, 116.0474)].method_subject_id,
+    }
+    workset_providers = tuple(
+        provider
+        for provider in parent_scope.evidence_providers
+        if provider.method_subject_id in workset_subject_ids
+    )
+    workset_bindings = tuple(
+        binding
+        for binding in bindings
+        if binding.method_subject_id in workset_subject_ids
+    )
+    workset_scope = replace(
+        parent_scope,
+        evidence_providers=workset_providers,
+        declared_candidate_ids=tuple(
+            binding.candidate_id for binding in workset_bindings
+        ),
+        capture_bindings=workset_bindings,
+    )
+
+    assert len(workset_scope.evidence_providers) == 2
+    assert len(workset_scope.evidence_providers) < len(parent_scope.evidence_providers)
+    assert workset_scope.capture_bindings == workset_bindings
+
+    def providers_for(
+        subject_keys: set[tuple[float, float]],
+    ) -> tuple[EvidenceProviderBinding, ...]:
+        subject_ids = {
+            subject_by_mz_loss[subject_key].method_subject_id
+            for subject_key in subject_keys
+        }
+        return tuple(
+            provider
+            for provider in parent_scope.evidence_providers
+            if provider.method_subject_id in subject_ids
+        )
+
+    foreign_subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=10.0,
+        neutral_loss_da=116.0474,
+    )
+    invalid_provider_cases = (
+        (tuple(reversed(workset_providers)), "exact compatible subject workset"),
+        (
+            (workset_providers[0], workset_providers[0]),
+            "duplicate evidence providers",
+        ),
+        (
+            providers_for({(243.098, 116.0474), (243.2, 116.0474)}),
+            "exact compatible subject workset",
+        ),
+        (
+            providers_for({(243.098, 116.0474), (243.0985, 114.0)}),
+            "exact compatible subject workset",
+        ),
+        (
+            (
+                EvidenceProviderBinding(
+                    provider_id=CID_NL_PROVIDER_ID,
+                    method_subject_id=foreign_subject.method_subject_id,
+                ),
+            ),
+            "exact compatible subject workset",
+        ),
+    )
+    for invalid_providers, message in invalid_provider_cases:
+        with pytest.raises(
+            SearchScopeContractError,
+            match=message,
+        ):
+            replace(workset_scope, evidence_providers=invalid_providers)
+
+
 def test_scope_rejects_provider_not_bound_to_variant_definition(
     tmp_path: Path,
 ) -> None:

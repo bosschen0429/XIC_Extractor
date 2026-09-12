@@ -55,8 +55,18 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   A selected segment that reaches either acquired-trace edge is unavailable
   (`incomplete_peak_context`) and carries no numeric physical facts. Discovery
   uses its existing bounded reacquisition pass to recover missing context;
-  unresolved clipped segments remain unavailable. Formula and selection semantics
-  are versioned in the profile, so old results require fresh processing.
+  unresolved clipped segments remain unavailable. The profile binds the formula;
+  the physical question and segment universe bind the selection policy. Persisted
+  evaluations replay their recorded policy and retain their exact identity.
+- Current physical selection uses the complete positive peak interval through
+  the first baseline-return samples, bounded by adjacent valleys. Point queries
+  use `baseline_peak_contains_query_v2`; membership and integration share these
+  bounds, including inter-scan peak tails. Group-guided recovery uses
+  `unique_baseline_peak_in_context_v1`: its center locates the bounded search
+  context and need not fall inside the peak, but multiple local peaks remain
+  ambiguous and nonnumeric. Legacy `closed_segment_contains_query_v1` receipts
+  retain their original 2%-height bounds when rehydrated. Fresh processing may
+  therefore include additional tail area; replay never rewrites a saved answer.
 - The canonical public profile fields are `signal_processing_method`
   (`gaussian` only) and `signal_processing_window_points` (default 15; non-bool
   odd integer 3–999). The legacy settings spelling

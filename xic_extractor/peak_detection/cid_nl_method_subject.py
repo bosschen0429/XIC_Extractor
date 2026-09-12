@@ -317,6 +317,164 @@ def mint_untargeted_cid_nl_method_subject_batch(
     )
 
 
+def cid_nl_method_subject_resolver_interval(
+    subject: CidNlMethodSubject,
+) -> tuple[float, float]:
+    """Return the exact precursor interval searched for one method subject."""
+
+    if type(subject) is not CidNlMethodSubject:
+        raise CidNlMethodSubjectContractError(
+            "resolver interval requires an exact CID-NL method subject"
+        )
+    fraction = subject.precursor_tolerance_ppm / 1_000_000.0
+    return (
+        subject.precursor_mz / (1.0 + fraction),
+        subject.precursor_mz / (1.0 - fraction),
+    )
+
+
+def validate_cid_nl_alignment_subject_compatibility(
+    subjects: tuple[CidNlMethodSubject, ...],
+) -> tuple[CidNlMethodSubject, ...]:
+    """Validate subjects that may share one Alignment comparison universe."""
+
+    if (
+        type(subjects) is not tuple
+        or not subjects
+        or any(type(subject) is not CidNlMethodSubject for subject in subjects)
+    ):
+        raise CidNlMethodSubjectContractError(
+            "alignment subjects must be a non-empty exact tuple"
+        )
+    subject_ids = tuple(subject.method_subject_id for subject in subjects)
+    if len(subject_ids) != len(set(subject_ids)):
+        raise CidNlMethodSubjectContractError(
+            "alignment subjects must have unique method subject identities"
+        )
+    if len(subjects) == 1:
+        return subjects
+    if any(
+        subject.subject_kind != "untargeted_precursor"
+        or subject.composition is not None
+        for subject in subjects
+    ):
+        raise CidNlMethodSubjectContractError(
+            "multi-subject alignment requires scalar Untargeted CID-NL subjects"
+        )
+    neutral_losses = {subject.neutral_loss_da for subject in subjects}
+    if len(neutral_losses) != 1:
+        raise CidNlMethodSubjectContractError(
+            "multi-subject alignment cannot cross configured neutral losses"
+        )
+    return subjects
+
+
+def validate_cid_nl_alignment_subject_workset(
+    subjects: tuple[CidNlMethodSubject, ...],
+) -> tuple[CidNlMethodSubject, ...]:
+    """Validate one overlap-connected, method-compatible Alignment workset."""
+
+    validate_cid_nl_alignment_subject_compatibility(subjects)
+    ordered_intervals = sorted(
+        (cid_nl_method_subject_resolver_interval(subject) for subject in subjects),
+        key=lambda interval: (interval[0], interval[1]),
+    )
+    upper = ordered_intervals[0][1]
+    for lower, next_upper in ordered_intervals[1:]:
+        if lower > upper:
+            raise CidNlMethodSubjectContractError(
+                "alignment workset resolver intervals are not overlap-connected"
+            )
+        upper = max(upper, next_upper)
+    return subjects
+
+
+def cid_nl_alignment_subject_worksets(
+    subjects: tuple[CidNlMethodSubject, ...],
+) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
+    """Partition subjects into compatible overlap-connected worksets.
+
+    Connectivity only bounds which subjects Alignment compares. CrossSample
+    remains the owner of every feature-group membership decision.
+    """
+
+    if type(subjects) is not tuple or any(
+        type(subject) is not CidNlMethodSubject for subject in subjects
+    ):
+        raise CidNlMethodSubjectContractError(
+            "alignment workset input must be an exact subject tuple"
+        )
+    if not subjects:
+        return ()
+    if len({subject.method_subject_id for subject in subjects}) != len(subjects):
+        raise CidNlMethodSubjectContractError(
+            "alignment workset input contains duplicate method subjects"
+        )
+
+    original_index = {
+        subject.method_subject_id: index for index, subject in enumerate(subjects)
+    }
+    scalar_by_loss: dict[float, list[CidNlMethodSubject]] = {}
+    components: list[tuple[CidNlMethodSubject, ...]] = []
+    for subject in subjects:
+        if (
+            subject.subject_kind == "untargeted_precursor"
+            and subject.composition is None
+            and subject.neutral_loss_da is not None
+        ):
+            scalar_by_loss.setdefault(subject.neutral_loss_da, []).append(subject)
+        else:
+            components.append((subject,))
+
+    for compatible in scalar_by_loss.values():
+        ordered = sorted(
+            compatible,
+            key=lambda subject: (
+                cid_nl_method_subject_resolver_interval(subject)[0],
+                cid_nl_method_subject_resolver_interval(subject)[1],
+                subject.method_subject_id,
+            ),
+        )
+        component = [ordered[0]]
+        upper = cid_nl_method_subject_resolver_interval(ordered[0])[1]
+        for subject in ordered[1:]:
+            lower, next_upper = cid_nl_method_subject_resolver_interval(subject)
+            if lower > upper:
+                components.append(
+                    tuple(
+                        sorted(
+                            component,
+                            key=lambda item: original_index[item.method_subject_id],
+                        )
+                    )
+                )
+                component = [subject]
+                upper = next_upper
+                continue
+            component.append(subject)
+            upper = max(upper, next_upper)
+        components.append(
+            tuple(
+                sorted(
+                    component,
+                    key=lambda item: original_index[item.method_subject_id],
+                )
+            )
+        )
+
+    ordered_components = tuple(
+        sorted(
+            components,
+            key=lambda component: min(
+                original_index[subject.method_subject_id] for subject in component
+            ),
+        )
+    )
+    for workset in ordered_components:
+        validate_cid_nl_alignment_subject_workset(workset)
+    return ordered_components
+
+
 def cid_nl_method_subjects_from_request(
     request: ProcessingRequestIdentity,
 ) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
@@ -821,11 +979,15 @@ __all__ = [
     "REQUEST_INPUT_KEY",
     "SCHEMA_VERSION",
     "UntargetedCidNlMethodSubjectBatch",
+    "cid_nl_alignment_subject_worksets",
     "cid_nl_method_subject_batch_from_request",
     "cid_nl_method_subject_from_request",
     "cid_nl_method_subject_from_target",
+    "cid_nl_method_subject_resolver_interval",
     "cid_nl_method_subjects_from_request",
     "mint_untargeted_cid_nl_method_subject",
     "mint_untargeted_cid_nl_method_subject_batch",
+    "validate_cid_nl_alignment_subject_compatibility",
+    "validate_cid_nl_alignment_subject_workset",
     "validate_cid_nl_method_subject_binding",
 ]

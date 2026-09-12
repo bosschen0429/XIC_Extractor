@@ -176,7 +176,7 @@ class StreamedResultStore:
             raise FileExistsError(f"partition artifact already exists: {path}")
         # Exclusive creation happens outside cleanup: an existing file belongs
         # to another writer and must never be deleted by this attempt.
-        stream = temporary.open("xb")
+        stream = temporary.open("xb", buffering=1024 * 1024)
         try:
             with stream:
                 writer = _HashingWriter(stream)

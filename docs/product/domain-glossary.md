@@ -85,6 +85,13 @@ Use these terms consistently:
 - `CrossSamplePeakGroupHypothesis` (`cross-sample group hypothesis`): successor
   cross-sample owner/group identity, exposed through `group_hypothesis_id`. It
   does not own per-peak integration truth or product projection.
+- `CID-NL method subject`: the exact method-specific acquisition/assessment
+  question retained in an assessment's provenance. It is not a cross-sample
+  feature or a Matrix row.
+- `CID-NL alignment workset`: compatible method subjects scheduled and composed
+  together so their observations can reach the same CrossSample decision.
+  Workset membership is computational scope, not chemical identity. Alignment
+  owns its compatibility and recovery-binding policy in [alignment.md](alignment.md).
 - `identity-bearing member subject`: canonical sample identity plus a
   discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
   physical-observation identity. The canonical variant tag is part of identity;

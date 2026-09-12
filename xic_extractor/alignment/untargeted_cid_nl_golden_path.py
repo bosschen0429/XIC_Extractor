@@ -50,6 +50,7 @@ from xic_extractor.discovery.cid_nl_evidence_projection import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_unsearched_cid_nl_discovery_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.observations import (
@@ -326,9 +327,13 @@ def build_untargeted_cid_nl_golden_path(
     for recovery in recoveries:
         sample_id = recovery.sample.identity.sample_identity_id
         cell = cell_by_sample_id[sample_id]
-        if cell.content.method_result != "HOLD":
+        if not (
+            cell.content.method_result == "HOLD"
+            or is_unsearched_cid_nl_discovery_assessment(cell.method_assessment)
+        ):
             raise UntargetedCidNlGoldenPathError(
-                "only an existing HOLD cell may enter the bounded recovery path"
+                "bounded recovery requires an existing HOLD "
+                "or unsearched Discovery cell"
             )
         universe = mint_conservative_backfill_recovery_candidate_universe(
             processing_owners=processing_owners,

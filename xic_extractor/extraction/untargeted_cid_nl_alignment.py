@@ -72,6 +72,7 @@ def complete_untargeted_cid_nl_alignment(
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
+    max_partition_jobs: int = 100_000,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
 
@@ -95,25 +96,34 @@ def complete_untargeted_cid_nl_alignment(
             )
         receipts[sample_stem] = receipt
 
-    retained_sample_metadata = (
-        sample_metadata
-        if sample_metadata is not None
-        else tuple(
-            SampleMetadata(
-                sample_name=sample_stem,
-                raw_stem=sample_stem,
-                injection_order=index,
-                sample_role="study_sample",
-            )
-            for index, sample_stem in enumerate(
-                discovery_batch.sample_order,
-                start=1,
-            )
-        )
-    )
     ordered_raw_paths = tuple(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
+    if sample_metadata is not None:
+        retained_sample_metadata = sample_metadata
+    else:
+        try:
+            from xic_extractor.raw_reader import (
+                derive_sample_metadata_from_raw_files,
+            )
+
+            retained_sample_metadata = derive_sample_metadata_from_raw_files(
+                ordered_raw_paths,
+                dll_dir=dll_dir,
+            )
+        except Exception:
+            retained_sample_metadata = tuple(
+                SampleMetadata(
+                    sample_name=sample_stem,
+                    raw_stem=sample_stem,
+                    injection_order=index,
+                    sample_role="study_sample",
+                )
+                for index, sample_stem in enumerate(
+                    discovery_batch.sample_order,
+                    start=1,
+                )
+            )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
     if signal_processing_profile is not None:
@@ -162,6 +172,7 @@ def complete_untargeted_cid_nl_alignment(
             should_cancel=should_cancel,
             retain_partition_memory=retain_partition_memory,
             pipeline_overlap=True,
+            max_partition_jobs=max_partition_jobs,
         )
 
 

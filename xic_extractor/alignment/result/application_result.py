@@ -26,11 +26,14 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_unsearched_cid_nl_discovery_assessment,
     validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
+    cid_nl_alignment_subject_worksets,
     cid_nl_method_subject_batch_from_request,
+    validate_cid_nl_alignment_subject_workset,
 )
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
@@ -58,6 +61,19 @@ class ApplicationResultContractError(ValueError):
 
 
 _APPLICATION_RESULT_MINT_TOKEN = object()
+
+
+def _is_evaluated_unsupported_assessment(ref: CidNlMethodAssessmentRef) -> bool:
+    return (
+        ref.content.technical_state == "evaluated"
+        and ref.content.method_result in {"HOLD", "REJECT"}
+    )
+
+
+def _is_method_exclusion_coverage(ref: CidNlMethodAssessmentRef) -> bool:
+    return _is_evaluated_unsupported_assessment(
+        ref
+    ) or is_unsearched_cid_nl_discovery_assessment(ref)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,13 +125,23 @@ class UntargetedCandidateExclusion:
                     or ref.content.method_subject.composition is None
                     or ref.content.method_subject.method_subject_id
                     != self.method_subject_id
-                    or ref.content.technical_state != "evaluated"
-                    or ref.content.method_result == "SUPPORT"
+                    or not _is_method_exclusion_coverage(ref)
                     for ref in refs
+                )
+                or not any(_is_evaluated_unsupported_assessment(ref) for ref in refs)
+                or (
+                    self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+                    and not any(
+                        ref.content.canonical_sample_identity_id
+                        == self.canonical_sample_identity_id
+                        and _is_evaluated_unsupported_assessment(ref)
+                        for ref in refs
+                    )
                 )
             ):
                 raise ApplicationResultContractError(
-                    "Composite exclusion requires evaluated unsupported assessments"
+                    "Composite exclusion requires evaluated unsupported assessments, "
+                    "with exact no-input assessments allowed only as coverage"
                 )
             return
         if self.reason_code == "cid_nl_requirement_not_supported":
@@ -130,14 +156,24 @@ class UntargetedCandidateExclusion:
                     or ref.content.method_subject.subject_kind != "untargeted_precursor"
                     or ref.content.method_subject.method_subject_id
                     != self.method_subject_id
-                    or ref.content.technical_state != "evaluated"
-                    or ref.content.method_result not in {"HOLD", "REJECT"}
+                    or not _is_method_exclusion_coverage(ref)
                     for ref in refs
+                )
+                or not any(_is_evaluated_unsupported_assessment(ref) for ref in refs)
+                or (
+                    self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+                    and not any(
+                        ref.content.canonical_sample_identity_id
+                        == self.canonical_sample_identity_id
+                        and _is_evaluated_unsupported_assessment(ref)
+                        for ref in refs
+                    )
                 )
             ):
                 raise ApplicationResultContractError(
                     "CID-NL exclusion requires evaluated unsupported single-method "
-                    "assessments and no composite proof"
+                    "assessments, with exact no-input assessments allowed only as "
+                    "coverage, and no composite proof"
                 )
             return
         if self.discovery_candidate_state in MS1_FEATURE_BACKED_STATES:
@@ -282,11 +318,11 @@ class FinalizedUntargetApplicationResult:
 
 @dataclass(frozen=True, slots=True)
 class FinalizedUntargetBatchApplicationResult:
-    """One immutable batch handoff over subject-local Untarget results.
+    """One immutable batch handoff over exact Untarget workset results.
 
     The batch result owns only complete child results.  It does not regroup
     rows, select values, or synthesize missing evidence; those decisions stay
-    with the existing subject-local owners.
+    with the existing workset-local owners.
     """
 
     scope: UntargetedSearchScope
@@ -791,9 +827,29 @@ def _validate_untarget_batch_request(
             "Untarget batch exclusions are not in canonical candidate order"
         )
 
+    included_subject_ids = {
+        method_subject_id
+        for candidate_id, method_subject_id in parent_memberships.items()
+        if candidate_id not in excluded_id_set
+    }
+    included_subjects = tuple(
+        subject
+        for subject in subject_batch.subjects
+        if subject.method_subject_id in included_subject_ids
+    )
+    try:
+        expected_child_worksets = tuple(
+            tuple(subject.method_subject_id for subject in workset)
+            for workset in cid_nl_alignment_subject_worksets(included_subjects)
+        )
+    except CidNlMethodSubjectContractError as exc:
+        raise ApplicationResultContractError(
+            "Untarget batch included subjects cannot form alignment worksets"
+        ) from exc
+
     child_candidates: set[str] = set()
     seen_subject_ids: set[str] = set()
-    child_subject_ids: list[str] = []
+    child_worksets: list[tuple[str, ...]] = []
     row_ids: set[str] = set()
     group_ids: set[str] = set()
     physical_ids: set[str] = set()
@@ -859,17 +915,38 @@ def _validate_untarget_batch_request(
             raise ApplicationResultContractError(
                 "Untarget batch child subject membership crossed its parent"
             )
-        subjects = tuple(memberships.values())
-        if not subjects or len(set(subjects)) != 1:
+        child_subject_id_set = set(memberships.values())
+        child_subject_ids = tuple(
+            subject_id
+            for subject_id in parent_subject_ids
+            if subject_id in child_subject_id_set
+        )
+        if not child_subject_ids or len(child_subject_ids) != len(
+            child_subject_id_set
+        ):
             raise ApplicationResultContractError(
-                "Untarget batch child must be subject-local"
+                "Untarget batch child subject workset crossed its parent"
             )
-        if subjects[0] in seen_subject_ids:
+        if tuple(
+            provider.method_subject_id for provider in scope.evidence_providers
+        ) != child_subject_ids:
             raise ApplicationResultContractError(
-                "Untarget batch result has duplicate subject-local children"
+                "Untarget batch child providers do not match its subject workset"
             )
-        seen_subject_ids.add(subjects[0])
-        child_subject_ids.append(subjects[0])
+        try:
+            validate_cid_nl_alignment_subject_workset(
+                tuple(subject_by_id[subject_id] for subject_id in child_subject_ids)
+            )
+        except (CidNlMethodSubjectContractError, KeyError) as exc:
+            raise ApplicationResultContractError(
+                "Untarget batch child must carry one compatible alignment workset"
+            ) from exc
+        if seen_subject_ids.intersection(child_subject_id_set):
+            raise ApplicationResultContractError(
+                "Untarget batch result has duplicate subjects across children"
+            )
+        seen_subject_ids.update(child_subject_id_set)
+        child_worksets.append(child_subject_ids)
         for candidate_id in candidate_ids:
             if candidate_id in child_candidates or candidate_id in excluded_id_set:
                 raise ApplicationResultContractError(
@@ -914,19 +991,10 @@ def _validate_untarget_batch_request(
         raise ApplicationResultContractError(
             "Untarget batch child/exclusion candidate union is not exactly once"
         )
-    included_subject_ids = {
-        method_subject_id
-        for candidate_id, method_subject_id in parent_memberships.items()
-        if candidate_id not in excluded_id_set
-    }
-    expected_child_subject_ids = tuple(
-        subject_id
-        for subject_id in parent_subject_ids
-        if subject_id in included_subject_ids
-    )
-    if tuple(child_subject_ids) != expected_child_subject_ids:
+    if tuple(child_worksets) != expected_child_worksets:
         raise ApplicationResultContractError(
-            "Untarget batch child subjects are not in canonical order"
+            "Untarget batch child worksets are not in canonical order or an exact "
+            "partition"
         )
 
 

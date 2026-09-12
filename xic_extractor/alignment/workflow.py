@@ -416,7 +416,7 @@ WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowBundle:
-    """One subject-local request/adapter pair minted after runtime success."""
+    """One bounded subject-workset pair minted after runtime success."""
 
     request: UntargetWorkflowRequest | UntargetWorkflowCompositionRequest
     adapter: UntargetWorkflowAdapter
@@ -746,16 +746,19 @@ def compose_untarget_subject(
     *,
     completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedUntargetApplicationResult:
-    """Close one subject scientifically without asserting runtime completion."""
+    """Close one bounded subject workset without asserting runtime completion."""
     if type(request) is not UntargetWorkflowCompositionRequest:
         raise AlignmentWorkflowContractError(
             "Subject composition requires exact inputs"
         )
     owners = _validate_request_adapter(request, adapter)
     subjects = set(_untarget_scope_memberships(request.scope).values())
-    if len(subjects) != 1 or request.excluded_candidates:
+    provider_subjects = {
+        provider.method_subject_id for provider in request.scope.evidence_providers
+    }
+    if subjects != provider_subjects or request.excluded_candidates:
         raise AlignmentWorkflowContractError(
-            "Subject composition requires one included subject-local population"
+            "Subject composition requires one exact included subject workset"
         )
     try:
         if completed_captures is None:
@@ -1197,23 +1200,27 @@ def _validate_untarget_batch_bundles(
         child_provider_ids = tuple(
             provider.method_subject_id for provider in child_scope.evidence_providers
         )
-        if len(child_provider_ids) != 1 or set(memberships.values()) != set(
-            child_provider_ids
+        if (
+            not child_provider_ids
+            or len(child_provider_ids) != len(set(child_provider_ids))
+            or set(memberships.values()) != set(child_provider_ids)
         ):
             raise AlignmentWorkflowContractError(
-                "Untarget batch child must be one subject-local provider"
+                "Untarget batch child must close one exact subject workset"
             )
-        subject_id = child_provider_ids[0]
-        if subject_id not in parent_subject_ids:
+        if any(
+            subject_id not in parent_subject_ids
+            for subject_id in child_provider_ids
+        ):
             raise AlignmentWorkflowContractError(
                 "Untarget batch child references an undeclared method subject"
             )
-        if subject_id in child_subject_ids:
+        if any(subject_id in child_subject_ids for subject_id in child_provider_ids):
             raise AlignmentWorkflowContractError(
                 "Untarget batch provider duplicated a method subject"
             )
         child_candidates.extend(candidate_ids)
-        child_subject_ids.append(subject_id)
+        child_subject_ids.extend(child_provider_ids)
         _validate_request_adapter(child_request, bundle.adapter)
 
     excluded_ids = (

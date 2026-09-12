@@ -20,6 +20,8 @@ _BUILTIN_PACKAGE = "xic_extractor.presets.data"
 _BUILTIN_PRESETS = (
     "dna_dr",
     "dna_dr_product_ready",
+    "rna_ribose",
+    "rna_mer",
     "pt_pattern",
     "pt_pattern_cid_nl_dr",
 )

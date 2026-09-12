@@ -16,6 +16,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     validate_cid_nl_method_subject_binding,
 )
 from xic_extractor.peak_detection.evidence_facts import (
+    PHYSICAL_PEAK_WINDOW_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
     evaluate_physical_peak,
@@ -319,6 +320,7 @@ def _capture_physical_peak(
         query_rt_min=binding.preferred_rt,
         request_context_rt_start_min=binding.query_rt_min,
         request_context_rt_end_min=binding.query_rt_max,
+        selection_policy_version=expected.question.selection_policy_version,
     )
     if evaluation != expected:
         raise SampleLocalCaptureError(
@@ -525,6 +527,7 @@ def capture_physical_recovery_observation(
         query_rt_min=group_center_rt,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
+        selection_policy_version=PHYSICAL_PEAK_WINDOW_POLICY,
     )
     if evaluation.state != "available":
         return None

@@ -1170,3 +1170,27 @@ def test_load_config_allows_no_nl_target_with_empty_thresholds(tmp_path: Path) -
     assert targets[0].neutral_loss_da is None
     assert targets[0].nl_ppm_warn is None
     assert targets[0].nl_ppm_max is None
+
+
+def test_untargeted_list_selects_only_istds_from_shared_format():
+    from xic_extractor.configuration.targets import read_istd_targets, read_targets
+
+    source = Path(__file__).parents[1] / "config" / "targets.example.csv"
+    all_targets = read_targets(source)
+    selection = read_istd_targets(source)
+    assert selection.targets == tuple(t for t in all_targets if t.is_istd)
+    assert selection.targets
+    assert selection.skipped_count == len(all_targets) - len(selection.targets)
+    assert selection.skipped_count > 0
+
+
+def test_untargeted_list_with_no_istd_is_actionable(tmp_path):
+    from xic_extractor.configuration.targets import read_istd_targets
+
+    source = tmp_path / "targets.csv"
+    source.write_text(
+        ",".join(TARGET_FIELDS) + "\nAnalyte,100,1,2,5,,,,false,\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="is_istd=TRUE"):
+        read_istd_targets(source)

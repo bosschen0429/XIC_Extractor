@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-11
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,37 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-11 Eight-Sample Eligibility And HOLD Verification
+
+- Evidence: `diagnostic_only`; clean producing SHA `b8157555`. One real
+  Alignment run reused the retained eight-sample Discovery, `dna_dr`, production
+  output and four thread RAW workers. All 25 input hashes matched the
+  `full8-overlap-w4` baseline; no Discovery rerun or 85 RAW run.
+- Completed with exit 0 in 411.843 supervised seconds (6m52s), versus 452.234
+  seconds previously: an observed 40.391 seconds / 8.93% reduction. Sampled
+  process-tree peak private memory was 3,334,225,920 bytes, versus 3,895,476,224
+  bytes (14.41% lower), using the same `run.json` measurement fields. No memory
+  guard or task time ceiling fired.
+- Matrix remained byte-identical (1,387 rows). Assessments fell from 96,383 to
+  26,095: 70,288 ineligible empty assessments are no longer emitted; 18,078
+  retained initial empty HOLD records became
+  `not_evaluated / None / no_search_eligible_discovery_input`. The remaining
+  8,017 evaluated scientific payloads match after removing run-local wrappers.
+- All 21,973 exclusion IDs and their order match; 14,207 proof changes reflect
+  direct eligibility exclusion, and all 120 references in the 15 remaining
+  unsupported-method proofs resolve with valid sample coverage and negative
+  evidence. Excluded plus terminal candidates close the 30,570-candidate
+  universe without overlap or gaps. Expected-diff verification passes.
+- The baseline-to-current stack also includes scheduler, CLI and timing changes;
+  filesystem cache and single-run variation remain uncontrolled. Optimization
+  causality is `inconclusive`; this observation does not isolate the HOLD fix or
+  establish 85 RAW throughput or scientific readiness.
+- Locator: `output/cid-nl-bounded-runtime/full8-eligibility-hold-w4/report.md`,
+  with `launch-contract.md`, `preflight.json`, `run.json`,
+  `semantics-comparison.md`, `alignment-timing.json` and `memory.jsonl`.
+  Reuse this one-run result unless a relevant input, owner, implementation or
+  observable failure changes; no automatic rerun is needed.
 
 ### 2026-09-10 Eight-Sample Streaming Measurement
 

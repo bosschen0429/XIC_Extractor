@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     )
     from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
     from xic_extractor.discovery.models import DiscoveryCandidate
-    from xic_extractor.evidence_artifacts import EvidenceArtifactRef
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessmentRef,
     )
@@ -69,9 +68,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
         "reason_codes": list(content.reason_codes),
         "human_disposition_ref_id": content.human_disposition_ref_id,
         "outside_group": (
-            asdict(content.outside_group)
-            if content.outside_group is not None
-            else None
+            asdict(content.outside_group) if content.outside_group is not None else None
         ),
     }
 
@@ -115,9 +112,7 @@ def write_cid_nl_explanation(
             set
         )
 
-        assessment_bindings: dict[
-            str, tuple[EvidenceArtifactRef, tuple[EvidenceArtifactRef, ...]]
-        ] = {}
+        assessment_bindings: dict[str, int] = {}
 
         def report_progress(stage: str, completed: int, total: int | None) -> None:
             if progress_callback is not None:
@@ -213,12 +208,16 @@ def write_cid_nl_explanation(
 
         def emit_assessment(assessment: CidNlMethodAssessmentRef) -> None:
             identity = assessment.artifact.evidence_artifact_id
-            binding = (
-                assessment.artifact,
-                tuple(ref.artifact for ref in assessment.evidence_refs),
+            binding_key = (
+                assessment.artifact.evidence_artifact_id,
+                tuple(
+                    ref.artifact.evidence_artifact_id
+                    for ref in assessment.evidence_refs
+                ),
             )
+            binding_hash = hash(binding_key)
             if identity in assessment_bindings:
-                if assessment_bindings[identity] != binding:
+                if assessment_bindings[identity] != binding_hash:
                     raise ValueError(
                         "conflicting diagnostic owner identity: "
                         f"{('method_assessments', identity)}"
@@ -232,6 +231,18 @@ def write_cid_nl_explanation(
                 content.method_subject.method_subject_id,
                 content.canonical_sample_identity_id,
             ]
+            if (
+                content.detector_invocation_id
+                == "untargeted-cid-nl-backfill-recovery:v1"
+                and content.method_result == "SUPPORT"
+            ):
+                # Recovery has no Discovery terminal. Retain its exact physical
+                # support links so the original candidate can explain the cell.
+                for relation in assessment.individual_support_refs:
+                    physical_candidates[
+                        content.canonical_sample_identity_id,
+                        relation.content.peak_observation_content_id,
+                    ].update(related)
             add(
                 "method_assessments",
                 assessment.artifact.evidence_artifact_id,
@@ -263,7 +274,7 @@ def write_cid_nl_explanation(
             )
             for key in related:
                 sink.update_availability(key, method_assessments="recorded")
-            assessment_bindings[identity] = binding
+            assessment_bindings[identity] = binding_hash
 
         for assessment in phase_items(
             "method_assessments", completed.method_assessments

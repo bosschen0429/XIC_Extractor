@@ -60,7 +60,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentContractError,
     CidNlMethodAssessmentRef,
     CidNlTechnicalState,
+    is_cid_nl_missing_ms1_rejection,
     mint_cid_nl_method_assessment_ref,
+    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -360,10 +362,8 @@ def _sample_capture_requests(
                     )
                 grouped.setdefault(subject_id, []).append(item)
         else:
-            subject_values = {subjects.method_subject_id: subjects}
             grouped = {subjects.method_subject_id: list(candidates)}
-        for subject_id, members in grouped.items():
-            subject = subject_values[subject_id]
+        for members in grouped.values():
             ordered = sorted(
                 members, key=lambda item: (item.ms1_search_rt_min, item.candidate_id)
             )
@@ -379,14 +379,12 @@ def _sample_capture_requests(
                     components[-1][1].append(item)
             for right, members in components:
                 if len(members) > 1:
-                    request = XICRequest(
-                        mz=subject.precursor_mz,
-                        rt_min=members[0].ms1_search_rt_min,
-                        rt_max=right,
-                        ppm_tol=subject.precursor_tolerance_ppm,
-                    )
                     for item in members:
-                        requests[item.candidate_id] = request
+                        requests[item.candidate_id] = replace(
+                            requests[item.candidate_id],
+                            rt_min=members[0].ms1_search_rt_min,
+                            rt_max=right,
+                        )
     unique: dict[XICRequest, int] = {}
     indices = []
     if profile is None:
@@ -610,13 +608,30 @@ def adapt_current_discovery_sample_subject(
         ),
         neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
     )
-    if not bounded:
+    seed_candidates = tuple(
+        candidate
+        for candidate in bounded
+        if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
+        or (
+            candidate.ms1_peak_found
+            and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        )
+    )
+    peak_candidates = tuple(
+        candidate
+        for candidate in bounded
+        if candidate.ms1_peak_found
+        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+    )
+    if not seed_candidates and not peak_candidates:
         assessment = _mint_assessment(
             processing_owners=processing_owners,
             sample=sample,
             method_subject=method_subject,
             settings=settings,
             support_policy=support_policy,
+            technical_state="not_evaluated",
+            technical_reason_code="no_search_eligible_discovery_input",
         )
         if _observer is not None:
             _observer.record_artifact(assessment.artifact)
@@ -631,7 +646,7 @@ def adapt_current_discovery_sample_subject(
             ),
             acquisition=None,
             captures=(),
-            source_candidate_ids=(),
+            source_candidate_ids=tuple(item.candidate_id for item in bounded),
             strict_scan_count=0,
             lineage_artifacts=lineage,
         )
@@ -653,15 +668,7 @@ def adapt_current_discovery_sample_subject(
     try:
         scan_seeds = read_complete_discovery_scan_seeds(
             bound_raw,
-            candidates=tuple(
-                candidate
-                for candidate in bounded
-                if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
-                or (
-                    candidate.ms1_peak_found
-                    and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-                )
-            ),
+            candidates=seed_candidates,
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
             include_inferred=True,
@@ -678,12 +685,6 @@ def adapt_current_discovery_sample_subject(
     except StrictSeedReceiptError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
 
-    peak_candidates = tuple(
-        candidate
-        for candidate in bounded
-        if candidate.ms1_peak_found
-        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-    )
     search_scope = _untargeted_search_scope(
         processing_owners=processing_owners,
         sample=sample,
@@ -834,15 +835,16 @@ def recover_untargeted_cid_nl_sample_subject(
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw | None,
+    initial_assessment: CidNlMethodAssessmentRef | None = None,
     settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     _observer: _UntargetedRealDataWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlRecoveryTraceBatch | None = None,
 ) -> UntargetedCidNlRecoveryAttemptResult:
-    """Revisit one eligible HOLD cell without granting direct SUPPORT.
+    """Evaluate one owner-authorized bounded physical candidate universe.
 
-    This finite ObservationRepair adapter remains until that owner receives an
-    issued ``UntargetedSearchScope``. It is not a fallback for initial capture.
+    MS1-only recovery remains HOLD. A missing-MS1 rejection may contribute its
+    immutable measured CID-NL evidence to new owner-resolved relations.
     """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
@@ -863,6 +865,21 @@ def recover_untargeted_cid_nl_sample_subject(
         raise UntargetedCidNlRealDataAdapterError(
             "support_policy has the wrong owner type"
         )
+    if initial_assessment is not None:
+        validate_cid_nl_method_assessment_binding(
+            initial_assessment,
+            processing_owners=processing_owners,
+            sample=sample,
+            method_subject=method_subject,
+        )
+        if (
+            not is_cid_nl_missing_ms1_rejection(initial_assessment)
+            or initial_assessment.content.evaluation_receipt.support_policy
+            != support_policy
+        ):
+            raise UntargetedCidNlRealDataAdapterError(
+                "recovery requires the exact missing-MS1 rejection and support policy"
+            )
     if (
         isinstance(group_center_rt, bool)
         or not isinstance(group_center_rt, (int, float))
@@ -1014,7 +1031,47 @@ def recover_untargeted_cid_nl_sample_subject(
     recovery_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
     recovery_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
     scanned_count = 0
-    if method_subject.composition is not None:
+    if initial_assessment is not None and observations:
+        recovery_evidence = tuple(
+            ref
+            for ref in initial_assessment.evidence_refs
+            if query_rt_min <= ref.observation.scan_rt_min <= query_rt_max
+        )
+        individual_refs = []
+        set_refs = []
+        for evidence in recovery_evidence:
+            kind = _relation_kind(
+                evidence=evidence, candidate_peaks=observations, policy=support_policy
+            )
+            if kind == "individual":
+                individual_refs.append(
+                    resolve_dda_cid_nl_peak_support_ref(
+                        processing_owners=processing_owners,
+                        sample=sample,
+                        canonical_evidence=evidence,
+                        candidate_peaks=observations,
+                        policy=support_policy,
+                    )
+                )
+            elif kind == "set":
+                set_refs.append(
+                    resolve_dda_cid_nl_candidate_set_relation_ref(
+                        processing_owners=processing_owners,
+                        sample=sample,
+                        canonical_evidence=evidence,
+                        candidate_peaks=observations,
+                        policy=support_policy,
+                    )
+                )
+        recovery_support, recovery_sets = tuple(individual_refs), tuple(set_refs)
+        scanned_count = len({ref.observation.scan_number for ref in recovery_evidence})
+        if _observer is not None:
+            recovery_relations: tuple[
+                DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
+            ] = (*recovery_support, *recovery_sets)
+            for ref in recovery_relations:
+                _observer.record_artifact(ref.artifact)
+    elif method_subject.composition is not None:
         if raw is None or settings is None:
             raise UntargetedCidNlRealDataAdapterError(
                 "composite recovery requires full settings and owner-opened MS2 source"

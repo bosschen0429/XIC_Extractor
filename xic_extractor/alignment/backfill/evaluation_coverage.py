@@ -41,6 +41,7 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_unsearched_cid_nl_discovery_assessment,
     validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.evidence_facts import (
@@ -401,9 +402,17 @@ def _validate_conservative_no_request(
     if (
         target.content.canonical_sample_identity_id
         != proof.sample.identity.sample_identity_id
-        or target.content.technical_state != "evaluated"
-        or target.content.method_result != "HOLD"
-        or not target.method_assessment.content.evaluation_receipt.search_completed
+        or not (
+            (
+                target.content.technical_state == "evaluated"
+                and target.content.method_result == "HOLD"
+                and target.method_assessment.content.evaluation_receipt.search_completed
+            )
+            or (
+                proof.completion is None
+                and is_unsearched_cid_nl_discovery_assessment(target.method_assessment)
+            )
+        )
         or not target.method_assessment.content.evaluation_receipt.acquisition_supported
         or target.peak_observation is not None
         or target.peak_hypothesis is not None

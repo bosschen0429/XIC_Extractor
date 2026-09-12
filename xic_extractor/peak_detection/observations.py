@@ -1052,6 +1052,7 @@ def _validate_physical_integration_facts(
         query_rt_min=physical_evaluation.question.query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
+        selection_policy_version=physical_evaluation.question.selection_policy_version,
     )
     if (
         actual != physical_evaluation

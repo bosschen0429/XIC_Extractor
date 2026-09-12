@@ -108,8 +108,9 @@ def test_known_reference_rejects_invalid_consumed_input(
         read_known_istd_reference(path)
 
 
+@pytest.mark.parametrize("use_batch_context", [False, True])
 def test_known_reference_only_corrects_unique_same_target_support_pairs(
-    tmp_path: Path,
+    tmp_path: Path, use_batch_context: bool,
 ) -> None:
     from dataclasses import replace
 
@@ -121,6 +122,11 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
     reference = read_known_istd_reference(path)
+    if use_batch_context:
+        reference = reference.prepare_batch(
+            sample_universe=frozenset({"early", "late", "missing"}),
+            injection_order={"early": 1, "late": 2, "missing": 3},
+        )
     early, late, other = tuple(_owner(
         sample, precursor_mz=500, product_mz=383.9526,
         observed_neutral_loss_da=116.0474, owner_apex_rt=rt,
@@ -196,6 +202,172 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
         frozenset((paired.owner_id, late.owner_id)),
         frozenset((separate.owner_id,)),
     }
+
+
+def _batch_reference(tmp_path: Path, observations):
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+
+    path = tmp_path / "batch-reference.xlsx"
+    workbook = _known_reference_workbook(path)
+    targets = workbook["Targets"]
+    targets.delete_rows(2, targets.max_row)
+    results = workbook["XIC Results"]
+    results.delete_rows(2, results.max_row)
+    label_count = len(next(iter(observations.values())))
+    for index in range(label_count):
+        targets.append(
+            [f"landmark-{index}", "ISTD", 300 + index * 50, 0, 60,
+             20, 116.0474, 20, 50]
+        )
+    for sample, observed in observations.items():
+        for index, rt in enumerate(observed):
+            results.append([sample, f"landmark-{index}", "ISTD", rt, 100])
+    workbook.save(path)
+    return read_known_istd_reference(path)
+
+
+@pytest.mark.parametrize(
+    ("early_knots", "late_knots"),
+    [((8, 20, 40), (10, 24, 46)),
+     ((10, 24, 46), (8, 20, 40)),
+     ((8, 20, 40), (8, 20, 40))],
+)
+def test_batch_reference_corrects_unknowns_without_merging_distinct_peaks(
+    tmp_path: Path, early_knots, late_knots,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        construct_cross_sample_peak_group_hypotheses,
+    )
+
+    reference = _batch_reference(
+        tmp_path, {"early": early_knots, "late": late_knots}
+    )
+    early = _owner("early", "main", apex_rt=sum(early_knots[:2]) / 2,
+                   precursor_mz=600, product_mz=483.9526)
+    late = _owner("late", "main", apex_rt=sum(late_knots[:2]) / 2,
+                  precursor_mz=600, product_mz=483.9526)
+    competitor = _owner("early", "other", apex_rt=early.owner_apex_rt + 2,
+                        precursor_mz=600, product_mz=483.9526)
+    owners = (early, late, competitor)
+    original = tuple((o.owner_apex_rt, o.selected_integration) for o in owners)
+    universe = frozenset({"early", "late"})
+    order = {"early": 10, "late": 40}
+    lookup = reference.bind(owners, sample_universe=universe, injection_order=order)
+    assert not lookup.bindings  # These owners are not any declared ISTD.
+    assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
+    assert lookup.corrected_pair_delta_sec(competitor, late) > 60
+    groups = construct_cross_sample_peak_group_hypotheses(
+        owners, config=AlignmentConfig(), sample_universe=universe,
+        injection_order=order, drift_lookup=lookup,
+    )
+    assert {frozenset(group.owner_ids) for group in groups} == {
+        frozenset((early.owner_id, late.owner_id)),
+        frozenset((competitor.owner_id,)),
+    }
+    assert tuple((o.owner_apex_rt, o.selected_integration) for o in owners) == original
+
+
+def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
+    tmp_path: Path,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+
+    reference = _batch_reference(tmp_path, {
+        "early": (8, 20, 40), "middle": (11, None, 48), "late": (10, 24, 46),
+        "outside-batch": (30, 35, 55),
+    })
+    universe = frozenset({"early", "middle", "late"})
+    order = {"early": 10, "middle": 20, "late": 40}
+    early = _owner("early", "unknown", apex_rt=20, precursor_mz=600)
+    middle = _owner("middle", "unknown", apex_rt=20 + 4 / 3, precursor_mz=600)
+    late = _owner("late", "unknown", apex_rt=24, precursor_mz=600)
+    lookup = reference.bind(
+        (early, middle, late), sample_universe=universe, injection_order=order,
+    )
+    assert lookup.corrected_pair_delta_sec(early, middle) == pytest.approx(0)
+    assert lookup.corrected_pair_delta_sec(middle, late) == pytest.approx(0)
+
+
+@pytest.mark.parametrize(
+    ("observations", "early_rt", "late_rt"),
+    [({"early": (None, 20, 40), "late": (10, 24, 46)}, 8, 10),
+     ({"early": (8, 20, 40), "late": (10, 24, None)}, 40, 46),
+     ({"early": (8, 20, 40), "late": (10, 24, 46)}, 7, 9),
+     ({"early": (8, 20, 40), "late": (10, 24, 46)}, 41, 47),
+     ({"early": (8, 20, 40), "late": (10, 9, 46)}, 14, 15),
+     ({"early": (8, 20, 40), "late": (12, 0, 46)}, 14, 15)],
+)
+def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
+    tmp_path: Path, observations, early_rt, late_rt,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+
+    reference = _batch_reference(tmp_path, observations)
+    early = _owner("early", "unknown", apex_rt=early_rt, precursor_mz=600)
+    late = _owner("late", "unknown", apex_rt=late_rt, precursor_mz=600)
+    lookup = reference.bind(
+        (early, late), sample_universe=frozenset(observations),
+        injection_order={"early": 10, "late": 40},
+    )
+    assert lookup.corrected_pair_delta_sec(early, late) is None
+
+
+def test_batch_reference_preparation_is_shared_across_method_bindings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment import drift_evidence
+
+    reference = _batch_reference(tmp_path, {
+        "early": (8, 20, 40), "late": (10, 24, 46), "unused": (15, 30, 50),
+    })
+    universe = frozenset({"early", "late"})
+    order = {"early": 10, "late": 40}
+    prepared = reference.prepare_batch(sample_universe=universe, injection_order=order)
+
+    def unexpected_recomputation(*_args, **_kwargs):
+        pytest.fail("unchanged prepared batch recomputed reference medians")
+
+    monkeypatch.setattr(drift_evidence.statistics, "median", unexpected_recomputation)
+    assert prepared.prepare_batch(
+        sample_universe=universe, injection_order=dict(order),
+    ) is prepared
+    assert reference.prepare_batch(
+        sample_universe=universe, injection_order=dict(order),
+    ) is prepared
+    for index in range(3):
+        early = _owner("early", f"unknown-{index}", apex_rt=14, precursor_mz=600)
+        late = _owner("late", f"unknown-{index}", apex_rt=17, precursor_mz=600)
+        lookup = prepared.bind(
+            (early, late), sample_universe=universe, injection_order=order,
+        )
+        assert lookup.reference is prepared
+        assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
+
+
+def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
+    tmp_path: Path,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+
+    reference = _batch_reference(tmp_path, {
+        "early": (8, 20, 40), "late": (10, 24, 46), "extra": (15, 30, 50),
+    })
+    early = _owner("early", "unknown", apex_rt=14, precursor_mz=600)
+    late = _owner("late", "unknown", apex_rt=17.5, precursor_mz=600)
+    order = {"early": 1, "late": 2, "extra": 3}
+    original = reference.bind(
+        (early, late), sample_universe=frozenset({"early", "late"}),
+        injection_order=order,
+    )
+    changed = reference.bind(
+        (early, late), sample_universe=frozenset(order), injection_order=order,
+    )
+    assert original.corrected_pair_delta_sec(early, late) == pytest.approx(195 / 7)
+    assert changed.corrected_pair_delta_sec(early, late) == pytest.approx(30)
+    assert original.reference is not changed.reference
 
 
 def test_lookup_returns_median_sample_delta_and_injection_order() -> None:

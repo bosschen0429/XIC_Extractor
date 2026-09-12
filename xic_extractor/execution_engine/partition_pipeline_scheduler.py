@@ -510,10 +510,14 @@ class PartitionPipelineScheduler:
                     producer_thread.join()
                     consumer_thread.join()
 
-                    if consumer_exc is not None:
+                    if consumer_exc is not None and not isinstance(
+                        consumer_exc, InterruptedError
+                    ):
                         raise consumer_exc
                     if producer_exc is not None:
                         raise producer_exc
+                    if consumer_exc is not None:
+                        raise consumer_exc
                     if cancellation_ingress.is_cancelled or (
                         should_cancel is not None and should_cancel()
                     ):

@@ -27,7 +27,12 @@ lifecycle for each provider.
   MS1-feature-backed inputs to Alignment RAW owner build. Review-only states
   remain in the complete candidate/review universe and do not independently
   authorize another RAW XIC search, cross-sample grouping, Matrix identity, or
-  Backfill.
+  Backfill. Pure CID-NL production planning preserves the complete canonical
+  subject membership and query centers, but excludes subjects with no
+  MS1-feature-backed candidate before sample-by-subject scheduling. Their
+  candidates close with Discovery eligibility exclusions without method
+  assessments. Each eligible subject still assesses the complete sample
+  universe, including samples without a local candidate, for recovery.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
@@ -79,9 +84,13 @@ lifecycle for each provider.
   detail) and `discovery_review.csv` (compact human review).
 - Discovery `feature_family_id` remains a public output header and dataclass
   field, but its Discovery meaning is a per-sample peak anchor label for
-  candidates sharing the same discovered MS1 peak. It must not be treated as
-  cross-sample identity, selected-peak truth, or Backfill promotion authority by
-  itself.
+  candidates sharing the same discovered MS1 peak. Members must share the
+  sample, RAW source and tag, have matching apexes and overlapping peak bounds,
+  and stay within the configured precursor m/z tolerance of every other member.
+  Intermediate masses cannot bridge separate peaks through chained matches;
+  multiple hypotheses for the same peak remain allowed. The label must not be
+  treated as cross-sample identity, selected-peak truth, or Backfill promotion
+  authority by itself.
 - The peak-anchor schema migration intentionally removed legacy
   `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
   `feature_superfamily_role`, `feature_superfamily_confidence`, and

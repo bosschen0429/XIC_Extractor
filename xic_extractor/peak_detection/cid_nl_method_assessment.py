@@ -963,6 +963,27 @@ def _method_result(
     return "HOLD", ("insufficient_method_evidence",)
 
 
+def is_cid_nl_missing_ms1_rejection(assessment: CidNlMethodAssessmentRef) -> bool:
+    """Recognize a completed rejection; group owners still authorize a revisit."""
+    return (
+        assessment.content.technical_state == "evaluated"
+        and assessment.content.method_result == "REJECT"
+        and assessment.content.reason_codes
+        == ("qualifying_cid_nl_without_usable_ms1_peak",)
+        and not assessment.candidate_peaks
+    )
+
+
+def is_unsearched_cid_nl_discovery_assessment(
+    assessment: CidNlMethodAssessmentRef,
+) -> bool:
+    """Recognize missing eligible input, without granting recovery authority."""
+    return (
+        assessment.content.technical_state == "not_evaluated"
+        and assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
+    )
+
+
 def supported_cid_nl_peak_ids(assessment: CidNlMethodAssessmentRef) -> frozenset[str]:
     """Physical peaks that satisfy the complete owner-bound requirement."""
     if assessment.content.technical_state != "evaluated":

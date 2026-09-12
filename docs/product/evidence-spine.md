@@ -178,6 +178,22 @@ method-query subject. Within each scalar loss or full configured composition,
 candidates are ordered by exact precursor m/z and candidate ID. The first mass
 fixes a subject center; later candidates join only within its configured ppm
 tolerance, without moving the center or chaining through another candidate.
+Before this assignment, source-bound records with the same selected apex and
+identical raw RT/intensity throughout their shared peak interior may form one
+indivisible workset. Every contributor must share an extraction m/z interval
+and an admissible method-center interval; pairwise overlap cannot form a chain
+without an all-member intersection. A fixed center can accept the workset only
+when it covers every original precursor; otherwise the workset uses the midpoint
+of its common admissible center interval. Candidates without this evidence keep
+the fixed-first behavior. This prevents one observed peak from being split into
+separate method subjects merely because its queries straddle a bucket boundary.
+
+The shared interior establishes permission to process the candidates together;
+it is not a physical-observation ID or proof that their fitted tails and areas
+are identical. The runtime still acquires the shared context, selects peaks and
+assesses the complete MS2 relation universe. Distinct candidate identities,
+per-query physical facts and original MS2 evidence remain intact.
+
 This declared query membership lets nearby measured masses in different samples
 reach evaluation of the same method subject. Each physical query retains its own
 exact source m/z, RT bounds, trace and acquisition identity. Both single-subject
@@ -204,6 +220,34 @@ its CID-NL result (`SUPPORT`, `HOLD`, `REJECT`, or `None`). Absence of a
 positive evidence ref is therefore not treated as proof that a search
 completed, and technical failure cannot become REJECT or a human
 `unassessable` disposition.
+
+The initial Untargeted Discovery adapter records `not_evaluated` with
+`method_result=None` and `no_search_eligible_discovery_input` when it has neither
+an eligible scan-seed input nor a feature-backed MS1 candidate. This includes an
+empty local subject universe and inferred candidates removed by the Discovery
+eligibility filter. Its search receipt stays incomplete; it does not represent
+a completed method evaluation. Discovery eligibility exclusions remain owned by
+`UntargetedCandidateExclusion`.
+
+An existing owner-backed group may guide a bounded recovery for such an
+unsearched sample after the conservative sample-role and direct-support gates
+pass. Missing input alone grants no recovery authority. A group below the support
+threshold retains the exact no-request proof and a `not_searched` cell. A recovery
+that actually acquires or consumes its bound XIC trace and evaluates the candidate
+universe records a completed search, even when it finds no peaks or qualifying
+CID-NL evidence. That completed result remains `HOLD`; it is distinct from an
+initial unsearched slot and does not prove method rejection.
+
+An evaluated `REJECT` with the exact reason
+`qualifying_nl_evidence_without_any_ms1_candidate_peak` remains the result of its
+original assessment. Retained CID-NL production may independently authorize one
+group-guided recovery after the same frozen-group, direct-support and sample-role
+gates. The adapter validates the original sample, acquisition source, method and
+processing lineage, reuses only its immutable qualifying MS2 evidence within the
+new local window, and assesses fresh MS1 peaks with the existing individual/set
+relation rules. A new `SUPPORT` may reach CrossSample and the final cell owner;
+MS1 presence alone cannot promote a cell. The original rejection, Discovery
+exclusions and new assessment remain queryable together in the explanation store.
 
 For single-loss methods, one assessment may contain at most one measured
 evidence ref for each exact `(acquisition_source_id, scan_number)` key.
@@ -237,12 +281,17 @@ MS1 peak; non-qualifying scans cannot manufacture a negative result. A unique
 SUPPORT may compose the existing owner-backed `PeakHypothesis` and enter
 existing provisional group construction. HOLD, REJECT, and technical
 assessments remain valid without a fake hypothesis or an invented group.
-If a CID-NL subject has a complete evaluated assessment for every sample
-and none is SUPPORT, the existing `UntargetedCandidateExclusion` owner retains
+If a CID-NL subject has complete assessment coverage for every sample,
+all evaluated results are HOLD/REJECT, and remaining slots have exactly the
+unsearched Discovery-input reason above, the existing
+`UntargetedCandidateExclusion` owner retains
 those exact assessments under `cid_nl_requirement_not_supported` for a single
 method or `composite_requirement_not_supported` for a composite method. The
-exclusion requires complete current sample and request/attempt binding; a
-technical failure or incomplete assessment cannot stand in for this evidence.
+exclusion requires at least one evaluated result and complete current sample and
+request/attempt binding. Each feature-backed candidate must have its own sample's
+evaluated HOLD/REJECT assessment; an unsearched slot records coverage only and
+cannot supply negative evidence. Failed, unsupported, or other incomplete
+assessments cannot stand in for this evidence.
 The subject does not enter ModeTrack group construction. An all-excluded batch
 completes with an empty canonical Matrix and preserves its assessment evidence.
 

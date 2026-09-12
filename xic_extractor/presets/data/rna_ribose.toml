@@ -1,0 +1,12 @@
+name = "RNA Ribose"
+description = "CID neutral-loss discovery, ribose loss (132.0423 Da) for RNA modifications"
+combine_mode = "single"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "RNA_ribose"
+value = 132.0423
+
+[discovery]
+
+[alignment]

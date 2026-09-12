@@ -1,0 +1,12 @@
+name = "RNA MeR"
+description = "CID neutral-loss discovery, methylribose loss (146.0579 Da)"
+combine_mode = "single"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "RNA_MeR"
+value = 146.0579
+
+[discovery]
+
+[alignment]

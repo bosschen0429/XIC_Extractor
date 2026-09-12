@@ -62,6 +62,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
+    cid_nl_alignment_subject_worksets,
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -110,7 +111,20 @@ class CidNlPartitionPipelineAdapter:
     ) -> None:
         self._plan = plan
         self._alignment_config = alignment_config
-        self._known_istd_reference = known_istd_reference
+        self._known_istd_reference = (
+            None
+            if known_istd_reference is None
+            else known_istd_reference.prepare_batch(
+                sample_universe=frozenset(
+                    sample.metadata.raw_stem for sample in plan.context.samples
+                ),
+                injection_order={
+                    sample.metadata.raw_stem: sample.metadata.injection_order
+                    for sample in plan.context.samples
+                    if sample.metadata.injection_order is not None
+                },
+            )
+        )
         self._max_partition_jobs = max_partition_jobs
         self._raw_workers = raw_workers
         self._raw_worker_backend = raw_worker_backend
@@ -118,12 +132,36 @@ class CidNlPartitionPipelineAdapter:
         context = plan.context
         self._owners = context.processing_owners
         subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
-        subject_partitions = tuple(
-            plan.subject_batch.subjects[start : start + subjects_per_partition]
-            for start in range(
-                0, len(plan.subject_batch.subjects), subjects_per_partition
+        subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
+        current_subjects: list[CidNlMethodSubject] = []
+        for workset in cid_nl_alignment_subject_worksets(plan.runtime_subjects):
+            if len(workset) > subjects_per_partition:
+                raise ValueError(
+                    "max_partition_jobs cannot contain one alignment subject workset"
+                )
+            if current_subjects and (
+                len(current_subjects) + len(workset) > subjects_per_partition
+            ):
+                subject_partitions_list.append(
+                    tuple(
+                        sorted(
+                            current_subjects,
+                            key=lambda subject: subject.method_subject_id,
+                        )
+                    )
+                )
+                current_subjects = []
+            current_subjects.extend(workset)
+        if current_subjects:
+            subject_partitions_list.append(
+                tuple(
+                    sorted(
+                        current_subjects,
+                        key=lambda subject: subject.method_subject_id,
+                    )
+                )
             )
-        )
+        subject_partitions = tuple(subject_partitions_list)
         self._partitions = tuple(
             WorkPartition(
                 index=index,
@@ -400,7 +438,7 @@ class CidNlPartitionPipelineAdapter:
                     processing_attempt=self._owners.attempt,
                     children=store.sequence("children"),
                     excluded_candidates=_ordered_exclusions(
-                        store, exclusion_positions
+                        store, exclusion_positions, self._plan.excluded_candidates
                     ),
                 )
             ),
@@ -538,10 +576,18 @@ def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
 
 
 def _ordered_exclusions(
-    store: StreamedResultStore, positions: list[tuple[str, int, int]]
+    store: StreamedResultStore,
+    positions: list[tuple[str, int, int]],
+    planning_exclusions: tuple[UntargetedCandidateExclusion, ...],
 ) -> ImmutableSequence:
     """Restore canonical candidate order with finite result windows."""
-    ordered = tuple(sorted(positions))
+    all_positions = list(positions)
+    # Planning exclusions have no acquisition partition or assessment payload.
+    all_positions.extend(
+        (item.candidate_id, -1, offset)
+        for offset, item in enumerate(planning_exclusions)
+    )
+    ordered = tuple(sorted(all_positions))
     windows = tuple(
         ordered[start : start + 2048] for start in range(0, len(ordered), 2048)
     )
@@ -553,10 +599,14 @@ def _ordered_exclusions(
             by_partition.setdefault(partition, []).append((position, offset))
         values: dict[int, UntargetedCandidateExclusion] = {}
         for partition, selected in by_partition.items():
-            exclusions = store.read_selected(
-                partition,
-                "excluded_candidates",
-                tuple(offset for _, offset in selected),
+            exclusions = (
+                tuple(planning_exclusions[offset] for _, offset in selected)
+                if partition == -1
+                else store.read_selected(
+                    partition,
+                    "excluded_candidates",
+                    tuple(offset for _, offset in selected),
+                )
             )
             for (position, _), exclusion in zip(selected, exclusions, strict=True):
                 values[position] = exclusion

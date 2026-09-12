@@ -1,8 +1,10 @@
+from collections import deque
 from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.discovery.evidence_score import score_discovery_evidence
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.mass_accuracy import is_within_mz_tolerance
 
 _APEX_RT_EPSILON_MIN = 1e-6
 
@@ -12,7 +14,15 @@ def assign_peak_anchors(
     *,
     settings: DiscoverySettings | None = None,
 ) -> tuple[DiscoveryCandidate, ...]:
-    anchored = _assign_peak_anchors(candidates)
+    precursor_mz_tolerance_ppm = (
+        settings.precursor_mz_tolerance_ppm
+        if settings is not None
+        else DiscoverySettings.precursor_mz_tolerance_ppm
+    )
+    anchored = _assign_peak_anchors(
+        candidates,
+        precursor_mz_tolerance_ppm=precursor_mz_tolerance_ppm,
+    )
     scored = _score_all_evidence(anchored, settings=settings)
     return _bound_competing_inferred_precursor_hypotheses(scored)
 
@@ -76,12 +86,32 @@ def _inferred_precursor_hypothesis_rank(
 
 def _assign_peak_anchors(
     candidates: tuple[DiscoveryCandidate, ...],
+    *,
+    precursor_mz_tolerance_ppm: float,
 ) -> tuple[DiscoveryCandidate, ...]:
     groups: list[list[DiscoveryCandidate]] = []
-    for candidate in candidates:
-        group_index = _matching_anchor_index(candidate, groups)
+    active_group_indexes: deque[int] = deque()
+    for candidate in sorted(candidates, key=_anchor_grouping_sort_key):
+        if not candidate.ms1_peak_found or not _peak_bounds_present(candidate):
+            groups.append([candidate])
+            continue
+
+        while active_group_indexes and not is_within_mz_tolerance(
+            candidate.precursor_mz,
+            groups[active_group_indexes[0]][0].precursor_mz,
+            tolerance_ppm=precursor_mz_tolerance_ppm,
+        ):
+            active_group_indexes.popleft()
+
+        group_index = _matching_anchor_index(
+            candidate,
+            groups,
+            group_indexes=active_group_indexes,
+            precursor_mz_tolerance_ppm=precursor_mz_tolerance_ppm,
+        )
         if group_index is None:
             groups.append([candidate])
+            active_group_indexes.append(len(groups) - 1)
         else:
             groups[group_index].append(candidate)
 
@@ -126,16 +156,35 @@ def _score_all_evidence(
 def _matching_anchor_index(
     candidate: DiscoveryCandidate,
     groups: list[list[DiscoveryCandidate]],
+    *,
+    group_indexes: deque[int],
+    precursor_mz_tolerance_ppm: float,
 ) -> int | None:
-    for index, group in enumerate(groups):
-        if any(_same_peak_anchor(candidate, existing) for existing in group):
+    for index in group_indexes:
+        group = groups[index]
+        if all(
+            _same_peak_anchor(
+                candidate,
+                existing,
+                precursor_mz_tolerance_ppm=precursor_mz_tolerance_ppm,
+            )
+            for existing in group
+        ):
             return index
     return None
+
+
+def _anchor_grouping_sort_key(
+    candidate: DiscoveryCandidate,
+) -> tuple[float, str, float, float, str]:
+    return (candidate.precursor_mz, *_candidate_sort_key(candidate))
 
 
 def _same_peak_anchor(
     first: DiscoveryCandidate,
     second: DiscoveryCandidate,
+    *,
+    precursor_mz_tolerance_ppm: float,
 ) -> bool:
     return (
         first.raw_file == second.raw_file
@@ -143,6 +192,11 @@ def _same_peak_anchor(
         and first.neutral_loss_tag == second.neutral_loss_tag
         and first.ms1_peak_found
         and second.ms1_peak_found
+        and is_within_mz_tolerance(
+            first.precursor_mz,
+            second.precursor_mz,
+            tolerance_ppm=precursor_mz_tolerance_ppm,
+        )
         and _peak_bounds_present(first)
         and _peak_bounds_present(second)
         and _apex_matches(first, second)

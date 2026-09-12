@@ -55,6 +55,14 @@ observation, Alignment, ObservationRepair, Backfill, and cell-decision
 lifecycle. Provider-specific evidence handling must not create a parallel
 downstream decision core.
 
+CID-NL acquisition/assessment subjects remain exact provenance while compatible
+subjects may share an alignment workset. The method-subject owner validates
+workset compatibility, execution keeps that workset atomic, and the existing
+CrossSample/cell owners retain exact support bindings and select the bounded
+recovery subject. A scheduling partition or subject center cannot become a
+feature boundary. The [Alignment contract](product/alignment.md) owns this
+policy; result writers consume the completed groups and cells.
+
 ## Dependency Direction
 
 - Domain algorithms may depend on arrays, typed configuration/context, and

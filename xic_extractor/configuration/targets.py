@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.csv_io import (
@@ -232,3 +233,26 @@ def _parse_target_metadata_enum(
             f"must be one of {', '.join(sorted(allowed))} or blank",
         )
     return normalized
+
+
+def read_targets(path: Path) -> tuple[Target, ...]:
+    return tuple(_read_targets(path))
+
+
+@dataclass(frozen=True)
+class IstdTargetSelection:
+    """Untargeted projection of a validated shared target list."""
+
+    targets: tuple[Target, ...]
+    skipped_count: int
+
+
+def read_istd_targets(path: Path) -> IstdTargetSelection:
+    targets = read_targets(path)
+    istds = tuple(target for target in targets if target.is_istd)
+    if not istds:
+        raise ValueError(
+            f"{path}: no internal standards; set is_istd=TRUE for an ISTD row "
+            "or clear the optional list to run without ISTD alignment."
+        )
+    return IstdTargetSelection(istds, len(targets) - len(istds))

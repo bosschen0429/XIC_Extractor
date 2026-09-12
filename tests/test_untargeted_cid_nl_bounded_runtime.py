@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Event, Lock, get_ident
@@ -69,6 +70,8 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
                 rt=float(raw.rt[third_scan_number - 1]),
             ),
         )
+        if scenario == "mixed_eligibility":
+            third_raw.intensity[:] = 0.0
         third_candidates = _current_candidates(
             third_raw, raw_file=path, settings=settings, peak_config=peak_config
         )
@@ -79,7 +82,7 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
             )
         )
         raw.scans = (*raw.scans, *third_raw.scans)
-        if scenario == "unsupported":
+        if scenario == "ineligible":
             raw.intensity[:] = 0.0
             sample_candidates = _current_candidates(
                 raw, raw_file=path, settings=settings, peak_config=peak_config
@@ -138,9 +141,277 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
     return plan, reference
 
 
+def test_bounded_partition_keeps_alignment_workset_atomic(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        CidNlPartitionPipelineAdapter,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=mz,
+                    precursor_tolerance_ppm=20.0,
+                    neutral_loss_da=116.0474,
+                )
+                for mz in (500.0, 500.015, 500.05)
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    packing_plan = replace(plan, runtime_subjects=subjects)
+    sample_count = len(plan.context.samples)
+
+    adapter = CidNlPartitionPipelineAdapter(
+        packing_plan,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=sample_count * 2,
+    )
+
+    assert tuple(partition.payload for partition in adapter.partitions) == (
+        subjects[:2],
+        subjects[2:],
+    )
+    with pytest.raises(
+        ValueError,
+        match="cannot contain one alignment subject workset",
+    ):
+        CidNlPartitionPipelineAdapter(
+            packing_plan,
+            alignment_config=AlignmentConfig(),
+            max_partition_jobs=sample_count,
+        )
+
+
+def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        cid_nl_alignment_subject_worksets,
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=precursor_mz,
+                    precursor_tolerance_ppm=20.0,
+                    neutral_loss_da=neutral_loss_da,
+                )
+                for precursor_mz, neutral_loss_da in (
+                    (300.0, 116.0474),
+                    (300.005, 116.0474),
+                    (300.001, 114.0),
+                    (300.006, 114.0),
+                )
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    worksets = cid_nl_alignment_subject_worksets(subjects)
+    assert tuple(len(workset) for workset in worksets) == (2, 2)
+    assert tuple(subject for workset in worksets for subject in workset) != subjects
+    memberships = tuple(
+        (f"candidate-{index}", subject.method_subject_id)
+        for index, subject in enumerate(subjects)
+    )
+    packing_plan = replace(
+        plan,
+        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects,
+            candidate_memberships=memberships,
+        ),
+        runtime_subjects=subjects,
+    )
+    captured_batches = []
+
+    def capture_materialized_partition(_plan, subject_batch):
+        captured_batches.append(subject_batch)
+        return SimpleNamespace(jobs=())
+
+    def close_without_raw(*_args, **_kwargs):
+        return SimpleNamespace(
+            succeeded=True,
+            worker_batch=SimpleNamespace(resource_settlements=()),
+            acquisitions=(),
+        )
+
+    def forbid_raw_open(*_args, **_kwargs):
+        pytest.fail("partition batch mint must complete before RAW acquisition")
+
+    monkeypatch.setattr(
+        bounded_owner,
+        "materialize_untargeted_cid_nl_partition",
+        capture_materialized_partition,
+    )
+    monkeypatch.setattr(
+        bounded_owner,
+        "execute_untargeted_cid_nl_runtime_partition",
+        close_without_raw,
+    )
+    monkeypatch.setattr(_FakeThermoRaw, "__init__", forbid_raw_open)
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        packing_plan,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=len(plan.context.samples) * len(subjects),
+    )
+
+    (partition,) = adapter.partitions
+    result = adapter.execute_acquisition(partition)
+
+    assert result.succeeded
+    assert tuple(
+        subject.method_subject_id for subject in partition.payload
+    ) == tuple(sorted(subject.method_subject_id for subject in subjects))
+    assert captured_batches[0].subjects == partition.payload
+
+
+@pytest.mark.parametrize("scenario", ["mixed_eligibility", "ineligible"])
+@pytest.mark.parametrize("raw_workers", [1, 4])
+def test_bounded_runtime_skips_subjects_without_ms1_features(
+    tmp_path, monkeypatch, scenario, raw_workers
+):
+    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        CidNlPartitionPipelineAdapter,
+        execute_bounded_untargeted_cid_nl,
+    )
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario=scenario)
+    request_payload = plan.subject_batch.request_payload()
+    candidate_by_id = {
+        candidate.candidate_id: candidate
+        for candidates in plan.context.candidates_by_sample.values()
+        for candidate in candidates
+    }
+    eligible_subject_ids = {
+        subject_id
+        for candidate_id, subject_id in plan.subject_batch.candidate_memberships
+        if candidate_by_id[candidate_id].ms1_peak_found
+        and candidate_by_id[candidate_id].discovery_candidate_state
+        in MS1_FEATURE_BACKED_STATES
+    }
+    assert len(eligible_subject_ids) == (2 if scenario == "mixed_eligibility" else 0)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    adapter = CidNlPartitionPipelineAdapter(
+        plan, alignment_config=config, max_partition_jobs=len(plan.context.samples)
+    )
+    assert {
+        subject.method_subject_id
+        for partition in adapter.partitions
+        for subject in partition.payload
+    } == eligible_subject_ids
+    eager = None
+    if eligible_subject_ids:
+        batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+        runtime = execute_untargeted_cid_nl_production_batch(
+            batch,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
+        )
+        eager = compose_untargeted_cid_nl_production_result(
+            batch, runtime, alignment_config=config
+        )
+    if not eligible_subject_ids:
+
+        def forbid_raw_open(*args, **kwargs):
+            pytest.fail("an ineligible cohort must close without opening RAW")
+
+        monkeypatch.setattr(_FakeThermoRaw, "__init__", forbid_raw_open)
+    result = execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=tmp_path / "eligibility-output",
+        alignment_config=config,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "eligibility.json", "eligibility"
+        ),
+        max_partition_jobs=len(plan.context.samples),
+        raw_workers=raw_workers,
+        pipeline_overlap=True,
+    )
+    assert plan.subject_batch.request_payload() == request_payload
+    assert set(result.application_result.candidate_ids) == set(candidate_by_id)
+    assert {
+        assessment.content.method_subject.method_subject_id
+        for assessment in result.method_assessments
+    } == eligible_subject_ids
+    skipped = {
+        candidate_id
+        for candidate_id, subject_id in plan.subject_batch.candidate_memberships
+        if subject_id not in eligible_subject_ids
+    }
+    exclusions = {
+        exclusion.candidate_id: exclusion
+        for exclusion in result.application_result.excluded_candidates
+    }
+    assert skipped <= exclusions.keys()
+    for candidate_id in skipped:
+        exclusion = exclusions[candidate_id]
+        assert exclusion.reason_code == "discovery_candidate_not_search_eligible"
+        assert not exclusion.method_assessments
+        assert not exclusion.composite_assessments
+    assert bool(result.application_result.children) is bool(eligible_subject_ids)
+    writer = project_completed_untarget_batch_writer_inputs(result)
+    if eager is not None:
+        assert writer == project_completed_untarget_batch_writer_inputs(eager)
+        assert {
+            assessment.artifact.evidence_artifact_id: assessment
+            for assessment in result.method_assessments
+        } == {
+            assessment.artifact.evidence_artifact_id: assessment
+            for assessment in eager.method_assessments
+            if assessment.content.method_subject.method_subject_id
+            in eligible_subject_ids
+        }
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+        write_cid_nl_explanation,
+    )
+
+    matrix_path = tmp_path / "eligibility.tsv"
+    write_alignment_matrix_tsv(
+        matrix_path,
+        writer.matrix,
+        alignment_config=config,
+        production_decisions=writer.production_decisions,
+    )
+    report = write_cid_nl_explanation(
+        tmp_path / "eligibility.sqlite",
+        completed=result,
+        writer_inputs=writer,
+        candidates_by_sample=plan.context.candidates_by_sample,
+        matrix_path=matrix_path,
+        alignment_config=config,
+    )
+    with sqlite3.connect(report) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM candidates").fetchone()[
+            0
+        ] == len(candidate_by_id)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM records WHERE kind = 'method_assessments'"
+        ).fetchone()[0] == len(result.method_assessments)
+
+
 @pytest.mark.parametrize("subjects_per_partition", [1, 2])
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])
-@pytest.mark.parametrize("scenario", ["positive", "recovery", "unsupported", "istd"])
+@pytest.mark.parametrize("scenario", ["positive", "recovery", "istd"])
 def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     tmp_path: Path,
     monkeypatch,
@@ -281,11 +552,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert len(snapshot.manifest_work_unit_keys) == (
         partition_count * len(plan.context.samples) * 2 + 1
     )
-    if scenario == "unsupported":
-        assert not actual.children
-        assert len(actual.excluded_candidates) == len(actual.candidate_ids)
-    else:
-        assert actual.children
+    assert actual.children
     if scenario == "recovery":
         assert any(result.recovery_attempts for result in eager_runtime.sample_results)
 
