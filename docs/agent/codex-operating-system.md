@@ -37,15 +37,27 @@ Git history is the recovery path.
 
 ## Change Protocol
 
-After changes to hooks, rules, config, skills, or agent guidance, run:
+For changes to hooks, rules, config, skills, or agent guidance, run
+`git diff --check` and scan the diff for secrets, private/absolute paths, and
+accidentally tracked local config. Validate each changed skill's format and
+references. Select further checks by the behavior affected:
+
+| Changed behavior | Verification |
+| --- | --- |
+| Wording or description with unchanged routing and permissions | Relevant docs/format/link checks; existing checks that consume the changed text. |
+| Skill selection, required reads, completion, approval, or stopping boundaries | Representative positive and negative scenarios covering the changed decision; distinguish observed agent behavior from a manual walkthrough. |
+| Hook, executable rule, runtime config, script, sandbox, or subagent execution | Run the smoke and focused runtime tests below, plus checks for the affected consumer. |
+
+For execution changes:
 
 ```powershell
-git diff --check
 .venv\Scripts\python.exe .codex\hooks\fixtures\assert_hook_outputs.py
 .venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
 ```
 
-Also validate each changed skill, run focused docs/config tests, and scan the
-diff for secrets, private/absolute paths, and accidentally tracked local config.
+Instruction changes that alter those execution contracts also require the
+affected runtime checks. Pure prose changes do not require unrelated sandbox
+tests. Keep RAW validation and final-SHA PR requirements with their owners.
+
 Repository verification does not prove that the host trusted or activated the
 project layer; inspect host hooks separately when activation matters.
