@@ -21,6 +21,7 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
     Path("tests/test_config_hash.py"): ("docs-config", "targeted-core"),
     Path("tests/test_config_io.py"): ("docs-config", "targeted-core"),
     Path("tests/test_discovery_method_section.py"): ("gui", "alignment-core"),
+    Path("tests/test_discovery_samples_section.py"): ("gui", "alignment-core"),
     Path("tests/test_discovery_worker.py"): ("gui", "alignment-core"),
     Path("tests/test_matrix_identity_blast_radius.py"): (
         "alignment-core",

@@ -223,7 +223,7 @@ def test_unavailable_preset_requires_explicit_valid_preset_activation(qtbot) -> 
     section._preset.activated.emit(section._preset.currentIndex())
 
     assert section.is_valid() is True
-    assert section.get_values() == {"preset": "dna_dr", "overrides": {}}
+    assert section.get_values() == {"preset": "dna_dr", "overrides": {"rt_max": 60.0}}
 
 
 def test_invalid_override_quarantine_clears_on_explicit_preset_reselect(
@@ -237,7 +237,7 @@ def test_invalid_override_quarantine_clears_on_explicit_preset_reselect(
     assert section.is_valid() is False
     section._preset.activated.emit(section._preset.currentIndex())
     assert section.is_valid() is True
-    assert section.get_values()["overrides"] == {}
+    assert section.get_values()["overrides"] == {"rt_max": 60.0}
 
 
 def test_invalid_override_quarantine_clears_only_after_valid_method_edit(
@@ -257,7 +257,8 @@ def test_invalid_override_quarantine_clears_only_after_valid_method_edit(
 
     assert section.is_valid() is True
     assert section.get_values()["overrides"] == {
-        "rt_min": section.numeric_value("rt_min")
+        "rt_min": section.numeric_value("rt_min"),
+        "rt_max": 60.0,
     }
 
 

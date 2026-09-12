@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 SAMPLE_METADATA_SCHEMA_VERSION = "sample_metadata_v1"
 SAMPLE_METADATA_COLUMNS: tuple[str, ...] = (
@@ -48,6 +48,34 @@ SAMPLE_ROLES: frozenset[str] = frozenset(
 _CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
 _SAMPLE_METADATA_SNAPSHOT_PREFIX = "xic.sample-metadata-snapshot.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_SEQUENCE_HEADER_ALIASES: Mapping[str, frozenset[str]] = {
+    "order": frozenset(
+        {"id", "no", "index", "order", "injection order", "序號", "編號", "項次"}
+    ),
+    "raw_stem": frozenset(
+        {"file name", "filename", "raw file", "raw", "檔案", "檔名", "檔案名稱"}
+    ),
+    "sample_name": frozenset(
+        {
+            "sample",
+            "sample name",
+            "sample id",
+            "樣品",
+            "樣品名稱",
+            "樣本",
+            "樣本名稱",
+        }
+    ),
+    "method": frozenset({"method", "instrument method", "方法"}),
+    "sample_role": frozenset({"sample type", "type", "role", "類別", "類型", "角色"}),
+    "group": frozenset({"group", "組別", "分組"}),
+    "batch_id": frozenset({"batch", "batch id", "批次"}),
+}
+_SEQUENCE_HEADER_FIELD_BY_ALIAS = {
+    alias: field
+    for field, aliases in _SEQUENCE_HEADER_ALIASES.items()
+    for alias in aliases
+}
 
 
 @dataclass(frozen=True)
@@ -66,6 +94,21 @@ class SampleMetadata:
 
 class SampleMetadataError(ValueError):
     """Raised when sample metadata cannot be treated as a shared contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class SequenceMatchReport:
+    """Auditable projection of one sequence source onto the active RAW files."""
+
+    rows: tuple[SampleMetadata, ...]
+    matched_raw_stems: tuple[str, ...]
+    unmatched_raw_stems: tuple[str, ...]
+    unmatched_sequence_names: tuple[str, ...]
+    ambiguous_sequence_names: tuple[str, ...]
+
+    @property
+    def matched_count(self) -> int:
+        return len(self.matched_raw_stems)
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,21 +258,565 @@ def infer_sample_role(
     return "unknown"
 
 
-def load_sample_metadata(path: Path) -> tuple[SampleMetadata, ...]:
-    return parse_sample_metadata(
-        _read_sample_metadata_rows(path),
-        source=str(path),
+def normalize_for_matching(s: str) -> str:
+    """Normalize file or sample string for resilient fuzzy matching."""
+    s = re.sub(r"\.(raw|mzml|csv|tsv|txt)$", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"tissue", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"and", "", s, flags=re.IGNORECASE)
+    s = s.replace("+", "")
+    return re.sub(r"[^a-zA-Z0-9]", "", s).lower()
+
+
+def _parse_docx_sequence_table(docx_path: Path) -> list[dict[str, Any]]:
+    """Adapt the shared CLI Word-sequence owner to sample metadata rows."""
+    from xic_extractor.instrument_qc.sequence_manifest import parse_sequence_docx
+
+    if not docx_path.is_file():
+        raise SampleMetadataError(f"{docx_path}: file not found")
+    try:
+        entries = parse_sequence_docx(docx_path)
+    except ValueError as exc:
+        raise SampleMetadataError(str(exc)) from exc
+    if not entries:
+        raise SampleMetadataError(
+            f"{docx_path.name}: 未在 Word 文件中找到有效的進樣序列表"
+        )
+
+    return _sequence_doc_entries_as_rows(entries)
+
+
+def _sequence_doc_entries_as_rows(
+    entries: Sequence[Any],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "order": entry.injection_order,
+            "raw_stem": entry.doc_display_name,
+            "sample_name": entry.sample_description or entry.doc_display_name,
+            "sample_role": "",
+            "method": entry.instrument_method,
+            "group": "",
+            "batch_id": "",
+        }
+        for entry in entries
+    ]
+
+
+def _normalize_sequence_header(value: object) -> str:
+    text = str(value).strip().lower().replace("_", " ")
+    return " ".join(re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff\s]", " ", text).split())
+
+
+def _best_sequence_header(
+    rows: Iterable[Sequence[object]],
+) -> tuple[int, dict[str, int], tuple[str, ...], int] | None:
+    best: tuple[int, dict[str, int], tuple[str, ...], int] | None = None
+    best_score = -1
+    for row_idx, row in enumerate(rows):
+        header_map: dict[str, int] = {}
+        duplicate_fields: set[str] = set()
+        for col_idx, value in enumerate(row):
+            field = _SEQUENCE_HEADER_FIELD_BY_ALIAS.get(
+                _normalize_sequence_header(value)
+            )
+            if field is None:
+                continue
+            if field in header_map:
+                duplicate_fields.add(field)
+                continue
+            header_map[field] = col_idx
+
+        if "raw_stem" not in header_map and "sample_name" not in header_map:
+            continue
+        score = 2
+        if "order" in header_map:
+            score += 2
+        if "method" in header_map or "sample_role" in header_map:
+            score += 1
+        if score > best_score:
+            best_score = score
+            best = (row_idx, header_map, tuple(sorted(duplicate_fields)), score)
+            if score >= 5:
+                break
+    return best
+
+
+def _require_sequence_header(
+    candidate: tuple[int, dict[str, int], tuple[str, ...], int] | None,
+    *,
+    source_name: str,
+    source_kind: str,
+) -> tuple[int, dict[str, int]]:
+    if candidate is None:
+        raise SampleMetadataError(
+            f"{source_name}: {source_kind} 缺少樣品識別標頭 "
+            "(Sample ID/Sample Name/File Name/Raw File)"
+        )
+    row_idx, header_map, duplicate_fields, _score = candidate
+    if duplicate_fields:
+        fields = ", ".join(duplicate_fields)
+        raise SampleMetadataError(
+            f"{source_name}: {source_kind} 標頭語義不明確，欄位重複 ({fields})"
+        )
+    return row_idx, header_map
+
+
+def _parse_xlsx_sequence_table(xlsx_path: Path) -> list[dict[str, Any]]:
+    """Parse injection sequence table from Excel .xlsx workbook."""
+    if not xlsx_path.is_file():
+        raise SampleMetadataError(f"{xlsx_path}: file not found")
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(xlsx_path, read_only=True)
+    except Exception as exc:
+        raise SampleMetadataError(
+            f"{xlsx_path}: failed to read Excel workbook: {exc}"
+        ) from exc
+
+    best_sheet = None
+    best_candidate: tuple[int, dict[str, int], tuple[str, ...], int] | None = None
+    best_score = -1
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        candidate = _best_sequence_header(ws.iter_rows(values_only=True, max_row=20))
+        if candidate is not None and candidate[3] > best_score:
+            best_score = candidate[3]
+            best_sheet = ws
+            best_candidate = candidate
+        if best_score >= 5:
+            break
+
+    best_header_row, best_header_map = _require_sequence_header(
+        best_candidate,
+        source_name=xlsx_path.name,
+        source_kind="Excel 工作表",
+    )
+    assert best_sheet is not None
+
+    results: list[dict[str, Any]] = []
+    auto_order = 1
+    for row_idx, row in enumerate(best_sheet.iter_rows(values_only=True)):
+        if row_idx <= best_header_row or not row or not any(row):
+            continue
+        cells = [str(c).strip() if c is not None else "" for c in row]
+
+        order_val: int | None = None
+        if "order" in best_header_map and best_header_map["order"] < len(cells):
+            raw_order = cells[best_header_map["order"]]
+            m = re.match(r"^\d+", raw_order)
+            if m:
+                order_val = int(m.group(0))
+
+        file_name = (
+            cells[best_header_map["raw_stem"]]
+            if "raw_stem" in best_header_map
+            and best_header_map["raw_stem"] < len(cells)
+            else ""
+        )
+        sample_name = (
+            cells[best_header_map["sample_name"]]
+            if "sample_name" in best_header_map
+            and best_header_map["sample_name"] < len(cells)
+            else ""
+        )
+        role_text = (
+            cells[best_header_map["sample_role"]]
+            if "sample_role" in best_header_map
+            and best_header_map["sample_role"] < len(cells)
+            else ""
+        )
+        method_text = (
+            cells[best_header_map["method"]]
+            if "method" in best_header_map and best_header_map["method"] < len(cells)
+            else ""
+        )
+        group_text = (
+            cells[best_header_map["group"]]
+            if "group" in best_header_map and best_header_map["group"] < len(cells)
+            else ""
+        )
+        batch_text = (
+            cells[best_header_map["batch_id"]]
+            if "batch_id" in best_header_map
+            and best_header_map["batch_id"] < len(cells)
+            else ""
+        )
+
+        if not file_name and not sample_name:
+            continue
+
+        results.append(
+            {
+                "order": order_val if order_val is not None else auto_order,
+                "raw_stem": file_name,
+                "sample_name": sample_name or file_name,
+                "sample_role": role_text,
+                "method": method_text,
+                "group": group_text,
+                "batch_id": batch_text,
+            }
+        )
+        auto_order += 1
+
+    if not results:
+        raise SampleMetadataError(f"{xlsx_path.name}: Excel 工作表沒有有效的樣品資料列")
+    return results
+
+
+def _parse_generic_tabular_sequence(path: Path) -> list[dict[str, Any]]:
+    """Parse sequence table from generic CSV/TSV without schema_version."""
+    if not path.is_file():
+        raise SampleMetadataError(f"{path}: file not found")
+    delimiter = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        rows = list(csv.reader(handle, delimiter=delimiter))
+
+    if not rows:
+        raise SampleMetadataError(f"{path.name}: empty file")
+
+    best_header_row, best_header_map = _require_sequence_header(
+        _best_sequence_header(rows[:20]),
+        source_name=path.name,
+        source_kind="文字表格",
+    )
+
+    results: list[dict[str, Any]] = []
+    auto_order = 1
+    for row_idx, row in enumerate(rows):
+        if row_idx <= best_header_row or not row or not any(row):
+            continue
+        cells = [c.strip() for c in row]
+
+        order_val: int | None = None
+        if "order" in best_header_map and best_header_map["order"] < len(cells):
+            raw_order = cells[best_header_map["order"]]
+            m = re.match(r"^\d+", raw_order)
+            if m:
+                order_val = int(m.group(0))
+
+        file_name = (
+            cells[best_header_map["raw_stem"]]
+            if "raw_stem" in best_header_map
+            and best_header_map["raw_stem"] < len(cells)
+            else ""
+        )
+        sample_name = (
+            cells[best_header_map["sample_name"]]
+            if "sample_name" in best_header_map
+            and best_header_map["sample_name"] < len(cells)
+            else ""
+        )
+        role_text = (
+            cells[best_header_map["sample_role"]]
+            if "sample_role" in best_header_map
+            and best_header_map["sample_role"] < len(cells)
+            else ""
+        )
+        method_text = (
+            cells[best_header_map["method"]]
+            if "method" in best_header_map and best_header_map["method"] < len(cells)
+            else ""
+        )
+        group_text = (
+            cells[best_header_map["group"]]
+            if "group" in best_header_map and best_header_map["group"] < len(cells)
+            else ""
+        )
+        batch_text = (
+            cells[best_header_map["batch_id"]]
+            if "batch_id" in best_header_map
+            and best_header_map["batch_id"] < len(cells)
+            else ""
+        )
+
+        if not file_name and not sample_name:
+            continue
+
+        results.append(
+            {
+                "order": order_val if order_val is not None else auto_order,
+                "raw_stem": file_name,
+                "sample_name": sample_name or file_name,
+                "sample_role": role_text,
+                "method": method_text,
+                "group": group_text,
+                "batch_id": batch_text,
+            }
+        )
+        auto_order += 1
+
+    if not results:
+        raise SampleMetadataError(f"{path.name}: 文字表格沒有有效的樣品資料列")
+    return results
+
+
+def parse_sequence_file(path: Path) -> tuple[SampleMetadata, ...]:
+    """Parse laboratory sequence list from Word (.docx), Excel (.xlsx), or CSV/TSV."""
+    suffix = path.suffix.lower()
+    if suffix == ".docx":
+        raw_entries = _parse_docx_sequence_table(path)
+    elif suffix in {".xlsx", ".xls"}:
+        raw_entries = _parse_xlsx_sequence_table(path)
+    elif suffix in {".csv", ".tsv", ".txt"}:
+        raw_entries = _parse_generic_tabular_sequence(path)
+    else:
+        raise SampleMetadataError(f"{path.name}: 不支援的序列表檔案格式 ({suffix})")
+    return _metadata_from_sequence_entries(raw_entries)
+
+
+def _metadata_from_sequence_entries(
+    raw_entries: Sequence[Mapping[str, Any]],
+) -> tuple[SampleMetadata, ...]:
+    metadata_rows: list[SampleMetadata] = []
+    seen_names: set[str] = set()
+    seen_stems: set[str] = set()
+
+    for idx, entry in enumerate(raw_entries, start=1):
+        raw_stem = Path(entry["raw_stem"]).stem if entry["raw_stem"] else ""
+        sample_name = entry["sample_name"] or raw_stem or f"sample_{idx}"
+
+        if sample_name in seen_names:
+            if raw_stem and raw_stem not in seen_names:
+                sample_name = raw_stem
+            else:
+                sample_name = f"{sample_name}_{entry['order'] or idx}"
+        seen_names.add(sample_name)
+
+        if not raw_stem:
+            raw_stem = sample_name
+
+        if raw_stem in seen_stems:
+            raw_stem = f"{raw_stem}_{entry['order'] or idx}"
+        seen_stems.add(raw_stem)
+
+        role = infer_sample_role(
+            entry.get("sample_role"),
+            sample_name=sample_name,
+            comment=f"{entry.get('method', '')} {raw_stem}",
+        )
+
+        group = entry.get("group", "")
+        if not group:
+            search_text = f"{sample_name} {raw_stem}".lower()
+            if "tumor" in search_text:
+                group = "Tumor"
+            elif "normal" in search_text:
+                group = "Normal"
+            elif "benign" in search_text:
+                group = "Benign"
+            elif role == "pooled_qc":
+                group = "QC"
+
+        metadata_rows.append(
+            SampleMetadata(
+                sample_name=sample_name,
+                raw_stem=raw_stem,
+                injection_order=entry["order"],
+                sample_role=role,
+                batch_id=entry.get("batch_id", ""),
+                prep_batch_id="",
+                matrix_type="",
+                group=group,
+                excluded=False,
+                exclusion_reason="",
+            )
+        )
+
+    return tuple(metadata_rows)
+
+
+def load_and_match_sample_metadata(
+    path: Path,
+    raw_stems: Sequence[str],
+) -> SequenceMatchReport:
+    """Load a sequence source and project it onto the active RAW stems."""
+    if path.suffix.lower() != ".docx":
+        metadata = load_sample_metadata(path)
+        return match_sequence_to_raw_stems_report(metadata, raw_stems)
+
+    from xic_extractor.instrument_qc.sequence_manifest import (
+        ManifestMatchStatus,
+        build_sequence_manifest_from_entries,
+        parse_sequence_docx,
+    )
+
+    if not path.is_file():
+        raise SampleMetadataError(f"{path}: file not found")
+    try:
+        entries = parse_sequence_docx(path)
+    except ValueError as exc:
+        raise SampleMetadataError(str(exc)) from exc
+    if not entries:
+        raise SampleMetadataError(f"{path.name}: 未在 Word 文件中找到有效的進樣序列表")
+    metadata = _metadata_from_sequence_entries(_sequence_doc_entries_as_rows(entries))
+
+    manifest = build_sequence_manifest_from_entries(
+        entries,
+        raw_stems=tuple(raw_stems),
+    )
+    metadata_by_source = {
+        entry.source_section: row for entry, row in zip(entries, metadata, strict=True)
+    }
+    matched_by_raw: dict[str, SampleMetadata] = {}
+    unmatched_sequence_names: list[str] = []
+    ambiguous_sequence_names: list[str] = []
+    for manifest_row in manifest:
+        source_row = metadata_by_source.get(manifest_row.source_section)
+        if source_row is None:
+            continue
+        if manifest_row.match_status == ManifestMatchStatus.MATCHED:
+            matched_by_raw[manifest_row.raw_stem] = source_row
+        elif manifest_row.match_status == ManifestMatchStatus.AMBIGUOUS:
+            ambiguous_sequence_names.append(source_row.raw_stem)
+        elif manifest_row.match_status == ManifestMatchStatus.UNMATCHED:
+            unmatched_sequence_names.append(source_row.raw_stem)
+
+    return _sequence_match_report(
+        metadata,
+        raw_stems,
+        matched_by_raw=matched_by_raw,
+        unmatched_sequence_names=unmatched_sequence_names,
+        ambiguous_sequence_names=ambiguous_sequence_names,
     )
 
 
+def match_sequence_to_raw_stems_report(
+    sequence_rows: Sequence[SampleMetadata],
+    raw_stems: Sequence[str],
+) -> SequenceMatchReport:
+    """Match a non-Word sequence source and retain ambiguity/unmatched evidence."""
+    raw_stem_order = tuple(raw_stems)
+    normalized_raws: dict[str, list[str]] = {}
+    for stem in raw_stem_order:
+        normalized_raws.setdefault(normalize_for_matching(stem), []).append(stem)
+
+    matched_by_raw: dict[str, SampleMetadata] = {}
+    unmatched_sequence_names: list[str] = []
+    ambiguous_sequence_names: list[str] = []
+    for row in sequence_rows:
+        keys = {
+            normalize_for_matching(value)
+            for value in (row.raw_stem, row.sample_name)
+            if value
+        }
+        candidates = {
+            stem
+            for key in keys
+            for stem in normalized_raws.get(key, ())
+            if stem not in matched_by_raw
+        }
+        if len(candidates) == 1:
+            matched_by_raw[candidates.pop()] = row
+        elif len(candidates) > 1:
+            ambiguous_sequence_names.append(row.raw_stem or row.sample_name)
+        else:
+            unmatched_sequence_names.append(row.raw_stem or row.sample_name)
+
+    return _sequence_match_report(
+        sequence_rows,
+        raw_stem_order,
+        matched_by_raw=matched_by_raw,
+        unmatched_sequence_names=unmatched_sequence_names,
+        ambiguous_sequence_names=ambiguous_sequence_names,
+    )
+
+
+def match_sequence_to_raw_stems(
+    sequence_rows: Sequence[SampleMetadata],
+    raw_stems: Sequence[str],
+) -> tuple[SampleMetadata, ...]:
+    """Compatibility projection for callers that only consume matched rows."""
+    return match_sequence_to_raw_stems_report(sequence_rows, raw_stems).rows
+
+
+def _sequence_match_report(
+    sequence_rows: Sequence[SampleMetadata],
+    raw_stems: Sequence[str],
+    *,
+    matched_by_raw: Mapping[str, SampleMetadata],
+    unmatched_sequence_names: Sequence[str],
+    ambiguous_sequence_names: Sequence[str],
+) -> SequenceMatchReport:
+    raw_stem_order = tuple(raw_stems)
+    if not raw_stem_order:
+        return SequenceMatchReport(
+            rows=tuple(sequence_rows),
+            matched_raw_stems=(),
+            unmatched_raw_stems=(),
+            unmatched_sequence_names=tuple(unmatched_sequence_names),
+            ambiguous_sequence_names=tuple(ambiguous_sequence_names),
+        )
+
+    rows: list[SampleMetadata] = []
+    matched_raw_stems: list[str] = []
+    unmatched_raw_stems: list[str] = []
+    for stem in raw_stem_order:
+        source_row = matched_by_raw.get(stem)
+        if source_row is None:
+            unmatched_raw_stems.append(stem)
+            rows.append(
+                SampleMetadata(
+                    sample_name=stem,
+                    raw_stem=stem,
+                    injection_order=None,
+                    sample_role=infer_sample_role("unknown", sample_name=stem),
+                )
+            )
+            continue
+
+        matched_raw_stems.append(stem)
+        rows.append(
+            SampleMetadata(
+                sample_name=source_row.sample_name,
+                raw_stem=stem,
+                injection_order=source_row.injection_order,
+                sample_role=source_row.sample_role,
+                batch_id=source_row.batch_id,
+                prep_batch_id=source_row.prep_batch_id,
+                matrix_type=source_row.matrix_type,
+                group=source_row.group,
+                excluded=source_row.excluded,
+                exclusion_reason=source_row.exclusion_reason,
+            )
+        )
+
+    return SequenceMatchReport(
+        rows=tuple(rows),
+        matched_raw_stems=tuple(matched_raw_stems),
+        unmatched_raw_stems=tuple(unmatched_raw_stems),
+        unmatched_sequence_names=tuple(unmatched_sequence_names),
+        ambiguous_sequence_names=tuple(ambiguous_sequence_names),
+    )
+
+
+def load_sample_metadata(path: Path) -> tuple[SampleMetadata, ...]:
+    suffix = path.suffix.lower()
+    if suffix in {".docx", ".xlsx", ".xls"}:
+        return parse_sequence_file(path)
+    if is_sample_metadata_source(path):
+        return parse_sample_metadata(
+            _read_sample_metadata_rows(path),
+            source=str(path),
+        )
+    return parse_sequence_file(path)
+
+
 def is_sample_metadata_source(path: Path) -> bool:
-    if path.suffix.lower() not in {".csv", ".tsv", ".txt"} or not path.is_file():
+    suffix = path.suffix.lower()
+    if suffix in {".docx", ".xlsx", ".xls"}:
+        return path.is_file()
+    if suffix not in {".csv", ".tsv", ".txt"} or not path.is_file():
         return False
-    delimiter = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle, delimiter=delimiter)
-        fieldnames = set(reader.fieldnames or ())
-    return "schema_version" in fieldnames and "sample_name" in fieldnames
+    delimiter = "\t" if suffix in {".tsv", ".txt"} else ","
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle, delimiter=delimiter)
+            fieldnames = set(reader.fieldnames or ())
+        return "schema_version" in fieldnames and "sample_name" in fieldnames
+    except Exception:
+        return False
 
 
 def parse_sample_metadata(

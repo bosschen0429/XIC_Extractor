@@ -14,15 +14,16 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from gui import styles
-from gui.method_editor import MethodEditorDialog
+from gui import discovery_config_io, styles
+from gui.method_editor import MethodEditorDialog, validate_gui_method
 from gui.ui import section_card
-from xic_extractor.presets import Preset, bind_cid_nl_recipe, load_preset
+from xic_extractor.presets import Preset, bind_cid_nl_recipe, load_preset, save_preset
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.settings_schema import RESOLVER_MODES
 
@@ -34,8 +35,8 @@ ADVANCED_NUMERIC_FIELDS: tuple[tuple[str, str, float, float, int, float], ...] =
     ("nl_min_intensity_ratio", "NL 最低強度比", 0.0, 1.0, 4, 0.01),
     ("seed_rt_gap_min", "Seed RT 間隔 (min)", 0.0, 60.0, 3, 0.05),
     ("ms1_search_padding_min", "MS1 RT padding (min)", 0.0, 60.0, 3, 0.05),
-    ("rt_min", "RT 下界 (min)", 0.0, 999.0, 3, 0.5),
-    ("rt_max", "RT 上界 (min)", 0.0, 999.0, 3, 0.5),
+    ("rt_min", "RT 下界 (min)", 0.0, 60.0, 3, 0.5),
+    ("rt_max", "RT 上界 (min)", 0.0, 60.0, 3, 0.5),
 )
 ADVANCED_FIELDS = tuple(name for name, *_ in ADVANCED_NUMERIC_FIELDS) + (
     "resolver_mode",
@@ -51,6 +52,17 @@ POSITIVE_DISCOVERY_OVERRIDE_FIELDS = frozenset(
         "ms1_search_padding_min",
     }
 )
+
+
+_PRESET_DISPLAY_NAMES: dict[str, str] = {
+    "dna_dr": "dR · DNA · 116.0474 Da",
+    "rna_ribose": "R · RNA · 132.0423 Da",
+    "rna_mer": "MeR · RNA · 146.0579 Da",
+}
+
+
+def preset_display_name(key: str) -> str:
+    return _PRESET_DISPLAY_NAMES.get(key, key)
 
 
 class DiscoveryMethodSection(QWidget):
@@ -72,37 +84,34 @@ class DiscoveryMethodSection(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
 
-        card, body = section_card("② Discovery 方法", "選擇、編輯與重用方法")
+        card, body = section_card("分析方法")
         root.addWidget(card)
 
         preset_row = QHBoxLayout()
         preset_row.setContentsMargins(0, 0, 0, 0)
-        preset_row.addWidget(QLabel("Preset"))
         self._preset = QComboBox()
         for name in presets:
-            self._preset.addItem(name, name)
+            if name not in {"dna_dr", "rna_ribose", "rna_mer"}:
+                continue
+            self._preset.addItem(preset_display_name(name), name)
         preset_row.addWidget(self._preset, 1)
-        body.addLayout(preset_row)
-
-        actions = QHBoxLayout()
-        import_button = QPushButton("匯入方法…")
-        import_button.setObjectName("import_discovery_method")
-        import_button.clicked.connect(self._choose_import)
-        edit_button = QPushButton("編輯／另存方法…")
+        edit_button = QPushButton("編輯方法…")
         edit_button.setObjectName("edit_discovery_method")
         edit_button.clicked.connect(self._edit_method)
-        new_button = QPushButton("新增方法…")
-        new_button.setObjectName("new_discovery_method")
-        new_button.clicked.connect(self._new_method)
-        actions.addWidget(import_button)
-        actions.addWidget(edit_button)
-        actions.addWidget(new_button)
-        actions.addStretch()
-        body.addLayout(actions)
+        preset_row.addWidget(edit_button)
+        more_button = QPushButton("更多")
+        more_button.setObjectName("more_discovery_methods")
+        menu = QMenu(more_button)
+        menu.addAction("匯入方法…", self._choose_import)
+        menu.addAction("新增方法…", self._new_method)
+        more_button.setMenu(menu)
+        preset_row.addWidget(more_button)
+        body.addLayout(preset_row)
         self._method_message = QLabel()
         self._method_message.setObjectName("method_operation_message")
         self._method_message.setWordWrap(True)
         self._method_message.setTextFormat(Qt.TextFormat.PlainText)
+        self._method_message.hide()
         body.addWidget(self._method_message)
 
         self._preset_preview = QLabel("")
@@ -112,9 +121,10 @@ class DiscoveryMethodSection(QWidget):
         body.addWidget(self._preset_preview)
 
         self._advanced_toggle = QPushButton("顯示進階覆寫")
+        self._advanced_toggle.setObjectName("details_toggle")
         self._advanced_toggle.setCheckable(True)
         self._advanced_toggle.toggled.connect(self._on_toggle)
-        body.addWidget(self._advanced_toggle)
+        body.addWidget(self._advanced_toggle, 0, Qt.AlignmentFlag.AlignLeft)
 
         self._advanced_panel = QWidget()
         advanced_layout = QGridLayout(self._advanced_panel)
@@ -158,6 +168,10 @@ class DiscoveryMethodSection(QWidget):
         self._preset.activated.connect(self._on_preset_activated)
         self._load_preset_defaults(clear_edits=True)
 
+    def _show_method_message(self, text: str) -> None:
+        self._method_message.setText(text)
+        self._method_message.setVisible(bool(text))
+
     def load(self, values: dict[str, Any]) -> None:
         if self._quarantined_bundle is not None:
             self._update_quarantine_preview()
@@ -175,13 +189,14 @@ class DiscoveryMethodSection(QWidget):
                 self._preset.removeItem(sentinel_index)
             self._unavailable_preset = None
             index = self._preset.findData(preset)
+            unavailable_reason = f"preset {preset!r} 不可用"
             if index < 0 and preset:
                 try:
                     imported = self._read_supported_preset(preset)
-                except (OSError, TypeError, ValueError):
-                    pass
+                except (OSError, TypeError, ValueError) as exc:
+                    unavailable_reason = str(exc)
                 else:
-                    self._preset.addItem(imported.name, preset)
+                    self._preset.addItem(preset_display_name(imported.name), preset)
                     index = self._preset.count() - 1
             if index >= 0:
                 self._preset.setCurrentIndex(index)
@@ -190,7 +205,7 @@ class DiscoveryMethodSection(QWidget):
                 self._quarantine(
                     persisted_bundle,
                     kind="unavailable_preset",
-                    reason=f"preset {preset!r} 不可用",
+                    reason=unavailable_reason,
                 )
                 self._preset.addItem(f"已保存但不可用：{preset}", "")
                 self._preset.setCurrentIndex(self._preset.count() - 1)
@@ -221,11 +236,16 @@ class DiscoveryMethodSection(QWidget):
             return
         for key, value in overrides.items():
             self._set_override_value(key, value)
+        self.refresh_theme()
 
     def get_values(self) -> dict[str, Any]:
         if self._quarantined_bundle is not None:
             return deepcopy(self._quarantined_bundle)
         overrides: dict[str, Any] = {}
+        if self._active_preset is not None and self._active_preset.source.startswith(
+            "builtin:"
+        ):
+            overrides["rt_max"] = 60.0
         for key in ADVANCED_FIELDS:
             if key not in self._edited:
                 continue
@@ -244,9 +264,25 @@ class DiscoveryMethodSection(QWidget):
     @staticmethod
     def _read_supported_preset(source: str) -> Preset:
         preset = load_preset(source)
+        overrides = {"rt_max": 60.0} if preset.source.startswith("builtin:") else None
+        validate_gui_method(preset, overrides)
         recipe = bind_cid_nl_recipe(preset, "discovery_only")
         CidNlDiscoveryMethodSpec(settings=recipe.discovery_settings)
         return preset
+
+    def apply_method(self, preset: Preset) -> bool:
+        """Persist the current run using the same TOML owner as portable presets."""
+        try:
+            validate_gui_method(preset)
+            path = discovery_config_io.CONFIG_DIR / "current_discovery_method.toml"
+            save_preset(preset, path)
+        except (OSError, TypeError, ValueError) as exc:
+            self._show_method_message(f"方法未套用：{exc}")
+            return False
+        if not self.import_method(path):
+            return False
+        self._show_method_message(f"已套用至本次執行：{preset.name}")
+        return True
 
     def import_method(self, path: Path) -> bool:
         """Select a validated method; a rejected import leaves current state intact."""
@@ -254,7 +290,7 @@ class DiscoveryMethodSection(QWidget):
         try:
             preset = self._read_supported_preset(source)
         except (OSError, TypeError, ValueError) as exc:
-            self._method_message.setText(f"無法匯入方法：{exc}")
+            self._show_method_message(f"無法匯入方法：{exc}")
             return False
         self._clear_quarantine()
         self._unavailable_preset = None
@@ -262,15 +298,15 @@ class DiscoveryMethodSection(QWidget):
         try:
             index = self._preset.findData(source)
             if index < 0:
-                self._preset.addItem(preset.name, source)
+                self._preset.addItem(preset_display_name(preset.name), source)
                 index = self._preset.count() - 1
             else:
-                self._preset.setItemText(index, preset.name)
+                self._preset.setItemText(index, preset_display_name(preset.name))
             self._preset.setCurrentIndex(index)
         finally:
             del blocker
         self._load_preset_defaults(clear_edits=True)
-        self._method_message.setText(f"已載入：{preset.name}")
+        self._show_method_message(f"已載入：{preset.name}")
         self.changed.emit()
         return True
 
@@ -283,7 +319,7 @@ class DiscoveryMethodSection(QWidget):
 
     def _edit_method(self) -> None:
         if not self.is_valid():
-            self._method_message.setText(self.validation_reason())
+            self._show_method_message(self.validation_reason())
             return
         editor = MethodEditorDialog(
             self.selected_method(),
@@ -291,14 +327,14 @@ class DiscoveryMethodSection(QWidget):
             parent=self,
         )
         editor.exec()
-        if editor.saved_path is not None:
-            self.import_method(editor.saved_path)
+        if editor.applied_preset is not None:
+            self.apply_method(editor.applied_preset)
 
     def _new_method(self) -> None:
         editor = MethodEditorDialog(
             Preset(
                 name="新方法",
-                description="自訂 CID-NL Discovery 方法",
+                description="自訂 CID-NL 分析方法",
                 tags=(),
                 combine_mode="single",
                 discovery_overrides={},
@@ -307,13 +343,14 @@ class DiscoveryMethodSection(QWidget):
             ),
             parent=self,
         )
-        editor.add_tag()
         editor.exec()
-        if editor.saved_path is not None:
-            self.import_method(editor.saved_path)
+        if editor.applied_preset is not None:
+            self.apply_method(editor.applied_preset)
 
     def set_override(self, key: str, value: Any) -> None:
         self._set_override_value(key, value)
+        if self.is_valid():
+            self.refresh_theme()
 
     def numeric_value(self, key: str) -> float:
         if key not in self._spins:
@@ -333,7 +370,8 @@ class DiscoveryMethodSection(QWidget):
             )
         if self._quarantine_kind == "unavailable_preset":
             return (
-                f"已保存的 preset「{self._unavailable_preset}」不支援 CID-NL Discovery"
+                f"已保存的 preset「{self._unavailable_preset}」無法在 GUI 使用："
+                f"{self._quarantine_reason}"
             )
         if not self._preset_value():
             return "請選擇 CID-NL Discovery preset"
@@ -354,7 +392,11 @@ class DiscoveryMethodSection(QWidget):
             return
         preset_obj = self._active_preset
         if preset_obj is not None:
-            recipe = bind_cid_nl_recipe(preset_obj, "discovery_only")
+            recipe = bind_cid_nl_recipe(
+                preset_obj,
+                "discovery_only",
+                recipe_overrides=self.get_values()["overrides"],
+            )
             self._update_preset_preview(preset_obj, recipe.discovery_settings)
         else:
             self._update_missing_preset_preview()
@@ -375,6 +417,8 @@ class DiscoveryMethodSection(QWidget):
 
         if key not in self._spins:
             raise KeyError(key)
+        if key in {"rt_min", "rt_max"} and not 0 <= float(value) <= 60:
+            raise ValueError(f"{key} 超出 0–60 min 範圍")
         blocker = QSignalBlocker(self._spins[key])
         try:
             self._spins[key].setValue(float(value))
@@ -409,6 +453,9 @@ class DiscoveryMethodSection(QWidget):
         settings = bind_cid_nl_recipe(
             preset_obj,
             "discovery_only",
+            recipe_overrides={"rt_max": 60.0}
+            if preset_obj.source.startswith("builtin:")
+            else None,
         ).discovery_settings
         self._update_preset_preview(preset_obj, settings)
         blockers = [QSignalBlocker(spin) for spin in self._spins.values()]
@@ -434,31 +481,26 @@ class DiscoveryMethodSection(QWidget):
             return
         description = str(getattr(preset, "description", "") or "").strip()
         combination = {
-            "single": "單一 tag",
-            "union": "OR：符合任一 tag",
-            "intersection": "AND：同一個峰符合全部 tag",
-        }[preset.combine_mode]
-        tag_summary = " · ".join(
-            f"{tag.name} ({tag.value!r} Da)" for tag in preset.tags
-        )
-        chips = " ".join(
-            _chip(text)
-            for text in (
-                f"resolver {settings.resolver_mode}",
-                f"NL≥{settings.nl_min_intensity_ratio:g}",
-                f"RT {settings.rt_min:g}–{settings.rt_max:g}",
+            "single": "單一中性丟失標靶 (Single NL)",
+            "union": "聯集模式 (OR：符合任一標靶)",
+            "intersection": "交集模式 (AND：同時符合全部標靶)",
+        }.get(preset.combine_mode, preset.combine_mode)
+        tag_items = [
+            f"<b>{_escape(tag.name)}</b>: <b>{tag.value} Da</b>" for tag in preset.tags
+        ]
+        tag_summary = " &nbsp;│&nbsp; ".join(tag_items)
+        summary = " · ".join(
+            (
+                f"NL 容差 ±{settings.nl_tolerance_ppm:g} ppm",
+                f"Precursor 容差 ±{settings.precursor_mz_tolerance_ppm:g} ppm",
+                f"RT {settings.rt_min:g}–{settings.rt_max:g} min",
             )
         )
-        desc_html = (
-            f'<span style="color:{styles.ACTIVE["text_muted"]};">'
-            f"{_escape(description)}</span><br>"
-            if description
-            else ""
-        )
+        self._preset_preview.setToolTip(description)
         self._preset_preview.setText(
-            f"<b>{_escape(combination)}</b> · {_escape(tag_summary)}<br>"
-            + desc_html
-            + chips
+            f"{_escape(combination)} · {tag_summary}<br>"
+            f'<span style="color:{styles.ACTIVE["text_muted"]};">'
+            f"{_escape(summary)}</span>"
         )
         self._preset_preview.setVisible(True)
 
@@ -504,6 +546,8 @@ class DiscoveryMethodSection(QWidget):
         if self._loading or self._quarantined_bundle is not None:
             return
         self._edited.add(key)
+        if self._method_values_are_valid():
+            self.refresh_theme()
         self.changed.emit()
 
     def _on_method_edit_committed(self, key: str) -> None:
@@ -568,15 +612,6 @@ class DiscoveryMethodSection(QWidget):
 
 def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _chip(text: str) -> str:
-    c = styles.ACTIVE
-    return (
-        f'<span style="background:{c["primary_soft"]}; color:{c["primary_hover"]}; '
-        f'padding:2px 7px; border-radius:8px; font-weight:600;">'
-        f"{_escape(text)}</span>"
-    )
 
 
 def _minimum_for_field(name: str, minimum: float, decimals: int) -> float:

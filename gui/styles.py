@@ -1,23 +1,24 @@
 LIGHT_PALETTE: dict[str, str] = {
-    "primary": "#4f46e5",
-    "primary_hover": "#4338ca",
-    "primary_soft": "#eef0fd",
-    "brand": "#2d1b69",
+    "primary": "#505cc8",
+    "primary_hover": "#414da9",
+    "primary_soft": "#eceefb",
+    "primary_text": "#ffffff",
+    "brand": "#20252e",
     "success": "#1a7f37",
     "success_hover": "#15803d",
     "warning": "#9a6700",
     "error": "#cf222e",
-    "border": "#e2e5ea",
-    "border_strong": "#cfd4dc",
-    "bg_app": "#f4f5f7",
+    "border": "#dde1e7",
+    "border_strong": "#cdd2dc",
+    "bg_app": "#f3f4f6",
     "bg_card": "#ffffff",
     "bg_header": "#f7f8fa",
     "header_bg": "#f7f8fa",
-    "header_border": "#e2e5ea",
+    "header_border": "#dde1e7",
     "bg_row_alt": "#f7f8fa",
     "bg_subtle": "#fbfbfd",
-    "selection": "#e7e9fc",
-    "text": "#1c2128",
+    "selection": "#dfe3fa",
+    "text": "#20252e",
     "text_muted": "#59626d",
     "icon": "#5b6470",
     "danger_soft": "#fff1ef",
@@ -26,27 +27,28 @@ LIGHT_PALETTE: dict[str, str] = {
 }
 
 DARK_PALETTE: dict[str, str] = {
-    "primary": "#8b85f5",
-    "primary_hover": "#a7a2f8",
-    "primary_soft": "#2b2a45",
-    "brand": "#2d1b69",
+    "primary": "#d3ac68",
+    "primary_hover": "#e3bf80",
+    "primary_soft": "#3a342b",
+    "primary_text": "#202328",
+    "brand": "#25282d",
     "success": "#46b96e",
     "success_hover": "#54c97c",
     "warning": "#d9a441",
     "error": "#f1707a",
-    "border": "#363c46",
-    "border_strong": "#454c58",
-    "bg_app": "#181b21",
-    "bg_card": "#222730",
-    "bg_header": "#272d36",
-    "header_bg": "#222730",
-    "header_border": "#2c323b",
-    "bg_row_alt": "#262b34",
-    "bg_subtle": "#1e222a",
-    "selection": "#33324d",
-    "text": "#e6e9ee",
-    "text_muted": "#aab2bf",
-    "icon": "#b6bdc8",
+    "border": "#393d45",
+    "border_strong": "#494e57",
+    "bg_app": "#1c1e22",
+    "bg_card": "#25282d",
+    "bg_header": "#2b2e34",
+    "header_bg": "#25282d",
+    "header_border": "#393d45",
+    "bg_row_alt": "#292c32",
+    "bg_subtle": "#202328",
+    "selection": "#514531",
+    "text": "#e7e8eb",
+    "text_muted": "#a6acb5",
+    "icon": "#a6acb5",
     "danger_soft": "#3a2528",
     "danger_border": "#7a3f44",
     "warn_banner": "#d9663c",
@@ -54,9 +56,8 @@ DARK_PALETTE: dict[str, str] = {
 
 APPLICATION_FONT_FAMILY = "Segoe UI Variable"
 APPLICATION_FONT_POINT_SIZE = 10
-UI_FONT_STACK = (
-    '"Segoe UI Variable", "Segoe UI", "Microsoft JhengHei UI", sans-serif'
-)
+UI_FONT_STACK = '"Segoe UI Variable", "Segoe UI", "Microsoft JhengHei UI", sans-serif'
+
 
 def build_stylesheet(c: dict[str, str]) -> str:
     return f"""
@@ -73,7 +74,9 @@ QWidget {{
    a card's children fall back to transparent so they show the CARD colour, while
    the gaps between cards still show the app background. */
 QMainWindow,
+QDialog,
 QWidget#app_root,
+QWidget#detail_workspace,
 QScrollArea#content_scroll,
 QWidget#scroll_content {{
     background-color: {c["bg_app"]};
@@ -126,13 +129,13 @@ QFrame#sidebar {{
 
 QLabel#brand_title {{
     color: {c["text"]};
-    font-size: 13pt;
-    font-weight: 800;
+    font-size: 11pt;
+    font-weight: 700;
     background: transparent;
 }}
 
 QLabel#brand_sub {{
-    color: #97a0ad;
+    color: {c["text_muted"]};
     font-size: 8.5pt;
     font-weight: 600;
     background: transparent;
@@ -162,22 +165,19 @@ QPushButton#nav_item:checked {{
 
 QFrame#app_header {{
     border: none;
-    background: qlineargradient(
-        x1: 0, y1: 0, x2: 1, y2: 1,
-        stop: 0 {c["brand"]},
-        stop: 1 {c["primary"]}
-    );
+    border-bottom: 1px solid {c["border"]};
+    background-color: {c["bg_card"]};
 }}
 
 QLabel#header_title {{
-    color: #ffffff;
-    font-size: 16.5pt;
-    font-weight: 800;
+    color: {c["text"]};
+    font-size: 14pt;
+    font-weight: 700;
     background: transparent;
 }}
 
 QLabel#header_subtitle {{
-    color: rgba(255, 255, 255, 0.80);
+    color: {c["text_muted"]};
     font-size: 9.5pt;
     font-weight: 500;
     background: transparent;
@@ -228,20 +228,19 @@ QMenu::separator {{
 QFrame#section_card {{
     background-color: {c["bg_card"]};
     border: 1px solid {c["border"]};
-    border-radius: 10px;
+    border-radius: 6px;
 }}
 
 QFrame#section_header {{
-    background-color: {c["header_bg"]};
+    background-color: transparent;
     border: none;
-    border-bottom: 1px solid {c["header_border"]};
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
 }}
 
 QLabel#section_title {{
     color: {c["text"]};
-    font-size: 12.5pt;
+    font-size: 11.5pt;
     font-weight: 700;
 }}
 
@@ -282,10 +281,39 @@ QLabel#istd_warning {{
 QPushButton {{
     background-color: {c["bg_card"]};
     border: 1px solid {c["border_strong"]};
-    border-radius: 7px;
+    border-radius: 5px;
     color: {c["text"]};
     font-weight: 600;
-    padding: 8px 14px;
+    padding: 7px 12px;
+}}
+
+QPushButton#details_toggle {{
+    background: transparent;
+    border: none;
+    color: {c["text_muted"]};
+    text-align: left;
+    font-size: 9pt;
+    padding: 5px 2px;
+}}
+
+QPushButton#details_toggle:hover {{
+    color: {c["primary"]};
+}}
+
+QWidget#execution_bar {{
+    background-color: {c["bg_card"]};
+    border-top: 1px solid {c["border"]};
+}}
+
+QWidget#execution_bar QProgressBar {{
+    min-height: 0;
+    max-height: 4px;
+    border: none;
+    border-radius: 2px;
+}}
+
+QWidget#execution_bar QProgressBar::chunk {{
+    border-radius: 2px;
 }}
 
 QPushButton:hover {{
@@ -310,17 +338,17 @@ QPushButton:disabled {{
 }}
 
 QPushButton#btn_run {{
-    background-color: {c["success"]};
-    border-color: {c["success"]};
-    color: white;
+    background-color: {c["primary"]};
+    border-color: {c["primary"]};
+    color: {c["primary_text"]};
     font-size: 10.5pt;
     font-weight: 700;
-    padding: 11px 16px;
+    padding: 9px 16px;
 }}
 
 QPushButton#btn_run:hover {{
-    background-color: {c["success_hover"]};
-    border-color: {c["success_hover"]};
+    background-color: {c["primary_hover"]};
+    border-color: {c["primary_hover"]};
 }}
 
 QPushButton#btn_run:disabled {{
@@ -335,7 +363,7 @@ QPushButton#btn_stop {{
     color: white;
     font-size: 10.5pt;
     font-weight: 700;
-    padding: 11px 16px;
+    padding: 9px 16px;
 }}
 
 QPushButton#btn_stop:hover {{
@@ -344,15 +372,17 @@ QPushButton#btn_stop:hover {{
 }}
 
 QPushButton#btn_save,
-QPushButton#btn_add {{
+QPushButton#btn_add,
+QPushButton#apply_method {{
     background-color: {c["primary"]};
     border-color: {c["primary"]};
-    color: white;
+    color: {c["primary_text"]};
     font-weight: 700;
 }}
 
 QPushButton#btn_save:hover,
-QPushButton#btn_add:hover {{
+QPushButton#btn_add:hover,
+QPushButton#apply_method:hover {{
     background-color: {c["primary_hover"]};
     border-color: {c["primary_hover"]};
 }}
@@ -398,6 +428,15 @@ QTableWidget {{
     selection-color: {c["text"]};
 }}
 
+QTableWidget::item:selected {{
+    background-color: {c["selection"]};
+    color: {c["text"]};
+}}
+
+QTableWidget::item:hover {{
+    background-color: {c["primary_soft"]};
+}}
+
 QHeaderView::section {{
     background-color: {c["bg_header"]};
     border: none;
@@ -405,7 +444,7 @@ QHeaderView::section {{
     border-right: 1px solid {c["border"]};
     color: {c["text_muted"]};
     font-weight: 700;
-    padding: 9px;
+    padding: 7px 9px;
 }}
 
 QTableCornerButton::section {{
@@ -425,11 +464,7 @@ QProgressBar {{
 }}
 
 QProgressBar::chunk {{
-    background: qlineargradient(
-        x1: 0, y1: 0, x2: 1, y2: 0,
-        stop: 0 {c["primary"]},
-        stop: 1 #6366f1
-    );
+    background-color: {c["primary"]};
     border-radius: 6px;
 }}
 

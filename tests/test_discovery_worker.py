@@ -16,6 +16,7 @@ from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def _alignment_outputs(
@@ -516,3 +517,60 @@ def test_gui_full_rejects_retired_standard_peak_route_before_discovery(
         match="diagnostic-only",
     ):
         DiscoveryWorker(request)._run_full(request)
+
+
+def test_discovery_worker_forwards_sample_metadata_and_targets_csv(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "discovery_batch_index.csv"
+    index_path.write_text("sample,candidate_count\nS1.raw,1\n", encoding="utf-8")
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "S1.raw").touch()
+    targets_csv = tmp_path / "targets.csv"
+    targets_csv.touch()
+
+    sample_metadata = (
+        SampleMetadata(
+            sample_name="S1",
+            raw_stem="S1",
+            injection_order=1,
+            sample_role="qc",
+            batch_id="Batch1",
+        ),
+    )
+
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_run_alignment(**kwargs):
+        captured_kwargs.update(kwargs)
+        return _alignment_outputs(
+            matrix_tsv=tmp_path / "out" / "alignment_matrix.tsv",
+        )
+
+    monkeypatch.setattr(
+        module,
+        "run_alignment",
+        create_autospec(module.run_alignment, side_effect=fake_run_alignment),
+    )
+
+    request = DiscoveryRequest(
+        mode="align_only",
+        preset="dna_dr",
+        tuning_overrides={},
+        raw_dir=raw_dir,
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        discovery_batch_index=index_path,
+        targets_csv=targets_csv,
+        sample_metadata=sample_metadata,
+    )
+
+    worker = DiscoveryWorker(request)
+    summary = worker._run_align_only(request)
+
+    assert summary is not None
+    assert captured_kwargs["targets_csv"] == targets_csv
+    assert captured_kwargs["sample_metadata"] == sample_metadata

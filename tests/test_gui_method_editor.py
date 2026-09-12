@@ -1,6 +1,8 @@
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QComboBox, QLineEdit, QTableWidget
 
 from gui.method_editor import MethodEditorDialog
@@ -28,7 +30,9 @@ def test_editor_save_without_edits_preserves_method_text(qtbot, tmp_path: Path) 
         original.description,
     )
     assert bind_cid_nl_recipe(reloaded, "full").discovery_settings == (
-        bind_cid_nl_recipe(original, "full").discovery_settings
+        bind_cid_nl_recipe(
+            original, "full", recipe_overrides={"rt_max": 60.0}
+        ).discovery_settings
     )
 
 
@@ -101,7 +105,7 @@ def test_custom_method_import_and_restart_preserve_exact_settings(
     preset = replace(
         load_preset("dna_dr"),
         name="精確方法",
-        discovery_overrides={"nl_tolerance_ppm": 12.3456789},
+        discovery_overrides={"nl_tolerance_ppm": 12.3456789, "rt_max": 60.0},
     )
     path = tmp_path / "precise.toml"
     save_preset(preset, path)
@@ -142,7 +146,7 @@ def test_displayed_custom_method_survives_external_file_change(
     from xic_extractor.presets import save_preset
 
     path = tmp_path / "selected.toml"
-    save_preset(load_preset("dna_dr"), path)
+    save_preset(load_preset("dna_dr"), path, discovery_overrides={"rt_max": 60.0})
     section = DiscoveryMethodSection(("dna_dr",))
     qtbot.addWidget(section)
     assert section.import_method(path)
@@ -163,7 +167,7 @@ def test_gui_request_binds_displayed_method_after_external_edit(
     from xic_extractor.presets import save_preset
 
     path = tmp_path / "selected.toml"
-    save_preset(load_preset("dna_dr"), path)
+    save_preset(load_preset("dna_dr"), path, discovery_overrides={"rt_max": 60.0})
     config = {
         "mode": "full",
         "preset": str(path),
@@ -180,5 +184,114 @@ def test_gui_request_binds_displayed_method_after_external_edit(
     request = view._build_request(view._current_config())
     settings = DiscoveryWorker(request)._build_settings(request)
 
-    expected = bind_cid_nl_recipe(load_preset("dna_dr"), "full").discovery_settings
+    expected = bind_cid_nl_recipe(
+        load_preset("dna_dr"), "full", recipe_overrides={"rt_max": 60.0}
+    ).discovery_settings
     assert settings == expected
+
+
+def test_apply_and_save_are_independent_and_restart_uses_same_owner(
+    qtbot, tmp_path, monkeypatch
+):
+    from gui import discovery_config_io
+
+    monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
+    editor = MethodEditorDialog(load_preset("dna_dr"))
+    qtbot.addWidget(editor)
+    editor._select_tag("RNA_MeR", 146.0579)
+    assert "未套用" in editor._state.text()
+    portable = tmp_path / "portable.toml"
+    assert editor.save_to(portable)
+    assert editor.applied_preset is None
+    assert editor.apply_current()
+    section = DiscoveryMethodSection(("dna_dr",))
+    qtbot.addWidget(section)
+    assert section.apply_method(editor.applied_preset)
+    stored = section.get_values()
+    assert stored["preset"] != str(portable)
+    restored = DiscoveryMethodSection(("dna_dr",))
+    qtbot.addWidget(restored)
+    restored.load(stored)
+    assert restored.is_valid()
+    gui_settings = bind_cid_nl_recipe(
+        restored.selected_method(), "full"
+    ).discovery_settings
+    cli_settings = bind_cid_nl_recipe(load_preset(portable), "full").discovery_settings
+    assert gui_settings == cli_settings
+    assert gui_settings.tag_combine_mode == "union"
+    assert gui_settings.rt_max == 60.0
+
+
+def test_unsupported_editor_preserves_original_strategy(qtbot, tmp_path):
+    preset = load_preset("pt_pattern_cid_nl_dr")
+    editor = MethodEditorDialog(preset)
+    qtbot.addWidget(editor)
+    assert not editor.apply_current()
+    destination = tmp_path / "method.toml"
+    assert not editor.save_to(destination)
+    assert not destination.exists()
+    assert editor.applied_preset is None
+    assert "純 CID-NL" in editor.validation_message()
+
+
+def test_out_of_range_import_preserves_current_method(qtbot, tmp_path):
+    from xic_extractor.presets import save_preset
+
+    section = DiscoveryMethodSection(("dna_dr",))
+    qtbot.addWidget(section)
+    before = section.get_values()
+    path = tmp_path / "long_run.toml"
+    save_preset(load_preset("dna_dr"), path, discovery_overrides={"rt_max": 90.0})
+    assert not section.import_method(path)
+    assert section.get_values() == before
+    assert "0–60" in section._method_message.text()
+    assert (
+        bind_cid_nl_recipe(load_preset(path), "full").discovery_settings.rt_max == 90.0
+    )
+
+
+@pytest.mark.parametrize("combine_mode", ["union", "intersection"])
+def test_checked_tags_and_combine_mode_round_trip(qtbot, tmp_path, combine_mode):
+    editor = MethodEditorDialog(load_preset("dna_dr"))
+    qtbot.addWidget(editor)
+    assert editor._tags.rowCount() == 3
+    editor._tags.item(1, 0).setCheckState(Qt.CheckState.Checked)
+    editor._tags.item(1, 1).setText("132.0423456789")
+    editor._combine.setCurrentIndex(editor._combine.findData(combine_mode))
+    assert "132.0423456789 Da" in editor._summary.text()
+    path = tmp_path / "checked.toml"
+    assert editor.save_to(path)
+    settings = bind_cid_nl_recipe(load_preset(path), "full").discovery_settings
+    assert settings.selected_tag_names == ("DNA_dR", "RNA_ribose")
+    assert settings.tag_combine_mode == combine_mode
+    assert settings.neutral_loss_profiles[1].neutral_loss_da == 132.0423456789
+
+
+def test_no_checked_tags_cannot_replace_current_method(qtbot):
+    editor = MethodEditorDialog(load_preset("dna_dr"))
+    qtbot.addWidget(editor)
+    editor._tags.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    assert not editor.apply_current()
+    assert editor.applied_preset is None
+
+
+def test_new_method_can_apply_a_builtin_tag_without_an_empty_custom_row(
+    qtbot, monkeypatch, tmp_path
+):
+    from gui import discovery_config_io
+
+    monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
+
+    def choose_dr(editor):
+        editor._select_tag("DNA_dR", 116.0474)
+        assert editor.apply_current()
+        return editor.result()
+
+    monkeypatch.setattr(MethodEditorDialog, "exec", choose_dr)
+    section = DiscoveryMethodSection(("dna_dr",))
+    qtbot.addWidget(section)
+    section._new_method()
+    selected = section.selected_method()
+    assert selected.name == "新方法"
+    assert tuple(tag.name for tag in selected.tags) == ("DNA_dR",)
+    assert section.is_valid()

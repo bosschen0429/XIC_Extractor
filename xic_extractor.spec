@@ -1,7 +1,16 @@
 # xic_extractor.spec
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files
+
+if sys.platform == "win32":
+    # Resolve Windows DLLs before unrelated tools on PATH (notably ICU).
+    # Package-specific directories are still supplied by PyInstaller's hooks.
+    system32 = os.path.join(os.environ["SystemRoot"], "System32")
+    os.environ["PATH"] = system32 + os.pathsep + os.environ.get("PATH", "")
 
 block_cipher = None
 

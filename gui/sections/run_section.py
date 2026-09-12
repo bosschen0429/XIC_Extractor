@@ -8,50 +8,67 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from gui.ui import section_card
-
 
 class RunSection(QWidget):
     run_clicked = pyqtSignal()
     stop_clicked = pyqtSignal()
+    problems_clicked = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("execution_bar")
         self._running = False
+        self._stopping = False
+        self._terminal = False
         self._ready = True
+        self._missing: list[str] = []
         self._elapsed_seconds = 0
 
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(0, 0, 0, 0)
-
-        card, body = section_card("③ Run", "執行並顯示進度")
-        root_layout.addWidget(card)
+        root_layout.setContentsMargins(20, 12, 20, 12)
+        root_layout.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        status = QVBoxLayout()
+        status.setSpacing(3)
+        row.addLayout(status, 1)
 
         self._ready_hint = QLabel("")
         self._ready_hint.setObjectName("ready_hint_ok")
         self._ready_hint.setWordWrap(True)
-        body.addWidget(self._ready_hint)
+        status.addWidget(self._ready_hint)
+
+        self._status_label = QLabel("尚未開始")
+        self._status_label.setWordWrap(True)
+        self._status_label.setMaximumHeight(52)
+        self._status_label.hide()
+        status.addWidget(self._status_label)
+
+        self._problems_button = QPushButton("查看問題")
+        self._problems_button.setObjectName("show_run_problems")
+        self._problems_button.clicked.connect(self.problems_clicked)
+        self._problems_button.hide()
+        row.addWidget(self._problems_button)
 
         self._button = QPushButton("開始執行")
         self._button.setObjectName("btn_run")
+        self._button.setMinimumWidth(128)
         self._button.clicked.connect(self._on_button_clicked)
-        body.addWidget(self._button)
+        row.addWidget(self._button)
+        root_layout.addLayout(row)
 
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
-        body.addWidget(self._progress)
+        self._progress.setTextVisible(False)
+        self._progress.setFixedHeight(4)
+        self._progress.hide()
+        root_layout.addWidget(self._progress)
 
-        # Status + elapsed time on the same row
-        status_row = QHBoxLayout()
-        status_row.setContentsMargins(0, 0, 0, 0)
-        self._status_label = QLabel("尚未開始")
         self._elapsed_label = QLabel("")
         self._elapsed_label.setObjectName("elapsed_label")
         self._elapsed_label.setVisible(False)
-        status_row.addWidget(self._status_label, 1)
-        status_row.addWidget(self._elapsed_label)
-        body.addLayout(status_row)
+        status.addWidget(self._elapsed_label)
 
         # Elapsed timer (fires every second in the main thread — safe for Qt)
         self._timer = QTimer(self)
@@ -63,36 +80,51 @@ class RunSection(QWidget):
     def set_ready(self, ready: bool, missing: list[str]) -> None:
         """Reflect whether the current config can run, and what is missing."""
         self._ready = ready
+        self._missing = list(missing)
+        prefix = "再次執行：" if self._terminal else ""
         if ready:
             self._ready_hint.setObjectName("ready_hint_ok")
-            self._ready_hint.setText("✓ 設定完整，可以執行")
+            self._ready_hint.setText(prefix + "設定完整，可以執行")
         else:
             self._ready_hint.setObjectName("ready_hint_block")
-            self._ready_hint.setText("尚缺：" + "、".join(missing))
+            self._ready_hint.setText(prefix + "需修正：" + "、".join(missing))
+        self._ready_hint.setVisible(not self._running)
+        self._problems_button.setVisible(not ready and not self._running)
         self._repolish(self._ready_hint)
         if not self._running:
             self._button.setEnabled(ready)
 
     def set_progress(self, current: int, total: int, filename: str) -> None:
-        progress_max = max(total, 1)
-        self._progress.setRange(0, progress_max)
-        self._progress.setValue(current)
-        self._status_label.setText(f"處理中 {current}/{total}: {filename}")
+        self._progress.show()
+        self._progress.setRange(0, max(total, 0))
+        if total > 0:
+            self._progress.setValue(current)
+        if not self._stopping:
+            count = f"{current}/{total}" if total > 0 else f"已處理 {current} 個檔案"
+            self._status_label.setText(f"處理中 {count}：{filename}")
+            self._status_label.setToolTip(filename)
 
     def set_running(self, running: bool) -> None:
         self._running = running
         if running:
+            self._stopping = False
+            self._terminal = False
             self._elapsed_seconds = 0
             self._elapsed_label.setText("已執行 00:00")
             self._elapsed_label.setVisible(True)
             self._timer.start()
             self._status_label.setText("準備中...")
+            self._status_label.show()
+            self._progress.setRange(0, 0)
+            self._progress.show()
             self._progress.setValue(0)
             self._ready_hint.setVisible(False)
+            self._problems_button.hide()
             self._button.setEnabled(True)
         else:
+            self._stopping = False
             self._timer.stop()
-            self._ready_hint.setVisible(True)
+            self.set_ready(self._ready, self._missing)
             self._button.setEnabled(self._ready)
 
         self._button.setText("停止執行" if running else "開始執行")
@@ -108,19 +140,52 @@ class RunSection(QWidget):
         widget.update()
 
     def set_complete(self, total: int) -> None:
+        self._terminal = True
         self._timer.stop()
         self._elapsed_label.setVisible(False)
         progress_max = max(total, 1)
         self._progress.setRange(0, progress_max)
         self._progress.setValue(total)
         self._status_label.setText(f"完成，共 {total} 個檔案")
+        self._status_label.show()
+        self._progress.show()
 
     def set_error(self, message: str) -> None:
         """Show an error state: reset progress bar and display the message."""
+        self._terminal = True
         self._timer.stop()
         self._elapsed_label.setVisible(False)
         self._progress.setValue(0)
-        self._status_label.setText(f"錯誤: {message}")
+        self._progress.hide()
+        first_line = (message.splitlines() or ["未提供錯誤原因"])[0]
+        self._status_label.setText(f"執行失敗：{first_line[:180]}")
+        self._status_label.setToolTip(message)
+        self._status_label.show()
+        self.set_ready(self._ready, self._missing)
+
+    def set_stopping(self) -> None:
+        self._stopping = True
+        self._button.setEnabled(False)
+        self._button.setText("停止中…")
+        self._status_label.setText("停止中，等待目前階段結束")
+
+    def set_stopped(self) -> None:
+        self._terminal = True
+        self.set_running(False)
+        self._status_label.setText("已停止執行")
+        self._status_label.show()
+        self._progress.hide()
+
+    def reset(self) -> None:
+        if self._running:
+            return
+        self._terminal = False
+        self._status_label.setText("尚未開始")
+        self._status_label.hide()
+        self._status_label.setToolTip("")
+        self._progress.hide()
+        self._elapsed_label.hide()
+        self.set_ready(self._ready, self._missing)
 
     # ── Private ────────────────────────────────────────────────────────────────
 

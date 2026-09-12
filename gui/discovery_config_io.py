@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from gui.config_io import targets_example_path
+
 if getattr(sys, "frozen", False):
     ROOT = Path(sys.executable).parent  # user-writable: config/, output/
 else:
@@ -21,6 +23,9 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "dll_dir": "",
     "output_dir": "",
     "discovery_batch_index": "",
+    "targets_csv": "",
+    "sequence_source": "",
+    "custom_roles": {},
     "overrides": {},
 }
 
@@ -30,7 +35,9 @@ def _config_path() -> Path:
 
 
 def _fresh_defaults() -> dict[str, Any]:
-    return copy.deepcopy(_DEFAULT_CONFIG)
+    defaults = copy.deepcopy(_DEFAULT_CONFIG)
+    defaults["targets_csv"] = str(targets_example_path())
+    return defaults
 
 
 def read_discovery_config() -> dict[str, Any]:

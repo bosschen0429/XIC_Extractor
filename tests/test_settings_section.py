@@ -244,6 +244,66 @@ def test_settings_section_editing_main_fields_marks_dirty(qtbot) -> None:
     assert section._save_button.isVisible()
 
 
+def test_settings_section_compacts_configured_dll_without_changing_values(
+    qtbot,
+) -> None:
+    section = SettingsSection()
+    qtbot.addWidget(section)
+    section.load(_canonical_settings())
+    before = section.get_values()
+
+    assert not section.environment_section.is_expanded()
+    section.environment_section.set_expanded(True)
+    section.environment_section.set_expanded(False)
+
+    assert section.get_values() == before
+
+    section.load({**before, "dll_dir": ""})
+    assert section.environment_section.is_expanded()
+
+
+def test_settings_section_changed_tracks_edits_but_not_load(qtbot) -> None:
+    section = SettingsSection()
+    qtbot.addWidget(section)
+    changes: list[bool] = []
+    section.changed.connect(lambda: changes.append(True))
+
+    section.load(_canonical_settings())
+    assert changes == []
+
+    section._data_dir_edit.setText("C:\\new-data")
+    assert changes == [True]
+
+
+def test_settings_section_prepares_next_batch_once_and_preserves_method_context(
+    qtbot,
+) -> None:
+    section = SettingsSection()
+    qtbot.addWidget(section)
+    section.load(_canonical_settings())
+    before = section.get_values()
+    requests: list[bool] = []
+    section.new_batch_requested.connect(lambda: requests.append(True))
+
+    section._new_batch_button.click()
+
+    assert requests == [True]
+    assert section.get_values() == before
+
+    changes: list[bool] = []
+    section.changed.connect(lambda: changes.append(True))
+    section.new_batch_requested.connect(section.prepare_next_batch)
+    section._new_batch_button.click()
+    after = section.get_values()
+
+    assert requests == [True, True]
+    assert changes == [True]
+    assert after["data_dir"] == ""
+    assert {key: value for key, value in after.items() if key != "data_dir"} == {
+        key: value for key, value in before.items() if key != "data_dir"
+    }
+
+
 def test_settings_section_save_emits_signal_and_clears_dirty(qtbot) -> None:
     section = SettingsSection()
     qtbot.addWidget(section)

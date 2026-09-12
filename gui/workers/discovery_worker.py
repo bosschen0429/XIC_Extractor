@@ -25,6 +25,7 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     default_parallel_workers,
@@ -65,6 +66,8 @@ class DiscoveryRequest:
     dll_dir: Path
     output_dir: Path
     discovery_batch_index: Path | None
+    targets_csv: Path | None = None
+    sample_metadata: tuple[SampleMetadata, ...] | None = None
     preset_snapshot: Preset | None = None
 
 
@@ -255,6 +258,8 @@ class DiscoveryWorker(QThread):
             ),
             discovery_settings=recipe.discovery_settings,
             owner_build_xic_backend=recipe.owner_build_xic_backend,
+            sample_metadata=request.sample_metadata,
+            targets_csv=request.targets_csv,
             should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )

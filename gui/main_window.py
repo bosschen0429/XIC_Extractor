@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMenuBar,
     QPushButton,
-    QScrollArea,
     QStackedWidget,
     QStatusBar,
     QVBoxLayout,
@@ -55,15 +54,13 @@ def _icon(name: str, hex_color: str = "#7a828e") -> QIcon:
     painter.end()
     return QIcon(pixmap)
 
+
 if getattr(sys, "frozen", False) and sys.platform == "win32":
     _internal = _ROOT / "_internal"
     if _internal.exists():
         ctypes.windll.kernel32.SetFileAttributesW(
             str(_internal), 0x02
         )  # FILE_ATTRIBUTE_HIDDEN
-
-# Title bar background colour (deep purple matching the icon)
-_TITLEBAR_COLOR = "#2D1B69"
 
 # (nav label, icon file, header title, header subtitle) per workspace view.
 _VIEWS = (
@@ -77,7 +74,7 @@ _VIEWS = (
 )
 
 
-def _color_titlebar(hwnd: int, hex_color: str) -> None:
+def _color_titlebar(hwnd: int, hex_color: str, text_color: str) -> None:
     """Apply a custom caption colour on Windows 11+ (silently ignored elsewhere)."""
     if sys.platform != "win32":
         return
@@ -90,9 +87,12 @@ def _color_titlebar(hwnd: int, hex_color: str) -> None:
         DWMWA_TEXT_COLOR = 36
         _set = ctypes.windll.dwmapi.DwmSetWindowAttribute
         _set(hwnd, DWMWA_CAPTION_COLOR, ctypes.byref(ctypes.c_int(colorref)), 4)
-        _set(
-            hwnd, DWMWA_TEXT_COLOR, ctypes.byref(ctypes.c_int(0xFFFFFF)), 4
-        )  # white text
+        textref = (
+            int(text_color[1:3], 16)
+            | (int(text_color[3:5], 16) << 8)
+            | (int(text_color[5:7], 16) << 16)
+        )
+        _set(hwnd, DWMWA_TEXT_COLOR, ctypes.byref(ctypes.c_int(textref)), 4)
     except Exception:
         pass  # Win10 or non-Windows: no-op
 
@@ -103,10 +103,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("XIC Extractor")
         self.resize(1180, 880)
-        # The Targeted settings form is a dense ~30-parameter grid whose inputs
-        # (unbounded-range spin boxes) need ~796px of content width. Floor the
-        # window width at 1040 (796 content + 216 sidebar + scrollbar) so the
-        # form is never squeezed into a horizontal scrollbar.
+        # Keep the expanded method form readable at the supported small size.
         self.setMinimumSize(1040, 640)
         self._settings = QSettings("ChaoHuLab", "XICExtractor")
         self._dark = bool(self._settings.value("window/dark", False, type=bool))
@@ -149,24 +146,65 @@ class MainWindow(QMainWindow):
         row.addWidget(right, 1)
 
         self.targeted_view = TargetedView(_ROOT / "config")
-        self.targeted_view.status_message.connect(self._show_status)
+        self.targeted_view.status_message.connect(
+            lambda text, timeout: self._show_status(f"Targeted · {text}", timeout)
+        )
         self.targeted_view.state_changed.connect(
             lambda text: self._on_view_state(0, text)
         )
         self.untargeted_view = UntargetedView()
-        self.untargeted_view.status_message.connect(self._show_status)
+        self.untargeted_view.status_message.connect(
+            lambda text, timeout: self._show_status(f"Untargeted · {text}", timeout)
+        )
         self.untargeted_view.state_changed.connect(
             lambda text: self._on_view_state(1, text)
         )
         self._views = (self.targeted_view, self.untargeted_view)
-        self._stack.addWidget(self._wrap_content(self.targeted_view))
-        self._stack.addWidget(self._wrap_content(self.untargeted_view))
+        self._stack.addWidget(self.targeted_view)
+        self._stack.addWidget(self.untargeted_view)
 
         self._restore_window_state()
         self._apply_theme(self._dark)
         self.targeted_view.load_config()
+        self._restore_dll_directory()
         for view in self._views:
             view.emit_state()
+
+    def _restore_dll_directory(self) -> None:
+        """Remember the machine environment independently of batch saves."""
+        targeted = self.targeted_view._settings._dll_dir_edit
+        untargeted = self.untargeted_view._source._fields["dll_dir"]._edit
+        fields = (targeted, untargeted)
+        remembered = str(self._settings.value("environment/dll_dir", "") or "")
+        if not remembered:
+            remembered = next(
+                (
+                    field.text().strip()
+                    for field in fields
+                    if field.text().strip() and Path(field.text().strip()).is_dir()
+                ),
+                "",
+            )
+        for field in fields:
+            if remembered:
+                field.setText(remembered)
+            field.textChanged.connect(self._remember_dll_directory)
+        self.targeted_view._settings.environment_section.set_expanded(
+            not bool(targeted.text().strip() and Path(targeted.text()).is_dir())
+        )
+        self.untargeted_view._source._dll_section.set_expanded(
+            not bool(untargeted.text().strip() and Path(untargeted.text()).is_dir())
+        )
+        self._remember_dll_directory(remembered)
+
+    def _remember_dll_directory(self, value: str) -> None:
+        value = value.strip()
+        if not value or not Path(value).is_dir():
+            return
+        value = str(Path(value).resolve())
+        if value != self._settings.value("environment/dll_dir", ""):
+            self._settings.setValue("environment/dll_dir", value)
+            self._settings.sync()
 
     # ── Menu bar & shortcuts ────────────────────────────────────────────────
 
@@ -176,7 +214,10 @@ class MainWindow(QMainWindow):
 
         file_menu = self._add_menu(bar, "檔案(&F)")
         self._add_action(
-            file_menu, "開啟輸出資料夾", "Ctrl+O", self._open_output_dir,
+            file_menu,
+            "開啟輸出資料夾",
+            "Ctrl+O",
+            self._open_output_dir,
             icon="folder.svg",
         )
         file_menu.addSeparator()
@@ -185,7 +226,9 @@ class MainWindow(QMainWindow):
         view_menu = self._add_menu(bar, "檢視(&V)")
         for index, (name, icon_file, _, _) in enumerate(_VIEWS):
             self._add_action(
-                view_menu, name, f"Ctrl+{index + 1}",
+                view_menu,
+                name,
+                f"Ctrl+{index + 1}",
                 lambda _checked=False, i=index: self._select_view(i),
                 icon=icon_file,
             )
@@ -199,18 +242,27 @@ class MainWindow(QMainWindow):
 
         run_menu = self._add_menu(bar, "執行(&R)")
         self._add_action(
-            run_menu, "執行目前工作區", "Ctrl+R",
-            lambda: self._current_view().trigger_run(), icon="play.svg",
+            run_menu,
+            "執行目前工作區",
+            "Ctrl+R",
+            lambda: self._current_view().trigger_run(),
+            icon="play.svg",
         )
         self._add_action(
-            run_menu, "停止", "Ctrl+.",
-            lambda: self._current_view().trigger_stop(), icon="stop.svg",
+            run_menu,
+            "停止",
+            "Ctrl+.",
+            lambda: self._current_view().trigger_stop(),
+            icon="stop.svg",
         )
 
         help_menu = self._add_menu(bar, "說明(&H)")
         self._add_action(
-            help_menu, "關於 XIC Extractor", None,
-            lambda: show_about(self, _APP_VERSION), icon="info.svg",
+            help_menu,
+            "關於 XIC Extractor",
+            None,
+            lambda: show_about(self, _APP_VERSION),
+            icon="info.svg",
         )
 
     def _add_menu(self, bar: QMenuBar, title: str) -> QMenu:
@@ -245,6 +297,8 @@ class MainWindow(QMainWindow):
         self._retheme_icons(palette["icon"])
         for view in getattr(self, "_views", ()):
             view.refresh_theme()
+        if self.isVisible():
+            _color_titlebar(int(self.winId()), palette["bg_card"], palette["text"])
         self._settings.setValue("window/dark", dark)
 
     def _retheme_icons(self, color: str) -> None:
@@ -264,7 +318,7 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QFrame:
         bar = QFrame()
         bar.setObjectName("sidebar")
-        bar.setFixedWidth(216)
+        bar.setFixedWidth(184)
         col = QVBoxLayout(bar)
         col.setContentsMargins(14, 18, 14, 16)
         col.setSpacing(6)
@@ -285,10 +339,7 @@ class MainWindow(QMainWindow):
         brand.addStretch()
         col.addLayout(brand)
 
-        brand_sub = QLabel("Metabolomics toolkit")
-        brand_sub.setObjectName("brand_sub")
-        col.addWidget(brand_sub)
-        col.addSpacing(16)
+        col.addSpacing(12)
 
         for index, (name, icon_file, _, _) in enumerate(_VIEWS):
             button = QPushButton(f"  {name}")
@@ -303,7 +354,7 @@ class MainWindow(QMainWindow):
             col.addWidget(button)
 
         col.addStretch()
-        footer = QLabel("v0.2 · discovery + alignment")
+        footer = QLabel("v0.2")
         footer.setObjectName("brand_sub")
         col.addWidget(footer)
         return bar
@@ -311,29 +362,15 @@ class MainWindow(QMainWindow):
     def _build_header(self) -> QFrame:
         header = QFrame()
         header.setObjectName("app_header")
-        header.setFixedHeight(74)
+        header.setFixedHeight(60)
         col = QVBoxLayout(header)
-        col.setContentsMargins(26, 0, 26, 0)
+        col.setContentsMargins(20, 0, 20, 0)
         col.setSpacing(2)
         col.addStretch()
         col.addWidget(self._header_title)
         col.addWidget(self._header_subtitle)
         col.addStretch()
         return header
-
-    def _wrap_content(self, content: QWidget) -> QScrollArea:
-        scroll = QScrollArea()
-        scroll.setObjectName("content_scroll")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-
-        container = QWidget()
-        container.setObjectName("scroll_content")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(22, 20, 22, 22)
-        layout.addWidget(content)
-        scroll.setWidget(container)
-        return scroll
 
     # ── Behaviour ───────────────────────────────────────────────────────────
 
@@ -372,12 +409,12 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
-        _color_titlebar(int(self.winId()), _TITLEBAR_COLOR)
+        palette = DARK_PALETTE if self._dark else LIGHT_PALETTE
+        _color_titlebar(int(self.winId()), palette["bg_card"], palette["text"])
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         busy = any(
-            view.is_busy()
-            for view in (self.targeted_view, self.untargeted_view)
+            view.is_busy() for view in (self.targeted_view, self.untargeted_view)
         )
         if busy:
             if not confirm_close_while_busy(self):

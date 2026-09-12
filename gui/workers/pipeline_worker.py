@@ -1,7 +1,7 @@
 import statistics
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -17,6 +17,17 @@ from xic_extractor.extraction.targeted_service import (
 from xic_extractor.extractor import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError
+
+
+class _TargetSummary(TypedDict):
+    label: str
+    detected: int
+    total: int
+    nl_ok: int
+    nl_warn: int
+    nl_fail: int
+    nl_no_ms2: int
+    median_area: float | None
 
 
 class PipelineWorker(QThread):
@@ -99,7 +110,7 @@ def _target_summary(
     config: ExtractionConfig,
     target: Target,
     output: RunOutput,
-) -> dict[str, int | float | str | None]:
+) -> _TargetSummary:
     detected = 0
     nl_ok = 0
     nl_warn = 0

@@ -37,14 +37,17 @@ from gui.sections.settings_value_helpers import (
     _int_value,
     _invalid_parallel_mode,
     _invalid_parallel_workers,
+    _settings_values_are_valid,
 )
 from gui.sections.settings_widgets import CollapsibleSection, _LabeledSpin
 from gui.ui import SPACE_LG, SPACE_MD, SPACE_SM, titled_card
 from xic_extractor.config import migrate_settings_dict
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS, RESOLVER_MODES
+from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
 class SettingsSection(QWidget):
+    changed = pyqtSignal()
+    new_batch_requested = pyqtSignal()
     settings_saved = pyqtSignal()
 
     def __init__(self) -> None:
@@ -57,12 +60,15 @@ class SettingsSection(QWidget):
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
 
-        card, header_layout, card_layout = titled_card(
-            "① Settings", "資料路徑與峰偵測參數"
-        )
+        card, header_layout, card_layout = titled_card("設定", "")
         header_layout.addStretch()
+        self._new_batch_button = QPushButton("開始新批次")
+        self._new_batch_button.setToolTip("保留 DLL 與目前方法參數，清空本批資料目錄")
+        self._new_batch_button.clicked.connect(lambda: self.new_batch_requested.emit())
+        header_layout.addWidget(self._new_batch_button)
         self._reset_button = QPushButton("↺ 回到預設")
-        self._reset_button.setToolTip("將方法參數重設為預設值（保留 Data / DLL 路徑）")
+        self._reset_button.setToolTip("將方法參數重設為預設值（保留資料 / DLL 路徑）")
+        self._reset_button.setFlat(True)
         self._reset_button.clicked.connect(self._reset_defaults)
         header_layout.addWidget(self._reset_button)
         root_layout.addWidget(card)
@@ -169,7 +175,7 @@ class SettingsSection(QWidget):
         configure_advanced_controls(self._advanced_controls)
 
         # ── Data directory row ───────────────────────────────────────────────
-        body_layout.addWidget(QLabel("Data directory"), 0, 0)
+        body_layout.addWidget(QLabel("資料目錄"), 0, 0)
         body_layout.addWidget(self._data_dir_edit, 0, 1)
         body_layout.addWidget(self._make_browse_button(self._data_dir_edit), 0, 2)
 
@@ -178,12 +184,19 @@ class SettingsSection(QWidget):
         self._data_dir_error.setVisible(False)
         body_layout.addWidget(self._data_dir_error, 1, 1)
 
-        # ── DLL directory row ────────────────────────────────────────────────
-        body_layout.addWidget(QLabel("DLL directory"), 2, 0)
-        body_layout.addWidget(self._dll_dir_edit, 2, 1)
-        body_layout.addWidget(self._make_browse_button(self._dll_dir_edit), 2, 2)
+        # ── Environment row ──────────────────────────────────────────────────
+        self.environment_section = CollapsibleSection("Thermo DLL：需要設定（展開）")
+        environment_panel = QWidget()
+        environment_layout = QGridLayout(environment_panel)
+        environment_layout.setContentsMargins(0, 0, 0, 0)
+        environment_layout.setColumnStretch(1, 1)
+        environment_layout.addWidget(QLabel("DLL 目錄"), 0, 0)
+        environment_layout.addWidget(self._dll_dir_edit, 0, 1)
+        environment_layout.addWidget(self._make_browse_button(self._dll_dir_edit), 0, 2)
+        self.environment_section.add_row(environment_panel)
+        body_layout.addWidget(self.environment_section, 2, 0, 1, 3)
 
-        body_layout.addWidget(QLabel("Peak resolver"), 3, 0)
+        body_layout.addWidget(QLabel("峰值解析"), 3, 0)
         body_layout.addWidget(
             build_resolver_mode_row(self._resolver_controls), 3, 1, 1, 2
         )
@@ -210,7 +223,7 @@ class SettingsSection(QWidget):
         self.method_advanced_section.add_row(ms2_row)
         body_layout.addWidget(self.method_advanced_section, 4, 0, 1, 3)
 
-        self.advanced_section = CollapsibleSection("⚙ Advanced — debug 與方法開發專用")
+        self.advanced_section = CollapsibleSection("除錯與方法開發設定")
         build_advanced_section(
             self.advanced_section,
             self._advanced_controls,
@@ -226,6 +239,7 @@ class SettingsSection(QWidget):
 
         self._wire_signals()
         self._update_resolver_profile_visibility()
+        self._update_dll_presentation(initial=True)
 
     def load(self, settings: dict[str, str]) -> bool:
         blockers = [
@@ -312,6 +326,7 @@ class SettingsSection(QWidget):
         finally:
             del blockers
         self._set_dirty(False)
+        self._update_dll_presentation(initial=True)
         return migrated != settings
 
     def get_values(self) -> dict[str, str]:
@@ -450,52 +465,26 @@ class SettingsSection(QWidget):
         return values
 
     def is_valid(self) -> bool:
-        values = self.get_values()
-        smooth_window = int(values["smooth_window"])
-        smooth_polyorder = int(values["smooth_polyorder"])
-        signal_processing_window_points = int(values["signal_processing_window_points"])
-        peak_rel_height = float(values["peak_rel_height"])
-        peak_min_prominence_ratio = float(values["peak_min_prominence_ratio"])
-        ms2_precursor_tol_da = float(values["ms2_precursor_tol_da"])
-        nl_min_intensity_ratio = float(values["nl_min_intensity_ratio"])
-        resolver_min_search_range_min = float(values["resolver_min_search_range_min"])
-        resolver_min_relative_height = float(values["resolver_min_relative_height"])
-        resolver_min_absolute_height = float(values["resolver_min_absolute_height"])
-        resolver_min_ratio_top_edge = float(values["resolver_min_ratio_top_edge"])
-        resolver_peak_duration_min = float(values["resolver_peak_duration_min"])
-        resolver_peak_duration_max = float(values["resolver_peak_duration_max"])
-        resolver_min_scans = int(values["resolver_min_scans"])
-        try:
-            parallel_workers = int(values["parallel_workers"])
-        except ValueError:
-            parallel_workers = 0
-        return (
-            bool(values["data_dir"])
-            and bool(values["dll_dir"])
-            and smooth_window >= 3
-            and smooth_window % 2 == 1
-            and 1 <= smooth_polyorder < smooth_window
-            and signal_processing_window_points >= 3
-            and signal_processing_window_points % 2 == 1
-            and 0.50 <= peak_rel_height <= 0.99
-            and 0.01 <= peak_min_prominence_ratio <= 0.50
-            and ms2_precursor_tol_da > 0
-            and 0 < nl_min_intensity_ratio <= 1
-            and values["resolver_mode"] in RESOLVER_MODES
-            and resolver_min_search_range_min > 0
-            and 0 <= resolver_min_relative_height <= 1
-            and resolver_min_absolute_height >= 0
-            and resolver_min_ratio_top_edge > 1
-            and resolver_peak_duration_min >= 0
-            and resolver_peak_duration_max > 0
-            and resolver_peak_duration_min <= resolver_peak_duration_max
-            and resolver_min_scans >= 1
-            and values["parallel_mode"] in {"serial", "process"}
-            and parallel_workers >= 1
-        )
+        return _settings_values_are_valid(self.get_values())
 
     def set_enabled(self, enabled: bool) -> None:
         self.setEnabled(enabled)
+
+    def prepare_next_batch(self) -> None:
+        blocker = QSignalBlocker(self._data_dir_edit)
+        self._data_dir_edit.clear()
+        del blocker
+        self._validate_data_dir("")
+        self._set_dirty(True)
+
+    def reveal_invalid(self) -> None:
+        values = self.get_values()
+        if not values["dll_dir"]:
+            self.environment_section.set_expanded(True)
+        values.update(data_dir="present", dll_dir="present")
+        if not _settings_values_are_valid(values):
+            self.method_advanced_section.set_expanded(True)
+            self.advanced_section.set_expanded(True)
 
     def advanced_section_field_keys(self) -> tuple[str, ...]:
         return _ADVANCED_SETTING_KEYS
@@ -514,6 +503,7 @@ class SettingsSection(QWidget):
     def _wire_signals(self) -> None:
         self._data_dir_edit.textChanged.connect(self._validate_data_dir)
         self._data_dir_edit.textChanged.connect(lambda _: self._set_dirty(True))
+        self._dll_dir_edit.textChanged.connect(self._update_dll_presentation)
         self._dll_dir_edit.textChanged.connect(lambda _: self._set_dirty(True))
         self._smooth_window_spin.valueChanged.connect(lambda _: self._set_dirty(True))
         self._smooth_polyorder_spin.valueChanged.connect(
@@ -604,24 +594,22 @@ class SettingsSection(QWidget):
             edit_style.polish(self._data_dir_edit)
 
     def _make_browse_button(self, target: QLineEdit) -> QPushButton:
-        button = QPushButton("Browse…")
+        button = QPushButton("瀏覽…")
         button.clicked.connect(lambda: self._browse_for_directory(target))
         return button
 
     def _make_file_browse_button(self, target: QLineEdit) -> QPushButton:
-        button = QPushButton("Browse…")
+        button = QPushButton("瀏覽…")
         button.clicked.connect(lambda: self._browse_for_file(target))
         return button
 
     def _browse_for_directory(self, target: QLineEdit) -> None:
-        directory = QFileDialog.getExistingDirectory(
-            self, "Select directory", target.text()
-        )
+        directory = QFileDialog.getExistingDirectory(self, "選擇資料夾", target.text())
         if directory:
             target.setText(directory)
 
     def _browse_for_file(self, target: QLineEdit) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select file", target.text())
+        path, _ = QFileDialog.getOpenFileName(self, "選擇檔案", target.text())
         if path:
             target.setText(path)
 
@@ -642,3 +630,17 @@ class SettingsSection(QWidget):
     def _set_dirty(self, dirty: bool) -> None:
         self._dirty = dirty
         self._save_button.setVisible(dirty)
+        if dirty:
+            self.changed.emit()
+
+    def _update_dll_presentation(
+        self, _text: str = "", *, initial: bool = False
+    ) -> None:
+        configured = bool(self._dll_dir_edit.text().strip())
+        self.environment_section.set_title(
+            "Thermo DLL：已設定（展開編輯）"
+            if configured
+            else "Thermo DLL：需要設定（展開）"
+        )
+        if initial:
+            self.environment_section.set_expanded(not configured)

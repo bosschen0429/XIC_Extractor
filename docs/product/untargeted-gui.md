@@ -2,6 +2,8 @@
 
 ![Untargeted Discovery workspace](../../assets/screenshots/untargeted-workspace.png)
 
+![Untargeted Discovery in Graphite / Amber](../../assets/screenshots/untargeted-workspace-dark.png)
+
 The Untargeted workspace is the human GUI surface for discovery, alignment,
 and reviewable output access. It orchestrates existing product workflows; it
 does not create a separate product-authority lane.
@@ -10,17 +12,51 @@ does not create a separate product-authority lane.
 
 - The main window exposes **Targeted Extraction** and **Untargeted Discovery**
   as first-class workspaces.
+- The application provides Porcelain / Indigo (light) and Graphite / Amber
+  (dark) themes. Switch using the button below the sidebar brand, **檢視 → 深色模式**,
+  or `Ctrl+D`. Both workspaces update immediately; the choice survives restart
+  through the main window's existing `QSettings` preference. `gui/styles.py`
+  owns the shared palette, including method-editor actions.
 - Untargeted settings are local GUI state in `config/discovery_gui.json`;
   that file stays ignored.
+- Batch setup uses a scrollable overview with shared run feedback below it.
+  Sample and target tables open in a full-height detail workspace; **返回批次設定**
+  (`Alt+Left`) restores the overview without rebuilding data or discarding edits.
+  Table filtering, role correction, import, and export retain their existing owners.
+- DLL and internal-standard inputs show compact status summaries when valid;
+  invalid restored inputs expand for correction. **查看問題** reveals the relevant
+  setup section. Method selection and editing share one row; import and creation
+  are available under **更多**.
+- An existing DLL directory entered in either workspace is remembered immediately
+  in the main window's machine-local `QSettings`, independently of Save or Run.
+  Startup reuses it in both workspaces, ahead of batch-config defaults. A valid
+  existing workspace path seeds this preference on first use; missing remembered
+  paths remain visible for correction instead of silently selecting another path.
+- **開始新批次** preserves the selected method, explicit overrides, internal
+  standards, DLL, and mode. It clears RAW/batch-index/output inputs, sample roles,
+  acquisition-source binding, and displayed results. **清空來源** retains the
+  existing reset behavior, including resetting the method to dR.
+- Completion, failure, and stopping feedback survive readiness refreshes.
+  Editing settings after a run labels its results as previous results; starting
+  another run or batch clears them. Stop remains disabled while cancellation is
+  pending. These states describe worker feedback, not scientific acceptance.
 - Method settings come from built-in presets or imported TOML methods through
   the same `xic_extractor.presets` loader used by the CLI. The method section
-  exposes create, import, edit, and Save As operations for CID-NL methods.
+  exposes create, import, edit, Apply, and Save As operations for CID-NL methods.
+  The starting choices are dR, R, and MeR. The editor selects and combines their
+  tags, or adds custom neutral losses; Delta Mass, HCD-PI, and mixed methods are
+  not exposed by this GUI. Unsupported imports leave the selected method intact.
 - The operator configures Discovery tags, their combination, Discovery tuning,
   and dataset inputs. Alignment and Backfill strategy remain platform-owned.
 - Advanced values are explicit user overrides layered on the selected preset.
+- The GUI uses an explicit RT range of 0–60 minutes for built-in starting
+  methods. This override travels with the request and exported TOML; CLI defaults
+  are unchanged. Imported out-of-range methods are rejected, not clipped.
 - Save As materializes the effective method values through the preset owner;
-  the result can be used directly with CLI `--preset`. Cancelling the editor or
-  rejecting an import preserves the current method. The GUI stores only the
+  the result can be used directly with CLI `--preset`. Apply stores an effective
+  method through the same owner in local `config/current_discovery_method.toml`,
+  without a Save As dialog. Cancelling the editor or rejecting an import
+  preserves the current method. The GUI stores only the
   selected locator and overrides in its local config, not a second method format.
 - A run uses the method snapshot displayed by the GUI. External edits to the
   source file do not silently change that run; re-import selects the new content.
@@ -32,6 +68,33 @@ does not create a separate product-authority lane.
   normal GUI route. The retained helper remains available to explicit
   diagnostic callers and cannot change the Matrix.
 - Frozen builds must bundle preset TOMLs, because GUI startup loads presets.
+- Selecting a RAW directory lists files without assigning injection order. The
+  imported acquisition-information document supplies order through the shared
+  sample-metadata loader and matcher. Its source is persisted and reloaded before
+  explicit role corrections; folder changes clear the old sequence binding.
+  Matching uses the RAW files enumerated from the selected directory. Existing
+  sequence rows are never treated as RAW files; without enumerated RAW files,
+  importing another source replaces the sequence table.
+- The sample table edits a view of the complete imported metadata record.
+  Undisplayed fields, including exclusions and their reasons, survive visible
+  edits, filtering, request construction, and CSV export. Filters change only
+  visibility, not the submitted population. Importing a replacement source uses
+  its records; clearing or changing the RAW source removes the previous records.
+  A failed explicit import preserves the current data. A failed persisted-source
+  restore still clears injection order so a run cannot use stale acquisition order.
+- Generic CSV/TSV and XLSX sequences share the sample-metadata owner's finite
+  header aliases. Case, spaces, underscores, and punctuation are normalized before
+  exact matching; `Sample ID`, `Injection Order`, `Sample Type`, and `Batch ID`
+  have distinct meanings. Missing sample identity, duplicate semantic columns,
+  and header-only inputs are import errors. Word inputs retain the shared document
+  parser. Unsupported decorated headers are not guessed by substring.
+- The shared targets example is loaded by default. Untargeted uses only rows
+  marked `is_istd=TRUE` through `read_istd_targets`, the same selection consumed
+  by Alignment CLI. The GUI reports the selected and skipped row counts. Other
+  analytes do not become expected detections or constrain discovery. A supplied
+  list without internal standards is invalid; an empty input opts out.
+- Opening the bundled targets example for external editing first saves a user
+  copy. Reload validates external edits through the shared targets reader.
 
 ## Modes
 
@@ -49,7 +112,9 @@ run directory-level discovery plus alignment.
 | Surface | Role |
 | --- | --- |
 | `gui/views/untargeted_view.py` | Workspace state and run lifecycle |
-| `gui/sections/discovery_source_section.py` | RAW, DLL, output, mode, and batch-index inputs |
+| `gui/ui.py` | Shared overview/detail layout; moves the same editor widget and keeps execution feedback visible |
+| `gui/sections/discovery_source_section.py` | RAW, DLL, output, mode, batch-index inputs, and the shared internal-standard list |
+| `gui/sections/discovery_samples_section.py` | Acquisition-document matching, displayed sequence, and role corrections |
 | `gui/sections/discovery_method_section.py` | Method selection/import, displayed snapshot, and advanced overrides |
 | `gui/method_editor.py` | Name, tag, and composition editing; delegates TOML saving to the preset owner |
 | `gui/sections/discovery_results_section.py` | Output links and run summary |
