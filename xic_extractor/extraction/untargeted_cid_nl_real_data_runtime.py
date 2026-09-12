@@ -114,6 +114,8 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_cid_nl_missing_ms1_rejection,
+    is_unsearched_cid_nl_discovery_assessment,
     validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -1598,7 +1600,11 @@ def _prepare_subject_authorized_recoveries(
             if (
                 state.job.sample.identity.sample_identity_id
                 not in facts.activation_eligible_sample_ids
-                or assessment.content.method_result != "HOLD"
+                or not (
+                    assessment.content.method_result == "HOLD"
+                    or is_unsearched_cid_nl_discovery_assessment(assessment)
+                    or is_cid_nl_missing_ms1_rejection(assessment)
+                )
             ):
                 continue
             if assessment.candidate_peaks:
@@ -1648,6 +1654,13 @@ def _execute_recovery(
                 sample=job.sample,
                 method_subject=job.method_subject,
                 group_center_rt=center,
+                initial_assessment=(
+                    result.assessment_input.assessment
+                    if is_cid_nl_missing_ms1_rejection(
+                        result.assessment_input.assessment
+                    )
+                    else None
+                ),
                 support_policy=result.assessment_input.assessment.content.evaluation_receipt.support_policy,
                 peak_config=job.peak_config,
                 raw=raw,
@@ -1729,6 +1742,13 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
                     group_center_rt=center,
+                    initial_assessment=(
+                        result.assessment_input.assessment
+                        if is_cid_nl_missing_ms1_rejection(
+                            result.assessment_input.assessment
+                        )
+                        else None
+                    ),
                     support_policy=(
                         result.assessment_input.assessment.content.evaluation_receipt.support_policy
                     ),
@@ -1977,15 +1997,21 @@ def _finalize_job_state(
     registered_artifacts = observed_artifacts
     if adapter_result is not None:
         try:
+            # Recovery may reuse exact measured evidence from the initial result.
+            # Equal artifacts are one lineage node; conflicting identities still fail.
             expected_lineage = canonical_current_attempt_artifact_closure(
                 producer_attempt=job.processing_owners.attempt,
-                artifacts=(
-                    *adapter_result.lineage_artifacts,
-                    *(
-                        artifact
-                        for recovery in state.recovery_attempts
-                        for artifact in recovery.lineage_artifacts
-                    ),
+                artifacts=tuple(
+                    dict.fromkeys(
+                        (
+                            *adapter_result.lineage_artifacts,
+                            *(
+                                artifact
+                                for recovery in state.recovery_attempts
+                                for artifact in recovery.lineage_artifacts
+                            ),
+                        )
+                    )
                 ),
             )
             if observed_artifacts != expected_lineage:

@@ -541,18 +541,23 @@ def _metadata_by_stem(
     if isinstance(rows, (str, bytes)):
         raise IdentityContractError("sample_metadata must contain owner rows")
     result: dict[str, SampleMetadata] = {}
-    injection_orders: set[int] = set()
+    injection_orders: set[tuple[str, int]] = set()
     for row in rows:
         if not isinstance(row, SampleMetadata):
             raise IdentityContractError("sample_metadata contains a non-owner row")
         if not row.raw_stem or row.raw_stem in result:
             raise IdentityContractError("sample metadata RAW stems must be unique")
-        if row.injection_order is None or row.injection_order in injection_orders:
+        if row.injection_order is None:
+            raise IdentityContractError(
+                "sample metadata injection orders must be complete and unique"
+            )
+        order_key = (row.batch_id, row.injection_order)
+        if order_key in injection_orders:
             raise IdentityContractError(
                 "sample metadata injection orders must be complete and unique"
             )
         result[row.raw_stem] = row
-        injection_orders.add(row.injection_order)
+        injection_orders.add(order_key)
     return result
 
 

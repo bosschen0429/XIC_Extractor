@@ -41,10 +41,15 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 
 
 @pytest.mark.parametrize("fresh_available", [True, False])
+@pytest.mark.parametrize("shifted_mass", [True, False])
 def test_changed_physical_query_evaluates_once_and_preserves_support(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_available: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_available: bool,
+    shifted_mass: bool,
 ) -> None:
     import json
+    from types import SimpleNamespace
     from unittest.mock import Mock
 
     from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -86,8 +91,12 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             source_raw.scans[0],
             rt=rt,
             scan_number=int(np.argmin(np.abs(source_raw.rt - rt))) + 1,
+            precursor_mz=500.009 + index * 0.0006 if shifted_mass else 500.0,
+            masses=source_raw.scans[0].masses
+            + index * 0.0006
+            + (0.009 if shifted_mass else 0.0),
         )
-        for rt in (center - 0.25, center + 0.05)
+        for index, rt in enumerate((center - 0.25, center + 0.05))
     )
     source_raw.intensity = 250.0 + 1000.0 * np.exp(
         -0.5 * ((source_raw.rt - center) / 0.15) ** 2
@@ -96,12 +105,38 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         _settings(),
         neutral_loss_profile=None,
         seed_rt_gap_min=0.01,
+        # Retain two chemical hypotheses while their MS1 capture contexts overlap.
+        product_mz_tolerance_ppm=1.0,
         rt_min=12.8,
         rt_max=13.4,
     )
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    if shifted_mass:
+        # The ion is inside both source windows but outside the method-center
+        # window. Respect the vendor mass ranges instead of mocking capture.
+        def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
+            vendor.chromatogram_request_counts.append(len(trace_settings))
+            rt = source_raw.rt[start_scan - 1 : end_scan]
+            signal = source_raw.intensity[start_scan - 1 : end_scan]
+            return SimpleNamespace(
+                PositionsArray=[rt.tolist() for _ in trace_settings],
+                IntensitiesArray=[
+                    (
+                        signal
+                        if (
+                            setting.MassRanges[0][0]
+                            <= 500.015
+                            <= setting.MassRanges[0][1]
+                        )
+                        else np.zeros_like(signal)
+                    ).tolist()
+                    for setting in trace_settings
+                ],
+            )
+
+        monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
     source = fixture.owners.request.acquisition_sources[0]
     seeds = collect_strict_nl_seeds(
         raw, raw_file=fixture.source_paths["S1"], settings=settings
@@ -160,18 +195,34 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         physical_records=discovery.physical_evaluations,
     )
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == (
-        "SUPPORT" if fresh_available else "REJECT"
+    if not shifted_mass:
+        assert assessment.content.method_result == (
+            "SUPPORT" if fresh_available else "REJECT"
+        )
+        assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
+    assert len(assessment.candidate_peaks) == (
+        (2 if shifted_mass else 1) if fresh_available else 0
     )
-    assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
-    assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
     assert result.acquisition is not None
-    (acquired,) = result.acquisition.traces
+    assert len(result.acquisition.traces) == (2 if shifted_mass else 1)
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
     assert len(captures) == 2
     for record in discovery.physical_evaluations:
+        candidate = next(
+            item
+            for item in discovery.candidates
+            if item.candidate_id == record.candidate_id
+        )
+        acquired = next(
+            item
+            for item in result.acquisition.traces
+            if item.coordinate.request.mz == candidate.precursor_mz
+        )
+        assert (
+            acquired.coordinate.request.ppm_tol == settings.precursor_mz_tolerance_ppm
+        )
         changed = acquired.coordinate.request.rt_min < record.work_item.xic_rt_min or (
             acquired.coordinate.request.rt_max > record.work_item.xic_rt_max
         )
@@ -204,7 +255,11 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         if expected.state == "unavailable":
             assert capture.selected_hypothesis is None
             continue
-        observed = assessment.candidate_peaks[0]
+        observed = next(
+            item
+            for item in assessment.candidate_peaks
+            if item.content.mz == candidate.precursor_mz
+        )
         integration = physical_peak_observation_integration(expected)
         assert capture.selected_hypothesis.integration == integration
         assert (
@@ -216,6 +271,34 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     assert changed_questions == 2
     assert evaluate.call_count == 2
     assert prepare.call_count == 2
+    batch = acquire_untargeted_cid_nl_sample_trace_batch(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        candidates=discovery.candidates,
+        settings=settings,
+        raw=raw,
+        signal_processing_profile=profile,
+    )
+    assert batch is not None
+    acquisition_calls = tuple(vendor.chromatogram_request_counts)
+    reused = adapt_current_discovery_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=discovery.candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+        signal_processing_profile=profile,
+        physical_records=discovery.physical_evaluations,
+        _preacquired_traces=batch,
+    )
+    assert reused.acquisition is batch.acquisition
+    assert tuple(vendor.chromatogram_request_counts) == acquisition_calls
+    assert reused.assessment_input.assessment == assessment
+    assert [item.physical_evaluation for item in reused.captures] == [
+        item.physical_evaluation for item in result.captures
+    ]
     with pytest.raises(ValueError, match="trace_content_id"):
         capture_owner.capture_reacquired_physical_peak(
             scope=capture.scope,
@@ -463,9 +546,16 @@ def test_inferred_precursor_support_requires_a_physical_ms1_peak(
             for ref in assessment.evidence_refs
         )
     else:
-        assert assessment.content.method_result != "SUPPORT"
+        assert assessment.content.technical_state == "not_evaluated"
+        assert assessment.content.method_result is None
+        assert assessment.content.reason_codes == (
+            "no_search_eligible_discovery_input",
+        )
+        assert assessment.content.evaluation_receipt.search_completed is False
+        assert assessment.content.evaluation_receipt.scanned_event_count == 0
         assert not assessment.candidate_peaks
         assert not assessment.individual_support_refs
+        assert result.acquisition is None
 
 
 def test_merged_inferred_member_outside_final_mass_window_is_not_support(
@@ -662,7 +752,7 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     assert vendor_raw.chromatogram_request_counts == []
 
 
-def test_adapter_closes_empty_subject_universe_as_hold_without_xic(
+def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     tmp_path: Path,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -689,8 +779,13 @@ def test_adapter_closes_empty_subject_universe_as_hold_without_xic(
     )
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "HOLD"
-    assert assessment.content.reason_codes == ("insufficient_method_evidence",)
+    assert assessment.content.technical_state == "not_evaluated"
+    assert assessment.content.method_result is None
+    assert assessment.content.reason_codes == (
+        "no_search_eligible_discovery_input",
+    )
+    assert assessment.content.evaluation_receipt.search_completed is False
+    assert assessment.content.evaluation_receipt.scanned_event_count == 0
     assert result.assessment_input.discovery_projections == ()
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
@@ -1002,7 +1097,10 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         raw=raw,
     )
 
+    assert result.assessment.content.technical_state == "evaluated"
     assert result.assessment.content.method_result == "HOLD"
+    assert result.assessment.content.evaluation_receipt.search_completed is True
+    assert result.assessment.content.evaluation_receipt.scanned_event_count == 0
     assert len(result.assessment.candidate_peaks) == 1
     assert result.assessment.evidence_refs == ()
     assert result.recovery_input is not None

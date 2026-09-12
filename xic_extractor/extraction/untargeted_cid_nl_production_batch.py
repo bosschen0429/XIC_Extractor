@@ -6,6 +6,7 @@ import math
 from collections.abc import Callable, Mapping
 from copy import copy
 from dataclasses import dataclass, replace
+from itertools import zip_longest
 from pathlib import Path
 from typing import cast
 
@@ -101,12 +102,14 @@ from xic_extractor.peak_detection.capture import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_unsearched_cid_nl_discovery_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlComposition,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
+    cid_nl_alignment_subject_worksets,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
 )
@@ -143,6 +146,8 @@ class UntargetedCidNlProductionPlan:
     subject_batch: UntargetedCidNlMethodSubjectBatch
     context: UntargetedCidNlRealDataContext
     sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
+    runtime_subjects: tuple[CidNlMethodSubject, ...]
+    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
 
 
 def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
@@ -155,6 +160,170 @@ def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+def _method_center_interval(mz: float, ppm: float) -> tuple[float, float]:
+    fraction = ppm / 1_000_000.0
+    return mz / (1.0 + fraction), mz / (1.0 - fraction)
+
+
+def _same_physical_core(
+    left: DiscoveryPhysicalFactRecord,
+    right: DiscoveryPhysicalFactRecord,
+    *,
+    rt_min: float,
+    rt_max: float,
+) -> bool:
+    sentinel = object()
+    matched = False
+    left_core = (
+        point
+        for point in zip(left.rt, left.raw, strict=True)
+        if rt_min <= point[0] <= rt_max
+    )
+    right_core = (
+        point
+        for point in zip(right.rt, right.raw, strict=True)
+        if rt_min <= point[0] <= rt_max
+    )
+    for left_point, right_point in zip_longest(
+        left_core,
+        right_core,
+        fillvalue=sentinel,
+    ):
+        if (
+            left_point is sentinel
+            or right_point is sentinel
+            or left_point != right_point
+        ):
+            return False
+        matched = True
+    return matched
+
+
+def _physical_subject_units(
+    candidates: tuple[DiscoveryCandidate, ...],
+    *,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    composition: CidNlComposition | None,
+    precursor_tolerance_ppm: float,
+) -> tuple[tuple[float | None, tuple[DiscoveryCandidate, ...]], ...]:
+    """Keep query wrappers for one proven peak in the same method workset."""
+
+    views: dict[
+        str,
+        tuple[
+            DiscoveryPhysicalFactRecord,
+            tuple[float, float],
+            tuple[float, float],
+        ],
+    ] = {}
+    buckets: dict[tuple[str, float | None, float], list[DiscoveryCandidate]] = {}
+    unproved: list[tuple[float | None, tuple[DiscoveryCandidate, ...]]] = []
+    for candidate in candidates:
+        requirement = (
+            None if composition is not None else candidate.configured_neutral_loss_da
+        )
+        record = physical_records_by_candidate.get(candidate.candidate_id)
+        facts = None if record is None else record.evaluation.facts
+        if record is None or facts is None:
+            unproved.append((requirement, (candidate,)))
+            continue
+        xic_fraction = record.work_item.xic_ppm_tol / 1_000_000.0
+        views[candidate.candidate_id] = (
+            record,
+            (
+                record.work_item.xic_mz * (1.0 - xic_fraction),
+                record.work_item.xic_mz * (1.0 + xic_fraction),
+            ),
+            _method_center_interval(
+                candidate.precursor_mz,
+                precursor_tolerance_ppm,
+            ),
+        )
+        buckets.setdefault(
+            (
+                record.work_item.acquisition_source_id,
+                requirement,
+                facts.apex_rt_min,
+            ),
+            [],
+        ).append(candidate)
+
+    proved: list[tuple[float | None, tuple[DiscoveryCandidate, ...]]] = []
+    for bucket_key, bucket_candidates in sorted(buckets.items()):
+        requirement = bucket_key[1]
+        ordered = sorted(
+            bucket_candidates,
+            key=lambda item: (item.precursor_mz, item.candidate_id),
+        )
+        cohort: list[DiscoveryCandidate] = []
+        representative_record: DiscoveryPhysicalFactRecord | None = None
+        common_rt = (0.0, 0.0)
+        common_xic = (0.0, 0.0)
+        common_center = (0.0, 0.0)
+        for candidate in ordered:
+            record, xic_interval, center_interval = views[candidate.candidate_id]
+            facts = record.evaluation.facts
+            if facts is None:  # Kept local for type narrowing; filtered above.
+                raise RuntimeError("physical proof lost its selected peak")
+            if not cohort:
+                cohort = [candidate]
+                representative_record = record
+                common_rt = (facts.left_rt_min, facts.right_rt_min)
+                common_xic = xic_interval
+                common_center = center_interval
+                continue
+            next_rt = (
+                max(common_rt[0], facts.left_rt_min),
+                min(common_rt[1], facts.right_rt_min),
+            )
+            next_xic = (
+                max(common_xic[0], xic_interval[0]),
+                min(common_xic[1], xic_interval[1]),
+            )
+            next_center = (
+                max(common_center[0], center_interval[0]),
+                min(common_center[1], center_interval[1]),
+            )
+            apex = bucket_key[2]
+            joins = (
+                next_rt[0] < apex < next_rt[1]
+                and next_xic[0] <= next_xic[1]
+                and next_center[0] <= next_center[1]
+                and representative_record is not None
+                and _same_physical_core(
+                    representative_record,
+                    record,
+                    rt_min=next_rt[0],
+                    rt_max=next_rt[1],
+                )
+            )
+            if not joins:
+                proved.append((requirement, tuple(cohort)))
+                cohort = [candidate]
+                representative_record = record
+                common_rt = (facts.left_rt_min, facts.right_rt_min)
+                common_xic = xic_interval
+                common_center = center_interval
+                continue
+            cohort.append(candidate)
+            common_rt = next_rt
+            common_xic = next_xic
+            common_center = next_center
+        if cohort:
+            proved.append((requirement, tuple(cohort)))
+
+    return tuple(
+        sorted(
+            (*proved, *unproved),
+            key=lambda unit: (
+                0.0 if unit[0] is None else unit[0],
+                unit[1][0].precursor_mz,
+                tuple(candidate.candidate_id for candidate in unit[1]),
+            ),
+        )
+    )
 
 
 def prepare_untargeted_cid_nl_production_plan(
@@ -207,7 +376,6 @@ def prepare_untargeted_cid_nl_production_plan(
         if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
         else None
     )
-    candidate_facts: list[tuple[float, float, str]] = []
     for candidate in candidates:
         precursor_mz = float(candidate.precursor_mz)
         neutral_loss_da = float(candidate.configured_neutral_loss_da)
@@ -218,33 +386,52 @@ def prepare_untargeted_cid_nl_production_plan(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-        candidate_facts.append(
-            (
-                0.0 if composition else neutral_loss_da,
-                precursor_mz,
-                candidate.candidate_id,
-            )
-        )
+    subject_units = _physical_subject_units(
+        candidates,
+        physical_records_by_candidate=physical_records_by_candidate or {},
+        composition=composition,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+    )
     subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
     membership_keys: list[tuple[str, tuple[float, float | None]]] = []
     key_by_requirement: dict[float | None, tuple[float, float | None]] = {}
-    for neutral_loss_da, precursor_mz, candidate_id in sorted(candidate_facts):
-        requirement = None if composition else neutral_loss_da
+    for requirement, unit_candidates in subject_units:
         key = key_by_requirement.get(requirement)
-        # A fixed first query center bounds the workset without chaining masses.
-        if key is None or (
-            abs(precursor_mz - key[0]) / key[0] * 1_000_000.0
+        # A proven physical unit is indivisible. Existing fixed centers may host
+        # it only when every original query remains inside the method window.
+        if key is None or any(
+            abs(candidate.precursor_mz - key[0]) / key[0] * 1_000_000.0
             > settings.precursor_mz_tolerance_ppm
+            for candidate in unit_candidates
         ):
-            key = (precursor_mz, requirement)
+            if len(unit_candidates) == 1:
+                center = unit_candidates[0].precursor_mz
+            else:
+                center_intervals = tuple(
+                    _method_center_interval(
+                        candidate.precursor_mz,
+                        settings.precursor_mz_tolerance_ppm,
+                    )
+                    for candidate in unit_candidates
+                )
+                lower = max(interval[0] for interval in center_intervals)
+                upper = min(interval[1] for interval in center_intervals)
+                if lower > upper:
+                    raise RuntimeError(
+                        "physical subject unit lacks a common method center"
+                    )
+                center = (lower + upper) / 2.0
+            key = (center, requirement)
             key_by_requirement[requirement] = key
             subject_by_key[key] = mint_untargeted_cid_nl_method_subject(
-                precursor_mz=precursor_mz,
+                precursor_mz=center,
                 precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
                 neutral_loss_da=requirement,
                 composition=composition,
             )
-        membership_keys.append((candidate_id, key))
+        membership_keys.extend(
+            (candidate.candidate_id, key) for candidate in unit_candidates
+        )
 
     subjects = tuple(
         sorted(subject_by_key.values(), key=lambda subject: subject.method_subject_id)
@@ -272,6 +459,39 @@ def prepare_untargeted_cid_nl_production_plan(
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
+    )
+    candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
+    eligible_subject_ids = {
+        subject_id
+        for candidate_id, subject_id in subject_batch.candidate_memberships
+        if candidate_by_id[candidate_id].ms1_peak_found
+        and candidate_by_id[candidate_id].discovery_candidate_state
+        in MS1_FEATURE_BACKED_STATES
+    }
+    # Keep the complete membership and fixed query centers as request identity.
+    # Only subjects backed by an MS1 feature can seed cross-sample assessment.
+    runtime_subjects = tuple(
+        subject
+        for subject in subject_batch.subjects
+        if subject.method_subject_id in eligible_subject_ids
+    )
+    sample_ids = {
+        sample.metadata.raw_stem: sample.identity.sample_identity_id
+        for sample in context.samples
+    }
+    excluded_candidates = tuple(
+        UntargetedCandidateExclusion(
+            candidate_id=candidate_id,
+            method_subject_id=subject_id,
+            canonical_sample_identity_id=sample_ids[
+                candidate_by_id[candidate_id].sample_stem
+            ],
+            discovery_candidate_state=(
+                candidate_by_id[candidate_id].discovery_candidate_state
+            ),
+        )
+        for candidate_id, subject_id in subject_batch.candidate_memberships
+        if subject_id not in eligible_subject_ids
     )
     ordered_physical_records = tuple(
         record
@@ -316,6 +536,8 @@ def prepare_untargeted_cid_nl_production_plan(
         subject_batch=subject_batch,
         context=context,
         sample_job_templates=templates,
+        runtime_subjects=runtime_subjects,
+        excluded_candidates=excluded_candidates,
     )
 
 
@@ -324,6 +546,17 @@ def materialize_untargeted_cid_nl_partition(
     subject_batch: UntargetedCidNlMethodSubjectBatch,
 ) -> UntargetedCidNlProductionBatch:
     """Bind a finite subject partition to shared, already-validated inputs."""
+
+    requested_subject_ids = {
+        subject.method_subject_id for subject in subject_batch.subjects
+    }
+    for workset in cid_nl_alignment_subject_worksets(plan.runtime_subjects):
+        workset_ids = {subject.method_subject_id for subject in workset}
+        requested_members = requested_subject_ids.intersection(workset_ids)
+        if requested_members and requested_members != workset_ids:
+            raise ValueError(
+                "CID-NL partition cannot split one alignment subject workset"
+            )
 
     jobs = []
     for template in plan.sample_job_templates:
@@ -646,10 +879,16 @@ def _build_production_composition_inputs(
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
         )
-        if all(
+        evaluated_unsupported = tuple(
             ref.content.technical_state == "evaluated"
             and ref.content.method_result in {"HOLD", "REJECT"}
             for ref in subject_assessments
+        )
+        if any(evaluated_unsupported) and all(
+            is_unsupported or is_unsearched_cid_nl_discovery_assessment(ref)
+            for ref, is_unsupported in zip(
+                subject_assessments, evaluated_unsupported, strict=True
+            )
         ):
             unsupported_subjects[subject.method_subject_id] = subject_assessments
     bindings = tuple(
@@ -766,22 +1005,38 @@ def _build_production_composition_inputs(
         for sample in batch.context.processing_owners.sample_resolutions
         if sample.metadata.injection_order is not None
     }
+    if known_istd_reference is not None:
+        known_istd_reference = known_istd_reference.prepare_batch(
+            sample_universe=sample_universe,
+            injection_order=injection_order,
+        )
     raw_sample_stems = frozenset(batch.context.raw_paths_by_sample)
     empty_family_ids: frozenset[str] = frozenset()
-    for subject in batch.subject_batch.subjects:
-        child_bindings = tuple(bindings_by_subject.get(subject.method_subject_id, ()))
-        if not child_bindings:
-            continue
+    active_subjects = tuple(
+        subject
+        for subject in batch.subject_batch.subjects
+        if bindings_by_subject.get(subject.method_subject_id)
+    )
+    for subject_workset in cid_nl_alignment_subject_worksets(active_subjects):
+        workset_subject_ids = {
+            subject.method_subject_id for subject in subject_workset
+        }
+        child_bindings = tuple(
+            binding
+            for binding in bindings
+            if binding.method_subject_id in workset_subject_ids
+        )
         child_scope = UntargetedSearchScope(
             schema_version=scope.schema_version,
             request=scope.request,
             samples=scope.samples,
             method_constraints=scope.method_constraints,
-            evidence_providers=(
+            evidence_providers=tuple(
                 EvidenceProviderBinding(
                     provider_id=CID_NL_PROVIDER_ID,
                     method_subject_id=subject.method_subject_id,
-                ),
+                )
+                for subject in subject_workset
             ),
             declared_candidate_ids=tuple(
                 binding.candidate_id for binding in child_bindings
@@ -794,26 +1049,32 @@ def _build_production_composition_inputs(
                 assessment,
             )
             for sample in ordered_samples
+            for subject in subject_workset
             for assessment in result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
         )
         capture_inputs_list = []
         captures_list = []
-        assessment_by_sample_id = {
-            sample.identity.sample_identity_id: result_by_key[
+        assessment_by_sample_subject = {
+            (
+                sample.identity.sample_identity_id,
+                subject.method_subject_id,
+            ): result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].adapter_result.assessment_input.assessment
             for sample in batch.context.samples
+            for subject in subject_workset
         }
-        hypotheses_by_sample_id = {
-            sample_id: compose_peak_hypotheses_from_assessment_universe(
+        hypotheses_by_sample_subject = {
+            key: compose_peak_hypotheses_from_assessment_universe(
                 processing_owners=batch.context.processing_owners,
-                sample=sample_by_id[sample_id],
-                assessment=assessment_by_sample_id[sample_id],
+                sample=sample_by_id[key[0]],
+                assessment=assessment_by_sample_subject[key],
             )
-            for sample_id in dict.fromkeys(
-                binding.sample_identity_id for binding in child_bindings
+            for key in dict.fromkeys(
+                (binding.sample_identity_id, binding.method_subject_id)
+                for binding in child_bindings
             )
         }
         for binding in child_bindings:
@@ -838,7 +1099,9 @@ def _build_production_composition_inputs(
                 processing_owners=batch.context.processing_owners,
                 sample=sample,
             )
-            hypotheses = hypotheses_by_sample_id[binding.sample_identity_id]
+            hypotheses = hypotheses_by_sample_subject[
+                (binding.sample_identity_id, binding.method_subject_id)
+            ]
             matches = tuple(
                 hypothesis
                 for hypothesis in hypotheses
@@ -888,9 +1151,11 @@ def _build_production_composition_inputs(
                 (
                     group.group_hypothesis_id,
                     sample.identity.sample_identity_id,
+                    subject.method_subject_id,
                 ): recovery.assessment
                 for group in family_context.mode_tracks
                 for sample in batch.context.samples
+                for subject in subject_workset
                 if group.group_center_rt is not None
                 and (
                     recovery := result_by_key[
@@ -917,8 +1182,12 @@ def _build_production_composition_inputs(
                 key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
                 cell = cell_by_key[key]
                 if (
-                    cell.content.technical_state != "evaluated"
-                    or cell.content.method_result != "HOLD"
+                    not (
+                        cell.content.method_result == "HOLD"
+                        or is_unsearched_cid_nl_discovery_assessment(
+                            cell.method_assessment
+                        )
+                    )
                     or cell.peak_observation is not None
                 ):
                     continue
@@ -929,8 +1198,11 @@ def _build_production_composition_inputs(
                 if facts.may_attempt_recovery:
                     if cell.method_assessment.candidate_peaks:
                         continue
+                    method_subject_id = (
+                        cell.method_assessment.content.method_subject.method_subject_id
+                    )
                     sample_result = result_by_key[
-                        (sample.metadata.raw_stem, subject.method_subject_id)
+                        (sample.metadata.raw_stem, method_subject_id)
                     ]
                     if (
                         facts.group_context.group.group_center_rt is None
@@ -981,6 +1253,8 @@ def _build_production_composition_inputs(
                     in no_request_proofs
                     else "local_owner_not_supersedable"
                     if cell.content.outside_group is not None
+                    else "review_only"
+                    if is_unsearched_cid_nl_discovery_assessment(cell.method_assessment)
                     else "retained_unresolved_candidates"
                     if (
                         cell.content.technical_state == "evaluated"

@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, SupportsIndex, SupportsInt, cast
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -45,6 +45,8 @@ OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache_v6"
 RAW_IDENTITY_METHOD = "path_stat_v1"
 OverlayTraceItem = tuple[int, overlay_plot.FamilyCell, str, Any]
 WindowedOverlayTraceItem = tuple[int, OverlayTraceItem, tuple[int, int]]
+
+
 class _BatchRawReader(Protocol):
     def extract_xic_many(self, requests: Sequence[Any]) -> Sequence[Any]: ...
 
@@ -683,9 +685,7 @@ def _read_cache_index(cache_dir: Path) -> dict[str, Mapping[str, Any]]:
     if not isinstance(entries, Mapping):
         return {}
     return {
-        str(key): value
-        for key, value in entries.items()
-        if isinstance(value, Mapping)
+        str(key): value for key, value in entries.items() if isinstance(value, Mapping)
     }
 
 
@@ -837,6 +837,10 @@ def _artifact_fingerprint_matches(
 
 
 def _size_matches(expected_size: object, path: Path) -> bool:
+    if not isinstance(
+        expected_size, (str, bytes, bytearray, SupportsInt, SupportsIndex)
+    ):
+        return False
     try:
         parsed_size = int(expected_size)
     except (TypeError, ValueError):
@@ -895,8 +899,7 @@ def _cached_provenance_matches_request(
         "output_prefix": request.output_prefix,
     }
     if not all(
-        str(provenance.get(key, "")).strip() == value
-        for key, value in expected.items()
+        str(provenance.get(key, "")).strip() == value for key, value in expected.items()
     ):
         return False
     return _raw_identity_matches_provenance(
@@ -956,9 +959,9 @@ def _stable_float(value: float | None) -> str:
     return f"{float(value):.12g}"
 
 
-def _payload_float_matches(value: object, expected: float) -> bool:
+def _payload_float_matches(value: object, expected: float | None) -> bool:
     observed = _optional_float(value)
-    if observed is None:
+    if observed is None or expected is None:
         return False
     tolerance = max(1e-6, abs(expected) * 1e-9)
     return abs(observed - expected) <= tolerance
@@ -1214,11 +1217,7 @@ def _extract_overlay_traces(
 
     if extraction_stats is not None:
         extraction_stats.exact_scan_window_count += len(
-            {
-                scan_window
-                for group in groups
-                for _index, _item, scan_window in group
-            }
+            {scan_window for group in groups for _index, _item, scan_window in group}
         )
         extraction_stats.superwindow_group_count += len(groups)
         extraction_stats.extract_xic_batch_count += len(groups)
@@ -1801,6 +1800,8 @@ def _normalize_raw_identity_map(
 
 
 def _identity_int(value: object) -> int:
+    if not isinstance(value, (str, bytes, bytearray, SupportsInt, SupportsIndex)):
+        return -1
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -1906,9 +1907,7 @@ def _write_summary_json(
 def _write_markdown(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     statuses = Counter(str(row["status"]) for row in rows)
     verdicts = Counter(
-        str(row.get("family_verdict", ""))
-        for row in rows
-        if row.get("family_verdict")
+        str(row.get("family_verdict", "")) for row in rows if row.get("family_verdict")
     )
     gate = _top30_expansion_gate(rows)
     lines = [
@@ -2042,11 +2041,7 @@ def _format_tsv_blocker(row: Mapping[str, Any]) -> str:
 
 
 def _format_tsv_blockers(rows: Sequence[Mapping[str, Any]]) -> str:
-    blockers = [
-        blocker
-        for row in rows
-        if (blocker := _format_tsv_blocker(row))
-    ]
+    blockers = [blocker for row in rows if (blocker := _format_tsv_blocker(row))]
     return "; ".join(blockers)
 
 

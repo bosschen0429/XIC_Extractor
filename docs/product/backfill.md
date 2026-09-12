@@ -100,6 +100,18 @@ the exact group/sample associations and `not_searched`, `unavailable`, or
 facts. Workflow paths that request an actual repair retain the authorization
 and execution operations below.
 
+The retained CID-NL runtime also permits one independent recovery for an initial
+evaluated `REJECT` whose exact reason is
+`qualifying_nl_evidence_without_any_ms1_candidate_peak`. This does not change the
+original assessment or reopen all rejected Discovery inputs. An existing frozen
+group, direct-SUPPORT threshold, compatible sample role and bounded local request
+remain prerequisites. The new assessment combines fresh MS1 with original,
+lineage-validated qualifying MS2 inside that window and must earn method SUPPORT
+through the normal relation owner. Its receipt can produce a numeric final cell
+with no source Discovery candidate; explanation lineage retains the initial
+REJECT and exclusions. No group, insufficient support, blank samples, technical
+failure or a completed empty recovery grant another repair epoch.
+
 The result is a closed authorization union: no eligible cells produce
 `not_run`, one produces `repair(candidate)`, and more than one produces a
 typed `multiple_eligible` block. Missing, duplicate, extra, crossed, stale, or
@@ -213,8 +225,10 @@ The frozen rules are:
   existing candidate query RT/ppm envelope. `1↔N`, `N↔1`, tied order, or
   out-of-envelope evidence stays HOLD and nonnumeric. Drift, split,
   deconvolution, and multi-component resolution remain later work.
-- A method-level `REJECT` is terminal for that attempt and is not Backfill
-  eligible. Technical/no-evidence and HOLD cells may remain nonnumeric pending
+- A method-level `REJECT` is terminal for that assessed evidence and is not itself
+  Backfill authority. The retained-runtime missing-MS1 exception described above
+  authorizes a separate evidence acquisition and assessment; it never rewrites
+  the rejection. Technical/no-evidence and HOLD cells may remain nonnumeric pending
   an owner-bound recovery universe; neither state creates a vote by itself.
 - Targeted and Untargeted adapters unwrap their CellObservationRef reference projections and
   call the same policy owner over the same exact `CellObservationRef` objects;

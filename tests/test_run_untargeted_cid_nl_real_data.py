@@ -211,8 +211,8 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     assert unsupported_summary["source_artifact_sha256"] is None
     assert unsupported_summary["pending_acceptance_count"] == 0
     assert unsupported_summary["pending_acceptance_manifest"] is None
-    assert unsupported_summary["samples"][0]["technical_state"] == "evaluated"
-    assert unsupported_summary["samples"][0]["method_result"] == "HOLD"
+    assert unsupported_summary["samples"][0]["technical_state"] == "not_evaluated"
+    assert unsupported_summary["samples"][0]["method_result"] is None
     assert unsupported_summary["samples"][0]["backfill_disposition"] is None
     assert unsupported_summary["samples"][0]["source_candidate_count"] == 1
     assert unsupported_summary["samples"][0]["strict_scan_count"] == 0

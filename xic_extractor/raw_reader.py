@@ -3,7 +3,8 @@ import math
 import os
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, final
@@ -20,6 +21,7 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     fingerprint_file_content,
 )
+from xic_extractor.sample_metadata import SampleMetadata, infer_sample_role
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 EXPECTED_THERMO_DLLS = (
@@ -79,6 +81,36 @@ class _VerifiedAcquisitionSourceBinding:
     path_identity: tuple[int, int, int, int, int]
 
 
+@dataclass(frozen=True, slots=True)
+class RawSampleHeader:
+    raw_path: str
+    raw_stem: str
+    sample_name: str
+    sample_id: str
+    row_number: int | None
+    sample_type: str
+    creation_date: datetime | None
+    vial: str
+    comment: str
+
+
+def _to_python_datetime(dt: Any) -> datetime | None:
+    if dt is None:
+        return None
+    try:
+        return datetime(
+            int(dt.Year),
+            int(dt.Month),
+            int(dt.Day),
+            int(dt.Hour),
+            int(dt.Minute),
+            int(dt.Second),
+            int(getattr(dt, "Millisecond", 0)) * 1000,
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 class RawFileHandle:
     __slots__ = ("_raw_file", "_thermo", "_raw_chromatogram_call_count")
 
@@ -96,6 +128,39 @@ class RawFileHandle:
     @property
     def raw_chromatogram_call_count(self) -> int:
         return self._raw_chromatogram_call_count
+
+    @property
+    def sample_header(self) -> RawSampleHeader:
+        raw = self._raw_file
+        info = getattr(raw, "SampleInformation", None)
+        sample_name = str(getattr(info, "SampleName", "") or "").strip()
+        sample_id = str(getattr(info, "SampleId", "") or "").strip()
+        row_number_raw = getattr(info, "RowNumber", None)
+        row_number = None
+        if row_number_raw is not None:
+            try:
+                row_val = int(row_number_raw)
+                if row_val > 0:
+                    row_number = row_val
+            except (TypeError, ValueError):
+                pass
+        sample_type = str(getattr(info, "SampleType", "") or "Unknown").strip()
+        vial = str(getattr(info, "Vial", "") or "").strip()
+        comment = str(getattr(info, "Comment", "") or "").strip()
+        creation_date = _to_python_datetime(getattr(raw, "CreationDate", None))
+        file_name = str(getattr(raw, "FileName", "") or "").strip()
+        raw_stem = Path(file_name).stem if file_name else ""
+        return RawSampleHeader(
+            raw_path=file_name,
+            raw_stem=raw_stem,
+            sample_name=sample_name or raw_stem,
+            sample_id=sample_id,
+            row_number=row_number,
+            sample_type=sample_type,
+            creation_date=creation_date,
+            vial=vial,
+            comment=comment,
+        )
 
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity | None:
@@ -385,6 +450,102 @@ def open_raw(
         source_binding.source,
         raw_open_receipt,
     )
+
+
+def read_raw_sample_header(path: Path, dll_dir: Path) -> RawSampleHeader:
+    with open_raw(path, dll_dir=dll_dir) as handle:
+        header = handle.sample_header
+        if not header.raw_path:
+            header = replace(
+                header,
+                raw_path=str(path.resolve()),
+                raw_stem=path.stem,
+                sample_name=header.sample_name or path.stem,
+            )
+        return header
+
+
+def derive_sample_metadata_from_raw_files(
+    raw_paths: Sequence[Path],
+    dll_dir: Path,
+    *,
+    batch_by_parent: bool = True,
+) -> tuple[SampleMetadata, ...]:
+    """Derive canonical SampleMetadata rows directly from Thermo RAW file headers."""
+    if not raw_paths:
+        return ()
+
+    batches: dict[str, list[tuple[Path, Any]]] = {}
+    for path in raw_paths:
+        batch_id = path.parent.name if batch_by_parent else ""
+        header = read_raw_sample_header(path, dll_dir=dll_dir)
+        batches.setdefault(batch_id, []).append((path, header))
+
+    metadata_rows: list[SampleMetadata] = []
+    seen_sample_names: set[str] = set()
+
+    for batch_id, items in batches.items():
+        row_numbers = [h.row_number for _, h in items]
+        has_valid_row_numbers = all(
+            isinstance(rn, int) and rn > 0 for rn in row_numbers
+        ) and len(set(row_numbers)) == len(items)
+
+        if has_valid_row_numbers:
+            sorted_items = sorted(
+                items,
+                key=lambda x: (x[1].row_number, x[1].raw_stem or x[0].stem),
+            )
+            use_row_number = True
+        else:
+            min_dt = datetime.min
+            sorted_items = sorted(
+                items,
+                key=lambda x: (
+                    x[1].creation_date or min_dt,
+                    x[1].raw_stem or x[0].stem,
+                ),
+            )
+            use_row_number = False
+
+        for order_idx, (path, header) in enumerate(sorted_items, start=1):
+            injection_order = header.row_number if use_row_number else order_idx
+            raw_stem = header.raw_stem or path.stem
+
+            raw_name = header.sample_name or raw_stem
+            if (
+                not raw_name
+                or raw_name.lower() in {"unknown", "sample"}
+                or raw_name in seen_sample_names
+            ):
+                sample_name = raw_stem
+            else:
+                sample_name = raw_name
+
+            if sample_name in seen_sample_names:
+                sample_name = raw_stem
+            seen_sample_names.add(sample_name)
+
+            role = infer_sample_role(
+                header.sample_type,
+                sample_name=sample_name,
+                comment=header.comment,
+            )
+            metadata_rows.append(
+                SampleMetadata(
+                    sample_name=sample_name,
+                    raw_stem=raw_stem,
+                    injection_order=injection_order,
+                    sample_role=role,
+                    batch_id=batch_id,
+                    prep_batch_id="",
+                    matrix_type="",
+                    group="",
+                    excluded=False,
+                    exclusion_reason="",
+                )
+            )
+
+    return tuple(metadata_rows)
 
 
 def _validate_raw_session_capability(

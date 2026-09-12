@@ -96,7 +96,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     )
     captured_retained: dict[str, object] = {}
     captured_write: dict[str, object] = {}
-    reference = SimpleNamespace(provenance={"workbook_sha256": "a" * 64})
+    reference = SimpleNamespace(
+        provenance={"workbook_sha256": "a" * 64, "content_sha256": "b" * 64}
+    )
     monkeypatch.setattr(
         pipeline_module, "read_known_istd_reference", lambda _path: reference,
     )
@@ -197,6 +199,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "retained_untargeted_cid_nl_batch"
     )
     assert metadata["effective_owner_build_xic_backend"] == "none"
+    assert metadata.get("known_istd_reference_content_sha256") == (
+        reference.provenance["content_sha256"] if with_reference else None
+    )
     assert closed == [True]
 
 
@@ -530,7 +535,9 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
 
 
 def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
+    from tests.test_alignment_drift_evidence import _known_reference_workbook
     from tests.test_cid_nl_explanation import _owner_run
+    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
     from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
     from xic_extractor.diagnostics.cid_nl_explanation_projection import (
         write_cid_nl_explanation,
@@ -547,13 +554,10 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     plain_summary = read_cid_nl_explanation(plain)
     assert "known_istd_reference" not in plain_summary
     matrix_bytes = matrix.read_bytes()
-    provenance = {
-        "workbook_path": "reference.xlsx",
-        "workbook_sha256":
-            "c0d6d3c20ff4a3e77e41f56da306a517274f59fd132bfcd474aea030a2308d50",
-        "target_snapshot_id": "xic.target-list-snapshot.v1:" + "a" * 64,
-        "policy": "known_istd_unique_support_same_target_reference_median_v1",
-    }
+    reference_path = tmp_path / "reference.xlsx"
+    _known_reference_workbook(reference_path)
+    provenance = read_known_istd_reference(reference_path).provenance
+    assert "content_sha256" in provenance
     report = write_cid_nl_explanation(
         tmp_path / "reference.sqlite", **arguments,
         known_istd_reference_provenance=provenance,
@@ -566,3 +570,102 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         read_cid_nl_explanation(plain, candidate_id=candidate_id)
     )
     assert matrix.read_bytes() == matrix_bytes
+
+
+def test_pure_cid_nl_targets_csv_integration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    targets_csv = tmp_path / "targets.csv"
+    targets_csv.write_text(
+        "label,mz,rt_min,rt_max,ppm_tol,neutral_loss_da,nl_ppm_warn,nl_ppm_max,is_istd,istd_pair\n"
+        "ISTD1,200.0,1.0,5.0,10.0,100.0,10.0,20.0,true,\n",
+        encoding="utf-8",
+    )
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "S1.raw").touch()
+
+    completed = object()
+    writer_inputs = SimpleNamespace(
+        matrix=_matrix(("S1",)),
+        production_decisions=object(),
+    )
+    fake_ref = SimpleNamespace(provenance={"workbook_sha256": "b" * 64})
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "extract_batch_known_istd_reference",
+        lambda **kwargs: fake_ref,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **kwargs: captured.update(kwargs) or completed,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "project_completed_untarget_batch_writer_inputs",
+        lambda _value: writer_inputs,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_write_outputs_atomic",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "write_cid_nl_explanation",
+        lambda *_args, **_kwargs: tmp_path / "out" / "cid_nl_explanation.sqlite",
+        raising=False,
+    )
+    (tmp_path / "out").mkdir(parents=True, exist_ok=True)
+
+    result = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        discovery_settings=_settings(),
+        targets_csv=targets_csv,
+    )
+
+    assert result.untargeted_cid_nl_result is completed
+    assert captured["known_istd_reference"] is fake_ref
+
+
+def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
+    tmp_path, monkeypatch,
+):
+    import xic_extractor.alignment.raw_sources as raw_sources
+    from xic_extractor.configuration.targets import read_targets
+
+    source = Path(__file__).parents[1] / "config" / "targets.example.csv"
+    all_targets = read_targets(source)
+    batch_index = _write_batch(tmp_path, ("S1",))
+    captured = {}
+
+    def extract_reference(**kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr(raw_sources, "existing_raw_paths", lambda **kwargs: {})
+    monkeypatch.setattr(
+        pipeline_module, "extract_batch_known_istd_reference", extract_reference,
+    )
+    monkeypatch.setattr(
+        pipeline_module, "_run_untargeted_cid_nl_alignment", lambda **kwargs: None,
+    )
+    pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=tmp_path / "raw", dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out", alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(), discovery_settings=_settings(),
+        targets_csv=source,
+    )
+    assert captured["targets"] == tuple(t for t in all_targets if t.is_istd)
+    assert len(captured["targets"]) < len(all_targets)

@@ -17,16 +17,16 @@ from xic_extractor.discovery.peak_anchor import assign_peak_anchors
 def test_assign_peak_anchors_groups_candidates_sharing_ms1_peak() -> None:
     first = _candidate(
         candidate_id="Sample#10",
-        precursor_mz=244.130,
-        product_mz=128.082,
+        precursor_mz=500.000,
+        product_mz=383.9526,
         apex_rt=12.228,
         peak_start=12.104,
         peak_end=12.306,
     )
     second = _candidate(
         candidate_id="Sample#20",
-        precursor_mz=483.221,
-        product_mz=367.174,
+        precursor_mz=500.005,
+        product_mz=383.9576,
         apex_rt=12.228,
         peak_start=12.104,
         peak_end=12.306,
@@ -40,6 +40,68 @@ def test_assign_peak_anchors_groups_candidates_sharing_ms1_peak() -> None:
         "Sample#20",
         "Sample#10",
     ]
+
+
+def test_assign_peak_anchors_keeps_same_apex_different_precursors_separate() -> None:
+    first = _candidate(
+        candidate_id="Sample#10",
+        precursor_mz=250.0,
+        product_mz=133.9526,
+        apex_rt=12.228,
+        peak_start=12.104,
+        peak_end=12.306,
+    )
+    second = _candidate(
+        candidate_id="Sample#20",
+        precursor_mz=750.0,
+        product_mz=633.9526,
+        apex_rt=12.228,
+        peak_start=12.104,
+        peak_end=12.306,
+    )
+    settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+        precursor_mz_tolerance_ppm=20.0,
+    )
+
+    assigned = assign_peak_anchors((first, second), settings=settings)
+
+    assert [candidate.feature_family_id for candidate in assigned] == [
+        "Sample@F0001",
+        "Sample@F0002",
+    ]
+    assert [candidate.feature_family_size for candidate in assigned] == [1, 1]
+
+
+def test_assign_peak_anchors_does_not_chain_precursor_tolerance_groups() -> None:
+    low = _candidate(candidate_id="Sample#low", precursor_mz=500.000)
+    middle = _candidate(candidate_id="Sample#middle", precursor_mz=500.009)
+    high = _candidate(candidate_id="Sample#high", precursor_mz=500.018)
+    settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+        precursor_mz_tolerance_ppm=20.0,
+    )
+
+    assigned = assign_peak_anchors((middle, high, low), settings=settings)
+    reversed_assigned = assign_peak_anchors((low, high, middle), settings=settings)
+    by_id = {candidate.candidate_id: candidate for candidate in assigned}
+    reversed_by_id = {
+        candidate.candidate_id: candidate for candidate in reversed_assigned
+    }
+
+    assert by_id[low.candidate_id].feature_family_id == (
+        by_id[middle.candidate_id].feature_family_id
+    )
+    assert by_id[high.candidate_id].feature_family_id != (
+        by_id[middle.candidate_id].feature_family_id
+    )
+    assert {
+        candidate_id: (candidate.feature_family_id, candidate.feature_family_size)
+        for candidate_id, candidate in by_id.items()
+    } == {
+        candidate_id: (candidate.feature_family_id, candidate.feature_family_size)
+        for candidate_id, candidate in reversed_by_id.items()
+    }
 
 
 def test_assign_peak_anchors_keeps_raw_sample_and_tag_boundaries_separate() -> None:

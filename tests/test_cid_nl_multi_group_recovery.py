@@ -13,6 +13,7 @@ from tests.test_targeted_real_data_adapter import (
     _peak_config,
     _settings,
 )
+from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raws,
@@ -39,6 +40,228 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+@pytest.mark.parametrize(
+    "outcome", ["support", "empty", "below-quorum", "blank", "failed"]
+)
+def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
+    tmp_path, monkeypatch, outcome
+):
+    from xic_extractor.alignment.untargeted_finalized_matrix import (
+        project_completed_untarget_batch_writer_inputs,
+    )
+
+    stems = ("S1", "S2", "Rejected")
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    settings, peak_config = _settings(), _peak_config(tmp_path)
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw((8.0,))
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
+        if path.stem == "Rejected":
+            candidates[path.stem] = tuple(
+                _without_ms1_peak(candidate) for candidate in candidates[path.stem]
+            )
+            if outcome == "empty":
+                raw.intensity[:] = 0.0
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=i + 1,
+                sample_role="blank"
+                if (
+                    (outcome == "blank" and stem == "Rejected")
+                    or (outcome == "below-quorum" and stem == "S2")
+                )
+                else "study_sample",
+            )
+            for i, stem in enumerate(stems)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:rejected-bounded-recovery",
+        dll_dir=tmp_path,
+    )
+    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    recovery_calls = []
+    acquire = runtime_owner.acquire_untargeted_cid_nl_recovery_trace_batch
+
+    def acquire_recovery(**kwargs):
+        recovery_calls.append(kwargs["sample"].metadata.raw_stem)
+        if outcome == "failed":
+            raise OSError("recovery acquisition failed")
+        return acquire(**kwargs)
+
+    monkeypatch.setattr(
+        runtime_owner,
+        "acquire_untargeted_cid_nl_recovery_trace_batch",
+        acquire_recovery,
+    )
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="rejected-bounded-recovery:v1",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "reject-recovery"
+        ),
+    )
+    if outcome == "failed":
+        assert not result.succeeded
+        assert recovery_calls == ["Rejected"]
+        assert any(
+            settlement.failure_detail is not None
+            and "recovery acquisition failed" in settlement.failure_detail.message
+            for settlement in result.finalization.coordinator.state.runtime.settlements
+        )
+        return
+    assert result.succeeded, tuple(
+        s.failure_detail.message
+        for s in result.finalization.coordinator.state.runtime.settlements
+        if s.failure_detail is not None
+    )
+    rejected = next(
+        r for r in result.sample_results if r.job.sample.metadata.raw_stem == "Rejected"
+    )
+    initial = rejected.adapter_result.assessment_input.assessment
+    assert initial.content.method_result == "REJECT"
+    assert initial.content.reason_codes == (
+        "qualifying_cid_nl_without_usable_ms1_peak",
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    assert initial in completed.method_assessments
+    assert any(
+        exclusion.candidate_id == candidates["Rejected"][0].candidate_id
+        for exclusion in completed.application_result.excluded_candidates
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    (decision,) = tuple(
+        d
+        for d in writer.production_decisions.cells.values()
+        if d.sample_stem == "Rejected"
+    )
+    if outcome == "support":
+        assert decision.write_matrix_value and decision.matrix_value > 0
+        (recovery,) = rejected.recovery_attempts
+        assert recovery.assessment.content.method_result == "SUPPORT"
+        assert recovery.assessment in completed.method_assessments
+        assert recovery.assessment is not initial
+        assert recovery.assessment.evidence_refs == initial.evidence_refs
+        assert recovery.assessment.individual_support_refs
+        assert (
+            next(
+                c for c in writer.matrix.cells if c.sample_stem == "Rejected"
+            ).source_candidate_id
+            is None
+        )
+
+        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+        from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
+        from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+            write_cid_nl_explanation,
+        )
+
+        matrix_path = tmp_path / "matrix.tsv"
+        config = AlignmentConfig(anchor_min_seed_events=1)
+        write_alignment_matrix_tsv(
+            matrix_path,
+            writer.matrix,
+            alignment_config=config,
+            production_decisions=writer.production_decisions,
+        )
+        report = write_cid_nl_explanation(
+            tmp_path / "explanation.sqlite",
+            completed=completed,
+            writer_inputs=writer,
+            candidates_by_sample=candidates,
+            matrix_path=matrix_path,
+            alignment_config=config,
+        )
+        records = read_cid_nl_explanation(
+            report, candidate_id=candidates["Rejected"][0].candidate_id
+        )["records"]
+        assert {r["method_result"] for r in records["method_assessments"]} == {
+            "REJECT",
+            "SUPPORT",
+        }
+        assert {
+            r["artifact"]["evidence_artifact_id"] for r in records["method_assessments"]
+        } == {
+            initial.artifact.evidence_artifact_id,
+            recovery.assessment.artifact.evidence_artifact_id,
+        }
+        assert records["exclusions"]
+        assert (
+            next(
+                record["value"]
+                for record in records["cell_decisions"]
+                if record["canonical_sample_identity_id"]
+                == rejected.job.sample.identity.sample_identity_id
+            )
+            == decision.matrix_value
+        )
+
+        from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+            recover_untargeted_cid_nl_sample_subject,
+        )
+
+        # An immutable assessment from another sample/source cannot authorize
+        # the new relation, even when its method and coordinates look identical.
+        with pytest.raises(ValueError, match="sample|acquisition"):
+            recover_untargeted_cid_nl_sample_subject(
+                processing_owners=batch.context.processing_owners,
+                sample=batch.context.sample("S1"),
+                method_subject=initial.content.method_subject,
+                group_center_rt=8.0,
+                support_policy=initial.content.evaluation_receipt.support_policy,
+                peak_config=peak_config,
+                raw=None,
+                initial_assessment=initial,
+            )
+        with pytest.raises(ValueError, match="support policy"):
+            recover_untargeted_cid_nl_sample_subject(
+                processing_owners=batch.context.processing_owners,
+                sample=rejected.job.sample,
+                method_subject=initial.content.method_subject,
+                group_center_rt=8.0,
+                support_policy=replace(
+                    initial.content.evaluation_receipt.support_policy,
+                    precursor_tolerance_da=0.25,
+                ),
+                peak_config=peak_config,
+                raw=None,
+                initial_assessment=initial,
+            )
+    elif outcome == "empty":
+        (recovery,) = rejected.recovery_attempts
+        assert recovery.assessment.content.method_result == "HOLD"
+        assert not recovery.assessment.candidate_peaks
+        assert not decision.write_matrix_value and decision.matrix_value is None
+    else:
+        assert rejected.recovery_attempts == ()
+        assert not decision.write_matrix_value and decision.matrix_value is None
+    assert recovery_calls == (
+        [] if outcome in {"blank", "below-quorum"} else ["Rejected"]
+    )
+    assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == (
+        0 if outcome in {"blank", "below-quorum"} else 1
+    )
 
 
 @pytest.mark.parametrize("batched", [False, True], ids=["direct", "sample-batched"])

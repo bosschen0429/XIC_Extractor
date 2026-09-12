@@ -450,13 +450,14 @@ def _selected_cell_source(
         try:
             return direct_candidate_ids[key], None
         except KeyError as exc:
-            # A completed recovery can supply direct composite CID-NL support
+            # A completed recovery can supply direct CID-NL support
             # outside the closed Discovery candidate universe. Keep its physical
             # identity and explicit absent candidate instead of inventing one.
             assessments = evidence.method_assessments
-            if (
-                len(assessments) == 1
-                and assessments[0].content.method_subject.composition is not None
+            if len(assessments) == 1 and (
+                assessments[0].content.method_subject.composition is not None
+                or assessments[0].content.detector_invocation_id
+                == "untargeted-cid-nl-backfill-recovery:v1"
             ):
                 from xic_extractor.alignment.hypothesis_owner_adapter import (
                     validate_cid_nl_assessment_hypothesis_closure,

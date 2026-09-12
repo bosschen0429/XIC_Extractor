@@ -173,7 +173,9 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     s1_assessment = by_stem["S1"].adapter_result.assessment_input.assessment
     s2_assessment = by_stem["S2"].adapter_result.assessment_input.assessment
     assert s1_assessment.content.method_result == "SUPPORT"
-    assert s2_assessment.content.method_result == "HOLD"
+    assert s2_assessment.content.technical_state == "not_evaluated"
+    assert s2_assessment.content.method_result is None
+    assert not s2_assessment.content.evaluation_receipt.search_completed
     assert by_stem["S1"].adapter_result.strict_scan_count == 2
     assert by_stem["S2"].adapter_result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == [1]
@@ -196,7 +198,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
-def test_runtime_holds_inferred_precursor_without_physical_ms1_peak(
+def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -282,8 +284,16 @@ def test_runtime_holds_inferred_precursor_without_physical_ms1_peak(
     )
     assert len(result.sample_results) == 1
     adapter = result.sample_results[0].adapter_result
-    assert adapter.assessment_input.assessment.content.technical_state == "evaluated"
-    assert adapter.assessment_input.assessment.content.method_result == "HOLD"
+    assert (
+        adapter.assessment_input.assessment.content.technical_state == "not_evaluated"
+    )
+    assert adapter.assessment_input.assessment.content.method_result is None
+    assert adapter.assessment_input.assessment.content.reason_codes == (
+        "no_search_eligible_discovery_input",
+    )
+    assert not (
+        adapter.assessment_input.assessment.content.evaluation_receipt.search_completed
+    )
     assert adapter.source_candidate_ids == (inferred.candidate_id,)
     assert adapter.assessment_input.assessment.candidate_peaks == ()
     assert adapter.strict_scan_count == 0
@@ -422,6 +432,11 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     }
     assert by_stem["S1"].adapter_result.strict_scan_count == 1
     assert by_stem["S2"].adapter_result.strict_scan_count == 1
+    for stem in ("Missing", "NoPeak", "Blank"):
+        initial = by_stem[stem].adapter_result.assessment_input.assessment
+        assert initial.content.technical_state == "not_evaluated"
+        assert initial.content.method_result is None
+        assert not initial.content.evaluation_receipt.search_completed
     assert by_stem["Missing"].recovery_attempt is not None
     assert by_stem["Missing"].recovery_input is not None
     assert by_stem["Missing"].result_ref.recovery_candidate_count == 1
@@ -868,7 +883,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     assert [
         item.adapter_result.assessment_input.assessment.content.method_result
         for item in result.sample_results
-    ] == ["SUPPORT", "REJECT", "HOLD"]
+    ] == ["SUPPORT", "REJECT", None]
     assert raw_paths[2] not in opened
     if not excluded:
         empty_resource = next(

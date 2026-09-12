@@ -43,6 +43,11 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubjectContractError,
+    cid_nl_method_subject_resolver_interval,
+    validate_cid_nl_alignment_subject_workset,
+)
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
@@ -169,14 +174,19 @@ def bootstrap_cid_nl_initial_population(
             "retain_observation_only_candidates must be boolean"
         )
 
-    method_subject_ids = {
-        assessment.content.method_subject.method_subject_id
+    method_subjects_by_id = {
+        assessment.content.method_subject.method_subject_id: (
+            assessment.content.method_subject
+        )
         for _, assessment in sample_assessments
     }
-    if len(method_subject_ids) != 1:
-        raise ModeTrackProducerError(
-            "all assessments must share one exact CID-NL method subject"
-        )
+    method_subjects = tuple(
+        sorted(method_subjects_by_id.values(), key=lambda item: item.method_subject_id)
+    )
+    try:
+        validate_cid_nl_alignment_subject_workset(method_subjects)
+    except CidNlMethodSubjectContractError as exc:
+        raise ModeTrackProducerError(str(exc)) from exc
 
     hypotheses_by_sample: dict[str, tuple[PeakHypothesis, ...]] = {}
     assessment_by_hypothesis: dict[str, CidNlMethodAssessmentRef] = {}
@@ -243,7 +253,9 @@ def bootstrap_cid_nl_initial_population(
             if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         }
         drift_lookup = known_istd_reference.bind(
-            tuple(owner for owner in owners if owner.owner_id in support_ids)
+            tuple(owner for owner in owners if owner.owner_id in support_ids),
+            sample_universe=sample_universe,
+            injection_order=injection_order,
         )
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
@@ -291,16 +303,14 @@ def bootstrap_cid_nl_initial_population(
         for sample_id in sorted(hypotheses_by_sample)
         for hypothesis in hypotheses_by_sample[sample_id]
     )
-    method_subject = sample_assessments[0][1].content.method_subject
-    mz_delta = (
-        method_subject.precursor_mz
-        * method_subject.precursor_tolerance_ppm
-        / 1_000_000.0
+    method_subject_intervals = tuple(
+        cid_nl_method_subject_resolver_interval(subject)
+        for subject in method_subjects
     )
     family_context = mint_family_context_ref(
         mz_interval=(
-            method_subject.precursor_mz - mz_delta,
-            method_subject.precursor_mz + mz_delta,
+            min(interval[0] for interval in method_subject_intervals),
+            max(interval[1] for interval in method_subject_intervals),
         ),
         rt_interval=(
             min(hypothesis.integration.rt_left_min for hypothesis in hypotheses),

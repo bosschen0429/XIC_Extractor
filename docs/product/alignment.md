@@ -129,6 +129,25 @@ unresolved and rejected groups remain AuditTrail facts.
   search merely by entering Alignment. This keeps candidate recall available
   for review without turning an unavailable physical feature into owner-build,
   group, Matrix, or Backfill work.
+- Retained CID-NL capture preserves each candidate's extraction m/z and ppm
+  when combining overlapping RT contexts. Preparation sharing may extend the
+  RT interval; it does not replace the candidate center with a method-subject
+  center. Only identical resulting requests share an acquired trace.
+- A CID-NL method subject identifies an acquisition/assessment question, not a
+  feature boundary. Non-composite Untargeted subjects with the same scalar
+  neutral loss and overlap-connected resolver intervals form one alignment
+  workset. Execution keeps each workset atomic, and its formal workflow child
+  carries all original assessment bindings through grouping and final cells.
+  Sharing a workset permits comparison; the existing CrossSample gates still
+  decide membership. Different losses, disconnected intervals, and composite
+  subjects remain separate worksets.
+- A cross-subject group retains each SUPPORT cell's exact assessment and
+  hypothesis binding. Its canonical recovery subject is the supporting subject
+  nearest the formal group center, with method-subject ID breaking ties.
+  Missing/non-support cells and recovery jobs use that exact recovery subject;
+  support from another subject is admissible only through the group's exact
+  owner-backed support binding. Matrix rows consume these completed groups and
+  cells; writers do not merge subjects or invent cross-subject values.
 - Two resolved peaks in one sample count as an unresolved doublet only when
   their apex separation is chromatographically meaningful against the narrower
   of them, not on an absolute bound alone. One MS1 peak spans many scans and its
@@ -223,18 +242,26 @@ unresolved and rejected groups remain AuditTrail facts.
   write a Matrix value directly, infer unknown-family chemical identity, add a
   public knob, or create a second control plane.
 - Retained CID-NL Alignment can optionally use
-  `--known-istd-reference-workbook` for known-ISTD RT alignment. The report's
+  `--known-istd-reference-workbook` for batch-local RT alignment. The report's
   `Targets` sheet declares the ISTDs and its `XIC Results` sheet supplies their
-  measured per-sample RTs. Each target uses its own cohort median as the
-  reference coordinate. A correction binds only to a unique current supported
-  owner whose target matches and whose integration interval contains that
-  sample's reference RT. A pair receives correction only when both exact owners
-  bind to the same target; missing or ambiguous bindings stay uncorrected.
-  This is not a sample-wide shift for other peaks. The complete binding context
-  is retained through cell validation. The public explanation SQLite summary
+  measured per-sample RTs. Each target uses its median within the canonical
+  batch as the reference coordinate. The existing reference owner prepares one
+  sample-specific piecewise linear map from observed RT to reference RT before
+  the method loops; unchanged input reuses that map. At least two strictly
+  increasing observed/reference landmarks are required. Missing landmarks may
+  be interpolated between measured canonical injection orders; neither order
+  nor RT is extrapolated. Duplicate order disables order interpolation.
+  Ordinary analyte pairs compare their mapped coordinates when both have
+  bounded support. This accommodates different drift at different RTs and does
+  not impose one monotonic trend along injection order. Without a usable map,
+  the existing unique same-target supported-owner correction remains available;
+  otherwise the ordinary uncorrected comparison applies. A map is matching
+  evidence, not a chemical-identity override. The complete binding context is
+  retained through cell validation. The public explanation SQLite summary
   records the input fingerprint, target snapshot, and policy, including at the
-  production output level. Existing mass/RT gates, current RAW integration
-  values, and cell decisions remain authoritative; report areas are not inputs.
+  production output level. Mass and method evidence gates, current RAW
+  integration values, and cell decisions remain authoritative; the map changes
+  no observed RT or integrated value, and report areas are not inputs.
   Omitting the reference keeps the ordinary route. This context does not enable
   the separate targeted-identity reconciliation rule above.
 - An `owner_bounded_continuity` family reaches the primary matrix only when at

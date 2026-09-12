@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -76,6 +77,7 @@ class TimingRecorder:
         self._measurement_observations: list[dict[str, object]] = []
         self._measurement_contract: dict[str, object] = {}
         self._partition_timeline: list[dict[str, object]] = []
+        self._live_write_lock = threading.Lock()
 
     @classmethod
     def disabled(
@@ -396,35 +398,43 @@ class TimingRecorder:
     def _write_live(self) -> None:
         if self.live_output_path is None:
             return
-        self.live_output_path.parent.mkdir(parents=True, exist_ok=True)
-        start = max(0, len(self._records) - self.live_history_limit)
-        records = [record.to_json_dict() for record in self._records[start:]]
-        observation_start = max(
-            0,
-            len(self._measurement_observations) - self.live_observation_limit,
-        )
-        observations = self._measurement_observations[observation_start:]
-        payload = {
-            "schema_version": "timing.live.v2",
-            "run_id": self.run_id,
-            "pipeline": self.pipeline,
-            "heartbeat": dict(self._heartbeat),
-            "recent_records": records,
-            "record_count": len(self._records),
-            "dropped_record_count": start,
-            "measurement_contract": dict(self._measurement_contract),
-            "measurement_observations": observations,
-            "recent_measurement_observations": observations,
-            "observation_count": len(self._measurement_observations),
-            "dropped_observation_count": observation_start,
-            "span_semantics": self._span_semantics[start:],
-        }
-        serialized = json.dumps(payload, indent=2, sort_keys=True)
-        temporary_path = self.live_output_path.with_name(
-            f"{self.live_output_path.name}.tmp"
-        )
-        temporary_path.write_text(serialized, encoding="utf-8")
-        _replace_live_output(temporary_path, self.live_output_path)
+        with self._live_write_lock:
+            self.live_output_path.parent.mkdir(parents=True, exist_ok=True)
+            start = max(0, len(self._records) - self.live_history_limit)
+            records = [record.to_json_dict() for record in self._records[start:]]
+            observation_start = max(
+                0,
+                len(self._measurement_observations) - self.live_observation_limit,
+            )
+            observations = self._measurement_observations[observation_start:]
+            payload = {
+                "schema_version": "timing.live.v2",
+                "run_id": self.run_id,
+                "pipeline": self.pipeline,
+                "heartbeat": dict(self._heartbeat),
+                "recent_records": records,
+                "record_count": len(self._records),
+                "dropped_record_count": start,
+                "measurement_contract": dict(self._measurement_contract),
+                "measurement_observations": observations,
+                "recent_measurement_observations": observations,
+                "observation_count": len(self._measurement_observations),
+                "dropped_observation_count": observation_start,
+                "span_semantics": self._span_semantics[start:],
+            }
+            serialized = json.dumps(payload, indent=2, sort_keys=True)
+            temporary_path = self.live_output_path.with_name(
+                f"{self.live_output_path.name}.tmp"
+            )
+            try:
+                temporary_path.write_text(serialized, encoding="utf-8")
+                _replace_live_output(temporary_path, self.live_output_path)
+            finally:
+                if temporary_path.exists():
+                    try:
+                        temporary_path.unlink()
+                    except OSError:
+                        pass
 
 
 def _replace_live_output(temporary_path: Path, output_path: Path) -> None:

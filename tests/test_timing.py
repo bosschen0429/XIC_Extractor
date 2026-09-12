@@ -750,3 +750,32 @@ class _FakeProcessMemorySampler:
             private_bytes=self.current[1],
             availability="measured",
         )
+
+
+def test_timing_recorder_concurrent_live_output_thread_safety(tmp_path: Path) -> None:
+    live_path = tmp_path / "timing.live.json"
+    recorder = TimingRecorder("alignment", live_output_path=live_path)
+
+    import concurrent.futures
+
+    def worker(worker_id: int) -> None:
+        for i in range(20):
+            recorder.heartbeat_event(
+                {
+                    "event": "partition_progress",
+                    "stage": f"worker_{worker_id}",
+                    "completed": i,
+                    "total": 20,
+                }
+            )
+            recorder.record(f"stage_{worker_id}_{i}", elapsed_sec=0.01)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(worker, i) for i in range(4)]
+        for future in futures:
+            future.result()
+
+    assert live_path.exists()
+    payload = json.loads(live_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["record_count"] == 80

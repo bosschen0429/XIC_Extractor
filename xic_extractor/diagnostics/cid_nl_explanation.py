@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -35,7 +36,7 @@ class ExplanationReportWriter:
         self.candidate_count = 0
         self.record_counts: dict[str, int] = {}
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
-        self._records: dict[tuple[str, str], str] = {}
+        self._record_hashes: dict[tuple[str, str], bytes] = {}
         self._buffered_records: list[tuple[str, str, str]] = []
         self._buffered_links: list[tuple[str, str, str, str]] = []
 
@@ -48,9 +49,9 @@ class ExplanationReportWriter:
             self.connection = sqlite3.connect(self.temporary)
             self.connection.execute("PRAGMA page_size = 32768;")
             self.connection.execute("PRAGMA synchronous = OFF;")
-            self.connection.execute("PRAGMA journal_mode = MEMORY;")
-            self.connection.execute("PRAGMA cache_size = -64000;")
-            self.connection.execute("PRAGMA temp_store = MEMORY;")
+            self.connection.execute("PRAGMA journal_mode = OFF;")
+            self.connection.execute("PRAGMA cache_size = -32000;")
+            self.connection.execute("PRAGMA temp_store = FILE;")
             self.connection.executescript(
                 "CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT NOT NULL);"
                 "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, "
@@ -102,18 +103,15 @@ class ExplanationReportWriter:
     ) -> bool:
         encoded = _json(payload)
         key = (kind, identity)
-        existing = self._records.get(key)
-        if (
-            existing is not None
-            and existing != encoded
-            and _object(existing) != _object(encoded)
-        ):
+        content_hash = hashlib.blake2b(encoded.encode("utf-8"), digest_size=16).digest()
+        existing_hash = self._record_hashes.get(key)
+        if existing_hash is not None and existing_hash != content_hash:
             raise ValueError(
                 f"conflicting diagnostic owner identity: {(kind, identity)}"
             )
-        is_new = existing is None
+        is_new = existing_hash is None
         if is_new:
-            self._records[key] = encoded
+            self._record_hashes[key] = content_hash
             self._buffered_records.append((kind, identity, encoded))
             self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
             if len(self._buffered_records) >= 20000:
@@ -130,6 +128,8 @@ class ExplanationReportWriter:
                 "INSERT INTO records VALUES (?, ?, ?)", self._buffered_records
             )
             self._buffered_records.clear()
+            self._connection().commit()
+            self._connection().execute("BEGIN;")
 
     def _flush_links(self) -> None:
         if self._buffered_links:
@@ -137,6 +137,8 @@ class ExplanationReportWriter:
                 "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", self._buffered_links
             )
             self._buffered_links.clear()
+            self._connection().commit()
+            self._connection().execute("BEGIN;")
 
     def candidate_examples(self) -> list[dict[str, Any]]:
         if self._candidates:
@@ -189,7 +191,7 @@ class ExplanationReportWriter:
             self._connection().close()
             self.connection = None
         self._candidates.clear()
-        self._records.clear()
+        self._record_hashes.clear()
         self._buffered_records.clear()
         self._buffered_links.clear()
         self.temporary.unlink(missing_ok=True)

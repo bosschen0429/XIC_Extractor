@@ -4,8 +4,9 @@ import hashlib
 import json
 import math
 import statistics
-from collections.abc import Iterable
-from dataclasses import InitVar, dataclass, field
+from bisect import bisect_right
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import InitVar, dataclass, field, replace
 from functools import cached_property
 from io import BytesIO
 from pathlib import Path
@@ -46,19 +47,128 @@ class KnownIstdReference:
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
+    _batch_context: tuple[
+        tuple[str, ...], tuple[tuple[str, int], ...]
+    ] | None = field(default=None, repr=False)
+    _batch_knots: tuple[
+        tuple[str, tuple[tuple[float, float], ...]], ...
+    ] = field(default=(), repr=False)
+    _prepared_batch: KnownIstdReference | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    @cached_property
+    def content_sha256(self) -> str:
+        """Identify declared targets and measured coordinates, not source bytes."""
+        payload = {
+            "schema_version": "known_istd_reference_content_v1",
+            "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
+            "observed_labels": self.anchor.observed_labels,
+            "coordinates": tuple(
+                (label, sample, float(rt), float(delta))
+                for label, sample, rt, delta in self.coordinates
+            ),
+        }
+        return hashlib.sha256(
+            json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
 
     @property
     def provenance(self) -> dict[str, str]:
         return {
             "workbook_path": self.workbook_path,
             "workbook_sha256": self.workbook_sha256,
+            "content_sha256": self.content_sha256,
             "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
-            "policy": "known_istd_unique_support_same_target_reference_median_v1",
+            "policy": "known_istd_batch_monotone_rt_map_same_target_fallback_v2",
         }
 
+    def prepare_batch(
+        self,
+        *,
+        sample_universe: frozenset[str],
+        injection_order: Mapping[str, int] | None,
+    ) -> KnownIstdReference:
+        """Prepare immutable RT knots once for this canonical batch context."""
+        samples = tuple(sorted(sample_universe))
+        orders = tuple(sorted(
+            (sample, order) for sample, order in (injection_order or {}).items()
+            if sample in sample_universe
+        ))
+        context = samples, orders
+        if self._batch_context == context:
+            return self
+        if (
+            self._prepared_batch is not None
+            and self._prepared_batch._batch_context == context
+        ):
+            return self._prepared_batch
+        measured: dict[str, dict[str, float]] = {}
+        for label, sample, rt, _delta in self.coordinates:
+            if sample in sample_universe:
+                measured.setdefault(label, {})[sample] = rt
+        centers = {
+            label: statistics.median(values.values())
+            for label, values in measured.items()
+        }
+        order_by_sample = dict(orders)
+        if len(set(order_by_sample.values())) != len(order_by_sample):
+            order_by_sample = {}
+        observed_by_order = {
+            label: tuple(sorted(
+                (float(order_by_sample[sample]), rt)
+                for sample, rt in values.items() if sample in order_by_sample
+            ))
+            for label, values in measured.items()
+        }
+        sample_knots = []
+        for sample in samples:
+            knots = []
+            for label in sorted(centers, key=centers.__getitem__):
+                observed = measured[label].get(sample)
+                if observed is None and sample in order_by_sample:
+                    observed = _interpolate_bounded_coordinate(
+                        float(order_by_sample[sample]), observed_by_order[label]
+                    )
+                if observed is not None:
+                    knots.append((observed, centers[label]))
+            if len(knots) >= 2 and all(
+                left[0] < right[0] and left[1] < right[1]
+                for left, right in zip(knots, knots[1:])
+            ):
+                sample_knots.append((sample, tuple(knots)))
+        prepared = replace(
+            self, _batch_context=context, _batch_knots=tuple(sample_knots)
+        )
+        # Materialize the shared lookup before method/owner loops begin. The
+        # single memo is only for unchanged input, not another lookup registry.
+        _ = prepared._knots_by_sample
+        object.__setattr__(self, "_prepared_batch", prepared)
+        return prepared
+
+    @cached_property
+    def _knots_by_sample(self) -> dict[str, tuple[tuple[float, float], ...]]:
+        return dict(self._batch_knots)
+
+    def _corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float | None:
+        return _interpolate_bounded_coordinate(
+            owner.owner_apex_rt, self._knots_by_sample.get(owner.sample_stem, ())
+        )
+
     def bind(
-        self, support_owners: tuple[SampleLocalMS1Owner, ...]
+        self,
+        support_owners: tuple[SampleLocalMS1Owner, ...],
+        *,
+        sample_universe: frozenset[str] | None = None,
+        injection_order: Mapping[str, int] | None = None,
     ) -> KnownIstdOwnerLookup:
+        reference = (
+            self if sample_universe is None else self.prepare_batch(
+                sample_universe=sample_universe, injection_order=injection_order
+            )
+        )
         targets = {target.label: target for target in self.anchor.targets}
         candidates: list[tuple[str, str, float]] = []
         counts: dict[str, int] = {}
@@ -89,7 +199,7 @@ class KnownIstdReference:
             if len(matches) == 1:
                 candidates.append((matches[0].owner_id, label, delta))
         return KnownIstdOwnerLookup(
-            self, tuple(item for item in candidates if counts[item[0]] == 1)
+            reference, tuple(item for item in candidates if counts[item[0]] == 1)
         )
 
 
@@ -120,10 +230,25 @@ class KnownIstdOwnerLookup:
         left: SampleLocalMS1Owner,
         right: SampleLocalMS1Owner,
     ) -> float | None:
+        left_rt = self.reference._corrected_rt_min(left)
+        right_rt = self.reference._corrected_rt_min(right)
+        if left_rt is not None and right_rt is not None:
+            return abs(left_rt - right_rt) * 60.0
         a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
         if a is None or b is None or a[0] != b[0]:
             return None
         return abs((left.owner_apex_rt - a[1]) - (right.owner_apex_rt - b[1])) * 60.0
+
+
+def _interpolate_bounded_coordinate(
+    value: float, knots: tuple[tuple[float, float], ...]
+) -> float | None:
+    if len(knots) < 2 or not knots[0][0] <= value <= knots[-1][0]:
+        return None
+    right = min(bisect_right(knots, (value, math.inf)), len(knots) - 1)
+    left_x, left_y = knots[right - 1]
+    right_x, right_y = knots[right]
+    return left_y + (value - left_x) / (right_x - left_x) * (right_y - left_y)
 
 
 def read_known_istd_reference(path: Path) -> KnownIstdReference:
@@ -196,9 +321,6 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
             )
         if not targets or len({t.label for t in targets}) != len(targets):
             raise ValueError("known ISTD reference requires unique ISTD target labels")
-        snapshot = mint_target_list_snapshot(
-            targets, identity_namespace="known-istd-reference-v1"
-        )
         labels = {target.label for target in targets}
         coordinates: dict[tuple[str, str], float] = {}
         seen: set[tuple[str, str]] = set()
@@ -227,24 +349,67 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
             if rt < 0:
                 raise ValueError("XIC Results: reference RT must be nonnegative")
             coordinates[key] = rt
-        centers = {
-            label: statistics.median(
-                rt for (target, _), rt in coordinates.items() if target == label
-            )
-            for label in labels
-            if any(target == label for target, _ in coordinates)
-        }
-        return KnownIstdReference(
-            str(path.resolve()),
-            hashlib.sha256(payload).hexdigest(),
-            build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
-            tuple(
-                (label, sample, rt, rt - centers[label])
-                for (label, sample), rt in sorted(coordinates.items())
-            ),
+        return mint_known_istd_reference_from_measurements(
+            targets,
+            coordinates,
+            source_identifier=str(path.resolve()),
+            source_sha256=hashlib.sha256(payload).hexdigest(),
         )
     finally:
         workbook.close()
+
+
+def mint_known_istd_reference_from_measurements(
+    targets: Sequence[Target],
+    coordinates: Mapping[tuple[str, str], float],
+    *,
+    source_identifier: str = "<in-memory>",
+    source_sha256: str = "",
+) -> KnownIstdReference:
+    """Mint a KnownIstdReference from declared targets and measured apex RT.
+
+    Directly populates the node map from coordinates without reading Excel.
+    """
+    istd_targets = tuple(t for t in targets if t.is_istd)
+    if not istd_targets:
+        raise ValueError("known ISTD reference requires at least one ISTD target")
+    if len({t.label for t in istd_targets}) != len(istd_targets):
+        raise ValueError("known ISTD reference requires unique ISTD target labels")
+
+    snapshot = mint_target_list_snapshot(
+        istd_targets, identity_namespace="known-istd-reference-v1"
+    )
+    labels = {t.label for t in istd_targets}
+
+    for (label, _sample), rt in coordinates.items():
+        if label not in labels:
+            raise ValueError(f"undeclared ISTD target {label!r}")
+        if not math.isfinite(rt) or rt < 0:
+            raise ValueError(f"reference RT must be nonnegative finite float: {rt!r}")
+
+    centers = {
+        label: statistics.median(
+            rt for (target, _), rt in coordinates.items() if target == label
+        )
+        for label in labels
+        if any(target == label for target, _ in coordinates)
+    }
+    coords = tuple(
+        (label, sample, rt, rt - centers[label])
+        for (label, sample), rt in sorted(coordinates.items())
+        if label in centers
+    )
+    sha = (
+        source_sha256
+        if source_sha256
+        else hashlib.sha256(source_identifier.encode("utf-8")).hexdigest()
+    )
+    return KnownIstdReference(
+        workbook_path=source_identifier,
+        workbook_sha256=sha,
+        anchor=build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
+        coordinates=coords,
+    )
 
 
 @dataclass(frozen=True)

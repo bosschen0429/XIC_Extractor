@@ -35,6 +35,7 @@ class ChromPeakSegmentPolicy:
     min_apex_fraction_of_context: float = 0.05
     baseline_return_fraction: float = 0.02
     baseline_return_min_residual: float = 1.0
+    include_baseline_return_samples: bool = False
     clear_valley_max_fraction: float = 0.30
     morphology_trace_method: str = "gaussian_15"
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
@@ -395,6 +396,11 @@ def _segment_from_seed(
         seed.threshold,
         context_interval,
     )
+    if policy.include_baseline_return_samples:
+        # Retain the scans bracketing the return to baseline. An MS2 event can
+        # fall between the last positive MS1 scan and that return scan.
+        left = max(context_interval.start_index, left - 1)
+        right = min(context_interval.end_index, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
     if left_relation is not None:
         left = max(left, left_relation.valley_index)

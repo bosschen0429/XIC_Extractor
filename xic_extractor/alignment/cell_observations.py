@@ -60,7 +60,11 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlTechnicalState,
     validate_cid_nl_method_assessment_binding,
 )
-from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
+    CidNlMethodSubjectContractError,
+    validate_cid_nl_alignment_subject_compatibility,
+)
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
@@ -200,13 +204,10 @@ class CidNlCellGroupContext:
             raise CellObservationContractError(
                 "group SUPPORT closures must be unique and canonical-sorted by sample"
             )
-        method_subjects = {
-            support.assessment.content.method_subject for support in self.supports
-        }
-        if len(method_subjects) != 1:
-            raise CellObservationContractError(
-                "group SUPPORT closures reference different method subjects"
-            )
+        try:
+            validate_cid_nl_alignment_subject_compatibility(self.method_subjects)
+        except CidNlMethodSubjectContractError as exc:
+            raise CellObservationContractError(str(exc)) from exc
         expected_owners = tuple(
             owner_from_cid_nl_assessment_support(
                 sample=support.sample,
@@ -245,8 +246,33 @@ class CidNlCellGroupContext:
             )
 
     @property
+    def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:
+        return tuple(
+            sorted(
+                {
+                    support.assessment.content.method_subject.method_subject_id: (
+                        support.assessment.content.method_subject
+                    )
+                    for support in self.supports
+                }.values(),
+                key=lambda subject: subject.method_subject_id,
+            )
+        )
+
+    @property
     def method_subject(self) -> CidNlMethodSubject:
-        return self.supports[0].assessment.content.method_subject
+        center = self.group.group_center_mz
+        if center is None:
+            raise CellObservationContractError(
+                "group recovery subject requires a finite group center m/z"
+            )
+        return min(
+            self.method_subjects,
+            key=lambda subject: (
+                abs(subject.precursor_mz - center) / max(abs(center), 1e-12),
+                subject.method_subject_id,
+            ),
+        )
 
     @property
     def method_subject_id(self) -> str:
@@ -508,11 +534,20 @@ class CellObservationRef:
             raise CellObservationContractError(
                 "cell group method subject or SUPPORT closure was substituted"
             )
-        if self.method_assessment.content.method_subject != (
-            self.group_context.method_subject
+        exact_context_support = any(
+            support.assessment is self.method_assessment
+            and support.sample.identity.sample_identity_id
+            == self.content.canonical_sample_identity_id
+            for support in self.group_context.supports
+        )
+        if (
+            self.method_assessment.content.method_subject
+            != self.group_context.method_subject
+            and not exact_context_support
         ):
             raise CellObservationContractError(
-                "cell assessment references a different method subject than its group"
+                "cell assessment differs from the recovery subject without an "
+                "exact group SUPPORT binding"
             )
         if self.content.canonical_sample_identity_id != (
             self.method_assessment.content.canonical_sample_identity_id
@@ -868,7 +903,6 @@ def _outside_group_relation(
     _validate_relation_group_context(outside_group_context)
     if (
         method_assessment.content.method_result != "SUPPORT"
-        or outside_group_context.method_subject != group_context.method_subject
         or outside_group_context.processing_attempt != group_context.processing_attempt
         or outside_group_context.config != group_context.config
         or outside_group_context.group.processing_request_id
@@ -938,10 +972,16 @@ def mint_cell_observation_ref(
     )
     group = group_context.group
     subject = method_assessment.content.method_subject
-    if subject != group_context.method_subject:
+    exact_context_support = any(
+        support.assessment is method_assessment
+        and support.sample.identity.sample_identity_id
+        == sample.identity.sample_identity_id
+        for support in group_context.supports
+    )
+    if subject != group_context.method_subject and not exact_context_support:
         raise CellObservationContractError(
-            "assessment references a different target or method subject than the "
-            "group context"
+            "assessment differs from the group recovery subject without an exact "
+            "SUPPORT binding"
         )
     try:
         if target is None:
@@ -2727,7 +2767,9 @@ def compose_cid_nl_predecessor_cells(
     sample_universe: frozenset[str] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     injection_order: Mapping[str, int] | None = None,
-    recovery_assessments_by_group: Mapping[tuple[str, str], CidNlMethodAssessmentRef]
+    recovery_assessments_by_group: Mapping[
+        tuple[str, str, str], CidNlMethodAssessmentRef
+    ]
     | None = None,
 ) -> tuple[CellObservationRef, ...]:
     """Attach original assessments to the existing ModeTrack predecessor groups."""
@@ -2793,19 +2835,36 @@ def compose_cid_nl_predecessor_cells(
                     for support in context.supports
                     if support.sample.identity.sample_identity_id == sample_id
                 )
+                canonical_refs = tuple(
+                    ref
+                    for ref in refs
+                    if ref.content.method_subject == context.method_subject
+                )
+                if not canonical_refs:
+                    raise CellObservationContractError(
+                        "group recovery subject lacks an exact sample assessment"
+                    )
                 recovered = (recovery_assessments_by_group or {}).get(
-                    (context.group.group_hypothesis_id, sample_id)
+                    (
+                        context.group.group_hypothesis_id,
+                        sample_id,
+                        context.method_subject_id,
+                    )
                 )
                 if recovered is not None and not any(recovered is ref for ref in refs):
                     raise CellObservationContractError(
                         "group recovery is outside the assessment population"
+                    )
+                if len(local_refs) > 1:
+                    raise CellObservationContractError(
+                        "group contains multiple SUPPORT owners for one sample"
                     )
                 assessment = (
                     local_refs[0]
                     if local_refs
                     else recovered
                     if recovered is not None
-                    else refs[0]
+                    else canonical_refs[0]
                 )
                 local = tuple(
                     support

@@ -137,7 +137,7 @@ def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
                     neutral_loss_da=fixture.method_subject.neutral_loss_da,
                 ),
                 mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=243.099,
+                    precursor_mz=243.108,
                     precursor_tolerance_ppm=10.0,
                     neutral_loss_da=fixture.method_subject.neutral_loss_da,
                 ),
@@ -667,7 +667,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
 
     with pytest.raises(
         ApplicationResultContractError,
-        match="duplicate subject-local children",
+        match="duplicate subjects across children",
     ):
         finalize_alignment_result(
             UntargetBatchApplicationResultRequest(
@@ -829,7 +829,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
                     neutral_loss_da=fixture.method_subject.neutral_loss_da,
                 ),
                 mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=243.099,
+                    precursor_mz=243.108,
                     precursor_tolerance_ppm=10.0,
                     neutral_loss_da=fixture.method_subject.neutral_loss_da,
                 ),
@@ -953,7 +953,9 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
 ) -> None:
     request = _uninitialized(
         UntargetWorkflowCompositionRequest,
-        scope=object(),
+        scope=SimpleNamespace(
+            evidence_providers=(SimpleNamespace(method_subject_id="subject"),)
+        ),
         excluded_candidates=(),
     )
     adapter = object()

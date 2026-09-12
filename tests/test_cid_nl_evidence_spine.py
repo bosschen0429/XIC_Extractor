@@ -919,7 +919,7 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
         evaluation_receipt=_completed_receipt(scanned_event_count=0),
     )
 
-    with pytest.raises(CellObservationContractError, match="group context"):
+    with pytest.raises(CellObservationContractError, match="group recovery subject"):
         mint_cell_observation_ref(
             processing_owners=fixture.owners,
             sample=fixture.sample("hold"),
@@ -1083,12 +1083,23 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
             method_assessment=crossed_assessment,
             human_disposition=review_record,
         )
+    # Keep the group valid for this target so the human-disposition guard is reached.
+    other_fixture = replace(fixture, target=fixture.other_target)
+    other_support = _support_assessment(
+        other_fixture, "support", scan_losses=((80, 0.0),)
+    )
+    other_spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.other_target,
+        sample_assessments=((fixture.sample("support"), other_support),),
+        config=AlignmentConfig(anchor_min_seed_events=1),
+    )
     with pytest.raises(CellObservationContractError, match="different target"):
         mint_cell_observation_ref(
             processing_owners=review_owners,
             sample=fixture.sample("reviewed"),
             target=fixture.other_target,
-            group_context=spine.cells[0].group_context,
+            group_context=other_spine.cells[0].group_context,
             method_assessment=crossed_target_assessment,
             human_disposition=review_record,
         )

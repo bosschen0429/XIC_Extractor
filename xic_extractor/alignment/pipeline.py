@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+import hashlib
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from xic_extractor.alignment.csv_io import (
 )
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
+    mint_known_istd_reference_from_measurements,
     read_known_istd_reference,
 )
 from xic_extractor.alignment.ms1_index_source import (
@@ -47,6 +49,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
     write_cid_nl_explanation,
 )
@@ -66,6 +69,57 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def extract_batch_known_istd_reference(
+    targets: Sequence[Target],
+    raw_paths_by_sample: Mapping[str, Path],
+    dll_dir: Path,
+    peak_config: ExtractionConfig,
+    *,
+    source_identifier: str = "<in-memory>",
+    source_sha256: str = "",
+) -> KnownIstdReference:
+    """Extract ISTD peaks across raw files and construct in-memory reference."""
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.signal_processing import find_peak_and_area
+    from xic_extractor.xic_models import XICRequest
+
+    istd_targets = tuple(t for t in targets if t.is_istd)
+    if not istd_targets:
+        raise ValueError("No ISTD targets (is_istd=True) found in targets")
+
+    requests = tuple(
+        XICRequest(
+            mz=target.mz,
+            rt_min=target.rt_min,
+            rt_max=target.rt_max,
+            ppm_tol=target.ppm_tol,
+        )
+        for target in istd_targets
+    )
+
+    coordinates: dict[tuple[str, str], float] = {}
+    for sample_stem, raw_path in sorted(raw_paths_by_sample.items()):
+        with open_raw(raw_path, dll_dir=dll_dir) as raw:
+            traces = raw.extract_xic_many(requests)
+            for target, trace in zip(istd_targets, traces, strict=True):
+                peak_result = find_peak_and_area(
+                    trace.rt,
+                    trace.intensity,
+                    peak_config,
+                    evidence_role="ISTD",
+                )
+                if peak_result.peak is not None and peak_result.peak.rt > 0:
+                    peak_rt = float(peak_result.peak.rt)
+                    coordinates[(target.label, sample_stem)] = peak_rt
+
+    return mint_known_istd_reference_from_measurements(
+        istd_targets,
+        coordinates,
+        source_identifier=source_identifier,
+        source_sha256=source_sha256,
+    )
 
 
 def run_alignment(
@@ -94,6 +148,8 @@ def run_alignment(
     sample_column_injection_order: Path | None = None,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
     known_istd_reference_workbook: Path | None = None,
+    targets_csv: Path | None = None,
+    known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     capture_artifact_fingerprints: bool = False,
     backfill_scope: BackfillScope = "full-audit",
@@ -103,6 +159,7 @@ def run_alignment(
     require_discovery_owner_closure: bool = False,
     emit_provisional_matrix: bool = False,
     should_cancel: Callable[[], bool] | None = None,
+    max_partition_jobs: int = 100_000,
 ) -> AlignmentRunOutputs:
     """Publish finalized single-provider CID-NL Alignment owner results."""
     if (
@@ -185,6 +242,33 @@ def run_alignment(
         emit_provisional_matrix=emit_provisional_matrix,
     )
     _reject_alignment_output_collisions(output_dir=output_dir, outputs=outputs)
+    if known_istd_reference is not None:
+        resolved_known_istd_reference = known_istd_reference
+    elif targets_csv is not None:
+        from xic_extractor.alignment.raw_sources import existing_raw_paths
+        from xic_extractor.configuration.targets import read_istd_targets
+
+        targets = read_istd_targets(targets_csv).targets
+        raw_paths_by_sample = existing_raw_paths(
+            sample_order=batch.sample_order,
+            raw_files=batch.raw_files,
+            raw_dir=raw_dir,
+        )
+        resolved_known_istd_reference = extract_batch_known_istd_reference(
+            targets=targets,
+            raw_paths_by_sample=raw_paths_by_sample,
+            dll_dir=dll_dir,
+            peak_config=peak_config,
+            source_identifier=str(targets_csv.resolve()),
+            source_sha256=hashlib.sha256(targets_csv.read_bytes()).hexdigest(),
+        )
+    elif known_istd_reference_workbook is not None:
+        resolved_known_istd_reference = read_known_istd_reference(
+            known_istd_reference_workbook
+        )
+    else:
+        resolved_known_istd_reference = None
+
     return _run_untargeted_cid_nl_alignment(
         discovery_batch_index=discovery_batch_index,
         discovery_batch=batch,
@@ -209,17 +293,14 @@ def run_alignment(
         owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
         sample_column_injection_order=sample_column_injection_order,
         sample_metadata=sample_metadata,
-        known_istd_reference=(
-            None
-            if known_istd_reference_workbook is None
-            else read_known_istd_reference(known_istd_reference_workbook)
-        ),
+        known_istd_reference=resolved_known_istd_reference,
         backfill_scope=backfill_scope,
         audit_evidence_mode=audit_evidence_mode,
         selected_family_ids=selected_family_ids,
         selected_family_source=selected_family_source,
         signal_processing_profile=signal_processing_profile,
         should_cancel=should_cancel,
+        max_partition_jobs=max_partition_jobs,
     )
 
 
@@ -305,6 +386,7 @@ def _run_untargeted_cid_nl_alignment(
     selected_family_source: str,
     signal_processing_profile: SignalProcessingProfile,
     should_cancel: Callable[[], bool] | None,
+    max_partition_jobs: int = 100_000,
 ) -> AlignmentRunOutputs:
     """Run the retained CID-NL owner and project its completed result once."""
     _validate_untargeted_cid_nl_alignment_options(
@@ -341,6 +423,7 @@ def _run_untargeted_cid_nl_alignment(
             raw_worker_backend=raw_worker_backend,
             should_cancel=should_cancel,
             retain_partition_memory=True,
+            max_partition_jobs=max_partition_jobs,
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc

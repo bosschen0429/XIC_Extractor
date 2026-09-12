@@ -71,6 +71,16 @@ FACTS_VERSION = "candidate_evidence_facts_v1"
 PAIRED_ISTD_MAX_DELTA_MIN = 1.0
 
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
+LEGACY_PHYSICAL_PEAK_SELECTION_POLICY = "closed_segment_contains_query_v1"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v2"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v1"
+_PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
+    {
+        LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
+        PHYSICAL_PEAK_POINT_POLICY,
+        PHYSICAL_PEAK_WINDOW_POLICY,
+    }
+)
 PhysicalPeakOperation = Literal[
     "trace_evaluation",
     "asls_baseline",
@@ -560,10 +570,17 @@ def enumerate_physical_segment_universe(
     *,
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> PhysicalSegmentUniverse:
     if not isinstance(prepared_result, PreparedSignalResult):
         raise TypeError("prepared_result must be a PreparedSignalResult")
     validate_prepared_signal_identity(prepared_result.projection)
+    if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
+        raise ValueError("unsupported physical peak selection policy")
+    legacy = selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY
+    universe_schema = (
+        "physical_segment_universe_v1" if legacy else "physical_segment_universe_v2"
+    )
     context_start, context_end = _physical_owner_context(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
@@ -585,6 +602,9 @@ def enumerate_physical_segment_universe(
             policy=ChromPeakSegmentPolicy(
                 morphology_trace_method="canonical_signal",
                 morphology_trace_window_points=prepared.profile.window_points,
+                baseline_return_fraction=0.02 if legacy else 0.0,
+                baseline_return_min_residual=1.0 if legacy else 0.0,
+                include_baseline_return_samples=not legacy,
             ),
         )
         if enumeration.status == "OK":
@@ -611,9 +631,10 @@ def enumerate_physical_segment_universe(
         state,
         reason,
         physical_segments,
+        schema_version=universe_schema,
     )
     return PhysicalSegmentUniverse(
-        schema_version="physical_segment_universe_v1",
+        schema_version=universe_schema,
         prepared_signal_id=prepared_result.projection.prepared_signal_id,
         context_rt_start_min=context_start,
         context_rt_end_min=context_end,
@@ -645,6 +666,7 @@ def canonical_physical_segment_universe_bytes(
             universe.state,
             universe.reason,
             universe.segments,
+            schema_version=universe.schema_version,
         )
     )
 
@@ -652,7 +674,10 @@ def canonical_physical_segment_universe_bytes(
 def validate_physical_segment_universe_identity(
     universe: PhysicalSegmentUniverse,
 ) -> None:
-    if universe.schema_version != "physical_segment_universe_v1":
+    if universe.schema_version not in {
+        "physical_segment_universe_v1",
+        "physical_segment_universe_v2",
+    }:
         raise ValueError("unsupported physical segment universe schema")
     if universe.state not in {"available", "unavailable", "failed"}:
         raise ValueError("unsupported physical segment universe state")
@@ -692,6 +717,7 @@ def mint_physical_peak_question(
     *,
     selection_subject_id: str,
     query_rt_min: float,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> PhysicalPeakQuestion:
     if not isinstance(prepared, PreparedSignalProjection):
         raise TypeError("prepared must be a PreparedSignalProjection")
@@ -707,10 +733,8 @@ def mint_physical_peak_question(
     query_rt = _finite_physical_float(query_rt_min, field="query_rt_min")
     context_start = universe.context_rt_start_min
     context_end = universe.context_rt_end_min
-    admissible = tuple(
-        segment.physical_segment_id
-        for segment in universe.segments
-        if segment.left_rt_min <= query_rt <= segment.right_rt_min
+    admissible = _admissible_physical_segments(
+        universe, query_rt, selection_policy_version
     )
     values = {
         "schema_version": "physical_peak_question_v1",
@@ -723,7 +747,7 @@ def mint_physical_peak_question(
         "context_rt_start_min": _physical_float_text(context_start),
         "context_rt_end_min": _physical_float_text(context_end),
         "admissible_segment_ids": list(admissible),
-        "selection_policy_version": "closed_segment_contains_query_v1",
+        "selection_policy_version": selection_policy_version,
     }
     question_id = _typed_physical_id(
         "physical-question.v1:", _canonical_physical_json_bytes(values)
@@ -739,8 +763,31 @@ def mint_physical_peak_question(
         context_rt_start_min=context_start,
         context_rt_end_min=context_end,
         admissible_segment_ids=admissible,
-        selection_policy_version="closed_segment_contains_query_v1",
+        selection_policy_version=selection_policy_version,
         physical_question_id=question_id,
+    )
+
+
+def _admissible_physical_segments(
+    universe: PhysicalSegmentUniverse,
+    query_rt: float,
+    selection_policy_version: str,
+) -> tuple[str, ...]:
+    if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
+        raise ValueError("unsupported physical peak selection policy")
+    legacy = selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY
+    if legacy != (universe.schema_version == "physical_segment_universe_v1"):
+        raise ValueError("physical question crosses boundary policy")
+    if selection_policy_version == PHYSICAL_PEAK_WINDOW_POLICY:
+        if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
+            return ()
+        # A group center is a prior for this already acquired bounded context.
+        # Every local candidate participates; ambiguity never selects a winner.
+        return universe.segment_ids
+    return tuple(
+        segment.physical_segment_id
+        for segment in universe.segments
+        if segment.left_rt_min <= query_rt <= segment.right_rt_min
     )
 
 
@@ -757,7 +804,7 @@ def validate_physical_peak_question_identity(
 ) -> None:
     if question.schema_version != "physical_peak_question_v1":
         raise ValueError("unsupported physical peak question schema")
-    if question.selection_policy_version != "closed_segment_contains_query_v1":
+    if question.selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     _finite_physical_float(question.query_rt_min, field="query_rt_min")
     _finite_physical_float(question.context_rt_start_min, field="context_rt_start_min")
@@ -785,10 +832,8 @@ def validate_physical_peak_question_identity(
             or question.segment_ids != universe.segment_ids
         ):
             raise ValueError("physical question crosses segment universe")
-        expected_admissible = tuple(
-            segment.physical_segment_id
-            for segment in universe.segments
-            if segment.left_rt_min <= question.query_rt_min <= segment.right_rt_min
+        expected_admissible = _admissible_physical_segments(
+            universe, question.query_rt_min, question.selection_policy_version
         )
         if question.admissible_segment_ids != expected_admissible:
             raise ValueError("physical question omits owner-admissible segments")
@@ -930,6 +975,7 @@ def evaluate_physical_peak(
     query_rt_min: float,
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> PhysicalPeakEvaluation:
     """Answer one workflow-neutral physical question from owner-derived context."""
 
@@ -939,12 +985,14 @@ def evaluate_physical_peak(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
         request_context_rt_end_min=request_context_rt_end_min,
+        selection_policy_version=selection_policy_version,
     )
     question = mint_physical_peak_question(
         prepared_result.projection,
         universe,
         selection_subject_id=selection_subject_id,
         query_rt_min=query_rt_min,
+        selection_policy_version=selection_policy_version,
     )
     return answer_physical_peak_question(prepared_result, universe, question)
 
@@ -1202,6 +1250,7 @@ def rehydrate_physical_peak_evaluation(
         query_rt_min=expected.question.query_rt_min,
         request_context_rt_start_min=request_context_rt_start_min,
         request_context_rt_end_min=request_context_rt_end_min,
+        selection_policy_version=expected.question.selection_policy_version,
     )
     if actual != expected:
         raise ValueError(
@@ -1835,9 +1884,11 @@ def _physical_segment_universe_basis(
     state: PhysicalPeakState,
     reason: str,
     segments: tuple[PhysicalSegment, ...],
+    *,
+    schema_version: str,
 ) -> dict[str, object]:
     return {
-        "schema_version": "physical_segment_universe_v1",
+        "schema_version": schema_version,
         "prepared_signal_id": prepared_signal_id,
         "context_rt_start_min": _physical_float_text(context_rt_start_min),
         "context_rt_end_min": _physical_float_text(context_rt_end_min),

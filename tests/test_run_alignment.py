@@ -1634,13 +1634,15 @@ def test_run_alignment_cli_rejects_noncanonical_full_cohort_contract(
             str(dll_dir),
             "--expected-sample-count",
             "85",
+            "--output-level",
+            "debug",
         ]
     )
 
     assert code == 2
     stderr = capsys.readouterr().err
     assert "FULL COHORT canonical launch contract failed" in stderr
-    assert "--output-level must be 'validation-minimal'" in stderr
+    assert "--output-level must be 'production' or 'validation-minimal'" in stderr
     assert "--timing-live-output is required" in stderr
 
 
@@ -1778,3 +1780,67 @@ def test_pyproject_registers_alignment_cli_script() -> None:
     assert (
         pyproject["project"]["scripts"]["xic-align-cli"] == "scripts.run_alignment:main"
     )
+
+
+def test_run_alignment_cli_targets_csv_and_workbook_mutually_exclusive(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    batch_index = tmp_path / "batch.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    targets_csv = tmp_path / "targets.csv"
+    targets_csv.touch()
+    workbook = tmp_path / "ref.xlsx"
+    workbook.touch()
+
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--targets-csv",
+            str(targets_csv),
+            "--known-istd-reference-workbook",
+            str(workbook),
+        ]
+    )
+    assert code == 2
+    assert "mutually exclusive" in capsys.readouterr().err
+
+
+def test_run_alignment_cli_targets_csv_must_exist(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    batch_index = tmp_path / "batch.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--targets-csv",
+            str(tmp_path / "non_existent.csv"),
+        ]
+    )
+    assert code == 2
+    assert "targets CSV file does not exist" in capsys.readouterr().err

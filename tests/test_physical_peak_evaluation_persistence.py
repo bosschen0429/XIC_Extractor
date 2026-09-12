@@ -12,6 +12,8 @@ from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.peak_detection.evidence_facts import (
+    LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
+    PHYSICAL_PEAK_WINDOW_POLICY,
     deserialize_physical_peak_evaluation,
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -34,6 +36,88 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
     assert result.reason == "incomplete_peak_context"
     assert result.facts is None
     assert result.integration is None
+
+
+@pytest.mark.parametrize("query_rt", [1.525, 2.475, 1.542])
+def test_visible_peak_tail_selects_complete_baseline_bounded_peak(
+    query_rt: float,
+) -> None:
+    rt = np.linspace(0.0, 4.0, 161)
+    raw = 100.0 + 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.16) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="isolated-peak-tail", query_rt_min=query_rt
+    )
+
+    assert result.state == "available"
+    assert result.facts is not None
+    assert result.facts.apex_rt_min == pytest.approx(2.0)
+    assert result.facts.left_rt_min < query_rt < result.facts.right_rt_min
+    assert result.facts.area_counts_seconds > 0.0
+    baseline = evaluate_physical_peak(
+        prepared, selection_subject_id="outside-peak", query_rt_min=1.3
+    )
+    assert baseline.state == "unavailable"
+    assert baseline.facts is None
+
+
+@pytest.mark.parametrize("query_rt", [1.525, 2.0])
+def test_legacy_peak_policy_rehydrates_without_changing_saved_answer(query_rt) -> None:
+    rt = np.linspace(0.0, 4.0, 161)
+    raw = 100.0 + 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.16) ** 2)
+    profile = SignalProcessingProfile()
+    legacy = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw, profile=profile),
+        selection_subject_id="saved-legacy-query",
+        query_rt_min=query_rt,
+        selection_policy_version=LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
+    )
+    assert legacy.state == ("available" if query_rt == 2.0 else "unavailable")
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=legacy
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == legacy
+    assert serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=restored
+    ) == payload
+
+
+@pytest.mark.parametrize(
+    "centers,query_rt,expected",
+    [
+        ((2.0,), 1.0, "available"),
+        ((1.2, 2.8), 2.0, "ambiguous"),
+        ((2.0,), 4.5, "unavailable"),
+        ((), 2.0, "unavailable"),
+    ],
+)
+def test_group_window_selects_only_one_complete_peak(
+    centers, query_rt, expected
+) -> None:
+    rt = np.linspace(0.0, 4.0, 161)
+    raw = np.full_like(rt, 100.0)
+    for center in centers:
+        raw += 10000.0 * np.exp(-0.5 * ((rt - center) / 0.12) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="bounded-group-window",
+        query_rt_min=query_rt,
+        request_context_rt_start_min=0.0,
+        request_context_rt_end_min=4.0,
+        selection_policy_version=PHYSICAL_PEAK_WINDOW_POLICY,
+    )
+    assert result.state == ("unavailable" if expected == "ambiguous" else expected)
+    if expected == "ambiguous":
+        assert result.reason == "ambiguous_segment_candidates"
+    if expected == "available":
+        assert result.facts is not None
+        assert result.facts.apex_rt_min == pytest.approx(2.0)
+        assert result.facts.left_rt_min > query_rt
+    else:
+        assert result.facts is None
+        assert result.integration is None
 
 
 @pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])

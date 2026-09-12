@@ -175,6 +175,46 @@ class ResolvedCanonicalSampleIdentity:
             )
 
 
+def infer_sample_role(
+    sample_type: str | None,
+    sample_name: str | None = None,
+    comment: str | None = None,
+) -> SampleRole:
+    """Infer canonical SampleRole from Thermo SampleType and text metadata."""
+    combined = f"{sample_name or ''} {comment or ''}".upper()
+    if re.search(r"(?:^|[\W_])(?:POOLED|POOL)[_\s]?QC\d*(?:[\W_]|$)", combined):
+        return "pooled_qc"
+    if re.search(r"(?:^|[\W_])QC\d*(?:[\W_]|$)", combined):
+        return "qc"
+    if re.search(r"(?:^|[\W_])(?:BLANK|BLK)\d*(?:[\W_]|$)", combined):
+        return "blank"
+    if re.search(
+        r"(?:^|[\W_])(?:SDOLEK|SDO[_-]LEK|SST|SUITABILITY)(?:[\W_]|$)", combined
+    ):
+        return "system_suitability"
+    if re.search(
+        r"(?:^|[\W_])(?:SOLVENT|WASH|STOPFLOW|COLUMNWASH)(?:[\W_]|$)", combined
+    ):
+        return "solvent"
+    if re.search(
+        r"(?:^|[\W_])(?:CAL|CALIBRATOR|STD|STANDARD|MIX[_\s]?STDS)\d*(?:[\W_]|$)",
+        combined,
+    ):
+        return "calibrator"
+
+    st = (sample_type or "").strip().lower()
+    if st in {"unknown", "sample"}:
+        return "study_sample"
+    if st in SAMPLE_ROLES:
+        return st  # type: ignore[return-value]
+    if st in {"standard", "calibrator"}:
+        return "calibrator"
+
+    if sample_name:
+        return "study_sample"
+    return "unknown"
+
+
 def load_sample_metadata(path: Path) -> tuple[SampleMetadata, ...]:
     return parse_sample_metadata(
         _read_sample_metadata_rows(path),
