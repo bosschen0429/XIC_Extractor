@@ -9,9 +9,11 @@ triggered route; its owner carries detail.
 | Trigger | Required route |
 | --- | --- |
 | Project Python, worktree bootstrap, RAW/DLL, validation scale, command shape, or sandbox friction | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
-| Product term, method evidence, readiness claim, or validation policy | Route through [`docs/product/README.md`](docs/product/README.md), [`domain-glossary.md`](docs/product/domain-glossary.md), and [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
+| Product terminology lookup | Read the relevant entry in [`domain-glossary.md`](docs/product/domain-glossary.md). |
+| Product behavior or method evidence decision | Use [`docs/product/README.md`](docs/product/README.md) to locate the relevant topic owner. |
+| Readiness claim or validation policy | Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
 | Test selection, new regression coverage, fixture design, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
-| Semantic owner, Target/Untarget lifecycle, persisted decision, runtime receipt, writer, schema, or public contract | Choose one branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes), then use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
+| Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
 | Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
 | Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
