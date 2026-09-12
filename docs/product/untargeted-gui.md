@@ -79,6 +79,12 @@ does not create a separate product-authority lane.
   its records; clearing or changing the RAW source removes the previous records.
   A failed explicit import preserves the current data. A failed persisted-source
   restore still clears injection order so a run cannot use stale acquisition order.
+- Generic CSV/TSV and XLSX sequences share the sample-metadata owner's finite
+  header aliases. Case, spaces, underscores, and punctuation are normalized before
+  exact matching; `Sample ID`, `Injection Order`, `Sample Type`, and `Batch ID`
+  have distinct meanings. Missing sample identity, duplicate semantic columns,
+  and header-only inputs are import errors. Word inputs retain the shared document
+  parser. Unsupported decorated headers are not guessed by substring.
 - The shared targets example is loaded by default. Untargeted uses only rows
   marked `is_istd=TRUE` through `read_istd_targets`, the same selection consumed
   by Alignment CLI. The GUI reports the selected and skipped row counts. Other

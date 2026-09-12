@@ -6,9 +6,11 @@ import zipfile
 from pathlib import Path
 
 import openpyxl
+import pytest
 
 from xic_extractor.sample_metadata import (
     SampleMetadata,
+    SampleMetadataError,
     load_and_match_sample_metadata,
     load_sample_metadata,
     match_sequence_to_raw_stems,
@@ -231,6 +233,101 @@ def test_parse_generic_csv_sequence(tmp_path: Path) -> None:
     assert rows[0].sample_role == "blank"
     assert rows[1].injection_order == 2
     assert rows[1].sample_role == "study_sample"
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".tsv", ".xlsx"])
+def test_parse_tabular_sequence_resolves_exact_alias_collisions(
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    sequence_file = tmp_path / f"alias_collisions{suffix}"
+    _write_sequence_table(
+        sequence_file,
+        ["Batch ID", "Sample Type", "Sample ID", "Injection Order"],
+        [["BatchA", "QC", "QC1", 7]],
+    )
+
+    rows = parse_sequence_file(sequence_file)
+
+    assert [
+        (
+            row.sample_name,
+            row.raw_stem,
+            row.injection_order,
+            row.sample_role,
+            row.batch_id,
+        )
+        for row in rows
+    ] == [("QC1", "QC1", 7, "qc", "BatchA")]
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".xlsx"])
+def test_parse_tabular_sequence_rejects_ambiguous_identity_headers(
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    sequence_file = tmp_path / f"ambiguous_identity{suffix}"
+    _write_sequence_table(
+        sequence_file,
+        ["Sample ID", "Sample Name", "Injection Order"],
+        [["QC1", "QC One", 7]],
+    )
+
+    with pytest.raises(SampleMetadataError, match="標頭語義不明確"):
+        parse_sequence_file(sequence_file)
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".xlsx"])
+def test_parse_tabular_sequence_rejects_missing_identity_header(
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    sequence_file = tmp_path / f"missing_identity{suffix}"
+    _write_sequence_table(
+        sequence_file,
+        ["Batch ID", "Injection Order"],
+        [["BatchA", 7]],
+    )
+
+    with pytest.raises(SampleMetadataError, match="缺少樣品識別標頭"):
+        parse_sequence_file(sequence_file)
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".xlsx"])
+def test_parse_tabular_sequence_rejects_header_without_sample_rows(
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    sequence_file = tmp_path / f"header_only{suffix}"
+    _write_sequence_table(
+        sequence_file,
+        ["Sample ID", "Injection Order"],
+        [],
+    )
+
+    with pytest.raises(SampleMetadataError, match="沒有有效的樣品資料列"):
+        parse_sequence_file(sequence_file)
+
+
+def _write_sequence_table(
+    path: Path,
+    headers: list[str],
+    rows: list[list[str | int]],
+) -> None:
+    if path.suffix == ".xlsx":
+        workbook = openpyxl.Workbook()
+        worksheet = workbook.active
+        worksheet.append(headers)
+        for row in rows:
+            worksheet.append(row)
+        workbook.save(path)
+        return
+
+    delimiter = "\t" if path.suffix == ".tsv" else ","
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle, delimiter=delimiter)
+        writer.writerow(headers)
+        writer.writerows(rows)
 
 
 def test_match_sequence_to_raw_stems() -> None:

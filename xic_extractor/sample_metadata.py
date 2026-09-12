@@ -48,6 +48,34 @@ SAMPLE_ROLES: frozenset[str] = frozenset(
 _CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
 _SAMPLE_METADATA_SNAPSHOT_PREFIX = "xic.sample-metadata-snapshot.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_SEQUENCE_HEADER_ALIASES: Mapping[str, frozenset[str]] = {
+    "order": frozenset(
+        {"id", "no", "index", "order", "injection order", "序號", "編號", "項次"}
+    ),
+    "raw_stem": frozenset(
+        {"file name", "filename", "raw file", "raw", "檔案", "檔名", "檔案名稱"}
+    ),
+    "sample_name": frozenset(
+        {
+            "sample",
+            "sample name",
+            "sample id",
+            "樣品",
+            "樣品名稱",
+            "樣本",
+            "樣本名稱",
+        }
+    ),
+    "method": frozenset({"method", "instrument method", "方法"}),
+    "sample_role": frozenset({"sample type", "type", "role", "類別", "類型", "角色"}),
+    "group": frozenset({"group", "組別", "分組"}),
+    "batch_id": frozenset({"batch", "batch id", "批次"}),
+}
+_SEQUENCE_HEADER_FIELD_BY_ALIAS = {
+    alias: field
+    for field, aliases in _SEQUENCE_HEADER_ALIASES.items()
+    for alias in aliases
+}
 
 
 @dataclass(frozen=True)
@@ -274,6 +302,65 @@ def _sequence_doc_entries_as_rows(
     ]
 
 
+def _normalize_sequence_header(value: object) -> str:
+    text = str(value).strip().lower().replace("_", " ")
+    return " ".join(re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff\s]", " ", text).split())
+
+
+def _best_sequence_header(
+    rows: Iterable[Sequence[object]],
+) -> tuple[int, dict[str, int], tuple[str, ...], int] | None:
+    best: tuple[int, dict[str, int], tuple[str, ...], int] | None = None
+    best_score = -1
+    for row_idx, row in enumerate(rows):
+        header_map: dict[str, int] = {}
+        duplicate_fields: set[str] = set()
+        for col_idx, value in enumerate(row):
+            field = _SEQUENCE_HEADER_FIELD_BY_ALIAS.get(
+                _normalize_sequence_header(value)
+            )
+            if field is None:
+                continue
+            if field in header_map:
+                duplicate_fields.add(field)
+                continue
+            header_map[field] = col_idx
+
+        if "raw_stem" not in header_map and "sample_name" not in header_map:
+            continue
+        score = 2
+        if "order" in header_map:
+            score += 2
+        if "method" in header_map or "sample_role" in header_map:
+            score += 1
+        if score > best_score:
+            best_score = score
+            best = (row_idx, header_map, tuple(sorted(duplicate_fields)), score)
+            if score >= 5:
+                break
+    return best
+
+
+def _require_sequence_header(
+    candidate: tuple[int, dict[str, int], tuple[str, ...], int] | None,
+    *,
+    source_name: str,
+    source_kind: str,
+) -> tuple[int, dict[str, int]]:
+    if candidate is None:
+        raise SampleMetadataError(
+            f"{source_name}: {source_kind} 缺少樣品識別標頭 "
+            "(Sample ID/Sample Name/File Name/Raw File)"
+        )
+    row_idx, header_map, duplicate_fields, _score = candidate
+    if duplicate_fields:
+        fields = ", ".join(duplicate_fields)
+        raise SampleMetadataError(
+            f"{source_name}: {source_kind} 標頭語義不明確，欄位重複 ({fields})"
+        )
+    return row_idx, header_map
+
+
 def _parse_xlsx_sequence_table(xlsx_path: Path) -> list[dict[str, Any]]:
     """Parse injection sequence table from Excel .xlsx workbook."""
     if not xlsx_path.is_file():
@@ -287,99 +374,26 @@ def _parse_xlsx_sequence_table(xlsx_path: Path) -> list[dict[str, Any]]:
             f"{xlsx_path}: failed to read Excel workbook: {exc}"
         ) from exc
 
-    order_keys = {
-        "id",
-        "no",
-        "index",
-        "order",
-        "injection_order",
-        "序號",
-        "編號",
-        "項次",
-    }
-    file_keys = {"file name", "filename", "raw file", "raw", "檔案", "檔名", "檔案名稱"}
-    sample_keys = {
-        "sample",
-        "sample name",
-        "sample_name",
-        "sample id",
-        "樣品",
-        "樣品名稱",
-        "樣本",
-        "樣本名稱",
-    }
-    method_keys = {"method", "instrument method", "方法"}
-    role_keys = {"sample type", "sample_type", "type", "role", "類別", "類型", "角色"}
-    group_keys = {"group", "組別", "分組"}
-    batch_keys = {"batch", "batch id", "batch_id", "批次"}
-
     best_sheet = None
-    best_header_row = -1
+    best_candidate: tuple[int, dict[str, int], tuple[str, ...], int] | None = None
     best_score = -1
-    best_header_map: dict[str, int] = {}
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        for row_idx, row in enumerate(ws.iter_rows(values_only=True, max_row=20)):
-            if not row or not any(row):
-                continue
-            cells = [str(c).strip().lower() if c is not None else "" for c in row]
-            header_map: dict[str, int] = {}
-            for col_idx, text in enumerate(cells):
-                clean = " ".join(
-                    re.sub(
-                        r"[^a-zA-Z0-9\u4e00-\u9fff\s]", " ", text.replace("_", " ")
-                    ).split()
-                )
-                if any(k in clean for k in order_keys) and "order" not in header_map:
-                    header_map["order"] = col_idx
-                elif (
-                    any(k in clean for k in file_keys) and "raw_stem" not in header_map
-                ):
-                    header_map["raw_stem"] = col_idx
-                elif (
-                    any(k in clean for k in sample_keys)
-                    and "sample_name" not in header_map
-                ):
-                    header_map["sample_name"] = col_idx
-                elif (
-                    any(k in clean for k in method_keys) and "method" not in header_map
-                ):
-                    header_map["method"] = col_idx
-                elif (
-                    any(k in clean for k in role_keys)
-                    and "sample_role" not in header_map
-                ):
-                    header_map["sample_role"] = col_idx
-                elif any(k in clean for k in group_keys) and "group" not in header_map:
-                    header_map["group"] = col_idx
-                elif (
-                    any(k in clean for k in batch_keys) and "batch_id" not in header_map
-                ):
-                    header_map["batch_id"] = col_idx
-
-            score = 0
-            if "raw_stem" in header_map or "sample_name" in header_map:
-                score += 2
-            if "order" in header_map:
-                score += 2
-            if "method" in header_map or "sample_role" in header_map:
-                score += 1
-
-            if score > best_score:
-                best_score = score
-                best_sheet = ws
-                best_header_row = row_idx
-                best_header_map = header_map
-                if score >= 4:
-                    break
-        if best_score >= 4:
+        candidate = _best_sequence_header(ws.iter_rows(values_only=True, max_row=20))
+        if candidate is not None and candidate[3] > best_score:
+            best_score = candidate[3]
+            best_sheet = ws
+            best_candidate = candidate
+        if best_score >= 5:
             break
 
-    if best_sheet is None or best_score < 2:
-        raise SampleMetadataError(
-            f"{xlsx_path.name}: 未在 Excel 工作表中找到有效的樣品或進樣序列標頭"
-        )
+    best_header_row, best_header_map = _require_sequence_header(
+        best_candidate,
+        source_name=xlsx_path.name,
+        source_kind="Excel 工作表",
+    )
+    assert best_sheet is not None
 
     results: list[dict[str, Any]] = []
     auto_order = 1
@@ -446,6 +460,8 @@ def _parse_xlsx_sequence_table(xlsx_path: Path) -> list[dict[str, Any]]:
         )
         auto_order += 1
 
+    if not results:
+        raise SampleMetadataError(f"{xlsx_path.name}: Excel 工作表沒有有效的樣品資料列")
     return results
 
 
@@ -460,83 +476,11 @@ def _parse_generic_tabular_sequence(path: Path) -> list[dict[str, Any]]:
     if not rows:
         raise SampleMetadataError(f"{path.name}: empty file")
 
-    order_keys = {
-        "id",
-        "no",
-        "index",
-        "order",
-        "injection_order",
-        "序號",
-        "編號",
-        "項次",
-    }
-    file_keys = {"file name", "filename", "raw file", "raw", "檔案", "檔名", "檔案名稱"}
-    sample_keys = {
-        "sample",
-        "sample name",
-        "sample_name",
-        "sample id",
-        "樣品",
-        "樣品名稱",
-        "樣本",
-        "樣本名稱",
-    }
-    method_keys = {"method", "instrument method", "方法"}
-    role_keys = {"sample type", "sample_type", "type", "role", "類別", "類型", "角色"}
-    group_keys = {"group", "組別", "分組"}
-    batch_keys = {"batch", "batch id", "batch_id", "批次"}
-
-    best_header_row = -1
-    best_score = -1
-    best_header_map: dict[str, int] = {}
-
-    for row_idx, row in enumerate(rows[:20]):
-        if not row or not any(row):
-            continue
-        cells = [c.strip().lower() for c in row]
-        header_map: dict[str, int] = {}
-        for col_idx, text in enumerate(cells):
-            clean = " ".join(
-                re.sub(
-                    r"[^a-zA-Z0-9\u4e00-\u9fff\s]", " ", text.replace("_", " ")
-                ).split()
-            )
-            if any(k in clean for k in order_keys) and "order" not in header_map:
-                header_map["order"] = col_idx
-            elif any(k in clean for k in file_keys) and "raw_stem" not in header_map:
-                header_map["raw_stem"] = col_idx
-            elif (
-                any(k in clean for k in sample_keys) and "sample_name" not in header_map
-            ):
-                header_map["sample_name"] = col_idx
-            elif any(k in clean for k in method_keys) and "method" not in header_map:
-                header_map["method"] = col_idx
-            elif any(k in clean for k in role_keys) and "sample_role" not in header_map:
-                header_map["sample_role"] = col_idx
-            elif any(k in clean for k in group_keys) and "group" not in header_map:
-                header_map["group"] = col_idx
-            elif any(k in clean for k in batch_keys) and "batch_id" not in header_map:
-                header_map["batch_id"] = col_idx
-
-        score = 0
-        if "raw_stem" in header_map or "sample_name" in header_map:
-            score += 2
-        if "order" in header_map:
-            score += 2
-        if "method" in header_map or "sample_role" in header_map:
-            score += 1
-
-        if score > best_score:
-            best_score = score
-            best_header_row = row_idx
-            best_header_map = header_map
-            if score >= 4:
-                break
-
-    if best_score < 2:
-        raise SampleMetadataError(
-            f"{path.name}: 未在文字表格中找到有效的樣品或進樣序列標頭"
-        )
+    best_header_row, best_header_map = _require_sequence_header(
+        _best_sequence_header(rows[:20]),
+        source_name=path.name,
+        source_kind="文字表格",
+    )
 
     results: list[dict[str, Any]] = []
     auto_order = 1
@@ -603,6 +547,8 @@ def _parse_generic_tabular_sequence(path: Path) -> list[dict[str, Any]]:
         )
         auto_order += 1
 
+    if not results:
+        raise SampleMetadataError(f"{path.name}: 文字表格沒有有效的樣品資料列")
     return results
 
 
