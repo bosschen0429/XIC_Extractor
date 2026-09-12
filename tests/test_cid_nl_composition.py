@@ -259,7 +259,13 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
             excluded_candidates=(
                 replace(
                     exclusions[0],
-                    composite_assessments=exclusions[0].composite_assessments[:1],
+                    # Preserve the candidate's own proof; remove peer coverage.
+                    composite_assessments=tuple(
+                        assessment
+                        for assessment in exclusions[0].composite_assessments
+                        if assessment.content.canonical_sample_identity_id
+                        == exclusions[0].canonical_sample_identity_id
+                    ),
                 ),
                 *exclusions[1:],
             ),
