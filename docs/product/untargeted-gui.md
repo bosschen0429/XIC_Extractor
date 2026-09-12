@@ -72,6 +72,13 @@ does not create a separate product-authority lane.
   imported acquisition-information document supplies order through the shared
   sample-metadata loader and matcher. Its source is persisted and reloaded before
   explicit role corrections; folder changes clear the old sequence binding.
+- The sample table edits a view of the complete imported metadata record.
+  Undisplayed fields, including exclusions and their reasons, survive visible
+  edits, filtering, request construction, and CSV export. Filters change only
+  visibility, not the submitted population. Importing a replacement source uses
+  its records; clearing or changing the RAW source removes the previous records.
+  A failed explicit import preserves the current data. A failed persisted-source
+  restore still clears injection order so a run cannot use stale acquisition order.
 - The shared targets example is loaded by default. Untargeted uses only rows
   marked `is_istd=TRUE` through `read_istd_targets`, the same selection consumed
   by Alignment CLI. The GUI reports the selected and skipped row counts. Other

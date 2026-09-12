@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QSignalSpy
-from PyQt6.QtWidgets import QComboBox, QFileDialog, QPushButton
+from PyQt6.QtWidgets import QComboBox, QFileDialog, QMessageBox, QPushButton
 
 from gui.sections.discovery_samples_section import (
     _COL_BATCH,
@@ -13,6 +15,7 @@ from gui.sections.discovery_samples_section import (
     _COL_ROLE,
     DiscoverySamplesSection,
 )
+from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 
 
 def test_discovery_samples_section_fast_population(qtbot, tmp_path: Path) -> None:
@@ -216,30 +219,139 @@ def test_discovery_samples_section_batch_role_and_filter(qtbot, tmp_path: Path) 
     assert section._filter_status_label.text() == ""
 
 
+@pytest.mark.parametrize("with_raw", [False, True])
 def test_discovery_samples_section_file_dropped_imports_csv(
-    qtbot, tmp_path: Path
+    qtbot, tmp_path: Path, monkeypatch, with_raw: bool
 ) -> None:
     csv_file = tmp_path / "sample_metadata.csv"
     csv_file.write_text(
         "schema_version,sample_name,raw_stem,injection_order,sample_role,"
         "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
-        "sample_metadata_v1,Sample1,Stem1,10,calibrator,BatchX,,,,,,\n"
-        "sample_metadata_v1,Sample2,Stem2,20,pooled_qc,BatchX,,,,,,\n",
+        "sample_metadata_v1,Sample1,Stem1,10,calibrator,BatchX,Prep1,serum,G1,true,carryover\n"
+        "sample_metadata_v1,Sample2,Stem2,20,pooled_qc,BatchX,Prep2,plasma,G2,false,\n",
         encoding="utf-8",
     )
 
     section = DiscoverySamplesSection()
     qtbot.addWidget(section)
+    if with_raw:
+        raw_dir = tmp_path / "BatchX"
+        raw_dir.mkdir()
+        for stem in ("Stem1", "Stem2", "Unmatched"):
+            (raw_dir / f"{stem}.raw").touch()
+        section.set_sources(raw_dir, None)
 
     # Trigger file dropped
     section._table.file_dropped.emit(csv_file)
-    assert section._table.rowCount() == 2
-    meta = section.get_sample_metadata()
-    assert meta is not None
-    assert meta[0].raw_stem == "Stem1"
-    assert meta[0].sample_role == "calibrator"
-    assert meta[1].raw_stem == "Stem2"
-    assert meta[1].sample_role == "pooled_qc"
+    source = load_sample_metadata(csv_file)
+    expected = source + (
+        (
+            SampleMetadata(
+                "Unmatched", "Unmatched", sample_role="study_sample", batch_id="BatchX"
+            ),
+        )
+        if with_raw
+        else ()
+    )
+    assert section.get_sample_metadata() == expected
+
+    section._table.item(0, _COL_NAME).setText("Edited sample")
+    section._table.item(0, _COL_BATCH).setText("Edited batch")
+    combo = section._table.cellWidget(0, _COL_ROLE)
+    assert isinstance(combo, QComboBox)
+    combo.setCurrentIndex(combo.findData("blank"))
+    expected = (
+        replace(
+            expected[0],
+            sample_name="Edited sample",
+            batch_id="Edited batch",
+            sample_role="blank",
+        ),
+        *expected[1:],
+    )
+    section._filter_edit.setText("Edited sample")
+    section._table.selectRow(0)
+    assert section._table.isRowHidden(1)
+    assert section.get_sample_metadata() == expected
+
+    exported = tmp_path / "exported.csv"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *_a, **_kw: (str(exported), "")
+    )
+    section._export_button.click()
+    assert load_sample_metadata(exported) == expected
+
+
+@pytest.mark.parametrize(
+    "transition", ["new_source", "unmatched_source", "new_batch", "clear"]
+)
+def test_sample_source_fields_follow_current_records(qtbot, tmp_path, transition):
+    raw_dir = tmp_path / "BatchA"
+    raw_dir.mkdir()
+    (raw_dir / "Sample1.raw").touch()
+    source = tmp_path / "metadata.csv"
+    source.write_text(
+        "schema_version,sample_name,raw_stem,injection_order,sample_role,"
+        "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
+        "sample_metadata_v1,Sample1,Sample1,1,study_sample,BatchA,P1,serum,G1,true,carryover\n",
+        encoding="utf-8",
+    )
+    section = DiscoverySamplesSection()
+    qtbot.addWidget(section)
+    section.set_sources(raw_dir, None)
+    assert section.load_sequence_source(source)
+    assert section.get_sample_metadata() == load_sample_metadata(source)
+
+    if transition in {"new_source", "unmatched_source"}:
+        name = "Sample1" if transition == "new_source" else "Other"
+        replacement = tmp_path / "replacement.csv"
+        replacement.write_text(
+            f"Order,Raw File,Sample Name\n2,{name}.raw,{name}\n", encoding="utf-8"
+        )
+        assert section.load_sequence_source(replacement)
+        expected_order = 2 if transition == "new_source" else None
+    else:
+        if transition == "clear":
+            section.clear_all()
+            assert section.get_sample_metadata() is None
+        else:
+            raw_dir = tmp_path / "BatchB"
+            raw_dir.mkdir()
+            (raw_dir / "Sample1.raw").touch()
+        section.set_sources(raw_dir, None)
+        expected_order = None
+    assert section.get_sample_metadata() == (
+        SampleMetadata(
+            "Sample1",
+            "Sample1",
+            injection_order=expected_order,
+            sample_role="study_sample",
+            batch_id=raw_dir.name,
+        ),
+    )
+
+
+def test_failed_explicit_sample_import_preserves_source_and_edits(
+    qtbot, tmp_path, monkeypatch
+):
+    source = tmp_path / "metadata.csv"
+    source.write_text(
+        "schema_version,sample_name,raw_stem,injection_order,sample_role,"
+        "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
+        "sample_metadata_v1,Sample1,Sample1,1,study_sample,BatchA,P1,serum,G1,true,carryover\n",
+        encoding="utf-8",
+    )
+    section = DiscoverySamplesSection()
+    qtbot.addWidget(section)
+    assert section.load_sequence_source(source)
+    section._table.item(0, _COL_NAME).setText("Edited sample")
+    expected = (replace(load_sample_metadata(source)[0], sample_name="Edited sample"),)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_a: warnings.append(True))
+    section._table.file_dropped.emit(tmp_path / "missing.csv")
+    assert warnings == [True]
+    assert section.get_sequence_source() == str(source)
+    assert section.get_sample_metadata() == expected
 
 
 def test_discovery_samples_section_switching_raw_dir_clears_memory(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -243,12 +244,13 @@ class DiscoverySamplesSection(QWidget):
         results: list[SampleMetadata] = []
         for row in range(row_count):
             stem_item = self._table.item(row, _COL_STEM)
+            assert stem_item is not None
             batch_item = self._table.item(row, _COL_BATCH)
             order_item = self._table.item(row, _COL_ORDER)
             name_item = self._table.item(row, _COL_NAME)
             role_combo = self._table.cellWidget(row, _COL_ROLE)
 
-            stem = stem_item.text().strip() if stem_item else ""
+            stem = stem_item.text().strip()
             batch = batch_item.text().strip() if batch_item else ""
             order_text = order_item.text().strip() if order_item else ""
             order = int(order_text) if order_text.isdigit() else None
@@ -260,7 +262,8 @@ class DiscoverySamplesSection(QWidget):
                     role = cast(SampleRole, str(data))
 
             results.append(
-                SampleMetadata(
+                replace(
+                    cast(SampleMetadata, stem_item.data(Qt.ItemDataRole.UserRole)),
                     sample_name=name or stem,
                     raw_stem=stem,
                     injection_order=order,
@@ -326,6 +329,10 @@ class DiscoverySamplesSection(QWidget):
                 stem = path.stem
 
                 stem_item = QTableWidgetItem(stem)
+                stem_item.setData(
+                    Qt.ItemDataRole.UserRole,
+                    SampleMetadata(sample_name=stem, raw_stem=stem),
+                )
                 stem_item.setFlags(stem_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row, _COL_STEM, stem_item)
 
@@ -620,6 +627,7 @@ class DiscoverySamplesSection(QWidget):
                 if matched is None:
                     continue
 
+                stem_item.setData(Qt.ItemDataRole.UserRole, matched)
                 order = (
                     ""
                     if matched.injection_order is None
@@ -649,6 +657,7 @@ class DiscoverySamplesSection(QWidget):
             for row, sample in enumerate(metadata):
                 self._table.insertRow(row)
                 stem_item = QTableWidgetItem(sample.raw_stem)
+                stem_item.setData(Qt.ItemDataRole.UserRole, sample)
                 stem_item.setFlags(stem_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row, _COL_STEM, stem_item)
                 self._table.setItem(

@@ -244,11 +244,23 @@ def test_untargeted_view_builds_request_with_sample_metadata_and_targets(
     assert meta is not None
     assert meta[0].sample_role == "pooled_qc"
 
+    metadata_csv = tmp_path / "sample_metadata.csv"
+    metadata_csv.write_text(
+        "schema_version,sample_name,raw_stem,injection_order,sample_role,"
+        "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
+        "sample_metadata_v1,Sample_QC_01,Sample_QC_01,1,pooled_qc,B1,P1,serum,QC,true,carryover\n",
+        encoding="utf-8",
+    )
+    assert view._samples.load_sequence_source(metadata_csv)
+
     req = view._build_request(view._current_config())
     assert req.targets_csv == targets_csv
     assert req.sample_metadata is not None
     assert req.sample_metadata[0].raw_stem == "Sample_QC_01"
     assert req.sample_metadata[0].sample_role == "pooled_qc"
+    from xic_extractor.sample_metadata import load_sample_metadata
+
+    assert req.sample_metadata == load_sample_metadata(metadata_csv)
 
 
 def test_untargeted_view_reset_batch_button_clears_state(
