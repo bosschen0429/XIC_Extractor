@@ -68,6 +68,48 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
     assert changed.coordinates == reference.coordinates
     assert changed.workbook_sha256 != reference.workbook_sha256
     assert changed.anchor.target_snapshot == reference.anchor.target_snapshot
+    assert (
+        changed.provenance["content_sha256"] == reference.provenance["content_sha256"]
+    )
+
+
+def test_known_reference_content_identity_tracks_declared_and_measured_content():
+    from dataclasses import replace
+
+    from xic_extractor.alignment.drift_evidence import (
+        mint_known_istd_reference_from_measurements,
+    )
+
+    target = Target("known", 500, 7, 10, 20, 116.0474, 20, 50, True, "")
+    coordinates = {("known", "early"): 8, ("known", "late"): 9}
+    reference = mint_known_istd_reference_from_measurements(
+        (target,), coordinates, source_sha256="a" * 64,
+    )
+    equivalent = mint_known_istd_reference_from_measurements(
+        (target,), {("known", "late"): 9.0, ("known", "early"): 8.0},
+        source_identifier="elsewhere.xlsx", source_sha256="b" * 64,
+    )
+    changed_rt = mint_known_istd_reference_from_measurements(
+        (target,), {**coordinates, ("known", "late"): 9.5},
+        source_sha256="a" * 64,
+    )
+    changed_target = mint_known_istd_reference_from_measurements(
+        (replace(target, ppm_tol=10),), coordinates, source_sha256="a" * 64,
+    )
+
+    assert (
+        reference.provenance["content_sha256"]
+        == equivalent.provenance["content_sha256"]
+    )
+    assert reference.workbook_sha256 == changed_rt.workbook_sha256
+    assert (
+        reference.provenance["content_sha256"]
+        != changed_rt.provenance["content_sha256"]
+    )
+    assert (
+        reference.provenance["content_sha256"]
+        != changed_target.provenance["content_sha256"]
+    )
 
 
 @pytest.mark.parametrize(
