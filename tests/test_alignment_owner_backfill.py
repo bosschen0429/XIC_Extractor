@@ -1423,8 +1423,9 @@ def _dense_peak_source(*, center: float, height: float) -> FakeBackfillSource:
         [0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25, 0.1, 0.0],
     )
     return FakeBackfillSource(
-        rt=np.linspace(center - 0.10, center + 0.10, 11),
-        intensity=height * scale,
+        # Physical peak facts require context beyond both baseline-return scans.
+        rt=np.linspace(center - 0.14, center + 0.14, 15),
+        intensity=height * np.pad(scale, (2, 2)),
     )
 
 
