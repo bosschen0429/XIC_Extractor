@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--report",
         required=True,
         type=Path,
-        help="Path to the cid_nl_explanation.sqlite source report database.",
+        help="Path to the feature evidence SQLite report database.",
     )
     parser.add_argument(
         "--output",

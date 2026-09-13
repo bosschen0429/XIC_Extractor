@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 from xic_extractor.diagnostics.cid_nl_explanation import (
-    CidNlEvidenceLocator,
+    EvidenceLocator,
     ExplanationError,
     ExplanationUnavailableError,
-    read_cid_nl_curves,
-    read_cid_nl_explanation,
+    read_evidence_curves,
+    read_evidence_summary,
 )
 from xic_inspector.rendering.html_builder import (
     build_report_html,
@@ -189,7 +189,7 @@ class ReportResult:
     """Immutable result of successful report generation."""
 
     output_path: Path
-    source: CidNlEvidenceLocator
+    source: EvidenceLocator
     evidence_capability: CapabilityKind
     run_total: int
     eligible_count: int
@@ -402,7 +402,7 @@ def generate_report(
     selection: SelectionRequest,
     output: Path,
     *,
-    expected_source: CidNlEvidenceLocator | None = None,
+    expected_source: EvidenceLocator | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> ReportResult:
@@ -431,7 +431,7 @@ def generate_report(
         raise InspectorError(3, f"Source DB unavailable: {report_path}")
 
     try:
-        summary = read_cid_nl_explanation(report_path)
+        summary = read_evidence_summary(report_path)
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
@@ -472,7 +472,7 @@ def generate_report(
     req_id = summary.get("processing_request_id", "")
     att_id = summary.get("processing_attempt_id", "")
 
-    source_locator = CidNlEvidenceLocator(
+    source_locator = EvidenceLocator(
         report_path=report_path,
         matrix_path=matrix_file,
         matrix_sha256=actual_matrix_sha256,
@@ -576,7 +576,7 @@ def generate_report(
     if capability == "retained_curves_v1" and selected_items:
         # Load curves for selected items
         record_ids = [it.identifier for it in selected_items]
-        raw_curves = read_cid_nl_curves(
+        raw_curves = read_evidence_curves(
             report_path, sample_ids=normalized_sample_ids, record_ids=record_ids
         )
         for c in raw_curves:

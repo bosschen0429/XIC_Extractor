@@ -537,6 +537,7 @@ def _run_untargeted_cid_nl_alignment(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
             untargeted_cid_nl_result=completed,
+            evidence=cid_nl_evidence,
             cid_nl_evidence=cid_nl_evidence,
         )
     finally:

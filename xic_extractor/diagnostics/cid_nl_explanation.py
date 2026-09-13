@@ -34,8 +34,8 @@ ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
-class CidNlEvidenceLocator:
-    """Immutable provenance locator pointing to a completed CID-NL explanation DB."""
+class EvidenceLocator:
+    """Immutable provenance locator pointing to a completed evidence DB."""
 
     report_path: Path
     matrix_path: Path
@@ -43,6 +43,9 @@ class CidNlEvidenceLocator:
     processing_request_id: str
     processing_attempt_id: str
     schema_version: int
+
+
+CidNlEvidenceLocator = EvidenceLocator
 
 
 class ExplanationError(ValueError):
@@ -449,3 +452,7 @@ def read_cid_nl_curves(
     finally:
         if connection is not None:
             connection.close()
+
+
+read_evidence_summary = read_cid_nl_explanation
+read_evidence_curves = read_cid_nl_curves

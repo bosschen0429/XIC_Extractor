@@ -12,7 +12,7 @@ if TYPE_CHECKING:
         CompletedUntargetBatchWorkflowResult,
     )
     from xic_extractor.diagnostics.cid_nl_explanation import (
-        CidNlEvidenceLocator,
+        EvidenceLocator,
     )
 
 from xic_extractor.alignment.artifact_write_receipts import (
@@ -114,7 +114,14 @@ class AlignmentRunOutputs:
         OwnerBackfillEvaluationCoverageBatch | None
     ) = None
     untargeted_cid_nl_result: CompletedUntargetBatchWorkflowResult | None = None
-    cid_nl_evidence: CidNlEvidenceLocator | None = None
+    evidence: EvidenceLocator | None = None
+    cid_nl_evidence: EvidenceLocator | None = None
+
+    def __post_init__(self) -> None:
+        if self.evidence is not None and self.cid_nl_evidence is None:
+            object.__setattr__(self, "cid_nl_evidence", self.evidence)
+        elif self.cid_nl_evidence is not None and self.evidence is None:
+            object.__setattr__(self, "evidence", self.cid_nl_evidence)
 
 
 def output_paths(
