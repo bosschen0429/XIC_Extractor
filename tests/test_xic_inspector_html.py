@@ -51,6 +51,91 @@ def test_hostile_fields_stay_data_in_portable_report() -> None:
     assert not re.search(r"<(?:script|img|link)\b[^>]*(?:src|href)=", report)
 
 
+def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
+    """Protect the stable review entry points without requiring method data."""
+    payload = {
+        "items": [
+            {
+                "id": "item-1",
+                "title": "Recorded result",
+                "samples": [],
+                "details": {"records": []},
+            }
+        ],
+        "samples": [],
+    }
+    report = build_report_html(
+        title="Generic report",
+        evidence_capability="metadata_only",
+        strategy="sample",
+        request_id="generic",
+        run_total=1,
+        eligible_count=1,
+        selected_count=1,
+        source_db_name="generic.sqlite",
+        payload_data=payload,
+    )
+
+    for required_id in (
+        "active-filters",
+        "record-list",
+        "workspace-content",
+        "zoom-dialog",
+        "report-info-dialog",
+    ):
+        assert f'id="{required_id}"' in report
+    assert "本報告未提供可讀來源紀錄" in report
+    assert "對齊時間：來源未提供座標" in report
+    assert "counts·s" in report
+    assert "https://" not in report
+
+
+def test_record_scope_does_not_become_a_candidate_adoption_claim() -> None:
+    """Candidate links scope a record; they do not identify an adopted candidate."""
+    payload = {
+        "items": [
+            {
+                "id": "item-1",
+                "samples": [
+                    {
+                        "sample_id": "sample-1",
+                        "decision_refs": ["decision-1"],
+                    }
+                ],
+                "witnesses": [
+                    {"candidate_id": "candidate-1", "sample_id": "sample-1"},
+                    {"candidate_id": "candidate-2", "sample_id": "sample-1"},
+                ],
+                "details": {
+                    "readable_records": [
+                        {
+                            "ref": "decision-1",
+                            "title": "Decision record",
+                            "sample_ids": ["sample-1"],
+                            "candidate_ids": ["candidate-1", "candidate-2"],
+                        }
+                    ]
+                },
+            }
+        ],
+        "samples": [{"id": "sample-1", "label": "S01"}],
+    }
+    report = build_report_html(
+        title="Scoped reference",
+        evidence_capability="metadata_only",
+        strategy="sample",
+        request_id="scoped",
+        run_total=1,
+        eligible_count=1,
+        selected_count=1,
+        source_db_name="generic.sqlite",
+        payload_data=payload,
+    )
+
+    assert "當次採用" not in report
+    assert "目前查看" in report
+
+
 def test_build_and_write_report_atomically() -> None:
     """Verify atomic write of self-contained HTML report."""
     with tempfile.TemporaryDirectory() as tmpdir:

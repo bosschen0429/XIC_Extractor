@@ -25,6 +25,63 @@ from xic_inspector.selection.canonical import (
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
 
+_RECORD_TITLES = {
+    "rows": "結果列與輸出去向",
+    "final_groups": "最終分組紀錄",
+    "cell_decisions": "樣本定量決策",
+    "terminal_subjects": "終端觀察紀錄",
+    "method_subjects": "方法條件",
+    "method_assessments": "方法評估紀錄",
+    "initial_edges": "初始關聯紀錄",
+    "exclusions": "候選排除紀錄",
+    "capture_evidence": "曲線擷取關係",
+}
+
+_FIELD_LABELS = {
+    "quantitative_value": "正式定量值",
+    "value": "正式定量值",
+    "variant": "結果類型",
+    "source": "定量來源",
+    "reason": "來源記錄理由",
+    "disposition": "記錄狀態",
+    "destination": "輸出去向",
+    "method_result": "方法結果",
+    "neutral_loss_da": "中性丟失 (Da)",
+    "precursor_mz": "前驅離子 m/z",
+    "rt_apex_min": "峰頂 RT (min)",
+    "discovery_candidate_state": "候選狀態",
+    "kind": "擷取階段",
+}
+
+_TECHNICAL_LABELS = {
+    "record_id": "所指紀錄 ID",
+    "payload_id": "曲線 evidence ref",
+    "sample_id": "樣本 ID",
+    "canonical_sample_identity_id": "樣本 ID",
+    "candidate_id": "候選 ID",
+    "row_key_id": "結果列 ID",
+    "group_hypothesis_id": "分組 ID",
+    "peak_observation_content_id": "觀察 ID",
+    "processing_request_id": "處理 request ID",
+    "processing_attempt_id": "處理 attempt ID",
+    "profile_id": "訊號處理 profile ID",
+    "prepared_signal_id": "處理訊號 ID",
+    "trace_content_id": "訊號內容 ID",
+    "acquisition_source_id": "擷取來源 ID",
+    "observation_artifact_id": "觀察 artifact ID",
+    "method_subject_id": "方法對象 ID",
+    "full_trace_sha256": "完整訊號 SHA-256",
+    "selection_trace_sha256": "選取訊號 SHA-256",
+    "matrix_path": "Matrix 路徑",
+}
+
+_STAGE_LABELS = {
+    "discovery_physical": "探索階段曲線",
+    "initial_capture": "首次擷取曲線",
+    "reacquired_capture": "再次擷取曲線",
+    "recovery_observation": "方法補取曲線",
+}
+
 
 def read_summary(path: str | Path) -> dict[str, Any]:
     """Read compact metadata without retrieving curve payloads."""
@@ -355,6 +412,29 @@ class CidNlSource:
                     else (c.get("candidate_id"), c.get("sample_id")) in keys
                 )
             ]
+            projected_curves = []
+            for curve in curves:
+                projected = self._curve(curve)
+                projected["candidate_ids"] = sorted(
+                    {
+                        cid
+                        for cid, sid in keys
+                        if sid == curve.get("sample_id")
+                        and (
+                            ("capture_evidence", curve.get("payload_id"))
+                            in self.links.get((cid, sid), set())
+                            or any(
+                                witness.candidate_id == cid
+                                and witness.canonical_sample_identity_id == sid
+                                and witness.observation_id
+                                == curve.get("peak_observation_content_id")
+                                for witness in item.witnesses
+                                if witness.observation_id
+                            )
+                        )
+                    }
+                )
+                projected_curves.append(projected)
             samples = []
             for sid in item.sample_ids:
                 cells = [
@@ -388,16 +468,14 @@ class CidNlSource:
                             if len(values) == 1
                             else {}
                         ),
-                        "decision_reason": "; ".join(
-                            str(c.get("source", c.get("variant", "unavailable")))
-                            for c in cells
-                        )
-                        or "unavailable",
+                        "decision_reason": self._decision_reason(cells),
                         "decision_label": self._decision_label(cells),
+                        "decision_refs": self._decision_refs(item, sid),
                         "evidence_status": "available"
                         if any(
-                            c.get("sample_id") == sid and c["curves"]["rt"]
-                            for c in curves
+                            curve.get("sample_id") == sid
+                            and curve.get("raw_rts")
+                            for curve in projected_curves
                         )
                         else "unavailable",
                         "refs": cells,
@@ -429,35 +507,507 @@ class CidNlSource:
                         for w in item.witnesses
                     ],
                     "matched_refs": [asdict(w) for w in item.matched_witnesses],
-                    "details": item.details,
-                    "curves": [
-                        {
-                            **self._curve(c),
-                            "candidate_ids": sorted(
-                                {
-                                    cid
-                                    for cid, sid in keys
-                                    if sid == c.get("sample_id")
-                                    and (
-                                        ("capture_evidence", c.get("payload_id"))
-                                        in self.links.get((cid, sid), set())
-                                        or any(
-                                            w.candidate_id == cid
-                                            and w.canonical_sample_identity_id == sid
-                                            and w.observation_id
-                                            == c.get("peak_observation_content_id")
-                                            for w in item.witnesses
-                                            if w.observation_id
-                                        )
-                                    )
-                                }
-                            ),
-                        }
-                        for c in curves
-                    ],
+                    "details": {
+                        **item.details,
+                        "readable_records": self._readable_records(
+                            item, projected_curves
+                        ),
+                    },
+                    "curves": projected_curves,
                 }
             )
         return rendered
+
+    def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[str]:
+        item_keys = {
+            (witness.candidate_id, witness.canonical_sample_identity_id)
+            for witness in item.witnesses
+        }
+        refs = []
+        for record in item.details["records"]:
+            if record["kind"] != "cell_decisions":
+                continue
+            facts = record["facts"]
+            recorded_sample = facts.get(
+                "canonical_sample_identity_id", facts.get("sample_id")
+            )
+            if recorded_sample is not None:
+                applies = recorded_sample == sample_id
+            else:
+                applies = any(
+                    sid == sample_id
+                    and (cid, sid) in item_keys
+                    and (record["kind"], record["ref"])
+                    in self.links.get((cid, sid), set())
+                    for cid, sid in item_keys
+                )
+            if applies:
+                refs.append(record["ref"])
+        return sorted(set(refs))
+
+    @staticmethod
+    def _decision_reason(cells: list[dict[str, Any]]) -> str:
+        if not cells:
+            return "來源未記錄此樣本的定量決策。"
+        if len(cells) != 1:
+            return f"來源保留 {len(cells)} 筆定量決策，未記錄單一理由。"
+        cell = cells[0]
+        reason = cell.get("decision_reason", cell.get("reason"))
+        if reason not in (None, ""):
+            return f"來源記錄理由：{reason}"
+        source = cell.get("source")
+        if source == "trapezoid_counts_seconds_on_canonical_signal_v1":
+            return "來源記錄定量方式為當次採用訊號的梯形積分；未另記理由。"
+        if source not in (None, ""):
+            return f"來源記錄定量方式為「{source}」；未另記理由。"
+        variant = cell.get("variant")
+        if variant not in (None, ""):
+            return f"來源記錄結果類型為「{variant}」；未另記理由。"
+        return "來源未記錄定量理由。"
+
+    def _readable_records(
+        self, item: CanonicalItem, curves: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        available_refs = {
+            record["ref"] for record in item.details["records"]
+        } | {
+            curve["evidence_ref"]
+            for curve in curves
+            if curve.get("evidence_ref") is not None
+        }
+        readable = [
+            self._readable_record(item, record, available_refs)
+            for record in item.details["records"]
+        ]
+        positions = {record["ref"]: index for index, record in enumerate(readable)}
+        for curve in curves:
+            curve_record = self._readable_curve(item, curve, available_refs)
+            ref = curve_record["ref"]
+            if ref not in positions:
+                positions[ref] = len(readable)
+                readable.append(curve_record)
+                continue
+            index = positions[ref]
+            existing = readable[index]
+            curve_record["sample_ids"] = sorted(
+                set(existing["sample_ids"]) | set(curve_record["sample_ids"])
+            )
+            curve_record["candidate_ids"] = sorted(
+                set(existing["candidate_ids"]) | set(curve_record["candidate_ids"])
+            )
+            curve_record["fields"] = self._dedupe_entries(
+                existing["fields"] + curve_record["fields"]
+            )
+            curve_record["links"] = self._dedupe_entries(
+                existing["links"] + curve_record["links"]
+            )
+            curve_record["technical_refs"] = self._dedupe_entries(
+                existing["technical_refs"] + curve_record["technical_refs"]
+            )
+            readable[index] = curve_record
+        return readable
+
+    def _readable_record(
+        self,
+        item: CanonicalItem,
+        record: dict[str, Any],
+        available_refs: set[str],
+    ) -> dict[str, Any]:
+        kind = record["kind"]
+        facts = record["facts"]
+        sample_ids, candidate_ids = self._record_scope(item, record)
+        title = _RECORD_TITLES.get(kind, f"{kind} 來源紀錄")
+        return {
+            "ref": record["ref"],
+            "title": title,
+            "summary": self._record_summary(
+                item, kind, facts, sample_ids, candidate_ids, title
+            ),
+            "sample_ids": sample_ids,
+            "candidate_ids": candidate_ids,
+            "fields": self._record_fields(facts),
+            "links": self._record_links(facts, record["ref"], available_refs),
+            "technical_refs": self._technical_refs(
+                facts,
+                first={"label": "來源紀錄 ID", "value": record["ref"]},
+            ),
+        }
+
+    def _record_scope(
+        self, item: CanonicalItem, record: dict[str, Any]
+    ) -> tuple[list[str], list[str]]:
+        item_keys = {
+            (witness.candidate_id, witness.canonical_sample_identity_id)
+            for witness in item.witnesses
+        }
+        linked_keys = {
+            key
+            for key in item_keys
+            if (record["kind"], record["ref"])
+            in self.links.get(key, set())
+        }
+        facts = record["facts"]
+        recorded_sample = facts.get(
+            "canonical_sample_identity_id", facts.get("sample_id")
+        )
+        if recorded_sample is not None:
+            sample_ids = [recorded_sample] if recorded_sample in item.sample_ids else []
+            linked_keys = {key for key in linked_keys if key[1] == recorded_sample}
+        else:
+            sample_ids = sorted({sample_id for _, sample_id in linked_keys})
+        recorded_candidate = facts.get("candidate_id")
+        candidate_ids = {candidate_id for candidate_id, _ in linked_keys}
+        if recorded_candidate is not None and any(
+            candidate_id == recorded_candidate
+            and (recorded_sample is None or sample_id == recorded_sample)
+            for candidate_id, sample_id in item_keys
+        ):
+            candidate_ids.add(recorded_candidate)
+        return sample_ids, sorted(candidate_ids)
+
+    @staticmethod
+    def _sample_name(item: CanonicalItem, sample_id: str) -> str:
+        return next(
+            (
+                witness.sample_stem
+                for witness in item.witnesses
+                if witness.canonical_sample_identity_id == sample_id
+                and witness.sample_stem
+            ),
+            sample_id,
+        )
+
+    def _record_summary(
+        self,
+        item: CanonicalItem,
+        kind: str,
+        facts: dict[str, Any],
+        sample_ids: list[str],
+        candidate_ids: list[str],
+        title: str,
+    ) -> str:
+        sample = (
+            self._sample_name(item, sample_ids[0])
+            if len(sample_ids) == 1
+            else None
+        )
+        if kind == "cell_decisions":
+            value = facts.get("value", facts.get("quantitative_value"))
+            owner = f"{sample} 的" if sample else "這筆"
+            if value is None:
+                return f"{owner}正式定量決策記錄為空值；空值不等於零。"
+            if value == 0:
+                return f"{owner}正式定量決策記錄為零。"
+            return (
+                f"{owner}正式定量決策記錄數值 "
+                f"{self._format_measurement(value)}。"
+            )
+        if kind == "rows":
+            destination_value = (facts.get("route") or {}).get("destination")
+            destination = (
+                destination_value if isinstance(destination_value, str) else None
+            )
+            if destination == "matrix":
+                return "此結果列的實錄去向為定量矩陣。"
+            if destination == "archive":
+                return "此結果列留在封存紀錄，未列入定量矩陣。"
+            return "此結果列未記錄輸出去向。"
+        if kind == "final_groups":
+            state = facts.get("disposition")
+            return (
+                f"來源保留的最終分組紀錄，記錄狀態為「{state}」。"
+                if state not in (None, "")
+                else "來源保留最終分組紀錄，但未記錄狀態。"
+            )
+        if kind == "capture_evidence":
+            stage_value = facts.get("kind")
+            stage = (
+                _STAGE_LABELS.get(stage_value, "保留曲線")
+                if isinstance(stage_value, str)
+                else "保留曲線"
+            )
+            owner = f"{sample} 的" if sample else "這筆"
+            return f"{owner}{stage}與其精確曲線 evidence ref 的關係。"
+        if kind == "terminal_subjects":
+            count = len(facts.get("observations") or [])
+            return f"來源保留 {count} 筆終端觀察。"
+        if kind == "method_subjects" and facts.get("neutral_loss_da") is not None:
+            return f"此方法紀錄的中性丟失為 {facts['neutral_loss_da']} Da。"
+        scope = []
+        if sample_ids:
+            scope.append(f"{len(sample_ids)} 個樣本")
+        if candidate_ids:
+            scope.append(f"{len(candidate_ids)} 個候選")
+        suffix = f"，明示關聯到{'、'.join(scope)}" if scope else ""
+        return f"來源保留的{title}{suffix}。"
+
+    @classmethod
+    def _record_fields(cls, facts: dict[str, Any]) -> list[dict[str, Any]]:
+        fields = []
+
+        def add(key: str, value: Any) -> None:
+            if value is None or isinstance(value, (dict, list, tuple)):
+                return
+            if isinstance(value, str) and len(value) > 160:
+                return
+            fields.append(
+                {
+                    "label": _FIELD_LABELS.get(key, key),
+                    "value": cls._format_record_value(key, value),
+                }
+            )
+
+        if "quantitative_value" in facts or "value" in facts:
+            value = facts.get("value", facts.get("quantitative_value"))
+            fields.append(
+                {
+                    "label": "正式定量值",
+                    "value": (
+                        "空值（非零）"
+                        if value is None
+                        else cls._format_measurement(value)
+                    ),
+                }
+            )
+        route = facts.get("route")
+        if isinstance(route, dict):
+            add("destination", route.get("destination"))
+            add("reason", route.get("reason"))
+        for key in (
+            "variant",
+            "source",
+            "reason",
+            "disposition",
+            "method_result",
+            "neutral_loss_da",
+            "precursor_mz",
+            "rt_apex_min",
+            "discovery_candidate_state",
+            "kind",
+        ):
+            add(key, facts.get(key))
+        observations = facts.get("observations")
+        if isinstance(observations, list):
+            fields.append({"label": "終端觀察數", "value": len(observations)})
+            for index, observation in enumerate(observations, 1):
+                if isinstance(observation, dict):
+                    apex = observation.get("rt_apex_min")
+                    if isinstance(apex, (int, float)):
+                        fields.append(
+                            {
+                                "label": f"觀察 {index} 峰頂 RT (min)",
+                                "value": cls._format_fixed(apex, 3),
+                            }
+                        )
+        initial = facts.get("initial_evidence")
+        if isinstance(initial, dict):
+            add("reason", initial.get("failure", initial.get("reason")))
+        return cls._dedupe_entries(fields)
+
+    @classmethod
+    def _format_record_value(cls, key: str, value: Any) -> Any:
+        if key == "precursor_mz":
+            return cls._format_fixed(value, 4)
+        if key == "neutral_loss_da":
+            return cls._format_fixed(value, 4)
+        if key == "rt_apex_min":
+            return cls._format_fixed(value, 3)
+        return value
+
+    @staticmethod
+    def _format_fixed(value: Any, digits: int) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return value
+        return f"{value:.{digits}f}"
+
+    @staticmethod
+    def _format_measurement(value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return value
+        if value == 0:
+            return "0"
+        if abs(value) < 0.00005:
+            return f"{value:.4g}"
+        return f"{value:,.4f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    def _record_links(
+        facts: dict[str, Any], current_ref: str, available_refs: set[str]
+    ) -> list[dict[str, str]]:
+        links = []
+        for key, label in (
+            ("row_key_id", "查看結果列"),
+            ("group_hypothesis_id", "查看分組紀錄"),
+            ("payload_id", "查看曲線來源"),
+            ("record_id", "查看所指紀錄"),
+        ):
+            value = facts.get(key)
+            if (
+                isinstance(value, str)
+                and value in available_refs
+                and value != current_ref
+            ):
+                links.append({"ref": value, "label": label})
+        for key, value in facts.items():
+            if not (key.endswith("_ref") or key.endswith("_refs")):
+                continue
+            values = value if isinstance(value, list) else [value]
+            for ref in values:
+                if (
+                    isinstance(ref, str)
+                    and ref in available_refs
+                    and ref != current_ref
+                ):
+                    links.append({"ref": ref, "label": "查看相關紀錄"})
+        return CidNlSource._dedupe_entries(links)
+
+    @classmethod
+    def _technical_refs(
+        cls,
+        payload: dict[str, Any],
+        *,
+        first: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        refs = [first]
+
+        def visit(key: str, value: Any) -> None:
+            if isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    visit(child_key, child_value)
+                return
+            if isinstance(value, (list, tuple)):
+                for child in value:
+                    if isinstance(child, dict):
+                        for child_key, child_value in child.items():
+                            visit(child_key, child_value)
+                    elif cls._is_technical_key(key):
+                        visit(key, child)
+                return
+            if value is None or not cls._is_technical_key(key):
+                return
+            refs.append(
+                {
+                    "label": _TECHNICAL_LABELS.get(key, key),
+                    "value": value,
+                }
+            )
+
+        for field, value in payload.items():
+            visit(field, value)
+        return cls._dedupe_entries(refs)
+
+    @staticmethod
+    def _is_technical_key(key: str) -> bool:
+        return (
+            key == "id"
+            or key.endswith("_id")
+            or key.endswith("_ids")
+            or key.endswith("_ref")
+            or key.endswith("_refs")
+            or key.endswith("_sha256")
+            or key.endswith("_path")
+        )
+
+    @staticmethod
+    def _dedupe_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        result = []
+        seen = set()
+        for entry in entries:
+            marker = tuple(entry.items())
+            if marker in seen:
+                continue
+            seen.add(marker)
+            result.append(entry)
+        return result
+
+    def _readable_curve(
+        self,
+        item: CanonicalItem,
+        curve: dict[str, Any],
+        available_refs: set[str],
+    ) -> dict[str, Any]:
+        ref = curve["evidence_ref"]
+        sample_ids = [curve["sample_id"]] if curve.get("sample_id") else []
+        candidate_ids = sorted(
+            set(curve.get("candidate_ids") or [])
+            | ({curve["candidate_id"]} if curve.get("candidate_id") else set())
+        )
+        fields = [
+            {"label": "擷取階段", "value": curve["stage_label"]},
+            {"label": "時間軸", "value": "原始保留時間 (RT)"},
+        ]
+        signal_labels = ["原始訊號"]
+        signal_names = {
+            "baseline": "基線",
+            "smoothed": "平滑訊號",
+            "positive": "處理後正值訊號",
+        }
+        signal_labels.extend(
+            signal_names.get(signal["kind"], signal["kind"])
+            for signal in curve.get("processed_curves", [])
+        )
+        fields.append({"label": "可用訊號", "value": "、".join(signal_labels)})
+        left = curve.get("bound_left_rt")
+        right = curve.get("bound_right_rt")
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            fields.append(
+                {"label": "積分範圍 (min)", "value": f"{left:.3f}–{right:.3f}"}
+            )
+        if curve.get("apex_rt") is not None:
+            fields.append(
+                {
+                    "label": "積分峰頂 RT (min)",
+                    "value": self._format_fixed(curve["apex_rt"], 3),
+                }
+            )
+        integration = curve.get("integration") or {}
+        if integration.get("raw_apex_rt_min") is not None:
+            fields.append(
+                {
+                    "label": "原始訊號峰頂 RT (min)",
+                    "value": self._format_fixed(
+                        integration["raw_apex_rt_min"], 3
+                    ),
+                }
+            )
+        if curve.get("area") is not None:
+            fields.append(
+                {
+                    "label": "當次原始計數面積 (counts·s)",
+                    "value": self._format_measurement(curve["area"]),
+                }
+            )
+        for key, label in (
+            ("integration_method", "積分方法"),
+            ("boundary_source", "峰界來源"),
+        ):
+            if integration.get(key) is not None:
+                fields.append({"label": label, "value": integration[key]})
+        facts = {
+            "sample_id": curve.get("sample_id"),
+            "candidate_id": curve.get("candidate_id"),
+            "peak_observation_content_id": curve.get("observation_id"),
+            "provenance": curve.get("provenance") or {},
+        }
+        sample = (
+            self._sample_name(item, sample_ids[0]) if sample_ids else "這個樣本"
+        )
+        integration_note = (
+            "，並包含積分範圍與面積紀錄" if integration else "；來源未提供積分紀錄"
+        )
+        return {
+            "ref": ref,
+            "title": curve["stage_label"],
+            "summary": f"{sample} 的{curve['stage_label']}{integration_note}。",
+            "sample_ids": sample_ids,
+            "candidate_ids": candidate_ids,
+            "fields": self._dedupe_entries(fields),
+            "links": self._record_links(facts, ref, available_refs),
+            "technical_refs": self._technical_refs(
+                facts,
+                first={"label": "曲線 evidence ref", "value": ref},
+            ),
+        }
 
     @staticmethod
     def _decision_label(cells):
@@ -500,18 +1050,48 @@ class CidNlSource:
                 else ("未分組候選", "本次候選沒有最終分組紀錄")
             )
         count = len(samples)
-        value_count = sum(
-            "quantitative_value" in sample and sample["quantitative_value"] is not None
-            for sample in samples
-        )
+        states = {"numeric": 0, "zero": 0, "null": 0, "multiple": 0, "missing": 0}
+        for sample in samples:
+            decision_count = len(sample["refs"])
+            if decision_count == 0:
+                states["missing"] += 1
+            elif decision_count > 1:
+                states["multiple"] += 1
+            elif sample.get("quantitative_value") is None:
+                states["null"] += 1
+            elif sample["quantitative_value"] == 0:
+                states["zero"] += 1
+            else:
+                states["numeric"] += 1
         if count == 1:
-            population = "此樣本有定量數值" if value_count else "此樣本沒有定量數值"
+            population = {
+                "numeric": "此樣本有定量數值",
+                "zero": "此樣本定量值為零",
+                "null": "此樣本定量值為空值",
+                "multiple": "此樣本有多筆定量決策，未形成單一結果",
+                "missing": "此樣本沒有定量決策紀錄",
+            }[next(state for state, state_count in states.items() if state_count)]
         else:
-            population = (
-                f"所選 {count} 個樣本中有 {value_count} 個保留定量數值"
-                if value_count != count
-                else f"所選 {count} 個樣本均有定量數值"
+            labels = (
+                ("numeric", "有定量數值"),
+                ("null", "空值"),
+                ("zero", "零值"),
+                ("multiple", "有多筆決策且無單一結果"),
+                ("missing", "沒有定量決策紀錄"),
             )
+            population = "所選 {} 個樣本：{}".format(
+                count,
+                "、".join(
+                    f"{states[state]} 個{label}"
+                    for state, label in labels
+                    if states[state]
+                ),
+            )
+        curve_missing = sum(
+            sample["evidence_status"] == "unavailable" for sample in samples
+        )
+        if curve_missing:
+            population += f"；{curve_missing} 個未保存曲線"
         destination = route.get("destination")
         route_label = {
             "matrix": "去向：定量矩陣",
@@ -559,12 +1139,7 @@ class CidNlSource:
             ),
             "observation_id": payload.get("peak_observation_content_id"),
             "kind": payload.get("kind"),
-            "stage_label": {
-                "discovery_physical": "探索階段曲線",
-                "initial_capture": "首次擷取曲線",
-                "reacquired_capture": "再次擷取曲線",
-                "recovery_observation": "方法補取曲線",
-            }.get(payload.get("kind"), "保留曲線"),
+            "stage_label": _STAGE_LABELS.get(payload.get("kind"), "保留曲線"),
             "raw_rts": rts,
             "raw_intensities": curves.get("raw", []),
             "processed_curves": [

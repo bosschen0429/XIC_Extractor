@@ -55,11 +55,25 @@ sample, and candidate navigation; filters; evidence details; lightbox views;
 and keyboard interaction operate on the embedded selected subset.
 
 Source adapters supply readable titles and explanations of recorded outcomes.
-The workbench presents them as text and tables, including expanded details and
-chart tooltips; raw JSON and opaque identifiers remain in the embedded data.
-Precursor m/z uses four fixed decimal places, primary RT uses two, and detailed
-peak times use three. NULL, numeric zero, and unavailable values remain distinct.
-Focusing a sample also focuses its candidate and peak-detail tables.
+The workbench links the sample result, candidate, retained capture, integration
+facts, and available decision records. Focusing a sample scopes its candidate
+choices and peak details. Viewing a candidate does not change the recorded
+decision. Integration boundaries, peak time, and raw-count area are shown with
+the selected capture; that area does not replace the final quantitative value.
+
+Readable evidence records describe the supplied facts and their explicit links.
+Exact identifiers remain available on demand for traceability. A link opens a
+record only when its content is embedded in this report; an external or missing
+reference remains identifiable without claiming its content is available offline.
+The report does not infer a decision reason or a candidate relationship from a
+display name, nearby mass, or nearby retention time.
+
+Capture stage, signal type, and time axis are distinct. Aligned curves and peak
+marks require supplied aligned coordinates; the current CID-NL source does not
+provide them. The workbench explains this limitation while showing available
+raw-time data. Precursor m/z uses four fixed decimal places, primary RT uses two,
+and detailed peak times use three. NULL, numeric zero, a missing single result,
+and unavailable curve evidence remain distinct.
 
 Report generation writes through a temporary file and replaces the requested
 output only after successful completion. Cancellation or failure leaves an

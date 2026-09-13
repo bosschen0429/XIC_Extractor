@@ -616,6 +616,7 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     item = _report_data(output)["items"][0]
     assert item["curves"] == []
     assert item["samples"][0]["evidence_status"] == "unavailable"
+    assert item["samples"][0]["decision_refs"] == []
 
 
 def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
@@ -701,6 +702,305 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
         generate_report(report, SelectionRequest(), output)
     assert caught.value.code == 4
     assert output.read_bytes() == before
+
+
+def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
+    tmp_path,
+):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    output = tmp_path / "readable.html"
+    generate_report(report, SelectionRequest(), output)
+
+    item = _report_data(output)["items"][0]
+    records = item["details"]["records"]
+    assert next(r for r in records if r["ref"] == "cd-01")["facts"] == {
+        "row_key_id": "row-01",
+        "sample_id": "S1",
+        "quantitative_value": 1000.0,
+    }
+
+    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+    decision = readable["cd-01"]
+    assert decision["sample_ids"] == ["S1"]
+    assert decision["candidate_ids"] == ["C1"]
+    assert decision["links"] == [{"ref": "row-01", "label": "查看結果列"}]
+    assert {field["label"]: field["value"] for field in decision["fields"]}[
+        "正式定量值"
+    ] == "1,000"
+    decision_refs = {
+        ref["label"]: ref["value"] for ref in decision["technical_refs"]
+    }
+    assert decision_refs.items() >= {
+        "來源紀錄 ID": "cd-01",
+        "樣本 ID": "S1",
+        "結果列 ID": "row-01",
+    }.items()
+
+    curve = item["curves"][0]
+    curve_record = readable[curve["evidence_ref"]]
+    assert curve_record["ref"] == "S1:initial_capture:C1"
+    assert curve_record["sample_ids"] == ["S1"]
+    assert curve_record["candidate_ids"] == ["C1"]
+    curve_fields = {
+        field["label"]: field["value"] for field in curve_record["fields"]
+    }
+    assert curve_fields.items() >= {
+        "積分範圍 (min)": "0.900–1.100",
+        "積分峰頂 RT (min)": "1.000",
+        "原始訊號峰頂 RT (min)": "1.000",
+        "當次原始計數面積 (counts·s)": "2,500",
+        "時間軸": "原始保留時間 (RT)",
+    }.items()
+    curve_refs = {
+        ref["label"]: ref["value"] for ref in curve_record["technical_refs"]
+    }
+    assert curve_refs.items() >= {
+        "曲線 evidence ref": "S1:initial_capture:C1",
+        "觀察 ID": "obs-01",
+        "處理 request ID": "req-01",
+        "處理 attempt ID": "att-01",
+    }.items()
+    assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
+    assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
+    assert curve["provenance"]["processing_request_id"] == "req-01"
+    assert item["samples"][0]["decision_refs"] == ["cd-01"]
+    assert item["samples"][0]["decision_reason"] == "來源未記錄定量理由。"
+
+
+def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
+    tmp_path,
+):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='cell_decisions'",
+            (
+                json.dumps(
+                    {
+                        "row_key_id": "row-01",
+                        "sample_id": "S1",
+                        "quantitative_value": None,
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO candidates VALUES (?, ?, ?)",
+            ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
+        )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "cell_decisions",
+                "cd-02",
+                json.dumps(
+                    {
+                        "row_key_id": "row-01",
+                        "sample_id": "S2",
+                        "quantitative_value": 0,
+                    }
+                ),
+            ),
+        )
+        for kind, ref in (
+            ("rows", "row-01"),
+            ("final_groups", "G1"),
+            ("cell_decisions", "cd-02"),
+        ):
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, ref)
+            )
+
+    output = tmp_path / "null-zero.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    samples = {sample["sample_id"]: sample for sample in item["samples"]}
+    assert samples["S1"]["quantitative_value"] is None
+    assert samples["S2"]["quantitative_value"] == 0
+    assert samples["S1"]["decision_refs"] == ["cd-01"]
+    assert samples["S2"]["decision_refs"] == ["cd-02"]
+    assert samples["S1"]["decision_reason"] == "來源未記錄定量理由。"
+    assert samples["S2"]["decision_reason"] == "來源未記錄定量理由。"
+    assert "1 個空值" in item["reason_label"]
+    assert "1 個零值" in item["reason_label"]
+    assert "1 個未保存曲線" in item["reason_label"]
+    assert not any(token in item["reason_label"] for token in ("成功", "一致"))
+
+    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+    assert readable["cd-01"]["candidate_ids"] == ["C1"]
+    assert readable["cd-02"]["candidate_ids"] == ["C2"]
+    curve_record = readable[item["curves"][0]["evidence_ref"]]
+    assert curve_record["candidate_ids"] == ["C1"]
+    assert {field["label"]: field["value"] for field in readable["cd-01"]["fields"]}[
+        "正式定量值"
+    ] == "空值（非零）"
+    assert {field["label"]: field["value"] for field in readable["cd-02"]["fields"]}[
+        "正式定量值"
+    ] == "0"
+
+
+def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "cell_decisions",
+                "cd-extra",
+                json.dumps(
+                    {
+                        "row_key_id": "row-01",
+                        "sample_id": "S1",
+                        "quantitative_value": 2000.0,
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?)",
+            ("C1", "S1", "cell_decisions", "cd-extra"),
+        )
+
+    output = tmp_path / "multiple.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    sample = item["samples"][0]
+    assert "quantitative_value" not in sample
+    assert sample["decision_refs"] == ["cd-01", "cd-extra"]
+    assert sample["decision_reason"] == "來源保留 2 筆定量決策，未記錄單一理由。"
+    assert "有多筆定量決策，未形成單一結果" in item["reason_label"]
+
+
+def test_structured_external_evidence_refs_remain_technical_without_fake_links(
+    tmp_path,
+):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    external_ref = {
+        "content_identity": {
+            "artifact_content_id": "xic.artifact-content.v1:content-01",
+            "content_sha256": "content-sha-01",
+        },
+        "evidence_artifact_id": "xic.evidence-artifact.v1:external-01",
+        "producer_processing_attempt_id": "xic.processing-attempt.v1:external-att",
+        "producer_processing_request_id": "xic.processing-request.v1:external-req",
+        "upstream_artifact_ids": [],
+    }
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "method_assessments",
+                "assessment-01",
+                json.dumps(
+                    {
+                        "method_result": "HOLD",
+                        "evidence_refs": [external_ref],
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?)",
+            ("C1", "S1", "method_assessments", "assessment-01"),
+        )
+
+    output = tmp_path / "structured-external-ref.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+    assessment = readable["assessment-01"]
+    assert assessment["links"] == []
+    technical_values = {ref["value"] for ref in assessment["technical_refs"]}
+    assert technical_values >= {
+        "xic.artifact-content.v1:content-01",
+        "xic.evidence-artifact.v1:external-01",
+        "xic.processing-attempt.v1:external-att",
+        "xic.processing-request.v1:external-req",
+        "content-sha-01",
+    }
+
+
+def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
+    import zlib
+
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    precursor_mz = 307.1023254394531
+    apex_rt = 17.2623
+    area = 28578.925063705414
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "method_subjects",
+                "format-01",
+                json.dumps(
+                    {
+                        "precursor_mz": precursor_mz,
+                        "rt_apex_min": apex_rt,
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?)",
+            ("C1", "S1", "method_subjects", "format-01"),
+        )
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='cell_decisions'",
+            (
+                json.dumps(
+                    {
+                        "row_key_id": "row-01",
+                        "sample_id": "S1",
+                        "quantitative_value": area,
+                    }
+                ),
+            ),
+        )
+        payload_id, blob = connection.execute(
+            "SELECT payload_id,payload FROM curve_payloads"
+        ).fetchone()
+        payload = json.loads(zlib.decompress(blob))
+        payload["integration"]["apex_rt_min"] = apex_rt
+        payload["integration"]["raw_apex_rt_min"] = apex_rt
+        payload["integration"]["area_raw_counts_seconds"] = area
+        connection.execute(
+            "UPDATE curve_payloads SET payload=? WHERE payload_id=?",
+            (zlib.compress(json.dumps(payload).encode()), payload_id),
+        )
+
+    output = tmp_path / "formatted-values.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+    method_fields = {
+        field["label"]: field["value"] for field in readable["format-01"]["fields"]
+    }
+    decision_fields = {
+        field["label"]: field["value"] for field in readable["cd-01"]["fields"]
+    }
+    curve = item["curves"][0]
+    curve_fields = {
+        field["label"]: field["value"]
+        for field in readable[curve["evidence_ref"]]["fields"]
+    }
+    assert method_fields["前驅離子 m/z"] == "307.1023"
+    assert method_fields["峰頂 RT (min)"] == "17.262"
+    assert decision_fields["正式定量值"] == "28,578.9251"
+    assert curve_fields["積分峰頂 RT (min)"] == "17.262"
+    assert curve_fields["原始訊號峰頂 RT (min)"] == "17.262"
+    assert curve_fields["當次原始計數面積 (counts·s)"] == "28,578.9251"
+
+    method_record = next(
+        record for record in item["details"]["records"] if record["ref"] == "format-01"
+    )
+    assert method_record["facts"]["precursor_mz"] == precursor_mz
+    assert method_record["facts"]["rt_apex_min"] == apex_rt
+    assert item["details"]["cells"][0]["quantitative_value"] == area
+    assert curve["apex_rt"] == apex_rt
+    assert curve["area"] == area
+    assert curve["integration"]["area_raw_counts_seconds"] == area
+    assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
 
 
 @pytest.mark.parametrize(
@@ -797,5 +1097,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
         for token in ("row-01", "G1", "一致", "成功", "有效", "信心", "原始理由")
     )
     assert item["reason"] == state and item["route"] == row["route"]
-    assert item["samples"][0]["decision_reason"] == source_code
+    assert item["samples"][0]["decision_reason"] == (
+        "來源記錄定量方式為當次採用訊號的梯形積分；未另記理由。"
+    )
     assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
