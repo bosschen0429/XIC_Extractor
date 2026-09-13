@@ -10,7 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from xic_inspector.legacy_adapters.backfill_reconciliation_gallery import (
+from xic_inspector.reconciliation import (
     run_reconciliation_gallery,
 )
 

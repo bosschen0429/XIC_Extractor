@@ -21,7 +21,7 @@ from tools.diagnostics.family_ms1_overlay_rendering_styles import (
 )
 from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
 from xic_extractor.xic_models import XICTrace
-from xic_inspector.legacy_adapters.backfill_reconciliation_gallery import (
+from xic_inspector.reconciliation import (
     OVERLAY_INTERPRETATION_GUIDE_PATH,
     ReconciliationGroup,
     ReconciliationIndex,

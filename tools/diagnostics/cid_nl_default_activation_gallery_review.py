@@ -21,7 +21,7 @@ from xic_extractor.tabular_io import (
     text_value,
     write_tsv,
 )
-from xic_inspector.legacy_adapters.backfill_reconciliation_gallery import (
+from xic_inspector.reconciliation import (
     OVERLAY_INTERPRETATION_GUIDE_PATH,
     ReconciliationGroup,
     ReconciliationIndex,
