@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import cast
 
@@ -508,6 +509,7 @@ def capture_physical_recovery_observation(
     group_center_rt: float,
     profile: SignalProcessingProfile,
     resolver_mode: str,
+    evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
     """Capture a recovery question using its request-bound method and profile."""
     validate_cid_nl_method_subject_binding(
@@ -529,6 +531,8 @@ def capture_physical_recovery_observation(
         request_context_rt_end_min=trace.rt_max,
         selection_policy_version=PHYSICAL_PEAK_WINDOW_POLICY,
     )
+    if evaluation_sink is not None:
+        evaluation_sink(evaluation)
     if evaluation.state != "available":
         return None
     assert prepared.prepared is not None
@@ -542,6 +546,7 @@ def capture_physical_recovery_observation(
         proposal_sources=("canonical_physical_segment_v1",),
         physical_evaluation=evaluation,
         signal_processing_profile=profile,
+        capture_stage="method_recovery",
     )
 
 
@@ -618,6 +623,15 @@ def mint_captured_peak_observation(
             processing_owners=processing_owners,
             content=content,
             generation_provenance=provenance,
+            physical_evaluation=capture.physical_evaluation,
+            capture_stage=(
+                "reacquired_capture"
+                if require_capture_binding(
+                    capture.scope, capture.candidate_id
+                ).source_physical_evaluation
+                is not None
+                else "initial_capture"
+            ),
         )
     return mint_peak_observation_ref(
         processing_owners=processing_owners,

@@ -263,9 +263,7 @@ class CidNlPartitionPipelineAdapter:
                 )
             ),
         )
-        batch = materialize_untargeted_cid_nl_partition(
-            self._plan, subject_batch
-        )
+        batch = materialize_untargeted_cid_nl_partition(self._plan, subject_batch)
         with WorkerAdmissionPool(
             max_workers=self._raw_workers,
             backend=self._raw_worker_backend,
@@ -328,9 +326,7 @@ class CidNlPartitionPipelineAdapter:
             retain_memory=retain_memory,
             raw_workers=self._raw_workers,
         )
-        return PartitionCompositionOutput(
-            result=persisted, sealed=persisted.sealed
-        )
+        return PartitionCompositionOutput(result=persisted, sealed=persisted.sealed)
 
     def create_partition_artifacts(
         self,
@@ -374,9 +370,7 @@ class CidNlPartitionPipelineAdapter:
                     ).encode("utf-8"),
                     upstream_artifacts=(),
                 )
-                artifacts.append(
-                    RuntimeArtifactRegistrationReceipt(key, artifact)
-                )
+                artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
                 settlements.append(
                     mint_work_unit_settlement(
                         attempt=self._owners.attempt,
@@ -402,9 +396,7 @@ class CidNlPartitionPipelineAdapter:
             bindings.extend(persisted.capture_bindings)
             exclusion_positions.extend(
                 (exclusion.candidate_id, index, offset)
-                for offset, exclusion in enumerate(
-                    persisted.excluded_candidates
-                )
+                for offset, exclusion in enumerate(persisted.excluded_candidates)
             )
         scope = UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -416,9 +408,7 @@ class CidNlPartitionPipelineAdapter:
                 signal_processing_profile=context.signal_processing_profile,
             ),
             evidence_providers=tuple(
-                EvidenceProviderBinding(
-                    CID_NL_PROVIDER_ID, subject.method_subject_id
-                )
+                EvidenceProviderBinding(CID_NL_PROVIDER_ID, subject.method_subject_id)
                 for subject in self._plan.subject_batch.subjects
             ),
             declared_candidate_ids=tuple(
@@ -457,12 +447,8 @@ class CidNlPartitionPipelineAdapter:
     ]:
         key = self._global_closure_work_unit_key
         artifact = _mint_evidence_artifact_ref(
-            producer_processing_request_id=(
-                self._owners.request.processing_request_id
-            ),
-            producer_processing_attempt_id=(
-                self._owners.attempt.processing_attempt_id
-            ),
+            producer_processing_request_id=(self._owners.request.processing_request_id),
+            producer_processing_attempt_id=(self._owners.attempt.processing_attempt_id),
             semantic_contract=_GLOBAL_CLOSURE_CONTRACT,
             payload_bytes=(
                 json.dumps(
@@ -498,6 +484,7 @@ class CidNlPartitionPipelineAdapter:
             method_assessments=store.sequence("method_assessments"),
             initial_groups=store.sequence("initial_groups"),
             initial_edges=store.sequence("initial_edges"),
+            capture_evidence=store.sequence("capture_evidence"),
             cleanup_action=store.cleanup,
         )
 

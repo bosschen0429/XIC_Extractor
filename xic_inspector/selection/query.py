@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Sequence
 
 from xic_inspector.selection.canonical import CanonicalItem, Witness
@@ -133,7 +134,9 @@ def filter_by_query(
             )
         ]
         if matched_witnesses:
-            matched_items.append(item)
+            matched_items.append(
+                replace(item, matched_witnesses=tuple(matched_witnesses))
+            )
         elif has_rt_filter:
             # Passed non-RT criteria but had no RT apex across witnesses
             candidate_non_rt_witnesses = [

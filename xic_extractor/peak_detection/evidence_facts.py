@@ -4,7 +4,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 import numpy as np
@@ -347,6 +347,8 @@ class PhysicalPeakEvaluation:
     facts: PhysicalPeakFacts | None
     integration: IntegrationResult | None
     operations: tuple[PhysicalPeakOperation, ...]
+    # Diagnostic evidence only: never part of scientific equality or identity.
+    retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
 
 
 def canonical_physical_trace_content_bytes(
@@ -965,6 +967,7 @@ def answer_physical_peak_question(
         facts=facts,
         integration=integration,
         operations=operations,
+        retained_prepared_signal=prepared_result.prepared,
     )
 
 

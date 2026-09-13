@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
@@ -22,11 +22,26 @@ from xic_extractor.peak_detection.evidence_facts import (
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 
+@dataclass(frozen=True, slots=True)
+class DiscoveryPhysicalCandidateLink:
+    """Exact Discovery merge membership, retained only for evidence browsing."""
+
+    candidate_id: str
+    final_ordinal: int
+    representative_source_ordinal: int
+    member_source_ordinals: tuple[int, ...]
+    representative_work_ordinal: int
+    member_work_ordinals: tuple[int, ...]
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class DiscoveryPhysicalFactRecord:
     work_item: DiscoveryPhysicalWorkItem
     acquired_trace: AcquiredTrace
     evaluation: PhysicalPeakEvaluation
+    candidate_links: tuple[DiscoveryPhysicalCandidateLink, ...] = field(
+        default=(), compare=False
+    )
 
     def __post_init__(self) -> None:
         validate_discovery_physical_fact_record(self)
@@ -71,6 +86,7 @@ class DiscoveryCandidatePhysicalBinding:
     representative_work_ordinal: int
     selection_subject_id: str
     physical_fact_record: DiscoveryPhysicalFactRecord
+    member_work_ordinals: tuple[int, ...] = field(default=(), compare=False)
 
     def __post_init__(self) -> None:
         validate_discovery_candidate_physical_binding(self)
@@ -168,6 +184,32 @@ def validate_discovery_candidate_physical_binding(
         binding.selection_subject_id
     ):
         raise ValueError("Discovery physical binding crosses selection subject")
+
+
+def bind_discovery_physical_record_evidence(
+    records: tuple[DiscoveryPhysicalFactRecord, ...],
+    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+    """Copy actual merge refs before source/member provenance disappears."""
+    links_by_work: dict[int, list[DiscoveryPhysicalCandidateLink]] = {}
+    for binding in bindings:
+        link = DiscoveryPhysicalCandidateLink(
+            candidate_id=binding.candidate.candidate_id,
+            final_ordinal=binding.final_ordinal,
+            representative_source_ordinal=binding.representative_source_ordinal,
+            member_source_ordinals=binding.member_source_ordinals,
+            representative_work_ordinal=binding.representative_work_ordinal,
+            member_work_ordinals=binding.member_work_ordinals,
+        )
+        for ordinal in set(binding.member_work_ordinals):
+            links_by_work.setdefault(ordinal, []).append(link)
+    return tuple(
+        replace(
+            record,
+            candidate_links=tuple(links_by_work.get(record.work_item.work_ordinal, ())),
+        )
+        for record in records
+    )
 
 
 def bind_physical_facts_to_final_candidates(

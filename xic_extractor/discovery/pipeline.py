@@ -50,6 +50,7 @@ from xic_extractor.discovery.peak_anchor import assign_peak_anchors
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
     DiscoveryPhysicalFactRecord,
+    bind_discovery_physical_record_evidence,
     bind_physical_facts_to_final_candidates,
     order_physical_bindings_for_candidate_csv,
 )
@@ -881,7 +882,9 @@ def _write_dual_csvs(
                     run_spec=run_spec,
                     acquisition_input=acquisition_input,
                     work_manifest=physical_work_manifest,
-                    records=physical_evaluations,
+                    records=bind_discovery_physical_record_evidence(
+                        physical_evaluations, physical_bindings
+                    ),
                 )
                 stage.metrics["byte_size"] = physical_tmp.stat().st_size
     except Exception:

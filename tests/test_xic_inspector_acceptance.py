@@ -1,15 +1,18 @@
-"""Decisive acceptance test suite verifying XIC Inspector offline workbench matrix."""
+"""Owner-backed storage, publication and shared-callable regression coverage."""
 
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
+import sys
+from dataclasses import asdict
 
 import pytest
 
 from tests.test_cid_nl_explanation import _owner_run
 from xic_extractor.diagnostics.cid_nl_explanation import (
-    CidNlEvidenceLocator,
-    read_cid_nl_curves,
+    EvidenceLocator,
     read_cid_nl_explanation,
 )
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
@@ -39,6 +42,13 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         matrix_path=matrix,
         alignment_config=config,
     )
+    expected_observations = {
+        ref.content.peak_observation_content_id: asdict(ref.content.integration)
+        for child in completed.application_result.children
+        for terminal in child.scientific_core.terminal_subjects
+        if getattr(terminal, "hypothesis", None) is not None
+        for ref in terminal.hypothesis.peak_observation_refs
+    }
     # Spool cleanup / close
     completed.close()
 
@@ -49,12 +59,35 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
 
     # Verify curves persisted without RAW or DLL
-    candidate_id = candidates["S1"][0].candidate_id
-    curves = read_cid_nl_curves(report_path, record_ids=[candidate_id])
+    reread = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json,sys; from xic_extractor.diagnostics.cid_nl_explanation "
+            "import read_cid_nl_curves; "
+            "print(json.dumps(read_cid_nl_curves(sys.argv[1])))",
+            str(report_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    curves = json.loads(reread.stdout)
     assert len(curves) >= 1
-    curve = curves[0]
-    assert curve["kind"] == "initial_capture"
+    for retained in curves:
+        observation_id = retained["peak_observation_content_id"]
+        if observation_id in expected_observations:
+            assert retained["integration"] == json.loads(
+                json.dumps(expected_observations[observation_id])
+            )
+    assert expected_observations.keys() <= {
+        retained["peak_observation_content_id"] for retained in curves
+    }
     s1_sample = next(s for s in summary["samples"] if s["sample_stem"] == "S1")
+    curve = next(
+        c for c in curves if c["sample_id"] == s1_sample["canonical_sample_identity_id"]
+    )
+    assert curve["kind"] == "initial_capture"
     assert curve["sample_id"] == s1_sample["canonical_sample_identity_id"]
     assert len(curve["curves"]["rt"]) == len(curve["curves"]["raw"])
     assert len(curve["curves"]["rt"]) > 0
@@ -63,23 +96,25 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     assert curve["integration"]["area_raw_counts_seconds"] > 0
 
 
-def test_acceptance_a2_illegal_sources_rejected_and_legal_v1_handled(
+def test_missing_bound_matrix_rejects_generation(
     tmp_path,
 ) -> None:
-    """A2: Rejection of illegal sources; valid v1 metadata_only handling."""
+    """An unavailable bound Matrix cannot produce a complete report."""
     # 1. Illegal: missing matrix
     fake_db = tmp_path / "fake.sqlite"
     matrix_file = tmp_path / "missing_matrix.tsv"
     from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
 
     with ExplanationReportWriter(fake_db) as writer:
-        writer.finalize({
-            "processing_request_id": "req-1",
-            "processing_attempt_id": "att-1",
-            "matrix_path": str(matrix_file),
-            "matrix_sha256": "0" * 64,
-            "samples": [],
-        })
+        writer.finalize(
+            {
+                "processing_request_id": "req-1",
+                "processing_attempt_id": "att-1",
+                "matrix_path": str(matrix_file),
+                "matrix_sha256": "0" * 64,
+                "samples": [],
+            }
+        )
     out_html = tmp_path / "out.html"
     with pytest.raises(InspectorError) as exc:
         generate_report(fake_db, SelectionRequest(strategy="sample"), out_html)
@@ -87,9 +122,7 @@ def test_acceptance_a2_illegal_sources_rejected_and_legal_v1_handled(
     assert not out_html.exists()
 
 
-def test_acceptance_a4_zero_curve_read_on_metadata_query(
-    tmp_path, monkeypatch
-) -> None:
+def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) -> None:
     """A4: Metadata queries read 0 curves; generation reads only needed curves."""
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
@@ -120,10 +153,8 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(
     assert out_html.is_file()
 
 
-def test_acceptance_a5_and_a6_console_entry_and_offline_portable_html(
-    tmp_path, monkeypatch
-) -> None:
-    """A5 & A6: Console entry + module CLI; self-contained offline HTML."""
+def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
+    """The CLI callable embeds its resources; browser execution is separate."""
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
@@ -140,17 +171,24 @@ def test_acceptance_a5_and_a6_console_entry_and_offline_portable_html(
     out_html = tmp_path / "workbench.html"
 
     # Test CLI call
-    exit_code = cli_main([
-        "--report", str(report_path),
-        "--output", str(out_html),
-        "--strategy", "sample",
-        "--limit", "10",
-        "--seed", "0",
-    ])
+    exit_code = cli_main(
+        [
+            "--report",
+            str(report_path),
+            "--output",
+            str(out_html),
+            "--strategy",
+            "sample",
+            "--limit",
+            "10",
+            "--seed",
+            "0",
+        ]
+    )
     assert exit_code == 0
     assert out_html.is_file()
 
-    # A6: Copy HTML to completely empty directory with zero DB/Matrix/RAW
+    # Copy only HTML to inspect its embedded resources independently.
     empty_dir = tmp_path / "completely_isolated_env"
     empty_dir.mkdir()
     isolated_html = empty_dir / "portable_report.html"
@@ -164,7 +202,7 @@ def test_acceptance_a5_and_a6_console_entry_and_offline_portable_html(
     # Verify SVG and styles are inline
     assert "<style>" in html_text
     assert "<svg" in html_text
-    # Hostile script tags are escaped
+    # The embedded JSON occupies one script element.
     data_script = html_text.split('<script id="inspector-data"')[1]
     assert "</script>" not in data_script.split("</script>")[0]
 
@@ -201,33 +239,45 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     assert len(list(tmp_path.glob("*.tmp.*"))) == 0
 
 
-def test_acceptance_a9_pipeline_shared_callable_handoff(
-    tmp_path, monkeypatch
-) -> None:
-    """A9: Pipeline outputs provide CidNlEvidenceLocator handoff to Inspector."""
+def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -> None:
+    """A9: Pipeline outputs provide EvidenceLocator handoff to Inspector."""
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    report_path = write_cid_nl_explanation(
-        tmp_path / "cid_nl_explanation.sqlite",
-        completed=completed,
-        writer_inputs=writer,
-        candidates_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
+    import xic_extractor.alignment.pipeline as pipeline
+    from tests.alignment_pipeline_helpers import peak_config, write_batch
+    from tests.test_targeted_real_data_adapter import _settings
+
+    batch_index = write_batch(tmp_path, ("S1", "S2"))
+    monkeypatch.setattr(
+        pipeline,
+        "read_owner_bound_discovery_candidates_csv",
+        lambda path, **kwargs: candidates[path.parent.name],
     )
-    with matrix.open("rb") as h:
-        m_sha = hashlib.file_digest(h, "sha256").hexdigest()
-
-    summary = read_cid_nl_explanation(report_path)
-
-    locator = CidNlEvidenceLocator(
-        report_path=report_path,
-        matrix_path=matrix,
-        matrix_sha256=m_sha,
-        processing_request_id=summary["processing_request_id"],
-        processing_attempt_id=summary["processing_attempt_id"],
-        schema_version=2,
+    # The runtime fixture supplies actual completed science; exercise the real
+    # public publication interface, SQLite writer, locator mint and close path.
+    monkeypatch.setattr(
+        pipeline,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **kwargs: completed,
+    )
+    outputs = pipeline.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "published",
+        alignment_config=config,
+        peak_config=peak_config(),
+        discovery_settings=_settings(),
+    )
+    locator = outputs.evidence
+    assert isinstance(locator, EvidenceLocator)
+    summary = read_cid_nl_explanation(locator.report_path)
+    assert locator.processing_request_id == summary["processing_request_id"]
+    assert locator.processing_attempt_id == summary["processing_attempt_id"]
+    assert (
+        locator.matrix_sha256
+        == hashlib.sha256(locator.matrix_path.read_bytes()).hexdigest()
     )
 
     out_html = tmp_path / "handoff.html"

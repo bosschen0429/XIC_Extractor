@@ -1,19 +1,14 @@
-"""Build RAW-backed CID-NL old-to-successor differential overlay review."""
+"""Produce RAW-backed source/successor scientific diagnostic artifacts."""
 
 from __future__ import annotations
 
-import argparse
 import json
 import math
-import sys
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-if __package__ in {None, ""}:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.diagnostics.family_ms1_overlay_evidence import _gaussian_smooth_values
 from tools.diagnostics.family_ms1_overlay_rendering_styles import (
@@ -21,14 +16,6 @@ from tools.diagnostics.family_ms1_overlay_rendering_styles import (
 )
 from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
 from xic_extractor.xic_models import XICTrace
-from xic_inspector.reconciliation import (
-    OVERLAY_INTERPRETATION_GUIDE_PATH,
-    ReconciliationGroup,
-    ReconciliationIndex,
-    RepresentativeCell,
-    write_reconciliation_gallery_html,
-    write_reconciliation_outputs,
-)
 
 DEFAULT_DIFFERENTIAL_REVIEW_TSV = Path(
     "output/validation/cid_nl_default_activation_gallery_review_v1/"
@@ -176,36 +163,7 @@ class TracePair:
     failure_reason: str = ""
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = _parse_args(argv)
-    try:
-        payload = build_differential_overlay_review(
-            differential_review_tsv=args.differential_review_tsv,
-            decisions_tsv=args.decisions_tsv,
-            output_dir=args.output_dir,
-            raw_dir=args.raw_dir,
-            dll_dir=args.dll_dir,
-            limit=args.limit,
-            rt_half_window_min=args.rt_half_window_min,
-            ppm=args.ppm,
-            require_pass=args.require_pass,
-        )
-    except (OSError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    print(f"CID-NL differential overlay gallery: {payload['gallery_html']}")
-    print(f"CID-NL differential overlay summary: {payload['summary_tsv']}")
-    print(
-        "CID-NL differential transitions: "
-        f"{payload['transition_count']} "
-        f"(rendered {payload['rendered_transition_count']})",
-    )
-    if args.require_pass and payload["overall_status"] != "pass":
-        return 2
-    return 0
-
-
-def build_differential_overlay_review(
+def write_differential_evidence(
     *,
     differential_review_tsv: Path,
     decisions_tsv: Path,
@@ -234,8 +192,6 @@ def build_differential_overlay_review(
         ppm=ppm,
     )
     summary_rows = []
-    groups: list[ReconciliationGroup] = []
-    representatives: list[RepresentativeCell] = []
     for transition in transitions:
         pairs = trace_pairs_by_transition[transition.transition_key]
         prefix = (
@@ -265,8 +221,6 @@ def build_differential_overlay_review(
             rt_half_window_min=rt_half_window_min,
         )
         summary_rows.append(summary_row)
-        groups.append(_gallery_group(transition, summary_row))
-        representatives.extend(_representative_cells(transition))
         if transition.rank % 10 == 0:
             print(
                 "paired differential overlays rendered: "
@@ -275,39 +229,6 @@ def build_differential_overlay_review(
 
     summary_tsv = output_dir / "cid_nl_differential_overlay_review_summary.tsv"
     write_tsv(summary_tsv, summary_rows, SUMMARY_COLUMNS, lineterminator="\n")
-    index = ReconciliationIndex(
-        groups=tuple(groups),
-        representative_cells=tuple(representatives),
-        summary={
-            "schema_version": SCHEMA_VERSION,
-            "validation_label": "diagnostic_only",
-            "overlay_interpretation_guide_path": str(
-                OVERLAY_INTERPRETATION_GUIDE_PATH
-            ),
-            "matrix_contract_changed": False,
-            "product_behavior_changed": False,
-            "default_quant_matrix_changed": False,
-            "product_writer_changed": False,
-            "candidate_rows_are_matrix_rows": False,
-            "review_frame": "feature_inclusion_then_identity_authority",
-            "feature_inclusion_gate": (
-                "Successor MS1 trace support is feature-inclusion evidence; "
-                "a source peak does not invalidate it."
-            ),
-            "identity_authority_gate": (
-                "Replacement, merge, dedupe, and old-cell migration are "
-                "separate authority decisions."
-            ),
-            "source_successor_not_mutually_exclusive": True,
-            "authority_statement": (
-                "Differential overlays are human-review evidence only; they do "
-                "not grant ProductWriter or default matrix authority."
-            ),
-        },
-    )
-    output_paths = write_reconciliation_outputs(output_dir, index)
-    gallery_html = output_dir / "cid_nl_differential_overlay_gallery.html"
-    write_reconciliation_gallery_html(gallery_html, index, output_paths=output_paths)
     failures = [row for row in summary_rows if row["status"] != "success"]
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -318,11 +239,6 @@ def build_differential_overlay_review(
         "failed_transition_count": len(failures),
         "queue_tsv": str(queue_tsv),
         "summary_tsv": str(summary_tsv),
-        "gallery_html": str(gallery_html),
-        "groups_tsv": str(output_paths["groups_tsv"]),
-        "representative_cells_tsv": str(output_paths["representative_cells_tsv"]),
-        "summary_json": str(output_paths["summary_json"]),
-        "overlay_interpretation_guide_path": str(OVERLAY_INTERPRETATION_GUIDE_PATH),
         "product_writer_changed": False,
         "default_quant_matrix_changed": False,
         "candidate_rows_are_matrix_rows": False,
@@ -361,9 +277,7 @@ def build_transition_reviews(
         successor = text_value(row.get("successor_peak_hypothesis_id"))
         if not successor:
             continue
-        decisions_by_transition[
-            (row["old_peak_hypothesis_id"], successor)
-        ].append(
+        decisions_by_transition[(row["old_peak_hypothesis_id"], successor)].append(
             SampleDecision(
                 sample_stem=row["sample_stem"],
                 successor_decision=row["successor_decision"],
@@ -524,10 +438,7 @@ def extract_transition_trace_pairs(
                         successor_trace=traces[successor_key],
                     )
                 )
-    return {
-        key: tuple(value)
-        for key, value in pairs_by_transition.items()
-    }
+    return {key: tuple(value) for key, value in pairs_by_transition.items()}
 
 
 def render_transition_overlay(
@@ -647,12 +558,8 @@ def write_transition_trace_json(
                 "missing_raw": pair.missing_raw,
                 "failure_reason": pair.failure_reason,
                 "source_trace_max_intensity": _raw_trace_max(pair.source_trace),
-                "successor_trace_max_intensity": _raw_trace_max(
-                    pair.successor_trace
-                ),
-                "source_gaussian15_trace_max_intensity": _trace_max(
-                    pair.source_trace
-                ),
+                "successor_trace_max_intensity": _raw_trace_max(pair.successor_trace),
+                "source_gaussian15_trace_max_intensity": _trace_max(pair.source_trace),
                 "successor_gaussian15_trace_max_intensity": _trace_max(
                     pair.successor_trace
                 ),
@@ -846,87 +753,6 @@ def _summary_row(
     }
 
 
-def _gallery_group(
-    transition: TransitionReview,
-    summary_row: Mapping[str, object],
-) -> ReconciliationGroup:
-    return ReconciliationGroup(
-        feature_family_id=transition.successor_id,
-        seed_group_id=f"cid_nl_differential::{transition.transition_key}",
-        seed_group_basis="cid_nl_feature_inclusion_review",
-        seed_mz=_format_float(transition.successor_mz),
-        seed_rt=_format_float(transition.successor_rt),
-        seed_rt_window=(
-            f"source {transition.source_rt:.6g}; "
-            f"successor {transition.successor_rt:.6g}"
-        ),
-        seed_ppm=_format_float(PPM),
-        tag_or_class=(
-            f"DNA_dR | {transition.source_id}->{transition.successor_id}"
-        ),
-        product_behavior_state="cid_nl_feature_inclusion_candidate",
-        evidence_authority_state="feature_inclusion_visual_context",
-        reconciliation_class="cid_nl_identity_relationship_review",
-        detected_cell_count=transition.preserve_count,
-        rescued_cell_count=transition.write_authorized_count,
-        provisional_cell_count=0,
-        cell_total_count=transition.sample_count,
-        top_product_reason=(
-            f"{transition.transition_key}; source {transition.source_mz:.6g}/"
-            f"{transition.source_rt:.6g} -> successor "
-            f"{transition.successor_mz:.6g}/{transition.successor_rt:.6g}"
-        ),
-        top_support_component="paired_differential_ms1_overlay",
-        overlay_png_path=text_value(summary_row.get("png_path")),
-        overlay_trace_json_path=text_value(summary_row.get("trace_data_json")),
-        overlay_evidence_notes=(
-            "paired PeakHypothesis differential overlay",
-            "Gaussian15 successor/source median max ratio="
-            f"{summary_row.get('successor_to_source_median_max_ratio')}",
-            f"feature_inclusion_gate={transition.feature_inclusion_gate}",
-            f"identity_authority_gate={transition.identity_authority_gate}",
-            f"relationship={transition.source_successor_relationship}",
-            "diagnostic_only",
-        ),
-        source_artifacts=(
-            "cid_nl_discovery_identity_differential_review.tsv",
-            "successor_authority_decisions.tsv",
-        ),
-        review_only_visual_components=("paired_differential_ms1_overlay",),
-        dependent_context_components=(
-            f"source_peak_hypothesis_id:{transition.source_id}",
-            f"successor_peak_hypothesis_id:{transition.successor_id}",
-        ),
-    )
-
-
-def _representative_cells(
-    transition: TransitionReview,
-    max_cells: int = 6,
-) -> tuple[RepresentativeCell, ...]:
-    cells = []
-    for sample in transition.sample_decisions[:max_cells]:
-        cells.append(
-            RepresentativeCell(
-                feature_family_id=transition.successor_id,
-                seed_group_id=f"cid_nl_differential::{transition.transition_key}",
-                representative_roles=(f"decision:{sample.successor_decision}",),
-                sample_stem=sample.sample_stem,
-                cell_status=sample.successor_decision,
-                product_cell_state=sample.matrix_effect,
-                source_peak_hypothesis_id=transition.source_id,
-                successor_peak_hypothesis_id=transition.successor_id,
-                successor_decision=sample.successor_decision,
-                representative_reason=(
-                    f"{transition.source_id}->{transition.successor_id}: "
-                    f"{sample.human_explanation}"
-                ),
-                source_row_key=f"{transition.transition_key}:{sample.sample_stem}",
-            )
-        )
-    return tuple(cells)
-
-
 def _transition_priority_key(row: Mapping[str, str]) -> tuple[float, float, float, str]:
     return (
         -_required_int(row, "write_authorized_count"),
@@ -1053,25 +879,3 @@ def _format_float(value: object) -> str:
     if parsed is None:
         return ""
     return f"{parsed:.6g}"
-
-
-def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--differential-review-tsv",
-        type=Path,
-        default=DEFAULT_DIFFERENTIAL_REVIEW_TSV,
-    )
-    parser.add_argument("--decisions-tsv", type=Path, default=DEFAULT_DECISIONS_TSV)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--raw-dir", type=Path, default=RAW_ROOT)
-    parser.add_argument("--dll-dir", type=Path, default=DLL_DIR)
-    parser.add_argument("--limit", type=int)
-    parser.add_argument("--rt-half-window-min", type=float, default=RT_HALF_WINDOW_MIN)
-    parser.add_argument("--ppm", type=float, default=PPM)
-    parser.add_argument("--require-pass", action="store_true")
-    return parser.parse_args(argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

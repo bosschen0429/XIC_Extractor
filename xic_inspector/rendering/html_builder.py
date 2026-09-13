@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 import json
 import os
+import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +18,14 @@ MAX_HTML_SIZE_BYTES = 50 * 1024 * 1024  # 50 MiB hard cap
 def serialize_safe_inline_json(data: Any) -> str:
     """Serialize data to JSON, strictly escaping </script> tags."""
     raw_json = json.dumps(data, ensure_ascii=False, indent=None)
-    # Prevent breaking </script> tags in inline HTML
-    escaped = raw_json.replace("</script>", r"\u003c/script\>")
-    return escaped.replace("</Script>", r"\u003c/Script\>")
+    # Escape every '<', including mixed-case HTML end tags, using valid JSON.
+    return (
+        raw_json.replace("&", r"\u0026")
+        .replace("<", r"\u003c")
+        .replace(">", r"\u003e")
+        .replace("\u2028", r"\u2028")
+        .replace("\u2029", r"\u2029")
+    )
 
 
 def build_report_html(
@@ -58,6 +65,8 @@ def build_report_html(
 def write_report_atomically(
     html_content: str,
     output_path: Path,
+    *,
+    check_cancel: Callable[[], None] | None = None,
 ) -> int:
     """Write HTML report atomically and verify against 50 MiB limit.
 
@@ -79,12 +88,18 @@ def write_report_atomically(
             f"({MAX_HTML_SIZE_BYTES} bytes)"
         )
 
-    temp_path = output_path.with_name(f"{output_path.name}.tmp.{os.getpid()}")
+    temp_path: Path | None = None
     try:
-        temp_path.write_bytes(encoded_bytes)
+        with tempfile.NamedTemporaryFile(
+            dir=output_path.parent, prefix=f"{output_path.name}.tmp.", delete=False
+        ) as stream:
+            temp_path = Path(stream.name)
+            stream.write(encoded_bytes)
+        if check_cancel is not None:
+            check_cancel()
         os.replace(temp_path, output_path)
     except Exception:
-        if temp_path.exists():
+        if temp_path is not None and temp_path.exists():
             try:
                 temp_path.unlink()
             except OSError:

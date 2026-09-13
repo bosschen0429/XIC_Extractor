@@ -3,34 +3,27 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
-import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from xic_extractor.diagnostics.cid_nl_explanation import (
-    EvidenceLocator,
-    ExplanationError,
-    ExplanationUnavailableError,
-    read_evidence_curves,
-    read_evidence_summary,
-)
 from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
 )
 from xic_inspector.selection.canonical import (
     CanonicalItem,
-    Witness,
-    build_canonical_ref,
 )
 from xic_inspector.selection.query import filter_by_attention, filter_by_query
 from xic_inspector.selection.sampler import sample_stratified_sha256_v1
-from xic_inspector.selection.strata import (
-    classify_scoped_stratum,
+from xic_inspector.sources import (
+    EvidenceLocator,
+    EvidenceSource,
+    ExplanationError,
+    ExplanationUnavailableError,
+    read_evidence_summary,
 )
 
 StrategyKind = Literal["sample", "attention", "query"]
@@ -199,204 +192,6 @@ class ReportResult:
     sample_ids: tuple[str, ...]
 
 
-def _load_canonical_items(
-    db_path: Path,
-    request_id: str,
-    attempt_id: str,
-    normalized_sample_ids: set[str],
-) -> list[CanonicalItem]:
-    """Load canonical items from SQLite, building witness chains and scoped strata."""
-    connection = sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True)
-    connection.execute("PRAGMA query_only = ON;")
-
-    try:
-        # 1. Load candidates
-        candidates: dict[tuple[str, str], dict[str, Any]] = {}
-        for cid, sid, payload_str in connection.execute(
-            "SELECT candidate_id, sample_id, payload FROM candidates"
-        ):
-            candidates[(cid, sid)] = json.loads(payload_str)
-
-        # 2. Load records
-        records_by_kind: dict[str, dict[str, dict[str, Any]]] = {}
-        for kind, rid, payload_str in connection.execute(
-            "SELECT kind, record_id, payload FROM records"
-        ):
-            records_by_kind.setdefault(kind, {})[rid] = json.loads(payload_str)
-
-        # 3. Load links: (cid, sid) -> list of (kind, rid)
-        links_by_cand: dict[tuple[str, str], list[tuple[str, str]]] = {}
-        for cid, sid, kind, rid in connection.execute(
-            "SELECT candidate_id, sample_id, kind, record_id FROM links"
-        ):
-            links_by_cand.setdefault((cid, sid), []).append((kind, rid))
-
-        # Build items
-        # Priority: rows -> groups -> candidates
-        rows_records = records_by_kind.get("rows", {})
-        final_groups = records_by_kind.get("final_groups", {})
-
-        group_to_rows: dict[str, list[str]] = {}
-        row_items: list[CanonicalItem] = []
-
-        for row_key_id, row_payload in rows_records.items():
-            # Find group and candidate links for this row
-            row_group_id = row_payload.get("group_hypothesis_id")
-            if row_group_id:
-                group_to_rows.setdefault(row_group_id, []).append(row_key_id)
-
-            # Find all witnesses
-            witnesses: list[Witness] = []
-            item_samples: set[str] = set()
-            is_att = False
-            has_null = False
-            has_zero = False
-            is_excl = False
-
-            # Associated cell observations / candidates
-            for (cid, sid), linked in links_by_cand.items():
-                if any(k == "rows" and r == row_key_id for k, r in linked):
-                    item_samples.add(sid)
-                    c_data = candidates.get((cid, sid), {})
-                    precursor_mz = c_data.get("precursor_mz")
-
-                    # Look for peak observations or terminal subjects
-                    apex_rt = None
-                    for k, r in linked:
-                        if k == "terminal_subjects":
-                            pass
-                            # check cell decisions or edge conditions
-                        if k == "cell_decisions":
-                            cd = records_by_kind.get("cell_decisions", {}).get(r, {})
-                            val = cd.get("quantitative_value")
-                            if val is None:
-                                has_null = True
-                            elif val == 0:
-                                has_zero = True
-                            if cd.get("variant") == "unresolved" and val is None:
-                                is_att = True
-
-                    prec_mz_val = (
-                        float(precursor_mz) if precursor_mz is not None else None
-                    )
-                    witnesses.append(
-                        Witness(
-                            canonical_sample_identity_id=sid,
-                            candidate_id=cid,
-                            group_hypothesis_id=row_group_id,
-                            row_key_id=row_key_id,
-                            precursor_mz=prec_mz_val,
-                            rt_apex_min=apex_rt,
-                            sample_stem=c_data.get("sample_stem"),
-                        )
-                    )
-
-            ref, sref = build_canonical_ref("row", request_id, attempt_id, row_key_id)
-            stratum = classify_scoped_stratum(
-                is_attention=is_att,
-                is_excluded=is_excl,
-                has_null_cell=has_null,
-                has_zero_cell=has_zero,
-            )
-            row_items.append(
-                CanonicalItem(
-                    kind="row",
-                    request_id=request_id,
-                    attempt_id=attempt_id,
-                    identifier=row_key_id,
-                    serialized_ref=sref,
-                    sample_ids=tuple(sorted(item_samples)),
-                    witnesses=tuple(witnesses),
-                    stratum=stratum,
-                    is_attention=is_att,
-                    details=row_payload,
-                )
-            )
-
-        # Groups without rows
-        group_items: list[CanonicalItem] = []
-        for gid, g_payload in final_groups.items():
-            if gid in group_to_rows:
-                continue
-            witnesses = []
-            item_samples = set()
-            for (cid, sid), linked in links_by_cand.items():
-                if any(k == "final_groups" and r == gid for k, r in linked):
-                    item_samples.add(sid)
-                    c_data = candidates.get((cid, sid), {})
-                    witnesses.append(
-                        Witness(
-                            canonical_sample_identity_id=sid,
-                            candidate_id=cid,
-                            group_hypothesis_id=gid,
-                            precursor_mz=c_data.get("precursor_mz"),
-                            sample_stem=c_data.get("sample_stem"),
-                        )
-                    )
-            ref, sref = build_canonical_ref("group", request_id, attempt_id, gid)
-            group_disp = g_payload.get("disposition")
-            is_att = group_disp in ("provisional", "unresolved")
-            stratum = "attention" if is_att else "rest"
-            group_items.append(
-                CanonicalItem(
-                    kind="group",
-                    request_id=request_id,
-                    attempt_id=attempt_id,
-                    identifier=gid,
-                    serialized_ref=sref,
-                    sample_ids=tuple(sorted(item_samples)),
-                    witnesses=tuple(witnesses),
-                    stratum=stratum,
-                    is_attention=is_att,
-                    details=g_payload,
-                )
-            )
-
-        # Candidates without groups
-        cand_items: list[CanonicalItem] = []
-        for (cid, sid), c_payload in candidates.items():
-            linked = links_by_cand.get((cid, sid), [])
-            has_group = any(
-                k in ("final_groups", "initial_groups", "rows")
-                for k, _ in linked
-            )
-            if has_group:
-                continue
-            ref, sref = build_canonical_ref(
-                "candidate", request_id, attempt_id, cid, sample_id=sid
-            )
-            w = Witness(
-                canonical_sample_identity_id=sid,
-                candidate_id=cid,
-                precursor_mz=c_payload.get("precursor_mz"),
-                sample_stem=c_payload.get("sample_stem"),
-            )
-            stratum = (
-                "excluded"
-                if c_payload.get("discovery_candidate_state") == "excluded"
-                else "rest"
-            )
-            cand_items.append(
-                CanonicalItem(
-                    kind="candidate",
-                    request_id=request_id,
-                    attempt_id=attempt_id,
-                    identifier=cid,
-                    serialized_ref=sref,
-                    sample_ids=(sid,),
-                    witnesses=(w,),
-                    stratum=stratum,
-                    is_attention=False,
-                    details=c_payload,
-                )
-            )
-
-        all_items = row_items + group_items + cand_items
-        return sorted(all_items, key=lambda it: it.sort_key)
-    finally:
-        connection.close()
-
-
 def generate_report(
     report: Path,
     selection: SelectionRequest,
@@ -496,6 +291,14 @@ def generate_report(
     capability: CapabilityKind = summary.get(
         "plot_evidence_capability", "metadata_only"
     )
+    if capability == "metadata_only" and (
+        selection.strategy == "attention"
+        or selection.rt_min is not None
+        or selection.rt_max is not None
+    ):
+        raise InspectorError(
+            5, "Source lacks the metadata required for attention/RT selection"
+        )
 
     # Normalize sample scope
     summary_samples = summary.get("samples", [])
@@ -519,7 +322,11 @@ def generate_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    all_items = _load_canonical_items(report_path, req_id, att_id, normalized_set)
+    source = EvidenceSource(report_path, req_id, att_id)
+    try:
+        all_items = source.load_items(normalized_set)
+    except ExplanationError as exc:
+        raise InspectorError(4, str(exc), cause=exc) from exc
     run_total = len(all_items)
 
     # Eligible population
@@ -527,8 +334,7 @@ def generate_report(
         eligible_items = []
     else:
         eligible_items = [
-            it for it in all_items
-            if any(s in normalized_set for s in it.sample_ids)
+            it for it in all_items if any(s in normalized_set for s in it.sample_ids)
         ]
 
     eligible_count = len(eligible_items)
@@ -572,17 +378,12 @@ def generate_report(
     _check_cancel()
 
     # Stage: Curves
-    curves_data: dict[str, list[dict[str, Any]]] = {}
-    if capability == "retained_curves_v1" and selected_items:
-        # Load curves for selected items
-        record_ids = [it.identifier for it in selected_items]
-        raw_curves = read_evidence_curves(
-            report_path, sample_ids=normalized_sample_ids, record_ids=record_ids
+    try:
+        rendered_items = source.load_render_items(
+            selected_items, capability=capability, check_cancel=_check_cancel
         )
-        for c in raw_curves:
-            rec_id = c.get("candidate_id") or c.get("peak_observation_content_id")
-            if rec_id:
-                curves_data.setdefault(rec_id, []).append(c)
+    except ExplanationError as exc:
+        raise InspectorError(4, str(exc), cause=exc) from exc
 
     if on_progress:
         on_progress(
@@ -596,80 +397,6 @@ def generate_report(
     _check_cancel()
 
     # Stage: Render
-    rendered_items = []
-    for it in selected_items:
-        it_curves = curves_data.get(it.identifier, [])
-        # Build samples detail for table
-        samples_detail = []
-        for sid in it.sample_ids:
-            if sid not in normalized_set:
-                continue
-            matching_curve = next(
-                (c for c in it_curves if c.get("sample_id") == sid), None
-            )
-            val = None
-            if matching_curve and matching_curve.get("integration"):
-                val = matching_curve["integration"].get("height_raw")
-            sample_stem = next(
-                (
-                    s["sample_stem"]
-                    for s in summary_samples
-                    if s.get("canonical_sample_identity_id") == sid
-                ),
-                sid,
-            )
-            decision_reason = it.details.get(
-                "reason", it.details.get("disposition", "OK")
-            )
-            samples_detail.append(
-                {
-                    "sample_id": sid,
-                    "sample_stem": sample_stem,
-                    "status_kind": it.stratum,
-                    "status_label": it.stratum.upper(),
-                    "quantitative_value": val,
-                    "decision_reason": decision_reason,
-                }
-            )
-
-        curves_payload = []
-        for c in it_curves:
-            crvs = c.get("curves", {})
-            integ = c.get("integration") or {}
-            curves_payload.append(
-                {
-                    "sample_id": c.get("sample_id"),
-                    "raw_rts": crvs.get("rt", []),
-                    "raw_intensities": crvs.get("raw", []),
-                    "processed_rts": (
-                        crvs.get("rt", []) if crvs.get("smoothed") else None
-                    ),
-                    "processed_intensities": crvs.get("smoothed"),
-                    "bound_left_rt": integ.get("rt_left_min"),
-                    "bound_right_rt": integ.get("rt_right_min"),
-                }
-            )
-
-        mz_val = it.witnesses[0].precursor_mz if it.witnesses else None
-        rt_val = it.witnesses[0].rt_apex_min if it.witnesses else None
-        obs_reason = it.details.get(
-            "reason", it.details.get("disposition", "Normal observation")
-        )
-        rendered_items.append(
-            {
-                "id": it.identifier,
-                "kind": it.kind,
-                "title": f"{it.kind.capitalize()} {it.identifier}",
-                "stratum": it.stratum,
-                "badge": it.stratum,
-                "precursor_mz": mz_val,
-                "rt_apex_min": rt_val,
-                "reason": obs_reason,
-                "samples": samples_detail,
-                "curves": curves_payload,
-            }
-        )
-
     payload_dict = {
         "summary": summary,
         "samples": [
@@ -702,7 +429,7 @@ def generate_report(
 
     # Stage: Write
     try:
-        write_report_atomically(html_str, output_path)
+        write_report_atomically(html_str, output_path, check_cancel=_check_cancel)
     except ValueError as exc:
         raise InspectorError(7, str(exc), cause=exc) from exc
     except OSError as exc:

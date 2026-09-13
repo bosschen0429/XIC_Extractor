@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.diagnostics import cid_nl_differential_overlay_review as review
-from xic_extractor.tabular_io import write_tsv
+from xic_extractor.tabular_io import read_tsv_required, write_tsv
 from xic_extractor.xic_models import XICTrace
 
 
@@ -90,7 +90,7 @@ def test_extract_transition_trace_pairs_batches_source_and_successor_by_sample(
     assert pair.successor_trace.intensity.tolist() == [302.0, 604.0]
 
 
-def test_build_review_outputs_remain_human_review_only(
+def test_write_differential_evidence_remains_human_review_only(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
@@ -123,7 +123,7 @@ def test_build_review_outputs_remain_human_review_only(
         lambda _raw_path, _dll_dir: FakeRaw(),
     )
 
-    payload = review.build_differential_overlay_review(
+    payload = review.write_differential_evidence(
         differential_review_tsv=differential_tsv,
         decisions_tsv=decisions_tsv,
         output_dir=tmp_path / "review",
@@ -147,34 +147,29 @@ def test_build_review_outputs_remain_human_review_only(
     assert summary["overall_status"] == "pass"
     assert summary["review_frame"] == "feature_inclusion_then_identity_authority"
     assert summary["source_successor_not_mutually_exclusive"] is True
-    assert summary["overlay_interpretation_guide_path"].endswith(
-        "evidence_overlay_interpretation_guide.html"
-    )
     assert "human-review evidence only" in summary["authority_statement"]
-    groups_tsv = Path(payload["groups_tsv"]).read_text(encoding="utf-8")
-    assert "feature_inclusion_visual_context" in groups_tsv
-    assert "cid_nl_identity_relationship_review" in groups_tsv
-    assert "paired_differential_ms1_overlay" in groups_tsv
-    assert "DNA_dR | FAM000003->FAM000004" in groups_tsv
-    representative_tsv = Path(payload["representative_cells_tsv"]).read_text(
-        encoding="utf-8",
+    queue_rows = read_tsv_required(
+        Path(payload["queue_tsv"]),
+        review.QUEUE_COLUMNS,
     )
-    assert "source_peak_hypothesis_id" not in representative_tsv
-    assert "successor_peak_hypothesis_id" not in representative_tsv
-    html = Path(payload["gallery_html"]).read_text(encoding="utf-8")
-    guide_html_copy = (
-        Path(payload["gallery_html"]).parent
-        / "evidence_overlay_interpretation_guide.html"
+    assert [row["transition_key"] for row in queue_rows] == [
+        "FAM000003->FAM000004"
+    ]
+    summary_rows = read_tsv_required(
+        Path(payload["summary_tsv"]),
+        review.SUMMARY_COLUMNS,
     )
-    assert guide_html_copy.exists()
-    assert "Evidence Review Gallery" in html
-    assert "FAM000003" in html
-    assert "FAM000003 -&gt; FAM000004" in html
-    assert "HYPOTHESIS DIFFERENTIAL OVERLAY" in html
-    assert "hypothesis differential overlay available" in html
-    assert "How to read these overlays" in html
-    assert "evidence_overlay_interpretation_guide.html" in html
-    assert "family context only, hypothesis overlay not generated" not in html
+    assert len(summary_rows) == 1
+    assert summary_rows[0]["status"] == "success"
+    assert summary_rows[0]["visual_successor_ms1_state"] == (
+        "successor_ms1_trace_present"
+    )
+    png_path = Path(summary_rows[0]["png_path"])
+    trace_json = Path(summary_rows[0]["trace_data_json"])
+    assert png_path.is_file()
+    trace_payload = json.loads(trace_json.read_text(encoding="utf-8"))
+    assert trace_payload["transition_key"] == "FAM000003->FAM000004"
+    assert trace_payload["traces"][0]["sample_stem"] == "SampleC"
 
 
 def test_differential_plot_wording_compares_identity_support_not_same_mz() -> None:
@@ -235,50 +230,6 @@ def test_trace_max_uses_gaussian15_smoothing() -> None:
 
     assert review._raw_trace_max(trace) == 100.0
     assert 0 < review._trace_max(trace) < 100.0
-
-
-def test_overlay_interpretation_guide_documents_backfill_and_discovery() -> None:
-    guide = Path(
-        "docs/superpowers/validation/evidence_overlay_interpretation_guide.html"
-    )
-    text = guide.read_text(encoding="utf-8")
-
-    assert "Backfill overlay" in text
-    assert "Discovery differential" in text
-    assert "先判斷這張圖在回答哪一個問題" in text
-    assert "不要先找峰，先選 review lens" in text
-    assert "先看 successor 是否有 MS1-backed feature support" in text
-    assert "source 有峰不代表 successor 失敗" in text
-    assert "co-existing / unresolved identity" in text
-    assert "source/successor m/z 不需要相同" in text
-    assert "Candidate is not a matrix write" in text
-    assert "Gaussian15" in text
-    assert '<svg class="fallback-diagram"' in text
-    assert "guide_assets/lcms_overlay_backfill_context.png" not in text
-    assert "guide_assets/lcms_overlay_discovery_differential.png" not in text
-    assert "右側 A–D 是「圖上區域」標號" in text
-    assert 'data-guide-pin=' not in text
-    assert 'class="pin' not in text
-    assert "position: sticky" not in text
-    assert 'class="section scenario-stack"' in text
-    assert 'class="scenario-reader"' in text
-    assert 'class="reader-step"' in text
-    assert "expected RT window" in text
-    assert "orange seed/context trace" in text
-    assert "decision strip" in text
-    assert "source row identity" in text
-    assert "successor row identity" in text
-    assert "same-sample support pattern" in text
-    assert "provenance boundary" in text
-    assert "有峰就能寫 matrix" in text
-    assert 'class="plot-stage"' in text
-    assert 'class="reading-card"' in text
-    assert 'data-guide-step="1"' in text
-    assert "annotation-rail" not in text
-    assert 'class="note"' not in text
-    assert "<svg" in text
-    assert "FAM" not in text
-    assert "cid_nl_activation_review.png" not in text
 
 
 class _FakeAxis:

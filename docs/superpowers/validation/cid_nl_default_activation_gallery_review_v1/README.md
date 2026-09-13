@@ -14,9 +14,8 @@ PNG overlays are written under
 intentionally ignored by git to keep PR diffs reviewable.
 
 Reader guide: `docs/superpowers/validation/evidence_overlay_interpretation_guide.html`
-is the maintained plain-language guide for Backfill overlays and CID-NL
-Discovery differential overlays. The generated Gallery summary links to this
-guide so plot semantics stay visible instead of living only in agent chat.
+is the maintained plain-language guide for the historical Backfill and CID-NL
+Discovery overlay evidence recorded by this packet.
 
 ## Plain-Language Decision
 
@@ -68,11 +67,15 @@ the source/successor relationship justifies replacement, merge, or dedupe. If
 both source and successor have peak shapes, that can mean co-existing features
 or unresolved identity, not automatic successor failure.
 
-## What Was Built
+## Historical Artifact Receipt
+
+The counts below describe the retained validation run. The standalone Gallery
+renderer and its commands have since been retired; these rows are provenance,
+not current regeneration instructions.
 
 | Artifact | Rows / Count | Meaning |
 | --- | ---: | --- |
-| `backfill_evidence_reconciliation_gallery.html` | 90 groups | Evidence Review Gallery HTML rendered in CID-NL Discovery identity review mode. |
+| Retired standalone reconciliation Gallery HTML | 90 groups | Historical CID-NL Discovery identity review rendering. Current completed-evidence review uses XIC Inspector. |
 | `backfill_evidence_reconciliation_groups.tsv` | 90 | Deterministic group index for the gallery. |
 | `backfill_evidence_reconciliation_representative_cells.tsv` | 529 | Representative row/sample/provenance cells behind the review groups. |
 | `cid_nl_default_activation_overlay_review_queue.tsv` | 85 | Queue consumed by the existing RAW-backed family MS1 overlay batch renderer. |
@@ -104,18 +107,14 @@ Generated location:
 
 - `output/validation/cid_nl_default_activation_gallery_review_v1/`
 
-## Commands
+## Current Producers And Review Entry
 
-Build or refresh the gallery packet:
-
-```powershell
-python -m tools.diagnostics.cid_nl_default_activation_gallery_review --require-pass --overlay-batch-summary-tsv output/validation/cid_nl_default_activation_gallery_review_v1/overlays/family_ms1_overlay_batch_summary.tsv
-```
-
-`--require-pass` now means the packet is built and every overlay-queued row is
-linked to a provenance-matched overlay summary row. Running the builder without
-`--overlay-batch-summary-tsv` still writes the no-RAW review queue, but exits
-non-zero under `--require-pass` with `overall_status=needs_overlay_batch`.
+The no-RAW transition TSV is produced by
+`tools.diagnostics.cid_nl_default_activation_gallery_review.write_transition_review_evidence`.
+The paired RAW evidence is produced by
+`tools.diagnostics.cid_nl_differential_overlay_review.write_differential_evidence`.
+Both are callable artifact producers; the retired Gallery packet CLI is not a
+compatibility surface.
 
 Generate RAW-backed overlays when the overlay summary is missing:
 
@@ -123,17 +122,10 @@ Generate RAW-backed overlays when the overlay summary is missing:
 .venv\Scripts\python.exe -m tools.diagnostics.family_ms1_overlay_batch --review-queue-tsv output/validation/cid_nl_default_activation_gallery_review_v1/cid_nl_default_activation_overlay_review_queue.tsv --alignment-cells output/discovery/cid_nl_product_ready_alignment_85raw_20260620_fix3/alignment_backfill_cell_evidence.tsv --raw-dir $env:XIC_RAW_ROOT --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR --output-dir output/validation/cid_nl_default_activation_gallery_review_v1/overlays --limit 85 --no-pdf --reuse-existing
 ```
 
-Browser smoke the existing gallery:
+For completed evidence databases, use the installed read-only Inspector:
 
 ```powershell
-uv run python tools\diagnostics\gallery_browser_smoke.py --html output/validation/cid_nl_default_activation_gallery_review_v1/backfill_evidence_reconciliation_gallery.html --output-dir output/validation/cid_nl_default_activation_gallery_review_v1/gallery_browser_smoke
-```
-
-Generate the paired differential overlay review for all 78 ready
-source/successor transitions:
-
-```powershell
-.venv\Scripts\python.exe -m tools.diagnostics.cid_nl_differential_overlay_review --require-pass
+xic-inspector --report cid_nl_explanation.sqlite --output review.html --strategy attention
 ```
 
 Build the no-RAW feature-inclusion gate from the existing differential,

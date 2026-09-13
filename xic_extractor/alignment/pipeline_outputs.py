@@ -115,13 +115,7 @@ class AlignmentRunOutputs:
     ) = None
     untargeted_cid_nl_result: CompletedUntargetBatchWorkflowResult | None = None
     evidence: EvidenceLocator | None = None
-    cid_nl_evidence: EvidenceLocator | None = None
 
-    def __post_init__(self) -> None:
-        if self.evidence is not None and self.cid_nl_evidence is None:
-            object.__setattr__(self, "cid_nl_evidence", self.evidence)
-        elif self.cid_nl_evidence is not None and self.evidence is None:
-            object.__setattr__(self, "evidence", self.cid_nl_evidence)
 
 
 def output_paths(

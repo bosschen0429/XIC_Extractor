@@ -36,6 +36,7 @@ self-ownership，因此不需要 generic lifecycle metadata：
 | 目錄 | 長期用途 |
 | --- | --- |
 | `xic_extractor/` | Domain 與 pipeline package |
+| `xic_inspector/` | Installed read-only evidence review package；source adapters、共同 selection/API 與 self-contained offline renderer |
 | `gui/` | PyQt6 GUI adapters |
 | `scripts/` | Public CLI、product adapters、validation scripts |
 | `tools/diagnostics/` | Maintained product-adjacent diagnostics 與 docs governance |
@@ -117,7 +118,7 @@ fixture。完整 workbook、full matrix、RAW-derived dump 與 exploratory repor
 ### Package discovery
 
 `pyproject.toml` 的 `packages.find` 包含 `gui*`、`scripts*`、`tools*`、
-`xic_extractor*`，並排除 `tests*`。這些 package roots 必須維持在 repo root；搬移
+`xic_extractor*`、`xic_inspector*`，並排除 `tests*`。這些 package roots 必須維持在 repo root；搬移
 時要同步驗證 installed CLI/package closure。
 
 ### Frozen bundle
@@ -136,15 +137,16 @@ build workflow，並驗證 dev/frozen 兩種模式。
 1. GUI code → `gui/`。
 2. Public CLI/product adapter → `scripts/`，public CLI 同步註冊 entry point。
 3. Reusable domain logic → `xic_extractor/<owner>/`；owner 查 architecture contract。
-4. Maintained diagnostic → `tools/diagnostics/`，並更新 `tools/diagnostics/INDEX.md`。
-5. Tests → `tests/test_<module>_<behavior>.py`；shared fixture → `tests/fixtures/`。
-6. Stable product/user/agent/architecture rule → 對應 canonical owner。
-7. JSON schema → `docs/superpowers/schemas/<contract>.vN.json`。
-8. Current small validation contract/fixture → `docs/superpowers/validation/` 或
+4. Installed evidence review、source adapter、selection 或 renderer → `xic_inspector/`。
+5. Maintained diagnostic → `tools/diagnostics/`，並更新 `tools/diagnostics/INDEX.md`。
+6. Tests → `tests/test_<module>_<behavior>.py`；shared fixture → `tests/fixtures/`。
+7. Stable product/user/agent/architecture rule → 對應 canonical owner。
+8. JSON schema → `docs/superpowers/schemas/<contract>.vN.json`。
+9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
    `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。
-9. Construction spec/plan → GitHub Issue；branch closeout → PR body。
-10. Generated report/audit/full output → ignored `output/`。
-11. Optional private research → Obsidian；throwaway context → ignored scratch。
+10. Construction spec/plan → GitHub Issue；branch closeout → PR body。
+11. Generated report/audit/full output → ignored `output/`。
+12. Optional private research → Obsidian；throwaway context → ignored scratch。
 
 新抽象需要兩個現存 caller；新 config 需要現存第二值。新 artifact lane 需要長期
 owner、consumer 與 retirement rule，不能只因單次施工方便而建立。

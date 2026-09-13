@@ -50,7 +50,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
-from xic_extractor.diagnostics.cid_nl_explanation import CidNlEvidenceLocator
+from xic_extractor.diagnostics.cid_nl_explanation import EvidenceLocator
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
     write_cid_nl_explanation,
 )
@@ -516,7 +516,7 @@ def _run_untargeted_cid_nl_alignment(
                 ),
                 progress_callback=timing_recorder.heartbeat_event,
             )
-        cid_nl_evidence: CidNlEvidenceLocator | None = None
+        evidence: EvidenceLocator | None = None
         if outputs.matrix_tsv is not None and outputs.matrix_tsv.is_file():
             with outputs.matrix_tsv.open("rb") as handle:
                 matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
@@ -524,7 +524,7 @@ def _run_untargeted_cid_nl_alignment(
             app = getattr(completed, "application_result", None)
             req = getattr(app, "processing_request", None)
             att = getattr(app, "processing_attempt", None)
-            cid_nl_evidence = CidNlEvidenceLocator(
+            evidence = EvidenceLocator(
                 report_path=db_path,
                 matrix_path=outputs.matrix_tsv,
                 matrix_sha256=matrix_sha256,
@@ -537,8 +537,7 @@ def _run_untargeted_cid_nl_alignment(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
             untargeted_cid_nl_result=completed,
-            evidence=cid_nl_evidence,
-            cid_nl_evidence=cid_nl_evidence,
+            evidence=evidence,
         )
     finally:
         if hasattr(completed, "close"):

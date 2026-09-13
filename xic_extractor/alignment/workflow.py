@@ -71,6 +71,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     finalize_scientific_alignment,
 )
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
 from xic_extractor.execution_runtime_finalization_models import (
     RuntimeResourceReservation,
@@ -96,7 +97,10 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationRef,
+    RetainedCaptureEvidence,
+)
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
@@ -485,6 +489,13 @@ class CompletedUntargetBatchWorkflowResult:
     initial_edges: (
         tuple[CrossSampleNeighborhoodEdge, ...]
         | ImmutableSequence[CrossSampleNeighborhoodEdge]
+    ) = field(default=(), repr=False, compare=False)
+    discovery_physical_records: (
+        tuple[DiscoveryPhysicalFactRecord, ...]
+        | ImmutableSequence[DiscoveryPhysicalFactRecord]
+    ) = field(default=(), repr=False, compare=False)
+    capture_evidence: (
+        tuple[RetainedCaptureEvidence, ...] | ImmutableSequence[RetainedCaptureEvidence]
     ) = field(default=(), repr=False, compare=False)
     cleanup_action: Callable[[], None] | None = field(
         default=None, repr=False, compare=False
@@ -1209,8 +1220,7 @@ def _validate_untarget_batch_bundles(
                 "Untarget batch child must close one exact subject workset"
             )
         if any(
-            subject_id not in parent_subject_ids
-            for subject_id in child_provider_ids
+            subject_id not in parent_subject_ids for subject_id in child_provider_ids
         ):
             raise AlignmentWorkflowContractError(
                 "Untarget batch child references an undeclared method subject"

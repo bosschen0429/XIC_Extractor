@@ -4,19 +4,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
+
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 SCHEMA_VERSION = 2
 
 VALID_CURVE_KINDS = frozenset(
-    {"initial_capture", "reacquired_capture", "recovery_observation"}
+    {
+        "discovery_physical",
+        "initial_capture",
+        "reacquired_capture",
+        "recovery_observation",
+    }
 )
 ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
     {
@@ -45,9 +56,6 @@ class EvidenceLocator:
     schema_version: int
 
 
-CidNlEvidenceLocator = EvidenceLocator
-
-
 class ExplanationError(ValueError):
     """The requested diagnostic cannot be interpreted."""
 
@@ -58,6 +66,133 @@ class ExplanationUnavailableError(ExplanationError):
 
 class CandidateNotFoundError(ExplanationError):
     """The exact candidate ID is absent from this run."""
+
+
+_CURVE_KEYS = frozenset({"rt", "raw", "baseline", "smoothed", "positive"})
+_COORDINATE_KEYS = frozenset({"mz", "rt_min", "rt_max", "ppm_tol"})
+_PROFILE_KEYS = frozenset(field.name for field in fields(SignalProcessingProfile))
+_INTEGRATION_KEYS = frozenset(field.name for field in fields(IntegrationResult)) | {
+    "apex_rt_min",
+    "area_profile_selected",
+    "boundary_source",
+}
+_PROVENANCE_KEYS = frozenset(
+    {
+        "profile_id",
+        "profile_version",
+        "trace_content_id",
+        "prepared_signal_id",
+        "acquisition_source_id",
+        "full_trace_sha256",
+        "selection_trace_sha256",
+        "processing_request_id",
+        "processing_attempt_id",
+        "observation_artifact_id",
+        "selected_trace_indices",
+        "resolver_mode",
+        "proposal_sources",
+        "method_subject_id",
+        "profile",
+        "physical_state",
+        "physical_reason",
+    }
+)
+
+
+def _validate_curve_payload(
+    payload: Mapping[str, Any],
+    *,
+    sample_id: str,
+    kind: str,
+    record_id: str,
+) -> None:
+    """Validate the selected persisted envelope once at its storage boundary."""
+    if kind not in VALID_CURVE_KINDS:
+        raise ExplanationError(f"undeclared curve kind: {kind}")
+    if not isinstance(payload, Mapping):
+        raise ExplanationError("curve payload must be an object")
+    extra = set(payload) - ALLOWED_CURVE_PAYLOAD_KEYS
+    if extra:
+        raise ExplanationError(f"undeclared curve payload keys: {sorted(extra)}")
+    if set(payload) != ALLOWED_CURVE_PAYLOAD_KEYS:
+        raise ExplanationError("curve payload missing required fields")
+    if payload["schema_version"] != "curve_payload_v1":
+        raise ExplanationError("unsupported curve payload schema version")
+    if payload["kind"] != kind or payload["sample_id"] != sample_id:
+        raise ExplanationError("curve payload crosses sample or kind binding")
+    if not isinstance(sample_id, str) or not sample_id or not record_id:
+        raise ExplanationError("curve payload missing sample or record identity")
+    provenance = payload["provenance"]
+    if not isinstance(provenance, Mapping) or set(provenance) - _PROVENANCE_KEYS:
+        raise ExplanationError("undeclared provenance fields")
+    profile = provenance.get("profile")
+    if profile is not None and (
+        not isinstance(profile, Mapping) or set(profile) != _PROFILE_KEYS
+    ):
+        raise ExplanationError("undeclared or missing profile fields")
+    if record_id not in (
+        payload["peak_observation_content_id"],
+        payload["candidate_id"],
+        provenance.get("method_subject_id"),
+    ):
+        raise ExplanationError("curve payload crosses record binding")
+
+    curves = payload["curves"]
+    if not isinstance(curves, Mapping) or set(curves) != _CURVE_KEYS:
+        raise ExplanationError("undeclared or missing curve array fields")
+    rt = curves["rt"]
+    if not isinstance(rt, (list, tuple)):
+        raise ExplanationError("curve RT must be an array")
+    if not rt and (
+        provenance.get("physical_state") != "unavailable"
+        or payload["peak_observation_content_id"] is not None
+        or payload["integration"] is not None
+        or any(
+            curves[name] is not None for name in ("baseline", "smoothed", "positive")
+        )
+    ):
+        raise ExplanationError(
+            "empty acquisition cannot claim observed or processed evidence"
+        )
+    for name, values in curves.items():
+        if values is None and name not in {"rt", "raw"}:
+            continue
+        if not isinstance(values, (list, tuple)) or len(values) != len(rt):
+            raise ExplanationError(f"curve array length mismatch: {name}")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in values
+        ):
+            raise ExplanationError(f"curve values must be finite numbers: {name}")
+    if any(right <= left for left, right in zip(rt, rt[1:])):
+        raise ExplanationError("curve RT must be strictly increasing")
+
+    coordinate = payload["trace_coordinate"]
+    if not isinstance(coordinate, Mapping) or set(coordinate) != _COORDINATE_KEYS:
+        raise ExplanationError("undeclared or missing trace coordinate fields")
+    for name, value in coordinate.items():
+        if value is None and name == "ppm_tol":
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ExplanationError(f"invalid trace coordinate: {name}")
+    if coordinate["mz"] <= 0 or coordinate["rt_min"] > coordinate["rt_max"]:
+        raise ExplanationError("invalid trace coordinate bounds")
+    if coordinate["ppm_tol"] is not None and coordinate["ppm_tol"] <= 0:
+        raise ExplanationError("invalid trace coordinate tolerance")
+
+    integration = payload["integration"]
+    if integration is not None:
+        if not isinstance(integration, Mapping) or set(integration) - _INTEGRATION_KEYS:
+            raise ExplanationError("undeclared integration fields")
+        for name, value in integration.items():
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ExplanationError(f"nonfinite integration value: {name}")
 
 
 class ExplanationReportWriter:
@@ -74,6 +209,7 @@ class ExplanationReportWriter:
         self._buffered_records: list[tuple[str, str, str]] = []
         self._buffered_links: list[tuple[str, str, str, str]] = []
         self._buffered_curve_payloads: list[tuple[str, str, str, str, str, bytes]] = []
+        self._curve_hashes: dict[str, bytes] = {}
 
     def __enter__(self) -> ExplanationReportWriter:
         if self.path.exists() or self.temporary.exists():
@@ -171,16 +307,31 @@ class ExplanationReportWriter:
         payload: Mapping[str, Any],
         codec: str = "zlib-json-utf8-v1",
     ) -> None:
-        if kind not in VALID_CURVE_KINDS:
-            raise ExplanationError(f"undeclared curve kind: {kind}")
-        if not (set(payload.keys()) <= ALLOWED_CURVE_PAYLOAD_KEYS):
-            unrecognized = set(payload.keys()) - ALLOWED_CURVE_PAYLOAD_KEYS
-            raise ExplanationError(f"undeclared curve payload keys: {unrecognized}")
+        _validate_curve_payload(
+            payload, sample_id=sample_id, kind=kind, record_id=record_id
+        )
         if codec != "zlib-json-utf8-v1":
             raise ExplanationError(f"unsupported curve codec: {codec}")
         encoded_json = json.dumps(
-            payload, ensure_ascii=False, sort_keys=True
+            payload, ensure_ascii=False, sort_keys=True, allow_nan=False
         ).encode("utf-8")
+        binding = _json(
+            {
+                "sample_id": sample_id,
+                "kind": kind,
+                "record_id": record_id,
+                "codec": codec,
+            }
+        ).encode("utf-8")
+        digest = hashlib.sha256(binding + b"\0" + encoded_json).digest()
+        previous = self._curve_hashes.get(payload_id)
+        if previous is not None:
+            if previous != digest:
+                raise ExplanationError(
+                    f"conflicting curve payload identity: {payload_id}"
+                )
+            return
+        self._curve_hashes[payload_id] = digest
         compressed = zlib.compress(encoded_json, level=6)
         self._buffered_curve_payloads.append(
             (payload_id, sample_id, kind, record_id, codec, compressed)
@@ -191,7 +342,7 @@ class ExplanationReportWriter:
     def _flush_curve_payloads(self) -> None:
         if self._buffered_curve_payloads:
             self._connection().executemany(
-                "INSERT OR REPLACE INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
                 self._buffered_curve_payloads,
             )
             self._buffered_curve_payloads.clear()
@@ -273,6 +424,7 @@ class ExplanationReportWriter:
         self._buffered_records.clear()
         self._buffered_links.clear()
         self._buffered_curve_payloads.clear()
+        self._curve_hashes.clear()
         self.temporary.unlink(missing_ok=True)
 
 
@@ -410,7 +562,13 @@ def read_cid_nl_curves(
         connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
         connection.execute("PRAGMA query_only = ON")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version == 1:
+            return []
         if version != 2:
+            raise ExplanationError(f"unsupported explanation schema version: {version}")
+        if sample_ids is not None and not sample_ids:
+            return []
+        if record_ids is not None and not record_ids:
             return []
 
         query = (
@@ -438,21 +596,22 @@ def read_cid_nl_curves(
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")
             decompressed = zlib.decompress(blob)
             payload_data = json.loads(decompressed.decode("utf-8"))
-            if payload_data.get("kind") not in VALID_CURVE_KINDS:
-                raise ExplanationError(
-                    f"undeclared curve payload kind: {payload_data.get('kind')}"
-                )
-            if not (set(payload_data.keys()) <= ALLOWED_CURVE_PAYLOAD_KEYS):
-                unrec = set(payload_data.keys()) - ALLOWED_CURVE_PAYLOAD_KEYS
-                raise ExplanationError(f"undeclared curve payload keys: {unrec}")
-            results.append(payload_data)
+            _validate_curve_payload(
+                payload_data,
+                sample_id=sample_id,
+                kind=kind,
+                record_id=record_id,
+            )
+            results.append({**payload_data, "payload_id": payload_id})
         return results
-    except (sqlite3.Error, json.JSONDecodeError, zlib.error) as exc:
+    except (
+        sqlite3.Error,
+        json.JSONDecodeError,
+        zlib.error,
+        UnicodeError,
+        TypeError,
+    ) as exc:
         raise ExplanationError(f"failed reading curve payloads: {exc}") from exc
     finally:
         if connection is not None:
             connection.close()
-
-
-read_evidence_summary = read_cid_nl_explanation
-read_evidence_curves = read_cid_nl_curves

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
+import zlib
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
 from xic_extractor.diagnostics.cid_nl_explanation import (
-    CidNlEvidenceLocator,
+    EvidenceLocator,
     ExplanationError,
     ExplanationReportWriter,
     read_cid_nl_curves,
@@ -18,7 +21,7 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
 
 
 def test_cid_nl_evidence_locator_immutability() -> None:
-    locator = CidNlEvidenceLocator(
+    locator = EvidenceLocator(
         report_path=Path("out/cid_nl_explanation.sqlite"),
         matrix_path=Path("out/alignment_matrix.tsv"),
         matrix_sha256="abcd" * 16,
@@ -126,6 +129,179 @@ def test_v2_rejects_undeclared_curve_kind_and_keys() -> None:
                         "extra_fake_field": 123,
                     },
                 )
+
+
+def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeypatch):
+    from tests.test_cid_nl_explanation import _owner_run
+    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+        write_cid_nl_explanation,
+    )
+
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "positive"
+    )
+    expected = {}
+    for child in completed.application_result.children:
+        for terminal in child.scientific_core.terminal_subjects:
+            hypothesis = getattr(terminal, "hypothesis", None)
+            if hypothesis is not None:
+                expected[
+                    (terminal.candidate_id, terminal.canonical_sample_identity_id)
+                ] = [
+                    {
+                        "peak_observation_content_id": (
+                            ref.content.peak_observation_content_id
+                        ),
+                        "rt_apex_min": ref.content.integration.rt_apex_min,
+                    }
+                    for ref in hypothesis.peak_observation_refs
+                ]
+    assert expected
+    report = write_cid_nl_explanation(
+        tmp_path / "metadata.sqlite",
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    completed.close()
+    with sqlite3.connect(report) as connection:
+        actual = {
+            (record["candidate_id"], record["canonical_sample_identity_id"]): record[
+                "observations"
+            ]
+            for (raw,) in connection.execute(
+                "SELECT payload FROM records WHERE kind='terminal_subjects'"
+            )
+            if (record := json.loads(raw)).get("hypothesis_id")
+        }
+    assert actual == expected
+
+
+def _bound_curve_payload():
+    return {
+        "schema_version": "curve_payload_v1",
+        "kind": "initial_capture",
+        "sample_id": "S1",
+        "candidate_id": "C1",
+        "peak_observation_content_id": "obs-1",
+        "trace_coordinate": {"mz": 500.0, "rt_min": 1.0, "rt_max": 2.0, "ppm_tol": 7.0},
+        "curves": {
+            "rt": [1.0, 1.5, 2.0],
+            "raw": [0.0, 9.0, 0.0],
+            "baseline": None,
+            "smoothed": None,
+            "positive": None,
+        },
+        "integration": None,
+        "provenance": {"profile_id": None, "trace_content_id": None},
+    }
+
+
+def test_shared_curve_is_reused_and_conflicting_same_identity_rejected(tmp_path):
+    payload = _bound_curve_payload()
+    with ExplanationReportWriter(tmp_path / "dedup.sqlite") as writer:
+        binding = dict(
+            payload_id="p1", sample_id="S1", kind="initial_capture", record_id="obs-1"
+        )
+        writer.add_curve_payload(**binding, payload=payload)
+        writer._flush_curve_payloads()
+        writer.add_curve_payload(**binding, payload=deepcopy(payload))
+        changed = deepcopy(payload)
+        changed["curves"]["raw"][1] = 8.0
+        with pytest.raises(ExplanationError, match="conflict"):
+            writer.add_curve_payload(**binding, payload=changed)
+        report = writer.finalize({"samples": []})
+    with sqlite3.connect(report) as connection:
+        assert (
+            connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 1
+        )
+    assert read_cid_nl_curves(report, record_ids=["obs-1"])[0] == {
+        **payload,
+        "payload_id": "p1",
+    }
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "sample",
+        "record",
+        "nested_field",
+        "length",
+        "nonfinite",
+        "provenance_type",
+        "profile_field",
+    ],
+)
+def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
+    tmp_path, corruption
+):
+    payload = _bound_curve_payload()
+    with ExplanationReportWriter(tmp_path / "corrupt.sqlite") as writer:
+        writer.add_curve_payload(
+            payload_id="p1",
+            sample_id="S1",
+            kind="initial_capture",
+            record_id="obs-1",
+            payload=payload,
+        )
+        report = writer.finalize({"samples": []})
+    if corruption == "sample":
+        payload["sample_id"] = "S2"
+    elif corruption == "record":
+        payload["peak_observation_content_id"] = "other-observation"
+    elif corruption == "nested_field":
+        payload["curves"]["invented_smoothed"] = [0.0, 1.0, 0.0]
+    elif corruption == "length":
+        payload["curves"]["raw"].pop()
+    elif corruption == "provenance_type":
+        payload["provenance"] = "malformed"
+    elif corruption == "profile_field":
+        payload["provenance"]["profile"] = {"invented_profile": True}
+    else:
+        payload["curves"]["raw"][1] = float("nan")
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "UPDATE curve_payloads SET payload=?",
+            (zlib.compress(json.dumps(payload).encode()),),
+        )
+    with pytest.raises(ExplanationError):
+        read_cid_nl_curves(report, sample_ids=["S1"], record_ids=["obs-1"])
+
+
+def test_empty_acquisition_preserves_unavailable_without_inventing_peak(tmp_path):
+    payload = _bound_curve_payload()
+    payload["peak_observation_content_id"] = None
+    payload["integration"] = None
+    payload["curves"] = {
+        "rt": [],
+        "raw": [],
+        "baseline": None,
+        "smoothed": None,
+        "positive": None,
+    }
+    payload["provenance"]["physical_state"] = "unavailable"
+    with ExplanationReportWriter(tmp_path / "empty.sqlite") as writer:
+        writer.add_curve_payload(
+            payload_id="empty",
+            sample_id="S1",
+            kind="initial_capture",
+            record_id=payload["candidate_id"],
+            payload=payload,
+        )
+        invented = {**payload, "peak_observation_content_id": "obs-1"}
+        with pytest.raises(ExplanationError, match="empty acquisition"):
+            writer.add_curve_payload(
+                payload_id="invalid",
+                sample_id="S1",
+                kind="initial_capture",
+                record_id="obs-1",
+                payload=invented,
+            )
+        report = writer.finalize({"samples": []})
+    assert read_cid_nl_curves(report) == [{**payload, "payload_id": "empty"}]
 
 
 def test_v1_backward_compatibility() -> None:

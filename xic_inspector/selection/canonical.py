@@ -37,6 +37,7 @@ class CanonicalItem:
     stratum: str  # 'attention' | 'excluded' | 'null' | 'zero' | 'rest'
     is_attention: bool = False
     details: dict[str, Any] = field(default_factory=dict)
+    matched_witnesses: tuple[Witness, ...] = ()
 
     @property
     def sort_key(self) -> bytes:

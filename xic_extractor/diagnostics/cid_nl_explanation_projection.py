@@ -15,6 +15,7 @@ from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
+from xic_extractor.peak_detection.traces import Trace
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.config import AlignmentConfig
@@ -84,93 +85,122 @@ def _emit_curve_payload(
     *,
     candidate_id: str | None = None,
     kind: str = "initial_capture",
+    trace: Any = None,
+    evaluation: Any = None,
+    provenance: Mapping[str, Any] | None = None,
+    related: Iterable[tuple[str, str]] = (),
 ) -> None:
-    content = getattr(ref, "content", None)
-    if (
-        content is None
-        or not hasattr(content, "rt")
-        or not hasattr(content, "intensity")
-    ):
+    """Serialize retained owner values; missing processing remains unavailable."""
+    content = ref.content if ref is not None else None
+    if evaluation is None and ref is not None:
+        evaluation = ref.physical_evaluation
+    prepared = evaluation.retained_prepared_signal if evaluation is not None else None
+    if trace is None and content is None:
         return
-    integration = getattr(content, "integration", None)
-    obs_content_id = getattr(content, "peak_observation_content_id", None)
+    generation = ref.generation_provenance if ref is not None else None
+    actual = dict(provenance or {})
+    if evaluation is not None:
+        actual.update(
+            trace_content_id=evaluation.question.trace_content_id,
+            prepared_signal_id=evaluation.prepared.prepared_signal_id,
+            profile_id=evaluation.prepared.profile_id,
+            physical_state=evaluation.state,
+            physical_reason=evaluation.reason,
+        )
+    if prepared is not None:
+        actual.update(
+            profile_id=prepared.profile.profile_id,
+            profile_version=prepared.profile.schema_version,
+            profile=asdict(prepared.profile),
+        )
+    if generation is not None:
+        actual.update(
+            _fields(
+                generation,
+                "full_trace_sha256",
+                "selection_trace_sha256",
+                "acquisition_source_id",
+                "selected_trace_indices",
+                "resolver_mode",
+                "proposal_sources",
+            )
+        )
+        actual.update(
+            observation_artifact_id=ref.artifact.evidence_artifact_id,
+            processing_request_id=ref.artifact.producer_processing_request_id,
+            processing_attempt_id=ref.artifact.producer_processing_attempt_id,
+        )
+    elif trace is not None:
+        actual["acquisition_source_id"] = trace.acquisition_source_id
+    obs_id = content.peak_observation_content_id if content is not None else None
+    record_id = obs_id or candidate_id or actual.get("method_subject_id")
+    if record_id is None:
+        raise ValueError("retained curve lacks an actual owner binding")
+    if trace is not None:
+        rt, raw = trace.rt, trace.intensity
+        coordinate = _fields(trace, "mz", "rt_min", "rt_max", "ppm_tol")
+    else:
+        assert content is not None and generation is not None
+        rt, raw = content.rt, content.intensity
+        coordinate = {
+            "mz": content.mz,
+            "rt_min": generation.query_rt_min,
+            "rt_max": generation.query_rt_max,
+            "ppm_tol": generation.query_ppm_tol,
+        }
+    integration = (
+        content.integration
+        if content is not None
+        else (evaluation.integration if evaluation is not None else None)
+    )
     envelope = {
         "schema_version": "curve_payload_v1",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
-        "peak_observation_content_id": obs_content_id,
-        "trace_coordinate": {
-            "mz": float(content.mz),
-            "rt_min": float(min(content.rt)),
-            "rt_max": float(max(content.rt)),
-            "ppm_tol": 10.0,
-        },
+        "peak_observation_content_id": obs_id,
+        "trace_coordinate": {name: float(value) for name, value in coordinate.items()},
         "curves": {
-            "rt": [float(x) for x in content.rt],
-            "raw": [float(y) for y in content.intensity],
-            "baseline": None,
-            "smoothed": None,
-            "positive": None,
+            "rt": [float(x) for x in rt],
+            "raw": [float(y) for y in raw],
+            "baseline": list(prepared.baseline) if prepared is not None else None,
+            "smoothed": list(prepared.smoothed) if prepared is not None else None,
+            "positive": list(prepared.positive_signal)
+            if prepared is not None
+            else None,
         },
-        "integration": {
-            "apex_rt_min": float(
-                getattr(
-                    integration,
-                    "rt_apex_min",
-                    getattr(integration, "raw_apex_rt_min", 0.0),
-                )
-            ),
-            "raw_apex_rt_min": float(getattr(integration, "raw_apex_rt_min", 0.0)),
-            "rt_left_min": float(getattr(integration, "rt_left_min", 0.0)),
-            "rt_right_min": float(getattr(integration, "rt_right_min", 0.0)),
-            "height_raw": float(getattr(integration, "height_raw", 0.0)),
-            "area_raw_counts_seconds": float(
-                getattr(integration, "area_raw_counts_seconds", 0.0)
-            ),
-            "area_profile_selected": (
-                float(integration.area_profile_selected)
-                if hasattr(integration, "area_profile_selected")
-                and integration.area_profile_selected is not None
-                else None
-            ),
-            "integration_method": str(
-                getattr(integration, "integration_method", "raw_trapezoid")
-            ),
-            "boundary_source": str(
-                integration.boundary_sources[0]
-                if getattr(integration, "boundary_sources", None)
-                else getattr(integration, "boundary_source", "candidate_interval")
-            ),
-        }
-        if integration is not None
-        else None,
-        "provenance": {
-            "profile_id": None,
-            "trace_content_id": None,
-        },
+        "integration": asdict(integration) if integration is not None else None,
+        "provenance": actual,
     }
-    rec_id: str = str(
-        candidate_id or getattr(content, "peak_observation_content_id", "unknown")
-    )
-    pid = f"{sample_id}:{kind}:{rec_id}"
+    # One envelope per actual content/binding; candidate associations are links.
+    encoded = json.dumps(
+        envelope,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    payload_id = "xic.inspector-curve.v1:" + hashlib.sha256(encoded).hexdigest()
     sink.add_curve_payload(
-        payload_id=pid,
+        payload_id=payload_id,
         sample_id=sample_id,
         kind=kind,
-        record_id=rec_id,
+        record_id=record_id,
         payload=envelope,
     )
-    if getattr(content, "peak_observation_content_id", None) and candidate_id:
-        obs_id: str = str(content.peak_observation_content_id)
-        obs_pid = f"{sample_id}:{kind}:{obs_id}"
-        sink.add_curve_payload(
-            payload_id=obs_pid,
-            sample_id=sample_id,
-            kind=kind,
-            record_id=obs_id,
-            payload=envelope,
-        )
+    sink.add_record(
+        "capture_evidence",
+        payload_id,
+        {
+            "payload_id": payload_id,
+            "sample_id": sample_id,
+            "candidate_id": candidate_id,
+            "peak_observation_content_id": obs_id,
+            "record_id": record_id,
+            "kind": kind,
+        },
+        related,
+    )
 
 
 def write_cid_nl_explanation(
@@ -281,6 +311,88 @@ def write_cid_nl_explanation(
                     },
                 )
 
+        for record in phase_items(
+            "discovery_physical", getattr(completed, "discovery_physical_records", ())
+        ):
+            work = record.work_item
+            sid = samples[work.sample_stem].identity.sample_identity_id
+            related = {(link.candidate_id, sid) for link in record.candidate_links}
+            if not related:
+                related = {(record.candidate_id, sid)}
+                sink.add_candidate(
+                    record.candidate_id,
+                    sid,
+                    {
+                        "candidate_id": record.candidate_id,
+                        "canonical_sample_identity_id": sid,
+                        "sample_stem": work.sample_stem,
+                        "precursor_mz": work.precursor_mz,
+                        "physical_state": record.evaluation.state,
+                        "reason": record.evaluation.reason,
+                        "rt_apex_min": (
+                            record.evaluation.facts.apex_rt_min
+                            if record.evaluation.facts is not None
+                            else None
+                        ),
+                        "availability": {"terminal": "unavailable"},
+                    },
+                )
+            _emit_curve_payload(
+                sink,
+                None,
+                sid,
+                candidate_id=record.candidate_id,
+                kind="discovery_physical",
+                trace=Trace(
+                    sample_name=work.sample_stem,
+                    mz=work.xic_mz,
+                    rt=record.acquired_trace.trace.rt,
+                    intensity=record.acquired_trace.trace.intensity,
+                    rt_min=work.xic_rt_min,
+                    rt_max=work.xic_rt_max,
+                    ppm_tol=work.xic_ppm_tol,
+                    acquisition_source_id=work.acquisition_source_id,
+                ),
+                evaluation=record.evaluation,
+                provenance={
+                    "processing_request_id": request_id,
+                    "processing_attempt_id": (
+                        application.processing_attempt.processing_attempt_id
+                    ),
+                },
+                related=related,
+            )
+
+        capture_evidence = getattr(completed, "capture_evidence", ())
+        for evidence in phase_items("capture_evidence", capture_evidence):
+            sid = evidence.canonical_sample_identity_id
+            related = (
+                {(evidence.candidate_id, sid)}
+                if evidence.candidate_id is not None
+                else method_candidates[evidence.method_subject_id, sid]
+            )
+            stage = (
+                "recovery_observation"
+                if evidence.capture_stage == "method_recovery"
+                else evidence.capture_stage
+            )
+            _emit_curve_payload(
+                sink,
+                evidence.observation_ref,
+                sid,
+                candidate_id=evidence.candidate_id,
+                kind=stage,
+                trace=evidence.trace,
+                evaluation=evidence.physical_evaluation,
+                provenance=_fields(
+                    evidence,
+                    "processing_request_id",
+                    "processing_attempt_id",
+                    "method_subject_id",
+                ),
+                related=related,
+            )
+
         for subject in phase_items("method_subjects", subjects.subjects):
             related = subject_candidates[subject.method_subject_id]
             add(
@@ -339,12 +451,15 @@ def write_cid_nl_explanation(
                         content.canonical_sample_identity_id,
                         relation.content.peak_observation_content_id,
                     ].update(related)
-                    _emit_curve_payload(
-                        sink,
-                        relation,
-                        sample_id=content.canonical_sample_identity_id,
-                        kind="recovery_observation",
-                    )
+                if not capture_evidence:
+                    for peak in assessment.candidate_peaks:
+                        _emit_curve_payload(
+                            sink,
+                            peak,
+                            content.canonical_sample_identity_id,
+                            kind="recovery_observation",
+                            related=related,
+                        )
             add(
                 "method_assessments",
                 assessment.artifact.evidence_artifact_id,
@@ -481,18 +596,28 @@ def write_cid_nl_explanation(
                     payload.update(
                         hypothesis_id=hypothesis.hypothesis_id,
                         physical_observation_ids=physical_ids,
+                        observations=[
+                            {
+                                "peak_observation_content_id": (
+                                    ref.content.peak_observation_content_id
+                                ),
+                                "rt_apex_min": ref.content.integration.rt_apex_min,
+                            }
+                            for ref in hypothesis.peak_observation_refs
+                        ],
                     )
                     hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
                     for ref in hypothesis.peak_observation_refs:
                         physical_id = ref.content.peak_observation_content_id
                         physical_candidates[key[1], physical_id].add(key)
-                        _emit_curve_payload(
-                            sink,
-                            ref,
-                            sample_id=key[1],
-                            candidate_id=terminal.candidate_id,
-                            kind="initial_capture",
-                        )
+                        if not capture_evidence:
+                            _emit_curve_payload(
+                                sink,
+                                ref,
+                                sample_id=key[1],
+                                kind=ref.capture_stage,
+                                related=(key,),
+                            )
                 add("terminal_subjects", _key(*key), payload, (key,))
                 sink.update_availability(
                     key, terminal=terminal.variant, final_groups="recorded"
