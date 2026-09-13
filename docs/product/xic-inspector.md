@@ -54,6 +54,13 @@ It has no report-time database, server, CDN, or network dependency. Item,
 sample, and candidate navigation; filters; evidence details; lightbox views;
 and keyboard interaction operate on the embedded selected subset.
 
+Source adapters supply readable titles and explanations of recorded outcomes.
+The workbench presents them as text and tables, including expanded details and
+chart tooltips; raw JSON and opaque identifiers remain in the embedded data.
+Precursor m/z uses four fixed decimal places, primary RT uses two, and detailed
+peak times use three. NULL, numeric zero, and unavailable values remain distinct.
+Focusing a sample also focuses its candidate and peak-detail tables.
+
 Report generation writes through a temporary file and replaces the requested
 output only after successful completion. Cancellation or failure leaves an
 existing report intact. The output cannot alias its source evidence database or
