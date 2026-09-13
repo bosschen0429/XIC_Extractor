@@ -184,7 +184,10 @@ def test_generate_report_sample_strategy_success() -> None:
         assert "write" in progresses
 
         content = out_html.read_text(encoding="utf-8")
-        assert "XIC Inspector" in content
+        title = re.search(r"<title>(.*?)</title>", content, re.S).group(1)
+        heading = re.search(r"<h1[^>]*>(.*?)</h1>", content, re.S).group(1)
+        assert title == heading == "Inspector"
+        assert res.source.processing_request_id not in title + heading
         assert "retained_curves_v1" in content
 
 
@@ -698,3 +701,101 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
         generate_report(report, SelectionRequest(), output)
     assert caught.value.code == 4
     assert output.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "state,destination,sample_count",
+    [("established", "matrix", 2), ("provisional", "archive", 1)],
+)
+def test_source_labels_explain_recorded_group_and_sample_outcome(
+    tmp_path, state, destination, sample_count
+):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    source_code = "trapezoid_counts_seconds_on_canonical_signal_v1"
+    with sqlite3.connect(report) as connection:
+        row = {
+            "row_key_id": "row-01",
+            "group_hypothesis_id": "G1",
+            "route": {"destination": destination, "reason": state},
+        }
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='rows'", (json.dumps(row),)
+        )
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='final_groups'",
+            (json.dumps({"group_hypothesis_id": "G1", "disposition": state}),),
+        )
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='cell_decisions'",
+            (
+                json.dumps(
+                    {
+                        "row_key_id": "row-01",
+                        "sample_id": "S1",
+                        "quantitative_value": 1000.0,
+                        "variant": "numeric",
+                        "source": source_code,
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            ("method_subjects", "method-01", json.dumps({"neutral_loss_da": 116.0474})),
+        )
+        connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?)",
+            ("C1", "S1", "method_subjects", "method-01"),
+        )
+        if sample_count == 2:
+            connection.execute(
+                "INSERT INTO candidates VALUES (?, ?, ?)",
+                ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
+            )
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (
+                    "cell_decisions",
+                    "cd-02",
+                    json.dumps(
+                        {
+                            "row_key_id": "row-01",
+                            "sample_id": "S2",
+                            "quantitative_value": 700.0,
+                            "variant": "numeric",
+                            "source": source_code,
+                        }
+                    ),
+                ),
+            )
+            for kind, rid in (
+                ("rows", "row-01"),
+                ("final_groups", "G1"),
+                ("cell_decisions", "cd-02"),
+            ):
+                connection.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, rid)
+                )
+    output = tmp_path / "labels.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    assert len(item["samples"]) == sample_count
+    assert ("已建立" if state == "established" else "暫定") in item["title"]
+    assert ("定量矩陣" if destination == "matrix" else "封存紀錄") in item[
+        "reason_label"
+    ]
+    assert "定量數值" in item["reason_label"]
+    assert item["method_label"] == "NL 116.0474"
+    assert all(
+        s["status_label"] == "有定量值" and "梯形積分面積" in s["decision_label"]
+        for s in item["samples"]
+    )
+    assert item["curves"][0]["stage_label"] == "首次擷取曲線"
+    labels = item["title"] + item["reason_label"] + item["route_label"]
+    assert not any(
+        token in labels
+        for token in ("row-01", "G1", "一致", "成功", "有效", "信心", "原始理由")
+    )
+    assert item["reason"] == state and item["route"] == row["route"]
+    assert item["samples"][0]["decision_reason"] == source_code
+    assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]

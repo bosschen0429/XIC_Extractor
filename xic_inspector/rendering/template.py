@@ -11,6 +11,9 @@ _SHELL = """<!DOCTYPE html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>__REPORT_TITLE__</title>
+  <meta name="xic-request-id" content="__REQUEST_ID__">
+  <meta name="xic-evidence-capability" content="__EVIDENCE_CAPABILITY__">
+  <meta name="xic-source-name" content="__SOURCE_DB_NAME__">
   <style>
     :root {
       --bg: #f5f7f8;
@@ -47,7 +50,11 @@ _SHELL = """<!DOCTYPE html>
       margin-bottom: 16px;
     }
     .header-title { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-    .header-title h1 { font-size: 20px; font-weight: 600; }
+    .header-title h1 { font-size: 23px; font-weight: 650; }
+    .brand { display: flex; gap: 10px; align-items: center; }
+    .brand-mark { background: var(--text); color: white; border-radius: 4px; padding: 9px 6px; font-size: 13px; font-weight: 700; }
+    .report-actions { display: flex; gap: 12px; align-items: center; }
+    .notice { text-align: center; background: #edf2f5; padding: 8px 14px; margin: -24px -28px 18px; font-size: 12px; color: var(--muted); }
     .header-meta { font-size: 13px; color: var(--muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 16px; }
     .filter-bar {
       margin-top: 14px;
@@ -135,7 +142,9 @@ _SHELL = """<!DOCTYPE html>
       margin-bottom: 2px;
     }
     .record-meta { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
-    .record-reason { font-size: 12px; color: var(--muted); margin-top: 9px; }
+    .record-reason { font-size: 12px; color: var(--muted); margin-top: 9px; line-height: 1.6; }
+    .record-name { align-items: flex-start; gap: 7px; }
+    .record-name > span:first-child { min-width: 0; }
 
     /* Badge */
     .badge {
@@ -148,11 +157,12 @@ _SHELL = """<!DOCTYPE html>
     }
     .badge-ok { background: #dafbe1; color: var(--green); }
     .badge-conflict { background: #ffebe9; color: var(--red); }
-    .badge-attention { background: #ffebe9; color: var(--red); }
-    .badge-excluded { background: #fff8c5; color: var(--orange); }
+    .badge-attention { background: #fff0d5; color: #865000; }
+    .badge-excluded { background: #f0ebf8; color: #66438c; }
     .badge-null { background: #eaeef2; color: var(--gray); }
     .badge-zero { background: #e8deff; color: var(--purple); }
-    .badge-rest { background: #ddf4ff; color: var(--blue); }
+    .badge-rest { background: #edf2f5; color: #536372; }
+    .badge { white-space: nowrap; font-weight: 500; padding: 3px 8px; }
     .badge-missing { background: #eaeef2; color: var(--gray); }
 
     /* Evidence Workspace */
@@ -166,13 +176,13 @@ _SHELL = """<!DOCTYPE html>
     }
     .detail-eyebrow { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
     .detail-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-    .detail-meta { font-size: 13px; color: var(--muted); font-family: var(--font-mono); margin-top: 4px; }
+    .detail-meta { font-size: 13px; color: var(--muted); margin-top: 10px; display: flex; flex-wrap: wrap; gap: 16px; }
+    .detail-meta strong { font-family: var(--font-mono); font-weight: 500; }
+    .detail-actions { display: grid; justify-items: end; gap: 10px; flex: none; }
     .finding-card {
-      background: #f6f8fa;
-      border-left: 3px solid var(--blue);
-      padding: 10px 14px;
-      border-radius: 0 4px 4px 0;
-      font-size: 13px;
+      border-bottom: 1px solid var(--border-light);
+      padding: 2px 0 16px;
+      font-size: 14px;
       margin-bottom: 16px;
     }
     .chart-toolbar {
@@ -192,13 +202,15 @@ _SHELL = """<!DOCTYPE html>
       gap: 10px;
       font-size: 12px;
       margin-bottom: 14px;
-      padding: 8px 12px;
-      background: #fcfcfc;
-      border-bottom: 1px solid var(--border-light);
-      border-radius: 4px;
+      padding: 0;
     }
     .legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; }
     .legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .sample-legend label, .chart-toolbar label { display: flex; align-items: center; gap: 5px; }
+    .legend-line { display: inline-block; width: 14px; height: 3px; }
+    .candidate-bar { font-size: 12px; margin: -2px 0 12px; }
+    .candidate-bar select { max-width: 300px; margin-left: 6px; }
+    .focus-status { color: var(--muted); font-size: 12px; margin-left: auto; }
 
     /* Charts */
     .charts-grid {
@@ -212,7 +224,7 @@ _SHELL = """<!DOCTYPE html>
       .workbench { grid-template-columns: 1fr; }
     }
     .plot-card {
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-light);
       border-radius: 6px;
       padding: 12px;
       background: #fff;
@@ -228,8 +240,9 @@ _SHELL = """<!DOCTYPE html>
       cursor: pointer;
     }
     .plot-header button:hover { background: #f6f8fa; }
-    .svg-container { width: 100%; height: 260px; }
-    .svg-container svg { width: 100%; height: 100%; display: block; }
+    .svg-container { width: 100%; aspect-ratio: 540 / 250; }
+    .svg-container svg { width: 100%; height: auto; display: block; }
+    #zoom-container svg { height: 100%; }
     .chart-caption { font-size: 11px; color: var(--muted); margin-top: 6px; }
 
     /* Sample Table */
@@ -240,7 +253,7 @@ _SHELL = """<!DOCTYPE html>
       font-size: 13px;
     }
     .sample-table th, .sample-table td {
-      border: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-light);
       padding: 8px 10px;
       text-align: left;
     }
@@ -251,7 +264,7 @@ _SHELL = """<!DOCTYPE html>
     .table-scroll { overflow-x: auto; }
     .reading-hint { color: var(--muted); font-size: 12px; margin: 6px 0 12px; }
     .finding-card .reading-hint { margin-bottom: 0; }
-    .detail-top h2 { font-size: 25px; font-weight: 650; }
+    .detail-top h2 { font-size: 21px; font-weight: 650; }
     .record-meta { margin-top: 5px; line-height: 1.7; }
     .sample-section { margin-bottom: 22px; }
     .sample-btn {
@@ -299,7 +312,6 @@ _SHELL = """<!DOCTYPE html>
       padding: 40px 20px;
       color: var(--muted);
     }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font-size: 12px; }
     details { margin: 12px 0; padding: 8px; border: 1px solid var(--border-light); border-radius: 4px; }
     summary { cursor: pointer; font-weight: 600; }
     .detail-panel h2, .detail-panel .mono { overflow-wrap: anywhere; }
@@ -307,30 +319,42 @@ _SHELL = """<!DOCTYPE html>
     select { max-width: 100%; }
     :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     [hidden] { display: none !important; }
+    button:disabled { cursor: default; opacity: .45; }
+    button, input, select { font: inherit; }
+    input[type="checkbox"] { accent-color: var(--blue); }
+    #details-body { display: grid; gap: 24px; }
+    #details-body h3 { margin-bottom: 8px; font-size: 15px; }
+    #details-body p { font-size: 13px; }
+    #details-body .sample-table { font-size: 12px; }
     @media (max-width: 740px) {
       body { padding: 14px; }
       .panel { padding: 15px; }
       .list-panel { padding: 0; max-height: 280px; }
+      .record-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .record-button { padding: 12px; font-size: 13px; }
+      .record-reason { display: none; }
+      .record-meta { font-size: 11px; }
       .detail-top { flex-wrap: wrap; gap: 10px; }
       .chart-toolbar select { max-width: 230px; }
+      .notice { margin: -14px -14px 14px; }
     }
   </style>
 </head>
 <body>
+  <div class="notice" id="report-notice" hidden></div>
   <header>
     <div class="header-title">
-      <h1>__REPORT_TITLE__</h1>
-      <span class="badge badge-__CAPABILITY_BADGE__">__CAPABILITY_LABEL__</span>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">XIC</span><div><h1>__REPORT_TITLE__</h1><p class="reading-hint">既有結果檢閱</p></div></div>
+      <div class="report-actions"><span class="badge badge-__CAPABILITY_BADGE__">__CAPABILITY_LABEL__</span><button id="btn-report-info" type="button">報告資訊</button></div>
     </div>
     <div class="header-meta">
       <span><strong>__STRATEGY_LABEL__</strong> · 這份報告包含 __SELECTED_COUNT__ 個項目</span>
       <span>左側選項目，右側對照曲線與樣本結果。</span>
     </div>
-    <details><summary>報告來源</summary><div class="header-meta"><span>策略：__STRATEGY__</span><span>證據格式：__EVIDENCE_CAPABILITY__</span><span>請求批次：<code class="mono">__REQUEST_ID__</code></span><span>全部／合格／選取：__RUN_TOTAL__ / __ELIGIBLE_COUNT__ / __SELECTED_COUNT__</span><span>來源 DB：__SOURCE_DB_NAME__</span></div></details>
     <div class="filter-bar" id="filters">
-      <label>搜尋：<input type="text" id="search" placeholder="樣本、m/z、判定或 ID"></label>
-      <label>m/z 範圍：<input type="number" id="mz-min" step="any" placeholder="min"> ~ <input type="number" id="mz-max" step="any" placeholder="max"></label>
-      <label>RT 範圍 (min)：<input type="number" id="rt-min" step="any" placeholder="min"> ~ <input type="number" id="rt-max" step="any" placeholder="max"></label>
+      <label>搜尋：<input type="text" id="search" placeholder="項目、樣本、m/z 或判定"></label>
+      <label>m/z 範圍：<input type="number" id="mz-min" step="0.0001" placeholder="下限"> ~ <input type="number" id="mz-max" step="0.0001" placeholder="上限"></label>
+      <label>RT 範圍 (min)：<input type="number" id="rt-min" step="0.01" placeholder="起點"> ~ <input type="number" id="rt-max" step="0.01" placeholder="終點"></label>
       <button type="button" id="clear">重設篩選</button>
     </div>
   </header>
@@ -348,6 +372,8 @@ _SHELL = """<!DOCTYPE html>
       <div id="workspace-content"></div>
     </main>
   </div>
+
+  <div id="report-info" hidden><section><h3>報告範圍</h3><dl class="factlist"><dt>檢閱方式</dt><dd>__STRATEGY_LABEL__</dd><dt>包含項目</dt><dd>__SELECTED_COUNT__ 筆</dd><dt>運算中的項目</dt><dd>共 __RUN_TOTAL__ 筆，其中 __ELIGIBLE_COUNT__ 筆可供本次選取</dd><dt>可用資料</dt><dd>__CAPABILITY_LABEL__</dd></dl></section></div>
 
   <dialog id="zoom-dialog">
     <div class="dialog-header">

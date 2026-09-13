@@ -379,8 +379,10 @@ class CidNlSource:
                         "status_label": {
                             "attention": "需留意",
                             "excluded": "已排除",
-                            "rest": "其他結果",
-                        }.get(item.details["sample_status"][sid], "未提供"),
+                            "null": "空值",
+                            "zero": "真實零值",
+                            "rest": "有定量值" if len(values) == 1 else "有結果紀錄",
+                        }.get(item.details["sample_status"][sid], "未提供定量決策"),
                         **(
                             {"quantitative_value": values[0]}
                             if len(values) == 1
@@ -391,15 +393,7 @@ class CidNlSource:
                             for c in cells
                         )
                         or "unavailable",
-                        "decision_label": (
-                            "當次結果為空值"
-                            if len(values) == 1 and values[0] is None
-                            else "當次定量結果為零"
-                            if len(values) == 1 and values[0] == 0
-                            else "沿用當次定量結果"
-                            if len(values) == 1
-                            else "未提供單一樣本定量值"
-                        ),
+                        "decision_label": self._decision_label(cells),
                         "evidence_status": "available"
                         if any(
                             c.get("sample_id") == sid and c["curves"]["rt"]
@@ -418,7 +412,6 @@ class CidNlSource:
                 {
                     "id": item.serialized_ref,
                     "kind": item.kind,
-                    "title": f"{item.kind.capitalize()} {item.identifier}",
                     "stratum": item.stratum,
                     "badge": item.stratum,
                     "precursor_mz": item.witnesses[0].precursor_mz
@@ -428,17 +421,8 @@ class CidNlSource:
                     if item.witnesses
                     else None,
                     "reason": reason,
-                    "reason_label": {
-                        "established": "已建立分組",
-                        "provisional": "分組仍為暫定狀態",
-                        "unresolved": "當次判定尚未解決",
-                        "unavailable": "未提供當次判定說明",
-                    }.get(reason, "當次判定已保留，可展開查看原始理由"),
                     "route": route,
-                    "route_label": {
-                        "matrix": "結果去向：定量矩陣（Matrix）",
-                        "archive": "結果去向：留存紀錄（Archive）",
-                    }.get(route.get("destination"), "未提供結果去向"),
+                    **self._item_labels(item, samples, route),
                     "samples": samples,
                     "witnesses": [
                         {**asdict(w), "matched": w in item.matched_witnesses}
@@ -476,6 +460,93 @@ class CidNlSource:
         return rendered
 
     @staticmethod
+    def _decision_label(cells):
+        if not cells:
+            return "沒有這個樣本的定量決策紀錄。"
+        if len(cells) != 1:
+            return f"保留 {len(cells)} 筆定量決策，沒有合併成單一數值。"
+        cell = cells[0]
+        value = cell["quantitative_value"]
+        if value is None:
+            if cell.get("variant") == "unresolved":
+                return "當次決策尚未解決，定量結果保留為空值。"
+            return "當次定量決策記錄為空值，並非零。"
+        if value == 0:
+            return "當次定量決策記錄的數值為零。"
+        if cell.get("source") == "trapezoid_counts_seconds_on_canonical_signal_v1":
+            return "依當次採用的訊號，以梯形積分面積定量。"
+        return "當次定量決策已保留數值。"
+
+    def _item_labels(self, item, samples, route):
+        """Describe recorded outcomes without promoting them to scientific claims."""
+        group = next(
+            (
+                r["facts"]
+                for r in item.details["records"]
+                if r["kind"] == "final_groups"
+            ),
+            {},
+        )
+        state = group.get("disposition", route.get("reason"))
+        title, outcome = {
+            "established": ("已建立分組", "本次已建立分組"),
+            "provisional": ("暫定分組", "本次分組仍為暫定"),
+            "unresolved": ("分組尚待釐清", "本次分組判定尚未解決"),
+        }.get(state, ("分組紀錄", "保留本次分組紀錄"))
+        if item.kind == "candidate":
+            title, outcome = (
+                ("已排除候選", "本次候選已被排除，沒有最終分組")
+                if item.stratum == "excluded"
+                else ("未分組候選", "本次候選沒有最終分組紀錄")
+            )
+        count = len(samples)
+        value_count = sum(
+            "quantitative_value" in sample and sample["quantitative_value"] is not None
+            for sample in samples
+        )
+        if count == 1:
+            population = "此樣本有定量數值" if value_count else "此樣本沒有定量數值"
+        else:
+            population = (
+                f"所選 {count} 個樣本中有 {value_count} 個保留定量數值"
+                if value_count != count
+                else f"所選 {count} 個樣本均有定量數值"
+            )
+        destination = route.get("destination")
+        route_label = {
+            "matrix": "去向：定量矩陣",
+            "archive": "去向：封存紀錄（未列入定量矩陣）",
+        }.get(destination, "未記錄輸出去向")
+        route_outcome = {
+            "matrix": "結果去向為定量矩陣",
+            "archive": "結果留存於封存紀錄，未列入定量矩陣",
+        }.get(destination, "未記錄輸出去向")
+        losses = sorted(
+            {
+                record["facts"]["neutral_loss_da"]
+                for record in item.details["records"]
+                if record["kind"] == "method_subjects"
+                and isinstance(record["facts"].get("neutral_loss_da"), (int, float))
+            }
+        )
+        labels = {
+            "title": title,
+            "badge_label": {
+                "attention": "需留意",
+                "excluded": "已排除",
+                "null": "含空值",
+                "zero": "含零值",
+            }.get(item.stratum, "已記錄"),
+            "reason_label": f"{outcome}，{population}；{route_outcome}。",
+            "route_label": route_label,
+        }
+        if losses:
+            labels["method_label"] = (
+                "NL " + "、".join(f"{loss:.4f}" for loss in losses)
+            )
+        return labels
+
+    @staticmethod
     def _curve(payload):
         curves = payload.get("curves", {})
         integration = payload.get("integration") or {}
@@ -488,6 +559,12 @@ class CidNlSource:
             ),
             "observation_id": payload.get("peak_observation_content_id"),
             "kind": payload.get("kind"),
+            "stage_label": {
+                "discovery_physical": "探索階段曲線",
+                "initial_capture": "首次擷取曲線",
+                "reacquired_capture": "再次擷取曲線",
+                "recovery_observation": "方法補取曲線",
+            }.get(payload.get("kind"), "保留曲線"),
             "raw_rts": rts,
             "raw_intensities": curves.get("raw", []),
             "processed_curves": [

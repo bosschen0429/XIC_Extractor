@@ -399,6 +399,16 @@ def generate_report(
     # Stage: Render
     payload_dict = {
         "summary": summary,
+        "selection": {
+            "strategy": selection.strategy,
+            "sample_ids": selection.sample_ids,
+            "candidate_ids": selection.candidate_ids,
+            "group_ids": selection.group_ids,
+            "mz_min": selection.mz_min,
+            "mz_max": selection.mz_max,
+            "rt_min": selection.rt_min,
+            "rt_max": selection.rt_max,
+        },
         "samples": [
             {
                 "id": s["canonical_sample_identity_id"],
@@ -411,7 +421,7 @@ def generate_report(
     }
 
     html_str = build_report_html(
-        title=f"XIC Inspector — {req_id or 'Report'}",
+        title="Inspector",
         evidence_capability=capability,
         strategy=selection.strategy,
         request_id=req_id,
