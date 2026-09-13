@@ -13,14 +13,14 @@ _SHELL = """<!DOCTYPE html>
   <title>__REPORT_TITLE__</title>
   <style>
     :root {
-      --bg: #f4f6f8;
+      --bg: #f5f7f8;
       --card: #ffffff;
       --panel: #ffffff;
       --border: #d0d7de;
       --border-light: #e1e4e8;
-      --text: #24292f;
-      --muted: #57606a;
-      --blue: #0969da;
+      --text: #17202a;
+      --muted: #5a6673;
+      --blue: #1d6fa3;
       --blue-bg: #edf5fa;
       --green: #1a7f37;
       --red: #cf222e;
@@ -31,11 +31,13 @@ _SHELL = """<!DOCTYPE html>
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-family: Aptos, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
       color: var(--text);
       background: var(--bg);
       line-height: 1.5;
-      padding: 16px;
+      padding: 24px 28px;
+      max-width: 1510px;
+      margin: auto;
     }
     header {
       background: var(--card);
@@ -80,20 +82,21 @@ _SHELL = """<!DOCTYPE html>
     /* Workbench Layout */
     .workbench {
       display: grid;
-      grid-template-columns: 310px minmax(0, 1fr);
-      gap: 16px;
+      grid-template-columns: 288px minmax(0, 1fr);
+      gap: 18px;
       align-items: start;
     }
     .panel {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 16px;
+      padding: 22px;
+      min-width: 0;
     }
     .list-panel {
       max-height: calc(100vh - 170px);
       overflow-y: auto;
-      padding: 8px;
+      padding: 0;
     }
     .list-header {
       font-size: 13px;
@@ -104,23 +107,24 @@ _SHELL = """<!DOCTYPE html>
       display: flex;
       justify-content: space-between;
     }
-    .record-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+    .list-header { padding: 14px 17px; }
+    .record-list { display: flex; flex-direction: column; }
     .record-button {
       display: block;
       width: 100%;
       text-align: left;
-      padding: 8px 10px;
+      padding: 16px 17px;
       background: none;
-      border: 1px solid transparent;
-      border-radius: 6px;
+      border: 0;
+      border-bottom: 1px solid var(--border-light);
+      border-radius: 0;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 15px;
       color: inherit;
     }
     .record-button:hover { background: #f6f8fa; }
     .record-button.selected {
       background: var(--blue-bg);
-      border-color: #b6d3f2;
       box-shadow: inset 3px 0 var(--blue);
     }
     .record-name {
@@ -131,7 +135,7 @@ _SHELL = """<!DOCTYPE html>
       margin-bottom: 2px;
     }
     .record-meta { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
-    .record-reason { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .record-reason { font-size: 12px; color: var(--muted); margin-top: 9px; }
 
     /* Badge */
     .badge {
@@ -139,7 +143,7 @@ _SHELL = """<!DOCTYPE html>
       font-size: 11px;
       font-weight: 600;
       padding: 1px 6px;
-      border-radius: 12px;
+      border-radius: 4px;
       text-transform: uppercase;
     }
     .badge-ok { background: #dafbe1; color: var(--green); }
@@ -190,7 +194,7 @@ _SHELL = """<!DOCTYPE html>
       margin-bottom: 14px;
       padding: 8px 12px;
       background: #fcfcfc;
-      border: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-light);
       border-radius: 4px;
     }
     .legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -243,6 +247,13 @@ _SHELL = """<!DOCTYPE html>
     .sample-table th { background: #f6f8fa; font-weight: 600; color: var(--muted); font-size: 12px; }
     .sample-table tr.focused-row { background: #f0f7ff; }
     .sample-table td.num { font-family: var(--font-mono); text-align: right; }
+    .sample-table th.num { text-align: right; }
+    .table-scroll { overflow-x: auto; }
+    .reading-hint { color: var(--muted); font-size: 12px; margin: 6px 0 12px; }
+    .finding-card .reading-hint { margin-bottom: 0; }
+    .detail-top h2 { font-size: 25px; font-weight: 650; }
+    .record-meta { margin-top: 5px; line-height: 1.7; }
+    .sample-section { margin-bottom: 22px; }
     .sample-btn {
       background: none;
       border: none;
@@ -265,6 +276,8 @@ _SHELL = """<!DOCTYPE html>
       max-width: 800px;
       width: 90vw;
       margin: auto;
+      max-height: 88vh;
+      overflow-y: auto;
     }
     dialog::backdrop { background: rgba(0,0,0,0.4); }
     .dialog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
@@ -293,22 +306,29 @@ _SHELL = """<!DOCTYPE html>
     button, select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: white; color: var(--text); cursor: pointer; }
     select { max-width: 100%; }
     :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 740px) {
+      body { padding: 14px; }
+      .panel { padding: 15px; }
+      .list-panel { padding: 0; max-height: 280px; }
+      .detail-top { flex-wrap: wrap; gap: 10px; }
+      .chart-toolbar select { max-width: 230px; }
+    }
   </style>
 </head>
 <body>
   <header>
     <div class="header-title">
       <h1>__REPORT_TITLE__</h1>
-      <span class="badge badge-__CAPABILITY_BADGE__">__EVIDENCE_CAPABILITY__</span>
+      <span class="badge badge-__CAPABILITY_BADGE__">__CAPABILITY_LABEL__</span>
     </div>
     <div class="header-meta">
-      <span>策略：<strong>__STRATEGY__</strong></span>
-      <span>請求批次：<code class="mono">__REQUEST_ID__</code></span>
-      <span>母體／合格／選取：<strong>__RUN_TOTAL__ / __ELIGIBLE_COUNT__ / __SELECTED_COUNT__</strong></span>
-      <span>來源 DB：<code class="mono">__SOURCE_DB_NAME__</code></span>
+      <span><strong>__STRATEGY_LABEL__</strong> · 這份報告包含 __SELECTED_COUNT__ 個項目</span>
+      <span>左側選項目，右側對照曲線與樣本結果。</span>
     </div>
+    <details><summary>報告來源</summary><div class="header-meta"><span>策略：__STRATEGY__</span><span>證據格式：__EVIDENCE_CAPABILITY__</span><span>請求批次：<code class="mono">__REQUEST_ID__</code></span><span>全部／合格／選取：__RUN_TOTAL__ / __ELIGIBLE_COUNT__ / __SELECTED_COUNT__</span><span>來源 DB：__SOURCE_DB_NAME__</span></div></details>
     <div class="filter-bar" id="filters">
-      <label>搜尋：<input type="text" id="search" placeholder="ID / 判定 / 數值"></label>
+      <label>搜尋：<input type="text" id="search" placeholder="樣本、m/z、判定或 ID"></label>
       <label>m/z 範圍：<input type="number" id="mz-min" step="any" placeholder="min"> ~ <input type="number" id="mz-max" step="any" placeholder="max"></label>
       <label>RT 範圍 (min)：<input type="number" id="rt-min" step="any" placeholder="min"> ~ <input type="number" id="rt-max" step="any" placeholder="max"></label>
       <button type="button" id="clear">重設篩選</button>

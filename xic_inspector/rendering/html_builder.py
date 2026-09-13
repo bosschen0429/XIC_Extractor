@@ -48,6 +48,20 @@ def build_report_html(
     content = content.replace("__REPORT_TITLE__", html.escape(title))
     content = content.replace("__CAPABILITY_BADGE__", cap_badge)
     content = content.replace(
+        "__CAPABILITY_LABEL__",
+        "含已保存曲線" if cap_badge == "ok" else "僅有結果紀錄",
+    )
+    content = content.replace(
+        "__STRATEGY_LABEL__",
+        html.escape(
+            {
+                "sample": "抽樣檢閱",
+                "attention": "爭議聚焦",
+                "query": "指定目標查詢",
+            }.get(strategy, strategy)
+        ),
+    )
+    content = content.replace(
         "__EVIDENCE_CAPABILITY__", html.escape(evidence_capability)
     )
     content = content.replace("__STRATEGY__", html.escape(strategy))

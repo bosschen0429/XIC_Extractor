@@ -376,7 +376,11 @@ class CidNlSource:
                             sid,
                         ),
                         "status_kind": item.details["sample_status"][sid],
-                        "status_label": item.details["sample_status"][sid].upper(),
+                        "status_label": {
+                            "attention": "需留意",
+                            "excluded": "已排除",
+                            "rest": "其他結果",
+                        }.get(item.details["sample_status"][sid], "未提供"),
                         **(
                             {"quantitative_value": values[0]}
                             if len(values) == 1
@@ -387,6 +391,15 @@ class CidNlSource:
                             for c in cells
                         )
                         or "unavailable",
+                        "decision_label": (
+                            "當次結果為空值"
+                            if len(values) == 1 and values[0] is None
+                            else "當次定量結果為零"
+                            if len(values) == 1 and values[0] == 0
+                            else "沿用當次定量結果"
+                            if len(values) == 1
+                            else "未提供單一樣本定量值"
+                        ),
                         "evidence_status": "available"
                         if any(
                             c.get("sample_id") == sid and c["curves"]["rt"]
@@ -415,7 +428,17 @@ class CidNlSource:
                     if item.witnesses
                     else None,
                     "reason": reason,
+                    "reason_label": {
+                        "established": "已建立分組",
+                        "provisional": "分組仍為暫定狀態",
+                        "unresolved": "當次判定尚未解決",
+                        "unavailable": "未提供當次判定說明",
+                    }.get(reason, "當次判定已保留，可展開查看原始理由"),
                     "route": route,
+                    "route_label": {
+                        "matrix": "結果去向：定量矩陣（Matrix）",
+                        "archive": "結果去向：留存紀錄（Archive）",
+                    }.get(route.get("destination"), "未提供結果去向"),
                     "samples": samples,
                     "witnesses": [
                         {**asdict(w), "matched": w in item.matched_witnesses}
