@@ -25,7 +25,7 @@ from xic_extractor.alignment.untargeted_explanation_contract import (
     _SECTION_MINT_TOKEN,
     ExplanationLocatorKind,
 )
-from xic_inspector.legacy_adapters.untargeted_evidence_report import (
+from xic_inspector.reports.untargeted_evidence_report import (
     _render_untargeted_evidence_report,
     _write_untargeted_evidence_report,
 )
