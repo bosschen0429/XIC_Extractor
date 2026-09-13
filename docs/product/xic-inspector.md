@@ -55,6 +55,8 @@ sample, and candidate navigation; filters; evidence details; lightbox views;
 and keyboard interaction operate on the embedded selected subset.
 
 Source adapters supply readable titles and explanations of recorded outcomes.
+The item list keeps a concise outcome title, status, and readable reason so that
+users can scan results before opening an item.
 The workbench links the sample result, candidate, retained capture, integration
 facts, and available decision records. Focusing a sample scopes its candidate
 choices and peak details. Viewing a candidate does not change the recorded
@@ -68,10 +70,12 @@ reference remains identifiable without claiming its content is available offline
 The report does not infer a decision reason or a candidate relationship from a
 display name, nearby mass, or nearby retention time.
 
-Capture stage, signal type, and time axis are distinct. Aligned curves and peak
-marks require supplied aligned coordinates; the current CID-NL source does not
-provide them. The workbench explains this limitation while showing available
-raw-time data. Precursor m/z uses four fixed decimal places, primary RT uses two,
+Capture stage, signal type, and time axis are distinct. Raw-time and aligned-time
+plots are shown together for comparison, with separate zoom controls. Aligned
+curves and peak marks require supplied aligned coordinates; the current CID-NL
+source does not provide them. The aligned section explains this limitation
+while the raw plot remains available. The integration readout identifies its
+raw-time coordinates. Precursor m/z uses four fixed decimal places, primary RT uses two,
 and detailed peak times use three. NULL, numeric zero, a missing single result,
 and unavailable curve evidence remain distinct.
 

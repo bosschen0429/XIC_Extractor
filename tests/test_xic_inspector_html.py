@@ -85,7 +85,8 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
     ):
         assert f'id="{required_id}"' in report
     assert "本報告未提供可讀來源紀錄" in report
-    assert "對齊時間：來源未提供座標" in report
+    assert "對齊時間圖不可用" in report
+    assert "來源未提供目前所選曲線與訊號的對齊座標" in report
     assert "counts·s" in report
     assert "https://" not in report
 
