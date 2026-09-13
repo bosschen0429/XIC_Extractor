@@ -28,13 +28,12 @@ from xic_extractor.alignment.untargeted_explanation_contract import (
     UntargetedExplanationIndex,
 )
 from xic_extractor.processing_identity import fingerprint_file_content
-
-from .backfill_reconciliation_gallery_assets import (
+from xic_inspector.reconciliation.backfill_reconciliation_gallery_assets import (
     gallery_css,
     lightbox_html,
     lightbox_script,
 )
-from .backfill_reconciliation_gallery_html import (
+from xic_inspector.reconciliation.backfill_reconciliation_gallery_html import (
     escape_attr,
     escape_html,
 )

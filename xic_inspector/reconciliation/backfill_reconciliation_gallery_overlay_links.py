@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.diagnostics.diagnostic_io import text_value
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_review_modes as _gallery_review_modes,
 )
 

@@ -5,91 +5,91 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_assets as _gallery_assets,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_chain_html as _gallery_chain_html,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_counts as _gallery_counts,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_detail_cards as _gallery_detail_cards,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_detail_drawer as _gallery_detail_drawer,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_evidence as _gallery_evidence,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_family_pattern as _gallery_family_pattern,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_filters as _gallery_filters,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_html as _gallery_html,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_index_builder as _gallery_index_builder,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_index_fields as _gallery_index_fields,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_indices as _gallery_indices,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_inputs as _gallery_inputs,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_models as _gallery_models,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_output_rows as _gallery_output_rows,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_output_writer as _gallery_output_writer,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_overlay_links as _gallery_overlay_links,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_page as _gallery_page,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_provenance as _gallery_provenance,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_ranges as _gallery_ranges,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_render_context as _gallery_render_context_module,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_review_modes as _gallery_review_modes,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_search as _gallery_search,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_shadow_tables as _gallery_shadow_tables,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_source_context as _gallery_source_context,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_state as _gallery_state,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_summary as _gallery_summary,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_table_rows as _gallery_table_rows,
 )
-from xic_inspector.legacy_adapters import (
+from xic_inspector.reconciliation import (
     backfill_reconciliation_gallery_target_benchmark as _gallery_target_benchmark,
 )
 
