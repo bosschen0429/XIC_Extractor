@@ -19,7 +19,9 @@ from tools.diagnostics.family_ms1_overlay_evidence import _gaussian_smooth_value
 from tools.diagnostics.family_ms1_overlay_rendering_styles import (
     PLOT_GAUSSIAN_SMOOTH_POINTS,
 )
-from xic_extractor.diagnostics.backfill_reconciliation_gallery import (
+from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
+from xic_extractor.xic_models import XICTrace
+from xic_inspector.legacy_adapters.backfill_reconciliation_gallery import (
     OVERLAY_INTERPRETATION_GUIDE_PATH,
     ReconciliationGroup,
     ReconciliationIndex,
@@ -27,8 +29,6 @@ from xic_extractor.diagnostics.backfill_reconciliation_gallery import (
     write_reconciliation_gallery_html,
     write_reconciliation_outputs,
 )
-from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
-from xic_extractor.xic_models import XICTrace
 
 DEFAULT_DIFFERENTIAL_REVIEW_TSV = Path(
     "output/validation/cid_nl_default_activation_gallery_review_v1/"

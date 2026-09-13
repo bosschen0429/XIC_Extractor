@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.workflow import (
         CompletedUntargetBatchWorkflowResult,
     )
+    from xic_extractor.diagnostics.cid_nl_explanation import (
+        CidNlEvidenceLocator,
+    )
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -111,6 +114,7 @@ class AlignmentRunOutputs:
         OwnerBackfillEvaluationCoverageBatch | None
     ) = None
     untargeted_cid_nl_result: CompletedUntargetBatchWorkflowResult | None = None
+    cid_nl_evidence: CidNlEvidenceLocator | None = None
 
 
 def output_paths(

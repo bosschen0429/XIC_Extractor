@@ -77,6 +77,102 @@ def _key(*parts: str) -> str:
     return json.dumps(parts, separators=(",", ":"))
 
 
+def _emit_curve_payload(
+    sink: ExplanationReportWriter,
+    ref: Any,
+    sample_id: str,
+    *,
+    candidate_id: str | None = None,
+    kind: str = "initial_capture",
+) -> None:
+    content = getattr(ref, "content", None)
+    if (
+        content is None
+        or not hasattr(content, "rt")
+        or not hasattr(content, "intensity")
+    ):
+        return
+    integration = getattr(content, "integration", None)
+    obs_content_id = getattr(content, "peak_observation_content_id", None)
+    envelope = {
+        "schema_version": "curve_payload_v1",
+        "kind": kind,
+        "sample_id": sample_id,
+        "candidate_id": candidate_id,
+        "peak_observation_content_id": obs_content_id,
+        "trace_coordinate": {
+            "mz": float(content.mz),
+            "rt_min": float(min(content.rt)),
+            "rt_max": float(max(content.rt)),
+            "ppm_tol": 10.0,
+        },
+        "curves": {
+            "rt": [float(x) for x in content.rt],
+            "raw": [float(y) for y in content.intensity],
+            "baseline": None,
+            "smoothed": None,
+            "positive": None,
+        },
+        "integration": {
+            "apex_rt_min": float(
+                getattr(
+                    integration,
+                    "rt_apex_min",
+                    getattr(integration, "raw_apex_rt_min", 0.0),
+                )
+            ),
+            "raw_apex_rt_min": float(getattr(integration, "raw_apex_rt_min", 0.0)),
+            "rt_left_min": float(getattr(integration, "rt_left_min", 0.0)),
+            "rt_right_min": float(getattr(integration, "rt_right_min", 0.0)),
+            "height_raw": float(getattr(integration, "height_raw", 0.0)),
+            "area_raw_counts_seconds": float(
+                getattr(integration, "area_raw_counts_seconds", 0.0)
+            ),
+            "area_profile_selected": (
+                float(integration.area_profile_selected)
+                if hasattr(integration, "area_profile_selected")
+                and integration.area_profile_selected is not None
+                else None
+            ),
+            "integration_method": str(
+                getattr(integration, "integration_method", "raw_trapezoid")
+            ),
+            "boundary_source": str(
+                integration.boundary_sources[0]
+                if getattr(integration, "boundary_sources", None)
+                else getattr(integration, "boundary_source", "candidate_interval")
+            ),
+        }
+        if integration is not None
+        else None,
+        "provenance": {
+            "profile_id": None,
+            "trace_content_id": None,
+        },
+    }
+    rec_id: str = str(
+        candidate_id or getattr(content, "peak_observation_content_id", "unknown")
+    )
+    pid = f"{sample_id}:{kind}:{rec_id}"
+    sink.add_curve_payload(
+        payload_id=pid,
+        sample_id=sample_id,
+        kind=kind,
+        record_id=rec_id,
+        payload=envelope,
+    )
+    if getattr(content, "peak_observation_content_id", None) and candidate_id:
+        obs_id: str = str(content.peak_observation_content_id)
+        obs_pid = f"{sample_id}:{kind}:{obs_id}"
+        sink.add_curve_payload(
+            payload_id=obs_pid,
+            sample_id=sample_id,
+            kind=kind,
+            record_id=obs_id,
+            payload=envelope,
+        )
+
+
 def write_cid_nl_explanation(
     path: Path,
     *,
@@ -243,6 +339,12 @@ def write_cid_nl_explanation(
                         content.canonical_sample_identity_id,
                         relation.content.peak_observation_content_id,
                     ].update(related)
+                    _emit_curve_payload(
+                        sink,
+                        relation,
+                        sample_id=content.canonical_sample_identity_id,
+                        kind="recovery_observation",
+                    )
             add(
                 "method_assessments",
                 assessment.artifact.evidence_artifact_id,
@@ -381,8 +483,16 @@ def write_cid_nl_explanation(
                         physical_observation_ids=physical_ids,
                     )
                     hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
-                    for physical_id in physical_ids:
+                    for ref in hypothesis.peak_observation_refs:
+                        physical_id = ref.content.peak_observation_content_id
                         physical_candidates[key[1], physical_id].add(key)
+                        _emit_curve_payload(
+                            sink,
+                            ref,
+                            sample_id=key[1],
+                            candidate_id=terminal.candidate_id,
+                            kind="initial_capture",
+                        )
                 add("terminal_subjects", _key(*key), payload, (key,))
                 sink.update_availability(
                     key, terminal=terminal.variant, final_groups="recorded"

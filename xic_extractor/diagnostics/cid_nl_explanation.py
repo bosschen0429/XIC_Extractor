@@ -6,12 +6,43 @@ import hashlib
 import json
 import os
 import sqlite3
-from collections.abc import Iterable, Mapping
+import zlib
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+VALID_CURVE_KINDS = frozenset(
+    {"initial_capture", "reacquired_capture", "recovery_observation"}
+)
+ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version",
+        "kind",
+        "sample_id",
+        "candidate_id",
+        "peak_observation_content_id",
+        "trace_coordinate",
+        "curves",
+        "integration",
+        "provenance",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CidNlEvidenceLocator:
+    """Immutable provenance locator pointing to a completed CID-NL explanation DB."""
+
+    report_path: Path
+    matrix_path: Path
+    matrix_sha256: str
+    processing_request_id: str
+    processing_attempt_id: str
+    schema_version: int
 
 
 class ExplanationError(ValueError):
@@ -39,6 +70,7 @@ class ExplanationReportWriter:
         self._record_hashes: dict[tuple[str, str], bytes] = {}
         self._buffered_records: list[tuple[str, str, str]] = []
         self._buffered_links: list[tuple[str, str, str, str]] = []
+        self._buffered_curve_payloads: list[tuple[str, str, str, str, str, bytes]] = []
 
     def __enter__(self) -> ExplanationReportWriter:
         if self.path.exists() or self.temporary.exists():
@@ -62,6 +94,11 @@ class ExplanationReportWriter:
                 "CREATE TABLE links (candidate_id TEXT, sample_id TEXT, kind TEXT, "
                 "record_id TEXT, "
                 "PRIMARY KEY(candidate_id, sample_id, kind, record_id));"
+                "CREATE TABLE curve_payloads (payload_id TEXT PRIMARY KEY, "
+                "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
+                "codec TEXT NOT NULL, payload BLOB NOT NULL);"
+                "CREATE INDEX idx_curve_payloads_sample_record "
+                "ON curve_payloads(sample_id, record_id);"
                 "BEGIN;"
             )
         except BaseException:
@@ -122,6 +159,42 @@ class ExplanationReportWriter:
             self._flush_links()
         return is_new
 
+    def add_curve_payload(
+        self,
+        payload_id: str,
+        sample_id: str,
+        kind: str,
+        record_id: str,
+        payload: Mapping[str, Any],
+        codec: str = "zlib-json-utf8-v1",
+    ) -> None:
+        if kind not in VALID_CURVE_KINDS:
+            raise ExplanationError(f"undeclared curve kind: {kind}")
+        if not (set(payload.keys()) <= ALLOWED_CURVE_PAYLOAD_KEYS):
+            unrecognized = set(payload.keys()) - ALLOWED_CURVE_PAYLOAD_KEYS
+            raise ExplanationError(f"undeclared curve payload keys: {unrecognized}")
+        if codec != "zlib-json-utf8-v1":
+            raise ExplanationError(f"unsupported curve codec: {codec}")
+        encoded_json = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True
+        ).encode("utf-8")
+        compressed = zlib.compress(encoded_json, level=6)
+        self._buffered_curve_payloads.append(
+            (payload_id, sample_id, kind, record_id, codec, compressed)
+        )
+        if len(self._buffered_curve_payloads) >= 5000:
+            self._flush_curve_payloads()
+
+    def _flush_curve_payloads(self) -> None:
+        if self._buffered_curve_payloads:
+            self._connection().executemany(
+                "INSERT OR REPLACE INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
+                self._buffered_curve_payloads,
+            )
+            self._buffered_curve_payloads.clear()
+            self._connection().commit()
+            self._connection().execute("BEGIN;")
+
     def _flush_records(self) -> None:
         if self._buffered_records:
             self._connection().executemany(
@@ -155,6 +228,7 @@ class ExplanationReportWriter:
     def finalize(self, summary: Mapping[str, Any]) -> Path:
         self._flush_records()
         self._flush_links()
+        self._flush_curve_payloads()
         if self._candidates:
             self._connection().executemany(
                 "INSERT INTO candidates VALUES (?, ?, ?)",
@@ -171,6 +245,7 @@ class ExplanationReportWriter:
                     dict(
                         summary,
                         schema_version=SCHEMA_VERSION,
+                        plot_evidence_capability="retained_curves_v1",
                         diagnostic_only=True,
                         completion="post_matrix_publication",
                     )
@@ -194,6 +269,7 @@ class ExplanationReportWriter:
         self._record_hashes.clear()
         self._buffered_records.clear()
         self._buffered_links.clear()
+        self._buffered_curve_payloads.clear()
         self.temporary.unlink(missing_ok=True)
 
 
@@ -242,7 +318,7 @@ def read_cid_nl_explanation(
         connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
         connection.execute("PRAGMA query_only = ON")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version != SCHEMA_VERSION:
+        if version not in (1, 2):
             raise ExplanationError(f"unsupported explanation schema version: {version}")
         expected = {
             "metadata": ("key", "payload"),
@@ -250,6 +326,15 @@ def read_cid_nl_explanation(
             "records": ("kind", "record_id", "payload"),
             "links": ("candidate_id", "sample_id", "kind", "record_id"),
         }
+        if version == 2:
+            expected["curve_payloads"] = (
+                "payload_id",
+                "sample_id",
+                "kind",
+                "record_id",
+                "codec",
+                "payload",
+            )
         for table, columns in expected.items():
             actual = tuple(
                 row[1] for row in connection.execute(f"PRAGMA table_info({table})")
@@ -263,11 +348,15 @@ def read_cid_nl_explanation(
             raise ExplanationError("malformed explanation: missing completion summary")
         summary = _object(row[0])
         if (
-            summary.get("schema_version") != SCHEMA_VERSION
+            summary.get("schema_version") != version
             or summary.get("diagnostic_only") is not True
             or summary.get("completion") != "post_matrix_publication"
         ):
             raise ExplanationError("malformed explanation: invalid completion summary")
+        if version == 1:
+            summary.setdefault("plot_evidence_capability", "metadata_only")
+        else:
+            summary.setdefault("plot_evidence_capability", "retained_curves_v1")
         if candidate_id is None:
             return summary
         candidates = [
@@ -289,7 +378,7 @@ def read_cid_nl_explanation(
         ):
             records.setdefault(kind, []).append(_object(payload))
         return {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": version,
             "diagnostic_only": True,
             "completion": summary["completion"],
             "candidate_id": candidate_id,
@@ -298,6 +387,65 @@ def read_cid_nl_explanation(
         }
     except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
         raise ExplanationError(f"malformed explanation: {exc}") from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def read_cid_nl_curves(
+    path: str | Path,
+    *,
+    sample_ids: Sequence[str] | None = None,
+    record_ids: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Selectively read and decompress curve payloads without rehydration."""
+    path = Path(path)
+    if not path.is_file():
+        raise ExplanationUnavailableError(f"explanation unavailable: {path}")
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        connection.execute("PRAGMA query_only = ON")
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version != 2:
+            return []
+
+        query = (
+            "SELECT payload_id, sample_id, kind, record_id, codec, payload "
+            "FROM curve_payloads WHERE 1=1"
+        )
+        params: list[Any] = []
+        if sample_ids:
+            query += f" AND sample_id IN ({','.join('?' for _ in sample_ids)})"
+            params.extend(sample_ids)
+        if record_ids:
+            query += f" AND record_id IN ({','.join('?' for _ in record_ids)})"
+            params.extend(record_ids)
+
+        results: list[dict[str, Any]] = []
+        for (
+            payload_id,
+            sample_id,
+            kind,
+            record_id,
+            codec,
+            blob,
+        ) in connection.execute(query, params):
+            if codec != "zlib-json-utf8-v1":
+                raise ExplanationError(f"unsupported curve payload codec: {codec}")
+            decompressed = zlib.decompress(blob)
+            payload_data = json.loads(decompressed.decode("utf-8"))
+            if payload_data.get("kind") not in VALID_CURVE_KINDS:
+                raise ExplanationError(
+                    f"undeclared curve payload kind: {payload_data.get('kind')}"
+                )
+            if not (set(payload_data.keys()) <= ALLOWED_CURVE_PAYLOAD_KEYS):
+                unrec = set(payload_data.keys()) - ALLOWED_CURVE_PAYLOAD_KEYS
+                raise ExplanationError(f"undeclared curve payload keys: {unrec}")
+            results.append(payload_data)
+        return results
+    except (sqlite3.Error, json.JSONDecodeError, zlib.error) as exc:
+        raise ExplanationError(f"failed reading curve payloads: {exc}") from exc
     finally:
         if connection is not None:
             connection.close()

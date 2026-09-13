@@ -15,7 +15,13 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from xic_extractor.diagnostics.backfill_reconciliation_gallery import (
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_tsv_required,
+    text_value,
+    write_tsv,
+)
+from xic_inspector.legacy_adapters.backfill_reconciliation_gallery import (
     OVERLAY_INTERPRETATION_GUIDE_PATH,
     ReconciliationGroup,
     ReconciliationIndex,
@@ -23,12 +29,6 @@ from xic_extractor.diagnostics.backfill_reconciliation_gallery import (
     TargetBenchmarkContext,
     write_reconciliation_gallery_html,
     write_reconciliation_outputs,
-)
-from xic_extractor.tabular_io import (
-    file_sha256,
-    read_tsv_required,
-    text_value,
-    write_tsv,
 )
 
 SCHEMA_VERSION = "cid_nl_default_activation_gallery_review_v1"

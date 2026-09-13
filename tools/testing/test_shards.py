@@ -237,6 +237,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_shift_aware_*.py",
             "tests/test_standard_peak_*.py",
             "tests/test_tier2_*.py",
+            "tests/test_xic_inspector_*.py",
         ),
         "product-gates-evidence": (
             "tests/test_area_integration_uncertainty_audit.py",

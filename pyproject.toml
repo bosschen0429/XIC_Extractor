@@ -39,9 +39,10 @@ xic-untargeted-cid-nl-mode-track-cli = "scripts.run_untargeted_cid_nl_mode_track
 xic-untargeted-provisional-matrix-cli = "scripts.run_untargeted_provisional_matrix:main"
 xic-pt-pattern-discovery-cli = "scripts.run_pt_pattern_discovery:main"
 xic-align-cli = "scripts.run_alignment:main"
+xic-inspector = "xic_inspector.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["gui*", "scripts*", "tools*", "xic_extractor*"]
+include = ["gui*", "scripts*", "tools*", "xic_extractor*", "xic_inspector*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]

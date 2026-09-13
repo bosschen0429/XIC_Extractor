@@ -69,7 +69,6 @@ from xic_extractor.alignment.untargeted_explanation_navigation import (
     explanation_locator_relative_path,
     mint_explanation_locator_request,
 )
-from xic_extractor.output import untargeted_evidence_report as report_module
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
@@ -911,7 +910,6 @@ def test_duplicate_route_and_partial_sample_owner_inputs_fail_closed() -> None:
         navigation_module,
         run_binding_module,
         sections_module,
-        report_module,
     ),
 )
 def test_explanation_prototype_modules_publish_no_public_exports(

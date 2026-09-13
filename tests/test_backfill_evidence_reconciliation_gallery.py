@@ -13,101 +13,101 @@ from xic_extractor.alignment.tsv_writer import (
     ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS,
     ALIGNMENT_REVIEW_COLUMNS,
 )
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery as gallery,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_assets as gallery_assets,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_chain_html as gallery_chain_html,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_counts as gallery_counts,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_detail_cards as gallery_detail_cards,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_detail_drawer as gallery_detail_drawer,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_evidence as gallery_evidence,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_family_pattern as gallery_family_pattern,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_filters as gallery_filters,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_html as gallery_html,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_index_builder as gallery_index_builder,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_index_fields as gallery_index_fields,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_indices as gallery_indices,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_inputs as gallery_inputs,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_models as gallery_models,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_output_rows as gallery_output_rows,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_output_writer as gallery_output_writer,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_overlay_links as gallery_overlay_links,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_page as gallery_page,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_provenance as gallery_provenance,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_ranges as gallery_ranges,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_render_context as gallery_render_context,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_review_modes as gallery_review_modes,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_search as gallery_search,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_shadow_tables as gallery_shadow_tables,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_source_context as gallery_source_context,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_state as gallery_state,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_summary as gallery_summary,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_table_rows as gallery_table_rows,
-)
-from xic_extractor.diagnostics import (
-    backfill_reconciliation_gallery_target_benchmark as gallery_target_benchmark,
-)
 from xic_extractor.diagnostics.backfill_shadow_policy import (
     BACKFILL_SHADOW_POLICY_COLUMNS,
 )
 from xic_extractor.diagnostics.shadow_production_projection import (
     SHADOW_PRODUCTION_PROJECTION_COLUMNS,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery as gallery,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_assets as gallery_assets,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_chain_html as gallery_chain_html,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_counts as gallery_counts,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_detail_cards as gallery_detail_cards,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_detail_drawer as gallery_detail_drawer,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_evidence as gallery_evidence,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_family_pattern as gallery_family_pattern,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_filters as gallery_filters,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_html as gallery_html,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_index_builder as gallery_index_builder,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_index_fields as gallery_index_fields,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_indices as gallery_indices,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_inputs as gallery_inputs,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_models as gallery_models,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_output_rows as gallery_output_rows,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_output_writer as gallery_output_writer,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_overlay_links as gallery_overlay_links,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_page as gallery_page,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_provenance as gallery_provenance,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_ranges as gallery_ranges,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_render_context as gallery_render_context,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_review_modes as gallery_review_modes,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_search as gallery_search,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_shadow_tables as gallery_shadow_tables,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_source_context as gallery_source_context,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_state as gallery_state,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_summary as gallery_summary,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_table_rows as gallery_table_rows,
+)
+from xic_inspector.legacy_adapters import (
+    backfill_reconciliation_gallery_target_benchmark as gallery_target_benchmark,
 )
 
 EXPECTED_GROUP_COLUMNS = (
@@ -1486,6 +1486,30 @@ def test_gallery_notes_include_anchor_peak_own_max_cell_evidence(
                 "evidence_summary": {
                     "family_verdict": "review_required_neighboring_ms1_interference"
                 },
+                "coherence_rows": [
+                    {
+                        "sample_stem": "S_SUPPORT",
+                        "anchor_peak_rt": "10",
+                        "reason": (
+                            "family_ms1_overlay_anchor_peak_own_max_shape_supported"
+                        ),
+                        "shape_correlation_score": "0.94",
+                    },
+                    {
+                        "sample_stem": "S_REVIEW",
+                        "anchor_peak_rt": "10",
+                        "reason": (
+                            "family_ms1_overlay_anchor_peak_shape_below_threshold"
+                        ),
+                        "shape_correlation_score": "0.40",
+                    },
+                    {
+                        "sample_stem": "S_DUP",
+                        "anchor_peak_rt": "10",
+                        "reason": "alignment_gap_fill_duplicate_loser",
+                        "shape_correlation_score": "",
+                    },
+                ],
                 "traces": [
                     _overlay_trace("S_DET", "detected", 10.0, [0, 300, 1000, 300, 0]),
                     _overlay_trace(
@@ -1587,6 +1611,24 @@ def test_gallery_anchor_notes_are_scoped_to_seed_group_cells(tmp_path: Path) -> 
                 "evidence_summary": {
                     "family_verdict": "review_required_neighboring_ms1_interference"
                 },
+                "coherence_rows": [
+                    {
+                        "sample_stem": "S_SEED_A",
+                        "anchor_peak_rt": "10",
+                        "reason": (
+                            "family_ms1_overlay_anchor_peak_own_max_shape_supported"
+                        ),
+                        "shape_correlation_score": "0.94",
+                    },
+                    {
+                        "sample_stem": "S_SEED_B",
+                        "anchor_peak_rt": "10.2",
+                        "reason": (
+                            "family_ms1_overlay_anchor_peak_own_max_shape_supported"
+                        ),
+                        "shape_correlation_score": "0.94",
+                    },
+                ],
                 "traces": [
                     _overlay_trace("S_DET", "detected", 10.0, [0, 300, 1000, 300, 0]),
                     _overlay_trace(
@@ -1661,6 +1703,52 @@ def test_gallery_anchor_notes_are_scoped_to_seed_group_cells(tmp_path: Path) -> 
     assert "S_SEED_B" not in seed_a_notes
     assert "S_SEED_B" in seed_b_notes
     assert "S_SEED_A" not in seed_b_notes
+
+
+def test_gallery_anchor_notes_when_old_artifact_lacks_coherence_data(
+    tmp_path: Path,
+) -> None:
+    trace_json = tmp_path / "fam-old_trace_data.json"
+    trace_json.write_text(
+        json.dumps(
+            {
+                "family_id": "FAM_OLD",
+                "rt_min": 9.0,
+                "rt_max": 11.0,
+                "evidence_summary": {
+                    "family_verdict": "review_required_neighboring_ms1_interference"
+                },
+                "traces": [
+                    _overlay_trace("S_DET", "detected", 10.0, [0, 300, 1000, 300, 0]),
+                    _overlay_trace("S_RESC", "rescued", 10.02, [0, 280, 940, 310, 0]),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = gallery.build_reconciliation_index(
+        review_rows=[_review_row("FAM_OLD", detected="1", rescued="1")],
+        cell_rows=[
+            _cell_row("FAM_OLD", "S_DET", "detected", apex_rt="10.0"),
+            _cell_row("FAM_OLD", "S_RESC", "rescued", apex_rt="10.02"),
+        ],
+        seed_audit_rows=[
+            _seed_row("FAM_OLD", "S_RESC"),
+        ],
+        overlay_rows=[
+            {
+                "feature_family_id": "FAM_OLD",
+                "seed_group_id": (
+                    "seed::FAM_OLD::mz=269.145::rt=10.0000::window=9.0000-11.0000::ppm=10"
+                ),
+                "family_verdict": "review_required_neighboring_ms1_interference",
+                "png_path": "plots/fam-old.png",
+                "trace_data_json": str(trace_json),
+            },
+        ],
+    )
+    group = result.groups[0]
+    assert "anchor peak evidence=unavailable" in group.overlay_evidence_notes
 
 
 def test_seed_specific_overlay_rows_do_not_broadcast_across_seed_groups(
