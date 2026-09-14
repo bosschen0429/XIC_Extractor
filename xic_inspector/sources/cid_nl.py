@@ -123,6 +123,7 @@ class CidNlSource:
         self.records: dict[str, dict[str, dict[str, Any]]] = {}
         self.candidates: dict[tuple[str, str], dict[str, Any]] = {}
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        self.record_links: dict[tuple[str, str], set[tuple[str, str]]] = {}
         self.sample_labels: dict[str, str] = {}
         self.row_cell_decisions: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
         self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
@@ -166,7 +167,10 @@ class CidNlSource:
             for cid, sid, kind, rid in connection.execute(
                 "SELECT candidate_id, sample_id, kind, record_id FROM links"
             ):
-                self.links.setdefault((cid, sid), set()).add((kind, rid))
+                key = cid, sid
+                record = kind, rid
+                self.links.setdefault(key, set()).add(record)
+                self.record_links.setdefault(record, set()).add(key)
         except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
             raise ExplanationError(f"Invalid CID-NL metadata: {exc}") from exc
         finally:
@@ -199,24 +203,33 @@ class CidNlSource:
                 item_keys[item.serialized_ref] = {key}
         item_by_ref = {item.serialized_ref: item for item in items}
         edge_links = {
-            edge_ref: {
-                key
-                for key, links in self.links.items()
-                if ("initial_edges", edge_ref) in links
-            }
+            edge_ref: self.record_links.get(("initial_edges", edge_ref), set())
             for edge_ref in self.records.get("initial_edges", {})
         }
+        item_refs_by_key: dict[tuple[str, str], set[str]] = {}
+        for item_ref, keys in item_keys.items():
+            for key in keys:
+                item_refs_by_key.setdefault(key, set()).add(item_ref)
+        peer_edges: dict[str, dict[str, set[str]]] = {
+            item_ref: {} for item_ref in item_keys
+        }
+        for edge_ref, linked_keys in edge_links.items():
+            participating_refs = {
+                item_ref
+                for key in linked_keys
+                for item_ref in item_refs_by_key.get(key, ())
+            }
+            for item_ref in participating_refs:
+                peer_refs = {
+                    peer_ref
+                    for key in linked_keys - item_keys[item_ref]
+                    for peer_ref in item_refs_by_key.get(key, ())
+                    if peer_ref != item_ref
+                }
+                for peer_ref in peer_refs:
+                    peer_edges[item_ref].setdefault(peer_ref, set()).add(edge_ref)
         for item in items:
-            peers: dict[str, set[str]] = {}
-            own_keys = item_keys[item.serialized_ref]
-            for edge_ref, linked_keys in edge_links.items():
-                if not own_keys.intersection(linked_keys):
-                    continue
-                for peer_ref, peer_keys in item_keys.items():
-                    if peer_ref != item.serialized_ref and peer_keys.intersection(
-                        linked_keys - own_keys
-                    ):
-                        peers.setdefault(peer_ref, set()).add(edge_ref)
+            peers = peer_edges[item.serialized_ref]
             ranked = sorted(
                 peers.items(),
                 key=lambda entry: (
@@ -316,7 +329,7 @@ class CidNlSource:
         return 0 if decision in {"blocked_edge", "split_edge", "split"} else 1
 
     def _linked(self, kind: str, rid: str) -> set[tuple[str, str]]:
-        return {key for key, links in self.links.items() if (kind, rid) in links}
+        return set(self.record_links.get((kind, rid), ()))
 
     def _item(self, kind, identifier, gid, keys, scope, payload) -> CanonicalItem:
         scoped = sorted(key for key in keys if key[1] in scope)
@@ -495,8 +508,12 @@ class CidNlSource:
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
         )
+        support_observations = {
+            sid: self._support_observation_refs(sid, gid, group, witnesses, facts)
+            for sid in sorted(item_sample_ids)
+        }
         origins = {
-            sid: self._support_origin(sid, witnesses, facts)
+            sid: self._support_origin(sid, support_observations[sid], facts)
             for sid in sorted(item_sample_ids)
         }
         initial_member_ids = {
@@ -513,7 +530,7 @@ class CidNlSource:
         final_members = group.get("member_subjects")
         review_summary = {
             "observed_sample_count": len(
-                {w.canonical_sample_identity_id for w in witnesses if w.observation_id}
+                {sid for sid, refs in support_observations.items() if refs}
             ),
             "scope_sample_count": len(item_sample_ids),
             "origin_kinds": sorted({origin["kind"] for origin in origins.values()}),
@@ -550,15 +567,35 @@ class CidNlSource:
         )
 
     @staticmethod
-    def _support_origin(sample_id, witnesses, facts):
-        observation_refs = sorted(
-            {
-                witness.observation_id
-                for witness in witnesses
-                if witness.canonical_sample_identity_id == sample_id
-                and witness.observation_id
-            }
+    def _support_observation_refs(sample_id, group_id, group, witnesses, facts):
+        observation_refs = {
+            witness.observation_id
+            for witness in witnesses
+            if witness.canonical_sample_identity_id == sample_id
+            and witness.observation_id
+        }
+        observation_refs.update(
+            observation_id
+            for member in group.get("member_subjects", [])
+            if member.get("canonical_sample_identity_id") == sample_id
+            for observation_id in member.get("physical_observation_ids", [])
+            if isinstance(observation_id, str)
         )
+        for (record_kind, _), fact in facts.items():
+            if record_kind != "cell_observations":
+                continue
+            for predecessor in fact.get("predecessor_cells", []):
+                content = predecessor.get("content", {})
+                if (
+                    content.get("canonical_sample_identity_id") == sample_id
+                    and content.get("group_hypothesis_id") == group_id
+                    and isinstance(content.get("peak_observation_content_id"), str)
+                ):
+                    observation_refs.add(content["peak_observation_content_id"])
+        return sorted(observation_refs)
+
+    @staticmethod
+    def _support_origin(sample_id, observation_refs, facts):
         observation_set = set(observation_refs)
         captures = []
         methods = []

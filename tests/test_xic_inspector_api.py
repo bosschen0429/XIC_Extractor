@@ -935,6 +935,139 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
     }
 
 
+def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
+    import zlib
+
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "DELETE FROM links WHERE kind='terminal_subjects' "
+            "AND record_id='terminal-01'"
+        )
+        final_group = json.loads(
+            connection.execute(
+                "SELECT payload FROM records WHERE kind='final_groups' "
+                "AND record_id='G1'"
+            ).fetchone()[0]
+        )
+        final_group["member_subjects"] = [
+            {
+                "member_subject_id": "member-01",
+                "canonical_sample_identity_id": "S1",
+                "subject_kind": "peak_hypothesis",
+                "subject_id": "hypothesis-01",
+                "physical_observation_ids": ["obs-01"],
+            }
+        ]
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='final_groups' AND record_id='G1'",
+            (json.dumps(final_group),),
+        )
+        decision = json.loads(
+            connection.execute(
+                "SELECT payload FROM records WHERE kind='cell_decisions' "
+                "AND record_id='cd-01'"
+            ).fetchone()[0]
+        )
+        decision.update(
+            group_hypothesis_id="G1",
+            cell_observation_id="cell-observation-01",
+        )
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='cell_decisions' "
+            "AND record_id='cd-01'",
+            (json.dumps(decision),),
+        )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "cell_observations",
+                "cell-observation-01",
+                json.dumps(
+                    {
+                        "cell_observation_id": "cell-observation-01",
+                        "group_hypothesis_id": "G1",
+                        "canonical_sample_identity_id": "S1",
+                        "predecessor_cells": [
+                            {
+                                "content": {
+                                    "canonical_sample_identity_id": "S1",
+                                    "group_hypothesis_id": "G1",
+                                    "peak_observation_content_id": "obs-01",
+                                    "method_result": "SUPPORT",
+                                }
+                            }
+                        ],
+                    }
+                ),
+            ),
+        )
+        original = json.loads(
+            zlib.decompress(
+                connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
+            )
+        )
+        connection.execute(
+            "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "recovery-curve",
+                "S1",
+                "recovery_observation",
+                "obs-01",
+                "zlib-json-utf8-v1",
+                zlib.compress(
+                    json.dumps({**original, "kind": "recovery_observation"}).encode()
+                ),
+            ),
+        )
+        for kind, ref, facts in (
+            (
+                "capture_evidence",
+                "recovery-curve",
+                {
+                    "payload_id": "recovery-curve",
+                    "sample_id": "S1",
+                    "candidate_id": "C1",
+                    "peak_observation_content_id": "obs-01",
+                    "record_id": "obs-01",
+                    "kind": "recovery_observation",
+                },
+            ),
+            (
+                "method_assessments",
+                "recovery-method",
+                {
+                    "canonical_sample_identity_id": "S1",
+                    "candidate_peak_content_ids": ["obs-01"],
+                    "detector_invocation_id": "untargeted-cid-nl-backfill-recovery:v1",
+                    "method_result": "SUPPORT",
+                },
+            ),
+        ):
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (kind, ref, json.dumps(facts)),
+            )
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C1", "S1", kind, ref)
+            )
+
+    output = tmp_path / "zero-terminal-recovery.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+
+    assert item["witnesses"][0]["observation_id"] is None
+    assert item["review_summary"]["observed_sample_count"] == 1
+    assert item["review_summary"]["origin_kinds"] == ["recovery_support"]
+    assert item["samples"][0]["support_origin"] == {
+        "kind": "recovery_support",
+        "label": "方法補取支持",
+        "method_refs": ["recovery-method"],
+        "capture_refs": ["recovery-curve"],
+        "observation_refs": ["obs-01"],
+    }
+
+
 def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
     import zlib
 
@@ -1048,6 +1181,85 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
     assert peer["edge_refs"] == ["edge-c1-c2"]
     assert len(peer["curves"]) == 1
     assert peer["curves"][0]["candidate_ids"] == ["C2"]
+
+
+def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "INSERT INTO candidates VALUES (?, ?, ?)",
+            (
+                "C2",
+                "S1",
+                json.dumps(
+                    {
+                        "candidate_id": "C2",
+                        "canonical_sample_identity_id": "S1",
+                        "precursor_mz": 501.0,
+                    }
+                ),
+            ),
+        )
+        for candidate_id, group_id, row_id in (
+            ("C2", "G2", "row-02"),
+            ("C1", "G4", "row-04"),
+        ):
+            for kind, ref, facts in (
+                (
+                    "rows",
+                    row_id,
+                    {"row_key_id": row_id, "group_hypothesis_id": group_id},
+                ),
+                (
+                    "final_groups",
+                    group_id,
+                    {"group_hypothesis_id": group_id, "disposition": "completed"},
+                ),
+            ):
+                connection.execute(
+                    "INSERT INTO records VALUES (?, ?, ?)",
+                    (kind, ref, json.dumps(facts)),
+                )
+                connection.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?)",
+                    (candidate_id, "S1", kind, ref),
+                )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "initial_edges",
+                "edge-shared-multirow",
+                json.dumps(
+                    {
+                        "disposition": "excluded",
+                        "initial_evidence": {"decision": "split_edge"},
+                    }
+                ),
+            ),
+        )
+        for candidate_id in ("C1", "C2"):
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)",
+                (candidate_id, "S1", "initial_edges", "edge-shared-multirow"),
+            )
+
+    output = tmp_path / "shared-multirow-peer.html"
+    result = generate_report(
+        report,
+        SelectionRequest(strategy="query", limit=10, candidate_ids=("C1",)),
+        output,
+    )
+    items = _report_data(output)["items"]
+
+    assert result.selected_count == 2
+    assert {item["details"]["source"]["group_hypothesis_id"] for item in items} == {
+        "G1",
+        "G4",
+    }
+    for item in items:
+        assert item["review_summary"]["related_group_count"] == 1
+        assert [peer["group_id"] for peer in item["related_groups"]] == ["G2"]
+        assert item["related_groups"][0]["edge_refs"] == ["edge-shared-multirow"]
 
 
 def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolation(
