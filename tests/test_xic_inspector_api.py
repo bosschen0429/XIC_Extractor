@@ -1183,6 +1183,194 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
     assert peer["curves"][0]["candidate_ids"] == ["C2"]
 
 
+def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
+    report, _, _ = _create_mock_v2_db(
+        tmp_path,
+        samples=[
+            {"sample_stem": "sample one", "canonical_sample_identity_id": "S1"},
+            {"sample_stem": "sample two", "canonical_sample_identity_id": "S2"},
+            {"sample_stem": "sample three", "canonical_sample_identity_id": "S3"},
+        ],
+    )
+    with sqlite3.connect(report) as connection:
+        for candidate_id, sample_id in (
+            ("C1-duplicate", "S1"),
+            ("C2", "S2"),
+            ("C3", "S3"),
+        ):
+            connection.execute(
+                "INSERT INTO candidates VALUES (?, ?, ?)",
+                (
+                    candidate_id,
+                    sample_id,
+                    json.dumps(
+                        {
+                            "candidate_id": candidate_id,
+                            "canonical_sample_identity_id": sample_id,
+                            "precursor_mz": 500.0,
+                        }
+                    ),
+                ),
+            )
+        for candidate_id, sample_id in (("C1-duplicate", "S1"), ("C2", "S2")):
+            for kind, ref in (("rows", "row-01"), ("final_groups", "G1")):
+                connection.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?)",
+                    (candidate_id, sample_id, kind, ref),
+                )
+        connection.execute(
+            "UPDATE records SET payload=? WHERE kind='final_groups' AND record_id='G1'",
+            (
+                json.dumps(
+                    {
+                        "group_hypothesis_id": "G1",
+                        "disposition": "completed",
+                        "member_subjects": [
+                            {
+                                "member_subject_id": "member-1",
+                                "canonical_sample_identity_id": "S1",
+                            },
+                            {
+                                "member_subject_id": "member-2",
+                                "canonical_sample_identity_id": "S2",
+                            },
+                        ],
+                    }
+                ),
+            ),
+        )
+        for kind, ref, payload in (
+            (
+                "rows",
+                "row-02",
+                {"row_key_id": "row-02", "group_hypothesis_id": "G2"},
+            ),
+            (
+                "final_groups",
+                "G2",
+                {
+                    "group_hypothesis_id": "G2",
+                    "disposition": "completed",
+                    "member_subjects": [
+                        {
+                            "member_subject_id": "member-3",
+                            "canonical_sample_identity_id": "S3",
+                        }
+                    ],
+                },
+            ),
+        ):
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (kind, ref, json.dumps(payload)),
+            )
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)",
+                ("C3", "S3", kind, ref),
+            )
+        edges = (
+            (
+                "edge-direct-three-links",
+                "member-1",
+                "member-2",
+                "eligible",
+                {
+                    "decision": "strong_edge",
+                    "reason": "strong_edge: score=90",
+                    "score": 90,
+                    "rt_raw_delta_sec": 1.25,
+                    "rt_drift_corrected_delta_sec": 0.75,
+                },
+                (("C1", "S1"), ("C1-duplicate", "S1"), ("C2", "S2")),
+            ),
+            (
+                "edge-review",
+                "member-1",
+                "member-2",
+                "review_only",
+                {
+                    "decision": "weak_edge",
+                    "reason": "weak_edge: score unavailable",
+                },
+                (("C1", "S1"), ("C2", "S2")),
+            ),
+            (
+                "edge-external-excluded",
+                "member-1",
+                "member-3",
+                "excluded",
+                {
+                    "decision": "blocked_edge",
+                    "reason": "blocked: identity_conflict",
+                    "score": 0,
+                },
+                (("C1", "S1"), ("C3", "S3")),
+            ),
+        )
+        for ref, left_id, right_id, disposition, evidence, links in edges:
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (
+                    "initial_edges",
+                    ref,
+                    json.dumps(
+                        {
+                            "left_member_subject_id": left_id,
+                            "right_member_subject_id": right_id,
+                            "disposition": disposition,
+                            "initial_evidence": evidence,
+                        }
+                    ),
+                ),
+            )
+            for candidate_id, sample_id in links:
+                connection.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?)",
+                    (candidate_id, sample_id, "initial_edges", ref),
+                )
+
+    output = tmp_path / "internal-pair-support.html"
+    generate_report(
+        report,
+        SelectionRequest(strategy="query", limit=1, candidate_ids=("C1",)),
+        output,
+    )
+    item = _report_data(output)["items"][0]
+
+    assert item["internal_pair_support"] == [
+        {
+            "edge_ref": "edge-direct-three-links",
+            "left_member_subject_id": "member-1",
+            "right_member_subject_id": "member-2",
+            "left_sample_label": "sample one",
+            "right_sample_label": "sample two",
+            "support_kind": "direct",
+            "disposition": "eligible",
+            "decision": "strong_edge",
+            "reason": "strong_edge: score=90",
+            "score": 90,
+            "rt_raw_delta_sec": 1.25,
+            "rt_drift_corrected_delta_sec": 0.75,
+        },
+        {
+            "edge_ref": "edge-review",
+            "left_member_subject_id": "member-1",
+            "right_member_subject_id": "member-2",
+            "left_sample_label": "sample one",
+            "right_sample_label": "sample two",
+            "support_kind": "review_only",
+            "disposition": "review_only",
+            "decision": "weak_edge",
+            "reason": "weak_edge: score unavailable",
+            "score": None,
+            "rt_raw_delta_sec": None,
+            "rt_drift_corrected_delta_sec": None,
+        },
+    ]
+    assert item["review_summary"]["related_group_count"] == 1
+    assert item["related_groups"][0]["edge_refs"] == ["edge-external-excluded"]
+
+
 def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
     report, _, _ = _create_mock_v2_db(tmp_path)
     with sqlite3.connect(report) as connection:

@@ -87,8 +87,76 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
     assert "本報告未提供可讀來源紀錄" in report
     assert "對齊時間圖不可用" in report
     assert "來源未提供目前所選曲線與訊號的對齊座標" in report
+    assert "Array.isArray(item.internal_pair_support)" in report
     assert "counts·s" in report
     assert "https://" not in report
+
+
+def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -> None:
+    payload = {
+        "items": [
+            {
+                "id": "group-1",
+                "samples": [],
+                "internal_pair_support": [
+                    {
+                        "edge_ref": "edge-direct",
+                        "left_member_subject_id": "member-a",
+                        "right_member_subject_id": "member-b",
+                        "left_sample_label": "Sample A",
+                        "right_sample_label": "Sample B",
+                        "support_kind": "direct",
+                        "reason": "eligible edge",
+                    },
+                    {
+                        "edge_ref": "edge-review",
+                        "left_member_subject_id": "member-a",
+                        "right_member_subject_id": "member-c",
+                        "left_sample_label": "Sample A",
+                        "right_sample_label": "Sample C",
+                        "support_kind": "review_only",
+                        "reason": "retained for review",
+                    },
+                ],
+                "details": {"readable_records": [{"ref": "edge-direct"}]},
+            }
+        ],
+        "samples": [],
+    }
+    report = build_report_html(
+        title="Pair support report",
+        evidence_capability="metadata_only",
+        strategy="sample",
+        request_id="pair-support",
+        run_total=1,
+        eligible_count=1,
+        selected_count=1,
+        source_db_name="generic.sqlite",
+        payload_data=payload,
+    )
+
+    inline = re.search(
+        r'<script id="inspector-data" type="application/json">(.*?)</script>',
+        report,
+        re.S,
+    )
+    assert inline is not None
+    assert json.loads(inline[1]) == payload
+    for label in (
+        "樣本配對支持",
+        "直接支持",
+        "僅供檢閱",
+        "這不表示族群內每一對都一致",
+        "原始 RT 差",
+        "校正 RT 差",
+        "分數",
+        "查看配對紀錄",
+        "初始候選比較紀錄",
+        "不是最終分組決策的完整追蹤",
+    ):
+        assert label in report
+    assert "相關族群比較" not in report
+    assert "已分開保存的相關族群" not in report
 
 
 def test_record_scope_does_not_become_a_candidate_adoption_claim() -> None:

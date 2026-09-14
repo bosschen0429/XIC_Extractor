@@ -124,6 +124,7 @@ class CidNlSource:
         self.candidates: dict[tuple[str, str], dict[str, Any]] = {}
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
         self.record_links: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        self.initial_edge_refs_by_member: dict[str, set[str]] = {}
         self.sample_labels: dict[str, str] = {}
         self.row_cell_decisions: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
         self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
@@ -157,6 +158,14 @@ class CidNlSource:
                 "SELECT kind, record_id, payload FROM records"
             ):
                 self.records.setdefault(kind, {})[rid] = json.loads(payload)
+            for edge_ref, edge in self.records.get("initial_edges", {}).items():
+                for field in ("left_member_subject_id", "right_member_subject_id"):
+                    member_id = edge.get(field)
+                    if isinstance(member_id, str):
+                        refs = self.initial_edge_refs_by_member.setdefault(
+                            member_id, set()
+                        )
+                        refs.add(edge_ref)
             for rid, fact in self.records.get("cell_decisions", {}).items():
                 group_id = fact.get("group_hypothesis_id")
                 row_key_id = fact.get("row_key_id")
@@ -788,6 +797,7 @@ class CidNlSource:
             reason = route.get(
                 "reason", source.get("reason", source.get("disposition", "unavailable"))
             )
+            internal_pair_support = self._internal_pair_support(item)
             rendered.append(
                 {
                     "id": item.serialized_ref,
@@ -816,6 +826,11 @@ class CidNlSource:
                         ),
                     },
                     "review_summary": item.details["review_summary"],
+                    **(
+                        {"internal_pair_support": internal_pair_support}
+                        if internal_pair_support
+                        else {}
+                    ),
                     "related_groups": [
                         self._related_group(
                             peer,
@@ -832,6 +847,72 @@ class CidNlSource:
                 }
             )
         return rendered
+
+    def _internal_pair_support(self, item: CanonicalItem) -> list[dict[str, Any]]:
+        source = item.details["source"]
+        group_id = source.get("group_hypothesis_id")
+        group = self.records.get("final_groups", {}).get(group_id, {})
+        members = group.get("member_subjects")
+        if not isinstance(members, list):
+            return []
+        members_by_id = {
+            member["member_subject_id"]: member
+            for member in members
+            if isinstance(member, dict)
+            and isinstance(member.get("member_subject_id"), str)
+        }
+        edge_refs = {
+            edge_ref
+            for member_id in members_by_id
+            for edge_ref in self.initial_edge_refs_by_member.get(member_id, ())
+        }
+        projected = []
+        for edge_ref in sorted(edge_refs):
+            edge = self.records.get("initial_edges", {}).get(edge_ref, {})
+            left_id = edge.get("left_member_subject_id")
+            right_id = edge.get("right_member_subject_id")
+            if left_id not in members_by_id or right_id not in members_by_id:
+                continue
+            disposition = edge.get("disposition")
+            if disposition not in {"eligible", "review_only"}:
+                continue
+            evidence = edge.get("initial_evidence")
+            evidence = evidence if isinstance(evidence, dict) else {}
+            projected.append(
+                {
+                    "edge_ref": edge_ref,
+                    "left_member_subject_id": left_id,
+                    "right_member_subject_id": right_id,
+                    "left_sample_label": self._member_sample_label(
+                        left_id, members_by_id[left_id]
+                    ),
+                    "right_sample_label": self._member_sample_label(
+                        right_id, members_by_id[right_id]
+                    ),
+                    "support_kind": (
+                        "direct" if disposition == "eligible" else "review_only"
+                    ),
+                    "disposition": disposition,
+                    "decision": evidence.get("decision"),
+                    "reason": evidence.get("reason"),
+                    "score": evidence.get("score"),
+                    "rt_raw_delta_sec": evidence.get("rt_raw_delta_sec"),
+                    "rt_drift_corrected_delta_sec": evidence.get(
+                        "rt_drift_corrected_delta_sec"
+                    ),
+                }
+            )
+        return projected
+
+    def _member_sample_label(self, member_id: str, member: dict[str, Any]) -> str:
+        sample_id = member.get("canonical_sample_identity_id")
+        if isinstance(sample_id, str) and sample_id in self.sample_labels:
+            return self.sample_labels[sample_id]
+        for field in ("sample_label", "sample_stem", "label"):
+            label = member.get(field)
+            if isinstance(label, str) and label:
+                return label
+        return sample_id if isinstance(sample_id, str) and sample_id else member_id
 
     def _project_curves(self, item, raw_curves, captures):
         keys = {
