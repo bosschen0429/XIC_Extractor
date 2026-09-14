@@ -85,6 +85,44 @@ class KnownIstdReference:
             "policy": "known_istd_batch_monotone_rt_map_same_target_fallback_v2",
         }
 
+    @property
+    def explanation_provenance(self) -> dict[str, object]:
+        """Project the batch map already used by grouping, without preparing it."""
+        result: dict[str, object] = dict(self.provenance)
+        prepared = self if self._batch_context is not None else self._prepared_batch
+        if prepared is None or prepared._batch_context is None:
+            return result
+        samples, orders = prepared._batch_context
+        knots_by_sample = prepared._knots_by_sample
+        result["calibration"] = {
+            "schema_version": "known_istd_calibration_v1",
+            "rt_unit": "minute",
+            "interpolation": "piecewise_linear",
+            "extrapolation": "unavailable",
+            "sample_universe": list(samples),
+            "injection_order": dict(orders),
+            "measurements": [
+                {"label": label, "sample_stem": sample, "observed_rt_min": rt}
+                for label, sample, rt, _delta in prepared.coordinates
+                if sample in samples
+            ],
+            "samples": [
+                {
+                    "sample_stem": sample,
+                    "knots": [list(knot) for knot in knots_by_sample.get(sample, ())],
+                    "domain_rt_min": (
+                        [knots_by_sample[sample][0][0], knots_by_sample[sample][-1][0]]
+                        if sample in knots_by_sample else None
+                    ),
+                    "status": (
+                        "available" if sample in knots_by_sample else "unavailable"
+                    ),
+                }
+                for sample in samples
+            ],
+        }
+        return result
+
     def prepare_batch(
         self,
         *,
@@ -129,7 +167,7 @@ class KnownIstdReference:
             for label in sorted(centers, key=centers.__getitem__):
                 observed = measured[label].get(sample)
                 if observed is None and sample in order_by_sample:
-                    observed = _interpolate_bounded_coordinate(
+                    observed = interpolate_calibrated_rt_min(
                         float(order_by_sample[sample]), observed_by_order[label]
                     )
                 if observed is not None:
@@ -153,7 +191,7 @@ class KnownIstdReference:
         return dict(self._batch_knots)
 
     def _corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float | None:
-        return _interpolate_bounded_coordinate(
+        return interpolate_calibrated_rt_min(
             owner.owner_apex_rt, self._knots_by_sample.get(owner.sample_stem, ())
         )
 
@@ -240,12 +278,13 @@ class KnownIstdOwnerLookup:
         return abs((left.owner_apex_rt - a[1]) - (right.owner_apex_rt - b[1])) * 60.0
 
 
-def _interpolate_bounded_coordinate(
-    value: float, knots: tuple[tuple[float, float], ...]
+def interpolate_calibrated_rt_min(
+    value: float, knots: Sequence[Sequence[float]]
 ) -> float | None:
+    """Apply validated monotone owner knots; coordinates outside are unavailable."""
     if len(knots) < 2 or not knots[0][0] <= value <= knots[-1][0]:
         return None
-    right = min(bisect_right(knots, (value, math.inf)), len(knots) - 1)
+    right = min(bisect_right(knots, value, key=lambda knot: knot[0]), len(knots) - 1)
     left_x, left_y = knots[right - 1]
     right_x, right_y = knots[right]
     return left_y + (value - left_x) / (right_x - left_x) * (right_y - left_y)

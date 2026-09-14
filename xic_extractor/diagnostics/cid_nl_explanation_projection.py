@@ -211,7 +211,7 @@ def write_cid_nl_explanation(
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
-    known_istd_reference_provenance: Mapping[str, str] | None = None,
+    known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> Path:
     """Persist exact owner identities, reasons and Matrix publication provenance."""

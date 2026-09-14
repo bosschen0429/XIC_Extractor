@@ -311,6 +311,51 @@ def test_batch_reference_corrects_unknowns_without_merging_distinct_peaks(
     assert tuple((o.owner_apex_rt, o.selected_integration) for o in owners) == original
 
 
+def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
+
+    reference = _batch_reference(tmp_path, {
+        "early": (8, 20, 40), "late": (10, 24, 46),
+    })
+    assert reference.explanation_provenance.get("calibration") is None
+    prepared = reference.prepare_batch(
+        sample_universe=frozenset({"early", "late", "missing"}),
+        injection_order={"early": 1, "late": 2},
+    )
+
+    def cannot_refit(*args, **kwargs):
+        raise AssertionError("receipt must not recalculate calibration")
+
+    monkeypatch.setattr(type(reference), "prepare_batch", cannot_refit)
+    receipt = reference.explanation_provenance
+    assert receipt == prepared.explanation_provenance
+    assert {k: receipt[k] for k in reference.provenance} == reference.provenance
+    calibration = receipt["calibration"]
+    assert calibration["schema_version"] == "known_istd_calibration_v1"
+    assert calibration["extrapolation"] == "unavailable"
+    assert len(calibration["measurements"]) == 6
+    samples = {sample["sample_stem"]: sample for sample in calibration["samples"]}
+    assert samples["missing"]["status"] == "unavailable"
+    assert samples["missing"]["domain_rt_min"] is None
+    knots = samples["early"]["knots"]
+    assert samples["early"]["domain_rt_min"] == [8, 40]
+    assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(15.5)
+    assert interpolate_calibrated_rt_min(7, knots) is None
+    assert interpolate_calibrated_rt_min(41, knots) is None
+    from xic_extractor.diagnostics.cid_nl_explanation import (
+        ExplanationReportWriter,
+        read_cid_nl_explanation,
+    )
+
+    with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
+        path = writer.finalize({"known_istd_reference": receipt})
+    saved = read_cid_nl_explanation(path)
+    assert saved["schema_version"] == 2
+    assert saved["known_istd_reference"] == receipt
+
+
 def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
     tmp_path: Path,
 ) -> None:

@@ -14,7 +14,10 @@ from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
 )
-from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+from xic_extractor.alignment.drift_evidence import (
+    KnownIstdReference,
+    read_known_istd_reference,
+)
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import (
     _validate_untargeted_cid_nl_alignment_options,
@@ -26,6 +29,7 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 )
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
@@ -94,14 +98,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not dll_dir.is_dir():
         print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
         return 2
-    if args.targets_csv is not None and args.known_istd_reference_workbook is not None:
-        print(
-            "--targets-csv and --known-istd-reference-workbook are mutually exclusive",
-            file=sys.stderr,
-        )
-        return 2
-    if args.targets_csv is not None and not args.targets_csv.is_file():
-        print(f"{args.targets_csv}: targets CSV file does not exist", file=sys.stderr)
+    try:
+        known_istd_reference = _resolve_istd_input(args)
+    except (ValueError, OSError, BadZipFile, KeyError, ConfigError) as exc:
+        print(str(exc), file=sys.stderr)
         return 2
     try:
         discovery_batch = read_discovery_batch_index(discovery_batch_index)
@@ -146,11 +146,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 discovery_batch_index,
                 require_owner_closure=True,
             )
-            known_istd_reference = (
-                None
-                if args.known_istd_reference_workbook is None
-                else read_known_istd_reference(args.known_istd_reference_workbook)
-            )
         except (ValueError, OSError, BadZipFile, KeyError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -164,28 +159,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=output_dir,
             owner_build_xic_backend=owner_build_xic_backend,
         )
-        if known_istd_reference is not None:
-            print(
-                "Known ISTD reference workbook: "
-                f"{known_istd_reference.workbook_path}"
-            )
-            print(
-                "Known ISTD reference SHA-256: "
-                f"{known_istd_reference.workbook_sha256}"
-            )
-        if args.targets_csv is not None:
-            try:
-                from xic_extractor.configuration.targets import read_istd_targets
-
-                selection = read_istd_targets(args.targets_csv)
-                print(
-                    f"Targets CSV: {args.targets_csv.resolve()} "
-                    f"({len(selection.targets)} ISTD loaded, "
-                    f"{selection.skipped_count} non-ISTD rows skipped)"
-                )
-            except Exception as exc:
-                print(f"Failed to read targets CSV: {exc}", file=sys.stderr)
-                return 2
         return 0
 
     timing_recorder = (
@@ -244,6 +217,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "max_partition_jobs": args.max_partition_jobs,
             **timing_kwargs,
         }
+        if known_istd_reference is not None:
+            run_kwargs["known_istd_reference"] = known_istd_reference
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
         authority_hold = False
         try:
@@ -322,6 +297,48 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+def _resolve_istd_input(args: argparse.Namespace) -> KnownIstdReference | None:
+    """Resolve the CLI's normal ISTD input before any RAW acquisition."""
+    if sum((
+        args.targets_csv is not None,
+        args.known_istd_reference_workbook is not None,
+        args.allow_uncorrected,
+    )) > 1:
+        raise ValueError(
+            "--targets-csv, --known-istd-reference-workbook and "
+            "--allow-uncorrected are mutually exclusive"
+        )
+    if args.allow_uncorrected:
+        print("ISTD alignment: disabled (explicit --allow-uncorrected)")
+        return None
+    if args.known_istd_reference_workbook is not None:
+        args.known_istd_reference_workbook = (
+            args.known_istd_reference_workbook.resolve()
+        )
+        reference = read_known_istd_reference(args.known_istd_reference_workbook)
+        print("ISTD alignment: enabled (explicit workbook)")
+        print(f"Known ISTD reference workbook: {reference.workbook_path}")
+        print(f"Known ISTD reference SHA-256: {reference.workbook_sha256}")
+        print(f"Known ISTD labels loaded: {len(reference.anchor.observed_labels)}")
+        return reference
+    source = "explicit targets CSV" if args.targets_csv is not None else "GUI default"
+    args.targets_csv = (
+        args.targets_csv or (_repo_root() / "config" / "targets.example.csv")
+    ).resolve()
+    if not args.targets_csv.is_file():
+        raise ValueError(f"{args.targets_csv}: targets CSV file does not exist")
+    from xic_extractor.configuration.targets import read_istd_targets
+
+    selection = read_istd_targets(args.targets_csv)
+    print(f"ISTD alignment: enabled ({source})")
+    print(
+        f"Targets CSV: {args.targets_csv} "
+        f"({len(selection.targets)} ISTD loaded, "
+        f"{selection.skipped_count} non-ISTD rows skipped)"
+    )
+    return None
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -368,7 +385,17 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Targets CSV containing ISTD definitions. When provided, ISTD drift "
             "anchors are extracted directly in-memory from RAW files without "
-            "requiring an external Excel workbook."
+            "requiring an external Excel workbook. Defaults to the GUI template "
+            "config/targets.example.csv unless a workbook or --allow-uncorrected "
+            "is specified. The resolved source and ISTD count are printed."
+        ),
+    )
+    parser.add_argument(
+        "--allow-uncorrected",
+        action="store_true",
+        help=(
+            "Explicitly run without ISTD RT alignment. Mutually exclusive with "
+            "--targets-csv and --known-istd-reference-workbook."
         ),
     )
     parser.add_argument(

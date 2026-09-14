@@ -1450,6 +1450,11 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
 
         assert f"Known ISTD reference workbook: {reference_path.resolve()}" in stdout
         assert hashlib.sha256(reference_path.read_bytes()).hexdigest() in stdout
+    if reference_kind is None:
+        expected = run_alignment._repo_root() / "config" / "targets.example.csv"
+        assert f"Targets CSV: {expected}" in stdout
+        assert "7 ISTD loaded" in stdout
+        assert "ISTD alignment: enabled (GUI default)" in stdout
     assert (
         "Alignment launch preflight OK (diagnostic_only; no validation completed)"
         in stdout
@@ -1815,6 +1820,65 @@ def test_run_alignment_cli_targets_csv_and_workbook_mutually_exclusive(
     )
     assert code == 2
     assert "mutually exclusive" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "mode", ["uncorrected", "conflict_target", "conflict_workbook", "missing",
+             "invalid", "explicit"],
+)
+def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+) -> None:
+    batch_index, raw_dir = _write_owner_closed_preflight_batch(tmp_path, ("S1",))
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    template = run_alignment._repo_root() / "config" / "targets.example.csv"
+    monkeypatch.setattr(run_alignment, "_repo_root", lambda: tmp_path)
+
+    def no_raw(**kwargs):
+        pytest.fail("preflight or invalid ISTD input reached RAW execution")
+
+    monkeypatch.setattr(run_alignment, "run_alignment", no_raw)
+    extras = []
+    if mode in {"uncorrected", "conflict_target", "conflict_workbook"}:
+        extras = ["--allow-uncorrected"]
+        if mode == "conflict_target":
+            extras += ["--targets-csv", str(template)]
+        elif mode == "conflict_workbook":
+            extras += ["--known-istd-reference-workbook", str(tmp_path / "ref.xlsx")]
+    elif mode == "invalid":
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "targets.example.csv").write_text(
+            "not,a,target,list\n", encoding="utf-8",
+        )
+    elif mode == "explicit":
+        extras = ["--targets-csv", str(template)]
+    code = run_alignment.main([
+        "--preset", "dna_dr", "--discovery-batch-index", str(batch_index),
+        "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir), "--preflight-only",
+        *extras,
+    ])
+    captured = capsys.readouterr()
+    if mode == "uncorrected":
+        assert code == 0
+        assert "ISTD alignment: disabled (explicit --allow-uncorrected)" in captured.out
+        assert "Targets CSV:" not in captured.out
+    elif mode == "explicit":
+        assert code == 0
+        assert f"Targets CSV: {template}" in captured.out
+        assert "ISTD alignment: enabled (explicit targets CSV)" in captured.out
+    else:
+        assert code == 2
+        assert captured.err
+        assert "preflight OK" not in captured.out
+        if mode.startswith("conflict"):
+            assert "mutually exclusive" in captured.err
+        else:
+            assert str(tmp_path / "config" / "targets.example.csv") in captured.err
 
 
 def test_run_alignment_cli_targets_csv_must_exist(

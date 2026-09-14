@@ -512,7 +512,7 @@ def _run_untargeted_cid_nl_alignment(
                 known_istd_reference_provenance=(
                     None
                     if known_istd_reference is None
-                    else known_istd_reference.provenance
+                    else known_istd_reference.explanation_provenance
                 ),
                 progress_callback=timing_recorder.heartbeat_event,
             )
