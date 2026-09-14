@@ -57,6 +57,11 @@ and keyboard interaction operate on the embedded selected subset.
 Source adapters supply readable titles and explanations of recorded outcomes.
 The item list keeps a concise outcome title, status, and readable reason so that
 users can scan results before opening an item.
+Ungrouped excluded candidates remain accessible in a counted, collapsed list
+section. Ordinary reports initially show other items; explicit queries and
+in-report filters expose matching excluded records. A report containing only
+excluded candidates explains how to open them. This presentation does not alter
+the selected population, retained evidence, or API selection semantics.
 The workbench links the sample result, candidate, retained capture, integration
 facts, and available decision records. Viewing a sample scopes its candidate
 choices and peak details. An explicit return beside the sample heading restores
@@ -67,8 +72,10 @@ not replace the final quantitative value.
 
 Readable evidence records first show their supplied summary and linked records.
 Full fields and exact identifiers remain available together on demand; missing
-summaries do not become generic filler. Curve provenance and quantitative
-decision evidence have distinct entry labels. Closing evidence returns to its
+summaries do not become generic filler. Curve provenance, quantitative decisions,
+and candidate exclusions have distinct entry labels. Excluded candidates can
+open their recorded exclusion evidence even when no curve is available.
+Closing evidence returns to its
 opening control. A link opens a record only when its content is embedded in
 this report; an external or missing reference remains identifiable without
 claiming its content is available offline. CID-NL decision and curve records

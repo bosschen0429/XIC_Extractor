@@ -1039,6 +1039,91 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
     assert "不代表正式定量採用" in readable["edge-shared"]["summary"]
 
 
+def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        for candidate_id in ("C2", "C3"):
+            connection.execute(
+                "INSERT INTO candidates VALUES (?, ?, ?)",
+                (
+                    candidate_id,
+                    "S2",
+                    json.dumps(
+                        {
+                            "candidate_id": candidate_id,
+                            "canonical_sample_identity_id": "S2",
+                            "precursor_mz": 510.0,
+                            "discovery_candidate_state": (
+                                "review_only_ambiguous_coisolation"
+                            ),
+                        }
+                    ),
+                ),
+            )
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (
+                    "exclusions",
+                    f"exclusion-{candidate_id.lower()}",
+                    json.dumps(
+                        {
+                            "candidate_id": candidate_id,
+                            "canonical_sample_identity_id": "S2",
+                            "discovery_candidate_state": (
+                                "review_only_ambiguous_coisolation"
+                            ),
+                            "reason_code": (
+                                "discovery_candidate_not_search_eligible"
+                            ),
+                            "assessment_artifact_ids": [],
+                        }
+                    ),
+                ),
+            )
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)",
+                (
+                    candidate_id,
+                    "S2",
+                    "exclusions",
+                    f"exclusion-{candidate_id.lower()}",
+                ),
+            )
+
+    output = tmp_path / "excluded-candidate.html"
+    generate_report(report, SelectionRequest(), output)
+    items = _report_data(output)["items"]
+    candidates = {
+        item["witnesses"][0]["candidate_id"]: item
+        for item in items
+        if item["kind"] == "candidate"
+    }
+
+    for candidate_id, other_id in (("C2", "C3"), ("C3", "C2")):
+        item = candidates[candidate_id]
+        sample = item["samples"][0]
+        expected_ref = f"exclusion-{candidate_id.lower()}"
+        assert item["stratum"] == "excluded"
+        assert item["curves"] == []
+        assert sample["evidence_status"] == "unavailable"
+        assert "quantitative_value" not in sample
+        assert sample["decision_refs"] == [expected_ref]
+        assert f"exclusion-{other_id.lower()}" not in sample["decision_refs"]
+        readable = {
+            record["ref"]: record
+            for record in item["details"]["readable_records"]
+        }
+        exclusion = readable[expected_ref]
+        assert "Discovery 候選未取得後續搜尋資格" in exclusion["summary"]
+        assert "不是正式定量採用決策" in exclusion["summary"]
+        fields = {field["label"]: field["value"] for field in exclusion["fields"]}
+        assert fields["候選狀態"] == "review_only_ambiguous_coisolation"
+        assert "discovery_candidate_not_search_eligible" in fields["排除理由"]
+
+    quantitative_item = next(item for item in items if item["kind"] == "row")
+    assert quantitative_item["samples"][0]["decision_refs"] == ["cd-01"]
+
+
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
     import zlib
 

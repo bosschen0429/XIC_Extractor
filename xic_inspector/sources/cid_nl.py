@@ -55,6 +55,7 @@ _FIELD_LABELS = {
     "precursor_mz": "前驅離子 m/z",
     "rt_apex_min": "峰頂 RT (min)",
     "discovery_candidate_state": "候選狀態",
+    "reason_code": "排除理由",
     "kind": "擷取階段",
 }
 
@@ -92,6 +93,7 @@ _REASON_LABELS = {
         "在已宣告候選範圍內具有唯一支持"
     ),
     "product_mz_out_of_tolerance": "產品離子 m/z 超出容許範圍",
+    "discovery_candidate_not_search_eligible": "Discovery 候選未取得後續搜尋資格",
 }
 
 
@@ -537,6 +539,16 @@ class CidNlSource:
         }
         refs = []
         for record in item.details["records"]:
+            if record["kind"] == "exclusions":
+                if item.kind != "candidate" or item.stratum != "excluded":
+                    continue
+                applies = any(
+                    sid == sample_id
+                    for _candidate_id, sid in self._record_link_keys(item, record)
+                )
+                if applies:
+                    refs.append(record["ref"])
+                continue
             if record["kind"] != "cell_decisions":
                 continue
             facts = record["facts"]
@@ -859,6 +871,21 @@ class CidNlSource:
                 parts.append(f"score {self._format_measurement(score)}")
             detail = "；".join(parts) if parts else "來源未記錄初始配對判定"
             return f"{detail}。此相關初始配對不代表正式定量採用。"
+        if kind == "exclusions":
+            state = facts.get("discovery_candidate_state")
+            reason = facts.get("reason_code")
+            parts = []
+            if state not in (None, ""):
+                parts.append(f"候選狀態為「{state}」")
+            if reason not in (None, ""):
+                readable_reason = (
+                    _REASON_LABELS.get(reason, reason)
+                    if isinstance(reason, str)
+                    else str(reason)
+                )
+                parts.append(f"排除理由：{readable_reason}")
+            detail = "；".join(parts) if parts else "來源未記錄候選排除理由"
+            return f"{detail}。此排除紀錄不是正式定量採用決策。"
         scope = []
         if sample_ids:
             scope.append(f"{len(sample_ids)} 個樣本")
@@ -910,6 +937,7 @@ class CidNlSource:
             "precursor_mz",
             "rt_apex_min",
             "discovery_candidate_state",
+            "reason_code",
             "kind",
         ):
             add(key, facts.get(key))
@@ -969,6 +997,9 @@ class CidNlSource:
             return cls._format_fixed(value, 4)
         if key == "rt_apex_min":
             return cls._format_fixed(value, 3)
+        if key == "reason_code" and isinstance(value, str):
+            label = _REASON_LABELS.get(value)
+            return f"{label}（{value}）" if label else value
         return value
 
     @staticmethod
