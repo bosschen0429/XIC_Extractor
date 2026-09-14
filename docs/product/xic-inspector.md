@@ -92,7 +92,12 @@ while the raw plot remains available. The integration readout identifies its
 raw-time coordinates. Precursor m/z uses four fixed decimal places, primary RT uses two,
 and detailed peak times use three. NULL, numeric zero, a missing single result,
 and unavailable curve evidence remain distinct within each item's sample
-results. These sample states do not require separate review items.
+results. Sample rows and curve legends visibly identify multiple candidates,
+explicit NULL, numeric zero, and unavailable curves for the responsible sample.
+Candidate counts use distinct supplied candidate identities within that sample;
+additional captures or processing stages do not add candidates. These markers
+call attention to recorded facts without declaring method failure or replacing
+the quantitative result. These sample states do not require separate review items.
 
 Report generation writes through a temporary file and replaces the requested
 output only after successful completion. Cancellation or failure leaves an

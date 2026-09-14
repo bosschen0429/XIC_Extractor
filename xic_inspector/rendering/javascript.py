@@ -19,7 +19,7 @@ WORKBENCH_JS = r"""(() => {
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
-  const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="result-number">${num(row.quantitative_value)}</span>`;
+  const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':row.quantitative_value===0?'<span class="result-zero">0</span>':`<span class="result-number">${num(row.quantitative_value)}</span>`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
   const state={id:(queryReport?items:items.filter(item=>!isCollapsedExcluded(item)))[0]?.id,sample:null,candidate:'',capture:'',signal:'raw',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
   let filtered=items, listed=[], dialogOpener=null, evidenceOpener=null;
@@ -28,6 +28,15 @@ WORKBENCH_JS = r"""(() => {
     const rows=witnesses(item).filter(w=>!sid||witnessSample(w)===sid), ids=[];
     rows.forEach(w=>{const id=candidateId(w);if(id&&!ids.includes(id))ids.push(id);});
     return ids.map((id,index)=>({id,index,witness:rows.find(w=>candidateId(w)===id)}));
+  }
+  function sampleNotices(item,row){
+    const notices=[], count=candidates(item,row.sample_id).length, curve=(item.curves||[]).some(c=>c.sample_id===row.sample_id&&c.raw_rts?.length);
+    if(count>1)notices.push({kind:'candidates',label:`${count} 個候選`,short:`${count} 候選`});
+    if(!has(row,'quantitative_value'))notices.push({kind:'missing',label:'無單一結果',short:'無單一結果'});
+    else if(row.quantitative_value===null)notices.push({kind:'null',label:'空值',short:'空值'});
+    else if(row.quantitative_value===0)notices.push({kind:'zero',label:'數值 0',short:'0'});
+    if(!curve)notices.push({kind:'curve',label:'曲線未提供',short:'缺曲線'});
+    return notices;
   }
   function candidateLabel(candidate){
     const w=candidate.witness||{};
@@ -112,7 +121,7 @@ WORKBENCH_JS = r"""(() => {
   }
   function sampleTable(item){
     const excluded=isCollapsedExcluded(item), evidenceLabel=excluded?'查看排除依據':'查看定量依據';
-    return `<div class="table-scroll compact-samples"><table class="sample-table"><thead><tr><th>顯示</th><th>樣本與狀態</th><th class="num">正式結果</th></tr></thead><tbody>${itemRows(item).map(r=>{const curve=(item.curves||[]).some(c=>c.sample_id===r.sample_id&&c.raw_rts?.length),current=r.sample_id===state.sample,evidenceContext=excluded?`${sampleName(r.sample_id)} 的排除依據`:`${sampleName(r.sample_id)} 的正式定量值`;return `<tr class="${current?'focused-row':''}" data-sample-row="${esc(r.sample_id)}"><td><label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="sr-only">在圖中顯示 ${esc(sampleName(r.sample_id))}</span></label></td><td><span class="sample-identity"><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</span><span class="badge badge-${esc(r.status_kind)}">${esc(r.status_label||'未記錄')}</span><button type="button" class="sample-focus" data-focus="${esc(r.sample_id)}" ${current?'disabled aria-current="true"':''}>${current?'目前查看':'查看樣本'}</button></td><td class="num"><strong>${result(r)}</strong><span class="curve-status">曲線：${curve?'已提供':'未提供'}</span>${evidenceButtons(r.decision_refs,evidenceContext,evidenceLabel)}</td></tr>`;}).join('')}</tbody></table></div><p class="reading-hint">勾選只控制圖中顯示；「查看樣本」會帶出該樣本的候選與積分。空值、0、無單一結果及缺曲線分開顯示。</p>`;
+    return `<div class="table-scroll compact-samples"><table class="sample-table"><thead><tr><th>顯示</th><th>樣本與狀態</th><th class="num">正式結果</th></tr></thead><tbody>${itemRows(item).map(r=>{const notices=sampleNotices(item,r),curve=!notices.some(n=>n.kind==='curve'),current=r.sample_id===state.sample,evidenceContext=excluded?`${sampleName(r.sample_id)} 的排除依據`:`${sampleName(r.sample_id)} 的正式定量值`;return `<tr class="sample-row ${notices.length?'sample-notice':''} ${current?'focused-row':''}" data-sample-row="${esc(r.sample_id)}"><td><label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="sr-only">在圖中顯示 ${esc(sampleName(r.sample_id))}</span></label></td><td><span class="sample-identity"><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</span><span class="badge badge-${esc(r.status_kind)}">${esc(r.status_label||'未記錄')}</span>${notices.length?`<span class="sample-flags" aria-label="需要留意：${esc(notices.map(n=>n.label).join('、'))}">${notices.map(n=>`<span class="sample-flag flag-${n.kind}">${esc(n.label)}</span>`).join('')}</span>`:''}<button type="button" class="sample-focus" data-focus="${esc(r.sample_id)}" ${current?'disabled aria-current="true"':''}>${current?'目前查看':'查看樣本'}</button></td><td class="num"><strong>${result(r)}</strong><span class="curve-status ${curve?'':'curve-unavailable'}">曲線：${curve?'已提供':'未提供'}</span>${evidenceButtons(r.decision_refs,evidenceContext,evidenceLabel)}</td></tr>`;}).join('')}</tbody></table></div><p class="reading-hint">勾選只控制圖中顯示；「查看樣本」會帶出該樣本的候選與積分。空值、0、無單一結果及缺曲線分開顯示。</p>`;
   }
   function candidateControl(item){
     if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本，才會列出該樣本的候選。</p>';
@@ -127,7 +136,7 @@ WORKBENCH_JS = r"""(() => {
     return `<label for="capture-select">擷取階段</label><select id="capture-select">${cs.map(c=>{const key=curveKey(c,all.indexOf(c));return `<option value="${esc(key)}" ${key===state.capture?'selected':''}>${esc(c.stage_label||c.kind||'保留曲線')}</option>`;}).join('')}</select>`;
   }
   function signalControl(item){const ss=signals(item),labels={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'};if(!ss.length)return '<p class="control-value">未提供訊號資料。</p>';return ss.length===1?`<p class="control-value">${labels[ss[0]]}</p>`:`<label for="signal-select">訊號種類</label><select id="signal-select">${ss.map(s=>`<option value="${s}" ${s===state.signal?'selected':''}>${labels[s]}</option>`).join('')}</select>`;}
-  function legend(item){return itemRows(item).map(r=>`<label class="legend-item"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="legend-line" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</label>`).join('');}
+  function legend(item){return itemRows(item).map(r=>{const notices=sampleNotices(item,r);return `<label class="legend-item ${notices.length?'has-notice':''}"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="legend-line" style="background:${color(r.sample_id)}"></span><span>${esc(sampleName(r.sample_id))}</span>${notices.map(n=>`<span class="legend-notice flag-${n.kind}" title="${esc(n.label)}">${esc(n.short)}</span>`).join('')}</label>`;}).join('');}
   function readout(item){
     if(!state.sample)return '<div class="integration-empty"><strong>跨樣本比較</strong><p>從樣本表查看一個樣本後，這裡會顯示該候選與擷取階段的積分界線、峰頂、面積及正式定量值。</p></div>';
     const row=itemRows(item).find(r=>r.sample_id===state.sample)||{}, curve=activeCurve(item), c=candidates(item).find(x=>x.id===state.candidate), excluded=isCollapsedExcluded(item), evidenceLabel=excluded?'查看排除依據':'查看定量依據', evidenceContext=excluded?`${sampleName(state.sample)} 的排除依據`:'正式定量值';
