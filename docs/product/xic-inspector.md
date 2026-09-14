@@ -62,6 +62,9 @@ section. Ordinary reports initially show other items; explicit queries and
 in-report filters expose matching excluded records. A report containing only
 excluded candidates explains how to open them. This presentation does not alter
 the selected population, retained evidence, or API selection semantics.
+When an ordinary report includes a Matrix row, it initially opens that row.
+Explicit queries keep their first matching item. Sampling remains a cross-section
+of evidence, so a known group query is the direct entry for comparing its samples.
 The workbench links the sample result, candidate, retained capture, integration
 facts, and available decision records. Viewing a sample scopes its candidate
 choices and peak details. An explicit return beside the sample heading restores
@@ -98,6 +101,11 @@ Candidate counts use distinct supplied candidate identities within that sample;
 additional captures or processing stages do not add candidates. These markers
 call attention to recorded facts without declaring method failure or replacing
 the quantitative result. These sample states do not require separate review items.
+Recorded cell decisions appear under their exact group, row, and sample even
+when the sample has no candidate. An explicit `not_searched` cell remains NULL
+with its recorded explanation; it does not create a candidate or a query witness.
+Item explanations expose recorded review conditions, such as a related method
+HOLD and its source reason, without treating them as the final cell decision.
 
 Report generation writes through a temporary file and replaces the requested
 output only after successful completion. Cancellation or failure leaves an

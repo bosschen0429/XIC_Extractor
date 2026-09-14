@@ -191,6 +191,134 @@ def test_generate_report_sample_strategy_success() -> None:
         assert "retained_curves_v1" in content
 
 
+def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    stored_cell = {
+        "cell_observation_id": "cell-observation-02",
+        "decision_id": "decision-02",
+        "group_hypothesis_id": "G1",
+        "row_key_id": "row-01",
+        "canonical_sample_identity_id": "S2",
+        "source": "",
+        "value": None,
+        "variant": "not_searched",
+    }
+    stored_observation = {
+        "cell_observation_id": "cell-observation-02",
+        "group_hypothesis_id": "G1",
+        "canonical_sample_identity_id": "S2",
+        "processing_request_id": "req-01",
+        "evidence_states": [],
+        "predecessor_cells": [],
+    }
+    with sqlite3.connect(report) as connection:
+        for kind, ref, facts in (
+            ("cell_decisions", "cd-02", stored_cell),
+            ("cell_observations", "cell-observation-02", stored_observation),
+            (
+                "cell_decisions",
+                "wrong-row",
+                {**stored_cell, "decision_id": "wrong-row", "row_key_id": "row-02"},
+            ),
+            (
+                "cell_decisions",
+                "wrong-group",
+                {
+                    **stored_cell,
+                    "decision_id": "wrong-group",
+                    "group_hypothesis_id": "G2",
+                },
+            ),
+            (
+                "cell_decisions",
+                "wrong-sample",
+                {
+                    **stored_cell,
+                    "decision_id": "wrong-sample",
+                    "canonical_sample_identity_id": "S3",
+                },
+            ),
+            (
+                "method_assessments",
+                "assessment-hold",
+                {
+                    "canonical_sample_identity_id": "S1",
+                    "method_result": "HOLD",
+                    "reason_codes": [
+                        "insufficient_method_evidence",
+                        "no_unique_qualifying_relation",
+                    ],
+                },
+            ),
+        ):
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (kind, ref, json.dumps(facts)),
+            )
+        connection.execute(
+            "INSERT INTO links VALUES (?, ?, ?, ?)",
+            ("C1", "S1", "method_assessments", "assessment-hold"),
+        )
+
+    output = tmp_path / "all-samples.html"
+    generate_report(
+        report,
+        SelectionRequest(strategy="query", group_ids=("G1",)),
+        output,
+    )
+    item = _report_data(output)["items"][0]
+    samples = {sample["sample_id"]: sample for sample in item["samples"]}
+
+    assert set(samples) == {"S1", "S2"}
+    assert samples["S2"]["sample_stem"] == "s2"
+    assert samples["S2"]["quantitative_value"] is None
+    assert samples["S2"]["decision_refs"] == ["cd-02"]
+    assert samples["S2"]["status_kind"] == "null"
+    assert samples["S2"]["decision_label"] == "本次未搜尋，定量結果保留為空值。"
+    assert "「本次未搜尋」（not_searched）" in samples["S2"]["decision_reason"]
+
+    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+    assert "cell-observation-02" in readable
+    assert readable["cell-observation-02"]["sample_ids"] == ["S2"]
+    assert readable["cell-observation-02"]["candidate_ids"] == []
+    assert not {"wrong-row", "wrong-group", "wrong-sample"} & readable.keys()
+    assert {
+        witness["canonical_sample_identity_id"] for witness in item["witnesses"]
+    } == {"S1"}
+    assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
+
+    assert "s1" in item["reason_label"]
+    assert "方法證據不足（insufficient_method_evidence）" in item["reason_label"]
+    assert "沒有唯一合格關係（no_unique_qualifying_relation）" in item["reason_label"]
+    assert "不代表正式定量採用" in item["reason_label"]
+    trigger = next(
+        trigger
+        for trigger in item["details"]["attention_triggers"]
+        if trigger["ref"] == "assessment-hold"
+    )
+    assert trigger["reason"] == "HOLD"
+    assert trigger["reason_codes"] == [
+        "insufficient_method_evidence",
+        "no_unique_qualifying_relation",
+    ]
+
+    scoped_output = tmp_path / "s1-only.html"
+    generate_report(
+        report,
+        SelectionRequest(
+            strategy="query", group_ids=("G1",), sample_ids=("S1",)
+        ),
+        scoped_output,
+    )
+    scoped_item = _report_data(scoped_output)["items"][0]
+    assert [sample["sample_id"] for sample in scoped_item["samples"]] == ["S1"]
+    scoped_records = {
+        record["ref"] for record in scoped_item["details"]["readable_records"]
+    }
+    assert "cd-02" not in scoped_records
+    assert "cell-observation-02" not in scoped_records
+
+
 def test_error_code_2_invalid_request() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)

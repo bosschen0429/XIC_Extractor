@@ -89,11 +89,20 @@ _STAGE_LABELS = {
 }
 
 _REASON_LABELS = {
+    "insufficient_method_evidence": "方法證據不足",
+    "no_unique_qualifying_relation": "沒有唯一合格關係",
     "unique_support_within_declared_candidate_universe": (
         "在已宣告候選範圍內具有唯一支持"
     ),
     "product_mz_out_of_tolerance": "產品離子 m/z 超出容許範圍",
     "discovery_candidate_not_search_eligible": "Discovery 候選未取得後續搜尋資格",
+}
+
+_RESULT_VARIANT_LABELS = {
+    "not_searched": "本次未搜尋",
+    "rejected_observation": "觀察未被採用",
+    "unavailable": "沒有可用觀察",
+    "unresolved": "決策尚未解決",
 }
 
 
@@ -112,6 +121,10 @@ class CidNlSource:
         self.records: dict[str, dict[str, dict[str, Any]]] = {}
         self.candidates: dict[tuple[str, str], dict[str, Any]] = {}
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        self.sample_labels: dict[str, str] = {}
+        self.row_cell_decisions: dict[
+            tuple[str, str], dict[str, dict[str, Any]]
+        ] = {}
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         connection = sqlite3.connect(
@@ -119,14 +132,34 @@ class CidNlSource:
         )
         try:
             connection.execute("PRAGMA query_only = ON")
+            summary_row = connection.execute(
+                "SELECT payload FROM metadata WHERE key='summary'"
+            ).fetchone()
+            if summary_row is not None:
+                summary = json.loads(summary_row[0])
+                for sample in summary.get("samples", []):
+                    sid = sample.get("canonical_sample_identity_id")
+                    sample_stem = sample.get("sample_stem")
+                    if isinstance(sid, str) and isinstance(sample_stem, str):
+                        self.sample_labels[sid] = sample_stem
             for cid, sid, payload in connection.execute(
                 "SELECT candidate_id, sample_id, payload FROM candidates"
             ):
                 self.candidates[cid, sid] = json.loads(payload)
+                sample_stem = self.candidates[cid, sid].get("sample_stem")
+                if isinstance(sample_stem, str) and sample_stem:
+                    self.sample_labels.setdefault(sid, sample_stem)
             for kind, rid, payload in connection.execute(
                 "SELECT kind, record_id, payload FROM records"
             ):
                 self.records.setdefault(kind, {})[rid] = json.loads(payload)
+            for rid, fact in self.records.get("cell_decisions", {}).items():
+                group_id = fact.get("group_hypothesis_id")
+                row_key_id = fact.get("row_key_id")
+                if isinstance(group_id, str) and isinstance(row_key_id, str):
+                    self.row_cell_decisions.setdefault(
+                        (group_id, row_key_id), {}
+                    )[rid] = fact
             for cid, sid, kind, rid in connection.execute(
                 "SELECT candidate_id, sample_id, kind, record_id FROM links"
             ):
@@ -165,6 +198,7 @@ class CidNlSource:
         scoped = sorted(key for key in keys if key[1] in scope)
         facts: dict[tuple[str, str], dict[str, Any]] = {}
         fact_samples: dict[tuple[str, str], set[str]] = {}
+        cell_bound_samples: set[str] = set()
         witnesses = []
         for cid, sid in scoped:
             candidate = self.candidates[cid, sid]
@@ -216,6 +250,38 @@ class CidNlSource:
                         sample_stem=candidate.get("sample_stem"),
                     )
                 )
+        if kind == "row" and isinstance(gid, str):
+            indexed_cells = self.row_cell_decisions.get((gid, identifier), {})
+            for rid, fact in sorted(indexed_cells.items()):
+                sid = fact.get(
+                    "canonical_sample_identity_id", fact.get("sample_id")
+                )
+                if not isinstance(sid, str) or sid not in scope:
+                    continue
+                facts["cell_decisions", rid] = fact
+                fact_samples.setdefault(("cell_decisions", rid), set()).add(sid)
+                cell_bound_samples.add(sid)
+                observation_id = fact.get("cell_observation_id")
+                if not isinstance(observation_id, str):
+                    continue
+                observation = self.records.get("cell_observations", {}).get(
+                    observation_id
+                )
+                if not isinstance(observation, dict):
+                    continue
+                observation_sid = observation.get(
+                    "canonical_sample_identity_id", observation.get("sample_id")
+                )
+                if (
+                    observation.get("group_hypothesis_id") != gid
+                    or observation_sid != sid
+                    or observation.get("row_key_id") not in (None, identifier)
+                ):
+                    continue
+                facts["cell_observations", observation_id] = observation
+                fact_samples.setdefault(
+                    ("cell_observations", observation_id), set()
+                ).add(sid)
         triggers = []
         group = self.records.get("final_groups", {}).get(gid, {})
         if group.get("disposition") in ("provisional", "unresolved"):
@@ -249,14 +315,18 @@ class CidNlSource:
             elif record_kind == "exclusions":
                 excluded = True
             if reason:
-                triggers.append(
-                    {
-                        "scope": "sample",
-                        "ref": rid,
-                        "reason": reason,
-                        "sample_ids": sorted(fact_samples[record_kind, rid]),
-                    }
-                )
+                trigger = {
+                    "scope": "sample",
+                    "ref": rid,
+                    "reason": reason,
+                    "sample_ids": sorted(fact_samples[record_kind, rid]),
+                }
+                reason_codes = fact.get("reason_codes")
+                if isinstance(reason_codes, list):
+                    trigger["reason_codes"] = [
+                        code for code in reason_codes if isinstance(code, str)
+                    ]
+                triggers.append(trigger)
         stratum = classify_scoped_stratum(
             is_attention=bool(triggers),
             is_excluded=excluded,
@@ -264,7 +334,8 @@ class CidNlSource:
             has_zero_cell=any(c["quantitative_value"] == 0 for c in cells),
         )
         sample_status = {}
-        for sid in sorted({sid for _, sid in scoped}):
+        item_sample_ids = {sid for _, sid in scoped} | cell_bound_samples
+        for sid in sorted(item_sample_ids):
             local_cells = [
                 c
                 for c in cells
@@ -308,7 +379,7 @@ class CidNlSource:
             attempt_id=self.attempt_id,
             identifier=identifier,
             serialized_ref=ref,
-            sample_ids=tuple(sorted({sid for _, sid in scoped})),
+            sample_ids=tuple(sorted(item_sample_ids)),
             witnesses=tuple(witnesses),
             stratum=stratum,
             is_attention=bool(triggers),
@@ -467,7 +538,7 @@ class CidNlSource:
                                 if w.canonical_sample_identity_id == sid
                                 and w.sample_stem
                             ),
-                            sid,
+                            self.sample_labels.get(sid, sid),
                         ),
                         "status_kind": item.details["sample_status"][sid],
                         "status_label": {
@@ -585,7 +656,10 @@ class CidNlSource:
         if source not in (None, ""):
             return f"來源記錄定量方式為「{source}」；未另記理由。"
         variant = cell.get("variant")
-        if variant not in (None, ""):
+        if isinstance(variant, str) and variant:
+            label = _RESULT_VARIANT_LABELS.get(variant)
+            if label:
+                return f"來源記錄結果類型為「{label}」（{variant}）；定量值為空。"
             return f"來源記錄結果類型為「{variant}」；未另記理由。"
         return "來源未記錄定量理由。"
 
@@ -1000,6 +1074,9 @@ class CidNlSource:
         if key == "reason_code" and isinstance(value, str):
             label = _REASON_LABELS.get(value)
             return f"{label}（{value}）" if label else value
+        if key == "variant" and isinstance(value, str):
+            label = _RESULT_VARIANT_LABELS.get(value)
+            return f"{label}（{value}）" if label else value
         return value
 
     @staticmethod
@@ -1206,8 +1283,15 @@ class CidNlSource:
         cell = cells[0]
         value = cell["quantitative_value"]
         if value is None:
-            if cell.get("variant") == "unresolved":
-                return "當次決策尚未解決，定量結果保留為空值。"
+            variant = cell.get("variant")
+            variant_label = {
+                "not_searched": "本次未搜尋，定量結果保留為空值。",
+                "rejected_observation": "本次觀察未被採用，定量結果保留為空值。",
+                "unavailable": "本次沒有可用觀察，定量結果保留為空值。",
+                "unresolved": "當次決策尚未解決，定量結果保留為空值。",
+            }.get(variant)
+            if variant_label:
+                return variant_label
             return "當次定量決策記錄為空值，並非零。"
         if value == 0:
             return "當次定量決策記錄的數值為零。"
@@ -1297,6 +1381,10 @@ class CidNlSource:
                 and isinstance(record["facts"].get("neutral_loss_da"), (int, float))
             }
         )
+        reason_label = f"{outcome}，{population}；{route_outcome}。"
+        attention = self._attention_reason_label(item, samples)
+        if attention:
+            reason_label += f" {attention}"
         labels = {
             "title": title,
             "badge_label": {
@@ -1305,7 +1393,7 @@ class CidNlSource:
                 "null": "含空值",
                 "zero": "含零值",
             }.get(item.stratum, "已記錄"),
-            "reason_label": f"{outcome}，{population}；{route_outcome}。",
+            "reason_label": reason_label,
             "route_label": route_label,
         }
         if losses:
@@ -1313,6 +1401,39 @@ class CidNlSource:
                 "NL " + "、".join(f"{loss:.4f}" for loss in losses)
             )
         return labels
+
+    @staticmethod
+    def _attention_reason_label(item, samples) -> str:
+        sample_labels = {
+            sample["sample_id"]: sample.get("sample_stem", sample["sample_id"])
+            for sample in samples
+        }
+        entries = []
+        for trigger in item.details.get("attention_triggers", []):
+            reason_codes = trigger.get("reason_codes") or [trigger.get("reason")]
+            reasons = []
+            for code in reason_codes:
+                if not isinstance(code, str) or not code:
+                    continue
+                label = _REASON_LABELS.get(code)
+                reasons.append(f"{label}（{code}）" if label else code)
+            if not reasons:
+                continue
+            affected = [
+                sample_labels.get(sample_id, sample_id)
+                for sample_id in trigger.get("sample_ids", [])
+                if isinstance(sample_id, str)
+            ]
+            subject = "、".join(affected) if affected else "本項目"
+            prefix = "相關方法評估為 HOLD：" if trigger.get("reason") == "HOLD" else ""
+            entries.append(f"{subject}：{prefix}{'、'.join(reasons)}")
+        if not entries:
+            return ""
+        return (
+            "需留意原因（不代表正式定量採用）："
+            + "；".join(dict.fromkeys(entries))
+            + "。"
+        )
 
     @staticmethod
     def _curve(payload):

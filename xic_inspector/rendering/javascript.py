@@ -21,7 +21,8 @@ WORKBENCH_JS = r"""(() => {
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':row.quantitative_value===0?'<span class="result-zero">0</span>':`<span class="result-number">${num(row.quantitative_value)}</span>`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
-  const state={id:(queryReport?items:items.filter(item=>!isCollapsedExcluded(item)))[0]?.id,sample:null,candidate:'',capture:'',signal:'raw',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
+  const initialItem=queryReport?items[0]:items.find(item=>item.kind==='row'&&item.route?.destination==='matrix')||items.find(item=>!isCollapsedExcluded(item));
+  const state={id:initialItem?.id,sample:null,candidate:'',capture:'',signal:'raw',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
   let filtered=items, listed=[], dialogOpener=null, evidenceOpener=null;
 
   function candidates(item,sid=state.sample){
