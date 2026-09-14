@@ -57,6 +57,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         _backfill_ms1_candidates_with_acquisition,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
     from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter as adapter
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.evidence_facts import (
@@ -73,6 +74,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     from xic_extractor.peak_detection.signal_processing_profile import (
         SignalProcessingProfile,
     )
+    from xic_extractor.peak_detection.traces import trace_from_xic_request
     from xic_extractor.processing_identity import (
         build_processing_request_identity,
         compose_processing_owner_references,
@@ -151,6 +153,29 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         signal_processing_profile=profile,
     )
     assert len(discovery.candidates) == 2
+    legacy_records = tuple(
+        DiscoveryPhysicalFactRecord(
+            work_item=record.work_item,
+            acquired_trace=record.acquired_trace,
+            evaluation=evaluate_physical_peak(
+                prepare_physical_signal(
+                    record.acquired_trace.trace.rt,
+                    record.acquired_trace.trace.intensity,
+                    profile=profile,
+                ),
+                selection_subject_id=record.evaluation.question.selection_subject_id,
+                query_rt_min=record.evaluation.question.query_rt_min,
+                request_context_rt_start_min=(
+                    record.evaluation.question.context_rt_start_min
+                ),
+                request_context_rt_end_min=(
+                    record.evaluation.question.context_rt_end_min
+                ),
+                selection_policy_version="baseline_peak_contains_query_v2",
+            ),
+        )
+        for record in discovery.physical_evaluations
+    )
     old_request = fixture.owners.request
     request = build_processing_request_identity(
         acquisition_sources=old_request.acquisition_sources,
@@ -162,7 +187,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         | {
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile,
-                {r.candidate_id: r.evaluation for r in discovery.physical_evaluations},
+                {r.candidate_id: r.evaluation for r in legacy_records},
             )
         },
     )
@@ -192,7 +217,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=discovery.physical_evaluations,
+        physical_records=legacy_records,
     )
     assessment = result.assessment_input.assessment
     if not shifted_mass:
@@ -209,7 +234,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
     assert len(captures) == 2
-    for record in discovery.physical_evaluations:
+    assert evaluate.call_count == 2
+    assert prepare.call_count == 2
+    for record in legacy_records:
         candidate = next(
             item
             for item in discovery.candidates
@@ -246,12 +273,52 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         )
         assert binding.source_physical_evaluation is record.evaluation
         assert binding.physical_evaluation is capture.physical_evaluation
+        assert (
+            binding.source_physical_evaluation.question.selection_policy_version
+            == "baseline_peak_contains_query_v2"
+        )
+        assert (
+            capture.physical_evaluation.question.selection_policy_version
+            == "baseline_peak_contains_query_v3"
+        )
         assert binding.acquisition_source_id == source.acquisition_source_id
         assert (
             binding.sample_identity_id
             == fixture.sample("S1").identity.sample_identity_id
         )
         states.append(expected.state)
+        replay_binding = replace(
+            binding,
+            query_mz=record.work_item.xic_mz,
+            query_rt_min=record.work_item.xic_rt_min,
+            query_rt_max=record.work_item.xic_rt_max,
+            query_ppm_tol=record.work_item.xic_ppm_tol,
+            physical_evaluation=record.evaluation,
+            source_physical_evaluation=None,
+        )
+        replay_scope = replace(
+            capture.scope,
+            capture_bindings=tuple(
+                replay_binding if item.candidate_id == record.candidate_id else item
+                for item in capture.scope.capture_bindings
+            ),
+        )
+        replay = capture_owner.capture_peak_hypotheses(
+            scope=replay_scope,
+            candidate_id=record.candidate_id,
+            trace=trace_from_xic_request(
+                sample_name=binding.sample_name,
+                request=record.acquired_trace.coordinate.request,
+                xic_trace=record.acquired_trace.trace,
+                source="retained-discovery-physical",
+                acquisition_source_id=binding.acquisition_source_id,
+            ),
+        )
+        assert replay.physical_evaluation == record.evaluation
+        assert (
+            replay.physical_evaluation.question.selection_policy_version
+            == "baseline_peak_contains_query_v2"
+        )
         if expected.state == "unavailable":
             assert capture.selected_hypothesis is None
             continue
@@ -269,8 +336,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert observed.content.integration.rt_apex_min == integration.rt_apex_min
     assert states == (["available"] * 2 if fresh_available else ["unavailable"] * 2)
     assert changed_questions == 2
-    assert evaluate.call_count == 2
-    assert prepare.call_count == 2
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=owners,
         sample=fixture.sample("S1"),
@@ -290,7 +355,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=discovery.physical_evaluations,
+        physical_records=legacy_records,
         _preacquired_traces=batch,
     )
     assert reused.acquisition is batch.acquisition

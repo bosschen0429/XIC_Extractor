@@ -72,11 +72,15 @@ PAIRED_ISTD_MAX_DELTA_MIN = 1.0
 
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
 LEGACY_PHYSICAL_PEAK_SELECTION_POLICY = "closed_segment_contains_query_v1"
-PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v2"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v1"
+LEGACY_PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v2"
+LEGACY_PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v1"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v3"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v2"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
+        LEGACY_PHYSICAL_PEAK_POINT_POLICY,
+        LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }
@@ -780,7 +784,10 @@ def _admissible_physical_segments(
     legacy = selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY
     if legacy != (universe.schema_version == "physical_segment_universe_v1"):
         raise ValueError("physical question crosses boundary policy")
-    if selection_policy_version == PHYSICAL_PEAK_WINDOW_POLICY:
+    if selection_policy_version in {
+        LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
+        PHYSICAL_PEAK_WINDOW_POLICY,
+    }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
         # A group center is a prior for this already acquired bounded context.
@@ -878,6 +885,17 @@ def answer_physical_peak_question(
             if selected.start_index == 0 or selected.end_index == len(prepared.rt):
                 state, reason = "unavailable", "incomplete_peak_context"
                 selected = None
+            elif question.selection_policy_version in {
+                PHYSICAL_PEAK_POINT_POLICY,
+                PHYSICAL_PEAK_WINDOW_POLICY,
+            }:
+                # Smoothing may spread one acquired signal point into a peak.
+                # Support belongs to the selected interval's original XIC;
+                # saved policies retain their original answer semantics.
+                original = prepared.raw[selected.start_index : selected.end_index]
+                if sum(value > 0.0 for value in original) < 2:
+                    state, reason = "unavailable", "insufficient_original_xic_support"
+                    selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer_v1",
         "state": state,

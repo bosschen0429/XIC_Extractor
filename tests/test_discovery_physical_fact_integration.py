@@ -1015,6 +1015,12 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
             "failed",
             "non_monotonic_rt",
         ),
+        (
+            np.linspace(7.0, 8.5, 31),
+            np.asarray([0.0] * 16 + [100.0] + [0.0] * 14),
+            "unavailable",
+            "insufficient_original_xic_support",
+        ),
     ],
 )
 def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
@@ -1046,8 +1052,12 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     )
 
     candidate = result.candidates[0]
-    assert result.physical_evaluations[0].evaluation.state == physical_state
-    assert result.physical_evaluations[0].evaluation.reason == physical_reason
+    evaluation = result.physical_evaluations[0].evaluation
+    assert evaluation.question.selection_policy_version == (
+        "baseline_peak_contains_query_v3"
+    )
+    assert evaluation.state == physical_state
+    assert evaluation.reason == physical_reason
     assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     assert candidate.review_priority == "LOW"
     assert candidate.reason == (

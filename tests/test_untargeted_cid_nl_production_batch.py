@@ -1983,7 +1983,32 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             **(recovery_args | {"signal_processing_profile": None})
         )
     original_intensity = source_raws[paths[0]].intensity
+    recovery_evaluations = []
+    evaluate_recovery = capture_owner.evaluate_physical_peak
+
+    def retain_recovery_evaluation(*args, **kwargs):
+        evaluation = evaluate_recovery(*args, **kwargs)
+        recovery_evaluations.append(evaluation)
+        return evaluation
+
+    monkeypatch.setattr(
+        capture_owner,
+        "evaluate_physical_peak",
+        retain_recovery_evaluation,
+    )
     try:
+        singleton = original_intensity * 0.0
+        singleton[len(singleton) // 2] = float(max(original_intensity))
+        source_raws[paths[0]].intensity = singleton
+        unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+        assert unavailable.assessment.candidate_peaks == ()
+        assert unavailable.assessment.content.method_result == "HOLD"
+        assert unavailable.recovery_input is None
+        assert recovery_evaluations[-1].reason == "insufficient_original_xic_support"
+        assert recovery_evaluations[-1].question.selection_policy_version == (
+            "unique_baseline_peak_in_context_v2"
+        )
+
         source_raws[paths[0]].intensity = original_intensity * 0.0
         unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
         assert unavailable.assessment.candidate_peaks == ()

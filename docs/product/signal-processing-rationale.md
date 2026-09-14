@@ -38,6 +38,13 @@ Gaussian. Raw vendor intensity remains an input to both fixed transforms and is
 retained where required for audit/provenance, but it is not a second covered
 peak answer or compatibility area source.
 
+Fresh physical answers also check original sampling support before exposing
+numeric facts: Gaussian spread cannot create independent acquired evidence.
+The versioned selection policy in
+[`LC-MS/MS evidence rules`](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
+owns that eligibility check; the profile continues to own the quantitative
+signal and its scan-support count.
+
 ## Why Smoothed-Everywhere
 
 ### The noise regime is different from pharma quantitation

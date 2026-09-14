@@ -13,6 +13,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 )
 from xic_extractor.peak_detection.evidence_facts import (
     LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     deserialize_physical_peak_evaluation,
     evaluate_physical_peak,
@@ -34,6 +35,94 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
 
     assert result.state == "unavailable"
     assert result.reason == "incomplete_peak_context"
+    assert result.facts is None
+    assert result.integration is None
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY]
+)
+@pytest.mark.parametrize("positive_points", [1, 2])
+def test_original_xic_support_limits_fresh_physical_answers(
+    policy: str, positive_points: int
+) -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.zeros_like(rt)
+    raw[15 : 15 + positive_points] = 1000.0
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="original-sampling-support",
+        query_rt_min=1.5,
+        selection_policy_version=policy,
+    )
+
+    if positive_points == 1:
+        assert result.state == "unavailable"
+        assert result.reason == "insufficient_original_xic_support"
+        assert result.answer.physical_segment_id is None
+        assert result.facts is None
+        assert result.integration is None
+    else:
+        assert result.state == "available"
+        assert result.facts is not None
+        assert result.facts.area_counts_seconds > 0.0
+
+
+@pytest.mark.parametrize(
+    "policy,query_rt",
+    [
+        ("baseline_peak_contains_query_v2", 1.5),
+        ("unique_baseline_peak_in_context_v1", 0.2),
+    ],
+)
+def test_recorded_singleton_policy_replays_without_reinterpretation(
+    policy: str, query_rt: float
+) -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.zeros_like(rt)
+    raw[15] = 1000.0
+    profile = SignalProcessingProfile()
+    recorded = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw, profile=profile),
+        selection_subject_id="recorded-singleton",
+        query_rt_min=query_rt,
+        selection_policy_version=policy,
+    )
+    assert recorded.state == "available"
+    assert recorded.facts is not None
+    assert recorded.facts.scan_support_count > 1
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=recorded
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == recorded
+    assert serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=restored
+    ) == payload
+
+
+@pytest.mark.parametrize(
+    "policy,reason",
+    [
+        (PHYSICAL_PEAK_POINT_POLICY, "insufficient_original_xic_support"),
+        (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
+    ],
+)
+def test_other_peak_support_cannot_rescue_a_singleton_or_resolve_ambiguity(
+    policy: str, reason: str
+) -> None:
+    rt = np.linspace(0.0, 8.0, 81)
+    raw = np.zeros_like(rt)
+    raw[20] = 1000.0
+    raw[58:63] = [100.0, 600.0, 1000.0, 600.0, 100.0]
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="two-local-peaks",
+        query_rt_min=2.0,
+        selection_policy_version=policy,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == reason
     assert result.facts is None
     assert result.integration is None
 
