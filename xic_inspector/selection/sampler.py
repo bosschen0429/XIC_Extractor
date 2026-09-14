@@ -58,7 +58,7 @@ def sample_cross_sample_sha256_v2(
         STRATA_ORDER.index(key[2]),
     ))
     queues = {key: deque(sorted(buckets[key], key=rank)) for key in keys}
-    selected = []
+    selected: list[CanonicalItem] = []
     for candidate_phase in (False, True):
         active = [key for key in keys if (key[0] == "candidate") == candidate_phase]
         while active and len(selected) < limit:
