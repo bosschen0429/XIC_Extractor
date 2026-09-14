@@ -1065,7 +1065,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     candidate = result.candidates[0]
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
-        "baseline_peak_contains_query_v4"
+        "baseline_peak_contains_query_v5"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason
@@ -1091,6 +1091,51 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         "ms1_feature_nl_rescued",
         "rejected_noise_or_outside_rt",
     }
+
+
+def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
+    tmp_path: Path,
+) -> None:
+    from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
+
+    rt, intensity = _context_sensitive_trace()
+    rt = 7.8 + (rt[:-1] - 23.0) * 0.025
+    intensity = intensity[:-1]
+    profile = SignalProcessingProfile(window_points=15)
+    previous = evaluate_physical_peak(
+        prepare_physical_signal(rt, intensity, profile=profile),
+        selection_subject_id="retained-exterior-context",
+        query_rt_min=7.8,
+        selection_policy_version="baseline_peak_contains_query_v4",
+    )
+    assert previous.reason == "incomplete_peak_context"
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-exterior-context")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    raw.rt, raw.intensity = rt, intensity
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+    evaluation = result.physical_evaluations[0].evaluation
+    candidate = result.candidates[0]
+    assert evaluation.state == "available"
+    assert evaluation.facts is not None
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(7.8)
+    assert candidate.ms1_area == evaluation.facts.area_counts_seconds
+    assert rt[0] < evaluation.facts.left_rt_min < 7.8
+    assert 7.8 < evaluation.facts.right_rt_min < rt[-1]
 
 
 @pytest.mark.parametrize("same_question", [True, False])

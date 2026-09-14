@@ -58,11 +58,18 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   unresolved clipped segments remain unavailable. The profile binds the formula;
   the physical question and segment universe bind the selection policy. Persisted
   evaluations replay their recorded policy and retain their exact identity.
-- Current physical selection uses the complete positive peak interval through
-  the first baseline-return samples, bounded by adjacent valleys. Point queries
-  use `baseline_peak_contains_query_v4`; membership and integration share these
-  bounds, including inter-scan peak tails. Group-guided recovery uses
-  `unique_baseline_peak_in_context_v3`: its center locates the bounded search
+- Current physical selection first uses the complete positive peak interval
+  through the first baseline-return samples, bounded by adjacent valleys.
+  Only an interval reaching an acquired edge may use an observed return at
+  0.1% of its apex residual. This alternative must have the same apex, be fully
+  interior, and lie within the original interval. Already complete intervals
+  retain their exact boundaries and values; every original candidate remains
+  in the universe. A still-clipped or unmatched alternative supplies no recovery.
+  This bounded tolerance addresses near-zero bridges caused by context-sensitive
+  baseline estimation; it does not infer an unobserved outer boundary.
+  Point queries use `baseline_peak_contains_query_v5`; membership and integration
+  share the selected bounds, including inter-scan peak tails. Group-guided
+  recovery uses `unique_baseline_peak_in_context_v4`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
   ambiguous and nonnumeric. Both current policies require at least two original
   XIC values strictly greater than zero within the uniquely selected, complete
@@ -73,9 +80,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   independent sampling support or join isolated impulses into acquired
   continuity. A gap elsewhere in the interval does not invalidate an observed
   adjacent pair.
-  This is a necessary lower bound, not sufficient proof of peak quality, S/N,
-  chemical identity, or quantification readiness. It neither changes integration
-  nor removes weak segments to resolve ambiguity. Recorded point-v3/window-v2
+  Original sampling support is a necessary lower bound, not sufficient proof of
+  peak quality, S/N, chemical identity, or quantification readiness. It neither
+  changes integration nor removes weak segments to resolve ambiguity. Fresh
+  policies use segment-universe-v3; questions cannot cross boundary-policy
+  families. Recorded point-v4/window-v3 receipts retain exact-zero returns and
+  the adjacency requirement with segment-universe-v2. Recorded point-v3/window-v2
   receipts retain the minimum-two-positive-points rule without the adjacency
   requirement. Recorded point-v2/window-v1 receipts replay without either
   original-support rule. Legacy

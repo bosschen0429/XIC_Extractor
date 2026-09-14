@@ -279,7 +279,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         )
         assert (
             capture.physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query_v4"
+            == "baseline_peak_contains_query_v5"
         )
         assert binding.acquisition_source_id == source.acquisition_source_id
         assert (

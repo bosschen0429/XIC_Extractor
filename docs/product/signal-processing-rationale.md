@@ -33,6 +33,17 @@ The physical baseline cannot be negative: extrapolated negative background
 must not create positive peak signal. A selected interval reaching an acquired
 trace edge lacks observed boundary context and has no numeric physical answer.
 
+For fresh selection, an edge-reaching interval can instead use a fully observed
+return at 0.1% of its apex residual, with the return samples retained. This
+alternative must keep the same apex and lie within the original interval;
+both ends must be inside the acquired trace. Already complete intervals and
+their values remain exact, and no candidate is dropped to resolve ambiguity.
+The bounded tolerance prevents a small context-dependent AsLS change near zero
+from necessarily joining a returned peak to an incomplete neighboring lobe.
+It preserves the Gaussian trace and makes the stability/quantitation tradeoff
+explicit in the versioned selection policy. A context window can still contain
+a different candidate population; this is not a guarantee of window invariance.
+
 AsLS estimates background; it is not a smoothing method exposed alongside
 Gaussian. Raw vendor intensity remains an input to both fixed transforms and is
 retained where required for audit/provenance, but it is not a second covered

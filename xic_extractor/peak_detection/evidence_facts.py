@@ -76,8 +76,10 @@ LEGACY_PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v2"
 LEGACY_PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v1"
 LEGACY_ORIGINAL_SUPPORT_POINT_POLICY = "baseline_peak_contains_query_v3"
 LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY = "unique_baseline_peak_in_context_v2"
-PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v4"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v3"
+LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY = "baseline_peak_contains_query_v4"
+LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY = "unique_baseline_peak_in_context_v3"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v5"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v4"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
@@ -85,10 +87,13 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
         LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
         LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
+        LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
+        LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }
 )
+_PHYSICAL_EDGE_RETURN_FRACTION = 0.001
 PhysicalPeakOperation = Literal[
     "trace_evaluation",
     "asls_baseline",
@@ -575,6 +580,17 @@ def validate_prepared_signal_identity(projection: PreparedSignalProjection) -> N
         raise ValueError("prepared_signal_id does not match owner content")
 
 
+def _physical_boundary_universe_schema(selection_policy_version: str) -> str:
+    if selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY:
+        return "physical_segment_universe_v1"
+    if selection_policy_version in {
+        PHYSICAL_PEAK_POINT_POLICY,
+        PHYSICAL_PEAK_WINDOW_POLICY,
+    }:
+        return "physical_segment_universe_v3"
+    return "physical_segment_universe_v2"
+
+
 def enumerate_physical_segment_universe(
     prepared_result: PreparedSignalResult,
     *,
@@ -588,9 +604,7 @@ def enumerate_physical_segment_universe(
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     legacy = selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY
-    universe_schema = (
-        "physical_segment_universe_v1" if legacy else "physical_segment_universe_v2"
-    )
+    universe_schema = _physical_boundary_universe_schema(selection_policy_version)
     context_start, context_end = _physical_owner_context(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
@@ -603,24 +617,61 @@ def enumerate_physical_segment_universe(
     if state == "available" and prepared is not None:
         rt = np.asarray(prepared.rt, dtype=float)
         signal = np.asarray(prepared.positive_signal, dtype=float)
+        zero_baseline = np.zeros_like(signal)
+        segment_policy = ChromPeakSegmentPolicy(
+            morphology_trace_method="canonical_signal",
+            morphology_trace_window_points=prepared.profile.window_points,
+            baseline_return_fraction=0.02 if legacy else 0.0,
+            baseline_return_min_residual=1.0 if legacy else 0.0,
+            include_baseline_return_samples=not legacy,
+        )
         enumeration = enumerate_chrom_peak_segments(
             rt,
             signal,
-            np.zeros_like(signal),
+            zero_baseline,
             quantitation_context_rt_start=context_start,
             quantitation_context_rt_end=context_end,
-            policy=ChromPeakSegmentPolicy(
-                morphology_trace_method="canonical_signal",
-                morphology_trace_window_points=prepared.profile.window_points,
-                baseline_return_fraction=0.02 if legacy else 0.0,
-                baseline_return_min_residual=1.0 if legacy else 0.0,
-                include_baseline_return_samples=not legacy,
-            ),
+            policy=segment_policy,
         )
         if enumeration.status == "OK":
+            segments = enumeration.segments
+            if universe_schema == "physical_segment_universe_v3" and any(
+                s.interval.start_index == 0 or s.interval.end_index == len(rt)
+                for s in segments
+            ):
+                # Context-dependent baseline estimates can bridge a nearly
+                # returned peak to an acquired edge. Only recover a fully
+                # observed return; complete segments keep their exact values.
+                near_baseline = enumerate_chrom_peak_segments(
+                    rt,
+                    signal,
+                    zero_baseline,
+                    quantitation_context_rt_start=context_start,
+                    quantitation_context_rt_end=context_end,
+                    policy=replace(
+                        segment_policy,
+                        baseline_return_fraction=_PHYSICAL_EDGE_RETURN_FRACTION,
+                    ),
+                )
+                alternatives = {s.apex_index: s for s in near_baseline.segments}
+                recovered = []
+                for segment in segments:
+                    alternative = alternatives.get(segment.apex_index)
+                    interval = segment.interval
+                    if (
+                        (interval.start_index == 0 or interval.end_index == len(rt))
+                        and alternative is not None
+                        and 0 < alternative.interval.start_index
+                        and alternative.interval.end_index < len(rt)
+                        and interval.start_index <= alternative.interval.start_index
+                        and alternative.interval.end_index <= interval.end_index
+                    ):
+                        segment = alternative
+                    recovered.append(segment)
+                segments = tuple(recovered)
             physical_segments = tuple(
                 _physical_segment_from_chrom(segment)
-                for segment in enumeration.segments
+                for segment in segments
             )
             if len(physical_segments) > prepared.profile.segment_universe_limit:
                 state = "unavailable"
@@ -687,6 +738,7 @@ def validate_physical_segment_universe_identity(
     if universe.schema_version not in {
         "physical_segment_universe_v1",
         "physical_segment_universe_v2",
+        "physical_segment_universe_v3",
     }:
         raise ValueError("unsupported physical segment universe schema")
     if universe.state not in {"available", "unavailable", "failed"}:
@@ -785,12 +837,14 @@ def _admissible_physical_segments(
 ) -> tuple[str, ...]:
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
-    legacy = selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY
-    if legacy != (universe.schema_version == "physical_segment_universe_v1"):
+    if universe.schema_version != _physical_boundary_universe_schema(
+        selection_policy_version
+    ):
         raise ValueError("physical question crosses boundary policy")
     if selection_policy_version in {
         LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
         LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
+        LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
@@ -893,6 +947,8 @@ def answer_physical_peak_question(
             elif question.selection_policy_version in {
                 LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
                 LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
+                LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
+                LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
                 PHYSICAL_PEAK_POINT_POLICY,
                 PHYSICAL_PEAK_WINDOW_POLICY,
             }:
@@ -904,6 +960,8 @@ def answer_physical_peak_question(
                     state, reason = "unavailable", "insufficient_original_xic_support"
                     selected = None
                 elif question.selection_policy_version in {
+                    LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
+                    LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
                 } and not any(

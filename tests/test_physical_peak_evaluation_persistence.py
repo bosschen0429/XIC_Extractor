@@ -16,13 +16,128 @@ from xic_extractor.peak_detection.evidence_facts import (
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     deserialize_physical_peak_evaluation,
+    enumerate_physical_segment_universe,
     evaluate_physical_peak,
+    mint_physical_peak_question,
     prepare_physical_signal,
     serialize_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+
+
+def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
+    # Scaled observed XIC with scan-ordinal RT: removing one exterior scan
+    # changes the AsLS valley sign while the retained Gaussian peak is exact.
+    raw = np.asarray(
+        [
+            236.132, 164.179, 104.242, 84.744, 131.893, 59.936, 55.567, 29.262,
+            33.487, 27.028, 20.902, 16.914, 23.171, 19.101, 11.874, 14.134,
+            30.926, 117.955, 378.598, 1206.0, 3363.568, 7394.956, 10749.463,
+            12201.848, 11247.332, 7386.286, 4304.834, 2474.821, 1514.42,
+            1122.02, 913.297, 694.172, 528.272, 422.653, 387.785, 328.499,
+            291.29, 249.678, 200.976, 190.326, 144.765, 163.245, 164.729,
+            227.957, 399.121, 895.663, 2136.916, 4325.4,
+        ]
+    )
+    return np.arange(len(raw), dtype=float), raw
+
+
+def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -> None:
+    rt, raw = _context_sensitive_trace()
+    full_signal = prepare_physical_signal(rt, raw)
+    cropped_signal = prepare_physical_signal(rt[:-1], raw[:-1])
+    full = evaluate_physical_peak(
+        full_signal, selection_subject_id="exterior-context", query_rt_min=23.0
+    )
+    assert full.state == "available" and full.facts is not None
+    selected = next(
+        s for s in full.segment_universe.segments
+        if s.physical_segment_id == full.facts.physical_segment_id
+    )
+    assert selected.end_index + 7 <= len(rt) - 1
+    assert full_signal.prepared is not None and cropped_signal.prepared is not None
+    assert (
+        full_signal.prepared.smoothed[selected.start_index:selected.end_index]
+        == cropped_signal.prepared.smoothed[selected.start_index:selected.end_index]
+    )
+
+    cropped = evaluate_physical_peak(
+        cropped_signal, selection_subject_id="exterior-context", query_rt_min=23.0
+    )
+    assert cropped.state == "available"
+    assert cropped.facts is not None and cropped.integration is not None
+    assert cropped.facts.apex_rt_min == full.facts.apex_rt_min
+    assert (
+        rt[0] < cropped.facts.left_rt_min < 23.0 < cropped.facts.right_rt_min < rt[-2]
+    )
+
+
+@pytest.mark.parametrize(
+    "policy", ["baseline_peak_contains_query_v4", "unique_baseline_peak_in_context_v3"]
+)
+def test_recorded_zero_return_policy_replays_without_edge_recovery(policy: str) -> None:
+    rt, raw = _context_sensitive_trace()
+    rt, raw = rt[:-1], raw[:-1]
+    profile = SignalProcessingProfile()
+    recorded = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="recorded-zero-return",
+        query_rt_min=23.0,
+        selection_policy_version=policy,
+    )
+    assert recorded.state == "unavailable"
+    assert recorded.reason == "incomplete_peak_context"
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=recorded
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == recorded
+    assert serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=restored
+    ) == payload
+
+
+def test_complete_peak_values_are_unchanged_by_edge_recovery() -> None:
+    rt, raw = _context_sensitive_trace()
+    prepared = prepare_physical_signal(rt, raw)
+    recorded = evaluate_physical_peak(
+        prepared, selection_subject_id="complete-context", query_rt_min=23.0,
+        selection_policy_version="baseline_peak_contains_query_v4",
+    )
+    fresh = evaluate_physical_peak(
+        prepared, selection_subject_id="complete-context", query_rt_min=23.0
+    )
+    assert recorded.state == fresh.state == "available"
+    assert recorded.facts is not None and fresh.facts is not None
+    assert fresh.facts.physical_segment_id == recorded.facts.physical_segment_id
+    assert (
+        fresh.facts.relative_shape_content_hash
+        == recorded.facts.relative_shape_content_hash
+    )
+    assert fresh.facts.scan_support_count == recorded.facts.scan_support_count
+    assert fresh.integration == recorded.integration
+
+
+@pytest.mark.parametrize("fresh_universe", [False, True])
+def test_point_question_rejects_a_different_boundary_policy_family(
+    fresh_universe: bool,
+) -> None:
+    rt, raw = _context_sensitive_trace()
+    prepared = prepare_physical_signal(rt, raw)
+    old_policy = "baseline_peak_contains_query_v4"
+    universe_policy = PHYSICAL_PEAK_POINT_POLICY if fresh_universe else old_policy
+    query_policy = old_policy if fresh_universe else PHYSICAL_PEAK_POINT_POLICY
+    universe = enumerate_physical_segment_universe(
+        prepared, selection_policy_version=universe_policy
+    )
+    with pytest.raises(ValueError, match="crosses boundary policy"):
+        mint_physical_peak_question(
+            prepared.projection, universe,
+            selection_subject_id="cross-boundary-policy", query_rt_min=23.0,
+            selection_policy_version=query_policy,
+        )
 
 
 def test_truncated_physical_peak_has_no_numeric_facts() -> None:
