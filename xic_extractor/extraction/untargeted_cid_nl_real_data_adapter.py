@@ -288,19 +288,35 @@ class UntargetedCidNlRecoveryTraceBatch:
 class _UntargetedRealDataWorkObserver:
     """Retain already-minted facts so runtime failure can quarantine them."""
 
-    __slots__ = ("_artifacts", "_processing_owners", "acquisition")
+    __slots__ = (
+        "_artifacts",
+        "_processing_owners",
+        "initial_acquisition",
+        "recovery_acquisition",
+    )
 
     def __init__(self, processing_owners: ProcessingOwnerReferences) -> None:
         self._processing_owners = processing_owners
-        self.acquisition: TraceAcquisitionBatch | None = None
+        self.initial_acquisition: TraceAcquisitionBatch | None = None
+        self.recovery_acquisition: TraceAcquisitionBatch | None = None
         self._artifacts: dict[str, EvidenceArtifactRef] = {}
 
-    def record_acquisition(self, acquisition: TraceAcquisitionBatch) -> None:
-        if self.acquisition is not None and self.acquisition is not acquisition:
+    @property
+    def acquisition(self) -> TraceAcquisitionBatch | None:
+        return self.recovery_acquisition or self.initial_acquisition
+
+    def record_acquisition(
+        self, acquisition: TraceAcquisitionBatch, *, recovery: bool = False
+    ) -> None:
+        observed = self.recovery_acquisition if recovery else self.initial_acquisition
+        if observed is not None and observed is not acquisition:
             raise UntargetedCidNlRealDataAdapterError(
-                "one bounded work unit cannot replace its observed acquisition"
+                "one acquisition phase cannot replace its observed acquisition"
             )
-        self.acquisition = acquisition
+        if recovery:
+            self.recovery_acquisition = acquisition
+        else:
+            self.initial_acquisition = acquisition
 
     def record_artifact(self, artifact: EvidenceArtifactRef) -> None:
         attempt = self._processing_owners.attempt
@@ -960,7 +976,7 @@ def recover_untargeted_cid_nl_sample_subject(
             request=request,
         )
     if _observer is not None:
-        _observer.record_acquisition(acquisition)
+        _observer.record_acquisition(acquisition, recovery=True)
     observations: tuple[PeakObservationRef, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
     if signal_processing_profile is not None:

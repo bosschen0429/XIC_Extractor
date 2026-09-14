@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -13,6 +15,7 @@ from tests.test_targeted_real_data_adapter import (
     _settings,
 )
 from tests.test_untargeted_cid_nl_real_data_runtime import (
+    _assert_partition_matches_runtime,
     _discovery_receipts,
     _install_runtime_raw,
     _install_runtime_raws,
@@ -24,8 +27,10 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     build_untargeted_cid_nl_real_data_context,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+    CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlRealDataRuntimeJob,
     execute_untargeted_cid_nl_real_data_runtime,
+    execute_untargeted_cid_nl_runtime_partition,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -143,9 +148,11 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
     assert vendor_raw.chromatogram_request_counts == [2]
 
 
+@pytest.mark.parametrize("initial_trace_without_peak", [False, True])
 def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     tmp_path: Path,
     monkeypatch,
+    initial_trace_without_peak: bool,
 ) -> None:
     stems = ("S1", "S2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -167,6 +174,29 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         candidates_by_sample[raw_path.stem] = candidates
     source_raws[raw_paths[2]] = _FakeRaw((7.98,))
     candidates_by_sample["Missing"] = ()
+    if initial_trace_without_peak:
+        source_raw, candidates = _nearby_subject_candidates(
+            raw_paths[2], settings=settings, peak_config=peak_config
+        )
+        source_raws[raw_paths[2]] = source_raw
+        candidates_by_sample["Missing"] = candidates
+        from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter
+
+        acquire_peaks = untargeted_cid_nl_real_data_adapter._reacquire_peak_observations
+
+        def capture_without_peak(**kwargs):
+            acquisition, observations, captures = acquire_peaks(**kwargs)
+            if kwargs["sample"].metadata.raw_stem == "Missing":
+                # Physical capture may reject every peak after acquiring the XIC.
+                # Exercise that runtime boundary with the real acquisition retained.
+                return acquisition, (), captures
+            return acquisition, observations, captures
+
+        monkeypatch.setattr(
+            untargeted_cid_nl_real_data_adapter,
+            "_reacquire_peak_observations",
+            capture_without_peak,
+        )
     subjects = _subjects(
         candidates_by_sample["S1"],
         settings.precursor_mz_tolerance_ppm,
@@ -233,6 +263,40 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         for subject in subjects
         for sample in context.samples
     )
+    if initial_trace_without_peak:
+        partition = execute_untargeted_cid_nl_runtime_partition(
+            jobs,
+            partition_key="initial-and-recovery",
+            alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        )
+        assert partition.succeeded, tuple(
+            item.failure_detail.message
+            for item in partition.worker_batch.settlements
+            if item.failure_detail is not None
+        )
+        missing = tuple(
+            item
+            for item in partition.sample_results
+            if item.job.sample.metadata.raw_stem == "Missing"
+        )
+        assert len(missing) == 2
+        assert len(partition.acquisitions) == 4
+        assert len({item.work_unit_key for item in partition.acquisitions}) == 4
+        for item in missing:
+            initial = item.adapter_result.acquisition
+            assert initial is not None
+            assert item.adapter_result.assessment_input.assessment.candidate_peaks == ()
+            recovery = item.recovery_attempt
+            assert recovery is not None
+            assert recovery.acquisition is not initial
+            assert all(
+                any(receipt.acquisition is batch for receipt in partition.acquisitions)
+                for batch in (initial, recovery.acquisition)
+            )
+        assert [
+            vendor.chromatogram_request_counts for vendor in opened[raw_paths[2]]
+        ] == [[2], [2]]
+        return
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
@@ -282,6 +346,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     )
     assert sum(":initial:" in key for key in resource_keys) == 2
     assert sum(":recovery:" in key for key in resource_keys) == 3
+    _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def _nearby_subject_candidates(
