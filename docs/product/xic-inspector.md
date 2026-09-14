@@ -77,10 +77,17 @@ show observed coverage and recorded initial/final membership; each sample
 distinguishes initial discovery support, reacquired support, and method recovery
 with its exact evidence references. A physical direct-observation cell is not
 by itself evidence of initial discovery support.
-Recorded edges can link to a distinct peer group or row for separation review.
+Recorded initial comparisons can link to a distinct peer group or row.
 Each selected primary embeds curves for at most one exact peer and exposes the
 total peer count and queryable references. Peer context does not increase the
 primary selected count or create a scientific relationship.
+Within a final group, optional `internal_pair_support` shows retained initial
+edges whose exact member endpoints both belong to that group. Eligible edges
+are direct support; review-only edges are not direct support. The panel shows
+sample labels, recorded reasons, scores, and available raw/corrected RT deltas.
+Each edge remains one record even when it links more than two candidate keys.
+Direct edges may connect through another member; they do not imply every pair
+agrees. Initial comparison records are not a trace of the final split decision.
 The workbench links the sample result, candidate, retained capture, integration
 facts, and available decision records. Viewing a sample scopes its candidate
 choices and peak details. An explicit return beside the sample heading restores
