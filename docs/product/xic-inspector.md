@@ -58,15 +58,22 @@ Source adapters supply readable titles and explanations of recorded outcomes.
 The item list keeps a concise outcome title, status, and readable reason so that
 users can scan results before opening an item.
 The workbench links the sample result, candidate, retained capture, integration
-facts, and available decision records. Focusing a sample scopes its candidate
-choices and peak details. Viewing a candidate does not change the recorded
-decision. Integration boundaries, peak time, and raw-count area are shown with
-the selected capture; that area does not replace the final quantitative value.
+facts, and available decision records. Viewing a sample scopes its candidate
+choices and peak details. An explicit return beside the sample heading restores
+the all-sample view without resetting the item's display settings. Viewing a
+candidate does not change the recorded decision. Integration boundaries, peak
+time, and raw-count area are shown with the selected capture; that area does
+not replace the final quantitative value.
 
-Readable evidence records describe the supplied facts and their explicit links.
-Exact identifiers remain available on demand for traceability. A link opens a
-record only when its content is embedded in this report; an external or missing
-reference remains identifiable without claiming its content is available offline.
+Readable evidence records first show their supplied summary and linked records.
+Full fields and exact identifiers remain available together on demand; missing
+summaries do not become generic filler. Curve provenance and quantitative
+decision evidence have distinct entry labels. Closing evidence returns to its
+opening control. A link opens a record only when its content is embedded in
+this report; an external or missing reference remains identifiable without
+claiming its content is available offline. CID-NL decision and curve records
+link to related method assessments and initial edges through exact sample and
+candidate keys; those links do not establish formal quantification adoption.
 The report does not infer a decision reason or a candidate relationship from a
 display name, nearby mass, or nearby retention time.
 
@@ -77,7 +84,8 @@ source does not provide them. The aligned section explains this limitation
 while the raw plot remains available. The integration readout identifies its
 raw-time coordinates. Precursor m/z uses four fixed decimal places, primary RT uses two,
 and detailed peak times use three. NULL, numeric zero, a missing single result,
-and unavailable curve evidence remain distinct.
+and unavailable curve evidence remain distinct within each item's sample
+results. These sample states do not require separate review items.
 
 Report generation writes through a temporary file and replaces the requested
 output only after successful completion. Cancellation or failure leaves an

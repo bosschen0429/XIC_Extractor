@@ -920,6 +920,125 @@ def test_structured_external_evidence_refs_remain_technical_without_fake_links(
     }
 
 
+def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        connection.execute(
+            "INSERT INTO candidates VALUES (?, ?, ?)",
+            ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
+        )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "cell_decisions",
+                "cd-02",
+                json.dumps(
+                    {
+                        "row_key_id": "row-01",
+                        "group_hypothesis_id": "G1",
+                        "canonical_sample_identity_id": "S2",
+                        "value": 700.0,
+                        "variant": "numeric",
+                    }
+                ),
+            ),
+        )
+        for kind, ref in (
+            ("rows", "row-01"),
+            ("final_groups", "G1"),
+            ("cell_decisions", "cd-02"),
+        ):
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, ref)
+            )
+        for ref, sample_id, reason_code in (
+            (
+                "method-s1",
+                "S1",
+                "unique_support_within_declared_candidate_universe",
+            ),
+            ("method-s2", "S2", "another_recorded_reason"),
+        ):
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (
+                    "method_assessments",
+                    ref,
+                    json.dumps(
+                        {
+                            "canonical_sample_identity_id": sample_id,
+                            "method_result": "SUPPORT",
+                            "reason_codes": [reason_code],
+                            "technical_state": "evaluated",
+                        }
+                    ),
+                ),
+            )
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)",
+                (
+                    "C1" if sample_id == "S1" else "C2",
+                    sample_id,
+                    "method_assessments",
+                    ref,
+                ),
+            )
+        for ref, links in (
+            ("edge-shared", (("C1", "S1"), ("C2", "S2"))),
+            ("edge-s2-only", (("C2", "S2"),)),
+        ):
+            connection.execute(
+                "INSERT INTO records VALUES (?, ?, ?)",
+                (
+                    "initial_edges",
+                    ref,
+                    json.dumps(
+                        {
+                            "disposition": "excluded",
+                            "initial_evidence": {
+                                "decision": "blocked_edge",
+                                "failure_reason": "product_mz_out_of_tolerance",
+                                "reason": "blocked: product_mz_out_of_tolerance",
+                                "score": 0,
+                            },
+                        }
+                    ),
+                ),
+            )
+            for candidate_id, sample_id in links:
+                connection.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?)",
+                    (candidate_id, sample_id, "initial_edges", ref),
+                )
+
+    output = tmp_path / "related-records.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    samples = {sample["sample_id"]: sample for sample in item["samples"]}
+    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+
+    s1_decision = readable[samples["S1"]["decision_refs"][0]]
+    s1_link_refs = {link["ref"] for link in s1_decision["links"]}
+    assert {"method-s1", "edge-shared"} <= s1_link_refs
+    assert {"method-s2", "edge-s2-only"}.isdisjoint(s1_link_refs)
+    s2_decision = readable[samples["S2"]["decision_refs"][0]]
+    s2_link_refs = {link["ref"] for link in s2_decision["links"]}
+    assert {"method-s2", "edge-shared", "edge-s2-only"} <= s2_link_refs
+    assert "method-s1" not in s2_link_refs
+
+    curve_ref = item["curves"][0]["evidence_ref"]
+    curve_links = {link["ref"] for link in readable[curve_ref]["links"]}
+    assert {"method-s1", "edge-shared"} <= curve_links
+    assert {"method-s2", "edge-s2-only"}.isdisjoint(curve_links)
+
+    assert "SUPPORT" in readable["method-s1"]["summary"]
+    assert "在已宣告候選範圍內具有唯一支持" in readable["method-s1"]["summary"]
+    assert "不代表正式定量採用" in readable["method-s1"]["summary"]
+    assert "產品離子 m/z 超出容許範圍" in readable["edge-shared"]["summary"]
+    assert "score 0" in readable["edge-shared"]["summary"]
+    assert "不代表正式定量採用" in readable["edge-shared"]["summary"]
+
+
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
     import zlib
 

@@ -46,6 +46,11 @@ _FIELD_LABELS = {
     "disposition": "記錄狀態",
     "destination": "輸出去向",
     "method_result": "方法結果",
+    "reason_codes": "方法判定理由",
+    "technical_state": "技術狀態",
+    "decision": "初始判定",
+    "failure_reason": "未建立關聯理由",
+    "score": "初始關聯分數",
     "neutral_loss_da": "中性丟失 (Da)",
     "precursor_mz": "前驅離子 m/z",
     "rt_apex_min": "峰頂 RT (min)",
@@ -80,6 +85,13 @@ _STAGE_LABELS = {
     "initial_capture": "首次擷取曲線",
     "reacquired_capture": "再次擷取曲線",
     "recovery_observation": "方法補取曲線",
+}
+
+_REASON_LABELS = {
+    "unique_support_within_declared_candidate_universe": (
+        "在已宣告候選範圍內具有唯一支持"
+    ),
+    "product_mz_out_of_tolerance": "產品離子 m/z 超出容許範圍",
 }
 
 
@@ -605,7 +617,54 @@ class CidNlSource:
                 existing["technical_refs"] + curve_record["technical_refs"]
             )
             readable[index] = curve_record
+        self._add_related_links(item, curves, readable)
         return readable
+
+    def _add_related_links(
+        self,
+        item: CanonicalItem,
+        curves: list[dict[str, Any]],
+        readable: list[dict[str, Any]],
+    ) -> None:
+        records_by_ref = {record["ref"]: record for record in item.details["records"]}
+        targets = [
+            (record, self._record_link_keys(item, record))
+            for record in item.details["records"]
+            if record["kind"] in {"method_assessments", "initial_edges"}
+        ]
+        curves_by_ref = {
+            curve["evidence_ref"]: curve
+            for curve in curves
+            if curve.get("evidence_ref") is not None
+        }
+        for presentation in readable:
+            ref = presentation["ref"]
+            record = records_by_ref.get(ref)
+            if ref in curves_by_ref:
+                curve = curves_by_ref[ref]
+                sample_id = curve.get("sample_id")
+                source_keys = {
+                    (candidate_id, sample_id)
+                    for candidate_id in curve.get("candidate_ids", [])
+                    if sample_id is not None
+                }
+            elif record is not None and record["kind"] == "cell_decisions":
+                source_keys = self._record_link_keys(item, record)
+            else:
+                continue
+            related = []
+            for target, target_keys in targets:
+                if not source_keys.intersection(target_keys):
+                    continue
+                label = (
+                    "查看相關方法判定（不代表正式定量採用）"
+                    if target["kind"] == "method_assessments"
+                    else "查看相關初始配對（不代表正式定量採用）"
+                )
+                related.append({"ref": target["ref"], "label": label})
+            presentation["links"] = self._dedupe_entries(
+                presentation["links"] + related
+            )
 
     def _readable_record(
         self,
@@ -636,16 +695,8 @@ class CidNlSource:
     def _record_scope(
         self, item: CanonicalItem, record: dict[str, Any]
     ) -> tuple[list[str], list[str]]:
-        item_keys = {
-            (witness.candidate_id, witness.canonical_sample_identity_id)
-            for witness in item.witnesses
-        }
-        linked_keys = {
-            key
-            for key in item_keys
-            if (record["kind"], record["ref"])
-            in self.links.get(key, set())
-        }
+        item_keys = self._item_keys(item)
+        linked_keys = self._record_link_keys(item, record)
         facts = record["facts"]
         recorded_sample = facts.get(
             "canonical_sample_identity_id", facts.get("sample_id")
@@ -664,6 +715,29 @@ class CidNlSource:
         ):
             candidate_ids.add(recorded_candidate)
         return sample_ids, sorted(candidate_ids)
+
+    @staticmethod
+    def _item_keys(item: CanonicalItem) -> set[tuple[str, str]]:
+        return {
+            (witness.candidate_id, witness.canonical_sample_identity_id)
+            for witness in item.witnesses
+        }
+
+    def _record_link_keys(
+        self, item: CanonicalItem, record: dict[str, Any]
+    ) -> set[tuple[str, str]]:
+        linked_keys = {
+            key
+            for key in self._item_keys(item)
+            if (record["kind"], record["ref"])
+            in self.links.get(key, set())
+        }
+        recorded_sample = record["facts"].get(
+            "canonical_sample_identity_id", record["facts"].get("sample_id")
+        )
+        if recorded_sample is not None:
+            linked_keys = {key for key in linked_keys if key[1] == recorded_sample}
+        return linked_keys
 
     @staticmethod
     def _sample_name(item: CanonicalItem, sample_id: str) -> str:
@@ -733,6 +807,58 @@ class CidNlSource:
             return f"來源保留 {count} 筆終端觀察。"
         if kind == "method_subjects" and facts.get("neutral_loss_da") is not None:
             return f"此方法紀錄的中性丟失為 {facts['neutral_loss_da']} Da。"
+        if kind == "method_assessments":
+            result = facts.get("method_result")
+            reasons = facts.get("reason_codes")
+            reason_values = (
+                [reason for reason in reasons if isinstance(reason, str)]
+                if isinstance(reasons, list)
+                else []
+            )
+            readable_reasons = (
+                "、".join(
+                    _REASON_LABELS.get(reason, reason) for reason in reason_values
+                )
+                if reason_values
+                else None
+            )
+            result_text = (
+                f"方法結果為「{result}」"
+                if result not in (None, "")
+                else "來源未記錄方法結果"
+            )
+            reason_text = (
+                f"；理由：{readable_reasons}" if readable_reasons else "；未記錄理由"
+            )
+            return (
+                f"{result_text}{reason_text}。"
+                "此相關方法判定不代表正式定量採用。"
+            )
+        if kind == "initial_edges":
+            evidence = facts.get("initial_evidence")
+            evidence = evidence if isinstance(evidence, dict) else {}
+            disposition = facts.get("disposition")
+            decision = evidence.get("decision")
+            failure = evidence.get(
+                "failure_reason", evidence.get("failure", evidence.get("reason"))
+            )
+            score = evidence.get("score")
+            parts = []
+            if disposition not in (None, ""):
+                parts.append(f"記錄狀態為「{disposition}」")
+            if decision not in (None, ""):
+                parts.append(f"初始判定為「{decision}」")
+            if failure not in (None, ""):
+                readable_failure = (
+                    _REASON_LABELS.get(failure, failure)
+                    if isinstance(failure, str)
+                    else str(failure)
+                )
+                parts.append(f"理由：{readable_failure}")
+            if score is not None:
+                parts.append(f"score {self._format_measurement(score)}")
+            detail = "；".join(parts) if parts else "來源未記錄初始配對判定"
+            return f"{detail}。此相關初始配對不代表正式定量採用。"
         scope = []
         if sample_ids:
             scope.append(f"{len(sample_ids)} 個樣本")
@@ -779,6 +905,7 @@ class CidNlSource:
             "reason",
             "disposition",
             "method_result",
+            "technical_state",
             "neutral_loss_da",
             "precursor_mz",
             "rt_apex_min",
@@ -786,6 +913,20 @@ class CidNlSource:
             "kind",
         ):
             add(key, facts.get(key))
+        reason_codes = facts.get("reason_codes")
+        if isinstance(reason_codes, list) and reason_codes:
+            reason_values = [
+                reason for reason in reason_codes if isinstance(reason, str)
+            ]
+            fields.append(
+                {
+                    "label": _FIELD_LABELS["reason_codes"],
+                    "value": "、".join(
+                        _REASON_LABELS.get(reason, reason)
+                        for reason in reason_values
+                    ),
+                }
+            )
         observations = facts.get("observations")
         if isinstance(observations, list):
             fields.append({"label": "終端觀察數", "value": len(observations)})
@@ -801,7 +942,23 @@ class CidNlSource:
                         )
         initial = facts.get("initial_evidence")
         if isinstance(initial, dict):
-            add("reason", initial.get("failure", initial.get("reason")))
+            add("decision", initial.get("decision"))
+            failure = initial.get(
+                "failure_reason", initial.get("failure", initial.get("reason"))
+            )
+            if failure not in (None, ""):
+                readable_failure = (
+                    _REASON_LABELS.get(failure, failure)
+                    if isinstance(failure, str)
+                    else str(failure)
+                )
+                fields.append(
+                    {
+                        "label": _FIELD_LABELS["failure_reason"],
+                        "value": readable_failure,
+                    }
+                )
+            add("score", initial.get("score"))
         return cls._dedupe_entries(fields)
 
     @classmethod
