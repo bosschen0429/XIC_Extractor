@@ -60,18 +60,25 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   evaluations replay their recorded policy and retain their exact identity.
 - Current physical selection uses the complete positive peak interval through
   the first baseline-return samples, bounded by adjacent valleys. Point queries
-  use `baseline_peak_contains_query_v3`; membership and integration share these
+  use `baseline_peak_contains_query_v4`; membership and integration share these
   bounds, including inter-scan peak tails. Group-guided recovery uses
-  `unique_baseline_peak_in_context_v2`: its center locates the bounded search
+  `unique_baseline_peak_in_context_v3`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
   ambiguous and nonnumeric. Both current policies require at least two original
   XIC values strictly greater than zero within the uniquely selected, complete
   interval. Fewer points give `insufficient_original_xic_support` with no numeric
-  physical facts; Gaussian spread does not supply independent sampling support.
+  physical facts. Those original values must also include at least one adjacent
+  pair strictly greater than zero; otherwise the answer is unavailable with
+  `insufficient_original_xic_continuity`. Gaussian spread cannot supply
+  independent sampling support or join isolated impulses into acquired
+  continuity. A gap elsewhere in the interval does not invalidate an observed
+  adjacent pair.
   This is a necessary lower bound, not sufficient proof of peak quality, S/N,
   chemical identity, or quantification readiness. It neither changes integration
-  nor removes weak segments to resolve ambiguity. Recorded point-v2/window-v1
-  receipts replay without this support rule. Legacy
+  nor removes weak segments to resolve ambiguity. Recorded point-v3/window-v2
+  receipts retain the minimum-two-positive-points rule without the adjacency
+  requirement. Recorded point-v2/window-v1 receipts replay without either
+  original-support rule. Legacy
   `closed_segment_contains_query_v1` receipts retain their original 2%-height
   bounds. Explicit fresh evaluation uses the current policy and new answer
   identity; replay never rewrites a saved answer.

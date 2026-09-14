@@ -39,7 +39,11 @@ retained where required for audit/provenance, but it is not a second covered
 peak answer or compatibility area source.
 
 Fresh physical answers also check original sampling support before exposing
-numeric facts: Gaussian spread cannot create independent acquired evidence.
+numeric facts: Gaussian spread cannot create independent acquired evidence or
+turn disconnected original impulses into continuous acquisition support. The
+selected interval needs at least one adjacent pair of positive original XIC
+values. This does not require every positive sample in the interval to be
+consecutive, and does not change the quantitative trace or peak boundaries.
 The versioned selection policy in
 [`LC-MS/MS evidence rules`](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
 owns that eligibility check; the profile continues to own the quantitative

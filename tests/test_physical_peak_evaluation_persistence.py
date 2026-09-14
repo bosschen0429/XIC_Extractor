@@ -40,10 +40,16 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
 
 
 @pytest.mark.parametrize(
-    "policy", [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY]
+    "policy",
+    [
+        PHYSICAL_PEAK_POINT_POLICY,
+        PHYSICAL_PEAK_WINDOW_POLICY,
+        "baseline_peak_contains_query_v3",
+        "unique_baseline_peak_in_context_v2",
+    ],
 )
 @pytest.mark.parametrize("positive_points", [1, 2])
-def test_original_xic_support_limits_fresh_physical_answers(
+def test_original_xic_support_limits_physical_answers(
     policy: str, positive_points: int
 ) -> None:
     rt = np.linspace(0.0, 3.0, 31)
@@ -66,6 +72,69 @@ def test_original_xic_support_limits_fresh_physical_answers(
         assert result.state == "available"
         assert result.facts is not None
         assert result.facts.area_counts_seconds > 0.0
+
+
+@pytest.mark.parametrize(
+    "policy,recorded_policy,query_rt",
+    [
+        (PHYSICAL_PEAK_POINT_POLICY, "baseline_peak_contains_query_v3", 1.5),
+        (PHYSICAL_PEAK_WINDOW_POLICY, "unique_baseline_peak_in_context_v2", 0.2),
+    ],
+)
+@pytest.mark.parametrize("positions", [(14, 16), (12, 14, 16, 18)])
+def test_discontinuous_original_points_cannot_mint_fresh_physical_facts(
+    policy: str, recorded_policy: str, query_rt: float, positions: tuple[int, ...]
+) -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.zeros_like(rt)
+    raw[list(positions)] = 1000.0
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    recorded = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="isolated-acquired-impulses",
+        query_rt_min=query_rt,
+        selection_policy_version=recorded_policy,
+    )
+    assert recorded.state == "available"
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=recorded
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == recorded
+    assert serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=restored
+    ) == payload
+
+    fresh = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="isolated-acquired-impulses",
+        query_rt_min=query_rt,
+        selection_policy_version=policy,
+    )
+    assert fresh.state == "unavailable"
+    assert fresh.reason == "insufficient_original_xic_continuity"
+    assert fresh.answer.physical_segment_id is None
+    assert fresh.facts is None and fresh.integration is None
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY]
+)
+def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
+    policy: str,
+) -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.zeros_like(rt)
+    raw[[14, 15, 17]] = 1000.0
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="pair-with-a-sampling-gap",
+        query_rt_min=1.5,
+        selection_policy_version=policy,
+    )
+    assert result.state == "available"
+    assert result.facts is not None and result.facts.area_counts_seconds > 0.0
 
 
 @pytest.mark.parametrize(

@@ -1001,25 +1001,35 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
 
 
 @pytest.mark.parametrize(
-    ("rt", "intensity", "physical_state", "physical_reason"),
+    ("rt", "intensity", "physical_state", "physical_reason", "window_points"),
     [
         (
             np.asarray([7.8]),
             np.asarray([10.0]),
             "unavailable",
             "insufficient_points_for_profile",
+            3,
         ),
         (
             np.asarray([7.8, 7.7, 7.9]),
             np.asarray([1.0, 2.0, 1.0]),
             "failed",
             "non_monotonic_rt",
+            3,
         ),
         (
             np.linspace(7.0, 8.5, 31),
             np.asarray([0.0] * 16 + [100.0] + [0.0] * 14),
             "unavailable",
             "insufficient_original_xic_support",
+            3,
+        ),
+        (
+            np.linspace(7.0, 8.5, 31),
+            np.asarray([0.0] * 16 + [100.0, 0.0, 100.0] + [0.0] * 12),
+            "unavailable",
+            "insufficient_original_xic_continuity",
+            15,
         ),
     ],
 )
@@ -1029,6 +1039,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     intensity: np.ndarray,
     physical_state: str,
     physical_reason: str,
+    window_points: int,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1048,16 +1059,18 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
         peak_config=_backfill_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        signal_processing_profile=SignalProcessingProfile(window_points=window_points),
     )
 
     candidate = result.candidates[0]
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
-        "baseline_peak_contains_query_v3"
+        "baseline_peak_contains_query_v4"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason
+    assert evaluation.facts is None
+    assert evaluation.integration is None
     assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     assert candidate.review_priority == "LOW"
     assert candidate.reason == (

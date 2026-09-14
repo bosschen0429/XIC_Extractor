@@ -74,13 +74,17 @@ PhysicalPeakState = Literal["available", "unavailable", "failed"]
 LEGACY_PHYSICAL_PEAK_SELECTION_POLICY = "closed_segment_contains_query_v1"
 LEGACY_PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v2"
 LEGACY_PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v1"
-PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v3"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v2"
+LEGACY_ORIGINAL_SUPPORT_POINT_POLICY = "baseline_peak_contains_query_v3"
+LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY = "unique_baseline_peak_in_context_v2"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v4"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v3"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
         LEGACY_PHYSICAL_PEAK_POINT_POLICY,
         LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
+        LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
+        LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }
@@ -786,6 +790,7 @@ def _admissible_physical_segments(
         raise ValueError("physical question crosses boundary policy")
     if selection_policy_version in {
         LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
+        LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
@@ -886,6 +891,8 @@ def answer_physical_peak_question(
                 state, reason = "unavailable", "incomplete_peak_context"
                 selected = None
             elif question.selection_policy_version in {
+                LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
+                LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
                 PHYSICAL_PEAK_POINT_POLICY,
                 PHYSICAL_PEAK_WINDOW_POLICY,
             }:
@@ -895,6 +902,20 @@ def answer_physical_peak_question(
                 original = prepared.raw[selected.start_index : selected.end_index]
                 if sum(value > 0.0 for value in original) < 2:
                     state, reason = "unavailable", "insufficient_original_xic_support"
+                    selected = None
+                elif question.selection_policy_version in {
+                    PHYSICAL_PEAK_POINT_POLICY,
+                    PHYSICAL_PEAK_WINDOW_POLICY,
+                } and not any(
+                    left > 0.0 and right > 0.0
+                    for left, right in zip(original, original[1:])
+                ):
+                    # Gaussian can bridge separate acquired impulses into one
+                    # segment. A fresh answer needs an original adjacent pair.
+                    state, reason = (
+                        "unavailable",
+                        "insufficient_original_xic_continuity",
+                    )
                     selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer_v1",
