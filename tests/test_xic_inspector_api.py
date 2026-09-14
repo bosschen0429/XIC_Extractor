@@ -305,9 +305,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     scoped_output = tmp_path / "s1-only.html"
     generate_report(
         report,
-        SelectionRequest(
-            strategy="query", group_ids=("G1",), sample_ids=("S1",)
-        ),
+        SelectionRequest(strategy="query", group_ids=("G1",), sample_ids=("S1",)),
         scoped_output,
     )
     scoped_item = _report_data(scoped_output)["items"][0]
@@ -832,6 +830,315 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     assert output.read_bytes() == before
 
 
+@pytest.mark.parametrize(
+    ("capture_kind", "invocation", "expected_kind", "expected_label"),
+    (
+        (
+            "recovery_observation",
+            "untargeted-cid-nl-backfill-recovery:v1",
+            "recovery_support",
+            "方法補取支持",
+        ),
+        (
+            "reacquired_capture",
+            "untargeted-cid-nl-reacquire:v1",
+            "reacquired_support",
+            "重新擷取支持",
+        ),
+        (
+            "initial_capture",
+            "untargeted-cid-nl-real-data:v1",
+            "discovery_support",
+            "初始探索支持",
+        ),
+    ),
+)
+def test_sample_support_origin_uses_exact_method_capture_and_observation(
+    tmp_path, capture_kind, invocation, expected_kind, expected_label
+):
+    import zlib
+
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        original = json.loads(
+            zlib.decompress(
+                connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
+            )
+        )
+        recovery = {
+            **original,
+            "kind": capture_kind,
+        }
+        connection.execute(
+            "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "recovery-curve",
+                "S1",
+                capture_kind,
+                "obs-01",
+                "zlib-json-utf8-v1",
+                zlib.compress(json.dumps(recovery).encode()),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "capture_evidence",
+                "recovery-curve",
+                json.dumps(
+                    {
+                        "payload_id": "recovery-curve",
+                        "sample_id": "S1",
+                        "candidate_id": "C1",
+                        "peak_observation_content_id": "obs-01",
+                        "record_id": "obs-01",
+                        "kind": capture_kind,
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "method_assessments",
+                "recovery-method",
+                json.dumps(
+                    {
+                        "canonical_sample_identity_id": "S1",
+                        "candidate_peak_content_ids": ["obs-01"],
+                        "detector_invocation_id": invocation,
+                        "method_result": "SUPPORT",
+                    }
+                ),
+            ),
+        )
+        for kind, ref in (
+            ("capture_evidence", "recovery-curve"),
+            ("method_assessments", "recovery-method"),
+        ):
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C1", "S1", kind, ref)
+            )
+
+    output = tmp_path / "recovery-origin.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+
+    assert item["details"]["review_summary"]["origin_kinds"] == [expected_kind]
+    assert item["review_summary"] == item["details"]["review_summary"]
+    assert item["samples"][0]["support_origin"] == {
+        "kind": expected_kind,
+        "label": expected_label,
+        "method_refs": ["recovery-method"],
+        "capture_refs": ["recovery-curve"],
+        "observation_refs": ["obs-01"],
+    }
+
+
+def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
+    import zlib
+
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        original = json.loads(
+            zlib.decompress(
+                connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
+            )
+        )
+        for candidate_id, group_id, row_id, observation_id in (
+            ("C2", "G2", "row-02", "obs-02"),
+            ("C3", "G3", "row-03", "obs-03"),
+        ):
+            connection.execute(
+                "INSERT INTO candidates VALUES (?, ?, ?)",
+                (
+                    candidate_id,
+                    "S1",
+                    json.dumps(
+                        {
+                            "candidate_id": candidate_id,
+                            "canonical_sample_identity_id": "S1",
+                            "precursor_mz": 501.0,
+                        }
+                    ),
+                ),
+            )
+            for kind, ref, facts in (
+                (
+                    "rows",
+                    row_id,
+                    {"row_key_id": row_id, "group_hypothesis_id": group_id},
+                ),
+                (
+                    "final_groups",
+                    group_id,
+                    {"group_hypothesis_id": group_id, "disposition": "provisional"},
+                ),
+                (
+                    "terminal_subjects",
+                    f"terminal-{candidate_id}",
+                    {
+                        "observations": [
+                            {
+                                "peak_observation_content_id": observation_id,
+                                "rt_apex_min": 1.0,
+                            }
+                        ]
+                    },
+                ),
+            ):
+                connection.execute(
+                    "INSERT INTO records VALUES (?, ?, ?)",
+                    (kind, ref, json.dumps(facts)),
+                )
+                connection.execute(
+                    "INSERT INTO links VALUES (?, ?, ?, ?)",
+                    (candidate_id, "S1", kind, ref),
+                )
+            curve = {
+                **original,
+                "candidate_id": candidate_id,
+                "peak_observation_content_id": observation_id,
+            }
+            connection.execute(
+                "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    f"curve-{candidate_id}",
+                    "S1",
+                    "initial_capture",
+                    observation_id,
+                    "zlib-json-utf8-v1",
+                    zlib.compress(json.dumps(curve).encode()),
+                ),
+            )
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?)",
+            (
+                "initial_edges",
+                "edge-c1-c2",
+                json.dumps(
+                    {
+                        "disposition": "excluded",
+                        "initial_evidence": {"decision": "blocked_edge"},
+                    }
+                ),
+            ),
+        )
+        for candidate_id in ("C1", "C2"):
+            connection.execute(
+                "INSERT INTO links VALUES (?, ?, ?, ?)",
+                (candidate_id, "S1", "initial_edges", "edge-c1-c2"),
+            )
+
+    output = tmp_path / "peer.html"
+    result = generate_report(
+        report,
+        SelectionRequest(strategy="query", limit=1, candidate_ids=("C1",)),
+        output,
+    )
+    data = _report_data(output)
+
+    assert result.selected_count == 1
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["review_summary"]["related_group_count"] == 1
+    assert len(item["related_groups"]) == 1
+    peer = item["related_groups"][0]
+    assert peer["group_id"] == "G2"
+    assert peer["edge_refs"] == ["edge-c1-c2"]
+    assert len(peer["curves"]) == 1
+    assert peer["curves"][0]["candidate_ids"] == ["C2"]
+
+
+def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolation(
+    tmp_path,
+):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        summary = json.loads(
+            connection.execute(
+                "SELECT payload FROM metadata WHERE key='summary'"
+            ).fetchone()[0]
+        )
+        summary["known_istd_reference"] = {
+            "calibration": {
+                "schema_version": "known_istd_calibration_v1",
+                "rt_unit": "minute",
+                "interpolation": "piecewise_linear",
+                "extrapolation": "unavailable",
+                "samples": [
+                    {
+                        "sample_stem": "s1",
+                        "knots": [[0.8, 1.6], [1.2, 2.4]],
+                        "domain_rt_min": [0.8, 1.2],
+                        "status": "available",
+                    }
+                ],
+            }
+        }
+        connection.execute(
+            "UPDATE metadata SET payload=? WHERE key='summary'",
+            (json.dumps(summary),),
+        )
+
+    output = tmp_path / "aligned.html"
+    generate_report(report, SelectionRequest(), output)
+    curve = _report_data(output)["items"][0]["curves"][0]
+
+    assert curve["raw_rts"] == [0.8, 0.9, 1.0, 1.1, 1.2]
+    assert curve["aligned_rts"] == pytest.approx([1.6, 1.8, 2.0, 2.2, 2.4])
+    assert curve["aligned_bound_left_rt"] == pytest.approx(1.8)
+    assert curve["aligned_bound_right_rt"] == pytest.approx(2.2)
+    assert curve["aligned_apex_rt"] == pytest.approx(2.0)
+
+    with sqlite3.connect(report) as connection:
+        summary["known_istd_reference"]["calibration"]["samples"][0].update(
+            knots=[[0.9, 1.8], [1.1, 2.2]], domain_rt_min=[0.9, 1.1]
+        )
+        connection.execute(
+            "UPDATE metadata SET payload=? WHERE key='summary'",
+            (json.dumps(summary),),
+        )
+    outside = tmp_path / "outside.html"
+    generate_report(report, SelectionRequest(), outside)
+    outside_curve = _report_data(outside)["items"][0]["curves"][0]
+    assert "aligned_rts" not in outside_curve
+
+
+def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
+    report, _, _ = _create_mock_v2_db(tmp_path)
+    with sqlite3.connect(report) as connection:
+        summary = json.loads(
+            connection.execute(
+                "SELECT payload FROM metadata WHERE key='summary'"
+            ).fetchone()[0]
+        )
+        summary["known_istd_reference"] = {
+            "calibration": {
+                "schema_version": "known_istd_calibration_v1",
+                "rt_unit": "minute",
+                "interpolation": "piecewise_linear",
+                "extrapolation": "unavailable",
+                "samples": [
+                    {
+                        "sample_stem": "s1",
+                        "knots": [[0.8, 1.6], [0.7, 2.4]],
+                        "domain_rt_min": [0.8, 0.7],
+                        "status": "available",
+                    }
+                ],
+            }
+        }
+        connection.execute(
+            "UPDATE metadata SET payload=? WHERE key='summary'",
+            (json.dumps(summary),),
+        )
+
+    with pytest.raises(InspectorError) as caught:
+        generate_report(report, SelectionRequest(), tmp_path / "invalid.html")
+    assert caught.value.code == 4
+
+
 def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     tmp_path,
 ):
@@ -855,39 +1162,42 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     assert {field["label"]: field["value"] for field in decision["fields"]}[
         "正式定量值"
     ] == "1,000"
-    decision_refs = {
-        ref["label"]: ref["value"] for ref in decision["technical_refs"]
-    }
-    assert decision_refs.items() >= {
-        "來源紀錄 ID": "cd-01",
-        "樣本 ID": "S1",
-        "結果列 ID": "row-01",
-    }.items()
+    decision_refs = {ref["label"]: ref["value"] for ref in decision["technical_refs"]}
+    assert (
+        decision_refs.items()
+        >= {
+            "來源紀錄 ID": "cd-01",
+            "樣本 ID": "S1",
+            "結果列 ID": "row-01",
+        }.items()
+    )
 
     curve = item["curves"][0]
     curve_record = readable[curve["evidence_ref"]]
     assert curve_record["ref"] == "S1:initial_capture:C1"
     assert curve_record["sample_ids"] == ["S1"]
     assert curve_record["candidate_ids"] == ["C1"]
-    curve_fields = {
-        field["label"]: field["value"] for field in curve_record["fields"]
-    }
-    assert curve_fields.items() >= {
-        "積分範圍 (min)": "0.900–1.100",
-        "積分峰頂 RT (min)": "1.000",
-        "原始訊號峰頂 RT (min)": "1.000",
-        "當次原始計數面積 (counts·s)": "2,500",
-        "時間軸": "原始保留時間 (RT)",
-    }.items()
-    curve_refs = {
-        ref["label"]: ref["value"] for ref in curve_record["technical_refs"]
-    }
-    assert curve_refs.items() >= {
-        "曲線 evidence ref": "S1:initial_capture:C1",
-        "觀察 ID": "obs-01",
-        "處理 request ID": "req-01",
-        "處理 attempt ID": "att-01",
-    }.items()
+    curve_fields = {field["label"]: field["value"] for field in curve_record["fields"]}
+    assert (
+        curve_fields.items()
+        >= {
+            "積分範圍 (min)": "0.900–1.100",
+            "積分峰頂 RT (min)": "1.000",
+            "原始訊號峰頂 RT (min)": "1.000",
+            "當次原始計數面積 (counts·s)": "2,500",
+            "時間軸": "原始保留時間 (RT)",
+        }.items()
+    )
+    curve_refs = {ref["label"]: ref["value"] for ref in curve_record["technical_refs"]}
+    assert (
+        curve_refs.items()
+        >= {
+            "曲線 evidence ref": "S1:initial_capture:C1",
+            "觀察 ID": "obs-01",
+            "處理 request ID": "req-01",
+            "處理 attempt ID": "att-01",
+        }.items()
+    )
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
     assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
     assert curve["provenance"]["processing_request_id"] == "req-01"
@@ -1200,9 +1510,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                             "discovery_candidate_state": (
                                 "review_only_ambiguous_coisolation"
                             ),
-                            "reason_code": (
-                                "discovery_candidate_not_search_eligible"
-                            ),
+                            "reason_code": ("discovery_candidate_not_search_eligible"),
                             "assessment_artifact_ids": [],
                         }
                     ),
@@ -1238,8 +1546,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
         assert sample["decision_refs"] == [expected_ref]
         assert f"exclusion-{other_id.lower()}" not in sample["decision_refs"]
         readable = {
-            record["ref"]: record
-            for record in item["details"]["readable_records"]
+            record["ref"]: record for record in item["details"]["readable_records"]
         }
         exclusion = readable[expected_ref]
         assert "Discovery 候選未取得後續搜尋資格" in exclusion["summary"]

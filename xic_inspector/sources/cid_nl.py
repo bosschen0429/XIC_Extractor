@@ -7,12 +7,14 @@ exact link projection, scoped status interpretation and curve presentation.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 from xic_extractor.diagnostics.cid_nl_explanation import (
     ExplanationError,
     read_cid_nl_curves,
@@ -122,9 +124,9 @@ class CidNlSource:
         self.candidates: dict[tuple[str, str], dict[str, Any]] = {}
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
         self.sample_labels: dict[str, str] = {}
-        self.row_cell_decisions: dict[
-            tuple[str, str], dict[str, dict[str, Any]]
-        ] = {}
+        self.row_cell_decisions: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
+        self.calibration_by_sample_stem: dict[str, tuple[tuple[float, float], ...]] = {}
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         connection = sqlite3.connect(
@@ -142,6 +144,7 @@ class CidNlSource:
                     sample_stem = sample.get("sample_stem")
                     if isinstance(sid, str) and isinstance(sample_stem, str):
                         self.sample_labels[sid] = sample_stem
+                self.calibration_by_sample_stem = self._read_calibration(summary)
             for cid, sid, payload in connection.execute(
                 "SELECT candidate_id, sample_id, payload FROM candidates"
             ):
@@ -157,9 +160,9 @@ class CidNlSource:
                 group_id = fact.get("group_hypothesis_id")
                 row_key_id = fact.get("row_key_id")
                 if isinstance(group_id, str) and isinstance(row_key_id, str):
-                    self.row_cell_decisions.setdefault(
-                        (group_id, row_key_id), {}
-                    )[rid] = fact
+                    self.row_cell_decisions.setdefault((group_id, row_key_id), {})[
+                        rid
+                    ] = fact
             for cid, sid, kind, rid in connection.execute(
                 "SELECT candidate_id, sample_id, kind, record_id FROM links"
             ):
@@ -170,6 +173,7 @@ class CidNlSource:
             connection.close()
 
         items = []
+        item_keys: dict[str, set[tuple[str, str]]] = {}
         row_groups = set()
         grouped = set()
         # Construct the run population before applying sample scope.
@@ -178,18 +182,138 @@ class CidNlSource:
             row_groups.add(gid)
             keys = self._linked("rows", rid)
             grouped.update(keys)
-            items.append(self._item("row", rid, gid, keys, sample_ids, payload))
+            item = self._item("row", rid, gid, keys, sample_ids, payload)
+            items.append(item)
+            item_keys[item.serialized_ref] = keys
         for gid, payload in self.records.get("final_groups", {}).items():
             keys = self._linked("final_groups", gid)
             grouped.update(keys)
             if gid not in row_groups:
-                items.append(self._item("group", gid, gid, keys, sample_ids, payload))
+                item = self._item("group", gid, gid, keys, sample_ids, payload)
+                items.append(item)
+                item_keys[item.serialized_ref] = keys
         for key, payload in self.candidates.items():
             if key not in grouped:
-                items.append(
-                    self._item("candidate", key[0], None, {key}, sample_ids, payload)
-                )
+                item = self._item("candidate", key[0], None, {key}, sample_ids, payload)
+                items.append(item)
+                item_keys[item.serialized_ref] = {key}
+        item_by_ref = {item.serialized_ref: item for item in items}
+        edge_links = {
+            edge_ref: {
+                key
+                for key, links in self.links.items()
+                if ("initial_edges", edge_ref) in links
+            }
+            for edge_ref in self.records.get("initial_edges", {})
+        }
+        for item in items:
+            peers: dict[str, set[str]] = {}
+            own_keys = item_keys[item.serialized_ref]
+            for edge_ref, linked_keys in edge_links.items():
+                if not own_keys.intersection(linked_keys):
+                    continue
+                for peer_ref, peer_keys in item_keys.items():
+                    if peer_ref != item.serialized_ref and peer_keys.intersection(
+                        linked_keys - own_keys
+                    ):
+                        peers.setdefault(peer_ref, set()).add(edge_ref)
+            ranked = sorted(
+                peers.items(),
+                key=lambda entry: (
+                    min(self._edge_priority(ref) for ref in entry[1]),
+                    min(entry[1]),
+                    entry[0],
+                ),
+            )
+            self.related_items[item.serialized_ref] = [
+                (item_by_ref[peer_ref], tuple(sorted(refs)))
+                for peer_ref, refs in ranked
+            ]
+            item.details["review_summary"]["related_group_count"] = len(ranked)
         return sorted(items, key=lambda item: item.sort_key)
+
+    @staticmethod
+    def _read_calibration(summary) -> dict[str, tuple[tuple[float, float], ...]]:
+        reference = summary.get("known_istd_reference")
+        if reference is None:
+            return {}
+        if not isinstance(reference, dict):
+            raise ExplanationError("known_istd_reference must be an object")
+        calibration = reference.get("calibration")
+        if calibration is None:
+            return {}
+        if not isinstance(calibration, dict):
+            raise ExplanationError("known_istd_reference.calibration must be an object")
+        expected = {
+            "schema_version": "known_istd_calibration_v1",
+            "rt_unit": "minute",
+            "interpolation": "piecewise_linear",
+            "extrapolation": "unavailable",
+        }
+        for field, value in expected.items():
+            if calibration.get(field) != value:
+                actual = calibration.get(field)
+                raise ExplanationError(
+                    f"Invalid known ISTD calibration {field}: {actual!r}"
+                )
+        samples = calibration.get("samples")
+        if not isinstance(samples, list):
+            raise ExplanationError("known ISTD calibration samples must be a list")
+        result = {}
+        for sample in samples:
+            if not isinstance(sample, dict):
+                raise ExplanationError(
+                    "known ISTD calibration sample must be an object"
+                )
+            stem = sample.get("sample_stem")
+            status = sample.get("status")
+            if not isinstance(stem, str) or not stem or stem in result:
+                raise ExplanationError("known ISTD calibration sample_stem is invalid")
+            if status == "unavailable":
+                continue
+            if status != "available":
+                raise ExplanationError(
+                    "known ISTD calibration sample status is invalid"
+                )
+            raw_knots = sample.get("knots")
+            domain = sample.get("domain_rt_min")
+            if not isinstance(raw_knots, list) or len(raw_knots) < 2:
+                raise ExplanationError(
+                    "available known ISTD calibration needs two knots"
+                )
+            knots = []
+            for knot in raw_knots:
+                if not isinstance(knot, list) or len(knot) != 2:
+                    raise ExplanationError(
+                        "known ISTD calibration knot must be an RT pair"
+                    )
+                x, y = knot
+                if (
+                    isinstance(x, bool)
+                    or isinstance(y, bool)
+                    or not isinstance(x, (int, float))
+                    or not isinstance(y, (int, float))
+                    or not math.isfinite(x)
+                    or not math.isfinite(y)
+                ):
+                    raise ExplanationError(
+                        "known ISTD calibration knots must be finite"
+                    )
+                knots.append((float(x), float(y)))
+            if any(a[0] >= b[0] or a[1] > b[1] for a, b in zip(knots, knots[1:])):
+                raise ExplanationError("known ISTD calibration knots must be monotone")
+            if domain != [knots[0][0], knots[-1][0]]:
+                raise ExplanationError(
+                    "known ISTD calibration domain does not match knots"
+                )
+            result[stem] = tuple(knots)
+        return result
+
+    def _edge_priority(self, edge_ref: str) -> int:
+        edge = self.records.get("initial_edges", {}).get(edge_ref, {})
+        evidence = edge.get("initial_evidence", {})
+        decision = evidence.get("decision")
+        return 0 if decision in {"blocked_edge", "split_edge", "split"} else 1
 
     def _linked(self, kind: str, rid: str) -> set[tuple[str, str]]:
         return {key for key, links in self.links.items() if (kind, rid) in links}
@@ -253,9 +377,7 @@ class CidNlSource:
         if kind == "row" and isinstance(gid, str):
             indexed_cells = self.row_cell_decisions.get((gid, identifier), {})
             for rid, fact in sorted(indexed_cells.items()):
-                sid = fact.get(
-                    "canonical_sample_identity_id", fact.get("sample_id")
-                )
+                sid = fact.get("canonical_sample_identity_id", fact.get("sample_id"))
                 if not isinstance(sid, str) or sid not in scope:
                     continue
                 facts["cell_decisions", rid] = fact
@@ -373,6 +495,36 @@ class CidNlSource:
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
         )
+        origins = {
+            sid: self._support_origin(sid, witnesses, facts)
+            for sid in sorted(item_sample_ids)
+        }
+        initial_member_ids = {
+            member.get("member_subject_id")
+            for initial_ref, fact in self.records.get("initial_groups", {}).items()
+            if any(
+                ("initial_groups", initial_ref) in self.links.get(key, set())
+                for key in scoped
+            )
+            for member in fact.get("member_subjects", [])
+            if isinstance(member, dict)
+            and isinstance(member.get("member_subject_id"), str)
+        }
+        final_members = group.get("member_subjects")
+        review_summary = {
+            "observed_sample_count": len(
+                {w.canonical_sample_identity_id for w in witnesses if w.observation_id}
+            ),
+            "scope_sample_count": len(item_sample_ids),
+            "origin_kinds": sorted({origin["kind"] for origin in origins.values()}),
+            "initial_member_count": (
+                len(initial_member_ids) if initial_member_ids else len(keys)
+            ),
+            "final_member_count": len(final_members)
+            if isinstance(final_members, list)
+            else len(keys),
+            "related_group_count": 0,
+        }
         return CanonicalItem(
             kind=kind,
             request_id=self.request_id,
@@ -388,6 +540,8 @@ class CidNlSource:
                 "cells": cells,
                 "attention_triggers": triggers,
                 "sample_status": sample_status,
+                "support_origins": origins,
+                "review_summary": review_summary,
                 "records": [
                     {"kind": k, "ref": r, "facts": f}
                     for (k, r), f in sorted(facts.items())
@@ -395,9 +549,78 @@ class CidNlSource:
             },
         )
 
+    @staticmethod
+    def _support_origin(sample_id, witnesses, facts):
+        observation_refs = sorted(
+            {
+                witness.observation_id
+                for witness in witnesses
+                if witness.canonical_sample_identity_id == sample_id
+                and witness.observation_id
+            }
+        )
+        observation_set = set(observation_refs)
+        captures = []
+        methods = []
+        for (record_kind, ref), fact in facts.items():
+            fact_sid = fact.get("canonical_sample_identity_id", fact.get("sample_id"))
+            if fact_sid != sample_id:
+                continue
+            if (
+                record_kind == "capture_evidence"
+                and fact.get("peak_observation_content_id") in observation_set
+            ):
+                captures.append((ref, fact))
+            elif (
+                record_kind == "method_assessments"
+                and fact.get("method_result") == "SUPPORT"
+            ):
+                peak_ids = fact.get("candidate_peak_content_ids", [])
+                if isinstance(peak_ids, list) and observation_set.intersection(
+                    peak_ids
+                ):
+                    methods.append((ref, fact))
+
+        capture_kinds = {fact.get("kind") for _, fact in captures}
+        invocations = {fact.get("detector_invocation_id") for _, fact in methods}
+        if (
+            "recovery_observation" in capture_kinds
+            and "untargeted-cid-nl-backfill-recovery:v1" in invocations
+        ):
+            kind, label = "recovery_support", "方法補取支持"
+        elif "reacquired_capture" in capture_kinds and methods:
+            kind, label = "reacquired_support", "重新擷取支持"
+        elif "initial_capture" in capture_kinds and any(
+            isinstance(value, str) and value.startswith("untargeted-cid-nl-real-data:")
+            for value in invocations
+        ):
+            kind, label = "discovery_support", "初始探索支持"
+        else:
+            kind, label = "unavailable", "來源未提供"
+        return {
+            "kind": kind,
+            "label": label,
+            "method_refs": sorted(ref for ref, _ in methods),
+            "capture_refs": sorted(ref for ref, _ in captures),
+            "observation_refs": observation_refs,
+        }
+
     def load_render_items(
         self, items, *, capability: str, check_cancel: Callable[[], None]
     ):
+        primary_items = list(items)
+        chosen_peers = {
+            item.serialized_ref: self.related_items.get(item.serialized_ref, [])[:1]
+            for item in primary_items
+        }
+        expanded = list(primary_items)
+        expanded_refs = {item.serialized_ref for item in expanded}
+        for peers in chosen_peers.values():
+            for peer, _edge_refs in peers:
+                if peer.serialized_ref not in expanded_refs:
+                    expanded.append(peer)
+                    expanded_refs.add(peer.serialized_ref)
+        items = expanded
         # Read each sample's selected exact references once. This avoids the
         # candidate-ID/sample cross product when IDs are shared across samples.
         refs_by_sample: dict[str, set[str]] = {}
@@ -472,54 +695,11 @@ class CidNlSource:
                     if name in provenance and provenance[name] != expected:
                         raise ExplanationError(f"Selected curve crosses {name} binding")
         rendered = []
-        for item in items:
+        for item in primary_items:
             check_cancel()
-            keys = {
-                (w.candidate_id, w.canonical_sample_identity_id) for w in item.witnesses
-            }
-            observation_keys = {
-                (w.observation_id, w.canonical_sample_identity_id)
-                for w in item.witnesses
-                if w.observation_id
-            }
-            capture_keys = {
-                (capture["sample_id"], capture["payload_id"])
-                for capture in captures_by_item[item.serialized_ref]
-            }
-            curves = [
-                c
-                for c in raw_curves
-                if (c.get("sample_id"), c.get("payload_id")) in capture_keys
-                or (
-                    (c.get("peak_observation_content_id"), c.get("sample_id"))
-                    in observation_keys
-                    if observation_keys
-                    else (c.get("candidate_id"), c.get("sample_id")) in keys
-                )
-            ]
-            projected_curves = []
-            for curve in curves:
-                projected = self._curve(curve)
-                projected["candidate_ids"] = sorted(
-                    {
-                        cid
-                        for cid, sid in keys
-                        if sid == curve.get("sample_id")
-                        and (
-                            ("capture_evidence", curve.get("payload_id"))
-                            in self.links.get((cid, sid), set())
-                            or any(
-                                witness.candidate_id == cid
-                                and witness.canonical_sample_identity_id == sid
-                                and witness.observation_id
-                                == curve.get("peak_observation_content_id")
-                                for witness in item.witnesses
-                                if witness.observation_id
-                            )
-                        )
-                    }
-                )
-                projected_curves.append(projected)
+            projected_curves = self._project_curves(
+                item, raw_curves, captures_by_item[item.serialized_ref]
+            )
             samples = []
             for sid in item.sample_ids:
                 cells = [
@@ -541,6 +721,7 @@ class CidNlSource:
                             self.sample_labels.get(sid, sid),
                         ),
                         "status_kind": item.details["sample_status"][sid],
+                        "support_origin": item.details["support_origins"][sid],
                         "status_label": {
                             "attention": "需留意",
                             "excluded": "已排除",
@@ -558,8 +739,7 @@ class CidNlSource:
                         "decision_refs": self._decision_refs(item, sid),
                         "evidence_status": "available"
                         if any(
-                            curve.get("sample_id") == sid
-                            and curve.get("raw_rts")
+                            curve.get("sample_id") == sid and curve.get("raw_rts")
                             for curve in projected_curves
                         )
                         else "unavailable",
@@ -598,10 +778,92 @@ class CidNlSource:
                             item, projected_curves
                         ),
                     },
+                    "review_summary": item.details["review_summary"],
+                    "related_groups": [
+                        self._related_group(
+                            peer,
+                            edge_refs,
+                            self._project_curves(
+                                peer,
+                                raw_curves,
+                                captures_by_item[peer.serialized_ref],
+                            )[:1],
+                        )
+                        for peer, edge_refs in chosen_peers[item.serialized_ref]
+                    ],
                     "curves": projected_curves,
                 }
             )
         return rendered
+
+    def _project_curves(self, item, raw_curves, captures):
+        keys = {
+            (w.candidate_id, w.canonical_sample_identity_id) for w in item.witnesses
+        }
+        observation_keys = {
+            (w.observation_id, w.canonical_sample_identity_id)
+            for w in item.witnesses
+            if w.observation_id
+        }
+        capture_keys = {
+            (capture["sample_id"], capture["payload_id"]) for capture in captures
+        }
+        curves = [
+            curve
+            for curve in raw_curves
+            if (curve.get("sample_id"), curve.get("payload_id")) in capture_keys
+            or (
+                (curve.get("peak_observation_content_id"), curve.get("sample_id"))
+                in observation_keys
+                if observation_keys
+                else (curve.get("candidate_id"), curve.get("sample_id")) in keys
+            )
+        ]
+        projected_curves = []
+        for curve in curves:
+            projected = self._curve(curve)
+            projected["candidate_ids"] = sorted(
+                {
+                    cid
+                    for cid, sid in keys
+                    if sid == curve.get("sample_id")
+                    and (
+                        ("capture_evidence", curve.get("payload_id"))
+                        in self.links.get((cid, sid), set())
+                        or any(
+                            witness.candidate_id == cid
+                            and witness.canonical_sample_identity_id == sid
+                            and witness.observation_id
+                            == curve.get("peak_observation_content_id")
+                            for witness in item.witnesses
+                            if witness.observation_id
+                        )
+                    )
+                }
+            )
+            projected_curves.append(projected)
+        return projected_curves
+
+    @staticmethod
+    def _related_group(item, edge_refs, curves):
+        source = item.details["source"]
+        group_id = source.get("group_hypothesis_id")
+        row_key_id = source.get("row_key_id") if item.kind == "row" else None
+        route = source.get("route", {})
+        reason = route.get(
+            "reason", source.get("reason", source.get("disposition", "unavailable"))
+        )
+        return {
+            "id": item.serialized_ref,
+            "label": f"相關分組 {group_id or item.identifier}",
+            "group_id": group_id or item.identifier,
+            "row_key_id": row_key_id,
+            "edge_refs": list(edge_refs),
+            "reason": reason,
+            "sample_ids": list(item.sample_ids),
+            "witnesses": [asdict(witness) for witness in item.witnesses],
+            "curves": curves,
+        }
 
     def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[str]:
         item_keys = {
@@ -666,9 +928,7 @@ class CidNlSource:
     def _readable_records(
         self, item: CanonicalItem, curves: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        available_refs = {
-            record["ref"] for record in item.details["records"]
-        } | {
+        available_refs = {record["ref"] for record in item.details["records"]} | {
             curve["evidence_ref"]
             for curve in curves
             if curve.get("evidence_ref") is not None
@@ -815,8 +1075,7 @@ class CidNlSource:
         linked_keys = {
             key
             for key in self._item_keys(item)
-            if (record["kind"], record["ref"])
-            in self.links.get(key, set())
+            if (record["kind"], record["ref"]) in self.links.get(key, set())
         }
         recorded_sample = record["facts"].get(
             "canonical_sample_identity_id", record["facts"].get("sample_id")
@@ -847,9 +1106,7 @@ class CidNlSource:
         title: str,
     ) -> str:
         sample = (
-            self._sample_name(item, sample_ids[0])
-            if len(sample_ids) == 1
-            else None
+            self._sample_name(item, sample_ids[0]) if len(sample_ids) == 1 else None
         )
         if kind == "cell_decisions":
             value = facts.get("value", facts.get("quantitative_value"))
@@ -858,10 +1115,7 @@ class CidNlSource:
                 return f"{owner}正式定量決策記錄為空值；空值不等於零。"
             if value == 0:
                 return f"{owner}正式定量決策記錄為零。"
-            return (
-                f"{owner}正式定量決策記錄數值 "
-                f"{self._format_measurement(value)}。"
-            )
+            return f"{owner}正式定量決策記錄數值 {self._format_measurement(value)}。"
         if kind == "rows":
             destination_value = (facts.get("route") or {}).get("destination")
             destination = (
@@ -916,10 +1170,7 @@ class CidNlSource:
             reason_text = (
                 f"；理由：{readable_reasons}" if readable_reasons else "；未記錄理由"
             )
-            return (
-                f"{result_text}{reason_text}。"
-                "此相關方法判定不代表正式定量採用。"
-            )
+            return f"{result_text}{reason_text}。此相關方法判定不代表正式定量採用。"
         if kind == "initial_edges":
             evidence = facts.get("initial_evidence")
             evidence = evidence if isinstance(evidence, dict) else {}
@@ -1024,8 +1275,7 @@ class CidNlSource:
                 {
                     "label": _FIELD_LABELS["reason_codes"],
                     "value": "、".join(
-                        _REASON_LABELS.get(reason, reason)
-                        for reason in reason_values
+                        _REASON_LABELS.get(reason, reason) for reason in reason_values
                     ),
                 }
             )
@@ -1230,9 +1480,7 @@ class CidNlSource:
             fields.append(
                 {
                     "label": "原始訊號峰頂 RT (min)",
-                    "value": self._format_fixed(
-                        integration["raw_apex_rt_min"], 3
-                    ),
+                    "value": self._format_fixed(integration["raw_apex_rt_min"], 3),
                 }
             )
         if curve.get("area") is not None:
@@ -1254,9 +1502,7 @@ class CidNlSource:
             "peak_observation_content_id": curve.get("observation_id"),
             "provenance": curve.get("provenance") or {},
         }
-        sample = (
-            self._sample_name(item, sample_ids[0]) if sample_ids else "這個樣本"
-        )
+        sample = self._sample_name(item, sample_ids[0]) if sample_ids else "這個樣本"
         integration_note = (
             "，並包含積分範圍與面積紀錄" if integration else "；來源未提供積分紀錄"
         )
@@ -1397,9 +1643,7 @@ class CidNlSource:
             "route_label": route_label,
         }
         if losses:
-            labels["method_label"] = (
-                "NL " + "、".join(f"{loss:.4f}" for loss in losses)
-            )
+            labels["method_label"] = "NL " + "、".join(f"{loss:.4f}" for loss in losses)
         return labels
 
     @staticmethod
@@ -1435,12 +1679,11 @@ class CidNlSource:
             + "。"
         )
 
-    @staticmethod
-    def _curve(payload):
+    def _curve(self, payload):
         curves = payload.get("curves", {})
         integration = payload.get("integration") or {}
         rts = curves.get("rt", [])
-        return {
+        result = {
             "sample_id": payload.get("sample_id"),
             "candidate_id": payload.get("candidate_id"),
             "evidence_ref": payload.get(
@@ -1463,3 +1706,38 @@ class CidNlSource:
             "integration": integration,
             "provenance": payload.get("provenance"),
         }
+        sample_stem = self.sample_labels.get(payload.get("sample_id"))
+        knots = self.calibration_by_sample_stem.get(sample_stem)
+        if knots:
+            aligned_rts = [interpolate_calibrated_rt_min(value, knots) for value in rts]
+            aligned_left = (
+                interpolate_calibrated_rt_min(integration.get("rt_left_min"), knots)
+                if isinstance(integration.get("rt_left_min"), (int, float))
+                else None
+            )
+            aligned_right = (
+                interpolate_calibrated_rt_min(integration.get("rt_right_min"), knots)
+                if isinstance(integration.get("rt_right_min"), (int, float))
+                else None
+            )
+            apex = integration.get("rt_apex_min", integration.get("apex_rt_min"))
+            aligned_apex = (
+                interpolate_calibrated_rt_min(apex, knots)
+                if isinstance(apex, (int, float))
+                else None
+            )
+            if (
+                aligned_rts
+                and all(value is not None for value in aligned_rts)
+                and all(
+                    value is not None
+                    for value in (aligned_left, aligned_right, aligned_apex)
+                )
+            ):
+                result.update(
+                    aligned_rts=aligned_rts,
+                    aligned_bound_left_rt=aligned_left,
+                    aligned_bound_right_rt=aligned_right,
+                    aligned_apex_rt=aligned_apex,
+                )
+        return result

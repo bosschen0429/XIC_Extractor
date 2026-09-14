@@ -21,7 +21,7 @@ and one selection strategy:
 
 | Strategy | Purpose |
 | --- | --- |
-| `sample` | Deterministically sample a bounded cross-section of evidence items. |
+| `sample` | Balance real cross-sample groups by sample coverage, support origin, and recorded state; use ungrouped candidates only when group items do not fill the limit. |
 | `attention` | Select items carrying owner-provided review conditions. |
 | `query` | Filter one actual evidence-witness chain by sample, candidate, group, precursor m/z, or RT apex, with offset/limit pagination. |
 
@@ -31,6 +31,15 @@ A successful result reports the bound evidence locator, capability, selected
 sample scope, and run/eligible/matched/selected counts. Invalid requests,
 unavailable or invalid sources, unsafe output paths, output failures, and
 cancellation remain distinguishable errors.
+
+The default sample uses `cross_sample_sha256_v2`, limit 30 and seed 0. It cycles
+through represented group cases: broad coverage (all or all but one scoped
+sample, with at least two observed samples), other cross-sample coverage, and
+limited coverage. Recorded recovery, reacquisition, discovery support, and
+the existing review states distinguish cases. Stable hash ranking selects
+within a case; adding ungrouped candidates cannot displace existing group
+cases. The report retains the algorithm, seed and selected case counts.
+Exact-ID queries remain available for any row, group or ungrouped candidate.
 
 ## Source and ownership boundary
 
@@ -62,9 +71,16 @@ section. Ordinary reports initially show other items; explicit queries and
 in-report filters expose matching excluded records. A report containing only
 excluded candidates explains how to open them. This presentation does not alter
 the selected population, retained evidence, or API selection semantics.
-When an ordinary report includes a Matrix row, it initially opens that row.
-Explicit queries keep their first matching item. Sampling remains a cross-section
-of evidence, so a known group query is the direct entry for comparing its samples.
+An ordinary report initially opens its group or row with the greatest observed
+sample coverage. Explicit queries keep their first matching item. Group summaries
+show observed coverage and recorded initial/final membership; each sample
+distinguishes initial discovery support, reacquired support, and method recovery
+with its exact evidence references. A physical direct-observation cell is not
+by itself evidence of initial discovery support.
+Recorded edges can link to a distinct peer group or row for separation review.
+Each selected primary embeds curves for at most one exact peer and exposes the
+total peer count and queryable references. Peer context does not increase the
+primary selected count or create a scientific relationship.
 The workbench links the sample result, candidate, retained capture, integration
 facts, and available decision records. Viewing a sample scopes its candidate
 choices and peak details. An explicit return beside the sample heading restores
@@ -89,9 +105,13 @@ display name, nearby mass, or nearby retention time.
 
 Capture stage, signal type, and time axis are distinct. Raw-time and aligned-time
 plots are shown together for comparison, with separate zoom controls. Aligned
-curves and peak marks require supplied aligned coordinates; the current CID-NL
-source does not provide them. The aligned section explains this limitation
-while the raw plot remains available. The integration readout identifies its
+curves and peak marks use the formal calibration saved by the producer that
+built the groups. The source adapter applies its stored sample knots to curve
+and peak times without fitting again or extrapolating. Missing calibration,
+insufficient sample anchors, and points outside the saved domain remain
+unavailable; partial coverage is visible. Old reports without this evidence
+retain the raw plot. Aligning a plot cannot repair grouping that was created
+without the intended ISTD input. The integration readout identifies its
 raw-time coordinates. Precursor m/z uses four fixed decimal places, primary RT uses two,
 and detailed peak times use three. NULL, numeric zero, a missing single result,
 and unavailable curve evidence remain distinct within each item's sample

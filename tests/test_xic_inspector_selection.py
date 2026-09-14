@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
     build_canonical_ref,
 )
 from xic_inspector.selection.query import filter_by_query
-from xic_inspector.selection.sampler import sample_stratified_sha256_v1
+from xic_inspector.selection.sampler import sample_cross_sample_sha256_v2
 from xic_inspector.selection.strata import classify_scoped_stratum
 
 
@@ -41,20 +43,54 @@ def _make_item(
     )
 
 
-def test_stratified_sha256_oracle_seed0_limit1_selects_rest() -> None:
-    """Algorithm oracle check: seed=0, limit=1 must select 'rest'."""
-    items = [
-        _make_item("row", "r_att", "attention", ("s1",), is_attention=True),
-        _make_item("candidate", "c_ex", "excluded", ("s1",)),
-        _make_item("row", "r_null", "null", ("s1",)),
-        _make_item("row", "r_zero", "zero", ("s1",)),
-        _make_item("row", "r_rest", "rest", ("s1",)),
+def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None:
+    """A large candidate population must not hide broad or recovery families."""
+    groups = []
+    for name, observed, origin, count in (
+        ("broad_direct", 8, "discovery_support", 60),
+        ("broad_recovery", 7, "recovery_support", 2),
+        ("partial_direct", 4, "discovery_support", 60),
+        ("partial_reacquired", 3, "reacquired_support", 15),
+        ("limited", 1, "discovery_support", 200),
+    ):
+        for index in range(count):
+            groups.append(replace(
+                _make_item("row", f"{name}_{index}", "rest", ("s1",)),
+                details={"review_summary": {
+                    "observed_sample_count": observed,
+                    "scope_sample_count": 8,
+                    "origin_kinds": [origin],
+                }},
+            ))
+    candidates = [
+        _make_item("candidate", f"c_{index}", "excluded", ("s1",))
+        for index in range(2000)
     ]
+    selected = sample_cross_sample_sha256_v2(groups + candidates, limit=30, seed=0)
+    assert len(selected) == 30
+    assert all(item.kind == "row" for item in selected)
+    assert sum(item.details["review_summary"]["observed_sample_count"] >= 2
+               for item in selected) >= 20
+    assert any(item.identifier.startswith("broad_recovery") for item in selected)
+    assert any(item.identifier.startswith("broad_direct") for item in selected)
+    assert any(item.identifier.startswith("partial_reacquired") for item in selected)
+    assert any(item.identifier.startswith("limited") for item in selected)
+    assert selected == sample_cross_sample_sha256_v2(
+        list(reversed(candidates + groups)), limit=30, seed=0
+    )
+    assert selected == sample_cross_sample_sha256_v2(groups, limit=30, seed=0)
 
-    selected = sample_stratified_sha256_v1(items, limit=1, seed=0)
-    assert len(selected) == 1
-    assert selected[0].stratum == "rest"
-    assert selected[0].identifier == "r_rest"
+
+def test_default_sample_uses_candidates_only_after_existing_groups() -> None:
+    row = _make_item("row", "row", "rest", ("s1",))
+    candidates = [
+        _make_item("candidate", f"c_{index}", "excluded", ("s1",))
+        for index in range(20)
+    ]
+    selected = sample_cross_sample_sha256_v2([row, *candidates], limit=4, seed=0)
+    assert len(selected) == 4
+    assert row in selected
+    assert len({item.serialized_ref for item in selected}) == 4
 
 
 def test_scoped_strata_priority() -> None:

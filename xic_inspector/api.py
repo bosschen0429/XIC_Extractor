@@ -17,7 +17,11 @@ from xic_inspector.selection.canonical import (
     CanonicalItem,
 )
 from xic_inspector.selection.query import filter_by_attention, filter_by_query
-from xic_inspector.selection.sampler import sample_stratified_sha256_v1
+from xic_inspector.selection.sampler import (
+    SAMPLING_ALGORITHM,
+    review_case_key,
+    sample_cross_sample_sha256_v2,
+)
 from xic_inspector.sources import (
     EvidenceLocator,
     EvidenceSource,
@@ -343,7 +347,7 @@ def generate_report(
     missing_rt_count = 0
 
     if selection.strategy == "sample":
-        selected_items = sample_stratified_sha256_v1(
+        selected_items = sample_cross_sample_sha256_v2(
             eligible_items, limit=selection.limit, seed=selection.seed
         )
         matched_count = eligible_count
@@ -401,6 +405,16 @@ def generate_report(
         "summary": summary,
         "selection": {
             "strategy": selection.strategy,
+            "algorithm": SAMPLING_ALGORITHM if selection.strategy == "sample" else None,
+            "seed": selection.seed,
+            "limit": selection.limit,
+            "offset": selection.offset,
+            "case_counts": {
+                "/".join(case): sum(
+                    review_case_key(item) == case for item in selected_items
+                )
+                for case in sorted({review_case_key(item) for item in selected_items})
+            },
             "sample_ids": selection.sample_ids,
             "candidate_ids": selection.candidate_ids,
             "group_ids": selection.group_ids,

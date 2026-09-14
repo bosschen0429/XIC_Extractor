@@ -21,7 +21,8 @@ WORKBENCH_JS = r"""(() => {
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':row.quantitative_value===0?'<span class="result-zero">0</span>':`<span class="result-number">${num(row.quantitative_value)}</span>`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
-  const initialItem=queryReport?items[0]:items.find(item=>item.kind==='row'&&item.route?.destination==='matrix')||items.find(item=>!isCollapsedExcluded(item));
+  const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
+  const initialItem=queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
   const state={id:initialItem?.id,sample:null,candidate:'',capture:'',signal:'raw',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
   let filtered=items, listed=[], dialogOpener=null, evidenceOpener=null;
 
@@ -38,6 +39,25 @@ WORKBENCH_JS = r"""(() => {
     else if(row.quantitative_value===0)notices.push({kind:'zero',label:'數值 0',short:'0'});
     if(!curve)notices.push({kind:'curve',label:'曲線未提供',short:'缺曲線'});
     return notices;
+  }
+  function originLabel(origin){
+    return origin?.label||({discovery_support:'初始探索支持',reacquired_support:'重新擷取支持',recovery_support:'方法補取支持',unavailable:'來源未提供'}[origin?.kind]||'來源未提供');
+  }
+  function originClass(origin){return ['discovery_support','reacquired_support','recovery_support'].includes(origin?.kind)?origin.kind:'unavailable';}
+  function originRefs(origin){return [...new Set(['method_refs','capture_refs','observation_refs'].flatMap(key=>Array.isArray(origin?.[key])?origin[key]:[]).filter(Boolean))];}
+  function sampleAlignment(item,row){
+    const curves=(item.curves||[]).filter(c=>c.sample_id===row.sample_id&&c.raw_rts?.length), aligned=curves.filter(c=>c.aligned_rts?.length).length;
+    if(!curves.length)return {kind:'unavailable',label:'校正：無曲線'};
+    if(!aligned)return {kind:'unavailable',label:'校正：對齊未提供'};
+    if(aligned<curves.length)return {kind:'partial',label:`校正：${aligned}/${curves.length} 段有對齊座標`};
+    return {kind:'complete',label:'校正：對齊可用'};
+  }
+  function familyOverview(item){
+    const r=item.review_summary;if(!r)return '';
+    const observed=finite(r.observed_sample_count)?r.observed_sample_count:0, scope=finite(r.scope_sample_count)?r.scope_sample_count:itemRows(item).length, initial=finite(r.initial_member_count)?r.initial_member_count:null, final=finite(r.final_member_count)?r.final_member_count:null, related=finite(r.related_group_count)?r.related_group_count:(item.related_groups||[]).length;
+    const change=initial===null||final===null?'未提供成員變化':final===initial?'成員數未變':final<initial?`${initial-final} 個未留在最終族群`:`${final-initial} 個後續加入`;
+    const origins=(Array.isArray(r.origin_kinds)?r.origin_kinds:[]).map(kind=>originLabel({kind}));
+    return `<section class="family-overview" aria-label="跨樣本族群摘要"><div><span>觀察涵蓋</span><strong>${observed} / ${scope}</strong><small>個樣本</small></div>${initial===null||final===null?'':`<div><span>族群成員</span><strong>${initial} → ${final}</strong><small>${change}</small></div>`}<div><span>支持來源</span><strong>${origins.length?esc(origins.join('、')):'未提供'}</strong></div><div><span>相關族群</span><strong>${related}</strong><small>${related?'可比較已保存的相關族群':'未記錄其他相關族群'}</small></div></section>`;
   }
   function candidateLabel(candidate){
     const w=candidate.witness||{};
@@ -58,7 +78,11 @@ WORKBENCH_JS = r"""(() => {
     curves.forEach(c=>(c.processed_curves||[]).forEach(s=>{const k=s.kind==='positive_signal'?'positive':s.kind;if(['baseline','smoothed','positive'].includes(k)&&(s.rts||c.raw_rts)?.length&&s.intensities?.length)out.add(k);}));
     return ['raw','baseline','smoothed','positive'].filter(k=>out.has(k));
   }
-  function alignedAvailable(item){return curvesForPlot(item).some(c=>seriesList(c,'aligned').length);}
+  function alignmentCoverage(item,peer=false){
+    const curves=curvesForPlot(item,peer), rawSamples=new Set(curves.filter(c=>seriesList(c,'raw',peer?'raw':state.signal).length).map(c=>c.sample_id)), alignedSamples=new Set(curves.filter(c=>seriesList(c,'aligned',peer?'raw':state.signal).length).map(c=>c.sample_id));
+    return {available:alignedSamples.size,total:rawSamples.size};
+  }
+  function alignedAvailable(item,peer=false){return alignmentCoverage(item,peer).available>0;}
   function normalize(item,changed=false){
     if(state.sample&&!itemRows(item).some(r=>r.sample_id===state.sample))state.sample=null;
     const cs=candidates(item);
@@ -69,18 +93,18 @@ WORKBENCH_JS = r"""(() => {
     else if(!curves.some(c=>curveKey(c,all.indexOf(c))===state.capture))state.capture=curves[0]?curveKey(curves[0],all.indexOf(curves[0])):'';
     const ss=signals(item);if(!ss.includes(state.signal))state.signal=ss[0]||'raw';
   }
-  function seriesList(curve,axis){
+  function seriesList(curve,axis,signal=state.signal){
     const rts=axis==='aligned'?curve.aligned_rts:curve.raw_rts;
     const raw=rts?.length&&curve.raw_intensities?.length?{kind:'raw',rts,intensities:curve.raw_intensities}:null;
-    if(state.signal==='raw')return raw?[raw]:[];
-    const found=(curve.processed_curves||[]).find(s=>s.kind===state.signal||(state.signal==='positive'&&s.kind==='positive_signal'));
+    if(signal==='raw')return raw?[raw]:[];
+    const found=(curve.processed_curves||[]).find(s=>s.kind===signal||(signal==='positive'&&s.kind==='positive_signal'));
     if(!found)return [];
     const processedRts=axis==='aligned'?found.aligned_rts:(found.rts||curve.raw_rts);
     const processed=processedRts?.length&&found.intensities?.length?{...found,rts:processedRts}:null;
     return processed?[...(raw?[raw]:[]),processed]:[];
   }
-  function curvesForPlot(item){
-    return (item.curves||[]).filter(c=>state.visible.has(c.sample_id)&&(!state.sample||c.sample_id!==state.sample||((!state.candidate||c.candidate_id===state.candidate||c.candidate_ids?.includes(state.candidate))&&(!state.capture||curveKey(c,(item.curves||[]).indexOf(c))===state.capture))));
+  function curvesForPlot(item,peer=false){
+    return (item.curves||[]).filter(c=>state.visible.has(c.sample_id)&&(peer||!state.sample||c.sample_id!==state.sample||((!state.candidate||c.candidate_id===state.candidate||c.candidate_ids?.includes(state.candidate))&&(!state.capture||curveKey(c,(item.curves||[]).indexOf(c))===state.capture))));
   }
 
   function filteredItems(){
@@ -122,7 +146,7 @@ WORKBENCH_JS = r"""(() => {
   }
   function sampleTable(item){
     const excluded=isCollapsedExcluded(item), evidenceLabel=excluded?'查看排除依據':'查看定量依據';
-    return `<div class="table-scroll compact-samples"><table class="sample-table"><thead><tr><th>顯示</th><th>樣本與狀態</th><th class="num">正式結果</th></tr></thead><tbody>${itemRows(item).map(r=>{const notices=sampleNotices(item,r),curve=!notices.some(n=>n.kind==='curve'),current=r.sample_id===state.sample,evidenceContext=excluded?`${sampleName(r.sample_id)} 的排除依據`:`${sampleName(r.sample_id)} 的正式定量值`;return `<tr class="sample-row ${notices.length?'sample-notice':''} ${current?'focused-row':''}" data-sample-row="${esc(r.sample_id)}"><td><label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="sr-only">在圖中顯示 ${esc(sampleName(r.sample_id))}</span></label></td><td><span class="sample-identity"><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</span><span class="badge badge-${esc(r.status_kind)}">${esc(r.status_label||'未記錄')}</span>${notices.length?`<span class="sample-flags" aria-label="需要留意：${esc(notices.map(n=>n.label).join('、'))}">${notices.map(n=>`<span class="sample-flag flag-${n.kind}">${esc(n.label)}</span>`).join('')}</span>`:''}<button type="button" class="sample-focus" data-focus="${esc(r.sample_id)}" ${current?'disabled aria-current="true"':''}>${current?'目前查看':'查看樣本'}</button></td><td class="num"><strong>${result(r)}</strong><span class="curve-status ${curve?'':'curve-unavailable'}">曲線：${curve?'已提供':'未提供'}</span>${evidenceButtons(r.decision_refs,evidenceContext,evidenceLabel)}</td></tr>`;}).join('')}</tbody></table></div><p class="reading-hint">勾選只控制圖中顯示；「查看樣本」會帶出該樣本的候選與積分。空值、0、無單一結果及缺曲線分開顯示。</p>`;
+    return `<div class="table-scroll compact-samples"><table class="sample-table"><thead><tr><th>顯示</th><th>樣本、支持與狀態</th><th class="num">正式結果</th></tr></thead><tbody>${itemRows(item).map(r=>{const notices=sampleNotices(item,r),curve=!notices.some(n=>n.kind==='curve'),current=r.sample_id===state.sample,evidenceContext=excluded?`${sampleName(r.sample_id)} 的排除依據`:`${sampleName(r.sample_id)} 的正式定量值`,origin=r.support_origin||{kind:'unavailable'},alignment=sampleAlignment(item,r),supportRefs=originRefs(origin);return `<tr class="sample-row ${notices.length?'sample-notice':''} ${current?'focused-row':''}" data-sample-row="${esc(r.sample_id)}"><td><label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="sr-only">在圖中顯示 ${esc(sampleName(r.sample_id))}</span></label></td><td><span class="sample-identity"><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</span><span class="badge badge-${esc(r.status_kind)}">${esc(r.status_label||'未記錄')}</span><span class="sample-provenance"><span class="support-origin origin-${originClass(origin)}">${esc(originLabel(origin))}</span><span class="alignment-status alignment-${alignment.kind}">${esc(alignment.label)}</span></span>${supportRefs.length?evidenceButtons(supportRefs,`${sampleName(r.sample_id)} 的${originLabel(origin)}`,'查看支持記錄'):''}${notices.length?`<span class="sample-flags" aria-label="需要留意：${esc(notices.map(n=>n.label).join('、'))}">${notices.map(n=>`<span class="sample-flag flag-${n.kind}">${esc(n.label)}</span>`).join('')}</span>`:''}<button type="button" class="sample-focus" data-focus="${esc(r.sample_id)}" ${current?'disabled aria-current="true"':''}>${current?'目前查看':'查看樣本'}</button></td><td class="num"><strong>${result(r)}</strong><span class="curve-status ${curve?'':'curve-unavailable'}">曲線：${curve?'已提供':'未提供'}</span>${evidenceButtons(r.decision_refs,evidenceContext,evidenceLabel)}</td></tr>`;}).join('')}</tbody></table></div><p class="reading-hint">支持來源說明樣本如何進入目前族群；校正狀態只反映保存的對齊座標。勾選控制圖中顯示，「查看樣本」帶出候選與積分。</p>`;
   }
   function candidateControl(item){
     if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本，才會列出該樣本的候選。</p>';
@@ -145,8 +169,8 @@ WORKBENCH_JS = r"""(() => {
     const rawApex=curve.integration?.raw_apex_rt_min, showRaw=finite(rawApex)&&(!finite(curve.apex_rt)||Math.abs(rawApex-curve.apex_rt)>1e-7);
     return `<div class="readout-heading"><div><span class="eyebrow">目前檢閱 · 下列 RT 均為原始時間</span><strong>${esc(sampleName(state.sample))}${c?` · ${esc((c.witness?.label||c.witness?.title||`候選 ${c.index+1}`))}`:''} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</strong></div>${curve.evidence_ref?`<button type="button" class="evidence-link" data-evidence-ref="${esc(curve.evidence_ref)}" data-evidence-context="目前曲線與積分">查看曲線來源</button>`:''}</div><dl class="integration-grid"><div><dt>積分範圍（原始時間）</dt><dd data-readout="bounds">${drt(curve.bound_left_rt)}–${drt(curve.bound_right_rt)} min</dd></div><div><dt>積分峰頂（原始時間）</dt><dd data-readout="apex">${drt(curve.apex_rt)} min</dd></div>${showRaw?`<div><dt>原始訊號峰頂（原始時間）</dt><dd data-readout="raw-apex">${drt(rawApex)} min</dd></div>`:''}<div><dt>當次原始計數面積</dt><dd data-readout="area">${num(curve.area)} <span>counts·s</span></dd></div><div><dt>正式定量值</dt><dd data-readout="quantity">${result(row)}</dd></div></dl><p class="control-note">面積是這次積分的原始計數面積；正式定量值是來源保存的決策結果，兩者分開顯示。</p>${evidenceButtons(row.decision_refs,evidenceContext,evidenceLabel)}`;
   }
-  function plot(item,axis){
-    const drawable=curvesForPlot(item).flatMap(curve=>seriesList(curve,axis).map(series=>({curve,series})));
+  function plot(item,axis,peer=false){
+    const drawable=curvesForPlot(item,peer).flatMap(curve=>seriesList(curve,axis,peer?'raw':state.signal).map(series=>({curve,series})));
     if(!drawable.length)return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;
     let lo=Infinity,hi=-Infinity,lowY=0,highY=0;
     drawable.forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)){lo=Math.min(lo,v);hi=Math.max(hi,v);lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
@@ -156,19 +180,30 @@ WORKBENCH_JS = r"""(() => {
     for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="10" fill="#5c6971">${v===0?'0':Math.abs(v)>=10000?v.toExponential(1):num(v)}</text>`;}
     svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" fill="none" stroke="#91a0a8"/>`;
     for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="296" text-anchor="middle" font-size="10" fill="#5c6971">${rt(v)}</text>`;}
-    const active=activeCurve(item);
+    const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
-    drawable.forEach(({curve,series:s})=>{const focused=!state.sample||curve.sample_id===state.sample,opacity=state.sample&&!focused?.16:.92,points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號';svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${s.kind==='raw'?1.7:2.2}" stroke-dasharray="${s.kind==='raw'?'':'6 4'}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if(curve!==active||!state.bounds||s.kind!==state.signal&&!(state.signal==='positive'&&s.kind==='positive_signal'))return;
+    drawable.forEach(({curve,series:s})=>{const focused=peer||!state.sample||curve.sample_id===state.sample,opacity=!peer&&state.sample&&!focused?.16:.92,points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號';svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${s.kind==='raw'?1.7:2.2}" stroke-dasharray="${s.kind==='raw'?'':'6 4'}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if(curve!==active||!state.bounds||s.kind!==state.signal&&!(state.signal==='positive'&&s.kind==='positive_signal'))return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
     return `<svg role="img" aria-label="${axis==='raw'?'原始時間':'對齊時間'}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="398" y="324" text-anchor="middle" font-size="11">${axis==='raw'?'原始 RT':'對齊 RT'}（min）</text></svg>`;
   }
   function plotCard(item,axis,signalLabel){
-    const isAligned=axis==='aligned';
+    const isAligned=axis==='aligned', coverage=alignmentCoverage(item), total=Math.max(coverage.total,coverage.available);
     if(isAligned&&!alignedAvailable(item))return '<section class="plot-card plot-unavailable" id="plot-aligned"><div class="plot-header"><div><h4>對齊時間 · '+signalLabel+'</h4><p>來源未提供目前所選曲線與訊號的對齊座標。</p></div></div><div class="aligned-unavailable"><strong>對齊時間圖不可用</strong><p>原始時間圖仍可檢閱；此處不以原始座標或標線代替對齊資料。</p></div></section>';
     const overlay=state.signal==='raw'?'實線為原始訊號。':'實線為原始訊號，虛線為目前所選處理訊號。';
-    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4><button type="button" data-zoom="${axis}">放大圖表 ↗</button></div><div class="svg-container" id="svg-${axis}">${plot(item,axis)}</div><p class="chart-caption">${overlay}${isAligned?'只使用來源提供的對齊座標與標線。':'峰界與積分讀值使用來源保存的原始時間值。'}</p></section>`;
+    const calibration=isAligned?`<p class="alignment-summary ${coverage.available<total?'partial':''}">校正狀態：${coverage.available} / ${total} 個目前顯示樣本有對齊座標${coverage.available<total?'；其餘不外插':''}</p>`:'';
+    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大圖表 ↗</button></div><div class="svg-container" id="svg-${axis}">${plot(item,axis)}</div><p class="chart-caption">${overlay}${isAligned?'只使用來源提供的對齊座標與標線。':'峰界與積分讀值使用來源保存的原始時間值。'}</p></section>`;
+  }
+  function peerPlotCard(peer,axis){
+    const aligned=axis==='aligned', coverage=alignmentCoverage(peer,true), total=Math.max(coverage.total,coverage.available);
+    if(aligned&&!alignedAvailable(peer,true))return '<section class="peer-plot plot-unavailable"><div class="plot-header"><h5>對齊時間</h5></div><div class="peer-unavailable">未提供相關族群的對齊座標；不以原始時間代替。</div></section>';
+    return `<section class="peer-plot"><div class="plot-header"><div><h5>${aligned?'對齊時間':'原始時間'}</h5>${aligned?`<p class="alignment-summary ${coverage.available<total?'partial':''}">校正狀態：${coverage.available} / ${total} 個樣本有對齊座標${coverage.available<total?'；其餘不外插':''}</p>`:''}</div></div><div class="peer-svg">${plot(peer,axis,true)}</div></section>`;
+  }
+  function relatedGroupsPanel(item){
+    const peers=Array.isArray(item.related_groups)?item.related_groups:[], declared=finite(item.review_summary?.related_group_count)?item.review_summary.related_group_count:peers.length;
+    if(!declared&&!peers.length)return '';
+    return `<section class="related-groups" aria-label="相關族群比較"><div class="section-heading"><div><h3>相關族群比較</h3><p>本報告記錄 ${declared} 個相關族群；內嵌 ${peers.length} 個供曲線比較。</p></div></div>${peers.length?peers.map(peer=>`<article class="related-group"><div class="related-group-heading"><div><span class="eyebrow">已分開保存的相關族群</span><h4>${esc(peer.label||'相關族群')}</h4></div><span>${Array.isArray(peer.sample_ids)?peer.sample_ids.length:0} 個樣本</span></div>${peer.reason?`<p class="related-reason">${esc(peer.reason)}</p>`:''}${evidenceButtons(peer.edge_refs,'族群分離依據','查看分離依據')}${peer.curves?.length?`<div class="peer-charts">${peerPlotCard(peer,'raw')}${peerPlotCard(peer,'aligned')}</div>`:'<p class="peer-unavailable">這個相關族群未內嵌可比較曲線。</p>'}</article>`).join(''):'<p class="peer-unavailable">相關族群已計數，但本報告未內嵌其曲線。</p>'}</section>`;
   }
   function evidencePanel(item){
     if(!state.evidence)return '';const record=records(item).find(r=>r.ref===state.evidence);
@@ -179,7 +214,7 @@ WORKBENCH_JS = r"""(() => {
   function detail(){
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;$('workspace-content').innerHTML=excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>';return;}normalize(item);
     const graph=state.sample?`${sampleName(state.sample)} · 目前查看`:'所有可見樣本',selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[state.signal]||'訊號',signalLabel=state.signal==='raw'?selectedSignalLabel:`原始＋${selectedSignalLabel}`;
-    $('workspace-content').innerHTML=`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)} · ${itemRows(item).length} 個樣本</p><h2>${esc(itemTitle(item))}</h2><div class="detail-meta"><span>m/z <strong>${mz(item.precursor_mz)}</strong></span><span>主要 RT <strong>${rt(item.rt_apex_min)} min</strong></span>${item.method_label?`<span>${esc(item.method_label)}</span>`:''}</div><p class="detail-summary">${esc(summary(item))} ${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分 · 比較所有可見樣本'}</span></div><div class="selection-controls ${state.sample?'':'overview-controls'}">${state.sample?`<div class="control-group"><span class="control-label">候選峰</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}<div class="control-group"><span class="control-label">訊號種類</span>${signalControl(item)}</div></div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div><label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示所選積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid">${plotCard(item,'raw',signalLabel)}${plotCard(item,'aligned',signalLabel)}</div><section class="integration-card" id="integration-readout">${readout(item)}</section></div>${evidencePanel(item)}</div></section><section class="sample-section"><div class="section-heading"><h3>樣本結果</h3></div>${sampleTable(item)}</section>`;
+    $('workspace-content').innerHTML=`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)} · ${itemRows(item).length} 個樣本</p><h2>${esc(itemTitle(item))}</h2><div class="detail-meta"><span>m/z <strong>${mz(item.precursor_mz)}</strong></span><span>主要 RT <strong>${rt(item.rt_apex_min)} min</strong></span>${item.method_label?`<span>${esc(item.method_label)}</span>`:''}</div><p class="detail-summary">${esc(summary(item))} ${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${familyOverview(item)}<section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分 · 比較所有可見樣本'}</span></div><div class="selection-controls ${state.sample?'':'overview-controls'}">${state.sample?`<div class="control-group"><span class="control-label">候選峰</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}<div class="control-group"><span class="control-label">訊號種類</span>${signalControl(item)}</div></div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div><label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示所選積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid">${plotCard(item,'raw',signalLabel)}${plotCard(item,'aligned',signalLabel)}</div><section class="integration-card" id="integration-readout">${readout(item)}</section></div>${evidencePanel(item)}</div></section>${relatedGroupsPanel(item)}<section class="sample-section"><div class="section-heading"><h3>樣本結果</h3></div>${sampleTable(item)}</section>`;
   }
   function reset(){state.sample=null;state.candidate='';state.capture='';state.signal='raw';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
   function clearFilters(){for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).value='';list();}

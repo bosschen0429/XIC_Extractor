@@ -16,6 +16,23 @@ and renders its finalized result. It requires explicit pure CID-NL discovery
 settings; the Alignment CLI supplies them through a bound preset. Unsupported
 discovery settings are rejected before acquisition or output creation.
 
+The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
+targets CSV or reference workbook takes precedence; otherwise it uses the same
+`config/targets.example.csv` template as the GUI's fresh default and prints the
+resolved source and ISTD count. Missing or invalid input fails before RAW work.
+An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
+be combined with either ISTD input. The Python API retains its explicit optional
+input contract.
+
+With ISTD input, the existing target extractor obtains label-bound measurements
+and the formal drift owner prepares its batch map before initial edge/group
+decisions. The finalized explanation saves the same prepared sample knots,
+domains, measurements and source provenance. Downstream review reuses these
+results; it does not refit the model. Insufficient anchors and positions outside
+the bounded map remain unassessable. A saved group built without the intended
+ISTD input must be rebuilt by the alignment owner, rather than being validated
+by a later display transformation.
+
 The retained Untargeted CID-NL production route carries initial groups directly
 into the CrossSample context without model fitting, assignment, FitOnceSource
 construction, or MT0 split/merge proposals and application. Initial candidates
