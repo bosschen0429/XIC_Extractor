@@ -33,6 +33,29 @@ the bounded map remain unassessable. A saved group built without the intended
 ISTD input must be rebuilt by the alignment owner, rather than being validated
 by a later display transformation.
 
+Initial owner edges use a selective drift trigger before querying that map.
+`alignment.edge_scoring` first evaluates raw RT with the existing identity,
+owner-quality and seed-support rules. A strong raw edge skips correction unless
+the reference owner has a direct, unique same-target binding for both endpoints;
+that measured pairing remains usable against a closer unbound competing peak.
+Weak seed support or weak/ambiguous owner quality cannot be repaired by RT, so
+those pairs also skip correction. Other non-blocked pairs query the prepared
+map once. No new RAW acquisition, model fit or grouping pass is introduced.
+
+After a query, correction that worsens the pair by more than the existing
+10-second contradiction threshold, or moves raw RT from inside to outside the
+preferred window, falls back to the raw-only score and decision. Fallback does
+not keep a prior bonus, promote a weak edge to strong, or bypass complete-link
+and hard gates. The existing targeted-ISTD product/loss hard-gate exceptions
+retain their RT query. Group ranking reuses the cached edge's chosen coordinate.
+
+Edge evidence and its audit projections record `rt_basis` as `raw` or
+`drift_corrected`. `drift_prior_source` identifies the supplied lookup, not proof
+that correction was applied. Unqueried or unavailable corrected RT is absent;
+the reason distinguishes raw sufficiency, insufficient non-RT evidence,
+unavailability and post-query fallback. Historical explanation records remain
+readable as recorded; they are not reclassified by this field addition.
+
 The retained Untargeted CID-NL production route carries initial groups directly
 into the CrossSample context without model fitting, assignment, FitOnceSource
 construction, or MT0 split/merge proposals and application. Initial candidates

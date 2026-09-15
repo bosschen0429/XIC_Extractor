@@ -81,6 +81,7 @@ def test_owner_edge_evidence_tsv_uses_stable_columns_and_float_format(
                 rt_raw_delta_sec=6.0,
                 rt_drift_corrected_delta_sec=None,
                 drift_prior_source="none",
+                rt_basis="raw",
                 injection_order_gap=None,
                 owner_quality="clean",
                 seed_support_level="strong",
@@ -97,12 +98,12 @@ def test_owner_edge_evidence_tsv_uses_stable_columns_and_float_format(
             "neutral_loss_tag\tleft_precursor_mz\tright_precursor_mz\tleft_rt_min\t"
             "right_rt_min\tdecision\tfailure_reason\trt_raw_delta_sec\t"
             "rt_drift_corrected_delta_sec\tdrift_prior_source\tinjection_order_gap\t"
-            "owner_quality\tseed_support_level\tduplicate_context\tscore\treason"
+            "owner_quality\tseed_support_level\tduplicate_context\tscore\treason\trt_basis"
         ),
         (
             "OWN-s1-000001\tOWN-s2-000001\ts1\ts2\tdC\t228.123\t228.123\t"
             "4.12346\t4.22346\tstrong_edge\t\t6\t\tnone\t\tclean\tstrong\t"
-            "none\t100\t'=strong"
+            "none\t100\t'=strong\traw"
         ),
     ]
 

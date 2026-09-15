@@ -277,6 +277,13 @@ class KnownIstdOwnerLookup:
             return None
         return abs((left.owner_apex_rt - a[1]) - (right.owner_apex_rt - b[1])) * 60.0
 
+    def has_direct_reference_pair(
+        self, left: SampleLocalMS1Owner, right: SampleLocalMS1Owner,
+    ) -> bool:
+        """A measured same-target binding must survive a closer unbound peak."""
+        a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
+        return a is not None and b is not None and a[0] == b[0]
+
 
 def interpolate_calibrated_rt_min(
     value: float, knots: Sequence[Sequence[float]]

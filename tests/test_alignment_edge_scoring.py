@@ -231,23 +231,140 @@ def test_invalid_drift_prior_source_raises_before_evidence_is_produced() -> None
         )
 
 
-def test_contradictory_drift_prior_keeps_edge_weak_and_penalizes_score() -> None:
+def test_sufficient_raw_edge_is_preserved_before_applying_drift() -> None:
+    class CountingDrift(_DriftLookup):
+        calls = 0
+
+        def sample_delta_min(self, sample_stem: str) -> float | None:
+            type(self).calls += 1
+            return super().sample_delta_min(sample_stem)
+
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.10),
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
-        drift_lookup=_DriftLookup(
+        drift_lookup=CountingDrift(
             deltas={"s1": 0.00, "s2": -0.30},
             orders={"s1": 1, "s2": 2},
         ),
     )
 
-    assert edge.decision == "weak_edge"
+    assert edge.decision == "strong_edge"
+    assert CountingDrift.calls == 0
     assert edge.drift_prior_source != "none"
     assert edge.rt_raw_delta_sec == pytest.approx(6.0)
-    assert edge.rt_drift_corrected_delta_sec == pytest.approx(24.0)
-    assert edge.rt_drift_corrected_delta_sec > edge.rt_raw_delta_sec + 10.0
-    assert edge.score == 70
+    assert edge.rt_drift_corrected_delta_sec is None
+    assert edge.score == 55
+    assert edge.rt_basis == "raw"
+    assert "raw_sufficient" in edge.reason
+
+
+@pytest.mark.parametrize("corrected_sec", [24.0, 65.0])
+def test_degraded_drift_falls_back_without_keeping_prior_bonus(
+    corrected_sec: float,
+) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        classify_cross_sample_initial_edge,
+    )
+
+    raw_sec = 6.0 if corrected_sec == 24.0 else 56.0
+    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0)
+    left = _owner("s1", evidence_score=45, seed_event_count=1)
+    right = _owner(
+        "s2", owner_apex_rt=10.0 + raw_sec / 60.0,
+        evidence_score=45, seed_event_count=1,
+    )
+    raw = evaluate_owner_edge(left, right, config=config)
+    edge = evaluate_owner_edge(
+        left, right, config=config,
+        drift_lookup=_DriftLookup(
+            deltas={"s1": 0.0, "s2": (raw_sec - corrected_sec) / 60.0},
+            orders={"s1": 1, "s2": 2},
+        ),
+    )
+
+    assert edge.rt_basis == "raw"
+    assert "raw_fallback" in edge.reason
+    assert edge.drift_prior_source == "batch_istd_trend"
+    assert edge.rt_drift_corrected_delta_sec == pytest.approx(corrected_sec)
+    assert edge.score == raw.score == 45
+    assert edge.decision == raw.decision == "weak_edge"
+    assert classify_cross_sample_initial_edge(
+        edge, context="full_batch_continuity", config=config,
+    ) == "eligible"
+    assert classify_cross_sample_initial_edge(
+        edge, context="complete_link", config=config,
+    ) == "review_only"
+
+
+def test_insufficient_raw_keeps_helpful_drift() -> None:
+    edge = evaluate_owner_edge(
+        _owner("s1", evidence_score=45, seed_event_count=1),
+        _owner("s2", owner_apex_rt=11.5, evidence_score=45, seed_event_count=1),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        drift_lookup=_DriftLookup(
+            deltas={"s1": 0.0, "s2": 1.0}, orders={"s1": 1, "s2": 2},
+        ),
+    )
+
+    assert edge.decision == "strong_edge"
+    assert edge.rt_basis == "drift_corrected"
+    assert edge.rt_raw_delta_sec == pytest.approx(90.0)
+    assert edge.rt_drift_corrected_delta_sec == pytest.approx(30.0)
+
+
+@pytest.mark.parametrize(
+    ("right", "expected_decision"),
+    [
+        (_owner("s1"), "blocked_edge"),
+        (_owner("s2", identity_conflict=True), "blocked_edge"),
+        (_owner("s2", precursor_mz=400.0), "blocked_edge"),
+        (_owner("s2", evidence_score=20, seed_event_count=0), "weak_edge"),
+        (_owner("s2", owner_area=0), "weak_edge"),
+        (_owner("s2", assignment_reason="ambiguous_nearby"), "weak_edge"),
+    ],
+)
+def test_drift_is_not_queried_when_it_cannot_admit_the_pair(
+    right: SampleLocalMS1Owner, expected_decision: str,
+) -> None:
+    class UnneededDrift(_DriftLookup):
+        def sample_delta_min(self, sample_stem: str) -> float | None:
+            pytest.fail("RT correction cannot overcome this non-RT failure")
+
+    edge = evaluate_owner_edge(
+        _owner("s1"), right, config=AlignmentConfig(),
+        drift_lookup=UnneededDrift(deltas={}, orders={}),
+    )
+    assert edge.decision == expected_decision
+    assert edge.rt_basis == "raw"
+    assert edge.rt_drift_corrected_delta_sec is None
+
+
+@pytest.mark.parametrize("failure", ["product", "loss"])
+def test_targeted_istd_hard_gate_exception_retains_its_rt_query(failure: str) -> None:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        classify_cross_sample_initial_edge,
+    )
+
+    edge = evaluate_owner_edge(
+        _owner("s1"),
+        _owner("s2", owner_apex_rt=11.5,
+               product_mz=155.0 if failure == "product" else 150.0,
+               observed_neutral_loss_da=105.0 if failure == "loss" else 100.0),
+        config=AlignmentConfig(),
+        drift_lookup=_DriftLookup(
+            deltas={"s1": 0.0, "s2": 1.0}, orders={},
+        ),
+    )
+    assert edge.decision == "blocked_edge"
+    assert edge.rt_basis == "drift_corrected"
+    assert edge.rt_drift_corrected_delta_sec == pytest.approx(30.0)
+    assert classify_cross_sample_initial_edge(
+        edge, context="targeted_istd_continuity", config=AlignmentConfig(),
+    ) == "eligible"
+    assert classify_cross_sample_initial_edge(
+        edge, context="complete_link", config=AlignmentConfig(),
+    ) == "excluded"
 
 
 def test_weak_seed_support_keeps_hard_pass_edge_weak() -> None:

@@ -187,26 +187,34 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     for invalid in (no_event, wrong_nl):
         rejected = reference.bind((early, invalid))
         assert rejected.corrected_pair_delta_sec(early, invalid) is None
-    assert evaluate_owner_edge(early, other, config=config, drift_lookup=lookup) == (
-        evaluate_owner_edge(early, other, config=config)
-    )
+
+    def assert_unavailable_pair_uses_only_raw(right, unavailable_lookup):
+        # Lookup provenance is retained even when the trigger skips querying it.
+        # Prove its unavailable binding separately, then pin every edge field.
+        assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
+        raw = evaluate_owner_edge(early, right, config=config)
+        suffix = (
+            ";drift=raw_sufficient" if raw.decision == "strong_edge"
+            else ";drift=unavailable"
+        )
+        assert evaluate_owner_edge(
+            early, right, config=config, drift_lookup=unavailable_lookup,
+        ) == replace(
+            raw, drift_prior_source="targeted_istd_trend", reason=raw.reason + suffix,
+        )
+
+    assert_unavailable_pair_uses_only_raw(other, lookup)
     other_rt = replace(late, owner_id="different-peak", owner_apex_rt=9.5,
                        owner_peak_start_rt=9.4, owner_peak_end_rt=9.6)
-    assert evaluate_owner_edge(early, other_rt, config=config, drift_lookup=lookup) == (
-        evaluate_owner_edge(early, other_rt, config=config)
-    )
+    assert_unavailable_pair_uses_only_raw(other_rt, lookup)
     # An overlapping SUPPORT owner prevents a unique binding; removing it later
     # from a group must not recreate reference authority.
     ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
-    assert evaluate_owner_edge(early, late, config=config, drift_lookup=ambiguous) == (
-        evaluate_owner_edge(early, late, config=config)
-    )
+    assert_unavailable_pair_uses_only_raw(late, ambiguous)
     workbook["XIC Results"]["D5"] = "ND"
     workbook.save(path)
     partial = read_known_istd_reference(path).bind((early, late))
-    assert evaluate_owner_edge(early, late, config=config, drift_lookup=partial) == (
-        evaluate_owner_edge(early, late, config=config)
-    )
+    assert_unavailable_pair_uses_only_raw(late, partial)
     workbook["Targets"].append(["second", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
     workbook["XIC Results"].append(["early", "second", "ISTD", 8, 1])
     workbook.save(path)
