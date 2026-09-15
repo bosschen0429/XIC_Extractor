@@ -72,15 +72,18 @@ in-report filters expose matching excluded records. A report containing only
 excluded candidates explains how to open them. This presentation does not alter
 the selected population, retained evidence, or API selection semantics.
 An ordinary report initially opens its group or row with the greatest observed
-sample coverage. Explicit queries keep their first matching item. Group summaries
-show observed coverage and recorded initial/final membership; each sample
+sample coverage. Explicit queries keep their first matching item. The workbench
+shows the group summary, all-visible-sample curves and integration, sample
+relationships and cross-sample curves, then all sample results and support
+records. These main sections are visible without expanding a disclosure.
+Each sample
 distinguishes initial discovery support, reacquired support, and method recovery
 with its exact evidence references. A physical direct-observation cell is not
 by itself evidence of initial discovery support.
-Recorded initial comparisons can link to a distinct peer group or row.
-Each selected primary embeds curves for at most one exact peer and exposes the
-total peer count and queryable references. Peer context does not increase the
-primary selected count or create a scientific relationship.
+Recorded initial comparisons can link to a distinct peer group or row in the
+source projection. They do not have a separate comparison panel in the workbench.
+Peer context does not increase the primary selected count or create a scientific
+relationship.
 Within a final group, optional `internal_pair_support` shows retained initial
 edges whose exact member endpoints both belong to that group. Eligible edges
 are direct support; review-only edges are not direct support. The panel shows
@@ -88,6 +91,9 @@ sample labels, recorded reasons, scores, and available raw/corrected RT deltas.
 Each edge remains one record even when it links more than two candidate keys.
 Direct edges may connect through another member; they do not imply every pair
 agrees. Initial comparison records are not a trace of the final split decision.
+Selecting a graph node or edge scopes the cross-sample curve lanes. Lanes follow
+the saved injection order, including after selecting a pair; missing order is
+identified explicitly. Each lane uses the sample's exact retained support binding.
 The workbench links the sample result, candidate, retained capture, integration
 facts, and available decision records. Viewing a sample scopes its candidate
 choices and peak details. An explicit return beside the sample heading restores
@@ -110,6 +116,11 @@ candidate keys; those links do not establish formal quantification adoption.
 The report does not infer a decision reason or a candidate relationship from a
 display name, nearby mass, or nearby retention time.
 
+Curves default to the saved smoothed signal. Selecting raw or another available
+signal replaces the curve rather than overlaying raw underneath it. Cross-sample
+lanes scale each sample to its selected signal's maximum. Missing selected signal
+data does not fall back to raw. The display does not prepare or smooth data again.
+
 Capture stage, signal type, and time axis are distinct. Raw-time and aligned-time
 plots are shown together for comparison, with separate zoom controls. Aligned
 curves and peak marks use the formal calibration saved by the producer that
@@ -117,7 +128,7 @@ built the groups. The source adapter applies its stored sample knots to curve
 and peak times without fitting again or extrapolating. Missing calibration,
 insufficient sample anchors, and points outside the saved domain remain
 unavailable; partial coverage is visible. Old reports without this evidence
-retain the raw plot. Aligning a plot cannot repair grouping that was created
+retain the original-time plot. Aligning a plot cannot repair grouping that was created
 without the intended ISTD input. The integration readout identifies its
 raw-time coordinates. Precursor m/z uses four fixed decimal places, primary RT uses two,
 and detailed peak times use three. NULL, numeric zero, a missing single result,
