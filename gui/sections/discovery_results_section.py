@@ -404,9 +404,9 @@ class DiscoveryResultsSection(QWidget):
         )
         if generation == self._generation and self._evidence == worker.job.source:
             self._report_target = result.output_path
+        self._on_report_terminal(worker, label, message)
         if worker.job.open_after_export:
             _open_path(str(result.output_path))
-        self._on_report_terminal(worker, label, message)
 
     def _on_report_terminal(self, worker, label: str, message: str) -> None:
         if self._report_worker is not worker:

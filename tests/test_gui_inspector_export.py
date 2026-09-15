@@ -154,6 +154,41 @@ def test_report_completion_after_clear_keeps_old_run_out_of_new_open(qtbot, tmp_
     assert any("request req-01 / attempt att-01" in text for text in messages)
 
 
+def test_export_and_open_announces_success_before_browser_event_reentry(
+    monkeypatch, qtbot, tmp_path
+):
+    import gui.sections.discovery_results_section as section_module
+
+    source = _source(tmp_path)
+    section = DiscoveryResultsSection()
+    qtbot.addWidget(section)
+    section.update_results(_summary(source))
+    statuses = []
+    section.status_message.connect(lambda text, _timeout: statuses.append(text))
+    opened = []
+
+    def reentrant_open(path: str) -> None:
+        opened.append(path)
+        # os.startfile can enter the Qt event loop before this slot returns.
+        qtbot.wait(50)
+
+    monkeypatch.setattr(section_module, "_open_path", reentrant_open)
+    section._start_report(
+        InspectorJob(
+            source, SelectionRequest(limit=1), tmp_path / "opened.html", True
+        )
+    )
+    worker = section._report_worker
+    assert worker is not None
+    assert worker.wait(10000)
+    qtbot.wait(50)
+    assert opened == [str(tmp_path / "opened.html")]
+    assert (tmp_path / "opened.html").is_file()
+    assert "selected 1" in section._inspector_status.text()
+    assert "retained_curves_v1" in section._inspector_status.text()
+    assert statuses and "selected 1" in statuses[-1]
+
+
 def test_slow_report_keeps_start_snapshot_while_new_result_arrives(
     monkeypatch, qtbot, tmp_path
 ):
