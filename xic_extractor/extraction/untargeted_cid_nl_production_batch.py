@@ -113,6 +113,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
 )
+from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
@@ -658,6 +659,7 @@ class UntargetedCidNlPartitionComposition:
     method_assessments: tuple[CidNlMethodAssessmentRef, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -723,6 +725,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
         initial_edges=inputs.initial_edges,
+        capture_evidence=inputs.capture_evidence,
     )
     sealed = store.append_children(
         partition_key,
@@ -747,6 +750,7 @@ class _ProductionCompositionInputs:
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
     completed_captures: tuple[tuple[SampleLocalCapture, ...], ...]
+    capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
 def compose_untargeted_cid_nl_production_result(
@@ -782,6 +786,7 @@ def compose_untargeted_cid_nl_production_result(
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
         initial_edges=inputs.initial_edges,
+        capture_evidence=inputs.capture_evidence,
     )
 
 
@@ -815,6 +820,7 @@ def compose_untargeted_cid_nl_partition(
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
         initial_edges=inputs.initial_edges,
+        capture_evidence=inputs.capture_evidence,
     )
 
 
@@ -1018,9 +1024,7 @@ def _build_production_composition_inputs(
         if bindings_by_subject.get(subject.method_subject_id)
     )
     for subject_workset in cid_nl_alignment_subject_worksets(active_subjects):
-        workset_subject_ids = {
-            subject.method_subject_id for subject in subject_workset
-        }
+        workset_subject_ids = {subject.method_subject_id for subject in subject_workset}
         child_bindings = tuple(
             binding
             for binding in bindings
@@ -1327,6 +1331,18 @@ def _build_production_composition_inputs(
         initial_groups=tuple(initial_groups),
         initial_edges=tuple(initial_edges),
         completed_captures=tuple(completed_captures),
+        capture_evidence=tuple(
+            evidence
+            for result in sample_results
+            for evidence in (
+                *result.adapter_result.capture_evidence,
+                *(
+                    item
+                    for attempt in result.recovery_attempts
+                    for item in attempt.capture_evidence
+                ),
+            )
+        ),
     )
 
 

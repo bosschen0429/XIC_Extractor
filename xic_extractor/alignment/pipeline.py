@@ -50,6 +50,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
+from xic_extractor.diagnostics.cid_nl_explanation import EvidenceLocator
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
     write_cid_nl_explanation,
 )
@@ -501,7 +502,7 @@ def _run_untargeted_cid_nl_alignment(
         if outputs.matrix_tsv is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
         with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-            write_cid_nl_explanation(
+            db_path = write_cid_nl_explanation(
                 output_dir / "cid_nl_explanation.sqlite",
                 completed=completed,
                 writer_inputs=writer_inputs,
@@ -511,14 +512,32 @@ def _run_untargeted_cid_nl_alignment(
                 known_istd_reference_provenance=(
                     None
                     if known_istd_reference is None
-                    else known_istd_reference.provenance
+                    else known_istd_reference.explanation_provenance
                 ),
                 progress_callback=timing_recorder.heartbeat_event,
             )
+        evidence: EvidenceLocator | None = None
+        if outputs.matrix_tsv is not None and outputs.matrix_tsv.is_file():
+            with outputs.matrix_tsv.open("rb") as handle:
+                matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
+
+            app = getattr(completed, "application_result", None)
+            req = getattr(app, "processing_request", None)
+            att = getattr(app, "processing_attempt", None)
+            evidence = EvidenceLocator(
+                report_path=db_path,
+                matrix_path=outputs.matrix_tsv,
+                matrix_sha256=matrix_sha256,
+                processing_request_id=getattr(req, "processing_request_id", ""),
+                processing_attempt_id=getattr(att, "processing_attempt_id", ""),
+                schema_version=2,
+            )
+
         return replace(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
             untargeted_cid_nl_result=completed,
+            evidence=evidence,
         )
     finally:
         if hasattr(completed, "close"):

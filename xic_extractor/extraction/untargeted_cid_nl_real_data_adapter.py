@@ -12,6 +12,7 @@ import json
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Protocol
 
@@ -78,13 +79,12 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
     resolve_dda_cid_nl_peak_support_ref,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
-)
+from xic_extractor.peak_detection.evidence_facts import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
+    RetainedCaptureEvidence,
     mint_peak_observation_ref,
 )
 from xic_extractor.peak_detection.search_scope import (
@@ -144,6 +144,9 @@ class UntargetedCidNlRealDataAdapterResult:
     strict_scan_count: int
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
+    capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
+        default=(), compare=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +156,9 @@ class UntargetedCidNlRecoveryAttemptResult:
     acquisition: TraceAcquisitionBatch
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
+    capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
+        default=(), compare=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,19 +288,35 @@ class UntargetedCidNlRecoveryTraceBatch:
 class _UntargetedRealDataWorkObserver:
     """Retain already-minted facts so runtime failure can quarantine them."""
 
-    __slots__ = ("_artifacts", "_processing_owners", "acquisition")
+    __slots__ = (
+        "_artifacts",
+        "_processing_owners",
+        "initial_acquisition",
+        "recovery_acquisition",
+    )
 
     def __init__(self, processing_owners: ProcessingOwnerReferences) -> None:
         self._processing_owners = processing_owners
-        self.acquisition: TraceAcquisitionBatch | None = None
+        self.initial_acquisition: TraceAcquisitionBatch | None = None
+        self.recovery_acquisition: TraceAcquisitionBatch | None = None
         self._artifacts: dict[str, EvidenceArtifactRef] = {}
 
-    def record_acquisition(self, acquisition: TraceAcquisitionBatch) -> None:
-        if self.acquisition is not None and self.acquisition is not acquisition:
+    @property
+    def acquisition(self) -> TraceAcquisitionBatch | None:
+        return self.recovery_acquisition or self.initial_acquisition
+
+    def record_acquisition(
+        self, acquisition: TraceAcquisitionBatch, *, recovery: bool = False
+    ) -> None:
+        observed = self.recovery_acquisition if recovery else self.initial_acquisition
+        if observed is not None and observed is not acquisition:
             raise UntargetedCidNlRealDataAdapterError(
-                "one bounded work unit cannot replace its observed acquisition"
+                "one acquisition phase cannot replace its observed acquisition"
             )
-        self.acquisition = acquisition
+        if recovery:
+            self.recovery_acquisition = acquisition
+        else:
+            self.initial_acquisition = acquisition
 
     def record_artifact(self, artifact: EvidenceArtifactRef) -> None:
         attempt = self._processing_owners.attempt
@@ -696,6 +718,7 @@ def adapt_current_discovery_sample_subject(
         signal_processing_profile=signal_processing_profile,
         physical_records=physical_records,
     )
+    capture_evidence: list[RetainedCaptureEvidence] = []
     acquisition, observations, captures = _reacquire_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
@@ -706,6 +729,7 @@ def adapt_current_discovery_sample_subject(
         source=source,
         search_scope=search_scope,
         method_subject=method_subject,
+        evidence_sink=capture_evidence,
         _observer=_observer,
         _preacquired_traces=_preacquired_traces,
     )
@@ -823,6 +847,7 @@ def adapt_current_discovery_sample_subject(
             }
         ),
         lineage_artifacts=lineage,
+        capture_evidence=tuple(capture_evidence),
     )
 
 
@@ -951,8 +976,9 @@ def recover_untargeted_cid_nl_sample_subject(
             request=request,
         )
     if _observer is not None:
-        _observer.record_acquisition(acquisition)
+        _observer.record_acquisition(acquisition, recovery=True)
     observations: tuple[PeakObservationRef, ...] = ()
+    physical_evaluations: list[PhysicalPeakEvaluation] = []
     if signal_processing_profile is not None:
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
@@ -969,6 +995,7 @@ def recover_untargeted_cid_nl_sample_subject(
             group_center_rt=float(group_center_rt),
             profile=signal_processing_profile,
             resolver_mode=peak_config.resolver_mode,
+            evaluation_sink=physical_evaluations.append,
         )
         observations = (observation,) if observation is not None else ()
     else:
@@ -1159,6 +1186,20 @@ def recover_untargeted_cid_nl_sample_subject(
         recovery_input=recovery_input,
         acquisition=acquisition,
         lineage_artifacts=lineage,
+        capture_evidence=tuple(
+            RetainedCaptureEvidence(
+                canonical_sample_identity_id=sample.identity.sample_identity_id,
+                processing_request_id=processing_owners.request.processing_request_id,
+                processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+                method_subject_id=method_subject.method_subject_id,
+                candidate_id=None,
+                capture_stage="method_recovery",
+                trace=trace,
+                physical_evaluation=evaluation,
+                observation_ref=observation,
+            )
+            for evaluation in physical_evaluations
+        ),
     )
 
 
@@ -1259,6 +1300,7 @@ def _reacquire_peak_observations(
     source,
     search_scope: UntargetedSearchScope,
     method_subject: CidNlMethodSubject | None = None,
+    evidence_sink: list[RetainedCaptureEvidence] | None = None,
     _observer: _UntargetedRealDataWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
@@ -1346,11 +1388,28 @@ def _reacquire_peak_observations(
                 trace=trace,
             )
         captures.append(capture)
+        retained = RetainedCaptureEvidence(
+            canonical_sample_identity_id=sample.identity.sample_identity_id,
+            processing_request_id=processing_owners.request.processing_request_id,
+            processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+            method_subject_id=binding.method_subject_id,
+            candidate_id=candidate.candidate_id,
+            capture_stage=(
+                "reacquired_capture"
+                if binding.source_physical_evaluation is not None
+                else "initial_capture"
+            ),
+            trace=trace,
+            physical_evaluation=capture.physical_evaluation,
+            source_physical_evaluation=binding.source_physical_evaluation,
+        )
         if (
             binding.source_physical_evaluation is not None
             and capture.physical_evaluation is not None
             and capture.physical_evaluation.state == "unavailable"
         ):
+            if evidence_sink is not None:
+                evidence_sink.append(retained)
             continue
         if (
             capture.detection.status != "detected"
@@ -1364,13 +1423,14 @@ def _reacquire_peak_observations(
             _validate_candidate_integration(candidate, integration)
         elif binding.source_physical_evaluation is None:
             _validate_physical_candidate_receipt(candidate, capture.physical_evaluation)
-        observations.append(
-            capture_owner.mint_captured_peak_observation(
-                capture,
-                processing_owners=processing_owners,
-                sample=sample,
-            )
+        observation = capture_owner.mint_captured_peak_observation(
+            capture,
+            processing_owners=processing_owners,
+            sample=sample,
         )
+        observations.append(observation)
+        if evidence_sink is not None:
+            evidence_sink.append(replace(retained, observation_ref=observation))
     if search_scope.method_constraints.signal_processing_profile is not None:
         observations = list(dict.fromkeys(observations))
     return acquisition, tuple(observations), tuple(captures)

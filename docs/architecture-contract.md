@@ -30,6 +30,8 @@ configuration ──► extraction / discovery
                      alignment
                          │
                  output renderers
+                         │
+                completed evidence ──► xic_inspector
 ```
 
 Targeted and Untargeted are applications of the same evidence lifecycle.
@@ -70,6 +72,10 @@ policy; result writers consume the completed groups and cells.
 - Domain algorithms must not import GUI, workbook builders, CLI scripts,
   process backends, report renderers, or RAW/CSV adapters.
 - Adapters, IO, rendering, and entry points depend inward on domain owners.
+- `xic_inspector` depends inward on read-only completed-evidence interfaces.
+  Source adapters own method-specific record/schema interpretation; its public
+  API, selection, and renderer remain method-neutral. Scientific/core packages
+  must not import or invoke the Inspector.
 - `alignment.pipeline.run_alignment` may dispatch pure single-provider CID-NL
   work to the retained execution adapter in `extraction/` after Alignment's
   output-collision guard. Alignment may only consume the completed typed batch
@@ -109,6 +115,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |
 | `diagnostics/` | reusable diagnostic models, summaries, and classification | CLI parsing, production mutation, or domain recomputation |
+| `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `gui/` and `scripts/` | interaction and thin orchestration | reusable domain behavior |
 | root facades | current public compatibility and thin orchestration | new implementation detail |
 

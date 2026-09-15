@@ -13,7 +13,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any, cast
 
 import numpy as np
@@ -370,6 +370,10 @@ class PeakObservationRef:
     content: PeakObservationContent
     generation_provenance: PeakObservationGenerationProvenance
     artifact: EvidenceArtifactRef
+    physical_evaluation: PhysicalPeakEvaluation | None = field(
+        default=None, compare=False
+    )
+    capture_stage: str = field(default="initial_capture", compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.content, PeakObservationContent):
@@ -409,6 +413,22 @@ class PeakObservationRef:
             ) from exc
 
 
+@dataclass(frozen=True, slots=True)
+class RetainedCaptureEvidence:
+    """Actual capture inputs and output, with no scientific decision authority."""
+
+    canonical_sample_identity_id: str
+    processing_request_id: str
+    processing_attempt_id: str
+    method_subject_id: str
+    candidate_id: str | None
+    capture_stage: str
+    trace: Trace
+    physical_evaluation: PhysicalPeakEvaluation | None
+    observation_ref: PeakObservationRef | None = None
+    source_physical_evaluation: PhysicalPeakEvaluation | None = None
+
+
 def mint_peak_observation_ref(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -420,6 +440,7 @@ def mint_peak_observation_ref(
     proposal_sources: tuple[str, ...],
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
+    capture_stage: str = "initial_capture",
 ) -> PeakObservationRef:
     """Mint one no-RAW observation after binding integration to exact signals.
 
@@ -451,6 +472,8 @@ def mint_peak_observation_ref(
         processing_owners=processing_owners,
         content=content,
         generation_provenance=generation_provenance,
+        physical_evaluation=physical_evaluation,
+        capture_stage=capture_stage,
     )
 
 
@@ -486,6 +509,8 @@ def _mint_peak_observation_artifact(
     processing_owners: ProcessingOwnerReferences,
     content: PeakObservationContent,
     generation_provenance: PeakObservationGenerationProvenance,
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    capture_stage: str = "initial_capture",
 ) -> PeakObservationRef:
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
@@ -500,6 +525,8 @@ def _mint_peak_observation_artifact(
         content=content,
         generation_provenance=generation_provenance,
         artifact=artifact,
+        physical_evaluation=physical_evaluation,
+        capture_stage=capture_stage,
     )
 
 

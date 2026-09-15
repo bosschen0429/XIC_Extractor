@@ -77,6 +77,7 @@ def write_owner_edge_evidence_tsv(
         "duplicate_context",
         "score",
         "reason",
+        "rt_basis",
     )
     rows = [
         {
@@ -96,6 +97,7 @@ def write_owner_edge_evidence_tsv(
                 edge.rt_drift_corrected_delta_sec,
             ),
             "drift_prior_source": edge.drift_prior_source,
+            "rt_basis": edge.rt_basis,
             "injection_order_gap": (
                 ""
                 if edge.injection_order_gap is None

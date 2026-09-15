@@ -351,11 +351,13 @@ confidence.
 Owners:
 
 - `tools/diagnostics/family_ms1_overlay_*`
-- `tools/diagnostics/backfill_evidence_reconciliation_gallery.py`
+- `tools/diagnostics/cid_nl_default_activation_gallery_review.py`
+- `tools/diagnostics/cid_nl_differential_overlay_review.py`
+- `xic_inspector`
 - `docs/superpowers/validation/evidence_chain_status_guide.html`
 
-Purpose: make human or model-assisted review possible without silently changing
-product authority.
+Purpose: produce scientific overlay evidence and make completed evidence
+reviewable without silently changing product authority.
 
 Evidence states:
 

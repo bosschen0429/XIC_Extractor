@@ -3,7 +3,9 @@ from __future__ import annotations
 import csv
 import json
 import math
-from dataclasses import fields, replace
+import subprocess
+import sys
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -663,9 +665,7 @@ def _assert_composite_no_input_exclusion_coverage(
         replace(
             first,
             composite_assessments=tuple(
-                no_input_by_sample_id[
-                    assessment.content.canonical_sample_identity_id
-                ]
+                no_input_by_sample_id[assessment.content.canonical_sample_identity_id]
                 for assessment in first.composite_assessments
             ),
         )
@@ -681,6 +681,155 @@ def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> Non
             mz=500.0,
             rt=8.0,
         )
+
+
+def _expected_retained_curve(
+    *,
+    kind,
+    sample_id,
+    candidate_id,
+    trace,
+    evaluation,
+    request_id,
+    attempt_id,
+    observation=None,
+    method_subject_id=None,
+):
+    # Acceptance oracle starts with the original owner values, never a reader
+    # result or a re-executed signal-processing calculation.
+    signal = evaluation.retained_prepared_signal if evaluation is not None else None
+    provenance = {
+        "processing_request_id": request_id,
+        "processing_attempt_id": attempt_id,
+    }
+    if method_subject_id is not None:
+        provenance["method_subject_id"] = method_subject_id
+    if evaluation is not None:
+        provenance.update(
+            trace_content_id=evaluation.question.trace_content_id,
+            prepared_signal_id=evaluation.prepared.prepared_signal_id,
+            profile_id=evaluation.prepared.profile_id,
+            physical_state=evaluation.state,
+            physical_reason=evaluation.reason,
+        )
+    if signal is not None:
+        provenance.update(
+            profile_id=signal.profile.profile_id,
+            profile_version=signal.profile.schema_version,
+            profile=asdict(signal.profile),
+        )
+    provenance["acquisition_source_id"] = trace.acquisition_source_id
+    if observation is not None:
+        generation = observation.generation_provenance
+        for name in (
+            "full_trace_sha256",
+            "selection_trace_sha256",
+            "selected_trace_indices",
+            "resolver_mode",
+            "proposal_sources",
+        ):
+            provenance[name] = getattr(generation, name)
+        provenance["observation_artifact_id"] = (
+            observation.artifact.evidence_artifact_id
+        )
+    integration = (
+        observation.content.integration
+        if observation is not None
+        else evaluation.integration
+    )
+    value = {
+        "schema_version": "curve_payload_v1",
+        "kind": kind,
+        "sample_id": sample_id,
+        "candidate_id": candidate_id,
+        "peak_observation_content_id": observation.content.peak_observation_content_id
+        if observation is not None
+        else None,
+        "trace_coordinate": {
+            "mz": trace.mz,
+            "rt_min": trace.rt_min,
+            "rt_max": trace.rt_max,
+            "ppm_tol": trace.ppm_tol,
+        },
+        "curves": {
+            "rt": list(trace.rt),
+            "raw": list(trace.intensity),
+            "baseline": list(signal.baseline) if signal is not None else None,
+            "smoothed": list(signal.smoothed) if signal is not None else None,
+            "positive": list(signal.positive_signal) if signal is not None else None,
+        },
+        "integration": asdict(integration) if integration is not None else None,
+        "provenance": provenance,
+    }
+    return json.loads(json.dumps(value))
+
+
+def _expected_capture_curve(evidence):
+    return _expected_retained_curve(
+        kind="recovery_observation"
+        if evidence.capture_stage == "method_recovery"
+        else evidence.capture_stage,
+        sample_id=evidence.canonical_sample_identity_id,
+        candidate_id=evidence.candidate_id,
+        trace=evidence.trace,
+        evaluation=evidence.physical_evaluation,
+        request_id=evidence.processing_request_id,
+        attempt_id=evidence.processing_attempt_id,
+        observation=evidence.observation_ref,
+        method_subject_id=evidence.method_subject_id,
+    )
+
+
+def _assert_fresh_process_curve_parity(path, expected, expected_links=None):
+    expected_links = expected_links or {}
+    script = """
+import json, sys
+from xic_extractor.peak_detection import evidence_facts
+
+def forbidden(*args, **kwargs):
+    raise AssertionError('readonly evidence must not execute scientific preparation')
+for name in (
+    'prepare_physical_signal', 'evaluate_physical_peak',
+    'rehydrate_physical_peak_evaluation',
+):
+    setattr(evidence_facts, name, forbidden)
+from xic_extractor.diagnostics.cid_nl_explanation import (
+    read_cid_nl_curves, read_cid_nl_explanation,
+)
+curves = read_cid_nl_curves(sys.argv[1])
+links = {
+    candidate: [
+        record['payload_id'] for record in read_cid_nl_explanation(
+            sys.argv[1], candidate_id=candidate
+        )['records'].get('capture_evidence', [])
+    ]
+    for candidate in json.loads(sys.argv[2])
+}
+print(json.dumps({'curves': curves, 'links': links}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(path), json.dumps(list(expected_links))],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    actual = json.loads(result.stdout)
+
+    def normalize(value):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+    by_payload_id = {item.pop("payload_id"): item for item in actual["curves"]}
+    assert len(by_payload_id) == len(actual["curves"])
+    assert {normalize(item) for item in by_payload_id.values()} == {
+        normalize(item) for item in expected
+    }
+    for candidate_id, source_values in expected_links.items():
+        linked = {
+            normalize(by_payload_id[identity])
+            for identity in actual["links"][candidate_id]
+        }
+        assert {normalize(item) for item in source_values} <= linked
 
 
 @pytest.mark.parametrize(
@@ -749,10 +898,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     precursor_mz = 307.1023254394531
     settings = replace(
         _settings() if method_mode == "single" else _multi_tag_settings(),
-            neutral_loss_profile=None,
-            tag_combine_mode=method_mode,
-            rt_min=13.1,
-            rt_max=17.4 if separate_groups or family_precursor_delta else 13.4,
+        neutral_loss_profile=None,
+        tag_combine_mode=method_mode,
+        rt_min=13.1,
+        rt_max=17.4 if separate_groups or family_precursor_delta else 13.4,
     )
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
@@ -784,13 +933,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         import numpy as np
 
-        sample_offset = 4.0 if (
-            (
-                separate_groups
-                and sample_stems.index(path.stem) >= group_sizes[0]
+        sample_offset = (
+            4.0
+            if (
+                (separate_groups and sample_stems.index(path.stem) >= group_sizes[0])
+                or (family_precursor_delta and sample_stems.index(path.stem) >= 1)
             )
-            or (family_precursor_delta and sample_stems.index(path.stem) >= 1)
-        ) else 0.0
+            else 0.0
+        )
         sample_center_rt = center_rt + sample_offset
         sample_index = sample_stems.index(path.stem)
         sample_mz = precursor_mz + (
@@ -846,9 +996,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 replace(
                     raw.scans[0],
                     rt=query_rts[index],
-                    scan_number=(
-                        int(np.argmin(np.abs(raw.rt - query_rts[index]))) + 1
-                    ),
+                    scan_number=(int(np.argmin(np.abs(raw.rt - query_rts[index]))) + 1),
                     # Separate chemical hypotheses exercise two retained wrappers.
                     precursor_mz=sample_mz,
                     masses=(
@@ -896,9 +1044,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             (record.candidate_id, record) for record in discovery.physical_evaluations
         )
         if family_context:
-            expected_candidate_count = (
-                1 if family_precursor_delta else 2
-            )
+            expected_candidate_count = 1 if family_precursor_delta else 2
             assert len(candidates[path.stem]) == expected_candidate_count
             assert all(candidate.ms1_peak_found for candidate in candidates[path.stem])
             if not family_precursor_delta:
@@ -1274,9 +1420,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                     candidate.candidate_id
                     for candidate in candidates[stem]
                     if (
-                    candidate.candidate_id in expected_source_candidate_ids
-                    and candidate.discovery_candidate_state
-                    in MS1_FEATURE_BACKED_STATES
+                        candidate.candidate_id in expected_source_candidate_ids
+                        and candidate.discovery_candidate_state
+                        in MS1_FEATURE_BACKED_STATES
                     )
                 }
                 expected_trace_count = 1 if expected_capture_candidate_ids else 0
@@ -1348,6 +1494,99 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             ),
         ),
     )
+    # Owner-produced arrays survive both sidecar and runtime partition handoff.
+    retained_discovery = tuple(completed.discovery_physical_records)
+    assert {item.candidate_id for item in retained_discovery} == set(source_records)
+    for retained in retained_discovery:
+        source = source_records[retained.candidate_id]
+        assert (
+            retained.evaluation.retained_prepared_signal
+            == source.evaluation.retained_prepared_signal
+        )
+        assert retained.rt == source.rt
+        assert retained.raw == source.raw
+        assert retained.candidate_links == source.candidate_links
+    persisted_capture_evidence = tuple(completed.capture_evidence)
+    runtime_captures = tuple(
+        evidence
+        for result in runtime_results
+        for sample_result in result.sample_results
+        for evidence in (
+            *sample_result.adapter_result.capture_evidence,
+            *(
+                item
+                for attempt in sample_result.recovery_attempts
+                for item in attempt.capture_evidence
+            ),
+        )
+    )
+    assert len(persisted_capture_evidence) == len(runtime_captures)
+    assert persisted_capture_evidence
+    for retained, source in zip(
+        persisted_capture_evidence, runtime_captures, strict=True
+    ):
+        assert (
+            retained.canonical_sample_identity_id == source.canonical_sample_identity_id
+        )
+        assert retained.candidate_id == source.candidate_id
+        assert retained.capture_stage == source.capture_stage
+        assert retained.physical_evaluation is not None
+        assert source.physical_evaluation is not None
+        assert (
+            retained.physical_evaluation.retained_prepared_signal
+            == source.physical_evaluation.retained_prepared_signal
+        )
+        assert retained.observation_ref == source.observation_ref
+        if retained.observation_ref is not None:
+            assert retained.observation_ref.capture_stage == retained.capture_stage
+            assert (
+                retained.observation_ref.physical_evaluation
+                == retained.physical_evaluation
+            )
+
+    expected_curves = []
+    expected_curve_links = {}
+    application = completed.application_result
+    samples_by_stem = {
+        sample.metadata.raw_stem: sample for sample in application.canonical_samples
+    }
+    for record in retained_discovery:
+        work = record.work_item
+        source_trace = SimpleNamespace(
+            rt=record.rt,
+            intensity=record.raw,
+            mz=work.xic_mz,
+            rt_min=work.xic_rt_min,
+            rt_max=work.xic_rt_max,
+            ppm_tol=work.xic_ppm_tol,
+            acquisition_source_id=work.acquisition_source_id,
+        )
+        expected = _expected_retained_curve(
+            kind="discovery_physical",
+            candidate_id=record.candidate_id,
+            sample_id=samples_by_stem[work.sample_stem].identity.sample_identity_id,
+            trace=source_trace,
+            evaluation=record.evaluation,
+            request_id=application.processing_request.processing_request_id,
+            attempt_id=application.processing_attempt.processing_attempt_id,
+        )
+        expected_curves.append(expected)
+        for cid in {link.candidate_id for link in record.candidate_links} or {
+            record.candidate_id
+        }:
+            expected_curve_links.setdefault(cid, []).append(expected)
+    for evidence in persisted_capture_evidence:
+        expected = _expected_capture_curve(evidence)
+        expected_curves.append(expected)
+        if evidence.candidate_id is not None:
+            expected_curve_links.setdefault(evidence.candidate_id, []).append(expected)
+
+    def close_and_verify_persisted_curves():
+        completed.close()
+        _assert_fresh_process_curve_parity(
+            tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
+        )
+
     assert runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",
         runtime_fingerprints,
@@ -1376,6 +1615,18 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+        write_cid_nl_explanation,
+    )
+
+    write_cid_nl_explanation(
+        tmp_path / "producer-evidence.sqlite",
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix_path,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+    )
     assert len(retained_contexts) == len(completed.application_result.children)
     assert len(retained_contexts) == len(consumed_contexts)
     assert all(
@@ -1412,9 +1663,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert mint_rechecks
         assert mint_args
     assert len(mint_rechecks) == len(mint_args)
-    assert all(
-        counts == {"prepare": 0, "evaluate": 0} for counts in mint_rechecks
-    )
+    assert all(counts == {"prepare": 0, "evaluate": 0} for counts in mint_rechecks)
     if family_context:
         assert len(matrix_rows) == 1
         if family_precursor_delta:
@@ -1485,6 +1734,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert matrix_row["S4"] == ""
         else:
             assert len(writer.matrix.cells) == len(sample_stems)
+        close_and_verify_persisted_curves()
         return
     if nearby:
         assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
@@ -1511,6 +1761,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             _assert_composite_no_input_exclusion_coverage(
                 completed, runtime_results[0], batch
             )
+            close_and_verify_persisted_curves()
             return
     assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
     for cell in writer.matrix.cells:
@@ -1540,6 +1791,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert len({facts.fact_content_id for facts in physical_facts.values()}) == 2
         assert len({cell.source_candidate_id for cell in writer.matrix.cells}) == 2
         assert len(matrix_rows) == 1
+        close_and_verify_persisted_curves()
         return
     if separate_groups:
         (child,) = completed.application_result.children
@@ -1558,6 +1810,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             for result in runtime_results[0].sample_results
         )
         _assert_outside_group_cells(scientific, captured_batches[0], tmp_path)
+        close_and_verify_persisted_curves()
         return
 
     from xic_extractor.peak_detection.observations import (
@@ -1689,6 +1942,17 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         - peak_config.nl_rt_anchor_half_window_min,
         request_context_rt_end_min=center_rt + peak_config.nl_rt_anchor_half_window_min,
     )
+    assert observation.capture_stage == "method_recovery"
+    assert observation.physical_evaluation is not None
+    assert (
+        observation.physical_evaluation.retained_prepared_signal
+        == recovery_prepared.prepared
+    )
+    (retained_recovery,) = recovered.capture_evidence
+    assert retained_recovery.observation_ref is observation
+    assert retained_recovery.physical_evaluation is observation.physical_evaluation
+    assert tuple(retained_recovery.trace.rt) == tuple(acquired.trace.rt)
+    assert tuple(retained_recovery.trace.intensity) == tuple(acquired.trace.intensity)
     assert expected_recovery.facts is not None
     assert (
         observation.content.integration.area_baseline_corrected
@@ -1719,15 +1983,123 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             **(recovery_args | {"signal_processing_profile": None})
         )
     original_intensity = source_raws[paths[0]].intensity
+    recovery_evaluations = []
+    evaluate_recovery = capture_owner.evaluate_physical_peak
+
+    def retain_recovery_evaluation(*args, **kwargs):
+        evaluation = evaluate_recovery(*args, **kwargs)
+        recovery_evaluations.append(evaluation)
+        return evaluation
+
+    monkeypatch.setattr(
+        capture_owner,
+        "evaluate_physical_peak",
+        retain_recovery_evaluation,
+    )
     try:
+        for offsets, reason in (
+            ((0,), "insufficient_original_xic_support"),
+            ((-2, 2), "insufficient_original_xic_continuity"),
+        ):
+            isolated = original_intensity * 0.0
+            for offset in offsets:
+                isolated[len(isolated) // 2 + offset] = float(max(original_intensity))
+            source_raws[paths[0]].intensity = isolated
+            unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+            assert unavailable.assessment.candidate_peaks == ()
+            assert unavailable.assessment.content.method_result == "HOLD"
+            assert unavailable.recovery_input is None
+            assert recovery_evaluations[-1].reason == reason
+            assert recovery_evaluations[-1].facts is None
+            assert recovery_evaluations[-1].integration is None
+            assert recovery_evaluations[-1].question.selection_policy_version == (
+                "unique_baseline_peak_in_context_v6"
+            )
+
         source_raws[paths[0]].intensity = original_intensity * 0.0
         unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
         assert unavailable.assessment.candidate_peaks == ()
         assert unavailable.assessment.content.method_result == "HOLD"
         assert unavailable.recovery_input is None
+        (retained_unavailable,) = unavailable.capture_evidence
+        assert retained_unavailable.observation_ref is None
+        assert retained_unavailable.physical_evaluation.state == "unavailable"
+        signal = retained_unavailable.physical_evaluation.retained_prepared_signal
+        assert signal is None  # The owner skips preparation for an all-zero trace.
+        assert len(retained_unavailable.trace.rt) > 0
+        assert all(value == 0.0 for value in retained_unavailable.trace.intensity)
+
+        # The external vendor can return an empty chromatogram for a valid
+        # native scan window. Keep the acquisition and scientific owners live.
+        vendor = opened_raws[paths[0]][-1]
+        vendor_chromatogram = vendor.GetChromatogramData
+
+        def empty_vendor_chromatogram(*args):
+            data = vendor_chromatogram(*args)
+            data.PositionsArray = [[] for _ in data.PositionsArray]
+            data.IntensitiesArray = [[] for _ in data.IntensitiesArray]
+            return data
+
+        with monkeypatch.context() as empty_vendor:
+            empty_vendor.setattr(
+                vendor, "GetChromatogramData", empty_vendor_chromatogram
+            )
+            empty = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+        assert empty.assessment.candidate_peaks == ()
+        assert empty.assessment.content.method_result == "HOLD"
+        assert empty.recovery_input is None
+        assert empty.acquisition.traces[0].coordinate.trace_point_count == 0
+        (retained_empty,) = empty.capture_evidence
+        assert retained_empty.observation_ref is None
+        assert retained_empty.physical_evaluation.state == "unavailable"
+        assert retained_empty.physical_evaluation.reason == "no_signal_above_baseline"
+        assert retained_empty.physical_evaluation.integration is None
+        assert retained_empty.physical_evaluation.retained_prepared_signal is None
+        assert len(retained_empty.trace.rt) == len(retained_empty.trace.intensity) == 0
+
     finally:
         source_raws[paths[0]].intensity = original_intensity
         recovery_raw.__exit__(None, None, None)
+
+    # The actual recovery owner ran above under this request and attempt.
+    # Exercise its production sink directly, without altering the completed
+    # scientific population or manufacturing a new recovery identity.
+    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
+    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+        _emit_curve_payload,
+    )
+
+    recovery_path = tmp_path / "recovery-evidence.sqlite"
+    recovery_sources = (retained_recovery, retained_unavailable, retained_empty)
+    with ExplanationReportWriter(recovery_path) as sink:
+        for evidence in recovery_sources:
+            _emit_curve_payload(
+                sink,
+                evidence.observation_ref,
+                evidence.canonical_sample_identity_id,
+                kind="recovery_observation",
+                trace=evidence.trace,
+                evaluation=evidence.physical_evaluation,
+                provenance={
+                    "processing_request_id": evidence.processing_request_id,
+                    "processing_attempt_id": evidence.processing_attempt_id,
+                    "method_subject_id": evidence.method_subject_id,
+                },
+            )
+        sink.finalize(
+            {
+                "processing_request_id": (
+                    job.processing_owners.request.processing_request_id
+                ),
+                "processing_attempt_id": (
+                    job.processing_owners.attempt.processing_attempt_id
+                ),
+                "matrix_path": str(matrix_path),
+            }
+        )
+    _assert_fresh_process_curve_parity(
+        recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
+    )
     from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
         UntargetedCidNlRealDataRuntimeError,
     )
@@ -1778,6 +2150,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             signal_processing_profile=profile,
             physical_records_by_candidate=wrong_records,
         )
+    close_and_verify_persisted_curves()
 
 
 @pytest.mark.parametrize(
@@ -2288,24 +2661,28 @@ def _source_verification_inputs(tmp_path: Path):
     raw, candidates = _nearby_subject_candidates(
         path, settings=settings, peak_config=peak_config
     )
-    return path, raw, dict(
-        raw_paths=(path,),
-        sample_metadata=(
-            SampleMetadata(
-                sample_name="S1",
-                raw_stem="S1",
-                injection_order=1,
-                sample_role="study_sample",
+    return (
+        path,
+        raw,
+        dict(
+            raw_paths=(path,),
+            sample_metadata=(
+                SampleMetadata(
+                    sample_name="S1",
+                    raw_stem="S1",
+                    injection_order=1,
+                    sample_role="study_sample",
+                ),
             ),
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample={"S1": candidates},
+            discovery_receipts_by_sample=_discovery_receipts(
+                tmp_path, (path,), {"S1": candidates}
+            ),
+            dll_dir=tmp_path,
+            sample_identity_namespace="study:source-verification",
         ),
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
-            tmp_path, (path,), {"S1": candidates}
-        ),
-        dll_dir=tmp_path,
-        sample_identity_namespace="study:source-verification",
     )
 
 
@@ -3416,19 +3793,24 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     corrected_matrix = project_completed_untarget_batch_writer_inputs(corrected).matrix
     assert len(plain_matrix.clusters) == 2
     assert len(corrected_matrix.clusters) == 1
-    assert {(cell.sample_stem, cell.apex_rt, cell.area)
-            for cell in corrected_matrix.cells} == {
+    assert {
+        (cell.sample_stem, cell.apex_rt, cell.area) for cell in corrected_matrix.cells
+    } == {
         (cell.sample_stem, cell.apex_rt, cell.area)
-        for cell in plain_matrix.cells if cell.area is not None
+        for cell in plain_matrix.cells
+        if cell.area is not None
     }
-    assert all(cell.area is not None and cell.area > 0
-               for cell in corrected_matrix.cells)
+    assert all(
+        cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
+    )
     from xic_extractor.alignment.cell_observations import CellObservationContractError
 
     (child,) = corrected.application_result.children
-    contexts = tuple(source.group_context
-                     for cell in child.scientific_core.cell_observations
-                     for source in cell.predecessor_cells)
+    contexts = tuple(
+        source.group_context
+        for cell in child.scientific_core.cell_observations
+        for source in cell.predecessor_cells
+    )
     assert contexts
     assert all(context.drift_lookup is contexts[0].drift_lookup for context in contexts)
     with pytest.raises(CellObservationContractError, match="exact SUPPORT"):

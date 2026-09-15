@@ -6,6 +6,19 @@ returns an independently traceable `ObservationRepair` decision containing a
 repaired/new observation or typed no-repair result. It does not select a
 product value, create membership, or write an output.
 
+The product-stage name is **Backfill（回填）**, following Discovery and Alignment.
+For this operation, `recovery` in implementation records describes Backfill;
+`ObservationRepair` names the typed decision it returns. Product descriptions
+and interface labels use Backfill.
+
+Backfill does not need to fill every cell. Existing direct support makes a
+conservative Backfill decision `not_applicable`; insufficient group support or
+uncertain local evidence can leave it on `hold`. A method assessment's `HOLD`
+is a separate result and does not by itself establish whether a revisit was
+needed, attempted, or accepted. Judge Backfill by the cell's eligibility,
+recorded reason and observation decision, not by the number of filled cells
+or HOLD results alone.
+
 ## Contract
 
 - Backfill is evidence-based recovery for an owner-backed Target or existing

@@ -38,6 +38,49 @@ from xic_extractor.processing_identity import (
 _TEST_PROCESSING_REQUEST_ID = "xic.processing-request.v1:" + "0" * 64
 
 
+def test_raw_sufficient_group_skips_drift_in_admission_and_ranking() -> None:
+    class UnneededDrift(_DriftLookup):
+        def sample_delta_min(self, sample_stem: str) -> float | None:
+            raise AssertionError("raw-sufficient grouping must not query correction")
+
+    owners = (_owner("a", "main", apex_rt=10.0), _owner("b", "main", apex_rt=10.1))
+    edges = []
+    features = cluster_sample_local_owners(
+        owners, config=AlignmentConfig(),
+        drift_lookup=UnneededDrift(deltas={}, orders={}),
+        edge_evidence_sink=edges,
+    )
+    assert [set(feature.event_cluster_ids) for feature in features] == [
+        {owner.owner_id for owner in owners},
+    ]
+    assert len(edges) == 1
+    assert edges[0].rt_basis == "raw"
+
+
+def test_degraded_drift_keeps_raw_full_batch_continuity() -> None:
+    owners = tuple(
+        _owner(sample, "main", apex_rt=10.0 + index * 0.05,
+               evidence_score=45, seed_event_count=1)
+        for index, sample in enumerate(("a", "b", "c"))
+    )
+    edges = []
+    features = cluster_sample_local_owners(
+        owners, config=AlignmentConfig(), sample_universe=frozenset({"a", "b", "c"}),
+        injection_order={"a": 1, "b": 2, "c": 3},
+        drift_lookup=_DriftLookup(
+            deltas={"a": 0.0, "b": -0.3, "c": -0.6},
+            orders={"a": 1, "b": 2, "c": 3},
+        ),
+        edge_evidence_sink=edges,
+    )
+    assert [set(feature.event_cluster_ids) for feature in features] == [
+        {owner.owner_id for owner in owners},
+    ]
+    assert all(edge.rt_basis == "raw" and edge.score == 45 for edge in edges)
+    assert all(edge.decision == "weak_edge" for edge in edges)
+    assert features[0].evidence == "owner_full_batch_continuity;owner_count=3"
+
+
 def test_owner_clustering_allows_plausible_rt_drift_with_complete_link() -> None:
     features = cluster_sample_local_owners(
         (

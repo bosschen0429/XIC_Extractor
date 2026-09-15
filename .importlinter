@@ -6,6 +6,7 @@ root_packages =
     gui
     scripts
     tools
+    xic_inspector
 exclude_type_checking_imports = False
 
 [importlinter:contract:domain-no-outer-layer]
@@ -17,6 +18,7 @@ forbidden_modules =
     gui
     scripts
     tools
+    xic_inspector
 allow_indirect_imports = False
 
 [importlinter:contract:peak-detection-stays-inner]

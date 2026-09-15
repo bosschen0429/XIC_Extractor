@@ -20,16 +20,14 @@ from itertools import combinations
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import (
-    KnownIstdOwnerLookup,
-    TargetedIstdIdentityAnchor,
-)
+from xic_extractor.alignment.drift_evidence import TargetedIstdIdentityAnchor
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     DriftPriorSource,
     EdgeDecision,
     HardGateFailureReason,
     OwnerEdgeEvidence,
+    RTEvidenceBasis,
     _compatible_composite_owners,
     evaluate_owner_edge,
 )
@@ -1140,7 +1138,7 @@ def _full_batch_weak_edge_is_eligible(
     return (
         edge.decision == "weak_edge"
         and not edge.failure_reason
-        and edge.drift_prior_source == "none"
+        and edge.rt_basis == "raw"
         and edge.rt_raw_delta_sec <= config.preferred_rt_sec
         and edge.owner_quality == "clean"
         and edge.seed_support_level == "moderate"
@@ -1159,7 +1157,7 @@ def _targeted_istd_rt_disposition(
         return "review_only"
     rt_delta_sec = edge.rt_raw_delta_sec
     if (
-        edge.drift_prior_source != "none"
+        edge.rt_basis == "drift_corrected"
         and edge.rt_drift_corrected_delta_sec is not None
     ):
         rt_delta_sec = edge.rt_drift_corrected_delta_sec
@@ -1905,6 +1903,7 @@ class CrossSamplePeakGroupEdgeFact:
     rt_raw_delta_sec: float
     rt_drift_corrected_delta_sec: float | None
     drift_prior_source: DriftPriorSource
+    rt_basis: RTEvidenceBasis
     injection_order_gap: int | None
     score: int
     reason: str
@@ -2378,6 +2377,7 @@ def cross_sample_peak_group_edge_fact_from_owner_edge(
         rt_raw_delta_sec=edge.rt_raw_delta_sec,
         rt_drift_corrected_delta_sec=edge.rt_drift_corrected_delta_sec,
         drift_prior_source=edge.drift_prior_source,
+        rt_basis=edge.rt_basis,
         injection_order_gap=edge.injection_order_gap,
         score=edge.score,
         reason=edge.reason,
@@ -2605,6 +2605,9 @@ def _link_groups(
             compatible_group_indexes,
             key=lambda index: _group_match_score(
                 owner, groups[index], config, drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache,
+                edge_evaluator=edge_evaluator,
             ),
         )
         groups[best_index].append(owner)
@@ -3711,9 +3714,19 @@ def _group_match_score(
     config: AlignmentConfig,
     *,
     drift_lookup: DriftLookupProtocol | None,
+    edge_evidence_sink: list[OwnerEdgeEvidence] | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+    edge_evaluator: OwnerEdgeEvaluator,
 ) -> tuple[float, float, float]:
     return max(
-        _owner_match_score(owner, existing, config, drift_lookup=drift_lookup)
+        _owner_match_score(
+            owner, existing, config,
+            edge=_edge_for_pair(
+                owner, existing, config=config, drift_lookup=drift_lookup,
+                edge_evidence_sink=edge_evidence_sink,
+                edge_cache=edge_cache, edge_evaluator=edge_evaluator,
+            ),
+        )
         for existing in group
     )
 
@@ -3723,20 +3736,15 @@ def _owner_match_score(
     right: SampleLocalMS1Owner,
     config: AlignmentConfig,
     *,
-    drift_lookup: DriftLookupProtocol | None,
+    edge: OwnerEdgeEvidence,
 ) -> tuple[float, float, float]:
     mz_score = _ppm(left.precursor_mz, right.precursor_mz) / config.max_ppm
-    corrected_delta = (
-        drift_lookup.corrected_pair_delta_sec(left, right)
-        if isinstance(drift_lookup, KnownIstdOwnerLookup)
-        else None
-    )
-    # Rank an already-compatible ISTD pair in the same measured coordinates
-    # that admitted its edge, so a closer unbound peak cannot steal membership.
+    # Reuse the coordinate that admitted this pair, including raw safeguards.
     rt_delta = (
-        corrected_delta
-        if corrected_delta is not None
-        else abs(left.owner_apex_rt - right.owner_apex_rt) * 60.0
+        edge.rt_drift_corrected_delta_sec
+        if edge.rt_basis == "drift_corrected"
+        and edge.rt_drift_corrected_delta_sec is not None
+        else edge.rt_raw_delta_sec
     )
     rt_score = rt_delta / config.identity_rt_candidate_window_sec
     left_event = left.primary_identity_event

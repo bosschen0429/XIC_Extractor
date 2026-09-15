@@ -186,6 +186,7 @@ def _population(spec, acquisition_input):
 
 def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
@@ -207,6 +208,25 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         expected_acquisition_input=acquisition_input,
         expected_work_manifest=manifest,
     )
+
+    from xic_extractor.peak_detection import evidence_facts
+
+    def unexpected_recompute(*args, **kwargs):
+        raise AssertionError("evidence retrieval must not prepare or evaluate")
+
+    monkeypatch.setattr(evidence_facts, "prepare_physical_signal", unexpected_recompute)
+    monkeypatch.setattr(evidence_facts, "evaluate_physical_peak", unexpected_recompute)
+    retained = read_discovery_physical_fact_records(
+        path, expected_run_spec=spec, expected_acquisition_input=acquisition_input
+    )
+    for source, restored in zip(records, retained, strict=True):
+        assert (
+            restored.evaluation.retained_prepared_signal
+            == source.evaluation.retained_prepared_signal
+        )
+        assert restored.rt == source.rt
+        assert restored.raw == source.raw
+        assert restored.evaluation.facts == source.evaluation.facts
 
     assert tuple(record.work_item for record in rehydrated) == manifest
     assert (
@@ -377,9 +397,9 @@ def test_discovery_sidecar_rejects_duplicate_json_field(tmp_path: Path) -> None:
         records=records,
     ).decode("utf-8")
     duplicate = payload.replace(
-        '{"schema_version":"discovery_physical_fact_sidecar_v1",',
-        '{"schema_version":"discovery_physical_fact_sidecar_v1",'
-        '"schema_version":"discovery_physical_fact_sidecar_v1",',
+        '{"schema_version":"discovery_physical_fact_sidecar_v2",',
+        '{"schema_version":"discovery_physical_fact_sidecar_v2",'
+        '"schema_version":"discovery_physical_fact_sidecar_v2",',
         1,
     )
 
@@ -550,9 +570,7 @@ def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
         window_points=spec.signal_processing_profile.window_points + 2,
     )
     other_spec = replace(spec, signal_processing_profile=other_profile)
-    with pytest.raises(
-        ValueError, match="run_spec_hash does not match expected run"
-    ):
+    with pytest.raises(ValueError, match="run_spec_hash does not match expected run"):
         read_discovery_physical_fact_records(
             sidecar_path,
             expected_run_spec=other_spec,
@@ -574,3 +592,40 @@ def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
             expected_run_spec=spec,
             expected_acquisition_input=acquisition_input,
         )
+
+
+def test_legacy_sidecar_does_not_claim_unretained_processed_curves(
+    tmp_path, monkeypatch
+):
+    _, spec, acquisition_input = _spec(tmp_path)
+    manifest, records = _population(spec, acquisition_input)
+    value = json.loads(
+        serialize_discovery_physical_fact_sidecar(
+            run_spec=spec,
+            acquisition_input=acquisition_input,
+            work_manifest=manifest,
+            records=records,
+        )
+    )
+    value["schema_version"] = "discovery_physical_fact_sidecar_v1"
+    for record in value["records"]:
+        record.pop("candidate_links")
+        record.pop("retained_prepared_signal")
+    path = tmp_path / "legacy.json"
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+    from xic_extractor.peak_detection import evidence_facts
+
+    def unexpected_recompute(*args, **kwargs):
+        raise AssertionError("a legacy evidence reader must not manufacture arrays")
+
+    monkeypatch.setattr(evidence_facts, "prepare_physical_signal", unexpected_recompute)
+    monkeypatch.setattr(evidence_facts, "evaluate_physical_peak", unexpected_recompute)
+    restored = read_discovery_physical_fact_records(
+        path, expected_run_spec=spec, expected_acquisition_input=acquisition_input
+    )
+    assert len(restored) == len(records)
+    assert all(item.evaluation.retained_prepared_signal is None for item in restored)
+    assert all(item.candidate_links == () for item in restored)
+    assert tuple(item.rt for item in restored) == tuple(item.rt for item in records)

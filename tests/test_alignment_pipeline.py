@@ -96,8 +96,17 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     )
     captured_retained: dict[str, object] = {}
     captured_write: dict[str, object] = {}
+    reference_provenance = {
+        "workbook_sha256": "a" * 64, "content_sha256": "b" * 64,
+    }
     reference = SimpleNamespace(
-        provenance={"workbook_sha256": "a" * 64, "content_sha256": "b" * 64}
+        provenance=reference_provenance,
+        explanation_provenance={
+            **reference_provenance,
+            "calibration": {
+                "schema_version": "known_istd_calibration_v1", "samples": [],
+            },
+        },
     )
     monkeypatch.setattr(
         pipeline_module, "read_known_istd_reference", lambda _path: reference,
@@ -133,7 +142,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         assert kwargs["writer_inputs"] is writer_inputs
         assert kwargs["matrix_path"].read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
         assert kwargs["known_istd_reference_provenance"] == (
-            reference.provenance if with_reference else None
+            reference.explanation_provenance if with_reference else None
         )
         path.write_text("published", encoding="utf-8")
         return path
@@ -592,7 +601,15 @@ def test_pure_cid_nl_targets_csv_integration(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
     )
-    fake_ref = SimpleNamespace(provenance={"workbook_sha256": "b" * 64})
+    fake_ref = SimpleNamespace(
+        provenance={"workbook_sha256": "b" * 64},
+        explanation_provenance={
+            "workbook_sha256": "b" * 64,
+            "calibration": {
+                "schema_version": "known_istd_calibration_v1", "samples": [],
+            },
+        },
+    )
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(

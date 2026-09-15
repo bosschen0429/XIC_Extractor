@@ -1001,19 +1001,53 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
 
 
 @pytest.mark.parametrize(
-    ("rt", "intensity", "physical_state", "physical_reason"),
+    ("rt", "intensity", "physical_state", "physical_reason", "window_points"),
     [
         (
             np.asarray([7.8]),
             np.asarray([10.0]),
             "unavailable",
             "insufficient_points_for_profile",
+            3,
         ),
         (
             np.asarray([7.8, 7.7, 7.9]),
             np.asarray([1.0, 2.0, 1.0]),
             "failed",
             "non_monotonic_rt",
+            3,
+        ),
+        (
+            np.linspace(7.0, 8.5, 31),
+            np.asarray([0.0] * 16 + [100.0] + [0.0] * 14),
+            "unavailable",
+            "insufficient_original_xic_support",
+            3,
+        ),
+        (
+            np.linspace(7.0, 8.5, 31),
+            np.asarray([1000.0] * 16 + [1100.0] + [1000.0] * 14),
+            "unavailable",
+            "insufficient_original_xic_support",
+            3,
+        ),
+        (
+            np.linspace(7.0, 8.5, 31),
+            np.asarray([0.0] * 16 + [100.0, 0.0, 100.0] + [0.0] * 12),
+            "unavailable",
+            "insufficient_original_xic_continuity",
+            15,
+        ),
+        (
+            np.linspace(6.8, 8.8, 101),
+            np.where(
+                (np.arange(101) % 2 == 1) | (np.arange(101) == 50),
+                1000.0 * np.exp(-0.5 * ((np.arange(101) - 50) / 8.0) ** 2),
+                0.0,
+            ),
+            "unavailable",
+            "fragmented_original_xic_support",
+            15,
         ),
     ],
 )
@@ -1023,6 +1057,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     intensity: np.ndarray,
     physical_state: str,
     physical_reason: str,
+    window_points: int,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1042,12 +1077,18 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
         peak_config=_backfill_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        signal_processing_profile=SignalProcessingProfile(window_points=window_points),
     )
 
     candidate = result.candidates[0]
-    assert result.physical_evaluations[0].evaluation.state == physical_state
-    assert result.physical_evaluations[0].evaluation.reason == physical_reason
+    evaluation = result.physical_evaluations[0].evaluation
+    assert evaluation.question.selection_policy_version == (
+        "baseline_peak_contains_query_v7"
+    )
+    assert evaluation.state == physical_state
+    assert evaluation.reason == physical_reason
+    assert evaluation.facts is None
+    assert evaluation.integration is None
     assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     assert candidate.review_priority == "LOW"
     assert candidate.reason == (
@@ -1068,6 +1109,51 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         "ms1_feature_nl_rescued",
         "rejected_noise_or_outside_rt",
     }
+
+
+def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
+    tmp_path: Path,
+) -> None:
+    from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
+
+    rt, intensity = _context_sensitive_trace()
+    rt = 7.8 + (rt[:-1] - 23.0) * 0.025
+    intensity = intensity[:-1]
+    profile = SignalProcessingProfile(window_points=15)
+    previous = evaluate_physical_peak(
+        prepare_physical_signal(rt, intensity, profile=profile),
+        selection_subject_id="retained-exterior-context",
+        query_rt_min=7.8,
+        selection_policy_version="baseline_peak_contains_query_v4",
+    )
+    assert previous.reason == "incomplete_peak_context"
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-exterior-context")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    raw.rt, raw.intensity = rt, intensity
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+    evaluation = result.physical_evaluations[0].evaluation
+    candidate = result.candidates[0]
+    assert evaluation.state == "available"
+    assert evaluation.facts is not None
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(7.8)
+    assert candidate.ms1_area == evaluation.facts.area_counts_seconds
+    assert rt[0] < evaluation.facts.left_rt_min < 7.8
+    assert 7.8 < evaluation.facts.right_rt_min < rt[-1]
 
 
 @pytest.mark.parametrize("same_question", [True, False])

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -17,13 +18,19 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryPhysicalCandidateLink,
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
 )
 from xic_extractor.peak_detection.evidence_facts import (
+    PhysicalPeakEvaluation,
+    PreparedSignal,
     _physical_evaluation_from_payload,
     deserialize_physical_peak_evaluation,
     serialize_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
@@ -33,7 +40,7 @@ from xic_extractor.processing_run_spec import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
-DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar_v1"
+DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar_v2"
 
 _ROOT_KEYS = (
     "schema_version",
@@ -73,6 +80,114 @@ _RECORD_KEYS = (
     "acquired_trace",
     "physical_evaluation",
 )
+
+
+def _retained_signal_content(evaluation: PhysicalPeakEvaluation) -> dict | None:
+    signal = evaluation.retained_prepared_signal
+    if signal is None:
+        return None
+    return {
+        "schema_version": "retained_prepared_signal_v1",
+        "prepared_signal_id": signal.projection.prepared_signal_id,
+        "profile_id": signal.profile.profile_id,
+        **{
+            name: [_float_text(value) for value in getattr(signal, name)]
+            for name in ("rt", "raw", "baseline", "smoothed", "positive_signal")
+        },
+    }
+
+
+def _restore_retained_signal(
+    record: Mapping[str, Any],
+    evaluation: PhysicalPeakEvaluation,
+    profile: SignalProcessingProfile,
+    acquired: AcquiredTrace,
+) -> PhysicalPeakEvaluation:
+    value = record.get("retained_prepared_signal")
+    # A historical sidecar has no retained processed evidence. Rehydration is
+    # scientific validation and cannot manufacture that missing evidence.
+    if value is None:
+        return replace(evaluation, retained_prepared_signal=None)
+    signal = _mapping(value, label="retained_prepared_signal")
+    names = ("rt", "raw", "baseline", "smoothed", "positive_signal")
+    _require_keys(
+        signal,
+        ("schema_version", "prepared_signal_id", "profile_id", *names),
+        label="retained_prepared_signal",
+    )
+    if (
+        signal["schema_version"] != "retained_prepared_signal_v1"
+        or signal["prepared_signal_id"] != evaluation.prepared.prepared_signal_id
+        or signal["profile_id"] != profile.profile_id
+    ):
+        raise ValueError("retained prepared signal crosses owner identity")
+    arrays = {
+        name: tuple(
+            _float_from_text(point, field=f"retained_prepared_signal.{name}")
+            for point in _list(signal[name], label=name)
+        )
+        for name in names
+    }
+    if (
+        arrays["rt"] != tuple(acquired.trace.rt)
+        or arrays["raw"] != tuple(acquired.trace.intensity)
+        or any(len(values) != len(arrays["rt"]) for values in arrays.values())
+    ):
+        raise ValueError("retained prepared signal crosses acquired trace")
+    return replace(
+        evaluation,
+        retained_prepared_signal=PreparedSignal(
+            projection=evaluation.prepared, profile=profile, **arrays
+        ),
+    )
+
+
+def _restore_candidate_links(
+    record: Mapping[str, Any], work_ordinal: int
+) -> tuple[DiscoveryPhysicalCandidateLink, ...]:
+    links = []
+    for value in _list(record.get("candidate_links", []), label="candidate_links"):
+        link = _mapping(value, label="candidate_link")
+        _require_keys(
+            link,
+            (
+                "candidate_id",
+                "final_ordinal",
+                "representative_source_ordinal",
+                "member_source_ordinals",
+                "representative_work_ordinal",
+                "member_work_ordinals",
+            ),
+            label="candidate_link",
+        )
+        member_work = tuple(
+            _integer(x, field="member_work_ordinal")
+            for x in _list(link["member_work_ordinals"], label="member_work_ordinals")
+        )
+        if work_ordinal not in member_work:
+            raise ValueError("Discovery candidate link crosses its work record")
+        links.append(
+            DiscoveryPhysicalCandidateLink(
+                candidate_id=_text(link["candidate_id"], field="candidate_id"),
+                final_ordinal=_integer(link["final_ordinal"], field="final_ordinal"),
+                representative_source_ordinal=_integer(
+                    link["representative_source_ordinal"],
+                    field="representative_source_ordinal",
+                ),
+                member_source_ordinals=tuple(
+                    _integer(x, field="member_source_ordinal")
+                    for x in _list(
+                        link["member_source_ordinals"], label="member_source_ordinals"
+                    )
+                ),
+                representative_work_ordinal=_integer(
+                    link["representative_work_ordinal"],
+                    field="representative_work_ordinal",
+                ),
+                member_work_ordinals=member_work,
+            )
+        )
+    return tuple(links)
 
 
 _SIDECAR_VERIFY_BLOCK_BYTES = 1 << 20
@@ -159,6 +274,12 @@ def serialize_discovery_physical_fact_sidecar(
                     "acquired_trace": json.loads(
                         serialize_acquired_trace(record.acquired_trace).decode("utf-8")
                     ),
+                    "candidate_links": [
+                        asdict(link) for link in record.candidate_links
+                    ],
+                    "retained_prepared_signal": _retained_signal_content(
+                        record.evaluation
+                    ),
                     "physical_evaluation": json.loads(
                         serialize_physical_peak_evaluation(
                             record.rt,
@@ -232,7 +353,10 @@ def _read_discovery_physical_fact_records_direct(
     expected_manifest = tuple(expected_work_manifest)
     _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
-    if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
+    if root["schema_version"] not in {
+        DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
+        "discovery_physical_fact_sidecar_v1",
+    }:
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
@@ -264,7 +388,15 @@ def _read_discovery_physical_fact_records_direct(
     records: list[DiscoveryPhysicalFactRecord] = []
     for item, raw_record in zip(persisted_manifest, raw_records, strict=True):
         record = _mapping(raw_record, label="record")
-        _require_keys(record, _RECORD_KEYS, label="record")
+        _require_keys(
+            record,
+            _RECORD_KEYS[:3]
+            + ("candidate_links", "retained_prepared_signal")
+            + _RECORD_KEYS[3:]
+            if root["schema_version"] == DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION
+            else _RECORD_KEYS,
+            label="record",
+        )
         if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
             raise ValueError("Discovery physical sidecar candidate ID changed")
         if (
@@ -352,7 +484,13 @@ def _read_discovery_physical_fact_records_direct(
             DiscoveryPhysicalFactRecord(
                 work_item=item,
                 acquired_trace=acquired,
-                evaluation=evaluation,
+                candidate_links=_restore_candidate_links(record, item.work_ordinal),
+                evaluation=_restore_retained_signal(
+                    record,
+                    evaluation,
+                    expected_run_spec.signal_processing_profile,
+                    acquired,
+                ),
             )
         )
     return tuple(records)
@@ -400,7 +538,10 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
     expected_manifest = tuple(expected_work_manifest)
     _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
-    if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
+    if root["schema_version"] not in {
+        DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
+        "discovery_physical_fact_sidecar_v1",
+    }:
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
@@ -432,7 +573,15 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
     records: list[DiscoveryPhysicalFactRecord] = []
     for item, raw_record in zip(persisted_manifest, raw_records, strict=True):
         record = _mapping(raw_record, label="record")
-        _require_keys(record, _RECORD_KEYS, label="record")
+        _require_keys(
+            record,
+            _RECORD_KEYS[:3]
+            + ("candidate_links", "retained_prepared_signal")
+            + _RECORD_KEYS[3:]
+            if root["schema_version"] == DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION
+            else _RECORD_KEYS,
+            label="record",
+        )
         if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
             raise ValueError("Discovery physical sidecar candidate ID changed")
         if (
@@ -460,7 +609,13 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
             DiscoveryPhysicalFactRecord(
                 work_item=item,
                 acquired_trace=acquired,
-                evaluation=evaluation,
+                candidate_links=_restore_candidate_links(record, item.work_ordinal),
+                evaluation=_restore_retained_signal(
+                    record,
+                    evaluation,
+                    expected_run_spec.signal_processing_profile,
+                    acquired,
+                ),
             )
         )
     result = tuple(records)

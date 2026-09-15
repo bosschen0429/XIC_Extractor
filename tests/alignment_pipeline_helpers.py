@@ -253,6 +253,7 @@ def owner_edge_evidence() -> OwnerEdgeEvidence:
         rt_raw_delta_sec=6.0,
         rt_drift_corrected_delta_sec=1.0,
         drift_prior_source="targeted_istd_trend",
+        rt_basis="drift_corrected",
         injection_order_gap=1,
         owner_quality="clean",
         seed_support_level="strong",

@@ -187,26 +187,34 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     for invalid in (no_event, wrong_nl):
         rejected = reference.bind((early, invalid))
         assert rejected.corrected_pair_delta_sec(early, invalid) is None
-    assert evaluate_owner_edge(early, other, config=config, drift_lookup=lookup) == (
-        evaluate_owner_edge(early, other, config=config)
-    )
+
+    def assert_unavailable_pair_uses_only_raw(right, unavailable_lookup):
+        # Lookup provenance is retained even when the trigger skips querying it.
+        # Prove its unavailable binding separately, then pin every edge field.
+        assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
+        raw = evaluate_owner_edge(early, right, config=config)
+        suffix = (
+            ";drift=raw_sufficient" if raw.decision == "strong_edge"
+            else ";drift=unavailable"
+        )
+        assert evaluate_owner_edge(
+            early, right, config=config, drift_lookup=unavailable_lookup,
+        ) == replace(
+            raw, drift_prior_source="targeted_istd_trend", reason=raw.reason + suffix,
+        )
+
+    assert_unavailable_pair_uses_only_raw(other, lookup)
     other_rt = replace(late, owner_id="different-peak", owner_apex_rt=9.5,
                        owner_peak_start_rt=9.4, owner_peak_end_rt=9.6)
-    assert evaluate_owner_edge(early, other_rt, config=config, drift_lookup=lookup) == (
-        evaluate_owner_edge(early, other_rt, config=config)
-    )
+    assert_unavailable_pair_uses_only_raw(other_rt, lookup)
     # An overlapping SUPPORT owner prevents a unique binding; removing it later
     # from a group must not recreate reference authority.
     ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
-    assert evaluate_owner_edge(early, late, config=config, drift_lookup=ambiguous) == (
-        evaluate_owner_edge(early, late, config=config)
-    )
+    assert_unavailable_pair_uses_only_raw(late, ambiguous)
     workbook["XIC Results"]["D5"] = "ND"
     workbook.save(path)
     partial = read_known_istd_reference(path).bind((early, late))
-    assert evaluate_owner_edge(early, late, config=config, drift_lookup=partial) == (
-        evaluate_owner_edge(early, late, config=config)
-    )
+    assert_unavailable_pair_uses_only_raw(late, partial)
     workbook["Targets"].append(["second", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
     workbook["XIC Results"].append(["early", "second", "ISTD", 8, 1])
     workbook.save(path)
@@ -309,6 +317,51 @@ def test_batch_reference_corrects_unknowns_without_merging_distinct_peaks(
         frozenset((competitor.owner_id,)),
     }
     assert tuple((o.owner_apex_rt, o.selected_integration) for o in owners) == original
+
+
+def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
+
+    reference = _batch_reference(tmp_path, {
+        "early": (8, 20, 40), "late": (10, 24, 46),
+    })
+    assert reference.explanation_provenance.get("calibration") is None
+    prepared = reference.prepare_batch(
+        sample_universe=frozenset({"early", "late", "missing"}),
+        injection_order={"early": 1, "late": 2},
+    )
+
+    def cannot_refit(*args, **kwargs):
+        raise AssertionError("receipt must not recalculate calibration")
+
+    monkeypatch.setattr(type(reference), "prepare_batch", cannot_refit)
+    receipt = reference.explanation_provenance
+    assert receipt == prepared.explanation_provenance
+    assert {k: receipt[k] for k in reference.provenance} == reference.provenance
+    calibration = receipt["calibration"]
+    assert calibration["schema_version"] == "known_istd_calibration_v1"
+    assert calibration["extrapolation"] == "unavailable"
+    assert len(calibration["measurements"]) == 6
+    samples = {sample["sample_stem"]: sample for sample in calibration["samples"]}
+    assert samples["missing"]["status"] == "unavailable"
+    assert samples["missing"]["domain_rt_min"] is None
+    knots = samples["early"]["knots"]
+    assert samples["early"]["domain_rt_min"] == [8, 40]
+    assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(15.5)
+    assert interpolate_calibrated_rt_min(7, knots) is None
+    assert interpolate_calibrated_rt_min(41, knots) is None
+    from xic_extractor.diagnostics.cid_nl_explanation import (
+        ExplanationReportWriter,
+        read_cid_nl_explanation,
+    )
+
+    with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
+        path = writer.finalize({"known_istd_reference": receipt})
+    saved = read_cid_nl_explanation(path)
+    assert saved["schema_version"] == 2
+    assert saved["known_istd_reference"] == receipt
 
 
 def test_batch_reference_interpolates_missing_landmark_in_canonical_order(

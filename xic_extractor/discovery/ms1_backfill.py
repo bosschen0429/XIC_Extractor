@@ -31,6 +31,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
     DiscoveryPhysicalFactRecord,
+    bind_discovery_physical_record_evidence,
 )
 from xic_extractor.discovery.priority import (
     assign_review_priority,
@@ -400,6 +401,9 @@ def _backfill_ms1_candidates_with_acquisition(
                 ),
                 representative_source_ordinal=(binding.representative_source_ordinal),
                 member_source_ordinals=binding.member_source_ordinals,
+                member_work_ordinals=tuple(
+                    physical_indices[index] for index in binding.member_source_ordinals
+                ),
                 representative_work_ordinal=physical_indices[
                     binding.representative_source_ordinal
                 ],
@@ -420,7 +424,9 @@ def _backfill_ms1_candidates_with_acquisition(
         ),
         measurements=measurements,
         physical_work_manifest=tuple(physical_work_manifest),
-        physical_evaluations=tuple(physical_evaluations),
+        physical_evaluations=bind_discovery_physical_record_evidence(
+            tuple(physical_evaluations), physical_bindings
+        ),
         physical_bindings=physical_bindings,
     )
 

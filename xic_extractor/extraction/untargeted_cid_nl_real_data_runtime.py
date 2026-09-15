@@ -1154,7 +1154,7 @@ def _prepare_runtime_work(
                 if (
                     has_acq
                     and resp.initial_acquisition is not None
-                    and state.observer.acquisition is None
+                    and state.observer.initial_acquisition is None
                 ):
                     state.observer.record_acquisition(resp.initial_acquisition)
                 if err is not None and state.error is None:
@@ -1229,9 +1229,11 @@ def _prepare_runtime_work(
                     if (
                         has_acq
                         and resp.recovery_acquisition is not None
-                        and state.observer.acquisition is None
+                        and state.observer.recovery_acquisition is None
                     ):
-                        state.observer.record_acquisition(resp.recovery_acquisition)
+                        state.observer.record_acquisition(
+                            resp.recovery_acquisition, recovery=True
+                        )
                     if err is not None and state.error is None:
                         state.error = err
                 if partition_key is not None:

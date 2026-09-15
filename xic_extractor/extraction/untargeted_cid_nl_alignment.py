@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
+from tempfile import mkdtemp
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -28,6 +29,7 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
@@ -52,6 +54,11 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl-v1"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class _DiscoveryEvidencePartition:
+    discovery_physical_records: tuple[DiscoveryPhysicalFactRecord, ...]
 
 
 def complete_untargeted_cid_nl_alignment(
@@ -125,55 +132,96 @@ def complete_untargeted_cid_nl_alignment(
                 )
             )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
-    physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
-    if signal_processing_profile is not None:
-        with recorder.stage("alignment.load_physical_facts"):
-            candidates_by_sample, physical_records = _load_physical_replay_inputs(
-                discovery_batch=discovery_batch,
-                candidates_by_sample=candidates_by_sample,
-                raw_paths=ordered_raw_paths,
-                settings=settings,
-                profile=signal_processing_profile,
-                raw_workers=raw_workers,
-            )
-    plan = prepare_untargeted_cid_nl_production_plan(
-        raw_paths=ordered_raw_paths,
-        sample_metadata=retained_sample_metadata,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=receipts,
-        dll_dir=dll_dir,
-        sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
-        signal_processing_profile=signal_processing_profile,
-        physical_records_by_candidate=physical_records,
+    output_dir.mkdir(parents=True, exist_ok=True)
+    evidence_store = (
+        StreamedResultStore(
+            Path(mkdtemp(prefix=".cid_nl_discovery_evidence_", dir=output_dir)),
+            shared_objects=(),
+            individually_addressable_fields=frozenset({"discovery_physical_records"}),
+        )
+        if signal_processing_profile is not None
+        else None
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with (
-        recorder.stage("alignment.untargeted_cid_nl_runtime"),
-        recorder.process_memory_scope("retained_runtime") as runtime_peak,
-    ):
-        return execute_bounded_untargeted_cid_nl(
-            plan,
-            output_dir=output_dir,
-            telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
-                coordinator, runtime_peak
-            ),
-            recovery_marker=OwnerPathRuntimeMarker(
-                output_dir / ".cid_nl_runtime.json",
-                _RUNTIME_ARTIFACT_NAMESPACE,
-            ),
-            progress_callback=recorder.heartbeat_event,
-            alignment_config=alignment_config,
-            known_istd_reference=known_istd_reference,
-            raw_workers=raw_workers,
-            raw_worker_backend=raw_worker_backend,
-            should_cancel=should_cancel,
-            retain_partition_memory=retain_partition_memory,
-            pipeline_overlap=True,
-            max_partition_jobs=max_partition_jobs,
+    def retain_records(
+        stem: str, records: tuple[DiscoveryPhysicalFactRecord, ...]
+    ) -> None:
+        assert evidence_store is not None
+        evidence_store.append(stem, _DiscoveryEvidencePartition(records))
+
+    try:
+        physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+        if signal_processing_profile is not None:
+            with recorder.stage("alignment.load_physical_facts"):
+                candidates_by_sample, physical_records = _load_physical_replay_inputs(
+                    discovery_batch=discovery_batch,
+                    candidates_by_sample=candidates_by_sample,
+                    raw_paths=ordered_raw_paths,
+                    settings=settings,
+                    profile=signal_processing_profile,
+                    raw_workers=raw_workers,
+                    retained_records_sink=retain_records,
+                )
+        plan = prepare_untargeted_cid_nl_production_plan(
+            raw_paths=ordered_raw_paths,
+            sample_metadata=retained_sample_metadata,
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample=candidates_by_sample,
+            discovery_receipts_by_sample=receipts,
+            dll_dir=dll_dir,
+            sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+            signal_processing_profile=signal_processing_profile,
+            physical_records_by_candidate=physical_records,
         )
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with (
+            recorder.stage("alignment.untargeted_cid_nl_runtime"),
+            recorder.process_memory_scope("retained_runtime") as runtime_peak,
+        ):
+            completed = execute_bounded_untargeted_cid_nl(
+                plan,
+                output_dir=output_dir,
+                telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
+                    coordinator, runtime_peak
+                ),
+                recovery_marker=OwnerPathRuntimeMarker(
+                    output_dir / ".cid_nl_runtime.json",
+                    _RUNTIME_ARTIFACT_NAMESPACE,
+                ),
+                progress_callback=recorder.heartbeat_event,
+                alignment_config=alignment_config,
+                known_istd_reference=known_istd_reference,
+                raw_workers=raw_workers,
+                raw_worker_backend=raw_worker_backend,
+                should_cancel=should_cancel,
+                retain_partition_memory=retain_partition_memory,
+                pipeline_overlap=True,
+                max_partition_jobs=max_partition_jobs,
+            )
+
+        if evidence_store is None:
+            return completed
+        evidence_store.seal()
+
+        def cleanup() -> None:
+            try:
+                completed.close()
+            finally:
+                evidence_store.cleanup()
+
+        return replace(
+            completed,
+            discovery_physical_records=evidence_store.sequence(
+                "discovery_physical_records"
+            ),
+            cleanup_action=cleanup,
+        )
+    except BaseException:
+        if evidence_store is not None:
+            evidence_store.cleanup()
+        raise
 
 
 def _load_physical_replay_inputs(
@@ -184,6 +232,10 @@ def _load_physical_replay_inputs(
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
     raw_workers: int = 1,
+    retained_records_sink: Callable[
+        [str, tuple[DiscoveryPhysicalFactRecord, ...]], None
+    ]
+    | None = None,
 ) -> tuple[
     dict[str, tuple[DiscoveryCandidate, ...]],
     dict[str, DiscoveryPhysicalFactRecord],
@@ -200,6 +252,7 @@ def _load_physical_replay_inputs(
         str,
         tuple[DiscoveryCandidate, ...],
         dict[str, DiscoveryPhysicalFactRecord],
+        tuple[DiscoveryPhysicalFactRecord, ...],
     ]:
         stem = acquisition_input.sample_stem
         records = read_discovery_physical_fact_records(
@@ -223,7 +276,7 @@ def _load_physical_replay_inputs(
             if candidate.candidate_id in sample_records:
                 raise ValueError("Discovery physical candidate identity is duplicated")
             sample_records[candidate.candidate_id] = record
-        return stem, tuple(sample_candidates), sample_records
+        return stem, tuple(sample_candidates), sample_records, records
 
     restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
     selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
@@ -231,9 +284,11 @@ def _load_physical_replay_inputs(
     workers = min(raw_workers, len(spec.acquisition_inputs))
     if workers > 1:
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            for stem, sample_candidates, sample_records in executor.map(
+            for stem, sample_candidates, sample_records, all_records in executor.map(
                 _load_sample_input, spec.acquisition_inputs
             ):
+                if retained_records_sink is not None:
+                    retained_records_sink(stem, all_records)
                 restored[stem] = sample_candidates
                 for cid, rec in sample_records.items():
                     if cid in selected_records:
@@ -243,9 +298,11 @@ def _load_physical_replay_inputs(
                     selected_records[cid] = rec
     else:
         for acquisition_input in spec.acquisition_inputs:
-            stem, sample_candidates, sample_records = _load_sample_input(
+            stem, sample_candidates, sample_records, all_records = _load_sample_input(
                 acquisition_input
             )
+            if retained_records_sink is not None:
+                retained_records_sink(stem, all_records)
             restored[stem] = sample_candidates
             for cid, rec in sample_records.items():
                 if cid in selected_records:
