@@ -8,9 +8,9 @@ linked owner pages.
 
 ## Current Position
 
-- The untargeted lane is an alignment, recovery, and primary-matrix hygiene
-  layer. It is not a full LC-MS preprocessing, normalization, artifact
-  annotation, blank/background filtering, or batch-correction system.
+- The untargeted lane runs Discovery, Alignment, and Backfill, with conservative
+  primary-matrix delivery. It is not a full LC-MS preprocessing, normalization,
+  artifact annotation, blank/background filtering, or batch-correction system.
 - Untargeted is the general application of the shared scientific lifecycle, not
   a separate core that Targeted must call into wholesale. Targeted and
   Untargeted share capture, CrossSample, ModeTrack, ObservationRepair, and
@@ -32,7 +32,7 @@ linked owner pages.
   `FAM...`, row order, m/z/RT display coordinates, and current Matrix text are
   compatibility/display facts, not canonical cell identity.
 - Exact equality to old upstream feature tables is not the success definition.
-  The accepted method direction is owner-centered recovery plus duplicate-claim
+  The accepted method direction is owner-centered Backfill plus duplicate-claim
   control while preserving a clean primary matrix.
 - QC, blank, calibrator, injection-order, and batch metadata must become
   first-class inputs before any QC correction, blank filtering, or normalization

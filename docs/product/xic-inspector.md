@@ -35,7 +35,7 @@ cancellation remain distinguishable errors.
 The default sample uses `cross_sample_sha256_v2`, limit 30 and seed 0. It cycles
 through represented group cases: broad coverage (all or all but one scoped
 sample, with at least two observed samples), other cross-sample coverage, and
-limited coverage. Recorded recovery, reacquisition, discovery support, and
+limited coverage. Recorded Backfill, reacquisition, discovery support, and
 the existing review states distinguish cases. Stable hash ranking selects
 within a case; adding ungrouped candidates cannot displace existing group
 cases. The report retains the algorithm, seed and selected case counts.
@@ -77,8 +77,10 @@ shows the group summary, all-visible-sample curves and integration, sample
 relationships and cross-sample curves, then all sample results and support
 records. These main sections are visible without expanding a disclosure.
 Each sample
-distinguishes initial discovery support, reacquired support, and method recovery
-with its exact evidence references. A physical direct-observation cell is not
+distinguishes initial discovery support, reacquired support, and Backfill
+support with its exact evidence references. Backfill records are displayed as
+`Backfill（回填）支持` and their curves as `Backfill（回填）曲線`.
+A physical direct-observation cell is not
 by itself evidence of initial discovery support.
 Recorded initial comparisons can link to a distinct peer group or row in the
 source projection. They do not have a separate comparison panel in the workbench.

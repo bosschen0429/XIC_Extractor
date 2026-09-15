@@ -16,6 +16,13 @@ XIC Extractor is an LC-MS evidence and model-selection system. It should make
 peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
+The three core product stages are **Discovery → Alignment → Backfill（回填）**.
+Backfill is the canonical name for the bounded missing-cell revisit, including
+when implementation records call that operation `recovery`. `ObservationRepair`
+names its typed decision contract. These implementation terms do not replace
+Backfill in product flow descriptions or interface labels. Backfill is
+conditional: cells with sufficient existing observations need no revisit.
+
 XIC has one shared scientific processing lifecycle. Untargeted extraction is
 its general application; Targeted extraction is a constrained application,
 not a second peer core:

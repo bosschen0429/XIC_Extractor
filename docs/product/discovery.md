@@ -118,10 +118,10 @@ lifecycle for each provider.
   value-delta framing, expected matrix effect, and explicit expected-diff review.
 - Do not introduce vendor RAW-to-mzML conversion as an implicit product
   dependency without a separate public contract.
-- The untargeted lane is an alignment, recovery, and primary-matrix hygiene
-  layer. It addresses false missingness, RT-driven splitting, owner-centered
-  recovery, duplicate-claim control, and Review/Audit separation. It is not a
-  full LC-MS QA/QC normalization, artifact deconvolution, blank/background
+- The untargeted lane runs Discovery, Alignment, and Backfill, with conservative
+  primary-matrix delivery. It addresses false missingness, RT-driven splitting,
+  owner-centered Backfill, duplicate-claim control, and Review/Audit separation.
+  It is not a full LC-MS QA/QC normalization, artifact deconvolution, blank/background
   contaminant, isotope/adduct annotation, or post-acquisition normalization
   system; see [Untargeted Method](untargeted-method.md) for the absorbed
   method/literature boundary.

@@ -837,7 +837,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
             "recovery_observation",
             "untargeted-cid-nl-backfill-recovery:v1",
             "recovery_support",
-            "方法補取支持",
+            "Backfill（回填）支持",
         ),
         (
             "reacquired_capture",
@@ -1061,7 +1061,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     assert item["review_summary"]["origin_kinds"] == ["recovery_support"]
     assert item["samples"][0]["support_origin"] == {
         "kind": "recovery_support",
-        "label": "方法補取支持",
+        "label": "Backfill（回填）支持",
         "method_refs": ["recovery-method"],
         "capture_refs": ["recovery-curve"],
         "observation_refs": ["obs-01"],

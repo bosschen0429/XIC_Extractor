@@ -87,7 +87,7 @@ _STAGE_LABELS = {
     "discovery_physical": "探索階段曲線",
     "initial_capture": "首次擷取曲線",
     "reacquired_capture": "再次擷取曲線",
-    "recovery_observation": "方法補取曲線",
+    "recovery_observation": "Backfill（回填）曲線",
 }
 
 _REASON_LABELS = {
@@ -633,7 +633,7 @@ class CidNlSource:
             "recovery_observation" in capture_kinds
             and "untargeted-cid-nl-backfill-recovery:v1" in invocations
         ):
-            kind, label = "recovery_support", "方法補取支持"
+            kind, label = "recovery_support", "Backfill（回填）支持"
         elif "reacquired_capture" in capture_kinds and methods:
             kind, label = "reacquired_support", "重新擷取支持"
         elif "initial_capture" in capture_kinds and any(
