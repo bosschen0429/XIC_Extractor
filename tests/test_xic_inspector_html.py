@@ -144,6 +144,11 @@ def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -
     assert json.loads(inline[1]) == payload
     for label in (
         "樣本配對支持",
+        "relationship-network",
+        "依進樣先後，由上而下",
+        "data-relation-node",
+        "data-relation-pair",
+        "data-lane-capture",
         "直接支持",
         "僅供檢閱",
         "這不表示族群內每一對都一致",

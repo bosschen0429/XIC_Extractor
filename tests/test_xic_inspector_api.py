@@ -1351,6 +1351,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             "score": 90,
             "rt_raw_delta_sec": 1.25,
             "rt_drift_corrected_delta_sec": 0.75,
+            "rt_basis": None,
         },
         {
             "edge_ref": "edge-review",
@@ -1365,6 +1366,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             "score": None,
             "rt_raw_delta_sec": None,
             "rt_drift_corrected_delta_sec": None,
+            "rt_basis": None,
         },
     ]
     assert item["review_summary"]["related_group_count"] == 1

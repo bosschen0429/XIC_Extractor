@@ -826,6 +826,7 @@ class CidNlSource:
                         ),
                     },
                     "review_summary": item.details["review_summary"],
+                    "relationship_members": self._relationship_members(item),
                     **(
                         {"internal_pair_support": internal_pair_support}
                         if internal_pair_support
@@ -847,6 +848,22 @@ class CidNlSource:
                 }
             )
         return rendered
+
+    def _relationship_members(self, item: CanonicalItem) -> list[dict[str, Any]]:
+        group_id = item.details["source"].get("group_hypothesis_id")
+        group = self.records.get("final_groups", {}).get(group_id, {})
+        return [
+            {
+                "member_subject_id": member["member_subject_id"],
+                "sample_id": member.get("canonical_sample_identity_id"),
+                "sample_label": self._member_sample_label(
+                    member["member_subject_id"], member
+                ),
+            }
+            for member in group.get("member_subjects", [])
+            if isinstance(member, dict)
+            and isinstance(member.get("member_subject_id"), str)
+        ]
 
     def _internal_pair_support(self, item: CanonicalItem) -> list[dict[str, Any]]:
         source = item.details["source"]
@@ -896,6 +913,7 @@ class CidNlSource:
                     "decision": evidence.get("decision"),
                     "reason": evidence.get("reason"),
                     "score": evidence.get("score"),
+                    "rt_basis": evidence.get("rt_basis"),
                     "rt_raw_delta_sec": evidence.get("rt_raw_delta_sec"),
                     "rt_drift_corrected_delta_sec": evidence.get(
                         "rt_drift_corrected_delta_sec"
