@@ -52,18 +52,44 @@ peak answer or compatibility area source.
 Fresh physical answers also check original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence or
 turn disconnected original impulses into continuous acquisition support. The
-selected interval needs at least one adjacent pair of positive original XIC
-values. Repeated short fragments can still contain adjacent pairs, so fresh
+selected interval needs at least one adjacent pair of original XIC values above
+the owner baseline; a constant background is not acquired peak support.
+Repeated short fragments can still contain adjacent pairs, so fresh
 answers additionally reject intervals with at least three positive runs
 separated by zeros and severe original jaggedness. This conjunction detects
 raw interruptions hidden by a smooth envelope; neither occasional gaps nor
 jaggedness alone rejects a peak. It does not require every positive sample to
 be consecutive, or change the quantitative trace or peak boundaries.
+Baseline crossings do not count as missing acquired samples in this
+fragmentation check.
+
+Sampling support alone also accepts shallow ripples on a background plateau.
+Fresh qualification therefore compares the selected canonical peak's relief
+above its two local valleys with fluctuations in the same original interval.
+The relief must be at least twice the unscaled MAD of normalized local
+three-point differences in the original signal. Each interior point is compared
+with linear interpolation between its immediate neighbors, using actual RT
+spacing and the coefficient norm. This removes constant and linear background;
+on a uniform grid it is `diff(raw, n=2) / sqrt(6)`. Comparing raw values with a
+wide smoother instead would confuse resolved neighboring peaks with noise.
+This is a local contrast requirement, not the full residual height above an
+AsLS floor; it uses the existing prepared arrays without recomputation.
+The local-relief construction follows the surrounding-contour interpretation
+of [peak prominence](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.peak_prominences.html),
+bounded here by the selected interval. The factor 2 is an explicit minimum
+qualification policy, not a calibrated false-positive probability. Broad,
+narrow, background-shifted and jagged positive controls guard retention;
+retained-input results alone do not establish cross-dataset detection accuracy.
+The difference construction is related to the normalized three-point
+estimators discussed by [Brown and Levine (2007)](https://faculty.wharton.upenn.edu/wp-content/uploads/2012/04/2007b-Variance-estimation-in-nonparametric-regression-via-the-difference-sequence-method.pdf).
+The robust MAD aggregation and qualification factor here are product policy;
+that paper does not validate this chromatographic gate or its threshold.
 The versioned selection policy in
 [`LC-MS/MS evidence rules`](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
 owns that eligibility check; the profile continues to own the quantitative
 signal and its scan-support count.
-The check addresses fragmented sampling support, not every form of noise or
+These checks address missing acquired support and insufficient local contrast,
+not every form of noise or
 chemical identity. Historical policies keep their recorded interpretation.
 
 ## Why Smoothed-Everywhere

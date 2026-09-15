@@ -1026,6 +1026,13 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
         ),
         (
             np.linspace(7.0, 8.5, 31),
+            np.asarray([1000.0] * 16 + [1100.0] + [1000.0] * 14),
+            "unavailable",
+            "insufficient_original_xic_support",
+            3,
+        ),
+        (
+            np.linspace(7.0, 8.5, 31),
             np.asarray([0.0] * 16 + [100.0, 0.0, 100.0] + [0.0] * 12),
             "unavailable",
             "insufficient_original_xic_continuity",
@@ -1076,7 +1083,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     candidate = result.candidates[0]
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
-        "baseline_peak_contains_query_v6"
+        "baseline_peak_contains_query_v7"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason

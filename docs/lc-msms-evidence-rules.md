@@ -67,18 +67,19 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   in the universe. A still-clipped or unmatched alternative supplies no recovery.
   This bounded tolerance addresses near-zero bridges caused by context-sensitive
   baseline estimation; it does not infer an unobserved outer boundary.
-  Point queries use `baseline_peak_contains_query_v6`; membership and integration
+  Point queries use `baseline_peak_contains_query_v7`; membership and integration
   share the selected bounds, including inter-scan peak tails. Group-guided
-  recovery uses `unique_baseline_peak_in_context_v5`: its center locates the bounded search
+  recovery uses `unique_baseline_peak_in_context_v6`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
   ambiguous and nonnumeric. Both current policies require at least two original
-  XIC values strictly greater than zero within the uniquely selected, complete
+  XIC values strictly greater than the owner baseline within the uniquely selected, complete
   interval. Fewer points give `insufficient_original_xic_support` with no numeric
   physical facts. Those original values must also include at least one adjacent
-  pair strictly greater than zero; otherwise the answer is unavailable with
+  pair strictly greater than that baseline; otherwise the answer is unavailable with
   `insufficient_original_xic_continuity`. Gaussian spread cannot supply
   independent sampling support or join isolated impulses into acquired
-  continuity. Fresh answers also reject `fragmented_original_xic_support` when
+  continuity, and a constant background cannot supply that support. Fresh
+  answers also reject `fragmented_original_xic_support` when
   the selected original interval has at least three maximal positive runs
   separated by zeros **and** severe original jaggedness. Jaggedness is the sum
   of absolute second differences divided by the original intensity range and
@@ -87,11 +88,32 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   versioned physical policy; changing that threshold requires policy review
   and versioning. One interruption, smooth low-level fragments around a main
   peak, or jaggedness without repeated zero interruptions does not trigger it.
-  Original sampling support is a necessary lower bound, not sufficient proof of
-  peak quality, S/N, chemical identity, or quantification readiness. It neither
+  Baseline crossings are not missing acquired samples and do not count as zero
+  interruptions for this fragmentation check.
+  A selected peak also needs local relief at least twice a local fluctuation
+  scale. For each interior original point, subtract its value from the linear
+  interpolation between its immediate neighbors and divide by the Euclidean
+  norm of those three coefficients. Use the unscaled MAD of these differences
+  over the selected interval. On a uniform RT grid the differences are
+  `diff(raw, n=2) / sqrt(6)`; RT-weighted interpolation also removes linear
+  trends on irregular grids. Fewer than three points or zero MAD supplies no
+  additional noise rejection; original-support requirements still apply.
+  Relief is the canonical apex
+  height minus the higher of the minima on its two sides, including the apex
+  and the recorded interval endpoints. Insufficient relief gives
+  `insufficient_local_peak_contrast`, without numeric facts or integration.
+  This uses the already prepared arrays; it does not refit the baseline or
+  smoothing or interpret smoothing bias as measurement noise. Background
+  offset and intensity units cannot supply local relief
+  relative to fluctuations. The fixed factor 2 is a minimum contrast policy,
+  not a detection significance or universally calibrated S/N claim.
+  These checks are necessary lower bounds, not sufficient proof of chemical
+  identity or quantification readiness. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity. Fresh
   policies use segment-universe-v3; questions cannot cross boundary-policy
-  families. Recorded point-v5/window-v4 receipts retain the adjacency-only
+  families. Recorded point-v6/window-v5 receipts retain above-zero acquired
+  support and fragmentation checks, without baseline-relative support or local
+  contrast qualification. Recorded point-v5/window-v4 receipts retain the adjacency-only
   requirement and edge recovery with segment-universe-v3, without the fragmented
   support check. Recorded point-v4/window-v3 receipts retain exact-zero returns and
   the adjacency requirement with segment-universe-v2. Recorded point-v3/window-v2

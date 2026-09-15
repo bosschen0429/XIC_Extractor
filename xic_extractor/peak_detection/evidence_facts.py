@@ -80,8 +80,10 @@ LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY = "baseline_peak_contains_query_v4"
 LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY = "unique_baseline_peak_in_context_v3"
 LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY = "baseline_peak_contains_query_v5"
 LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY = "unique_baseline_peak_in_context_v4"
-PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v6"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v5"
+LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY = "baseline_peak_contains_query_v6"
+LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY = "unique_baseline_peak_in_context_v5"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v7"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v6"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
@@ -93,11 +95,14 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
         LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
         LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
+        LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
+        LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }
 )
 _PHYSICAL_EDGE_RETURN_FRACTION = 0.001
+_PHYSICAL_LOCAL_CONTRAST_MIN_MAD = 2.0
 PhysicalPeakOperation = Literal[
     "trace_evaluation",
     "asls_baseline",
@@ -590,6 +595,8 @@ def _physical_boundary_universe_schema(selection_policy_version: str) -> str:
     if selection_policy_version in {
         LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
         LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
+        LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
+        LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }:
@@ -852,6 +859,7 @@ def _admissible_physical_segments(
         LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
         LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
         LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
+        LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
@@ -958,13 +966,32 @@ def answer_physical_peak_question(
                 LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
                 LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
                 LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
+                LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
+                LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
                 PHYSICAL_PEAK_POINT_POLICY,
                 PHYSICAL_PEAK_WINDOW_POLICY,
             }:
                 # Smoothing may spread one acquired signal point into a peak.
                 # Support belongs to the selected interval's original XIC;
                 # saved policies retain their original answer semantics.
-                original = prepared.raw[selected.start_index : selected.end_index]
+                acquired = prepared.raw[selected.start_index : selected.end_index]
+                original = acquired
+                if question.selection_policy_version in {
+                    PHYSICAL_PEAK_POINT_POLICY,
+                    PHYSICAL_PEAK_WINDOW_POLICY,
+                }:
+                    # Acquired background is not peak support. Reuse the owner
+                    # baseline so adding an offset cannot rescue an impulse.
+                    original = np.maximum(
+                        np.asarray(original, dtype=float)
+                        - np.asarray(
+                            prepared.baseline[
+                                selected.start_index : selected.end_index
+                            ],
+                            dtype=float,
+                        ),
+                        0.0,
+                    )
                 if sum(value > 0.0 for value in original) < 2:
                     state, reason = "unavailable", "insufficient_original_xic_support"
                     selected = None
@@ -973,6 +1000,8 @@ def answer_physical_peak_question(
                     LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
                     LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
                     LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
+                    LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
+                    LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
                 } and not any(
@@ -987,23 +1016,63 @@ def answer_physical_peak_question(
                     )
                     selected = None
                 elif question.selection_policy_version in {
+                    LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
+                    LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
                 }:
                     original_runs = sum(
-                        value > 0.0 and (index == 0 or original[index - 1] <= 0.0)
-                        for index, value in enumerate(original)
+                        value > 0.0 and (index == 0 or acquired[index - 1] <= 0.0)
+                        for index, value in enumerate(acquired)
                     )
                     # Repeated raw interruptions plus severe jaggedness cannot
                     # acquire peak support from a smooth envelope. Keep this
                     # conjunction in the versioned physical policy: neither
                     # isolated gaps nor jaggedness alone rejects a peak.
+                    # Baseline crossings are not missing acquired samples.
                     if original_runs >= 3 and noise_shape_severity(
-                        np.asarray(original, dtype=float)
+                        np.asarray(acquired, dtype=float)
                     )[0] == 2:
                         state, reason = (
                             "unavailable",
                             "fragmented_original_xic_support",
+                        )
+                        selected = None
+                if selected is not None and question.selection_policy_version in {
+                    PHYSICAL_PEAK_POINT_POLICY,
+                    PHYSICAL_PEAK_WINDOW_POLICY,
+                }:
+                    # A shallow local maximum on a background plateau must not
+                    # borrow its entire residual height as peak evidence. Use
+                    # relief above both local valleys and short-scale original
+                    # fluctuations; smoothing bias is not measurement noise.
+                    left, right, apex = (
+                        selected.start_index, selected.end_index, selected.apex_index
+                    )
+                    signal = np.asarray(prepared.positive_signal, dtype=float)
+                    prominence = float(signal[apex]) - max(
+                        float(np.min(signal[left : apex + 1])),
+                        float(np.min(signal[apex : right])),
+                    )
+                    raw = np.asarray(prepared.raw[left:right], dtype=float)
+                    rt = np.asarray(prepared.rt[left:right], dtype=float)
+                    if len(raw) >= 3:
+                        # Deviation from the line through each point's two
+                        # neighbors removes constant/linear background, also
+                        # on uneven RT grids. Normalize the coefficient norm
+                        # (sqrt(6) for a uniform-grid second difference).
+                        weight = (rt[2:] - rt[1:-1]) / (rt[2:] - rt[:-2])
+                        residual = (
+                            weight * raw[:-2] + (1.0 - weight) * raw[2:] - raw[1:-1]
+                        ) / np.sqrt(1.0 + weight**2 + (1.0 - weight)**2)
+                        noise_mad = float(
+                            np.median(np.abs(residual - np.median(residual)))
+                        )
+                    else:
+                        noise_mad = 0.0
+                    if prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * noise_mad:
+                        state, reason = (
+                            "unavailable", "insufficient_local_peak_contrast"
                         )
                         selected = None
     answer_basis = {

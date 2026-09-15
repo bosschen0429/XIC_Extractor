@@ -2013,7 +2013,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
-                "unique_baseline_peak_in_context_v5"
+                "unique_baseline_peak_in_context_v6"
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0

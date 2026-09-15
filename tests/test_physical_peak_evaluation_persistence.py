@@ -334,6 +334,85 @@ def test_original_jaggedness_does_not_replace_peak_evidence(
     assert fresh.segment_universe == recorded.segment_universe
 
 
+@pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
+def test_background_fluctuation_cannot_borrow_height_from_its_baseline(
+    scale: float, background: float,
+) -> None:
+    # Scaled acquired background with isolated impulses. The smoothed local
+    # maximum has little relief above its valleys, despite its residual height.
+    raw = scale * np.asarray([
+        170.433, 189.858, 153.087, 137.425, 137.427, 158.876, 146.820,
+        229.967, 130.081, 149.159, 174.631, 152.543, 140.415, 135.986,
+        138.815, 138.261, 141.191, 211.361, 127.825, 134.766, 106.415,
+        120.800, 141.851, 143.503, 120.040, 144.941, 133.412, 232.211,
+        161.916,
+    ]) + background
+    rt = np.arange(len(raw), dtype=float) / 10.0
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    recorded = evaluate_physical_peak(
+        prepared, selection_subject_id="background-fluctuation", query_rt_min=1.7,
+        selection_policy_version="baseline_peak_contains_query_v6",
+    )
+    assert recorded.state == "available"
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=recorded,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == recorded
+    fresh = evaluate_physical_peak(
+        prepared, selection_subject_id="background-fluctuation", query_rt_min=1.7,
+    )
+    assert fresh.state == "unavailable"
+    assert fresh.reason == "insufficient_local_peak_contrast"
+    assert fresh.facts is None and fresh.integration is None
+    assert fresh.segment_universe == recorded.segment_universe
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY]
+)
+@pytest.mark.parametrize("background", [1000.0, 100000.0])
+def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
+    policy: str, background: float,
+) -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.full_like(rt, background)
+    raw[15] += 1000.0
+    fresh = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw), selection_subject_id="impulse-on-background",
+        query_rt_min=1.5, selection_policy_version=policy,
+    )
+    assert fresh.state == "unavailable"
+    assert fresh.reason == "insufficient_original_xic_support"
+    assert fresh.facts is None and fresh.integration is None
+
+
+@pytest.mark.parametrize("width", [0.1, 0.5, 1.0])
+@pytest.mark.parametrize("background,slope", [(0.0, 0.0), (100000.0, 500.0)])
+def test_resolved_peak_on_background_keeps_its_canonical_integration(
+    width: float, background: float, slope: float,
+) -> None:
+    rt = np.linspace(0.0, 10.0, 101)
+    if slope:
+        rt += 0.01 * np.sin(np.arange(len(rt)))  # Uneven acquired RT spacing.
+    raw = (
+        1000.0 * np.exp(-0.5 * ((rt - 5.0) / width) ** 2)
+        + background + slope * rt
+    )
+    prepared = prepare_physical_signal(rt, raw)
+    recorded = evaluate_physical_peak(
+        prepared, selection_subject_id="resolved-peak", query_rt_min=5.0,
+        selection_policy_version="baseline_peak_contains_query_v6",
+    )
+    fresh = evaluate_physical_peak(
+        prepared, selection_subject_id="resolved-peak", query_rt_min=5.0,
+    )
+    assert recorded.state == fresh.state == "available"
+    assert fresh.integration == recorded.integration
+    assert fresh.segment_universe == recorded.segment_universe
+
+
 @pytest.mark.parametrize(
     "policy,query_rt",
     [
