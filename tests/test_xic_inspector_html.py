@@ -156,10 +156,10 @@ def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -
         "校正 RT 差",
         "分數",
         "查看配對紀錄",
-        "初始候選比較紀錄",
         "不是最終分組決策的完整追蹤",
     ):
         assert label in report
+    assert "初始候選比較紀錄" not in report
     assert "相關族群比較" not in report
     assert "已分開保存的相關族群" not in report
 
