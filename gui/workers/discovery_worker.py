@@ -406,10 +406,23 @@ def _alignment_summary(
             alignment_outputs[attr] = str(value)
     matrix = getattr(outputs, "matrix_tsv", None)
     run_metadata = getattr(outputs, "run_metadata_json", None)
+    evidence = getattr(outputs, "evidence", None)
     return {
         "alignment_outputs": alignment_outputs,
         "matrix_tsv": str(matrix) if matrix is not None else None,
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
+        "evidence": (
+            {
+                "report_path": str(evidence.report_path),
+                "matrix_path": str(evidence.matrix_path),
+                "matrix_sha256": evidence.matrix_sha256,
+                "processing_request_id": evidence.processing_request_id,
+                "processing_attempt_id": evidence.processing_attempt_id,
+                "schema_version": evidence.schema_version,
+            }
+            if evidence is not None
+            else None
+        ),
         "owner_build_route": owner_build_route.as_dict(),
     }
 

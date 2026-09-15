@@ -25,6 +25,15 @@ and one selection strategy:
 | `attention` | Select items carrying owner-provided review conditions. |
 | `query` | Filter one actual evidence-witness chain by sample, candidate, group, precursor m/z, or RT apex, with offset/limit pagination. |
 
+The Untargeted GUI also offers manual **Export XIC Inspector** after a completed
+alignment publishes an evidence locator. Its settings dialog uses the same
+`SelectionRequest` defaults and limits, with source sample stems shown beside
+their canonical IDs. **Export and Open** opens the successful HTML in the default
+browser; **Open XIC Inspector** reopens the last successful report for the current
+result, even after its source files are removed. A new run clears that Open
+target. Report progress, cancellation, and errors do not change science
+completion or Matrix publication.
+
 `xic_inspector.api` exposes `SelectionRequest`, `ReportResult`,
 `generate_report`, progress callbacks, and cancellation for installed callers.
 A successful result reports the bound evidence locator, capability, selected

@@ -415,15 +415,20 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         busy = any(
             view.is_busy() for view in (self.targeted_view, self.untargeted_view)
-        )
+        ) or self.untargeted_view.has_active_report()
         if busy:
             if not confirm_close_while_busy(self):
                 event.ignore()
                 return
             for view in self._views:
-                if view.is_busy():
+                if view.is_busy() or (
+                    view is self.untargeted_view and view.has_active_report()
+                ):
                     view.trigger_stop(confirm=False)
-            if any(view.is_busy() for view in self._views):
+            if (
+                any(view.is_busy() for view in self._views)
+                or self.untargeted_view.has_active_report()
+            ):
                 self._show_status("正在停止工作，停止完成後再關閉視窗", 5000)
                 event.ignore()
                 return
