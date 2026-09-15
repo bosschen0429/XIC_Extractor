@@ -381,17 +381,7 @@ def _finalized_product_projection(
             review_state="review_required",
             projection_reason=no_write_reason,
         )
-    return replace(
-        projection,
-        product_state="detected_clean",
-        counted_detection=True,
-        review_state="none",
-        projection_reason="finalized_numeric",
-        review_reasons=(),
-        conflict_reasons=(),
-        not_counted_reasons=(),
-        exclusion_reasons=(),
-    )
+    return projection
 
 
 def _build_acquisition_baseline_view(

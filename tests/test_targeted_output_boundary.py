@@ -15,6 +15,7 @@ from openpyxl import load_workbook
 
 from tests.test_targeted_production_workflow import production_case
 from xic_extractor.extraction import targeted_output_boundary
+from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -201,6 +202,8 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
         finalized[0].completed_projection.decisions[0].evidence.hypothesis.integration
     )
     assert rendered.reported_peak_area == finalized_value
+    assert rendered.targeted_product_projection is not None
+    assert rendered.targeted_product_projection.counted_detection is True
     assert rendered.reported_rt == finalized_integration.rt_apex_min
     assert rendered.peak is not None
     assert rendered.peak.peak_start == finalized_integration.rt_left_min
@@ -367,18 +370,40 @@ def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> 
     from gui.workers.pipeline_worker import build_summary
 
     config, target, output = production_case(tmp_path)
+    config = replace(config, keep_intermediate_csv=True)
     extraction = output.file_results[0].results[target.label]
-    projection = extraction.targeted_product_projection
-    assert projection is not None
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        targeted_product_projection=replace(
-            projection,
-            product_state="not_counted",
-            counted_detection=False,
-            projection_reason="acquisition_nl_fail",
+    candidate_evidence = extraction.candidate_ms2_evidence
+    assert candidate_evidence is not None
+    product_evidence = candidate_evidence.best_product_evidence
+    assert product_evidence is not None
+    observed_loss_da = 116.0058
+    policy_result = reproject_extraction_result(
+        replace(
+            extraction,
+            candidate_ms2_evidence=replace(
+                candidate_evidence,
+                nl_match=False,
+                nl_status="NL_FAIL",
+                strict_nl_scan_count=0,
+                best_loss_ppm=50.0,
+                best_product_evidence=replace(
+                    product_evidence,
+                    product_mz=product_evidence.precursor_mz - observed_loss_da,
+                    observed_loss_da=observed_loss_da,
+                    observed_loss_error_ppm=50.0,
+                ),
+            ),
         ),
+        target=target,
+        sample_name="SampleA",
     )
+    assert policy_result.targeted_product_projection is not None
+    assert policy_result.targeted_product_projection.counted_detection is False
+    assert (
+        "analyte_nl_fail_requires_policy"
+        in policy_result.targeted_product_projection.not_counted_reasons
+    )
+    output.file_results[0].results[target.label] = policy_result
     request = build_targeted_application_request(
         config,
         [target],
@@ -393,8 +418,10 @@ def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> 
         final_output.file_results[0].results[target.label].targeted_product_projection
     )
     assert final_projection is not None
-    assert final_projection.product_state == "detected_clean"
-    assert final_projection.counted_detection is True
+    assert final_projection.product_state == "not_counted"
+    assert final_projection.counted_detection is False
+    final_result = final_output.file_results[0].results[target.label]
+    assert final_result.reported_peak_area is not None
     summary = build_summary(
         config,
         [target],
@@ -403,11 +430,15 @@ def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> 
     )
 
     assert final_output is not output
-    assert summary["targets"][0]["detected"] == 1
-    assert (
-        summary["targets"][0]["median_area"]
-        == final_output.file_results[0].results[target.label].reported_peak_area
-    )
+    assert summary["targets"][0]["detected"] == 0
+    assert summary["targets"][0]["median_area"] is None
+    with config.output_csv.with_name("xic_results_long.csv").open(
+        newline="", encoding="utf-8-sig"
+    ) as handle:
+        row = next(csv.DictReader(handle))
+    assert row["Product State"] == "not_counted"
+    assert row["Counted Detection"] == "FALSE"
+    assert row["Area"] == "ND"
 
 
 def test_collision_leaves_existing_output_and_publishes_nothing_else(
