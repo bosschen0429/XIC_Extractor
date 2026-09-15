@@ -43,6 +43,7 @@ class UntargetedView(QWidget):
         )
         self._run = RunSection()
         self._results = DiscoveryResultsSection()
+        self._results.status_message.connect(self.status_message)
         self._workspace = AnalysisWorkspace(self._run)
         for section in (self._source, self._method, self._samples, self._results):
             self._workspace.add_section(section)
@@ -128,6 +129,9 @@ class UntargetedView(QWidget):
     def is_busy(self) -> bool:
         return self._worker is not None
 
+    def has_active_report(self) -> bool:
+        return self._results.is_report_busy()
+
     def persist_config(self) -> None:
         """Save the current source/method config so paths (RAW/DLL/output)
         survive a restart even without a run — set-once stickiness."""
@@ -147,6 +151,8 @@ class UntargetedView(QWidget):
     def trigger_stop(self, *, confirm: bool = True) -> None:
         if self._worker is not None:
             self._on_stop(confirm=confirm)
+        if self._results.is_report_busy():
+            self._results.stop_report_for_close()
 
     def _update_ready(self) -> None:
         missing = self._source.missing_fields()

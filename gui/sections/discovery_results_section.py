@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -20,7 +20,14 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import styles
+from gui.inspector_export_dialog import InspectorExportDialog
 from gui.ui import section_card
+from gui.workers.inspector_report_worker import (
+    InspectorJob,
+    InspectorReportWorker,
+    InspectorSummaryWorker,
+)
+from xic_inspector.api import EvidenceLocator, ReportResult
 
 _PER_SAMPLE_HEADERS = ("樣本", "候選", "高", "中", "低")
 
@@ -40,6 +47,8 @@ _TIER_LABELS = (("HIGH", "高信心"), ("MEDIUM", "中信心"), ("LOW", "低信�
 
 
 class DiscoveryResultsSection(QWidget):
+    status_message = pyqtSignal(str, int)
+
     def __init__(self) -> None:
         super().__init__()
         self._output_dir = ""
@@ -47,6 +56,11 @@ class DiscoveryResultsSection(QWidget):
         self._matrix = ""
         self._alignment_outputs: dict[str, str] = {}
         self._summary_text = "尚未執行"
+        self._evidence: EvidenceLocator | None = None
+        self._generation = 0
+        self._report_worker: InspectorReportWorker | None = None
+        self._summary_worker: InspectorSummaryWorker | None = None
+        self._report_target: Path | None = None
         self.hide()
 
         root = QVBoxLayout(self)
@@ -120,6 +134,30 @@ class DiscoveryResultsSection(QWidget):
         button_row.addStretch()
         layout.addLayout(button_row)
 
+        inspector_row = QHBoxLayout()
+        self._export_inspector = QPushButton("Export XIC Inspector")
+        self._export_inspector.setObjectName("export_inspector")
+        self._export_inspector.clicked.connect(self._export)
+        self._open_inspector = QPushButton("Open XIC Inspector")
+        self._open_inspector.setObjectName("open_inspector")
+        self._open_inspector.clicked.connect(
+            lambda: _open_path(str(self._report_target or ""))
+        )
+        self._cancel_inspector = QPushButton("取消匯出")
+        self._cancel_inspector.setObjectName("cancel_inspector")
+        self._cancel_inspector.clicked.connect(self.cancel_report)
+        for button in (
+            self._export_inspector, self._open_inspector, self._cancel_inspector
+        ):
+            inspector_row.addWidget(button)
+        inspector_row.addStretch()
+        layout.addLayout(inspector_row)
+        self._inspector_status = QLabel("尚無 Inspector 來源")
+        self._inspector_status.setObjectName("inspector_status")
+        self._inspector_status.setWordWrap(True)
+        layout.addWidget(self._inspector_status)
+        self._refresh_inspector_buttons()
+
         self._error = QLabel("")
         self._error.setWordWrap(True)
         self._error.setVisible(False)
@@ -129,6 +167,13 @@ class DiscoveryResultsSection(QWidget):
     # ── Public API ──────────────────────────────────────────────────────────
 
     def update_results(self, summary: dict[str, Any]) -> None:
+        self._generation += 1
+        self._report_target = None
+        self._evidence, reason = _locator_from_summary(summary.get("evidence"))
+        self._inspector_status.setText(
+            "可手動匯出 XIC Inspector" if self._evidence else reason
+        )
+        self._refresh_inspector_buttons()
         self.show()
         self._title.setText("本次分析結果")
         self._output_dir = str(summary.get("output_dir") or "")
@@ -174,6 +219,7 @@ class DiscoveryResultsSection(QWidget):
         self._summary_text = self._build_text(summary)
 
     def show_error(self, message: str) -> None:
+        self._invalidate_inspector("執行未完成，無 Inspector 來源")
         self.show()
         self._title.setText("本次執行未完成")
         self._output_dir = ""
@@ -200,6 +246,7 @@ class DiscoveryResultsSection(QWidget):
             self._title.setText("上次執行結果 · 設定已變更")
 
     def clear_results(self) -> None:
+        self._invalidate_inspector("新執行尚未完成，無 Inspector 來源")
         self._output_dir = ""
         self._gallery = ""
         self._matrix = ""
@@ -221,6 +268,157 @@ class DiscoveryResultsSection(QWidget):
         self._distribution.refresh()
         if self._error.isVisible():
             self._error.setStyleSheet(f"color: {styles.ACTIVE['error']};")
+
+    def is_report_busy(self) -> bool:
+        return self._report_worker is not None or self._summary_worker is not None
+
+    def cancel_report(self) -> None:
+        if self._report_worker is not None:
+            self._report_worker.stop()
+            self._inspector_status.setText("正在取消 Inspector 匯出…")
+
+    def stop_report_for_close(self) -> None:
+        self.cancel_report()
+
+    def _invalidate_inspector(self, reason: str) -> None:
+        self._generation += 1
+        self._evidence = None
+        self._report_target = None
+        self._inspector_status.setText(reason)
+        self._refresh_inspector_buttons()
+
+    def _refresh_inspector_buttons(self) -> None:
+        self._export_inspector.setEnabled(
+            self._evidence is not None and not self.is_report_busy()
+        )
+        self._open_inspector.setEnabled(self._report_target is not None)
+        self._cancel_inspector.setEnabled(self._report_worker is not None)
+
+    def _export(self) -> None:
+        source = self._evidence
+        if source is None or self.is_report_busy():
+            return
+        dialog = InspectorExportDialog(
+            source.report_path.parent / "xic_inspector.html", self
+        )
+        worker = InspectorSummaryWorker(source)
+        self._summary_worker = worker
+        worker.loaded.connect(
+            lambda summary: self._on_summary_loaded(worker, source, dialog, summary)
+        )
+        worker.failed.connect(
+            lambda message: self._on_summary_failed(worker, source, dialog, message)
+        )
+        worker.finished.connect(lambda: self._on_summary_finished(worker))
+        worker.start()
+        self._refresh_inspector_buttons()
+        accepted = dialog.exec()
+        if not accepted or dialog.selection is None or dialog.output_path is None:
+            return
+        # The dialog may have stayed open while a new run replaced its source.
+        if self._evidence != source or self._report_worker is not None:
+            self._inspector_status.setText("來源已切換，請重新開啟匯出設定")
+            return
+        job = InspectorJob(
+            source, dialog.selection, dialog.output_path, dialog.open_after_export
+        )
+        self._start_report(job)
+
+    def _on_summary_loaded(
+        self, worker: InspectorSummaryWorker, source: EvidenceLocator,
+        dialog: InspectorExportDialog, summary: dict,
+    ) -> None:
+        if (
+            self._summary_worker is worker
+            and self._evidence == source
+            and summary.get("processing_request_id") == source.processing_request_id
+            and summary.get("processing_attempt_id") == source.processing_attempt_id
+        ):
+            dialog.set_samples(summary)
+        else:
+            dialog.set_source_error("來源身份不符或結果已切換")
+
+    def _on_summary_failed(
+        self, worker: InspectorSummaryWorker, source: EvidenceLocator,
+        dialog: InspectorExportDialog, message: str,
+    ) -> None:
+        if self._summary_worker is worker:
+            dialog.set_source_error(message)
+
+    def _on_summary_finished(self, worker: InspectorSummaryWorker) -> None:
+        if self._summary_worker is worker:
+            self._summary_worker = None
+            self._refresh_inspector_buttons()
+
+    def _start_report(self, job: InspectorJob) -> None:
+        if self._report_worker is not None:
+            return
+        generation = self._generation
+        worker = InspectorReportWorker(job)
+        self._report_worker = worker
+        label = _run_label(job.source)
+        self._inspector_status.setText(f"{label}：正在匯出…")
+        worker.progress.connect(
+            lambda progress: self._on_report_progress(worker, label, progress)
+        )
+        worker.succeeded.connect(
+            lambda result: self._on_report_success(worker, generation, label, result)
+        )
+        worker.cancelled.connect(
+            lambda: self._on_report_terminal(worker, label, "已取消")
+        )
+        worker.failed.connect(
+            lambda code, reason: self._on_report_terminal(
+                worker, label, f"失敗 (code {code})：{reason}"
+            )
+        )
+        worker.finished.connect(lambda: self._on_report_finished(worker))
+        worker.start()
+        self._refresh_inspector_buttons()
+
+    def _on_report_progress(self, worker, label: str, progress) -> None:
+        if self._report_worker is worker:
+            self._inspector_status.setText(
+                f"{label}：{progress.stage} {progress.completed}"
+                + (f"/{progress.total}" if progress.total is not None else "")
+            )
+
+    def _on_report_success(
+        self, worker: InspectorReportWorker, generation: int, label: str,
+        result: ReportResult,
+    ) -> None:
+        if self._report_worker is not worker:
+            return
+        if result.source != worker.job.source:
+            self._on_report_terminal(worker, label, "失敗：報告來源與本次 job 不符")
+            return
+        capability = (
+            "limited / metadata only" if result.evidence_capability == "metadata_only"
+            else result.evidence_capability
+        )
+        message = (
+            f"{label}：已匯出 {result.output_path}；{capability}；"
+            f"run {result.run_total} / eligible {result.eligible_count} / "
+            f"matched {result.matched_count} / selected {result.selected_count} / "
+            f"missing RT {result.missing_rt_count}"
+        )
+        if generation == self._generation and self._evidence == worker.job.source:
+            self._report_target = result.output_path
+        self._on_report_terminal(worker, label, message)
+        if worker.job.open_after_export:
+            _open_path(str(result.output_path))
+
+    def _on_report_terminal(self, worker, label: str, message: str) -> None:
+        if self._report_worker is not worker:
+            return
+        self._inspector_status.setText(message)
+        self.status_message.emit(message, 10000)
+        self._refresh_inspector_buttons()
+
+    def _on_report_finished(self, worker: InspectorReportWorker) -> None:
+        if self._report_worker is worker:
+            self._report_worker = None
+            self._refresh_inspector_buttons()
 
     # ── Private ─────────────────────────────────────────────────────────────
 
@@ -259,6 +457,45 @@ class DiscoveryResultsSection(QWidget):
         for key, path in sorted(self._alignment_outputs.items()):
             parts.append(f"{key}：{path}")
         return " | ".join(parts)
+
+
+def _locator_from_summary(value: object) -> tuple[EvidenceLocator | None, str]:
+    if value is None:
+        return None, "本次完成結果沒有 Inspector evidence locator"
+    if not isinstance(value, dict):
+        return None, "Inspector evidence locator 格式無效"
+    path_keys = ("report_path", "matrix_path")
+    text_keys = (
+        "matrix_sha256", "processing_request_id", "processing_attempt_id"
+    )
+    if any(
+        not isinstance(value.get(key), str) or not value[key].strip()
+        for key in (*path_keys, *text_keys)
+    ):
+        return None, "Inspector evidence locator 欄位缺失或無效"
+    digest = value["matrix_sha256"]
+    if len(digest) != 64 or any(
+        char not in "0123456789abcdefABCDEF" for char in digest
+    ):
+        return None, "Inspector evidence locator Matrix digest 無效"
+    version = value.get("schema_version")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        return None, "Inspector evidence locator schema version 無效"
+    return EvidenceLocator(
+        report_path=Path(value["report_path"]),
+        matrix_path=Path(value["matrix_path"]),
+        matrix_sha256=digest,
+        processing_request_id=value["processing_request_id"],
+        processing_attempt_id=value["processing_attempt_id"],
+        schema_version=version,
+    ), ""
+
+
+def _run_label(source: EvidenceLocator) -> str:
+    return (
+        f"原執行 request {source.processing_request_id} / "
+        f"attempt {source.processing_attempt_id}"
+    )
 
 
 _MODE_LABELS = {

@@ -270,3 +270,36 @@ def test_close_event_waits_when_busy_view_has_not_stopped(monkeypatch, qtbot) ->
     assert event.accepted is False
     assert event.ignored is True
     assert "正在停止工作" in window.statusBar().currentMessage()
+
+
+def test_close_event_cancels_active_report_and_waits_for_terminal(
+    monkeypatch, qtbot
+) -> None:
+    import gui.main_window as module
+    import gui.views.targeted_view as targeted_module
+
+    monkeypatch.setattr(targeted_module, "read_settings", lambda: {})
+    monkeypatch.setattr(targeted_module, "read_targets", lambda: [])
+    monkeypatch.setattr(module, "confirm_close_while_busy", lambda _parent: True)
+    window = module.MainWindow()
+    qtbot.addWidget(window)
+    report_busy = {"value": True}
+    stops = []
+    window.targeted_view.is_busy = lambda: False  # type: ignore[method-assign]
+    window.untargeted_view.is_busy = lambda: False  # type: ignore[method-assign]
+    window.untargeted_view.has_active_report = lambda: report_busy["value"]  # type: ignore[method-assign]
+    window.untargeted_view.trigger_stop = (  # type: ignore[method-assign]
+        lambda *, confirm=True: stops.append(confirm)
+    )
+    window.untargeted_view.persist_config = lambda: None  # type: ignore[method-assign]
+    window._save_window_state = lambda: None  # type: ignore[method-assign]
+
+    pending = _CloseEvent()
+    window.closeEvent(pending)
+    assert stops == [False]
+    assert pending.ignored is True
+
+    report_busy["value"] = False
+    completed = _CloseEvent()
+    window.closeEvent(completed)
+    assert completed.accepted is True

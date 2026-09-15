@@ -137,6 +137,7 @@ PACKAGING_SOURCE_DIRECTORIES = (
     "scripts",
     "tools",
     "xic_extractor",
+    "xic_inspector",
 )
 
 
@@ -234,6 +235,13 @@ def test_pyinstaller_spec_includes_dynamic_raw_reader_imports() -> None:
     hiddenimports = set(re.findall(r'"([^"]+)"', hiddenimports_match.group("body")))
 
     assert {"pythonnet", "clr"} <= hiddenimports
+
+
+def test_pyinstaller_spec_includes_inspector_api() -> None:
+    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+    assert '"xic_inspector.api"' in spec_text
+    assert '"xic_inspector.sources.cid_nl"' in spec_text
+    assert '"xic_inspector.rendering.html_builder"' in spec_text
 
 
 def test_pyinstaller_spec_includes_builtin_preset_tomls() -> None:

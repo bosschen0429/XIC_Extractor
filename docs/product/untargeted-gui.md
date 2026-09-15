@@ -65,9 +65,22 @@ does not create a separate product-authority lane.
 - Stop requests cancellation, then waits for the current worker stage to
   yield.
 - Automatic Backfill gallery / MS1 overlay generation is parked outside the
-  normal GUI route. The retained helper remains available to explicit
-  diagnostic callers and cannot change the Matrix.
-- Frozen builds must bundle preset TOMLs, because GUI startup loads presets.
+  normal GUI route and cannot change the Matrix.
+- A completed alignment with a published evidence locator enables manual
+  **Export XIC Inspector** in the results section. Completion never starts a
+  report. The settings dialog reads source sample metadata in the background,
+  displays stems and submits canonical sample IDs. It offers Sample, Attention,
+  and Query selection, a 1–50 limit (default 30), seed (default 0), query
+  candidate/group IDs, m/z and RT bounds (minutes), query offset, and HTML
+  output path. **Export and Open** opens the completed HTML in the default browser;
+  **Open XIC Inspector** can later reopen that HTML without the source files.
+  The report uses the [shared Inspector API](xic-inspector.md), including its
+  source binding and error/cancellation rules; the GUI does not re-read RAW or
+  alter the Matrix. A new run or batch clears the current locator and Open
+  target. A running report keeps its original locator and identifies its
+  original request/attempt in the completion message.
+- Frozen builds bundle preset TOMLs and the Inspector modules used by manual
+  export.
 - Selecting a RAW directory lists files without assigning injection order. The
   imported acquisition-information document supplies order through the shared
   sample-metadata loader and matcher. Its source is persisted and reloaded before
@@ -117,9 +130,10 @@ run directory-level discovery plus alignment.
 | `gui/sections/discovery_samples_section.py` | Acquisition-document matching, displayed sequence, and role corrections |
 | `gui/sections/discovery_method_section.py` | Method selection/import, displayed snapshot, and advanced overrides |
 | `gui/method_editor.py` | Name, tag, and composition editing; delegates TOML saving to the preset owner |
-| `gui/sections/discovery_results_section.py` | Output links and run summary |
-| `gui/workers/discovery_worker.py` | Threaded mode dispatch; reports the gallery route as parked |
-| `gui/workers/backfill_gallery.py` | Retained explicit diagnostic composition helper; not a normal GUI caller |
+| `gui/sections/discovery_results_section.py` | Output links, run summary, and manual Inspector Export/Open state |
+| `gui/inspector_export_dialog.py` | One-report selection and output settings |
+| `gui/workers/inspector_report_worker.py` | Background Inspector metadata/report calls and cooperative cancellation |
+| `gui/workers/discovery_worker.py` | Threaded mode dispatch; passes the published evidence locator and reports the gallery route as parked |
 | `gui/discovery_config_io.py` | Local persisted Untargeted settings |
 | `xic_extractor.spec` | Frozen-release resource bundle contract |
 
@@ -157,7 +171,7 @@ for machine, validation, or diagnostic workflows.
 | Worker mode dispatch | `tests/test_discovery_worker.py` |
 | Shared run controls | `tests/test_pipeline_worker.py` |
 | Parked GUI gallery route | `tests/test_discovery_worker.py` |
-| Retained diagnostic gallery contract | `tests/test_backfill_gallery.py` |
+| Manual Inspector Export/Open | `tests/test_gui_inspector_export.py` and source/frozen GUI browser receipts |
 | Alignment output surfaces | `tests/test_alignment_output_levels.py`, `tests/test_alignment_pipeline_outputs.py` |
 | Frozen preset bundling | `tests/test_pyinstaller_spec.py` |
 
@@ -181,7 +195,7 @@ $env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards diagno
 
 - Adding a preset but forgetting the PyInstaller data bundle.
 - Committing machine-specific GUI state.
-- Reattaching the diagnostic gallery / overlay helper to an automatic GUI run.
+- Starting Inspector or browser automatically on science completion.
 - Re-enabling controls immediately after Stop while the worker is still
   alive.
 - Letting the GUI recompute domain evidence or override Discovery/Alignment
