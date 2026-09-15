@@ -108,8 +108,8 @@ uv run pytest
 
 | I want to... | Read this |
 | --- | --- |
-| Run targeted extraction step by step | [Targeted Extraction guide](docs/user/targeted-extraction.md) |
-| Run untargeted discovery from the GUI | [Untargeted Discovery guide](docs/user/untargeted-discovery.md) |
+| Run targeted extraction step by step | [Targeted Extraction guide](docs/user/targeted-extraction.html) |
+| Run untargeted discovery from the GUI | [Untargeted Discovery guide](docs/user/untargeted-discovery.html) |
 
 ## CLI
 
@@ -129,7 +129,9 @@ uv run xic-extractor-cli --base-dir .
 
 | Audience | Document | Purpose |
 | --- | --- | --- |
-| Users | [User guide index](docs/user/README.md) | GUI/CLI workflow walkthroughs |
+| Users | [Human guide index](docs/product/readers-index.html) | Choose an HTML guide for operation, processing, or system review |
+| Workflow owners | [User guide index](docs/user/README.md) | Detailed Markdown workflow guidance and field references |
+| Readers | [Core modules guide](docs/product/core-modules-explainer.html) | Visual map of both workflows and their shared processing core |
 | Maintainers | [Product topic index](docs/product/README.md) | Product contracts, output schemas, authority boundaries |
 | Developers | [Architecture contract](docs/architecture-contract.md) | Package ownership, dependency rules, refactoring discipline |
 | Developers | [Project layout](docs/project-layout.md) | Directory structure, naming conventions, file placement rules |
