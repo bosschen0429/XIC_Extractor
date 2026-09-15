@@ -78,8 +78,10 @@ LEGACY_ORIGINAL_SUPPORT_POINT_POLICY = "baseline_peak_contains_query_v3"
 LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY = "unique_baseline_peak_in_context_v2"
 LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY = "baseline_peak_contains_query_v4"
 LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY = "unique_baseline_peak_in_context_v3"
-PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v5"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v4"
+LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY = "baseline_peak_contains_query_v5"
+LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY = "unique_baseline_peak_in_context_v4"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v6"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v5"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
@@ -89,6 +91,8 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
         LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
         LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
+        LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
+        LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }
@@ -584,6 +588,8 @@ def _physical_boundary_universe_schema(selection_policy_version: str) -> str:
     if selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY:
         return "physical_segment_universe_v1"
     if selection_policy_version in {
+        LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
+        LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }:
@@ -845,6 +851,7 @@ def _admissible_physical_segments(
         LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
         LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
         LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
+        LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
@@ -949,6 +956,8 @@ def answer_physical_peak_question(
                 LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
                 LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
                 LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
+                LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
+                LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
                 PHYSICAL_PEAK_POINT_POLICY,
                 PHYSICAL_PEAK_WINDOW_POLICY,
             }:
@@ -962,6 +971,8 @@ def answer_physical_peak_question(
                 elif question.selection_policy_version in {
                     LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
                     LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
+                    LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
+                    LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
                 } and not any(
@@ -975,6 +986,26 @@ def answer_physical_peak_question(
                         "insufficient_original_xic_continuity",
                     )
                     selected = None
+                elif question.selection_policy_version in {
+                    PHYSICAL_PEAK_POINT_POLICY,
+                    PHYSICAL_PEAK_WINDOW_POLICY,
+                }:
+                    original_runs = sum(
+                        value > 0.0 and (index == 0 or original[index - 1] <= 0.0)
+                        for index, value in enumerate(original)
+                    )
+                    # Repeated raw interruptions plus severe jaggedness cannot
+                    # acquire peak support from a smooth envelope. Keep this
+                    # conjunction in the versioned physical policy: neither
+                    # isolated gaps nor jaggedness alone rejects a peak.
+                    if original_runs >= 3 and noise_shape_severity(
+                        np.asarray(original, dtype=float)
+                    )[0] == 2:
+                        state, reason = (
+                            "unavailable",
+                            "fragmented_original_xic_support",
+                        )
+                        selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer_v1",
         "state": state,

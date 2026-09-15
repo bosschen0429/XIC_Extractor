@@ -53,12 +53,18 @@ Fresh physical answers also check original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence or
 turn disconnected original impulses into continuous acquisition support. The
 selected interval needs at least one adjacent pair of positive original XIC
-values. This does not require every positive sample in the interval to be
-consecutive, and does not change the quantitative trace or peak boundaries.
+values. Repeated short fragments can still contain adjacent pairs, so fresh
+answers additionally reject intervals with at least three positive runs
+separated by zeros and severe original jaggedness. This conjunction detects
+raw interruptions hidden by a smooth envelope; neither occasional gaps nor
+jaggedness alone rejects a peak. It does not require every positive sample to
+be consecutive, or change the quantitative trace or peak boundaries.
 The versioned selection policy in
 [`LC-MS/MS evidence rules`](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner)
 owns that eligibility check; the profile continues to own the quantitative
 signal and its scan-support count.
+The check addresses fragmented sampling support, not every form of noise or
+chemical identity. Historical policies keep their recorded interpretation.
 
 ## Why Smoothed-Everywhere
 

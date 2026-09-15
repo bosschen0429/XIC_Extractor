@@ -22,6 +22,7 @@ from xic_extractor.peak_detection.evidence_facts import (
     prepare_physical_signal,
     serialize_physical_peak_evaluation,
 )
+from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -250,6 +251,87 @@ def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
     )
     assert result.state == "available"
     assert result.facts is not None and result.facts.area_counts_seconds > 0.0
+
+
+@pytest.mark.parametrize(
+    "policy,recorded_policy,query_rt",
+    [
+        (PHYSICAL_PEAK_POINT_POLICY, "baseline_peak_contains_query_v5", 5.0),
+        (PHYSICAL_PEAK_WINDOW_POLICY, "unique_baseline_peak_in_context_v4", 0.5),
+    ],
+)
+def test_fragmented_original_peak_is_not_rescued_by_smoothed_envelope(
+    policy: str, recorded_policy: str, query_rt: float,
+) -> None:
+    rt = np.linspace(0.0, 10.0, 101)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
+    raw[::2] = 0.0
+    raw[50] = 1000.0  # An adjacent pair does not repair repeated interruptions.
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    recorded = evaluate_physical_peak(
+        prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
+        selection_policy_version=recorded_policy,
+    )
+    assert recorded.state == "available" and recorded.facts is not None
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=recorded,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == recorded
+    assert serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=restored,
+    ) == payload
+
+    fresh = evaluate_physical_peak(
+        prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
+        selection_policy_version=policy,
+    )
+    assert fresh.state == "unavailable"
+    assert fresh.reason == "fragmented_original_xic_support"
+    assert fresh.facts is None and fresh.integration is None
+    assert fresh.answer.physical_segment_id is None
+    assert fresh.segment_universe == recorded.segment_universe
+    fresh_payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=fresh,
+    )
+    *_, restored_fresh = deserialize_physical_peak_evaluation(fresh_payload)
+    assert restored_fresh == fresh
+    assert serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=restored_fresh,
+    ) == fresh_payload
+
+
+@pytest.mark.parametrize("background_fragments", [False, True])
+def test_original_jaggedness_does_not_replace_peak_evidence(
+    background_fragments: bool,
+) -> None:
+    rt = np.linspace(0.0, 10.0, 101)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.5) ** 2)
+    if background_fragments:
+        raw[raw < 1.0] = 0.0
+        raw[[25, 29, 32, 69, 73]] = 10.0
+    else:
+        raw[::2] *= 0.1  # Jagged, but original signal remains continuous.
+    prepared = prepare_physical_signal(rt, raw)
+    recorded = evaluate_physical_peak(
+        prepared, selection_subject_id="supported-original-peak", query_rt_min=5.0,
+        selection_policy_version="baseline_peak_contains_query_v5",
+    )
+    fresh = evaluate_physical_peak(
+        prepared, selection_subject_id="supported-original-peak", query_rt_min=5.0,
+    )
+    assert recorded.state == fresh.state == "available"
+    if not background_fragments:
+        assert recorded.facts is not None
+        selected = next(
+            segment for segment in recorded.segment_universe.segments
+            if segment.physical_segment_id == recorded.facts.physical_segment_id
+        )
+        original = raw[selected.start_index:selected.end_index]
+        assert noise_shape_severity(original)[0] == 2
+    assert fresh.integration == recorded.integration
+    assert fresh.segment_universe == recorded.segment_universe
 
 
 @pytest.mark.parametrize(
