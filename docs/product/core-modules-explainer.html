@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="看懂 XIC Extractor 的兩種工作模式、共用核心模組與結果檢視路徑。">
+  <title>XIC Extractor 核心模組導覽</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f7f6;
+      --surface: #ffffff;
+      --ink: #1d3037;
+      --muted: #53676e;
+      --line: #d4e0de;
+      --teal: #0c6969;
+      --teal-soft: #e5f3f0;
+      --amber: #8b5a16;
+      --amber-soft: #fbf2df;
+      --violet: #624c91;
+      --violet-soft: #eeeaf7;
+      font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: linear-gradient(180deg, #e8f2ef 0, var(--paper) 480px);
+      line-height: 1.65;
+    }
+    a { color: var(--teal); text-underline-offset: .2em; }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    code {
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: .9em;
+      overflow-wrap: anywhere;
+    }
+    .page { width: min(1120px, calc(100% - 36px)); margin: 0 auto; }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--teal);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .hero { padding: 54px 0 35px; }
+    .hero-inner { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 30px; align-items: end; }
+    h1 { margin: 0; font-size: clamp(2.1rem, 4.9vw, 4.2rem); line-height: 1.16; letter-spacing: -.035em; }
+    .lead { max-width: 660px; margin: 20px 0 0; color: var(--muted); font-size: 1.08rem; }
+    .hero-aside {
+      border: 1px solid #b9d6d0;
+      border-radius: 18px;
+      padding: 18px 20px;
+      background: #f6fbf9;
+      box-shadow: 0 9px 30px rgba(12, 66, 64, .06);
+    }
+    .hero-aside strong { display: block; margin-bottom: 6px; color: var(--teal); }
+    .hero-aside p { margin: 0; color: var(--muted); font-size: .93rem; }
+    .jump {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 16px 0 34px;
+      border-bottom: 1px solid var(--line);
+    }
+    .jump a {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 14px;
+      background: rgba(255,255,255,.75);
+      font-size: .9rem;
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .jump a:hover { background: var(--teal-soft); border-color: #9fc9c0; }
+    section { padding: 46px 0 0; }
+    .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
+    h2 { margin: 0; font-size: clamp(1.5rem, 2.5vw, 2.25rem); line-height: 1.28; letter-spacing: -.02em; }
+    .section-intro { max-width: 780px; margin: 9px 0 24px; color: var(--muted); }
+    .mode-switch {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: #e8eeeb;
+    }
+    .mode-switch button {
+      border: 0;
+      border-radius: 9px;
+      padding: 9px 16px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .mode-switch button[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--teal);
+      box-shadow: 0 2px 8px rgba(27, 63, 61, .12);
+    }
+    .mode-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+      gap: 24px;
+      margin-top: 16px;
+      padding: 25px 28px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 12px 35px rgba(29, 55, 53, .06);
+    }
+    .mode-card h3 { margin: 0 0 8px; font-size: 1.4rem; }
+    .mode-card p { margin: 0; color: var(--muted); }
+    .mode-card .mode-output { border-left: 1px solid var(--line); padding-left: 24px; }
+    .tiny-label { margin: 0 0 8px !important; color: var(--teal) !important; font-size: .8rem; font-weight: 800; letter-spacing: .05em; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 13px 0 0; padding: 0; list-style: none; }
+    .chips li { border-radius: 999px; padding: 5px 10px; background: var(--teal-soft); color: #215c57; font-size: .86rem; font-weight: 650; }
+    .mode-output .chips li { background: var(--amber-soft); color: #77511e; }
+    .mode-links { margin-top: 16px !important; font-size: .9rem; }
+    .core-note {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: .94rem;
+    }
+    .core-note::before { content: "="; display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; background: var(--violet-soft); color: var(--violet); font-weight: 900; }
+    .flow { display: grid; gap: 0; margin: 24px 0 0; padding: 0; list-style: none; }
+    .flow > li { position: relative; display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 15px; }
+    .flow > li:not(:last-child)::before { content: ""; position: absolute; left: 26px; top: 47px; bottom: -7px; width: 2px; background: #9dbbb5; }
+    .step-marker { position: relative; z-index: 1; display: grid; place-items: center; width: 54px; height: 54px; border: 2px solid #a4cac2; border-radius: 50%; background: #f5faf8; color: var(--teal); font-size: 1.15rem; font-weight: 850; }
+    .step-marker.conditional { border-color: #e2c78f; background: #fff8e9; color: var(--amber); }
+    .stage {
+      margin: 0 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface);
+      overflow: clip;
+      box-shadow: 0 5px 18px rgba(29, 55, 53, .045);
+    }
+    .stage[open] { border-color: #add2c9; box-shadow: 0 10px 28px rgba(12, 105, 105, .075); }
+    .stage summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 19px 23px; cursor: pointer; list-style: none; }
+    .stage summary::-webkit-details-marker { display: none; }
+    .stage summary:hover { background: #f9fcfb; }
+    .stage-label { display: block; margin-bottom: 3px; color: var(--teal); font-size: .77rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .stage.conditional .stage-label { color: var(--amber); }
+    .stage-title { display: block; font-size: 1.18rem; font-weight: 800; line-height: 1.35; }
+    .stage-summary { display: block; margin-top: 4px; color: var(--muted); font-size: .94rem; }
+    .expand { color: var(--teal); font-size: .82rem; font-weight: 700; }
+    .expand::after { content: "展開 ↓"; }
+    .stage[open] .expand::after { content: "收合 ↑"; }
+    .stage-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .52fr); gap: 22px; padding: 0 23px 21px; border-top: 1px solid var(--line); }
+    .stage-body p { margin: 16px 0 0; }
+    .stage-body ul { margin: 11px 0 0; padding-left: 20px; }
+    .stage-body li + li { margin-top: 5px; }
+    .owner-box { align-self: start; margin-top: 18px; border-radius: 12px; padding: 13px 15px; background: var(--teal-soft); font-size: .9rem; }
+    .owner-box p { margin: 0; }
+    .owner-box p + p { margin-top: 7px; }
+    .owner-box code { font-weight: 700; }
+    .owner-box a { font-weight: 650; }
+    .support-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 21px; }
+    .support-card { border: 1px solid var(--line); border-radius: 15px; padding: 19px; background: var(--surface); }
+    .support-card h3 { margin: 0 0 7px; font-size: 1.02rem; }
+    .support-card p { margin: 0; color: var(--muted); font-size: .91rem; }
+    .support-card code { display: block; margin-top: 13px; color: var(--teal); font-size: .82rem; }
+    .review-card { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 15px; align-items: start; margin-top: 21px; }
+    .review-icon { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: var(--violet-soft); color: var(--violet); font-size: 1.3rem; font-weight: 800; }
+    .review-content { border: 1px solid #d9d1ea; border-radius: 16px; padding: 20px 23px; background: #faf8ff; }
+    .review-content h3 { margin: 0 0 7px; font-size: 1.13rem; }
+    .review-content p { margin: 0; color: var(--muted); }
+    .review-content .links { margin-top: 12px; font-size: .9rem; }
+    .reading { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; margin-top: 19px; }
+    .reading a { display: block; border: 1px solid var(--line); border-radius: 15px; padding: 18px 21px; background: var(--surface); text-decoration: none; }
+    .reading a:hover { border-color: #a8cbc3; background: #f7fbf9; }
+    .reading strong { display: block; margin-bottom: 5px; color: var(--ink); }
+    .reading span { color: var(--muted); font-size: .91rem; }
+    footer { margin-top: 52px; padding: 25px 0 45px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+    footer p { max-width: 820px; margin: 0; }
+    footer p + p { margin-top: 7px; }
+    @media (max-width: 790px) {
+      .hero-inner, .mode-card, .stage-body { grid-template-columns: 1fr; }
+      .hero-aside { max-width: 570px; }
+      .mode-card .mode-output { border-left: 0; border-top: 1px solid var(--line); padding: 17px 0 0; }
+      .support-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 540px) {
+      .page { width: min(100% - 28px, 1120px); }
+      .hero { padding-top: 34px; }
+      .mode-card { padding: 21px; }
+      .flow > li, .review-card { grid-template-columns: 39px minmax(0, 1fr); gap: 10px; }
+      .flow > li:not(:last-child)::before { left: 19px; }
+      .step-marker, .review-icon { width: 39px; height: 39px; font-size: 1rem; }
+      .stage summary { padding: 17px; }
+      .stage-body { padding: 0 17px 18px; }
+      .expand { font-size: .72rem; }
+      .reading { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <p class="eyebrow">XIC Extractor · 核心模組導覽</p>
+          <h1>RAW 進來之後，<br>誰接手？</h1>
+          <p class="lead">先選你要「查已知目標」或「找未知特徵」。兩種工作模式使用同一套科學處理核心，最後把證據整理成可審閱的結果。</p>
+        </div>
+        <aside class="hero-aside" aria-label="閱讀重點">
+          <strong>讀圖的順序</strong>
+          <p>看入口差異 → 沿共同核心走一遍 → 到輸出與檢視。每張卡片都能展開，並連到維護中的正式文件。</p>
+        </aside>
+      </div>
+    </header>
+
+    <nav class="jump" aria-label="頁面導覽">
+      <a href="#modes">兩種入口</a>
+      <a href="#core">共同核心</a>
+      <a href="#support">支援與檢視</a>
+      <a href="#reading">延伸閱讀</a>
+    </nav>
+
+    <main>
+      <section id="modes" aria-labelledby="modes-heading">
+        <p class="eyebrow">01 · 選擇工作方式</p>
+        <h2 id="modes-heading">入口不同，核心相同</h2>
+        <p class="section-intro">差別在搜尋範圍，以及最後要交付哪些列與欄。下面切換模式，就能對照你提供的資料和拿到的結果。</p>
+        <div class="mode-switch" role="group" aria-label="工作模式">
+          <button type="button" data-mode-button="targeted" aria-pressed="true">Targeted · 已知目標</button>
+          <button type="button" data-mode-button="untargeted" aria-pressed="false">Untargeted · 探索特徵</button>
+        </div>
+        <article class="mode-card" data-mode-panel="targeted" aria-label="Targeted 工作模式">
+          <div>
+            <p class="tiny-label">你提供</p>
+            <h3>已知要找哪個化合物</h3>
+            <p>目標清單限定要交付的目標；流程從 RAW 中尋找對應訊號，並對每個目標保留固定的結果列。</p>
+            <ul class="chips" aria-label="Targeted 輸入">
+              <li>Thermo .raw</li><li>目標清單</li><li>執行設定</li>
+            </ul>
+            <p class="mode-links"><a href="../user/targeted-extraction.md">看 Targeted 操作指南</a></p>
+          </div>
+          <div class="mode-output">
+            <p class="tiny-label">你拿到</p>
+            <p>按目標與樣本整理的 Excel workbook，包含結果、摘要和待審閱項目。</p>
+            <ul class="chips" aria-label="Targeted 輸出"><li>Excel workbook</li><li>Review Queue</li></ul>
+          </div>
+        </article>
+        <article class="mode-card" data-mode-panel="untargeted" aria-label="Untargeted 工作模式" hidden>
+          <div>
+            <p class="tiny-label">你提供</p>
+            <h3>讓資料告訴你有哪些特徵</h3>
+            <p>方法 preset 指定探索方式；流程找出樣本中的候選特徵，再把跨樣本可對齊的特徵整理在一起。</p>
+            <ul class="chips" aria-label="Untargeted 輸入">
+              <li>Thermo .raw</li><li>方法 preset</li>
+            </ul>
+            <p class="mode-links"><a href="../user/untargeted-discovery.md">看 Untargeted 操作指南</a></p>
+          </div>
+          <div class="mode-output">
+            <p class="tiny-label">你拿到</p>
+            <p>候選特徵 CSV 與跨樣本 matrix TSV。額外的 review 或 gallery 由輸出選項明確開啟。</p>
+            <ul class="chips" aria-label="Untargeted 輸出"><li>候選特徵 CSV</li><li>Alignment matrix TSV</li></ul>
+          </div>
+        </article>
+        <p class="core-note">搜尋政策與交付形狀可以不同；觀察峰、跨樣本配對、補缺與格值決策仍走共用核心。</p>
+      </section>
+
+      <section id="core" aria-labelledby="core-heading">
+        <p class="eyebrow">02 · 沿著共同核心</p>
+        <h2 id="core-heading">從候選訊號到可交付的格值</h2>
+        <p class="section-intro">產品流程的主軸是 Discovery → Alignment → 必要時 Backfill。下面把中間的峰觀察和最後的輸出決策一起標出，讓模組分工更容易看懂。</p>
+        <ol class="flow" aria-label="共同處理路徑">
+          <li>
+            <span class="step-marker" aria-hidden="true">1</span>
+            <details class="stage" open>
+              <summary><span><span class="stage-label">Discovery · 找候選</span><span class="stage-title">依搜尋範圍讀 RAW，找可能的訊號</span><span class="stage-summary">從儀器資料取得候選特徵與色譜訊號，保留它們從哪裡來的證據。</span></span><span class="expand" aria-hidden="true"></span></summary>
+              <div class="stage-body">
+                <div><p>Targeted 從目標清單限定要交付的目標；Untargeted 在設定的證據空間中探索。Discovery 產生候選和來源事實，Extraction 負責 Targeted 執行協調與抽取工作。</p><ul><li>進來：RAW、設定、搜尋範圍。</li><li>交出：候選訊號與帶來源的觀察資料。</li></ul></div>
+                <aside class="owner-box"><p><code>discovery/</code>、<code>extraction/</code></p><p>正式說明：<a href="discovery.md">Discovery</a>、<a href="../architecture-contract.md">模組責任</a></p></aside>
+              </div>
+            </details>
+          </li>
+          <li>
+            <span class="step-marker" aria-hidden="true">2</span>
+            <details class="stage">
+              <summary><span><span class="stage-label">Peak evidence · 看峰</span><span class="stage-title">把色譜訊號變成可檢查的峰觀察</span><span class="stage-summary">辨認峰的位置、邊界和面積，讓後續判斷有可追溯的依據。</span></span><span class="expand" aria-hidden="true"></span></summary>
+              <div class="stage-body">
+                <div><p>這一步處理物理訊號與候選峰證據。它還不是最終 matrix 的值；同一筆觀察仍須經過跨樣本和輸出格的決策。</p><ul><li>進來：候選色譜訊號。</li><li>交出：峰觀察、候選假說與積分證據。</li></ul></div>
+                <aside class="owner-box"><p><code>peak_detection/</code></p><p>正式說明：<a href="quantitation-context.md">定量脈絡</a>、<a href="decision-policy.md">證據與決策</a></p></aside>
+              </div>
+            </details>
+          </li>
+          <li>
+            <span class="step-marker" aria-hidden="true">3</span>
+            <details class="stage">
+              <summary><span><span class="stage-label">Alignment · 跨樣本</span><span class="stage-title">判斷哪些觀察屬於同一組</span><span class="stage-summary">把各樣本的證據對齊，建立可比較的目標或特徵群。</span></span><span class="expand" aria-hidden="true"></span></summary>
+              <div class="stage-body">
+                <div><p>Alignment 的 CrossSample owner 管群組成員與身分；共享處理核心讓兩種工作模式沿用同一套跨樣本判斷。</p><ul><li>進來：各樣本的峰觀察與來源。</li><li>交出：完成的跨樣本群組與每個樣本的對應情形。</li></ul></div>
+                <aside class="owner-box"><p><code>alignment/</code></p><p>正式說明：<a href="alignment.md">Alignment</a>、<a href="shared-processing-kernel.md">共享處理核心</a></p></aside>
+              </div>
+            </details>
+          </li>
+          <li>
+            <span class="step-marker conditional" aria-hidden="true">4</span>
+            <details class="stage conditional">
+              <summary><span><span class="stage-label">Backfill · 有需要才回填</span><span class="stage-title">某個格的證據不足時，有限度地再查一次</span><span class="stage-summary">已經有目標或群組 owner，才對缺漏的樣本格做 bounded revisit。</span></span><span class="expand" aria-hidden="true"></span></summary>
+              <div class="stage-body">
+                <div><p>Backfill 可能補出新觀察，也可能回報無法修復。它不憑空建立新群組，也不自行挑選輸出值；證據足夠的格不需要這一步。</p><ul><li>進來：已建立的目標／群組與不足的樣本格。</li><li>交出：補充觀察或明確的無修復結果。</li></ul></div>
+                <aside class="owner-box"><p><code>alignment/backfill/</code></p><p>正式說明：<a href="backfill.md">Backfill</a>、<a href="domain-glossary.md">產品用語</a></p></aside>
+              </div>
+            </details>
+          </li>
+          <li>
+            <span class="step-marker" aria-hidden="true">5</span>
+            <details class="stage">
+              <summary><span><span class="stage-label">Cell decision &amp; output · 交付</span><span class="stage-title">決定每個結果格要寫值，還是留空</span><span class="stage-summary">先完成格值決策，再依工作模式寫成 workbook 或 matrix。</span></span><span class="expand" aria-hidden="true"></span></summary>
+              <div class="stage-body">
+                <div><p>共享的 cell decision 決定值或 no-write；Targeted 和 Untargeted 各自決定要保留哪些列、怎麼呈現。Output renderer 只把已完成的結果寫成檔案，不重算科學證據。</p><ul><li>進來：對齊完成的證據與補缺結果。</li><li>交出：可審閱的 Excel workbook、TSV 或明確選用的報告。</li></ul></div>
+                <aside class="owner-box"><p><code>alignment/cell_decision/</code>、<code>output/</code></p><p>正式說明：<a href="decision-policy.md">格值決策</a>、<a href="quant-matrix.md">Matrix</a></p></aside>
+              </div>
+            </details>
+          </li>
+        </ol>
+      </section>
+
+      <section id="support" aria-labelledby="support-heading">
+        <p class="eyebrow">03 · 讓流程跑起來，再看結果</p>
+        <h2 id="support-heading">支援模組與只讀檢視</h2>
+        <p class="section-intro">下面的模組負責接人、讀檔或安排執行；它們支援共同核心，沒有另立一套科學判斷。</p>
+        <div class="support-grid">
+          <article class="support-card"><h3>GUI / CLI 與設定</h3><p>接收使用者選項、載入目標清單或 preset，將工作交給對應流程。</p><code>gui/ · scripts/ · configuration/</code></article>
+          <article class="support-card"><h3>RAW 資料入口</h3><p>對儀器資料提供讀取介面，讓 Discovery 和 Extraction 取得所需訊號。</p><code>raw_reader.py</code></article>
+          <article class="support-card"><h3>執行引擎</h3><p>安排工作、管理 worker 和已完成結果的暫存；不挑選峰，也不決定輸出格值。</p><code>execution_engine/</code></article>
+        </div>
+        <div class="review-card">
+          <span class="review-icon" aria-hidden="true">↗</span>
+          <div class="review-content"><h3>完成後需要看證據？用 XIC Inspector</h3><p>Inspector 從完成的輸出讀取證據，產生可離線打開的檢視頁。它是只讀的，不改變 RAW、峰選擇或 matrix 值。</p><p class="links"><code>xic_inspector/</code> · <a href="xic-inspector.md">看 Inspector 的正式說明</a> · <a href="execution-runtime.md">看執行生命週期</a></p></div>
+        </div>
+      </section>
+
+      <section id="reading" aria-labelledby="reading-heading">
+        <p class="eyebrow">04 · 繼續深入</p>
+        <h2 id="reading-heading">看故事，或查正式規則</h2>
+        <div class="reading">
+          <a href="raw-to-final-matrix-product-story.html"><strong>RAW 到 Final Matrix 的產品故事 →</strong><span>以一個具體例子，沿 Discovery、XIC、峰和 Alignment 看結果怎麼形成。</span></a>
+          <a href="../architecture-contract.md"><strong>Architecture contract →</strong><span>模組責任、依賴方向與正式 owner 的維護文件。</span></a>
+          <a href="domain-glossary.md"><strong>產品詞彙表 →</strong><span>查 Discovery、Alignment、Backfill、Targeted 和 Untargeted 的標準用語。</span></a>
+          <a href="README.md"><strong>產品文件索引 →</strong><span>按主題找到最新的行為、決策與輸出規則。</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>這頁是閱讀導覽。模組責任以 <a href="../architecture-contract.md">Architecture contract</a> 為準；產品語義以 <a href="README.md">產品主題文件</a> 與 <a href="domain-glossary.md">詞彙表</a> 為準。</p>
+      <p>維護時，若搜尋範圍、共用處理責任或交付形狀改變，先更新對應的正式 owner，再同步這張導覽。</p>
+    </footer>
+  </div>
+  <script>
+    const buttons = document.querySelectorAll('[data-mode-button]');
+    const panels = document.querySelectorAll('[data-mode-panel]');
+    buttons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const mode = button.dataset.modeButton;
+        buttons.forEach((candidate) => {
+          candidate.setAttribute('aria-pressed', String(candidate.dataset.modeButton === mode));
+        });
+        panels.forEach((panel) => {
+          panel.hidden = panel.dataset.modePanel !== mode;
+        });
+      });
+    });
+  </script>
+</body>
+</html>

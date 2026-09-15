@@ -53,6 +53,7 @@ owner for product documentation.
 | Presets | [`presets.md`](presets.md) | Resolver and alignment preset behavior, reproducibility rules |
 | Productization | [`productization.md`](productization.md) | Capability map, promotion boundaries, authority routing |
 | Untargeted GUI | [`untargeted-gui.md`](untargeted-gui.md) | Discovery workspace, run modes, local config, bundle resources |
+| Core Modules Explainer | [`core-modules-explainer.html`](core-modules-explainer.html) | User-readable map of the shared core, Targeted/Untargeted entry and delivery, supporting modules, and read-only review |
 | RAW-To-Final Matrix Story | [`raw-to-final-matrix-product-story.html`](raw-to-final-matrix-product-story.html) | Human-readable product explainer for RAW/discovery/alignment/matrix handoff |
 
 ## Authority Boundary
