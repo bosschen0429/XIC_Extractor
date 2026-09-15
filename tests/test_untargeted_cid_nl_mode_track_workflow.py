@@ -287,8 +287,19 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
     assert all(item is drift_lookup for item in seen)
 
 
-def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
+@pytest.mark.parametrize(
+    ("late_apex_rt", "use_drift", "same_initial_group"),
+    (
+        pytest.param(7.80, True, True, id="raw-sufficient-keeps-group"),
+        pytest.param(8.80, False, False, id="separated-without-drift"),
+        pytest.param(8.80, True, True, id="useful-drift-joins-group"),
+    ),
+)
+def test_refinement_bootstrap_uses_selective_rt_evidence_for_initial_groups(
     tmp_path: Path,
+    late_apex_rt: float,
+    use_drift: bool,
+    same_initial_group: bool,
 ) -> None:
     from tests.processing_identity_no_raw_fixture import (
         build_processing_identity_no_raw_fixture,
@@ -306,13 +317,14 @@ def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
         tmp_path,
         sample_stems=("early", "late"),
     )
+    direct_apex_by_sample = {"early": 7.80, "late": late_apex_rt}
     assessments = tuple(
         (
             fixture.sample(sample_stem),
             _assessment_with_observation_only_peak(
                 fixture,
                 sample_stem=sample_stem,
-                direct_apex_rt=7.80,
+                direct_apex_rt=direct_apex_by_sample[sample_stem],
                 observed_apex_rt=8.40,
                 scan_number=scan_number,
             ),
@@ -340,21 +352,22 @@ def test_refinement_bootstrap_uses_corrected_rt_for_initial_groups(
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
         ),
-        drift_lookup=DriftLookup(),
+        drift_lookup=DriftLookup() if use_drift else None,
     )
 
     direct_member_ids = {
         owner.cross_sample_member_subject.member_subject_id
         for owner in run.owners
-        if owner.owner_apex_rt == 7.80 and owner.cross_sample_member_subject is not None
+        if owner.owner_apex_rt == direct_apex_by_sample[owner.sample_stem]
+        and owner.cross_sample_member_subject is not None
     }
     assert len(direct_member_ids) == 2
-    assert not any(
+    assert any(
         direct_member_ids.issubset(
             {member.member_subject_id for member in predecessor.member_subjects}
         )
         for predecessor in run.predecessors
-    )
+    ) is same_initial_group
 
 
 def test_public_workflow_returns_cross_sample_application_receipts(
