@@ -39,14 +39,12 @@ from xic_extractor.evidence_artifacts import (
 from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
-    RuntimeArtifactIoSample,
     RuntimeArtifactRegistrationReceipt,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerBatchReceipt,
     RuntimeWorkerPeakRssSample,
     mint_work_unit_settlement,
-    runtime_observation_event_count,
     runtime_started_worker_keys,
     start_runtime_attempt,
 )
@@ -966,12 +964,11 @@ def _runtime_telemetry(
     coordinator: object,
 ) -> RuntimeTelemetrySamples:
     terminal = cast(Any, coordinator)
-    event_count = runtime_observation_event_count(terminal)
     worker_keys = runtime_started_worker_keys(terminal)
     reason = "not_collected_by_targeted_foreground_runner"
     return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=tuple(range(event_count)),
-        artifact_io=RuntimeArtifactIoSample(0, 0, 0, 0),
+        event_monotonic_offsets_ns=None,
+        artifact_io=None,
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
             availability=RuntimeMetricAvailability.UNSUPPORTED,
             reason=reason,
@@ -984,6 +981,7 @@ def _runtime_telemetry(
             )
             for worker_key in worker_keys
         ),
+        unavailable_reason=reason,
     )
 
 

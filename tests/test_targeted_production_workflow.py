@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -8,7 +9,10 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
+from xic_extractor.execution_runtime_observability import (
+    RuntimeMetricAvailability,
+    canonical_runtime_observability_ledger_bytes,
+)
 from xic_extractor.extraction import pipeline as extraction_pipeline
 from xic_extractor.extraction import targeted_production_workflow as production_workflow
 from xic_extractor.extraction.targeted_inputs import (
@@ -205,11 +209,6 @@ def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
 def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None:
     monkeypatch.setattr(
         production_workflow,
-        "runtime_observation_event_count",
-        lambda _coordinator: 3,
-    )
-    monkeypatch.setattr(
-        production_workflow,
         "runtime_started_worker_keys",
         lambda _coordinator: ("worker-a", "worker-b"),
     )
@@ -217,7 +216,9 @@ def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None
     samples = production_workflow._runtime_telemetry(object())
     reason = "not_collected_by_targeted_foreground_runner"
 
-    assert samples.event_monotonic_offsets_ns == (0, 1, 2)
+    assert samples.event_monotonic_offsets_ns is None
+    assert samples.artifact_io is None
+    assert samples.unavailable_reason == reason
     assert (
         samples.process_tree_peak_rss.availability
         is RuntimeMetricAvailability.UNSUPPORTED
@@ -234,6 +235,60 @@ def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None
         and sample.reason == reason
         for sample in samples.worker_peak_rss
     )
+
+
+def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    original_execute = production_workflow.execute_alignment_workflow
+    terminals = []
+
+    def capture_terminal(request, adapter):
+        terminal = original_execute(request, adapter)
+        terminals.append(terminal)
+        return terminal
+
+    monkeypatch.setattr(
+        production_workflow,
+        "execute_alignment_workflow",
+        capture_terminal,
+    )
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    assert len(terminals) == 1
+    receipt = terminals[0].runtime_receipt
+    assert receipt.supervisor.terminal_outcome.value == "succeeded"
+    assert all(
+        event.monotonic_offset_ns is None
+        for event in receipt.observability_ledger.events
+    )
+    canonical = json.loads(
+        canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
+    )
+    assert canonical["schema_version"] == "execution_runtime_observability_ledger_v2"
+    metrics = {metric.name: metric for metric in receipt.observability_ledger.metrics}
+    for name in (
+        "artifact_read_count",
+        "artifact_read_bytes",
+        "artifact_write_count",
+        "artifact_write_bytes",
+        "coordinator_work_seconds",
+        "attempt_wall_seconds",
+        "stage_or_unit_elapsed_seconds",
+    ):
+        assert metrics[name].availability is RuntimeMetricAvailability.UNSUPPORTED
+        assert metrics[name].value is None
+        assert metrics[name].reason == "not_collected_by_targeted_foreground_runner"
 
 
 def test_diagnostic_nl_evidence_finalizes_without_strict_support(
