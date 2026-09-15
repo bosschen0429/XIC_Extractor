@@ -53,7 +53,10 @@ owner for product documentation.
 | Presets | [`presets.md`](presets.md) | Resolver and alignment preset behavior, reproducibility rules |
 | Productization | [`productization.md`](productization.md) | Capability map, promotion boundaries, authority routing |
 | Untargeted GUI | [`untargeted-gui.md`](untargeted-gui.md) | Discovery workspace, run modes, local config, bundle resources |
+| Readers Index | [`readers-index.html`](readers-index.html) | Human-facing HTML route to the topics linked from the core modules guide |
 | Core Modules Explainer | [`core-modules-explainer.html`](core-modules-explainer.html) | User-readable map of the shared core, Targeted/Untargeted entry and delivery, supporting modules, and read-only review |
+| Processing Guide | [`processing-guide.html`](processing-guide.html) | Human-readable explanation of Discovery, shared peak/alignment/Backfill, and matrix decisions |
+| System Guide | [`system-guide.html`](system-guide.html) | Human-readable architecture, execution lifecycle, and completed-evidence review |
 | RAW-To-Final Matrix Story | [`raw-to-final-matrix-product-story.html`](raw-to-final-matrix-product-story.html) | Human-readable product explainer for RAW/discovery/alignment/matrix handoff |
 
 ## Authority Boundary
@@ -78,7 +81,7 @@ If a topic file conflicts with an owner listed below, the owner wins.
   command transcripts into this directory.
 - Topic pages do not change maturity tier, active lane, writer authority,
   matrix behavior, schema, or validation verdicts.
-- Product-story HTML can stay here only as an explainer. If it conflicts with
+- Human-readable HTML can stay here only as an explainer. If it conflicts with
   topic pages, status index, authority manifest, or product validation
   contract, those owners win.
 

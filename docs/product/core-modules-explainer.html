@@ -218,7 +218,7 @@
         </div>
         <aside class="hero-aside" aria-label="閱讀重點">
           <strong>讀圖的順序</strong>
-          <p>看入口差異 → 沿共同核心走一遍 → 到輸出與檢視。每張卡片都能展開，並連到維護中的正式文件。</p>
+          <p>看入口差異 → 沿共同核心走一遍 → 到輸出與檢視。每張卡片都能展開，並連到更深入的人讀版說明。</p>
         </aside>
       </div>
     </header>
@@ -247,7 +247,7 @@
             <ul class="chips" aria-label="Targeted 輸入">
               <li>Thermo .raw</li><li>目標清單</li><li>執行設定</li>
             </ul>
-            <p class="mode-links"><a href="../user/targeted-extraction.md">看 Targeted 操作指南</a></p>
+            <p class="mode-links"><a href="../user/targeted-extraction.html">看 Targeted 操作指南</a></p>
           </div>
           <div class="mode-output">
             <p class="tiny-label">你拿到</p>
@@ -263,7 +263,7 @@
             <ul class="chips" aria-label="Untargeted 輸入">
               <li>Thermo .raw</li><li>方法 preset</li>
             </ul>
-            <p class="mode-links"><a href="../user/untargeted-discovery.md">看 Untargeted 操作指南</a></p>
+            <p class="mode-links"><a href="../user/untargeted-discovery.html">看 Untargeted 操作指南</a></p>
           </div>
           <div class="mode-output">
             <p class="tiny-label">你拿到</p>
@@ -285,7 +285,7 @@
               <summary><span><span class="stage-label">Discovery · 找候選</span><span class="stage-title">依搜尋範圍讀 RAW，找可能的訊號</span><span class="stage-summary">從儀器資料取得候選特徵與色譜訊號，保留它們從哪裡來的證據。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
                 <div><p>Targeted 從目標清單限定要交付的目標；Untargeted 在設定的證據空間中探索。Discovery 產生候選和來源事實，Extraction 負責 Targeted 執行協調與抽取工作。</p><ul><li>進來：RAW、設定、搜尋範圍。</li><li>交出：候選訊號與帶來源的觀察資料。</li></ul></div>
-                <aside class="owner-box"><p><code>discovery/</code>、<code>extraction/</code></p><p>正式說明：<a href="discovery.md">Discovery</a>、<a href="../architecture-contract.md">模組責任</a></p></aside>
+                <aside class="owner-box"><p><code>discovery/</code>、<code>extraction/</code></p><p>繼續閱讀：<a href="processing-guide.html#discovery">Discovery</a>、<a href="system-guide.html#architecture">模組責任</a></p></aside>
               </div>
             </details>
           </li>
@@ -295,7 +295,7 @@
               <summary><span><span class="stage-label">Peak evidence · 看峰</span><span class="stage-title">把色譜訊號變成可檢查的峰觀察</span><span class="stage-summary">辨認峰的位置、邊界和面積，讓後續判斷有可追溯的依據。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
                 <div><p>這一步處理物理訊號與候選峰證據。它還不是最終 matrix 的值；同一筆觀察仍須經過跨樣本和輸出格的決策。</p><ul><li>進來：候選色譜訊號。</li><li>交出：峰觀察、候選假說與積分證據。</li></ul></div>
-                <aside class="owner-box"><p><code>peak_detection/</code></p><p>正式說明：<a href="quantitation-context.md">定量脈絡</a>、<a href="decision-policy.md">證據與決策</a></p></aside>
+                <aside class="owner-box"><p><code>peak_detection/</code></p><p>繼續閱讀：<a href="processing-guide.html#peak">定量脈絡</a>、<a href="processing-guide.html#decisions">證據與決策</a></p></aside>
               </div>
             </details>
           </li>
@@ -305,7 +305,7 @@
               <summary><span><span class="stage-label">Alignment · 跨樣本</span><span class="stage-title">判斷哪些觀察屬於同一組</span><span class="stage-summary">把各樣本的證據對齊，建立可比較的目標或特徵群。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
                 <div><p>Alignment 的 CrossSample owner 管群組成員與身分；共享處理核心讓兩種工作模式沿用同一套跨樣本判斷。</p><ul><li>進來：各樣本的峰觀察與來源。</li><li>交出：完成的跨樣本群組與每個樣本的對應情形。</li></ul></div>
-                <aside class="owner-box"><p><code>alignment/</code></p><p>正式說明：<a href="alignment.md">Alignment</a>、<a href="shared-processing-kernel.md">共享處理核心</a></p></aside>
+                <aside class="owner-box"><p><code>alignment/</code></p><p>繼續閱讀：<a href="processing-guide.html#alignment">Alignment</a>、<a href="processing-guide.html#kernel">共享處理核心</a></p></aside>
               </div>
             </details>
           </li>
@@ -315,7 +315,7 @@
               <summary><span><span class="stage-label">Backfill · 有需要才回填</span><span class="stage-title">某個格的證據不足時，有限度地再查一次</span><span class="stage-summary">已經有目標或群組 owner，才對缺漏的樣本格做 bounded revisit。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
                 <div><p>Backfill 可能補出新觀察，也可能回報無法修復。它不憑空建立新群組，也不自行挑選輸出值；證據足夠的格不需要這一步。</p><ul><li>進來：已建立的目標／群組與不足的樣本格。</li><li>交出：補充觀察或明確的無修復結果。</li></ul></div>
-                <aside class="owner-box"><p><code>alignment/backfill/</code></p><p>正式說明：<a href="backfill.md">Backfill</a>、<a href="domain-glossary.md">產品用語</a></p></aside>
+                <aside class="owner-box"><p><code>alignment/backfill/</code></p><p>繼續閱讀：<a href="processing-guide.html#backfill">Backfill</a>、<a href="processing-guide.html#terms">產品用語</a></p></aside>
               </div>
             </details>
           </li>
@@ -325,7 +325,7 @@
               <summary><span><span class="stage-label">Cell decision &amp; output · 交付</span><span class="stage-title">決定每個結果格要寫值，還是留空</span><span class="stage-summary">先完成格值決策，再依工作模式寫成 workbook 或 matrix。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
                 <div><p>共享的 cell decision 決定值或 no-write；Targeted 和 Untargeted 各自決定要保留哪些列、怎麼呈現。Output renderer 只把已完成的結果寫成檔案，不重算科學證據。</p><ul><li>進來：對齊完成的證據與補缺結果。</li><li>交出：可審閱的 Excel workbook、TSV 或明確選用的報告。</li></ul></div>
-                <aside class="owner-box"><p><code>alignment/cell_decision/</code>、<code>output/</code></p><p>正式說明：<a href="decision-policy.md">格值決策</a>、<a href="quant-matrix.md">Matrix</a></p></aside>
+                <aside class="owner-box"><p><code>alignment/cell_decision/</code>、<code>output/</code></p><p>繼續閱讀：<a href="processing-guide.html#decisions">格值決策</a>、<a href="processing-guide.html#matrix">Matrix</a></p></aside>
               </div>
             </details>
           </li>
@@ -343,24 +343,24 @@
         </div>
         <div class="review-card">
           <span class="review-icon" aria-hidden="true">↗</span>
-          <div class="review-content"><h3>完成後需要看證據？用 XIC Inspector</h3><p>Inspector 從完成的輸出讀取證據，產生可離線打開的檢視頁。它是只讀的，不改變 RAW、峰選擇或 matrix 值。</p><p class="links"><code>xic_inspector/</code> · <a href="xic-inspector.md">看 Inspector 的正式說明</a> · <a href="execution-runtime.md">看執行生命週期</a></p></div>
+          <div class="review-content"><h3>pure Untargeted CID-NL 完成後，用 XIC Inspector 看證據</h3><p>目前 Inspector 讀取已完成的 feature-evidence SQLite report，選出一部分證據，產生可離線打開的檢視頁。它是只讀的，不改變 RAW、峰選擇或 matrix 值；共用核心不代表其他工作模式已支援這個來源。</p><p class="links"><code>xic_inspector/</code> · <a href="system-guide.html#inspector">看 Inspector 的白話導覽</a> · <a href="system-guide.html#runtime">看執行生命週期</a></p></div>
         </div>
       </section>
 
       <section id="reading" aria-labelledby="reading-heading">
         <p class="eyebrow">04 · 繼續深入</p>
-        <h2 id="reading-heading">看故事，或查正式規則</h2>
+        <h2 id="reading-heading">看故事，或選一篇深入讀</h2>
         <div class="reading">
           <a href="raw-to-final-matrix-product-story.html"><strong>RAW 到 Final Matrix 的產品故事 →</strong><span>以一個具體例子，沿 Discovery、XIC、峰和 Alignment 看結果怎麼形成。</span></a>
-          <a href="../architecture-contract.md"><strong>Architecture contract →</strong><span>模組責任、依賴方向與正式 owner 的維護文件。</span></a>
-          <a href="domain-glossary.md"><strong>產品詞彙表 →</strong><span>查 Discovery、Alignment、Backfill、Targeted 和 Untargeted 的標準用語。</span></a>
-          <a href="README.md"><strong>產品文件索引 →</strong><span>按主題找到最新的行為、決策與輸出規則。</span></a>
+          <a href="system-guide.html#architecture"><strong>系統模組的白話導覽 →</strong><span>模組如何分工、執行如何管理，以及完成後如何檢視證據。</span></a>
+          <a href="processing-guide.html#terms"><strong>產品詞彙的白話解釋 →</strong><span>查 Discovery、Alignment、Backfill、Targeted 和 Untargeted 的用語。</span></a>
+          <a href="readers-index.html"><strong>人讀版文件索引 →</strong><span>按你的問題選操作指南、科學流程或系統導覽。</span></a>
         </div>
       </section>
     </main>
 
     <footer>
-      <p>這頁是閱讀導覽。模組責任以 <a href="../architecture-contract.md">Architecture contract</a> 為準；產品語義以 <a href="README.md">產品主題文件</a> 與 <a href="domain-glossary.md">詞彙表</a> 為準。</p>
+      <p>這頁與延伸 HTML 是人讀版。正式模組責任仍由 <code>docs/architecture-contract.md</code> 管理；產品語義由 <code>docs/product/</code> 的對應 Markdown owner 與 <code>domain-glossary.md</code> 管理。</p>
       <p>維護時，若搜尋範圍、共用處理責任或交付形狀改變，先更新對應的正式 owner，再同步這張導覽。</p>
     </footer>
   </div>

@@ -1,11 +1,19 @@
 # User Guides
 
-This directory holds public user-facing workflow guides. These pages explain how
-to operate the application, which files users edit, and which outputs to inspect.
-They do not replace product-topic source-of-truth documents under
+This directory keeps workflow guidance for the application. HTML pages give
+readers a continuous visual route through inputs, operation, and outputs;
+Markdown pages remain the detailed workflow owners. They do not replace
+product-topic source-of-truth documents under
 [`docs/product/`](../product/README.md).
 
-## Workflow Guides
+## Read In Browser
+
+| Guide | Scope |
+| --- | --- |
+| [`targeted-extraction.html`](targeted-extraction.html) | Targeted Extraction steps, inputs, workbook, and review starting points |
+| [`untargeted-discovery.html`](untargeted-discovery.html) | Untargeted Discovery steps, preset, candidate outputs, and alignment matrix |
+
+## Workflow Owners
 
 | Guide | Scope |
 | --- | --- |

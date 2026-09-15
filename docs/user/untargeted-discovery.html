@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="XIC Extractor Untargeted Discovery 操作指南：選模式、設定 RAW 與方法、匯入上機資訊，檢視候選特徵與 Alignment matrix。">
+  <title>Untargeted Discovery 操作指南 · XIC Extractor</title>
+  <style>
+    :root { color-scheme:light; --paper:#f5f7f6; --surface:#fff; --ink:#1d3037; --muted:#53676e; --line:#d4e0de; --teal:#0c6969; --teal-soft:#e5f3f0; --amber:#8b5a16; --amber-soft:#fbf2df; --violet:#624c91; --violet-soft:#eeeaf7; font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:linear-gradient(180deg,#e8f2ef 0,var(--paper) 480px); line-height:1.7; }
+    a { color:var(--teal); text-underline-offset:.2em; }
+    a:hover { text-decoration-thickness:2px; }
+    :focus-visible { outline:3px solid var(--amber); outline-offset:3px; }
+    code { font-family:"Cascadia Mono",Consolas,monospace; font-size:.91em; overflow-wrap:anywhere; }
+    .page { width:min(1100px,calc(100% - 36px)); margin:0 auto; }
+    .hero { padding:48px 0 30px; }
+    .eyebrow { margin:0 0 11px; color:var(--teal); font-size:.78rem; font-weight:800; letter-spacing:.15em; text-transform:uppercase; }
+    h1 { margin:0; font-size:clamp(2.1rem,4.9vw,4rem); line-height:1.15; letter-spacing:-.035em; }
+    h2 { margin:0; font-size:clamp(1.5rem,2.6vw,2.2rem); line-height:1.28; letter-spacing:-.02em; }
+    h3 { margin:0 0 7px; font-size:1.15rem; line-height:1.4; }
+    .lead { max-width:720px; margin:18px 0 0; color:var(--muted); font-size:1.08rem; }
+    .hero-inner { display:grid; grid-template-columns:minmax(0,1fr) 285px; gap:34px; align-items:end; }
+    .hero-aside { border:1px solid #b9d6d0; border-radius:18px; padding:19px 21px; background:#f6fbf9; box-shadow:0 9px 30px rgba(12,66,64,.06); }
+    .hero-aside strong { display:block; color:var(--teal); }
+    .hero-aside p { margin:7px 0 0; color:var(--muted); font-size:.93rem; }
+    .breadcrumbs { display:flex; flex-wrap:wrap; gap:9px; margin:0 0 22px; font-size:.9rem; }
+    .breadcrumbs a { font-weight:700; }
+    .breadcrumbs span { color:var(--muted); }
+    .jump { display:flex; flex-wrap:wrap; gap:10px; padding:16px 0 27px; border-bottom:1px solid var(--line); }
+    .jump a { border:1px solid var(--line); border-radius:999px; padding:6px 14px; background:rgba(255,255,255,.75); font-size:.9rem; font-weight:650; text-decoration:none; }
+    .jump a:hover { border-color:#9fc9c0; background:var(--teal-soft); }
+    section { padding:42px 0 0; }
+    .intro { max-width:790px; margin:9px 0 23px; color:var(--muted); }
+    .snapshot { margin:0 0 24px; border:1px solid var(--line); border-radius:19px; padding:12px; background:var(--surface); box-shadow:0 9px 26px rgba(29,55,53,.05); }
+    .snapshot img { display:block; width:100%; height:auto; border-radius:11px; }
+    .snapshot figcaption { padding:8px 7px 2px; color:var(--muted); font-size:.84rem; }
+    .steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; margin:0; padding:0; list-style:none; counter-reset:step; }
+    .steps li { position:relative; min-height:135px; border:1px solid var(--line); border-radius:16px; padding:20px 21px 18px 70px; background:var(--surface); box-shadow:0 5px 18px rgba(29,55,53,.045); counter-increment:step; }
+    .steps li::before { content:counter(step); position:absolute; top:19px; left:19px; display:grid; place-items:center; width:36px; height:36px; border:2px solid #a4cac2; border-radius:50%; color:var(--teal); background:#f5faf8; font-weight:850; }
+    .steps p { margin:0; color:var(--muted); font-size:.94rem; }
+    .note { margin:17px 0 0; border:1px solid #e9d7ab; border-radius:14px; padding:17px 20px; background:var(--amber-soft); }
+    .note p { margin:0; }
+    .note p + p { margin-top:8px; }
+    .note strong { color:var(--amber); }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:15px; background:var(--surface); }
+    table { width:100%; border-collapse:collapse; min-width:640px; text-align:left; }
+    th,td { padding:11px 15px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { background:#eaf3f0; color:#215c57; font-size:.85rem; }
+    tr:last-child td { border-bottom:0; }
+    td { font-size:.92rem; }
+    td:first-child { font-weight:700; }
+    .mode-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .mode-card { border:1px solid var(--line); border-radius:17px; padding:20px 21px; background:var(--surface); }
+    .mode-card:first-child { border-color:#add2c9; background:#f6fbf9; }
+    .mode-card .label { display:block; margin:0 0 7px; color:var(--teal); font-size:.75rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+    .mode-card h3 { overflow-wrap:anywhere; }
+    .mode-card p { margin:0; color:var(--muted); font-size:.93rem; }
+    .mode-card .mode-input { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; color:var(--ink); }
+    .input-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .input-card { border:1px solid var(--line); border-radius:15px; padding:18px 20px; background:var(--surface); }
+    .input-card h3 { margin-bottom:4px; }
+    .input-card p { margin:0; color:var(--muted); font-size:.93rem; }
+    .output-lead { display:grid; grid-template-columns:minmax(0,1fr) 285px; gap:16px; align-items:center; margin-bottom:19px; border:1px solid #d9d1ea; border-radius:17px; padding:20px 22px; background:#faf8ff; }
+    .output-lead h3 { color:var(--violet); }
+    .output-lead p { margin:0; color:var(--muted); }
+    .output-lead code { display:block; border-radius:10px; padding:10px 13px; background:var(--violet-soft); color:var(--violet); font-weight:750; }
+    details.faq { margin-top:10px; border:1px solid var(--line); border-radius:13px; background:var(--surface); }
+    details.faq summary { padding:13px 17px; cursor:pointer; font-weight:750; }
+    details.faq[open] { border-color:#add2c9; }
+    details.faq p { margin:0; padding:0 17px 16px; color:var(--muted); font-size:.94rem; }
+    .next { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:19px; }
+    .next a { border:1px solid var(--line); border-radius:15px; padding:18px 20px; background:var(--surface); text-decoration:none; }
+    .next a:hover { border-color:#a8cbc3; background:#f7fbf9; }
+    .next strong { display:block; color:var(--ink); }
+    .next span { display:block; margin-top:4px; color:var(--muted); font-size:.9rem; }
+    footer { margin-top:52px; padding:25px 0 45px; border-top:1px solid var(--line); color:var(--muted); font-size:.84rem; }
+    footer p { margin:0; }
+    footer p + p { margin-top:7px; }
+    @media (max-width:790px) { .hero-inner,.steps,.mode-grid,.input-grid,.output-lead,.next { grid-template-columns:1fr; } .hero-aside { max-width:570px; } }
+    @media (max-width:540px) { .page { width:min(100% - 28px,1100px); } .hero { padding-top:34px; } .steps li { min-height:0; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <nav class="breadcrumbs" aria-label="相關頁面"><a href="../product/core-modules-explainer.html#modes">核心模組導覽</a><span>／</span><span>Untargeted Discovery 操作指南</span></nav>
+      <div class="hero-inner"><div><p class="eyebrow">XIC Extractor · 探索特徵</p><h1>從 RAW 探索候選，<br>對齊各個樣本</h1><p class="lead">當你沒有預先列好的目標清單，用 Untargeted Discovery 從 RAW 找候選特徵，依需要跨樣本對齊，並從 GUI 開啟可檢視的輸出。</p></div><aside class="hero-aside" aria-label="快速掌握"><strong>先做三個選擇</strong><p>選 run mode、指定 RAW / DLL / output，確認上機資訊與 CID-NL 方法。預設跨樣本輸出是 <code>alignment_matrix.tsv</code>。</p></aside></div>
+    </header>
+    <nav class="jump" aria-label="頁內導覽"><a href="#workflow">操作步驟</a><a href="#modes">模式選擇</a><a href="#inputs">輸入與方法</a><a href="#outputs">輸出與檢視</a><a href="#troubleshooting">常見問題</a></nav>
+    <main>
+      <section id="workflow" aria-labelledby="workflow-heading">
+        <p class="eyebrow">01 · 跑一次探索</p><h2 id="workflow-heading">在 GUI 中完成這八步</h2><p class="intro">封裝版開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run python -m gui.main</code>。</p>
+        <figure class="snapshot"><img src="../../assets/screenshots/untargeted-workspace.png" alt="Untargeted Discovery 工作區畫面"><figcaption>Untargeted Discovery 工作區：模式、資料路徑、上機資訊、內標與方法設定。</figcaption></figure>
+        <ol class="steps">
+          <li><h3>選擇 Untargeted Discovery</h3><p>進入探索工作區。</p></li>
+          <li><h3>選擇 run mode</h3><p>新批次通常選 <code>full</code>；單檔候選探索選 <code>discovery_only</code>；既有探索結果要重新對齊選 <code>align_only</code>。</p></li>
+          <li><h3>設定資料路徑</h3><p>指定 RAW 輸入、Thermo DLL 資料夾與輸出資料夾。</p></li>
+          <li><h3>匯入 Word「上機資訊」</h3><p>依檔名配對樣本與注射順序；檢查未配對或有歧義項目。字母順序不是注射順序。</p></li>
+          <li><h3>檢查「內標清單」</h3><p>預設選用隨附範例。流程只使用 <code>is_istd=TRUE</code> 列；其他 analyte 列會列為 skipped。</p></li>
+          <li><h3>選 CID-NL 起始方法</h3><p>開「編輯方法…」選 dR、R、MeR 或 custom NL tags 與組合，將方法套用到本次執行。</p></li>
+          <li><h3>按「開始執行」</h3><p>確認設定完成後執行。</p></li>
+          <li><h3>從輸出資料夾開始檢視</h3><p>按問題選候選 CSV 或 Alignment matrix；GUI 預設呈現 matrix。</p></li>
+        </ol>
+        <div class="note"><p><strong>本機設定位置：</strong>GUI 將 Untargeted 設定存於 <code>config/discovery_gui.json</code>。這是機器本地狀態，應留在本機。</p></div>
+      </section>
+      <section id="modes" aria-labelledby="modes-heading">
+        <p class="eyebrow">02 · 模式選擇</p><h2 id="modes-heading">要探索、對齊，還是兩者都做？</h2><p class="intro">GUI 從 RAW 資料夾開始完整批次時選 <code>full</code>。若想對一整個資料夾只做 discovery-only batch，使用 CLI discovery workflow。</p>
+        <div class="mode-grid">
+          <article class="mode-card"><span class="label">新批次</span><h3><code>full</code></h3><p>候選探索後，再做跨樣本 Alignment。</p><p class="mode-input"><strong>輸入：</strong>RAW 資料夾。</p></article>
+          <article class="mode-card"><span class="label">先看單檔</span><h3><code>discovery_only</code></h3><p>只檢查一個 RAW 檔案的候選特徵。</p><p class="mode-input"><strong>輸入：</strong>單一 RAW 檔案。</p></article>
+          <article class="mode-card"><span class="label">已有探索結果</span><h3><code>align_only</code></h3><p>拿既有 discovery 輸出做對齊。</p><p class="mode-input"><strong>輸入：</strong>RAW 資料夾與 <code>discovery_batch_index.csv</code>。</p></article>
+        </div>
+      </section>
+      <section id="inputs" aria-labelledby="inputs-heading">
+        <p class="eyebrow">03 · 輸入與方法</p><h2 id="inputs-heading">開始之前核對這些資料</h2>
+        <div class="input-grid">
+          <article class="input-card"><h3>RAW directory 或 RAW file</h3><p>Thermo 儀器資料，依選定模式進行探索或對齊。</p></article>
+          <article class="input-card"><h3>DLL directory</h3><p>包含 Thermo RawFileReader DLL 的資料夾。</p></article>
+          <article class="input-card"><h3>Output directory</h3><p>候選與 Alignment artifacts 的寫入位置。</p></article>
+          <article class="input-card"><h3>上機資訊</h3><p>Word sequence table，供檔案／樣本配對及注射順序使用。</p></article>
+          <article class="input-card"><h3>內標清單</h3><p>與 Targeted 共用的 targets CSV；Untargeted 只消費 <code>is_istd=TRUE</code> 列。</p></article>
+          <article class="input-card"><h3>Preset 與 advanced overrides</h3><p>選定 CID-NL tags 與組合；進階覆寫可在本次執行中調整 preset 方法。</p></article>
+        </div>
+        <div class="note"><p><strong>要換內標清單：</strong>複製隨附範例，於 Excel 或系統關聯程式編輯後在 GUI 重載；保留 CSV headers 與 <code>is_istd</code> 標記。沒有第二份 Untargeted 專用清單。</p><p>若提供的檔案沒有內標，GUI 會報錯；清空該欄位可不使用內標清單執行。</p></div>
+      </section>
+      <section id="outputs" aria-labelledby="outputs-heading">
+        <p class="eyebrow">04 · 輸出與檢視</p><h2 id="outputs-heading">依你要回答的問題開檔</h2><p class="intro">預設 Alignment 執行只寫 <code>alignment_matrix.tsv</code>；其他 Alignment TSV、HTML、XLSX 需由明確的 machine、debug、validation 或 artifact 選項產生。GUI 預設呈現 matrix。</p>
+        <div class="output-lead"><div><h3>跨樣本量化先看 matrix</h3><p>feature 是列、sample 是欄，格內放 area；這是預設 Alignment 產物。</p></div><code>alignment_matrix.tsv</code></div>
+        <div class="table-wrap"><table><thead><tr><th scope="col">輸出</th><th scope="col">內容</th><th scope="col">適合的檢視問題</th></tr></thead><tbody>
+          <tr><td><code>discovery_candidates.csv</code></td><td>各樣本候選特徵的 m/z、RT、area 與 seed evidence。</td><td>逐樣本檢查候選細節。</td></tr>
+          <tr><td><code>discovery_review.csv</code></td><td>較精簡的候選欄位與 confidence。</td><td>快速分流檢視。</td></tr>
+          <tr><td><code>discovery_batch_index.csv</code></td><td>連結每個樣本的 candidate / review CSV。</td><td>Alignment 輸入；探索後自動產生。</td></tr>
+          <tr><td><code>alignment_matrix.tsv</code></td><td>跨樣本對齊特徵與各格 area。</td><td>預設跨樣本量化結果。</td></tr>
+          <tr><td><code>alignment_review.tsv</code></td><td>對齊品質、owner 身分與每格 backfill 狀態。</td><td>明確啟用的 review / diagnostic 檢視。</td></tr>
+          <tr><td>Review / gallery HTML</td><td>候選峰與 backfill 脈絡的視覺圖。</td><td>明確啟用的人類檢視輸出。</td></tr>
+        </tbody></table></div>
+      </section>
+      <section id="troubleshooting" aria-labelledby="troubleshooting-heading">
+        <p class="eyebrow">05 · 常見問題</p><h2 id="troubleshooting-heading">先檢查輸入，再看主輸出</h2>
+        <details class="faq"><summary>執行按鈕顯示設定未完成</summary><p>填齊畫面上每個路徑欄位，並確認檔案／資料夾實際存在。</p></details>
+        <details class="faq"><summary>DLL 載入失敗</summary><p>把 DLL directory 指到 Thermo RawFileReader 安裝資料夾。</p></details>
+        <details class="faq"><summary>沒有 gallery 開啟</summary><p>先確認主要 discovery / Alignment 輸出；gallery 產生屬於 best-effort。</p></details>
+        <details class="faq"><summary>只想重新做 Alignment</summary><p>選 <code>align_only</code>，並提供既有 <code>discovery_batch_index.csv</code>。</p></details>
+        <details class="faq"><summary>結果和預期不同</summary><p>檢查 RAW 檔案是否有效，以及 DLL 版本是否與 Xcalibur 安裝相符。</p></details>
+        <div class="next"><a href="targeted-extraction.html"><strong>已知道要查的目標？→</strong><span>改看 Targeted Extraction 操作指南。</span></a><a href="../product/core-modules-explainer.html#modes"><strong>回核心模組導覽 →</strong><span>對照兩種工作模式與共用處理核心。</span></a></div>
+      </section>
+    </main>
+    <footer><p>這頁是使用者閱讀版；正式操作文件 owner：<code>docs/user/untargeted-discovery.md</code>。產品行為若有更新，先依 owner 文件，再同步此頁。</p><p>使用者指南不取代產品主題契約或科學證據驗收。</p></footer>
+  </div>
+</body>
+</html>
