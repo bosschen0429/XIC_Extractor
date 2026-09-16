@@ -145,11 +145,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             "PeakEnd": "8.7200",
             "PeakWidth": "0.4400",
             "Confidence": "HIGH",
-            "Reason": (
-                "decision: detected_clean; support: ms1_peak_present, "
-                "ms1_coherent, role_aware_rt_support, "
-                "chrom_peak_segment_context, trace_coherent"
-            ),
+            "Reason": "Detected.",
         },
         {
             "SampleName": "SampleA",
@@ -165,13 +161,16 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             "PeakEnd": "9.7400",
             "PeakWidth": "0.4800",
             "Confidence": "HIGH",
-            "Reason": (
-                "decision: detected_clean; support: ms1_peak_present, "
-                "ms1_coherent, candidate_aligned_ms2_nl, "
-                "role_aware_rt_support, chrom_peak_segment_context, "
-                "trace_coherent"
-            ),
+            "Reason": "Detected.",
         },
+    ]
+    assert [row["Projection Reason"] for row in long_rows] == [
+        "decision: detected_clean; support: ms1_peak_present, "
+        "ms1_coherent, role_aware_rt_support, "
+        "chrom_peak_segment_context, trace_coherent",
+        "decision: detected_clean; support: ms1_peak_present, "
+        "ms1_coherent, candidate_aligned_ms2_nl, "
+        "role_aware_rt_support, chrom_peak_segment_context, trace_coherent",
     ]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
     assert all(row["Product State"] for row in long_rows)
@@ -776,12 +775,13 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
             "PeakEnd": "ND",
             "PeakWidth": "ND",
             "Confidence": "VERY_LOW",
-            "Reason": (
-                "decision: not_counted; support: trace_coherent; "
-                "not_counted: missing_positive_ms1_peak"
-            ),
+            "Reason": "Not counted: no positive MS1 peak available.",
         }
     ]
+    assert long_rows[0]["Projection Reason"] == (
+        "decision: not_counted; support: trace_coherent; "
+        "not_counted: missing_positive_ms1_peak"
+    )
     assert long_rows[0]["Product State"] == "not_counted"
     assert long_rows[0]["Counted Detection"] == "FALSE"
     assert "missing_positive_ms1_peak" in long_rows[0]["Projection Not Counted Reasons"]
