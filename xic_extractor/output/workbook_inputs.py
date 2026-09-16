@@ -13,11 +13,13 @@ from xic_extractor.sample_groups import classify_sample_group
 def _sample_group(name: str) -> str:
     return classify_sample_group(name)
 
+
 def _read_diagnostics(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
+
 
 def _read_long_results(
     config: ExtractionConfig, targets: list[Target]
@@ -66,6 +68,7 @@ def _legacy_wide_long_row(
         if target.neutral_loss_da is not None
         else "",
         "Int": row.get(f"{target.label}_Int", ""),
+        "IntSmoothed": row.get(f"{target.label}_IntSmoothed", ""),
         "PeakStart": row.get(f"{target.label}_PeakStart", ""),
         "PeakEnd": row.get(f"{target.label}_PeakEnd", ""),
         "PeakWidth": _legacy_peak_width(row, target.label),

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from scripts import csv_to_excel
 from xic_extractor import extractor as extractor_module
@@ -44,7 +45,7 @@ def _fabricate_run_output() -> RunOutput:
     peak = PeakResult(
         rt=9.03,
         intensity=500,
-        intensity_smoothed=500,
+        intensity_smoothed=450,
         area=123.0,
         peak_start=8.9,
         peak_end=9.2,
@@ -232,7 +233,7 @@ def test_xlsx_results_sheet_uses_selection_apex_rt_for_reporting(
     tmp_path: Path,
 ) -> None:
     out = _write_workbook(tmp_path)
-    wb = load_workbook(out, read_only=True)
+    wb = load_workbook(out)
     ws = wb["XIC Results"]
     rows = list(ws.iter_rows(values_only=True))
     headers = list(rows[0])
@@ -241,3 +242,8 @@ def test_xlsx_results_sheet_uses_selection_apex_rt_for_reporting(
     assert row["Target"] == "d3-5-hmdC"
     assert row["RT"] == 9
     assert row["Area"] == 123
+    assert row["Int"] == 500
+    assert row["IntSmoothed"] == 450
+    smoothed_column = headers.index("IntSmoothed") + 1
+    assert ws.cell(2, smoothed_column).number_format == "0.00E+00"
+    assert not ws.column_dimensions[get_column_letter(smoothed_column)].hidden

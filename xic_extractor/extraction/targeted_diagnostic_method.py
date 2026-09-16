@@ -44,6 +44,7 @@ class TargetedDiagnosticProjection:
     rt: float | None
     area: float | None
     intensity: float | None
+    intensity_smoothed: float | None
     peak_start: float | None
     peak_end: float | None
     peak_width: float | None
@@ -78,10 +79,9 @@ class TargetedDiagnosticMethodResult:
 def targeted_attempt_namespace_component(processing_attempt_id: str) -> str:
     """Return a deterministic filesystem-safe component for one exact attempt ID."""
 
-    if (
-        not isinstance(processing_attempt_id, str)
-        or not processing_attempt_id.startswith("xic.processing-attempt.v1:")
-    ):
+    if not isinstance(
+        processing_attempt_id, str
+    ) or not processing_attempt_id.startswith("xic.processing-attempt.v1:"):
         raise TargetedDiagnosticMethodError(
             "processing_attempt_id must be an owner-issued typed identity"
         )
@@ -192,7 +192,7 @@ def canonical_targeted_diagnostic_method_bytes(
     result: TargetedDiagnosticMethodResult,
 ) -> bytes:
     payload = {
-        "schema_version": "targeted_diagnostic_method_v1",
+        "schema_version": "targeted_diagnostic_method_v2",
         "processing_request_id": result.processing_request_id,
         "processing_attempt_id": result.processing_attempt_id,
         "groups": [
@@ -229,6 +229,7 @@ def canonical_targeted_diagnostic_method_bytes(
                 "rt": projection.rt,
                 "area": projection.area,
                 "intensity": projection.intensity,
+                "intensity_smoothed": projection.intensity_smoothed,
                 "peak_start": projection.peak_start,
                 "peak_end": projection.peak_end,
                 "peak_width": projection.peak_width,
@@ -284,10 +285,7 @@ def _validate_and_project_legacy(
                     "failed successor cell does not match legacy file failure"
                 )
             successor_confidence, successor_reason = _successor_output_semantics(cell)
-            if (
-                successor_confidence != "ERROR"
-                or successor_reason != file_result.error
-            ):
+            if successor_confidence != "ERROR" or successor_reason != file_result.error:
                 raise TargetedDiagnosticMethodParityError(
                     "successor confidence/reason differs from legacy"
                 )
@@ -298,6 +296,7 @@ def _validate_and_project_legacy(
                     rt=None,
                     area=None,
                     intensity=None,
+                    intensity_smoothed=None,
                     peak_start=None,
                     peak_end=None,
                     peak_width=None,
@@ -341,8 +340,10 @@ def _validate_and_project_legacy(
             legacy_result.reported_peak_start,
             legacy_result.reported_peak_end,
             legacy_result.reported_peak_width,
+            legacy_result.reported_smoothed_peak_intensity,
         )
         successor_values: tuple[
+            float | None,
             float | None,
             float | None,
             float | None,
@@ -367,22 +368,21 @@ def _validate_and_project_legacy(
                 integration.rt_left_min,
                 integration.rt_right_min,
                 abs(integration.rt_width_min),
+                integration.height_smoothed,
             )
             successor_counted_detection = True
             if (
                 legacy_values != successor_values
-                or product_projection.counted_detection
-                != successor_counted_detection
+                or product_projection.counted_detection != successor_counted_detection
             ):
                 raise TargetedDiagnosticMethodParityError(
                     "selected peak/boundary/area/count differs from legacy"
                 )
         else:
-            successor_values = (None, None, None, None, None, None)
+            successor_values = (None, None, None, None, None, None, None)
             successor_counted_detection = False
             if legacy_values != successor_values or (
-                product_projection.counted_detection
-                != successor_counted_detection
+                product_projection.counted_detection != successor_counted_detection
             ):
                 raise TargetedDiagnosticMethodParityError(
                     "non-selected successor cell differs from legacy counted state"
@@ -394,6 +394,7 @@ def _validate_and_project_legacy(
                 rt=successor_values[0],
                 area=successor_values[1],
                 intensity=successor_values[2],
+                intensity_smoothed=successor_values[6],
                 peak_start=successor_values[3],
                 peak_end=successor_values[4],
                 peak_width=successor_values[5],
@@ -430,10 +431,9 @@ def _validate_request_attempt(
         raise TargetedDiagnosticMethodError(
             "processing_attempt must be an owner-issued identity"
         )
-    if (
-        requests != {attempt.processing_request_id}
-        or attempts != {attempt.processing_attempt_id}
-    ):
+    if requests != {attempt.processing_request_id} or attempts != {
+        attempt.processing_attempt_id
+    }:
         raise TargetedDiagnosticMethodError(
             "processing_attempt does not match the method input lineage"
         )
@@ -469,8 +469,7 @@ def _successor_output_semantics(
         _observed_selected_cid_nl_hypothesis(cell, alignment_input)
         return (
             "HIGH",
-            "decision: accepted; evidence: ms1_coherent; "
-            "candidate_aligned_ms2_nl",
+            "decision: accepted; evidence: ms1_coherent; candidate_aligned_ms2_nl",
         )
     if cell.status == "backfilled":
         _require_successor_reason(

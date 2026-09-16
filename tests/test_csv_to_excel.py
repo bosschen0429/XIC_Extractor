@@ -37,7 +37,7 @@ def test_build_data_sheet_uses_row_based_compact_view_with_hidden_advanced_colum
 
     _build_data_sheet(ws, rows)
 
-    assert [ws.cell(row=1, column=i).value for i in range(1, 15)] == [
+    assert [ws.cell(row=1, column=i).value for i in range(1, 18)] == [
         "SampleName",
         "Group",
         "Target",
@@ -47,11 +47,14 @@ def test_build_data_sheet_uses_row_based_compact_view_with_hidden_advanced_colum
         "Area",
         "NL",
         "Int",
+        "IntSmoothed",
         "PeakStart",
         "PeakEnd",
         "PeakWidth",
         "Confidence",
         "Reason",
+        "Supporting Evidence",
+        "Conflicts / Concerns",
     ]
     assert ws["F2"].value == 9.1234
     assert ws["F2"].number_format == "0.0000"
@@ -64,23 +67,26 @@ def test_build_data_sheet_uses_row_based_compact_view_with_hidden_advanced_colum
     assert ws["H2"].fill.fgColor.rgb.endswith("C8E6C9")
     assert ws["I2"].value == 1000.0
     assert ws["I2"].number_format == "0.00E+00"
-    assert abs(ws["L2"].value - 0.4) < 1e-9
-    assert ws["L2"].number_format == "0.0000"
+    assert abs(ws["M2"].value - 0.4) < 1e-9
+    assert ws["M2"].number_format == "0.0000"
     assert ws.column_dimensions["I"].hidden is True
-    assert ws.column_dimensions["J"].hidden is True
+    assert ws.column_dimensions["J"].hidden is not True
     assert ws.column_dimensions["K"].hidden is True
     assert ws.column_dimensions["L"].hidden is True
     assert ws.column_dimensions["M"].hidden is True
-    assert ws.column_dimensions["N"].hidden is not True
-    assert ws["O1"].value == "Product State"
-    assert ws["P1"].value == "Counted Detection"
-    assert ws["Q1"].value == "Review State"
+    assert ws.column_dimensions["N"].hidden is True
+    assert ws["R1"].value == "Product State"
+    assert ws["S1"].value == "Counted Detection"
+    assert ws["T1"].value == "Review State"
     assert ws.column_dimensions["O"].hidden is not True
     assert ws.column_dimensions["P"].hidden is not True
     assert ws.column_dimensions["Q"].hidden is not True
-    assert ws["M2"].value == "HIGH"
-    assert ws["N2"].value == "all checks passed"
-    last_column = get_column_letter(len(LONG_HEADERS))
+    assert ws.column_dimensions["R"].hidden is not True
+    assert ws.column_dimensions["S"].hidden is not True
+    assert ws.column_dimensions["T"].hidden is not True
+    assert ws["N2"].value == "HIGH"
+    assert ws["O2"].value == "all checks passed"
+    last_column = get_column_letter(len(LONG_HEADERS) + 2)
     assert ws.auto_filter.ref == f"A1:{last_column}6"
 
 
@@ -103,6 +109,62 @@ def test_data_sheet_merges_repeated_sample_and_group_cells() -> None:
     assert ws["A3"].value is None
     assert ws["B2"].value == "Tumor"
     assert ws["B3"].value is None
+
+
+def test_data_sheet_separates_support_from_conflict_and_keeps_diagnostic_tokens(
+    tmp_path: Path,
+) -> None:
+    row = _long_row("SampleA", "Analyte", "ND", "ND", "OK")
+    row.update(
+        {
+            "Product State": "ambiguous",
+            "Counted Detection": "FALSE",
+            "Reason": (
+                "decision: ambiguous; support: ms1_coherent; "
+                "conflict: targeted_rt_conflict"
+            ),
+            "Projection Reason": (
+                "decision: ambiguous; support: ms1_coherent; "
+                "conflict: targeted_rt_conflict"
+            ),
+            "Projection Support Reasons": "ms1_coherent; candidate_aligned_ms2_nl",
+            "Projection Review Reasons": "targeted_rt_review",
+            "Projection Conflict Reasons": "targeted_rt_conflict",
+        }
+    )
+    wb = Workbook()
+    _build_data_sheet(wb.active, [row])
+    path = tmp_path / "evidence.xlsx"
+    wb.save(path)
+    wb.close()
+    with_wb = load_workbook(path)
+    ws = with_wb.active
+    headers = [cell.value for cell in ws[1]]
+    reason_idx = headers.index("Reason")
+    assert headers[reason_idx + 1 : reason_idx + 3] == [
+        "Supporting Evidence",
+        "Conflicts / Concerns",
+    ]
+    cells = {header: ws.cell(2, index + 1) for index, header in enumerate(headers)}
+    assert (
+        cells["Reason"].value
+        == "Not counted: peak position conflicts with the RT reference/window."
+    )
+    assert "MS1" in cells["Supporting Evidence"].value
+    assert "MS2/NL" in cells["Supporting Evidence"].value
+    assert "Conflict:" in cells["Conflicts / Concerns"].value
+    assert "Review:" in cells["Conflicts / Concerns"].value
+    assert "RT reference/window" in cells["Conflicts / Concerns"].value
+    assert cells["Projection Conflict Reasons"].value == "targeted_rt_conflict"
+    for header in ("Supporting Evidence", "Conflicts / Concerns"):
+        assert not ws.column_dimensions[cells[header].column_letter].hidden
+        assert cells[header].alignment.wrap_text
+    assert ws.column_dimensions[
+        cells["Projection Conflict Reasons"].column_letter
+    ].hidden
+    row["Reason"] = cells["Reason"].value
+    assert _review_queue_rows([row], [])[0]["Why"] == "targeted_rt_conflict"
+    with_wb.close()
 
 
 def test_data_sheet_forces_sample_names_and_target_labels_to_literal_text() -> None:
@@ -819,13 +881,15 @@ def test_run_writes_row_based_results_sheet_and_makes_overview_active(
     assert ws_results["C1"].value == "Target"
     assert ws_results["G1"].value == "Area"
     assert ws_results["I1"].value == "Int"
-    assert ws_results["M1"].value == "Confidence"
-    assert ws_results["N1"].value == "Reason"
+    assert ws_results["N1"].value == "Confidence"
+    assert ws_results["O1"].value == "Reason"
     assert ws_results.column_dimensions["I"].hidden is True
-    assert ws_results.column_dimensions["M"].hidden is True
-    assert ws_results["O1"].value == "Product State"
-    assert ws_results["P1"].value == "Counted Detection"
-    assert ws_results["Q1"].value == "Review State"
+    assert ws_results.column_dimensions["N"].hidden is True
+    assert ws_results["P1"].value == "Supporting Evidence"
+    assert ws_results["Q1"].value == "Conflicts / Concerns"
+    assert ws_results["R1"].value == "Product State"
+    assert ws_results["S1"].value == "Counted Detection"
+    assert ws_results["T1"].value == "Review State"
     assert ws_results.column_dimensions["O"].hidden is not True
     assert ws_results.column_dimensions["P"].hidden is not True
     assert ws_results.column_dimensions["Q"].hidden is not True

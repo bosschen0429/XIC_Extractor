@@ -60,11 +60,11 @@ TargetedDiagnosticDeliveryCandidateStatus = Literal[
     "rolled_back",
 ]
 
-_PROJECTION_CONTRACT_VERSION = "targeted_diagnostic_projection_v1"
+_PROJECTION_CONTRACT_VERSION = "targeted_diagnostic_projection_v2"
 _METHOD_RESULT_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_diagnostic_delivery",
     semantic_role="targeted_diagnostic_method_result",
-    schema_version="targeted_diagnostic_method_result_v1",
+    schema_version="targeted_diagnostic_method_result_v2",
     validation_status="diagnostic_only",
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf-v1",
@@ -72,7 +72,7 @@ _METHOD_RESULT_CONTRACT = _mint_artifact_semantic_contract_ref(
 _CSV_OUTPUT_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_diagnostic_delivery",
     semantic_role="hard_exact_targeted_diagnostic_csv",
-    schema_version="hard_exact_targeted_diagnostic_csv_v1",
+    schema_version="hard_exact_targeted_diagnostic_csv_v2",
     validation_status="diagnostic_only",
     media_type="text/csv",
     serialization_format="exact-bytes-v1",
@@ -93,6 +93,7 @@ class _SuccessorWriterResult:
     reported_rt: float | None
     reported_peak_area: float | None
     reported_peak_intensity: float | None
+    reported_smoothed_peak_intensity: float | None
     reported_peak_start: float | None
     reported_peak_end: float | None
     reported_peak_width: float | None
@@ -285,10 +286,7 @@ def settle_targeted_diagnostic_delivery_candidate(
             }
         )
     )
-    if (
-        alignment_result_artifact.upstream_artifact_ids
-        != expected_alignment_upstreams
-    ):
+    if alignment_result_artifact.upstream_artifact_ids != expected_alignment_upstreams:
         raise TargetedDiagnosticDeliveryError(
             "Alignment result does not close the exact candidate-set inputs"
         )
@@ -438,6 +436,7 @@ def _successor_writer_file_results(
                         reported_rt=projection.rt,
                         reported_peak_area=projection.area,
                         reported_peak_intensity=projection.intensity,
+                        reported_smoothed_peak_intensity=projection.intensity_smoothed,
                         reported_peak_start=projection.peak_start,
                         reported_peak_end=projection.peak_end,
                         reported_peak_width=projection.peak_width,
@@ -503,9 +502,7 @@ def _validate_method_context(
         raise TargetedDiagnosticDeliveryError(
             "alignment_inputs contain an invalid Targeted input"
         )
-    input_by_sample = {
-        item.sample.metadata.raw_stem: item for item in alignment_inputs
-    }
+    input_by_sample = {item.sample.metadata.raw_stem: item for item in alignment_inputs}
     if len(input_by_sample) != len(alignment_inputs):
         raise TargetedDiagnosticDeliveryError(
             "alignment_inputs contain duplicate sample-target cells"
@@ -627,8 +624,7 @@ def _runtime_gate_reason(
         for artifact in artifacts:
             artifact_id = artifact.evidence_artifact_id
             if (
-                artifact.producer_processing_request_id
-                != attempt.processing_request_id
+                artifact.producer_processing_request_id != attempt.processing_request_id
                 or artifact.producer_processing_attempt_id
                 != attempt.processing_attempt_id
             ):
@@ -734,6 +730,7 @@ def _canonical_projection_bytes(projection: TargetedDiagnosticProjection) -> byt
         "rt": projection.rt,
         "area": projection.area,
         "intensity": projection.intensity,
+        "intensity_smoothed": projection.intensity_smoothed,
         "peak_start": projection.peak_start,
         "peak_end": projection.peak_end,
         "peak_width": projection.peak_width,

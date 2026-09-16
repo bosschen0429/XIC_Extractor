@@ -26,7 +26,11 @@ def _review_queue_rows(
                 "Target": row.get("Target", ""),
                 "Role": row.get("Role", ""),
                 "Status": _review_status(issue, row.get("Confidence", "")),
-                "Why": _review_why(issue, row.get("Reason", ""), evidence),
+                "Why": _review_why(
+                    issue,
+                    row.get("Projection Reason", "") or row.get("Reason", ""),
+                    evidence,
+                ),
                 "RT": row.get("RT", ""),
                 "Area": row.get("Area", ""),
                 "Action": _suggested_action(issue, row),
@@ -216,8 +220,7 @@ def _review_why(issue: str, reason: str, evidence: str) -> str:
         return "NL support is borderline"
     if issue == "PROJECTION_CONFLICT":
         return (
-            _first_projection_reason(reason, "conflict")
-            or "Product evidence conflicts"
+            _first_projection_reason(reason, "conflict") or "Product evidence conflicts"
         )
     if issue == "PRODUCT_EXCLUDED":
         return _first_projection_reason(reason, "excluded") or "Product row excluded"
@@ -225,13 +228,11 @@ def _review_why(issue: str, reason: str, evidence: str) -> str:
         return "Product evidence is ambiguous"
     if issue == "PRODUCT_NOT_COUNTED":
         return (
-            _first_projection_reason(reason, "not_counted")
-            or "Product row not counted"
+            _first_projection_reason(reason, "not_counted") or "Product row not counted"
         )
     if issue == "PROJECTION_FLAGGED":
         return (
-            _first_projection_reason(reason, "review")
-            or "Product projection flagged"
+            _first_projection_reason(reason, "review") or "Product projection flagged"
         )
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
         return "Peak not found"

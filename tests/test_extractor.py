@@ -89,12 +89,14 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         "SampleName",
         "NoNL_RT",
         "NoNL_Int",
+        "NoNL_IntSmoothed",
         "NoNL_Area",
         "NoNL_PeakStart",
         "NoNL_PeakEnd",
         "NoNL_PeakWidth",
         "WithNL_RT",
         "WithNL_Int",
+        "WithNL_IntSmoothed",
         "WithNL_Area",
         "WithNL_PeakStart",
         "WithNL_PeakEnd",
@@ -106,12 +108,14 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             "SampleName": "SampleA",
             "NoNL_RT": "8.5000",
             "NoNL_Int": "1200",
+            "NoNL_IntSmoothed": "1200",
             "NoNL_Area": "57760.98",
             "NoNL_PeakStart": "8.2800",
             "NoNL_PeakEnd": "8.7200",
             "NoNL_PeakWidth": "0.4400",
             "WithNL_RT": "9.5000",
             "WithNL_Int": "2200",
+            "WithNL_IntSmoothed": "2200",
             "WithNL_Area": "58915.51",
             "WithNL_PeakStart": "9.2600",
             "WithNL_PeakEnd": "9.7400",
@@ -141,11 +145,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             "PeakEnd": "8.7200",
             "PeakWidth": "0.4400",
             "Confidence": "HIGH",
-            "Reason": (
-                "decision: detected_clean; support: ms1_peak_present, "
-                "ms1_coherent, role_aware_rt_support, "
-                "chrom_peak_segment_context, trace_coherent"
-            ),
+            "Reason": "Detected.",
         },
         {
             "SampleName": "SampleA",
@@ -161,13 +161,16 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             "PeakEnd": "9.7400",
             "PeakWidth": "0.4800",
             "Confidence": "HIGH",
-            "Reason": (
-                "decision: detected_clean; support: ms1_peak_present, "
-                "ms1_coherent, candidate_aligned_ms2_nl, "
-                "role_aware_rt_support, chrom_peak_segment_context, "
-                "trace_coherent"
-            ),
+            "Reason": "Detected.",
         },
+    ]
+    assert [row["Projection Reason"] for row in long_rows] == [
+        "decision: detected_clean; support: ms1_peak_present, "
+        "ms1_coherent, role_aware_rt_support, "
+        "chrom_peak_segment_context, trace_coherent",
+        "decision: detected_clean; support: ms1_peak_present, "
+        "ms1_coherent, candidate_aligned_ms2_nl, "
+        "role_aware_rt_support, chrom_peak_segment_context, trace_coherent",
     ]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
     assert all(row["Product State"] for row in long_rows)
@@ -324,10 +327,7 @@ def test_run_writes_peak_candidate_table_when_enabled(
     assert boundary_rows
     assert {row["target_label"] for row in boundary_rows} == {"NoNL"}
     assert {row["target_mz"] for row in boundary_rows} == {"258.10850"}
-    assert any(
-        "candidate_interval" in row["boundary_sources"]
-        for row in boundary_rows
-    )
+    assert any("candidate_interval" in row["boundary_sources"] for row in boundary_rows)
 
     boundary_summary_rows = _read_tsv(
         config.output_csv.with_name("peak_candidate_boundary_summary.tsv")
@@ -775,12 +775,13 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
             "PeakEnd": "ND",
             "PeakWidth": "ND",
             "Confidence": "VERY_LOW",
-            "Reason": (
-                "decision: not_counted; support: trace_coherent; "
-                "not_counted: missing_positive_ms1_peak"
-            ),
+            "Reason": "Not counted: no positive MS1 peak available.",
         }
     ]
+    assert long_rows[0]["Projection Reason"] == (
+        "decision: not_counted; support: trace_coherent; "
+        "not_counted: missing_positive_ms1_peak"
+    )
     assert long_rows[0]["Product State"] == "not_counted"
     assert long_rows[0]["Counted Detection"] == "FALSE"
     assert "missing_positive_ms1_peak" in long_rows[0]["Projection Not Counted Reasons"]
@@ -854,12 +855,14 @@ def test_run_writes_file_error_row_and_continues(
         "SampleName": "Bad",
         "NoNL_RT": "ERROR",
         "NoNL_Int": "ERROR",
+        "NoNL_IntSmoothed": "ERROR",
         "NoNL_Area": "ERROR",
         "NoNL_PeakStart": "ERROR",
         "NoNL_PeakEnd": "ERROR",
         "NoNL_PeakWidth": "ERROR",
         "WithNL_RT": "ERROR",
         "WithNL_Int": "ERROR",
+        "WithNL_IntSmoothed": "ERROR",
         "WithNL_Area": "ERROR",
         "WithNL_PeakStart": "ERROR",
         "WithNL_PeakEnd": "ERROR",
@@ -987,8 +990,7 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
     assert rows[0]["ISTD_Area"] == "59063.73"
     diagnostics = _read_csv(config.diagnostics_csv)
     assert any(
-        record["Target"] == "ISTD"
-        and record["Issue"] == "NO_MS2"
+        record["Target"] == "ISTD" and record["Issue"] == "NO_MS2"
         for record in diagnostics
     )
     assert any(
@@ -1757,9 +1759,10 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
     assert analyte_row["NL"] == "NL_FAIL"
     assert analyte_row["Product State"] == "not_counted"
     assert analyte_row["Counted Detection"] == "FALSE"
-    assert "analyte_nl_fail_requires_policy" in analyte_row[
-        "Projection Not Counted Reasons"
-    ]
+    assert (
+        "analyte_nl_fail_requires_policy"
+        in analyte_row["Projection Not Counted Reasons"]
+    )
 
 
 def test_paired_analyte_fallback_blanks_not_counted_peak_from_matrix(
@@ -1815,9 +1818,10 @@ def test_paired_analyte_fallback_blanks_not_counted_peak_from_matrix(
     assert analyte_row["Confidence"] == "VERY_LOW"
     assert analyte_row["Product State"] == "ambiguous"
     assert analyte_row["Counted Detection"] == "FALSE"
-    assert "analyte_nl_fail_requires_policy" in analyte_row[
-        "Projection Not Counted Reasons"
-    ]
+    assert (
+        "analyte_nl_fail_requires_policy"
+        in analyte_row["Projection Not Counted Reasons"]
+    )
     assert output.file_results[0].results["Analyte"].confidence == "LOW"
     diagnostics = _read_csv(config.diagnostics_csv)
     assert any(
@@ -2147,9 +2151,7 @@ class _FakeRaw:
         self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
     ) -> tuple[np.ndarray, np.ndarray]:
         center = (
-            self._peak_centers.pop(0)
-            if self._peak_centers
-            else (rt_min + rt_max) / 2
+            self._peak_centers.pop(0) if self._peak_centers else (rt_min + rt_max) / 2
         )
         rt = np.linspace(rt_min, rt_max, 201)
         intensity = 10.0 + 5000.0 * np.exp(-0.5 * ((rt - center) / 0.08) ** 2)
@@ -2182,7 +2184,7 @@ class _ShapeMetricRecoveryRaw(_FakeRaw):
         if self.calls == 1:
             return np.linspace(rt_min, rt_max, 5), np.ones(5)
         rt = np.linspace(rt_min, rt_max, 41)
-        intensity = 1000.0 * np.exp(-((np.arange(41) - 20) / 4.0) ** 2) + 10.0
+        intensity = 1000.0 * np.exp(-(((np.arange(41) - 20) / 4.0) ** 2)) + 10.0
         return rt, intensity
 
 
@@ -2269,9 +2271,7 @@ def _typed_candidate_score(
                 else candidate.selection_apex_rt
             ),
             rt_prior_sigma=0.1,
-            rt_min=rt_min
-            if rt_min is not None
-            else candidate.peak.peak_start,
+            rt_min=rt_min if rt_min is not None else candidate.peak.peak_start,
             rt_max=rt_max if rt_max is not None else candidate.peak.peak_end,
             dirty_matrix=False,
             neutral_loss_required=neutral_loss_required,

@@ -78,6 +78,7 @@ _REVIEW_HEADERS = [
     "Evidence",
 ]
 
+
 def _fill(hex6: str) -> PatternFill:
     return PatternFill("solid", fgColor=hex6)
 
@@ -107,11 +108,27 @@ def _nl_cell_fill(value: str) -> PatternFill:
 
 
 def _long_cell_value(header: str, raw_val: str) -> object:
-    if header in {"SampleName", "Target", "ISTD Pair", "Confidence", "Reason"}:
+    if header in {
+        "SampleName",
+        "Target",
+        "ISTD Pair",
+        "Confidence",
+        "Reason",
+        "Supporting Evidence",
+        "Conflicts / Concerns",
+    }:
         return _excel_text(raw_val)
     if header == "NL":
         return _nl_to_display(raw_val) if raw_val else ""
-    if header in {"RT", "Area", "Int", "PeakStart", "PeakEnd", "PeakWidth"}:
+    if header in {
+        "RT",
+        "Area",
+        "Int",
+        "IntSmoothed",
+        "PeakStart",
+        "PeakEnd",
+        "PeakWidth",
+    }:
         if raw_val in ND_ERROR:
             return raw_val
         parsed = _safe_float(raw_val)
@@ -134,7 +151,7 @@ def _long_cell_fill(header: str, raw_val: str, alt: bool) -> PatternFill:
 def _long_number_format(header: str) -> str:
     if header in {"RT", "PeakStart", "PeakEnd"}:
         return "0.0000"
-    if header in {"Area", "Int"}:
+    if header in {"Area", "Int", "IntSmoothed"}:
         return "0.00E+00"
     if header == "PeakWidth":
         return "0.0000"
@@ -152,6 +169,7 @@ def _long_column_width(header: str) -> int:
         "Area": 16,
         "NL": 14,
         "Int": 14,
+        "IntSmoothed": 16,
         "PeakStart": 14,
         "PeakEnd": 14,
         "PeakWidth": 14,
@@ -170,6 +188,7 @@ def _long_column_width(header: str) -> int:
         "Benchmark Eligibility State": 24,
     }
     return widths.get(header, 24)
+
 
 def _review_cell_value(header: str, raw_value: str) -> object:
     if header in {"Priority", "Issue Count"}:
@@ -205,7 +224,6 @@ def _review_number_format(header: str) -> str:
     if header == "Area":
         return "0.00E+00"
     return "#,##0"
-
 
 
 def _apply_sheet_role_styles(wb: Workbook) -> None:

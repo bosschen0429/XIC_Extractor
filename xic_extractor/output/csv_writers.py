@@ -5,6 +5,7 @@ from typing import Protocol
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.detection import is_accepted_result_detection
+from xic_extractor.output.reason_display import display_product_reason
 from xic_extractor.output.schema import (
     DIAGNOSTIC_HEADERS,
     LONG_HEADERS,
@@ -81,6 +82,9 @@ class ExtractionResultLike(Protocol):
 
     @property
     def reported_peak_intensity(self) -> float | None: ...
+
+    @property
+    def reported_smoothed_peak_intensity(self) -> float | None: ...
 
     @property
     def reported_peak_start(self) -> float | None: ...
@@ -188,6 +192,7 @@ def _long_output_rows(
             "Area": "",
             "NL": "",
             "Int": "",
+            "IntSmoothed": "",
             "PeakStart": "",
             "PeakEnd": "",
             "PeakWidth": "",
@@ -279,19 +284,13 @@ def _score_breakdown_rows(
                 "Negative Points": weighted_fields.get("Negative Points", ""),
                 "symmetry": _format_optional_severity(severities.get("symmetry")),
                 "local_sn": _format_optional_severity(severities.get("local_sn")),
-                "nl_support": _format_optional_severity(
-                    severities.get("nl_support")
-                ),
+                "nl_support": _format_optional_severity(severities.get("nl_support")),
                 "rt_prior": _format_optional_severity(severities.get("rt_prior")),
                 "rt_centrality": _format_optional_severity(
                     severities.get("rt_centrality")
                 ),
-                "noise_shape": _format_optional_severity(
-                    severities.get("noise_shape")
-                ),
-                "peak_width": _format_optional_severity(
-                    severities.get("peak_width")
-                ),
+                "noise_shape": _format_optional_severity(severities.get("noise_shape")),
+                "peak_width": _format_optional_severity(severities.get("peak_width")),
                 "Quality Penalty": str(result.quality_penalty),
                 "Quality Flags": ",".join(result.quality_flags),
                 "Total Severity": str(result.total_severity),
@@ -316,9 +315,7 @@ def _projection_fields(
         "Projection Support Reasons": _join_reasons(projection.support_reasons),
         "Projection Review Reasons": _join_reasons(projection.review_reasons),
         "Projection Conflict Reasons": _join_reasons(projection.conflict_reasons),
-        "Projection Not Counted Reasons": _join_reasons(
-            projection.not_counted_reasons
-        ),
+        "Projection Not Counted Reasons": _join_reasons(projection.not_counted_reasons),
         "Projection Exclusion Reasons": _join_reasons(projection.exclusion_reasons),
         "Legacy Authority Status": projection.legacy_authority_status,
         "Benchmark Eligibility State": projection.benchmark_eligibility_state,
@@ -327,8 +324,15 @@ def _projection_fields(
 
 def _display_reason(result: ExtractionResultLike) -> str:
     projection = result.targeted_product_projection
-    if projection is not None and projection.projection_reason:
-        return projection.projection_reason
+    if projection is not None:
+        return display_product_reason(
+            projection.product_state,
+            review_reasons=projection.review_reasons,
+            conflict_reasons=projection.conflict_reasons,
+            not_counted_reasons=projection.not_counted_reasons,
+            exclusion_reasons=projection.exclusion_reasons,
+            concerns=dict(result.score_breakdown).get("Concerns", ""),
+        )
     return result.reason
 
 
@@ -389,6 +393,7 @@ def _set_long_ms1_values(row: dict[str, str], value: str) -> None:
     row["RT"] = value
     row["Area"] = value
     row["Int"] = value
+    row["IntSmoothed"] = value
     row["PeakStart"] = value
     row["PeakEnd"] = value
     row["PeakWidth"] = value
@@ -401,6 +406,9 @@ def _set_long_peak_values(row: dict[str, str], result: ExtractionResultLike) -> 
     row["RT"] = _format_peak_decimal(result.reported_rt, digits=4)
     row["Area"] = _format_peak_decimal(result.reported_peak_area, digits=2)
     row["Int"] = _format_peak_decimal(result.reported_peak_intensity, digits=0)
+    row["IntSmoothed"] = _format_peak_decimal(
+        result.reported_smoothed_peak_intensity, digits=0
+    )
     row["PeakStart"] = _format_peak_decimal(result.reported_peak_start, digits=4)
     row["PeakEnd"] = _format_peak_decimal(result.reported_peak_end, digits=4)
     row["PeakWidth"] = _format_peak_decimal(result.reported_peak_width, digits=4)
@@ -456,6 +464,10 @@ def _set_peak_values(
     row[f"{target.label}_RT"] = _format_peak_decimal(result.reported_rt, digits=4)
     row[f"{target.label}_Int"] = _format_peak_decimal(
         result.reported_peak_intensity,
+        digits=0,
+    )
+    row[f"{target.label}_IntSmoothed"] = _format_peak_decimal(
+        result.reported_smoothed_peak_intensity,
         digits=0,
     )
     row[f"{target.label}_Area"] = _format_peak_decimal(

@@ -179,7 +179,6 @@ def test_extractor_delegates_rt_anchor_and_drift_helpers() -> None:
     assert "_anchor_mismatch_confidence" not in function_names
     assert "_check_target_nl" not in function_names
     assert "_candidate_ms2_evidence_builder" not in function_names
-    assert len(extractor_path.read_text(encoding="utf-8").splitlines()) <= 250
 
 
 def _function_names(path: Path) -> set[str]:

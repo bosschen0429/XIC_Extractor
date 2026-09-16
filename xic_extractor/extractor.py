@@ -138,6 +138,15 @@ class ExtractionResult:
         return None if peak is None else peak.intensity
 
     @property
+    def reported_smoothed_peak_intensity(self) -> float | None:
+        """Reuse the selected peak owner's smoothed height without recomputation."""
+        integration = self._selected_integration
+        if integration is not None:
+            return integration.height_smoothed
+        peak = self.peak
+        return None if peak is None else peak.intensity_smoothed
+
+    @property
     def reported_peak_start(self) -> float | None:
         integration = self._selected_integration
         if integration is not None:

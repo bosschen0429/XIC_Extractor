@@ -36,7 +36,17 @@ value implementation.
   inclusion, counted-detection policy, typed reason facts, and Review Queue
   routing; it must not recompute the value.
 - Region, boundary, and selected-envelope logic are candidate and model-selection surfaces. They require expected-diff review before changing selected peak, area, confidence, reason, product state, counted detection, workbook, or matrix values.
+- An NL-focused acquisition that clips a selected peak within configured target
+  scope at an acquired trace edge restores the union with that RT window once. The same
+  peak and evidence owners then select from the observed context. Complete
+  selected peaks keep their original query; a manual RT does not trigger this
+  recovery or choose its result.
 - Selected-hypothesis public behavior must preserve compatibility projections unless an explicit schema/versioning plan changes downstream contracts.
+- A positive, coherent analyte peak inside the configured search scope with
+  candidate-associated MS2/NL support keeps RT-prior/window-position conflicts
+  as review, independent of sample applicability category. RT disagreement
+  alone does not make that peak ND. Sample exclusions, paired-anchor conflicts,
+  hard quality blockers, and unresolved quantitative boundaries still apply.
 - The bounded headless `5-hmdC + 5-medC` contract is the only MS1
   shape-identity rescue scope with accepted `detected_flagged` expected-diff
   evidence. It grants no authority to broader targets, GUI wiring, or default
