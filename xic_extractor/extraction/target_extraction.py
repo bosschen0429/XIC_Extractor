@@ -277,41 +277,62 @@ def extract_one_target(
             candidate_ms2_cache[candidate] = evidence
         return evidence
 
-    if scoring_context_factory is not None:
-        scoring_context_builder = scoring_context_factory(
-            target=target,
-            sample_name=sample_name,
-            rt=rt,
-            intensity=intensity,
-            istd_rt_in_this_sample=istd_rt_in_this_sample,
-            paired_istd_fwhm=paired_istd_fwhm,
-            nl_result=nl_result,
-            candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
-        )
-    if scoring_context_builder is not None:
-        peak_result = extractor.find_peak_and_area(
-            rt,
-            intensity,
-            config,
-            preferred_rt=anchor_rt,
-            strict_preferred_rt=strict_preferred_rt,
-            scoring_context_builder=scoring_context_builder,
-            istd_confidence_note=istd_confidence_note,
-            evidence_role="ISTD" if target.is_istd else "Analyte",
-            istd_pair=target.istd_pair,
-            paired_istd_anchor_rt=istd_rt_in_this_sample,
-        )
-    else:
-        peak_result = extractor.find_peak_and_area(
-            rt,
-            intensity,
-            config,
-            preferred_rt=anchor_rt,
-            strict_preferred_rt=strict_preferred_rt,
-            evidence_role="ISTD" if target.is_istd else "Analyte",
-            istd_pair=target.istd_pair,
-            paired_istd_anchor_rt=istd_rt_in_this_sample,
-        )
+    for allow_context_extension in (True, False):
+        scoring_context_builder = None
+        if scoring_context_factory is not None:
+            scoring_context_builder = scoring_context_factory(
+                target=target,
+                sample_name=sample_name,
+                rt=rt,
+                intensity=intensity,
+                istd_rt_in_this_sample=istd_rt_in_this_sample,
+                paired_istd_fwhm=paired_istd_fwhm,
+                nl_result=nl_result,
+                candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
+            )
+        if scoring_context_builder is not None:
+            peak_result = extractor.find_peak_and_area(
+                rt,
+                intensity,
+                config,
+                preferred_rt=anchor_rt,
+                strict_preferred_rt=strict_preferred_rt,
+                scoring_context_builder=scoring_context_builder,
+                istd_confidence_note=istd_confidence_note,
+                evidence_role="ISTD" if target.is_istd else "Analyte",
+                istd_pair=target.istd_pair,
+                paired_istd_anchor_rt=istd_rt_in_this_sample,
+            )
+        else:
+            peak_result = extractor.find_peak_and_area(
+                rt,
+                intensity,
+                config,
+                preferred_rt=anchor_rt,
+                strict_preferred_rt=strict_preferred_rt,
+                evidence_role="ISTD" if target.is_istd else "Analyte",
+                istd_pair=target.istd_pair,
+                paired_istd_anchor_rt=istd_rt_in_this_sample,
+            )
+        peak = peak_result.peak
+        if (
+            not allow_context_extension
+            or not anchor_used
+            or peak is None
+            or len(rt) == 0
+        ):
+            break
+        if not target.rt_min <= peak.rt <= target.rt_max:
+            break
+        clipped_left = peak.peak_start <= float(rt[0]) and target.rt_min < rt_min
+        clipped_right = peak.peak_end >= float(rt[-1]) and target.rt_max > rt_max
+        if not clipped_left and not clipped_right:
+            break
+        # An NL-focused query must not turn an unobserved peak return into an apex.
+        # Restore the configured context once and let the same owners select again.
+        rt_min = min(rt_min, target.rt_min)
+        rt_max = max(rt_max, target.rt_max)
+        rt, intensity = raw.extract_xic(target.mz, rt_min, rt_max, target.ppm_tol)
     recovery_decision = recover_istd_anchor_peak_if_needed(
         peak_result,
         raw=raw,

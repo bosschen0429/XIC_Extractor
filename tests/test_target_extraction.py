@@ -110,6 +110,99 @@ def test_credible_istd_anchor_rt_rejects_not_counted_projection() -> None:
     assert target_extraction.credible_istd_anchor_rt(result) is None
 
 
+@pytest.mark.parametrize("touches_edge", [True, False])
+def test_nl_window_preserves_configured_context_for_selected_edge_peak(
+    tmp_path,
+    monkeypatch,
+    touches_edge: bool,
+) -> None:
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "xic_results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+    )
+    target = Target(
+        label="Analyte",
+        mz=258.1085,
+        rt_min=7.8,
+        rt_max=9.4,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=False,
+        istd_pair="",
+    )
+    calls = []
+    initial = _candidate(
+        rt=8.8 if touches_edge else 8.4,
+        peak_start=8.2,
+        peak_end=8.8 if touches_edge else 8.6,
+    )
+    complete = _candidate(rt=9.0, peak_start=8.7, peak_end=9.2)
+
+    class _Raw:
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            calls.append((mz, rt_min, rt_max, ppm_tol))
+            rt = (
+                np.array([8.0, 8.4, 8.8])
+                if len(calls) == 1
+                else np.array([7.8, 8.4, 8.8, 9.0, 9.4])
+            )
+            return rt, np.ones_like(rt) * 100.0
+
+    monkeypatch.setattr(
+        target_extraction,
+        "get_rt_window",
+        lambda *_args, **_kwargs: (8.0, 8.8, True, 8.4),
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extractor.find_peak_and_area",
+        lambda *_args, **_kwargs: _peak_result(
+            initial if len(calls) == 1 else complete
+        ),
+    )
+    monkeypatch.setattr(target_extraction, "check_target_nl", lambda *_args: None)
+    monkeypatch.setattr(
+        target_extraction, "candidate_ms2_evidence_builder", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        target_extraction,
+        "recover_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+    )
+    monkeypatch.setattr(
+        target_extraction,
+        "build_extraction_result",
+        lambda **kwargs: ExtractionResult(peak_result=kwargs["peak_result"], nl=None),
+    )
+    monkeypatch.setattr(
+        target_extraction, "append_peak_audit_rows", lambda **_kwargs: None
+    )
+    results = {}
+    target_extraction.extract_one_target(
+        _Raw(),
+        config,
+        "SampleA",
+        target,
+        reference_rt=None,
+        results=results,
+        diagnostics=[],
+    )
+    expected_calls = [(target.mz, 8.0, 8.8, 20.0)]
+    if touches_edge:
+        expected_calls.append((target.mz, 7.8, 9.4, 20.0))
+    assert calls == expected_calls
+    assert results["Analyte"].reported_rt == (9.0 if touches_edge else 8.4)
+
+
 def test_extract_one_target_passes_selected_hypothesis_to_result_assembly(
     tmp_path,
     monkeypatch,
@@ -378,21 +471,19 @@ def test_extract_one_target_passes_configured_ms1_window_to_boundary_policies(
         def extract_xic(self, *_args, **_kwargs):
             return (
                 np.asarray([8.0, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8]),
-                np.asarray(
-                    [10.0, 10.0, 12.0, 20.0, 60.0, 20.0, 12.0, 10.0, 10.0]
-                ),
+                np.asarray([10.0, 10.0, 12.0, 20.0, 60.0, 20.0, 12.0, 10.0, 10.0]),
             )
 
     def _raise_after_capturing_selected_envelope(*_args, **kwargs):
-        captured_windows["selected_envelope"] = (
-            kwargs["policy"].morphology_trace_window_points
-        )
+        captured_windows["selected_envelope"] = kwargs[
+            "policy"
+        ].morphology_trace_window_points
         raise ValueError("captured")
 
     def _raise_after_capturing_chrom_segment(*_args, **kwargs):
-        captured_windows["chrom_segment"] = (
-            kwargs["policy"].morphology_trace_window_points
-        )
+        captured_windows["chrom_segment"] = kwargs[
+            "policy"
+        ].morphology_trace_window_points
         raise ValueError("captured")
 
     monkeypatch.setattr(
