@@ -112,8 +112,8 @@ generic lifecycle metadata. New tracked `Doc kind: plan`, `spec`, `handoff`, or
    history disposition, then use the retirement tool.
 
 Never add tracked documents under `docs/superpowers/plans/`, `specs/`,
-`closeouts/`, or `file-management/docs-cleanup/`. The two exact machine
-exceptions named above are read-only compatibility surfaces.
+`closeouts/`, or `file-management/docs-cleanup/`. The exact machine exception
+named above remains a read-only compatibility surface.
 
 ## Stop rules
 

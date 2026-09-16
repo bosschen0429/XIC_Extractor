@@ -27,5 +27,23 @@
 
 - global `pr-closeout`: durable PR/branch narrative.
 - global `code-review`: explicit fixed-point PR diff review.
-- `wiki-ingest`: Obsidian source-copy or wiki writes after this skill decides a source belongs there.
-- `writing-great-skills`: refine this skill's predictability, hierarchy, and trigger wording.
+- `agent-memory`: consult configured private context when it can change the
+  classification; source-copy follows the canonical retirement contract.
+- `skill-creator`: refine this skill's instructions and trigger wording.
+
+## Owner And Authorization Walkthroughs
+
+These are manual decision scenarios, not automated evals or observed agent
+behavior. Apply the current owner contract to each proposed output:
+
+- A completed plan has an ordinary exact referrer: absorb its durable claim and
+  retarget the referrer before retirement; history remains in Git/PRs.
+- The named compatibility index has a live checker consumer: retain its current
+  machine contract until the consumer has a validated replacement.
+- An active plan contains the next implementation actions: route construction
+  to the owning Issue and disposable next actions to an ignored handoff.
+- Two candidate owners can be resolved from current repo consumers: inspect the
+  decisive evidence and proceed under existing authorization.
+- Safe classification is complete but required operator-only retirement approval
+  is absent: produce the reviewable owner/referrer result and ask for that
+  authority before the destructive step.

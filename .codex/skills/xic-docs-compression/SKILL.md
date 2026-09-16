@@ -7,7 +7,7 @@ description: Digest XIC documentation by combining audit facts with owner absorp
 
 Produce one compression decision per document family. Read
 `docs/project-layout.md` and `docs/agent/obsidian-handoff-contract.md`; they own
-route names, lifecycle metadata, public/private boundaries, and retirement
+placement, public/private boundaries, and retirement
 policy. This skill orders the work without redefining those contracts.
 
 ## 1. Audit The Surface
@@ -32,7 +32,8 @@ recorded.
 For each family, name one canonical repo owner and extract only the still-valid
 decision, reason, public contract, active gate/checker, next safe action, or
 supersession lesson. Compare completed transient docs with that owner and record
-the absorption result defined by the Obsidian handoff contract.
+which claims were absorbed, already owned, rejected, or remain unresolved under
+the owner's source-of-truth promotion rule.
 
 When prior project knowledge could change the classification, use
 `$agent-memory` and the configured Research Vault `_meta/routing.md` contract;
@@ -47,18 +48,22 @@ or the next safe action.
 
 ## 3. Route The Remainder
 
-Apply the exact route and lifecycle vocabulary from the canonical docs. Choose
-the smallest safe action: update the owner, retain a live machine anchor,
-demote support, tombstone a superseded claim, source-copy private history,
-retarget referrers, keep a temporary active/referrer-bound stub, or request a
-human decision.
+Apply the current placement and routing policy from the canonical docs. Update
+the owner, retarget ordinary referrers, and retain live checker/schema/status
+anchors or support only while their current consumer requires them. Route
+unfinished construction to the owning Issue, delivered narrative to the PR
+body, and current next actions to an ignored handoff. Git history preserves
+disposable chronology; optional private source-copy follows the owner contract.
 
 Read `references/bound-doc-compression.md` for XIC-specific heuristics when the
 family covers bound validation, Backfill/quant, productization, lockbox,
 docs-workflow history, or lifecycle closeout. For completed transient docs, use
 the canonical retirement-evidence and `retire_docs.py` path; unclear public
-contracts, unresolved exact referrers, or out-of-policy deletions remain human
-decisions.
+contracts or unresolved exact referrers require the cheapest decisive repo
+evidence. Preserve the affected file while resolving ownership, absorption, or
+replacement; proceed within existing authorization when those facts are closed.
+Ask only when unavailable intent or operator-only authority changes the result,
+including retirement approval required by the owner that is not already granted.
 
 Completion criterion: route, lifecycle, owner action, Obsidian action, referrer
 action, and retirement action agree; no public claim is left ownerless and no
@@ -66,11 +71,12 @@ machine dependency is silently removed.
 
 ## 4. Verify The Decision
 
-Rerun the docs-management or targeted referrer audit. Apply the staged placement
-guard and retirement-evidence gate when relevant. For `.codex` changes, run the
-hook/script smoke checks. When the task mutated files, inspect `git diff
---check` and scan changed files for secrets and unintended local paths. A
-read-only decision closes with the relevant audit/referrer checks.
+After document or referrer changes, run the docs-management or targeted referrer
+audit and apply the owner's placement/retirement checks when relevant. Reuse an
+unchanged accepted audit for a read-only decision and check only its required
+bindings. For skill or agent-guidance changes, follow
+`docs/agent/codex-operating-system.md#change-protocol`; it selects format,
+reference, scenario, and runtime checks for the affected behavior.
 
 Return a compact packet:
 
@@ -80,7 +86,7 @@ Current role / lifecycle / route:
 Durable payload / canonical repo owner:
 Absorption result:
 Memory consultation / repo-visible revalidation:
-Machine-anchor or support/stub role:
+Machine-anchor or support role:
 Obsidian / referrer / retirement actions:
 Remaining risk or human decision:
 Verification performed:

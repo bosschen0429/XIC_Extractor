@@ -64,9 +64,11 @@ triggered route; its owner carries detail.
 - **Evidence claim:** report the canonical Evidence label and the actual method-
   appropriate oracle. Passing tests proves engineering regression coverage,
   not scientific or production readiness.
-- **Execution config:** changes to `.codex` hooks, rules, config, execpolicy, or
-  subagent definitions run the smoke, focused tests, diff check, and secret/
-  local-path scan in the operating-system change protocol.
+- **Agent guidance changes:** use the
+  [operating-system change protocol](docs/agent/codex-operating-system.md#change-protocol)
+  for docs, skills, hooks, rules, config, and subagent definitions. Select its
+  checks by the behavior changed; execution changes require smoke and focused
+  runtime tests.
 - **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
   follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification).
   Hosted checks on the final remote SHA remain merge authority.
