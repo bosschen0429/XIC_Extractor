@@ -627,6 +627,9 @@ def _execute_target(
                     observations
                     and candidate_ms2_evidence is not None
                     and candidate_ms2_evidence.nl_match
+                    and observations[0].content.integration.rt_left_min
+                    <= product.scan_rt
+                    <= observations[0].content.integration.rt_right_min
                 ):
                     support = resolve_dda_cid_nl_peak_support_ref(
                         processing_owners=context.owners,

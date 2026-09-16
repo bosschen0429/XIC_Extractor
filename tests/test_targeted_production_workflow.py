@@ -118,6 +118,57 @@ def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
     assert len(finalized) == 1
 
 
+def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    original = output.file_results[0].results[target.label]
+    selected = original.selected_hypothesis
+    evidence = original.candidate_ms2_evidence
+    assert selected is not None and evidence is not None
+    product = evidence.best_product_evidence
+    assert product is not None
+    outside_rt = selected.integration.rt_right_min + 0.01
+    assert outside_rt < target.rt_max
+    output.file_results[0].results[target.label] = replace(
+        original,
+        candidate_ms2_evidence=replace(
+            evidence,
+            best_scan_rt=outside_rt,
+            best_product_evidence=replace(product, scan_rt=outside_rt),
+        ),
+    )
+    assessments = []
+    original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+
+    def record_assessment(**kwargs):
+        assessment = original_assessment(**kwargs)
+        assessments.append(assessment)
+        return assessment
+
+    monkeypatch.setattr(
+        production_workflow,
+        "mint_cid_nl_method_assessment_ref",
+        record_assessment,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    # A local MS1 value is allowed; an outside event must not become direct support.
+    assert len(assessments) == 1
+    assert assessments[0].individual_support_refs == ()
+    assert assessments[0].content.method_result != "SUPPORT"
+
+
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
     tmp_path: Path,
 ) -> None:
