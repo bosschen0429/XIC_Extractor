@@ -1,9 +1,5 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Total entry-points:** 107
-**Total files (incl. helpers):** 191 Python files under `tools/diagnostics/`
-**Count method:** top-level `### *.py` entry headings for entry-points;
-top-level `tools/diagnostics/*.py` files for total files.
 **Governing contracts:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -28,18 +24,18 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 
 ## Table of Contents
 
-1. [Validation Gates](#validation-gates) — 7 tools
-2. [Evidence Consistency](#evidence-consistency) — 8 tools
-3. [Alignment Diagnostics](#alignment-diagnostics) — 9 tools
-4. [Backfill Reviews](#backfill-reviews) — 42 tools
-5. [Peak / Candidate Audits](#peak--candidate-audits) — 7 tools
-6. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews) — 11 tools
-7. [Instrument QC](#instrument-qc) — 6 tools
-8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
-9. [Area / Region Audits](#area--region-audits) — 4 tools
-10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 14 tools
-12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
+1. [Validation Gates](#validation-gates)
+2. [Evidence Consistency](#evidence-consistency)
+3. [Alignment Diagnostics](#alignment-diagnostics)
+4. [Backfill Reviews](#backfill-reviews)
+5. [Peak / Candidate Audits](#peak--candidate-audits)
+6. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
+7. [Instrument QC](#instrument-qc)
+8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
+9. [Area / Region Audits](#area--region-audits)
+10. [One-off Fixtures](#one-off-fixtures)
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
+12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
 
 ---
 
