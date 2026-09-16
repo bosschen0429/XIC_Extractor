@@ -6,8 +6,23 @@ from types import SimpleNamespace
 
 import pytest
 
+import xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow as workflow
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
+)
 from tests.test_targeted_real_data_adapter import _peak_config, _settings
 from tests.test_untargeted_cid_nl_real_data_runtime import _discovery_receipts
+from xic_extractor.execution_runtime_finalization import (
+    RuntimeResourceKind,
+    RuntimeResourceReservation,
+)
+from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
+from xic_extractor.execution_runtime_owner import (
+    RuntimeCancellationRequest,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
+    start_runtime_attempt,
+)
 from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
     _mode_track_runtime_jobs,
 )
@@ -18,6 +33,66 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def test_mode_track_runtime_receipt_marks_uncollected_metrics_unsupported(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path,
+        sample_stems=("mode-track",),
+    )
+    attempt = fixture.attempt
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="mode-track-telemetry-test:v1",
+        cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+    )
+    reservation = RuntimeResourceReservation(
+        attempt=attempt,
+        kind=RuntimeResourceKind.ACQUISITION_SESSION,
+        resource_key="session:a",
+        worker_key="worker:a",
+        source_reference="no-raw:mode-track",
+        compatibility_token="mode-track-telemetry-test:v1",
+    )
+
+    receipt = execute_runtime_attempt(
+        runtime,
+        (reservation,),
+        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
+            settlements=()
+        ),
+        telemetry_provider=workflow._coarse_runtime_telemetry,
+        persister=lambda proposed: proposed,
+    )
+
+    assert all(
+        event.monotonic_offset_ns is None
+        for event in receipt.observability_ledger.events
+    )
+    unavailable_metric_names = {
+        "artifact_read_count",
+        "artifact_read_bytes",
+        "artifact_write_count",
+        "artifact_write_bytes",
+        "coordinator_work_seconds",
+        "attempt_wall_seconds",
+        "stage_or_unit_elapsed_seconds",
+    }
+    unavailable_metrics = tuple(
+        metric
+        for metric in receipt.observability_ledger.metrics
+        if metric.name in unavailable_metric_names
+    )
+    assert {metric.name for metric in unavailable_metrics} == unavailable_metric_names
+    assert all(
+        metric.availability is RuntimeMetricAvailability.UNSUPPORTED
+        and metric.value is None
+        and metric.reason == "not_collected_by_mode_track_foreground_runner"
+        for metric in unavailable_metrics
+    )
 
 
 def test_runtime_jobs_bind_raw_by_stem_after_injection_order_sort(

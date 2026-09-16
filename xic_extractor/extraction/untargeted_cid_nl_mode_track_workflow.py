@@ -36,11 +36,9 @@ from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
-    RuntimeArtifactIoSample,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerPeakRssSample,
-    runtime_observation_event_count,
     runtime_started_worker_keys,
     start_runtime_attempt,
 )
@@ -322,17 +320,11 @@ def _peak_config(
 def _coarse_runtime_telemetry(
     coordinator: Any,
 ) -> RuntimeTelemetrySamples:
-    event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
     reason = "not_collected_by_mode_track_foreground_runner"
     return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=(0,) * event_count,
-        artifact_io=RuntimeArtifactIoSample(
-            read_count=0,
-            read_bytes=0,
-            write_count=0,
-            write_bytes=0,
-        ),
+        event_monotonic_offsets_ns=None,
+        artifact_io=None,
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
             availability=RuntimeMetricAvailability.UNSUPPORTED,
             reason=reason,
@@ -345,6 +337,7 @@ def _coarse_runtime_telemetry(
             )
             for worker_key in worker_keys
         ),
+        unavailable_reason=reason,
     )
 
 
