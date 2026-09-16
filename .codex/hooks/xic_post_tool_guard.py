@@ -5,7 +5,6 @@ import json
 import re
 import sys
 
-
 ZERO_TEST_PATTERNS = [
     re.compile(r"collected\s+0\s+items", re.IGNORECASE),
     re.compile(r"no\s+tests\s+ran", re.IGNORECASE),

@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.diagnostics.docs_management_audit import parse_yaml_frontmatter
+# Repository imports follow the bootstrap for direct-script execution.
+from tools.diagnostics.docs_management_audit import parse_yaml_frontmatter  # noqa: E402
 
 VALID_LIFECYCLES = {"draft", "reviewed", "verified", "disputed", "archived"}
 VALID_TIERS = {"core", "supporting", "peripheral"}
@@ -41,8 +42,7 @@ def validate_vault_page(text: str) -> list[str]:
         errors.append("missing required field: tier")
     elif tier not in VALID_TIERS:
         errors.append(
-            f"invalid tier '{tier}'"
-            f" — valid: {', '.join(sorted(VALID_TIERS))}"
+            f"invalid tier '{tier}' — valid: {', '.join(sorted(VALID_TIERS))}"
         )
 
     tags = fm.get("tags", "")
