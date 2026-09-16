@@ -682,9 +682,18 @@ def test_extract_one_target_uses_chrom_segment_before_selected_envelope_cap(
     assert "selected_envelope_boundary_externalize" not in decision.not_counted_reasons
 
 
-def test_extract_one_target_caps_non_accept_selected_envelope_boundary(
+@pytest.mark.parametrize(
+    "expected_class, expected_not_counted",
+    [
+        ("context_apex_conflict", True),
+        ("split_supported", False),
+    ],
+)
+def test_extract_one_target_distinguishes_boundary_review_from_non_counted(
     tmp_path,
     monkeypatch,
+    expected_class,
+    expected_not_counted,
 ) -> None:
     config = ExtractionConfig(
         data_dir=tmp_path,
@@ -729,6 +738,14 @@ def test_extract_one_target_caps_non_accept_selected_envelope_boundary(
 
     class _Raw:
         def extract_xic(self, *_args, **_kwargs):
+            if expected_class == "split_supported":
+                rt = np.linspace(7.4, 10.4, 151)
+                intensity = (
+                    10.0
+                    + 100.0 * np.exp(-0.5 * ((rt - 8.4) / 0.12) ** 2)
+                    + 80.0 * np.exp(-0.5 * ((rt - 9.0) / 0.12) ** 2)
+                )
+                return rt, intensity
             return (
                 np.asarray(
                     [
@@ -820,9 +837,19 @@ def test_extract_one_target_caps_non_accept_selected_envelope_boundary(
 
     decision = captured["selection_decision"]
     assert isinstance(decision, PeakHypothesisSelectionDecision)
-    assert decision.projected_confidence == "VERY_LOW"
-    assert "selected_envelope_context_apex_conflict" in decision.review_reasons
-    assert "selected_envelope_boundary_externalize" in decision.not_counted_reasons
+    assert f"selected_envelope_{expected_class}" in decision.review_reasons
+    assert (
+        "selected_envelope_boundary_externalize" in decision.not_counted_reasons
+    ) is expected_not_counted
+    if expected_not_counted:
+        assert decision.projected_confidence == "VERY_LOW"
+    else:
+        selected = captured["selected_hypothesis"]
+        assert isinstance(selected, PeakHypothesis)
+        assert selected.integration is not None
+        assert selected.integration.rt_apex_min == candidate.peak.rt
+        assert selected.integration.rt_left_min == candidate.peak.peak_start
+        assert selected.integration.rt_right_min == candidate.peak.peak_end
 
 
 def test_paired_analyte_fallback_window_uses_target_region_not_istd_rt(

@@ -561,6 +561,17 @@ def _selected_envelope_guarded_decision(
     if evaluation.row_boundary_decision == "accept_candidate":
         return decision
     guard = f"selected_envelope_{evaluation.boundary_change_class}"
+    if (
+        evaluation.boundary_change_class == "split_supported"
+        and evaluation.selected_boundary_mode == "review_only"
+        and evaluation.row_boundary_decision == "externalize"
+    ):
+        # The expansion stays diagnostic; the selected resolver interval remains.
+        return replace(
+            decision,
+            projected_reason=f"{decision.projected_reason}; review: {guard}",
+            review_reasons=_append_unique(decision.review_reasons, guard),
+        )
     not_counted = f"selected_envelope_boundary_{evaluation.row_boundary_decision}"
     projected_reason = (
         f"decision: not_counted; not_counted: {not_counted}; review: {guard}"

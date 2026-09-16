@@ -31,7 +31,6 @@ from xic_extractor.peak_detection.targeted_product_projection import (
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.signal_processing import PeakCandidate, PeakDetectionResult
 from xic_extractor.target_sample_applicability import (
-    TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING,
     target_sample_exclusion_reasons,
     target_sample_is_applicable,
 )
@@ -415,7 +414,7 @@ def _projection_conflict_reasons(
                 reason,
                 support_reasons,
             )
-            and not _downgrade_rt_conflict_to_rna_containing_target_review(
+            and not _downgrade_rt_conflict_to_nl_supported_analyte_review(
                 result,
                 target,
                 reason,
@@ -501,7 +500,7 @@ def _downgrade_rt_conflict_to_istd_review(
     )
 
 
-def _downgrade_rt_conflict_to_rna_containing_target_review(
+def _downgrade_rt_conflict_to_nl_supported_analyte_review(
     result: ExtractionResult,
     target: Target,
     reason: str,
@@ -512,8 +511,6 @@ def _downgrade_rt_conflict_to_rna_containing_target_review(
     return (
         reason == "targeted_rt_conflict"
         and result.role.upper() == "ANALYTE"
-        and getattr(target, "sample_applicability", "all")
-        == TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING
         and target_sample_is_applicable(target, sample_name)
         and _positive(result.reported_rt)
         and _positive(result.reported_peak_area)
@@ -755,7 +752,7 @@ def _projection_review_reasons(
                 reason,
                 support_reasons,
             )
-            or _downgrade_rt_conflict_to_rna_containing_target_review(
+            or _downgrade_rt_conflict_to_nl_supported_analyte_review(
                 result,
                 target,
                 reason,

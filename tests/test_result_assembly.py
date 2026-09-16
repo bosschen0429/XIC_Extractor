@@ -1027,6 +1027,21 @@ def test_rna_containing_strict_nl_target_downgrades_targeted_rt_conflict() -> No
     assert "targeted_rt_review" in projection.review_reasons
 
 
+def test_strict_nl_analyte_keeps_rt_prior_conflict_as_review() -> None:
+    result = _result_with_targeted_projection_semantics(
+        target=_target(),
+        sample_name="STDS",
+        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
+        conflict_reasons=("targeted_rt_conflict",),
+    )
+    projection = result.targeted_product_projection
+    assert projection is not None
+    assert projection.product_state == "detected_flagged"
+    assert projection.counted_detection is True
+    assert "targeted_rt_conflict" not in projection.conflict_reasons
+    assert "targeted_rt_review" in projection.review_reasons
+
+
 def test_rna_containing_target_is_excluded_in_pure_dna_sample() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(sample_applicability="rna_containing"),

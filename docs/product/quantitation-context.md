@@ -9,6 +9,7 @@ Quantitation context is the RT and trace context used to integrate the selected 
 - The current product-candidate margin is capped at **0.40 min** and by the configured RT window limit. This is a candidate rule, not a universal science claim.
 - CWT, local minima, safe-merge, derivative, region-first logic, and morphology facts are proposal or model-selection evidence. No single evidence family silently becomes final integration authority.
 - Selected-full-envelope evidence remains diagnostic/review context unless a later activation contract promotes it.
+- A `review_only / split_supported / externalize` expansion keeps the selected resolver integration and adds boundary review. It does not by itself make that original integration non-counted; existing identity, quality, and unresolved-context exclusions still apply.
 
 ## Surfaces
 
