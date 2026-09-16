@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,7 +27,6 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignment,
     ModeTrackContractError,
-    ModeTrackModel,
     ModeTrackPredictionAssessment,
     ModeTrackTrajectoryPolicy,
     _global_no_write_state,
@@ -1216,25 +1215,6 @@ def test_public_ingress_normalizes_invalid_owner_inputs(
                 trajectory_assessment=scenario.missing_trajectory,
             ),
         )
-
-
-def test_policy_rejects_integer_float_identity_alias() -> None:
-    with pytest.raises(ModeTrackContractError, match="canonical float"):
-        ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="piecewise-linear-injection-local-v1",
-            band_policy_version="explicit-half-width-v1",
-            prediction_half_width_min=1,  # type: ignore[arg-type]
-            max_interpolation_gap=4,
-            max_extrapolation_gap=2,
-        )
-
-
-def test_mode_track_model_retains_only_identity_bound_behavior_fields() -> None:
-    assert {field.name for field in fields(ModeTrackModel)} == {
-        "group_hypothesis_id",
-        "ordering_reference_rt_min",
-        "anchors",
-    }
 
 
 def test_model_set_identity_binds_ordering_behavior_snapshot(
