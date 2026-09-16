@@ -14,15 +14,26 @@ Do not copy one owner's state into another surface.
 
 ## Task Shaping
 
-Small, established-owner changes need only a clear request and observable check.
-Use a Current Packet only when an unknown can change the semantic owner, public
-surface, material cost, acceptance, or a high-cost validation decision.
+Established-owner local work needs only the requested outcome or problem,
+bounded scope, observable validation, and any material rollback or Issue linkage.
+This compact contract applies through Issue readiness and PR closeout; reuse an
+existing intake Issue when one exists.
+
+Use an expanded Issue body or Current Packet when owner replacement, cross-owner
+handoff, persisted/schema migration, or a public behavior change has material
+correctness, authority, or compatibility risk; when science/readiness or
+high-cost validation needs a source-qualified decision; or when an unknown can
+change the owner, public surface, material cost, or acceptance. A local behavior
+change with a clear, inexpensive oracle remains compact unless a risk above
+requires expansion.
 
 An escalated packet is self-contained and records:
 
-1. current base and superseded packet;
+1. source binding when the decision depends on a particular code state, and any
+   superseded packet;
 2. outcome, owner, production entries, and current consumers;
-3. in-scope assets and their keep/adapt/replace/retire disposition;
+3. in-scope assets and their keep/adapt/replace/retire disposition when replacing
+   or migrating an owner;
 4. non-goals, preserved invariants, acceptance, falsifier, and stop rule.
 
 After blockers land, claim-time reconciliation updates the Issue against the
@@ -39,7 +50,7 @@ delivery graph on the same parent Issue:
 - every child owns one usable outcome and names its parent;
 - native dependencies are the schedule gate;
 - every cross-ticket handoff has exactly one carrier Issue;
-- an independent Issue states independent;
+- an independent child needs only its outcome, scope, and completion check;
 - successor work is not silently absorbed into the current child.
 
 The Issue tracker owns labels and graph mechanics. Main resolves local ambiguity
@@ -50,20 +61,30 @@ scope authority.
 
 ## Issue-To-PR Scope And Template Ownership
 
-Before an implementation Issue is ready, its body or Current Packet states:
+An implementation Issue is ready when its outcome, bounded scope, and observable
+completion check are clear. For the expanded cases in [Task Shaping](#task-shaping),
+its canonical body or Current Packet also records the applicable boundaries:
 
-- the exact execution base, or a provisional blocker binding;
-- parent, native blockers, consumed/produced handoffs, and carrier;
-- one semantic owner plus reachable production entries and current consumers;
+- the producing/execution source ref when evidence or a frozen decision depends
+  on it, or a provisional blocker binding reconciled at claim;
+- parent, native blockers, consumed/produced handoffs, and carrier when a delivery
+  edge exists;
+- semantic owners, reachable production entries, and current consumers affected
+  by the boundary; a census and exclusions when migration, retirement, or a
+  completeness claim depends on them;
 - asset disposition when replacing or migrating an owner;
 - observable loss, intended outcome, non-goals, and owner cutoff;
 - independently decidable acceptance, preserved invariants, and stop rule.
 
-The PR transfers that scope by naming the execution base, owner, production
-universe, Issue linkage, accepted delta, validated head, evidence, residual
-risk, and rollback. A finding changes the current PR only when it proves an
-in-scope acceptance/public-contract violation or a reachable loss introduced by
-the diff. Otherwise route it to its owner or reject it with evidence.
+The PR links the canonical scope and records the accepted delta, actual
+checks/evidence for the proposed head, material risk, and rollback. Repeat owner,
+consumer, census, or handoff details only where the diff changes them or a
+separate evidence source needs explicit binding. Record exact producing and
+validated refs when an artifact or required PR gate depends on their identity,
+and keep their relationship to the current head readable. A finding changes the
+current PR only when it proves an in-scope acceptance/public-contract violation
+or a reachable loss introduced by the diff. Otherwise route it to its owner or
+reject it with evidence.
 
 Templates prompt these decisions; their Markdown shape is not a public contract.
 Add a validator only for a current machine consumer and named removal loss.

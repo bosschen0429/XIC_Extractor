@@ -1,8 +1,10 @@
 # XIC Extractor Agent Contract
 
 This root file carries only high-frequency XIC deltas; Global Codex rules own
-general opportunity cost, minimal delivery, and test necessity. Read only the
-triggered route; its owner carries detail.
+general opportunity cost, minimal delivery, and test necessity. Load a route
+only for the decision being made, and reuse still-current context. The table
+is not a checklist for every edit. A local change within an established owner
+uses the affected source, existing tests, and the relevant branch below.
 
 ## Task Routes
 
@@ -18,11 +20,11 @@ triggered route; its owner carries detail.
 | Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
 | Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
-| Script/diagnostic creation, reuse, rerun, exposure, or retirement | Read [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md), search [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and check [`diagnostic-ledger.md`](docs/diagnostic-ledger.md). |
+| Create, expose, consolidate, or retire a script/diagnostic; select or repeat scientific diagnostic evidence | Use [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) for lifecycle changes; search [`INDEX.md`](tools/diagnostics/INDEX.md) when selecting a tool and [`diagnostic-ledger.md`](docs/diagnostic-ledger.md) when reusing or repeating evidence. Routine invocation of an already selected command uses its help and runner. |
 | Productization state, activation, promotion, or writer authority | Read [`productization.md`](docs/product/productization.md) and its linked current manifests/indexes. |
-| Hook, rule, agent config, skill, Git command policy, or long-task state | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md). |
+| Change a hook, rule, agent config, or skill; resolve Git command-policy behavior | Read [`codex-operating-system.md`](docs/agent/codex-operating-system.md). |
 | GitHub issue mechanics or triage | Read [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md). |
-| File placement or repository layout | Read [`project-layout.md`](docs/project-layout.md). |
+| Add or move a maintained file, change tracking, or alter repository layout | Read [`project-layout.md`](docs/project-layout.md). |
 
 ## Always-On Gates
 
@@ -39,11 +41,10 @@ triggered route; its owner carries detail.
 - **Structural observation:** use Codebase Memory (CBM) first for callers,
   dependencies, impact, and reachability; check index coverage once, then use
   targeted source reads only for exact text, reported gaps, or negative claims.
-- **Necessity proof:** default to the current owner, mechanism, observation, and
-  tests. New design or test must prove need. Design needs a current consumer and
-  removal loss: abstraction needs two callers, configuration a second value,
-  and compatibility a current consumer. [`testing.md`](docs/agent/testing.md)
-  owns the test-worth gate.
+- **Necessity proof:** prefer existing owners and mechanisms. Added design must
+  serve a present need worth its maintenance cost; use the
+  [design principles](docs/architecture-contract.md#design-principles), rather
+  than caller counts alone. [`testing.md`](docs/agent/testing.md) owns test worth.
 - 同一份未變更輸入，由正式 owner 完成計算或驗證後，下游重用結果，只檢查本次消費所需的身分與綁定；重算或深度重驗必須指出改變的輸入、新的信任邊界或可觸達的失效機制，不能只以「更保險」為由。
 - 批次路徑將共享準備移出迴圈，先以呼叫次數與小規模量測確認成本，再放大資料量。深度診斷、全圖重驗與審計預設按需執行；只有會影響本次輸出正確性、且沒有較便宜替代檢查時，才放進正常執行路徑。
 - **Final-state artifacts:** code, comments, tests, and docs describe current

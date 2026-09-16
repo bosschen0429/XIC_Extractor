@@ -148,8 +148,9 @@ build workflow，並驗證 dev/frozen 兩種模式。
 11. Generated report/audit/full output → ignored `output/`。
 12. Optional private research → Obsidian；throwaway context → ignored scratch。
 
-新抽象需要兩個現存 caller；新 config 需要現存第二值。新 artifact lane 需要長期
-owner、consumer 與 retirement rule，不能只因單次施工方便而建立。
+抽象與設定依 [architecture design principles](architecture-contract.md#design-principles)
+判斷目前收益與維護成本。新 artifact lane 需要長期 owner、consumer 與 retirement
+rule，不能只因單次施工方便而建立。
 
 ## § 6 暫存資料安全
 

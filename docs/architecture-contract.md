@@ -14,7 +14,13 @@ decomposition plans belong in Issues, PRs, and Git.
 - Let entry points orchestrate focused owners; do not turn them into permanent
   implementation homes.
 - Add abstraction only when it removes demonstrated coupling, duplication, or
-  cognitive load.
+  cognitive load for a current consumer. A private decomposition or concrete
+  dependency adapter can be useful with one caller; shared behavior requires
+  compatible current consumers. Name the present benefit and added maintenance
+  cost, without building layers for unnamed future consumers.
+- Add configuration for a present actor's meaningful value choice and observable
+  effect. Account for validation, replay, GUI/CLI, and documentation costs;
+  a hypothetical future value does not justify a new setting.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
 
@@ -180,8 +186,9 @@ resolution order is in [`decision-policy.md`](product/decision-policy.md).
 - Characterize uncovered behavior before moving it.
 - Keep Windows process payloads pickleable; do not pass nested closures or
   non-pickleable factories across process boundaries.
-- Responsibility count matters more than line count. Split a module when a
-  change adds a second owner, not to satisfy an arbitrary size budget.
+- Split a module to isolate coherent complexity or a distinct reason to change.
+  Private decomposition can preserve the existing semantic owner; a new file
+  does not require inventing another owner. Line count alone is not a reason.
 - Follow [`testing.md`](agent/testing.md) for observable-based test selection
   and RAW/workbook validation.
 - Shared models or protocols are justified when they prevent an actual import
