@@ -1,7 +1,7 @@
 interface:
   display_name: "XIC Docs Compression"
-  short_description: "Digest XIC docs into one owner and a safe lifecycle action"
-  default_prompt: "Use $xic-docs-compression to audit the selected XIC document family, absorb its durable meaning into one canonical repo owner, route the remainder under the existing lifecycle/Obsidian contract, and verify referrer and retirement safety."
+  short_description: "Consolidate XIC docs around current owners and consumers"
+  default_prompt: "Use $xic-docs-compression to inspect the selected XIC document family, preserve useful claims in their canonical repo owners, repair referrers, and remove redundant documents within existing authorization."
 compatibility:
   canonical_format: "agent-skills"
   adapter_targets:

@@ -112,10 +112,11 @@ passing alone never establishes production readiness.
 
 ## Product And Validation Discipline
 
-- P-specs, C-specs, and implementation plans must state whether they advance
-  `Trace` / `TraceGroup`, multi-source `PeakHypothesis`, `EvidenceVector`,
-  `IntegrationResult`, model selection, or `AuditTrail`. If they advance none,
-  label them cleanup-only.
+- Classify work by its actual observable effect: scientific decisions, public
+  behavior, reliability/performance, or documentation/workflow. Name the affected
+  scientific owner when those decisions change. GUI usability, recovery, and
+  maintainability work do not need to advance a scientific data type to be
+  worthwhile.
 - Treat 8RAW and 85RAW as validation fixtures and stress oracles, not product
   boundaries. Architecture must stay dataset-agnostic unless an approved
   product contract explicitly narrows the scope.
@@ -133,19 +134,19 @@ passing alone never establishes production readiness.
   verify current structure with CBM and source. Use `xic-raw-validation` for RAW
   launch or artifact acceptance. A diagnostic, method, or RAW label alone does
   not create another gate.
-- Prefer establishing the future spine or dual-write contract before polishing
-  legacy DTOs, resolver names, or scoring split points likely to move during
-  handoff migration.
+- Establish a migration seam or dual-write contract when a current migration
+  needs it and its compatibility/rollback costs are justified. Speculative
+  future architecture is not a prerequisite for an authorized local fix.
 - CWT, WIS, local minima, curvature, derivative, and region-first logic are
   evidence or hypothesis sources. A phase touching them must declare one mode:
   audit-only, hypothesis enumeration, model-selection calibration, production
   candidate, or retirement.
 - Science phases require independent domain evidence capable of disproving false
   confidence. Median RSD alone is not enough.
-- Cleanup phases require numerical parity against the settled baseline; behavior
-  changes relabel the phase.
-- Engineering phases require characterization parity and maintainability gain;
-  do not bundle behavior changes.
+- Behavior-preserving refactors use the existing affected-output oracle;
+  numerical parity is required when numerical results are at risk. Reuse valid
+  evidence rather than building a separate baseline ritual for non-numerical
+  changes. Intentional behavior changes name their expected difference.
 - Documentation and diagnostic phases require consistency and reviewer
   readability; no numerical gate language applies.
 

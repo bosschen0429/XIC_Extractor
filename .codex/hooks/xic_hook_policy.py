@@ -1,20 +1,5 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from tools.diagnostics import docs_policy as _doc_policy  # noqa: E402
-
-CONTROL_PLANE_PATH = _doc_policy.CONTROL_PLANE_PATH
-HANDOFF_CURRENT_DIR = _doc_policy.HANDOFF_CURRENT_DIR
-PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
-    _doc_policy.PRODUCTIZATION_AUTHORITY_MANIFEST_REL
-)
-PRODUCTIZATION_STATUS_INDEX_REL = _doc_policy.PRODUCTIZATION_STATUS_INDEX_REL
 GIT_COMMIT_OPTIONS_WITH_VALUE = {
     "-m",
     "-F",
@@ -35,7 +20,15 @@ GIT_COMMIT_OPTIONS_WITH_VALUE = {
 
 
 def short_option_uses_autostage(token: str) -> bool:
-    return token.startswith("-") and not token.startswith("--") and "a" in token[1:]
+    if not token.startswith("-") or token.startswith("--"):
+        return False
+    for option in token[1:]:
+        if option == "a":
+            return True
+        # The rest of a short value-taking option is data, not more flags.
+        if option in {"m", "F", "C", "c", "t", "S", "u"}:
+            break
+    return False
 
 
 def commit_tail_uses_autostage_or_pathspec(tokens: tuple[str, ...]) -> bool:

@@ -1,8 +1,7 @@
 """Audit repo/Obsidian documentation management health.
 
-This checker is read-only. It catches workflow drift that the staged
-docs-placement guard intentionally does not cover, such as whole
-docs/superpowers routing inventory and candidates with key-concept, repo-owner,
+This checker is read-only. It reports docs/superpowers routing inventory
+and candidates with key-concept, repo-owner,
 and Obsidian-lane hints, stale branch handoffs after a commit, vault manifest
 stats that no longer match the vault, pending raw/staged wiki files, missing
 wiki lifecycle metadata, and local-path exposure that needs a focused
@@ -33,7 +32,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
-    is_invalid_superpowers_spec_payload_path,
     is_markdown_path,
 )
 from tools.diagnostics.docs_routing_review import (  # noqa: E402
@@ -162,8 +160,6 @@ def resolve_vault(root: Path, explicit: Path | None) -> Path | None:
 
 def audit_repo(
     root: Path,
-    *,
-    fail_on_completed_transient: bool = False,
 ) -> tuple[list[AuditMessage], dict[str, object]]:
     messages: list[AuditMessage] = []
     repository_view = _docs_scan.load_repository_text_view(root)
@@ -315,35 +311,6 @@ def audit_repo(
             )
         )
 
-    invalid_spec_payload_count = int(structure_review["invalid_spec_payload_files"])
-    if invalid_spec_payload_count:
-        messages.append(
-            AuditMessage(
-                "blocker",
-                "docs",
-                (
-                    "docs/superpowers/specs contains non-Markdown payloads; "
-                    "inspect "
-                    "summary.repo.docs_structure_review.invalid_spec_payloads "
-                    f"({invalid_spec_payload_count} file(s))"
-                ),
-            )
-        )
-
-    completed_transient_count = int(completed_transient_review["completed_files"])
-    if fail_on_completed_transient and completed_transient_count:
-        messages.append(
-            AuditMessage(
-                "blocker",
-                "docs",
-                (
-                    "completed transient docs remain in repo; retire with "
-                    "owner absorption, evidence, and a clean referrer scan "
-                    f"({completed_transient_count} file(s))"
-                ),
-            )
-        )
-
     duplicate_topic_owner_groups = int(
         routing_review["topic_cluster_group_counts"].get("potential_duplicate_owner", 0)
     )
@@ -414,10 +381,7 @@ def completed_transient_review_for_repo(
 def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, object]:
     root_scatter: list[str] = []
     retired_lanes: list[dict[str, str]] = []
-    invalid_spec_payloads: list[str] = []
     for rel_path in sorted(scan_paths):
-        if is_invalid_superpowers_spec_payload_path(rel_path):
-            invalid_spec_payloads.append(rel_path)
         classification = classify_doc_path(rel_path)
         if classification.is_retired_tracked_dir:
             retired_lanes.append(
@@ -437,9 +401,6 @@ def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, objec
         "retired_lane_files": len(retired_lanes),
         "retired_lanes": retired_lanes,
         "top_retired_lanes": retired_lanes[:25],
-        "invalid_spec_payload_files": len(invalid_spec_payloads),
-        "invalid_spec_payloads": invalid_spec_payloads,
-        "top_invalid_spec_payloads": invalid_spec_payloads[:25],
     }
 
 
@@ -747,12 +708,8 @@ def run_audit(
     vault: Path | None = None,
     *,
     include_vault: bool = True,
-    fail_on_completed_transient: bool = False,
 ) -> AuditResult:
-    repo_messages, repo_summary = audit_repo(
-        root,
-        fail_on_completed_transient=fail_on_completed_transient,
-    )
+    repo_messages, repo_summary = audit_repo(root)
     if include_vault:
         resolved_vault = resolve_vault(root, vault)
         vault_messages, vault_summary = audit_vault(resolved_vault)
@@ -836,13 +793,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Skip private Obsidian vault checks and report repo state only.",
     )
     parser.add_argument(
-        "--fail-on-completed-transient",
-        action="store_true",
-        help=(
-            "Fail when implemented/superseded/archived transient docs remain."
-        ),
-    )
-    parser.add_argument(
         "--routing-manifest-tsv",
         type=Path,
         help="Write actionable docs/superpowers routing candidates as TSV.",
@@ -869,7 +819,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.root.resolve(),
         args.vault,
         include_vault=not args.repo_only,
-        fail_on_completed_transient=args.fail_on_completed_transient,
     )
     if args.routing_manifest_tsv is not None:
         write_routing_manifest_tsv(result, args.routing_manifest_tsv)

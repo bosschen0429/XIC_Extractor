@@ -14,7 +14,13 @@ decomposition plans belong in Issues, PRs, and Git.
 - Let entry points orchestrate focused owners; do not turn them into permanent
   implementation homes.
 - Add abstraction only when it removes demonstrated coupling, duplication, or
-  cognitive load.
+  cognitive load for a current consumer. A private decomposition or concrete
+  dependency adapter can be useful with one caller; shared behavior requires
+  compatible current consumers. Name the present benefit and added maintenance
+  cost, without building layers for unnamed future consumers.
+- Add configuration for a present actor's meaningful value choice and observable
+  effect. Account for validation, replay, GUI/CLI, and documentation costs;
+  a hypothetical future value does not justify a new setting.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
 
@@ -147,15 +153,26 @@ architecture boundaries.
   enumeration, calibration, production candidate, or retirement.
 - Direct matrix writes require an activation/export contract, expected diff,
   and focused output oracle.
-- Name current modules and contracts after owned behavior, not an Issue or PR,
-  milestone, numbered phase/package, opaque gate label, dated attempt, or first
-  validation dataset.
 
 `xic_extractor.evidence_semantics` is role-neutral and serves both candidate
 selection and product projection. Targeted role policy belongs in the Targeted
 projection builder, not in shared semantics. Because Alignment also consumes
 the shared layer, changes there have cross-path blast radius. The complete
 resolution order is in [`decision-policy.md`](product/decision-policy.md).
+
+## Module Naming
+
+Name new or renamed modules and commands for the capability they provide and
+the responsibility they own. A reader should understand their purpose without
+knowing the development history: for example, use `quant_matrix_export` for
+matrix export rather than `phase7` or `issue367_bundle`.
+
+Issue numbers, rollout phases, and dataset labels may explain provenance, but
+must not substitute for a capability description. Domain terms such as a real
+runtime phase, schema version, or scientific name remain appropriate when they
+describe the current behavior. Judge meaning in context rather than matching
+forbidden words. Preserve compatibility when considering existing names; this
+guidance does not require unrelated renames.
 
 ## Diagnostics Contract
 
@@ -180,8 +197,9 @@ resolution order is in [`decision-policy.md`](product/decision-policy.md).
 - Characterize uncovered behavior before moving it.
 - Keep Windows process payloads pickleable; do not pass nested closures or
   non-pickleable factories across process boundaries.
-- Responsibility count matters more than line count. Split a module when a
-  change adds a second owner, not to satisfy an arbitrary size budget.
+- Split a module to isolate coherent complexity or a distinct reason to change.
+  Private decomposition can preserve the existing semantic owner; a new file
+  does not require inventing another owner. Line count alone is not a reason.
 - Follow [`testing.md`](agent/testing.md) for observable-based test selection
   and RAW/workbook validation.
 - Shared models or protocols are justified when they prevent an actual import

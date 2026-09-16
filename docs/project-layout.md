@@ -76,10 +76,11 @@ closeout、active stub 或永久歷史 stub。
 
 - `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
 
-文件的 public/private 與 retirement 規則由
+文件的 public/private 與維護、移除規則由
 [`docs/agent/obsidian-handoff-contract.md`](agent/obsidian-handoff-contract.md)
 擁有。刪除前仍須先把 durable claim 吸收到 owner 並清空 exact referrers；一次性
-audit/evidence 寫到 ignored `output/`，不再用新的 tracked 歷史檔清舊歷史檔。
+audit/evidence 寫到 ignored `output/`。方法變更直接更新現行文件，Git 保留舊版；
+不要求另行歸檔或建立 retirement packet。
 
 ### Current authority routes
 
@@ -148,8 +149,9 @@ build workflow，並驗證 dev/frozen 兩種模式。
 11. Generated report/audit/full output → ignored `output/`。
 12. Optional private research → Obsidian；throwaway context → ignored scratch。
 
-新抽象需要兩個現存 caller；新 config 需要現存第二值。新 artifact lane 需要長期
-owner、consumer 與 retirement rule，不能只因單次施工方便而建立。
+抽象與設定依 [architecture design principles](architecture-contract.md#design-principles)
+判斷目前收益與維護成本。新 artifact lane 需要長期 owner、consumer 與 retirement
+rule，不能只因單次施工方便而建立。
 
 ## § 6 暫存資料安全
 

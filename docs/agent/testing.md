@@ -20,16 +20,27 @@ loss before fixing it. Do not freeze private helpers, temporary file layout, or
 cleanup state without a current consumer. Temporary compatibility tests name
 their removal condition.
 
-## Three Non-Negotiable Rules For Agent Testing
+## Oracle, Attribution, And Contract Boundaries
 
-All tests written by agents must strictly obey these three invariants:
-
-1. **Independent Oracle (No Mirror Expectations)**:
-   Never call the production calculation or helper inside the test body to generate `expected`. Name the independent oracle: an analytical mathematical formula (e.g. Gaussian integral), independent chemical standard, or confirmed business contract. Do not freeze unverified historical run numbers as golden truths.
-2. **Multi-Sample Attribution (No Proxy Metrics)**:
-   Any test for an extraction, alignment, batch, or writer pipeline must use at least two samples with distinct values to verify sample-to-result attribution. Never treat file existence (`exists()`), non-empty collections (`len > 0`), non-None (`is not None`), or mock invocation (`assert_called`) as proof of substantive correctness.
-3. **No Immortalized One-Time Verifications (No Private Implementation Locks)**:
-   One-time refactoring or retirement verifications belong in PR diffs and git history; do not write permanent tests scanning source code or AST for deleted identifiers (e.g. via `inspect.getsource()`). Never assert internal private helpers (`_foo`), openpyxl cell coordinates/colors, widget pixel geometry, or Python object memory `id()`.
+1. **Independent oracle:** derive expected results from an analytical formula,
+   independent chemical standard, or confirmed product contract. Do not use the
+   production calculation under test to generate its own expected result or
+   turn unverified historical run numbers into golden truths.
+2. **Sample attribution:** when a change can mix extraction, alignment, batch,
+   or writer results between samples, use at least two samples with distinct
+   expected values and assert each sample's result. For other observables,
+   such as invalid-input rejection, cancellation, an empty result, or workbook
+   sheet visibility, use the smallest fixture that reproduces that behavior.
+   File existence, non-empty collections, and mock calls alone do not prove
+   numerical or attribution correctness. When publication or absence itself is
+   the contract, assert the expected artifact set.
+3. **Stable contracts:** assert owner results and consumer-visible behavior.
+   Workbook coordinates or formatting are valid oracles when the published
+   layout or review meaning requires them; name that contract. Avoid coupling
+   tests to incidental helper names, widget geometry, or object identity.
+   Source/AST checks are appropriate for maintained dependency or construction
+   boundaries owned by the architecture gate. One-time scans for retired
+   identifiers belong in PR evidence and Git history.
 
 ## Choose The Observable
 

@@ -120,17 +120,23 @@ this complete disposition table:
 
 | Workflow verdict | No candidate code | Candidate code exists |
 | --- | --- | --- |
-| `baseline_needed` | `not_applicable` | `revert` |
-| `diagnosis_ready` | `not_applicable` | `revert` |
-| `optimization_ready` | `not_applicable` | `revert` |
-| `inconclusive` | `not_applicable` | `revert` |
+| `baseline_needed` | `not_applicable` | `retain_unaccepted` |
+| `diagnosis_ready` | `not_applicable` | `retain_unaccepted` |
+| `optimization_ready` | `not_applicable` | `retain_unaccepted` |
+| `inconclusive` | `not_applicable` | `retain_unaccepted` |
 | `rejected` | `not_applicable` | `revert` |
 | `optimized` | `not_applicable` | `keep` |
 
-Pre-edit verdicts do not preserve prematurely written candidate code.
-`optimization_ready` opens a fresh code-edit handoff; it does not accept an
-existing candidate. Missing evidence also does not create a keep-for-later
-state.
+`retain_unaccepted` preserves candidate work without accepting its performance
+or product behavior. Keep the existing accepted exact baseline isolated and
+name the bounded missing proof or implementation handoff. `optimization_ready`
+opens issue-bounded edits that may continue from retained candidate work; only
+`optimized` accepts that candidate.
+
+Disposition does not grant mutation authority. For `rejected`, execute rollback
+only when the task authorizes it and only for the current unaccepted delta;
+preserve unrelated and user-owned work. A read-only diagnosis reports the
+disposition and scoped next action without changing files.
 
 Choose the diagnostic-ledger action independently:
 
@@ -147,7 +153,7 @@ Every branch returns this core:
 
 ```markdown
 Workflow/performance verdict:
-Candidate disposition: keep | revert | not_applicable
+Candidate disposition: keep | retain_unaccepted | revert | not_applicable
 Diagnostic-ledger action: reuse | update | none
 Product validation status:
 Workload / sample universe / decision:

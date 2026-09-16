@@ -8,8 +8,8 @@ This file owns GitHub mechanics only. The implementation issue-to-PR shape and
 ## Conventions
 
 - **Create an issue**: use `gh issue create --title "..." --body "..."` for a short body, or `gh issue create --title "..." --body-file <path>` for a multi-line body. Follow the repo's PowerShell command contract; do not use Bash heredocs.
-- **Read an issue**: `gh issue view <number> --comments`, using `gh`'s `--json` and `--jq` options when structured labels or comments are needed.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Read an issue**: select the needed fields with `gh issue view <number> --json number,title,body,labels`; retrieve comments only when the decision depends on them. Capture long bodies or comment history with bounded output transport.
+- **List issues**: start with `gh issue list --state open --limit 20 --json number,title,labels` and appropriate `--label` and `--state` filters, then read the selected issues. A limited list is not an exhaustive inventory; fetch further pages only when the task requires completeness.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
@@ -34,7 +34,8 @@ Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Read the selected issue as above. Include comments when they carry the current
+scope, acceptance, or evidence needed for the task.
 
 ## Wayfinding operations
 

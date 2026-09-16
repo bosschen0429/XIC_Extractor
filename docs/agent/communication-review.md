@@ -8,10 +8,18 @@ artifact that carries detailed evidence.
 
 ## Pull Requests
 
-Use the repository PR template and describe final behavior, not temporary commit
-history. The body is the durable squash-merge review surface: lead with outcome,
-transfer the Issue scope, guide the load-bearing review, and record checks on the
-validated head. Hosted checks on the final remote SHA are the merge authority.
+Use the repository PR template to describe final behavior and bounded scope,
+with Summary, Motivation, Testing, and Risks/Rollback. State breaking changes
+explicitly when present and include relevant Issue linkage. The body is the
+durable squash-merge review surface; link canonical Issue scope and record actual
+checks for the proposed head.
+
+Established-owner local work uses this compact body. Add review guidance and
+expanded scope, source, or authority details only for the applicable cases in
+[`planning-workflows.md#task-shaping`](planning-workflows.md#task-shaping). Bind
+artifact evidence or required PR-gate results to exact producing/validated refs
+when their identity matters, and make compatibility with the current head clear.
+Hosted checks on the final remote SHA remain the merge authority.
 
 Review comments are evidence, not scope authority. Fix a comment when it proves
 an Issue/public-contract violation or a reachable loss introduced by the diff.

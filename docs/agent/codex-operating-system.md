@@ -25,10 +25,16 @@ The hook fixtures and `tests/test_config_codex_hooks.py` own executable behavior
 
 ## Adoption And Retirement
 
-Add or retain workflow machinery only when it has both:
+Judge workflow machinery by the loss it prevents and the work it adds. A named
+current consumer and reachable loss are necessary evidence, not sufficient
+reasons to retain a gate. Consider how often the failure is plausible, its
+consequence, false blocks, recovery effort, and ongoing maintenance; a numeric
+score or separate approval packet is not required.
 
-1. a named current consumer; and
-2. a reachable loss if the mechanism is removed.
+Use guidance or an existing check for low-cost, reversible mistakes. A blocking
+mechanism earns its place when a costly failure is detected reliably and the
+agent has a usable recovery path. Simplify or remove mechanisms whose friction
+outweighs their protection, while preserving the underlying obligation.
 
 Prefer an existing Issue, tool, or owner over another checklist. Tests that only
 assert the machinery exists are not consumer evidence. When the proof disappears,

@@ -93,6 +93,9 @@ flags.
 
 - Use PowerShell command syntax. Bash heredocs, export, and Unix continuations
   fail before Python runs.
+- Invoke a PowerShell helper from the active shell with `& <script.ps1> ...`.
+  The command policy rejects nested `powershell`/`pwsh` wrappers, including
+  copied `-File` examples; keep the helper and its arguments unchanged.
 - Use one current-worktree command at a time when a hook or policy is involved.
 - Prefer CLI help over copying command examples into docs.
 - Keep run outputs under ignored output/ and local inputs under ignored

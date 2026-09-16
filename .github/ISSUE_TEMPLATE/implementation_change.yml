@@ -1,5 +1,5 @@
 name: Implementation Change
-description: Define a bounded issue-to-PR implementation contract.
+description: Define an outcome, bounded scope, and observable completion check; add material boundaries when needed.
 title: "[Implementation] "
 labels:
   - needs-triage
@@ -14,79 +14,79 @@ body:
   - type: input
     id: execution_base
     attributes:
-      label: Execution binding
+      label: Source binding (when version-dependent)
       description: >-
-        Enter the exact 40-character code-evidence commit after blockers close;
-        otherwise enter `provisional - freeze at claim after #...`. A
-        provisional issue is not ready-for-agent, and the claiming agent
-        reconciles it automatically.
+        Fill only when an artifact, frozen decision, or required gate depends on
+        a particular source state. Name the exact producing/execution ref;
+        after blockers, reconcile any provisional binding at claim. Ordinary
+        established-owner work does not need an execution-base freeze.
     validations:
-      required: true
+      required: false
   - type: textarea
     id: graph_placement
     attributes:
-      label: Delivery graph placement and handoff
+      label: Delivery graph and handoff (when an edge exists)
       description: >-
-        Name the parent MAP, real native blockers, typed predecessor outputs
-        consumed, produced typed output and consuming contract or entry,
-        successor handoff, and exactly one carrier issue per delivery edge; use
-        `independent` when no edge exists.
+        Fill only for a real cross-ticket delivery edge. Name the parent, native
+        blockers, consumed/produced output and consuming contract or entry,
+        successor handoff, and one carrier Issue per edge. Leave empty for
+        independent work.
     validations:
-      required: true
+      required: false
   - type: textarea
     id: owner_universe
     attributes:
-      label: Semantic owner and finite production universe
-      description: Name one owner, the reachable production entries/current direct consumers, the census locator or query, and explicit exclusions.
+      label: Owner and consumer boundary (when material)
+      description: >-
+        Fill for a material owner replacement, cross-owner handoff, or public/
+        persisted-schema correctness, authority, or compatibility risk. Name
+        affected owners, production entries and current consumers. Add a census
+        locator and exclusions only when migration, retirement, or a completeness
+        claim depends on them.
     validations:
-      required: true
+      required: false
   - type: textarea
     id: asset_disposition
     attributes:
-      label: Owner-local asset disposition
+      label: Asset disposition (migration or replacement only)
       description: >-
         For migration or replacement, classify retained, adapted, replaced, and
-        retirement-candidate paths with consumers, zero-reference evidence, and
-        adapter removal conditions; otherwise state `Not applicable -
-        established owner` and its locator.
+        retirement-candidate paths with their consumers and adapter removal
+        conditions. Supply zero-reference evidence where retirement relies on
+        it. Leave empty for an established-owner local change.
     validations:
-      required: true
+      required: false
   - type: textarea
     id: boundaries
     attributes:
-      label: Scope ceiling and non-goals
+      label: Bounded scope
       description: >-
-        Bound this ticket by behavior and owner; name explicit non-goals and the
-        owner cutoff that prevents reachable future work from being absorbed
-        here.
+        State the behavior and owner this ticket changes. Add non-goals or an
+        owner cutoff when they prevent material scope ambiguity; ordinary local
+        work needs only its clear boundary.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Ticket completion contract
+      label: Observable completion and validation
       description: >-
-        State the required ticket-local observable or usable handoff, current
-        entry or consumer, stable falsifier, preserved invariants, work not
-        required for closure, and the rule to close or hand off when every item
-        passes. Explain what makes the delivery Atomic: a current consumer can
-        use the outcome now, the evidence is independently decisive, and the
-        change can be reviewed and rolled back without a future sibling. If
-        multiple PRs are proposed, name the outcome or failure-domain seam
-        rather than size or construction stage. Answer in prose appropriate to
-        this issue; no extra fixed subfields are required.
+        Name the observable result and the check that decides completion. Add
+        preserved invariants, rollback, or a usable handoff when the change needs
+        them. Science/readiness or high-cost RAW work must bind the decision to
+        its method/lane oracle, inputs, authority ceiling, and source-qualified
+        validation owner. For multiple PRs, name independently usable outcomes
+        or failure-domain seams. Use prose appropriate to this issue.
     validations:
       required: true
   - type: textarea
     id: stop_rule
     attributes:
-      label: Local resolution and parent escalation
+      label: Stop or escalation boundary (when task-specific)
       description: >-
-        Main adjudicates every finding. State the ticket-local fix, fail-closed
-        result, or bounded probe. Escalate only a current constructible
-        contradiction that changes a semantic owner, public contract,
-        transaction boundary, or parent acceptance and whose reachable wrong
-        output cannot close ticket-locally without that change; otherwise Main
-        routes or rejects the finding.
+        Fill for a high-cost run's observable stop condition or an unresolved
+        operator/parent decision that can change outcome, scope, or authority.
+        Generic review finding resolution follows planning-workflows.md; local
+        changes do not need to predict hypothetical findings here.
     validations:
-      required: true
+      required: false

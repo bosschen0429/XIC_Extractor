@@ -1,9 +1,5 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Total entry-points:** 107
-**Total files (incl. helpers):** 191 Python files under `tools/diagnostics/`
-**Count method:** top-level `### *.py` entry headings for entry-points;
-top-level `tools/diagnostics/*.py` files for total files.
 **Governing contracts:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -28,18 +24,18 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 
 ## Table of Contents
 
-1. [Validation Gates](#validation-gates) — 7 tools
-2. [Evidence Consistency](#evidence-consistency) — 8 tools
-3. [Alignment Diagnostics](#alignment-diagnostics) — 9 tools
-4. [Backfill Reviews](#backfill-reviews) — 42 tools
-5. [Peak / Candidate Audits](#peak--candidate-audits) — 7 tools
-6. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews) — 11 tools
-7. [Instrument QC](#instrument-qc) — 6 tools
-8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
-9. [Area / Region Audits](#area--region-audits) — 4 tools
-10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 14 tools
-12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
+1. [Validation Gates](#validation-gates)
+2. [Evidence Consistency](#evidence-consistency)
+3. [Alignment Diagnostics](#alignment-diagnostics)
+4. [Backfill Reviews](#backfill-reviews)
+5. [Peak / Candidate Audits](#peak--candidate-audits)
+6. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
+7. [Instrument QC](#instrument-qc)
+8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
+9. [Area / Region Audits](#area--region-audits)
+10. [One-off Fixtures](#one-off-fixtures)
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
+12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
 
 ---
 
@@ -2118,27 +2114,6 @@ export authority without a later public-surface contract.
 Tools that guard repo-local agent and documentation workflow. These are not
 LC-MS evidence diagnostics and must not claim product behavior readiness.
 
-### `docs_placement_guard.py`
-
-**Purpose**: Check staged A/M/R/C Markdown files for repo/Obsidian placement
-markers before commit; block lifecycle-managed Markdown deletions without
-matching retirement evidence; and fail closed on a same-path
-`body_to_compatibility_index` transaction unless its preimage, private
-source-copy readback, claim census, typed owner locators, replacement hash, and
-normalized dependency census all agree. Non-lifecycle deletions are ignored.
-**Topic group**: `docs_placement_guard.py` + `.codex/hooks/xic_hook_policy.py`
-**Governing doc**: `docs/agent/obsidian-handoff-contract.md`
-**Status note**: Reads staged git metadata, staged Markdown/JSON text, deleted
-or replaced source blobs, source/claim hashes, exact headings, relative links,
-literal referrers, and named constant consumers. It does not read RAW,
-mutate files, stage changes, alter product output, copy to Obsidian, or decide
-semantic product absorption. Hook integration runs the same checker after shell
-`git add` and before shell `git commit`; failures report paths, reasons, and
-required markers without auto-fixing. Destructive retirement still belongs to
-`retire_docs.py --evidence`.
-
----
-
 ### `docs_management_audit.py`
 
 **Purpose**: Audit the repo/Obsidian documentation management system after
@@ -2158,9 +2133,10 @@ Use `--routing-manifest-tsv` for file-level cleanup rows and
 `--topic-clusters-tsv` for big-direction consolidation. Use
 `--topic-index-dir output/docs-topic-indexes` to generate temporary,
 ignored index-only topic README files from the current cluster summary.
-Use `--repo-only --fail-on-completed-transient` in CI/PR closeout to fail when
-completed transient originals remain, without reading the private Obsidian vault.
-**Topic group**: `docs_management_audit.py` + `docs_placement_guard.py`
+Use `--repo-only` in CI/PR closeout without reading the private Obsidian vault.
+Completed-document inventory is advisory: lifecycle status alone does not
+determine whether a document still has a useful consumer.
+**Topic group**: `docs_management_audit.py` + `docs_scan.py`
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
 **Status note**: Read-only docs governance audit. It does not move files, write
 to Obsidian, stage changes, mutate product output, or authorize tracked
@@ -2172,27 +2148,6 @@ mean "not automatically movable", not "fully digested"; use
 `digestion_status`, `digestion_next_action`, and topic-cluster digestion review
 counts before treating retained docs as cleaned-up knowledge. Use it after major
 docs cleanup and before PR closeout when the repo/vault split changed.
-
----
-
-### `retire_docs.py`
-
-**Purpose**: Retire disposable construction records after owner absorption,
-source-hash verification, and an exact referrer scan. Approved
-`discard_git_history` evidence removes plans/specs without creating a permanent
-repo or vault copy; `obsidian_source_copy` remains available when private
-history has independent value. For the protected compatibility-index
-replacement, `--source-copy-only` preserves and reads back the exact preimage.
-**Topic group**: `docs_management_audit.py` + `retire_docs.py`
-**Governing doc**: `docs/project-layout.md`;
-`docs/agent/obsidian-handoff-contract.md`
-**Status note**: Dry-run unless `--execute` is supplied. Product absorption and
-operator approval happen before retirement and are recorded in an ignored
-evidence JSON supplied through `--evidence`; the tool does not decide product
-authority or validation readiness.
-`--source-copy-only --execute` also requires that evidence, verifies both
-top-level and source-entry hashes, and reports only the stable repo source key
-and hash; the repository evidence stores no private absolute vault path.
 
 ---
 

@@ -380,6 +380,65 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
 @pytest.mark.parametrize(
     "command",
     [
+        "git reset HEAD --hard",
+        "git reset --quiet --hard",
+        "git checkout HEAD -- example.txt",
+        "git checkout -f -- example.txt",
+    ],
+)
+def test_pre_hook_denies_destructive_git_outside_static_prefix(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    assert completed.stdout, "destructive parameter order bypassed the hook"
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git commit -mdata",
+        "git commit -qmdata",
+        "git commit -Fdata",
+        "git commit -Cdata",
+        "git commit -cdata",
+        "git commit -Skeya -m note",
+        "git commit -uall -m note",
+    ],
+)
+def test_pre_hook_allows_commit_attached_option_values(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git commit -a -m note",
+        "git commit -qamdata",
+        "git commit -mdata -a",
+        "git commit --all -m note",
+        "git commit -Skeya -mdata -- example.txt",
+        "git commit -mdata --pathspec-from-file=paths.txt",
+    ],
+)
+def test_pre_hook_keeps_commit_autostage_and_pathspec_denied(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "-a/--all or pathspec" in output["hookSpecificOutput"][
+        "permissionDecisionReason"
+    ]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "git -C C:\\repo push origin HEAD",
         "git --git-dir C:\\repo\\.git push origin HEAD",
         "git -C C:\\repo fetch origin",
@@ -964,4 +1023,6 @@ def test_pre_hook_emits_config_advisory_for_agent_contract() -> None:
     )
     output = json.loads(completed.stdout)
     message = output["hookSpecificOutput"]["additionalContext"]
-    assert "Execution-affecting XIC agent config" in message
+    assert "docs/agent/codex-operating-system.md Change Protocol" in message
+    assert "If changed" in message
+    assert "affected behavior" in message

@@ -231,7 +231,6 @@ def _run_audit(
     vault: Path | None = None,
     *,
     repo_only: bool = False,
-    fail_on_completed_transient: bool = False,
     preserve_index: bool = False,
 ):
     if root.resolve() != PROJECT_ROOT:
@@ -251,7 +250,6 @@ def _run_audit(
         root,
         vault,
         include_vault=not repo_only,
-        fail_on_completed_transient=fail_on_completed_transient,
     )
 
 
@@ -267,7 +265,7 @@ def test_repo_only_audit_skips_vault_blockers(tmp_path: Path) -> None:
     assert not any(msg.path == ".manifest.json" for msg in result.messages)
 
 
-def test_repo_only_completed_transient_spec_is_blocker(
+def test_repo_only_completed_transient_spec_is_advisory(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -293,20 +291,22 @@ def test_repo_only_completed_transient_spec_is_blocker(
     result = _run_audit(
         root,
         repo_only=True,
-        fail_on_completed_transient=True,
     )
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 1
     assert review["top_completed_files"][0]["path"] == spec_path
-    assert any(
-        msg.severity == "blocker"
-        and "completed transient docs remain in repo" in msg.message
-        for msg in result.messages
+    _write(
+        root / spec_path,
+        (root / spec_path).read_text(encoding="utf-8").replace(
+            "Doc lifecycle: implemented", "Doc lifecycle: active"
+        ),
     )
+    active_result = _run_audit(root, repo_only=True)
+    assert result.blockers == active_result.blockers
 
 
-def test_repo_only_archived_productization_phase_summary_is_blocker(
+def test_repo_only_archived_productization_summary_inventory(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -335,20 +335,14 @@ def test_repo_only_archived_productization_phase_summary_is_blocker(
     result = _run_audit(
         root,
         repo_only=True,
-        fail_on_completed_transient=True,
     )
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 1
     assert review["top_completed_files"][0]["path"] == summary_path
-    assert any(
-        msg.severity == "blocker"
-        and "completed transient docs remain in repo" in msg.message
-        for msg in result.messages
-    )
 
 
-def test_repo_only_active_transient_spec_is_not_completed_blocker(
+def test_repo_only_active_spec_is_excluded_from_completed_inventory(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -373,18 +367,13 @@ def test_repo_only_active_transient_spec_is_not_completed_blocker(
     result = _run_audit(
         root,
         repo_only=True,
-        fail_on_completed_transient=True,
     )
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 0
-    assert not any(
-        "completed transient docs remain in repo" in msg.message
-        for msg in result.messages
-    )
 
 
-def test_repo_only_completed_transient_stub_state_is_blocker(
+def test_repo_only_completed_transient_stub_inventory(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -410,18 +399,13 @@ def test_repo_only_completed_transient_stub_state_is_blocker(
     result = _run_audit(
         root,
         repo_only=True,
-        fail_on_completed_transient=True,
     )
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 1
-    assert any(
-        "completed transient docs remain in repo" in msg.message
-        for msg in result.messages
-    )
 
 
-def test_repo_only_completed_active_stub_state_is_blocker(
+def test_repo_only_completed_active_stub_inventory(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -452,16 +436,11 @@ def test_repo_only_completed_active_stub_state_is_blocker(
     result = _run_audit(
         root,
         repo_only=True,
-        fail_on_completed_transient=True,
     )
 
     review = result.summary["repo"]["completed_transient_review"]
     assert review["completed_files"] == 1
     assert review["top_completed_files"][0]["path"] == stub_path
-    assert any(
-        "completed transient docs remain in repo" in msg.message
-        for msg in result.blockers
-    )
 
 
 def test_tracked_current_handoff_is_a_retired_lane_blocker(tmp_path: Path) -> None:
@@ -1969,11 +1948,10 @@ def test_unmarked_superpowers_specs_path_is_retired_lane(
     assert structure["retired_lanes"] == [
         {"path": spec_path, "retired_dir": "docs/superpowers/specs/"}
     ]
-    assert structure["invalid_spec_payload_files"] == 0
     assert any(item for item in review["top_candidates"] if item["path"] == spec_path)
 
 
-def test_docs_structure_review_reports_non_markdown_specs_payload(
+def test_docs_audit_treats_spec_assets_like_markdown(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -1985,13 +1963,10 @@ def test_docs_structure_review_reports_non_markdown_specs_payload(
 
     result = _run_audit(root, vault)
 
-    structure = result.summary["repo"]["docs_structure_review"]
-    assert structure["invalid_spec_payload_files"] == 1
-    assert structure["invalid_spec_payloads"] == [payload_path]
-    assert any(
-        msg.severity == "blocker" and "non-Markdown payloads" in msg.message
-        for msg in result.messages
-    )
+    (root / payload_path).unlink()
+    _write(root / "docs/superpowers/specs/example-schema.md", "# Schema\n")
+    markdown_result = _run_audit(root, vault)
+    assert result.blockers == markdown_result.blockers
 
 
 def test_docs_audit_uses_staged_payload_missing_from_worktree(tmp_path: Path) -> None:
@@ -2018,11 +1993,8 @@ def test_docs_audit_uses_staged_payload_missing_from_worktree(tmp_path: Path) ->
     result = _run_audit(root, repo_only=True, preserve_index=True)
 
     structure = result.summary["repo"]["docs_structure_review"]
-    assert structure["invalid_spec_payloads"] == [payload_path]
-    assert any(
-        message.severity == "blocker"
-        and "non-Markdown payloads" in message.message
-        for message in result.messages
+    assert {"path": payload_path, "retired_dir": "docs/superpowers/specs/"} in (
+        structure["retired_lanes"]
     )
 
 
@@ -2122,7 +2094,6 @@ def test_docs_audit_completed_lifecycle_uses_staged_text(tmp_path: Path) -> None
     result = _run_audit(
         root,
         repo_only=True,
-        fail_on_completed_transient=True,
         preserve_index=True,
     )
 
