@@ -60,6 +60,7 @@ from xic_extractor.extraction.targeted_service import (
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.peak_detection.capture import (
+    SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
     capture_peak_hypotheses,
     mint_captured_peak_observation,
@@ -524,6 +525,7 @@ def _execute_target(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]
     ] = []
     capture_inputs: list[CaptureWorkflowArguments] = []
+    completed_captures: list[SampleLocalCapture] = []
     candidate_by_sample = {
         sample.identity.sample_identity_id: (result, candidate_id)
         for sample, result, candidate_id in candidates
@@ -564,6 +566,13 @@ def _execute_target(
                         peak_observation=observations[0],
                     )
                 )
+                if owner_hypothesis is not None:
+                    captured = bind_owner_backed_capture_hypothesis(
+                        captured,
+                        observation=observations[0],
+                        hypothesis=owner_hypothesis,
+                    )
+                completed_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
                         candidate_id=captured.candidate_id,
@@ -652,6 +661,7 @@ def _execute_target(
         assessments.append((sample, assessment))
         if captured is not None:
             if not observations:
+                completed_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
                         candidate_id=captured.candidate_id,
@@ -676,6 +686,7 @@ def _execute_target(
                 observation=observations[0],
                 hypothesis=matches[0],
             )
+            completed_captures.append(bound)
             capture_inputs.append(
                 CaptureWorkflowArguments(
                     candidate_id=bound.candidate_id,
@@ -763,6 +774,7 @@ def _execute_target(
             ),
             repair=None,
             predecessor_cell_observations=(),
+            completed_capture_handoff=tuple(completed_captures),
         ),
     )
     if type(terminal) is not CompletedTargetWorkflowResult:

@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.alignment import workflow as alignment_workflow
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -433,6 +434,11 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
         "capture_peak_hypotheses",
         record_capture,
     )
+    monkeypatch.setattr(
+        alignment_workflow,
+        "capture_peak_hypotheses",
+        record_capture,
+    )
 
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
@@ -444,6 +450,7 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     )
 
     assert finalized[0].completed_projection.decisions[0].value == selected_area
+    assert len(captured) == 1
     assert captured[0].selected_hypothesis is not None
     captured_integration = captured[0].selected_hypothesis.integration
     assert captured_integration.rt_apex_min == selected.integration.rt_apex_min

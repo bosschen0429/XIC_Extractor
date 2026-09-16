@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from typing import TypeAlias, cast
 
@@ -364,9 +364,32 @@ class _WorkflowAdapterFields:
             )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TargetWorkflowAdapter(_WorkflowAdapterFields):
-    pass
+    __slots__ = ("_completed_captures",)
+
+    completed_capture_handoff: InitVar[tuple[SampleLocalCapture, ...] | None] = None
+
+    def __post_init__(
+        self,
+        completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None,
+    ) -> None:
+        super(TargetWorkflowAdapter, self).__post_init__()
+        completed_captures = getattr(
+            self,
+            "_completed_captures",
+            completed_capture_handoff,
+        )
+        if completed_captures is not None and type(completed_captures) is not tuple:
+            raise AlignmentWorkflowContractError(
+                "completed captures require an immutable owner population"
+            )
+        if not hasattr(self, "_completed_captures"):
+            object.__setattr__(self, "_completed_captures", completed_captures)
+
+    @property
+    def completed_captures(self) -> tuple[SampleLocalCapture, ...] | None:
+        return getattr(self, "_completed_captures", None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -735,7 +758,16 @@ def _execute_composition_after_runtime(
     if owners is None:
         owners = _validate_request_adapter(request, adapter)
     try:
-        result = _compose_application_result(request, adapter, owners=owners)
+        result = _compose_application_result(
+            request,
+            adapter,
+            owners=owners,
+            completed_captures=(
+                adapter.completed_captures
+                if type(adapter) is TargetWorkflowAdapter
+                else None
+            ),
+        )
         if type(result) is FinalizedTargetApplicationResult:
             return CompletedTargetWorkflowResult(runtime_receipt, result)
         return CompletedUntargetWorkflowResult(
@@ -829,6 +861,13 @@ def _compose_application_result(
                 ):
                     raise AlignmentWorkflowContractError(
                         "completed capture crossed its owner binding"
+                    )
+                if (
+                    item.owner_hypothesis is None
+                    and capture.selected_hypothesis is not None
+                ):
+                    raise AlignmentWorkflowContractError(
+                        "completed capture crossed its sealed selection"
                     )
             captures = completed_captures
         stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
