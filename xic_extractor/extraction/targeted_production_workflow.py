@@ -39,14 +39,12 @@ from xic_extractor.evidence_artifacts import (
 from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
-    RuntimeArtifactIoSample,
     RuntimeArtifactRegistrationReceipt,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerBatchReceipt,
     RuntimeWorkerPeakRssSample,
     mint_work_unit_settlement,
-    runtime_observation_event_count,
     runtime_started_worker_keys,
     start_runtime_attempt,
 )
@@ -62,6 +60,7 @@ from xic_extractor.extraction.targeted_service import (
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.peak_detection.capture import (
+    SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
     capture_peak_hypotheses,
     mint_captured_peak_observation,
@@ -417,6 +416,11 @@ def _bind_results_to_raw_paths(
 ) -> tuple[tuple[Path, FileResult], ...]:
     results_by_sample: dict[str, FileResult] = {}
     for file_result in file_results:
+        if file_result.error:
+            raise RuntimeError(
+                "Targeted RAW acquisition failed for "
+                f"{file_result.sample_name}: {file_result.error}"
+            )
         if file_result.sample_name in results_by_sample:
             raise RuntimeError(
                 "Targeted acquisition returned duplicate sample identities"
@@ -526,6 +530,7 @@ def _execute_target(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]
     ] = []
     capture_inputs: list[CaptureWorkflowArguments] = []
+    completed_captures: list[SampleLocalCapture] = []
     candidate_by_sample = {
         sample.identity.sample_identity_id: (result, candidate_id)
         for sample, result, candidate_id in candidates
@@ -566,6 +571,13 @@ def _execute_target(
                         peak_observation=observations[0],
                     )
                 )
+                if owner_hypothesis is not None:
+                    captured = bind_owner_backed_capture_hypothesis(
+                        captured,
+                        observation=observations[0],
+                        hypothesis=owner_hypothesis,
+                    )
+                completed_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
                         candidate_id=captured.candidate_id,
@@ -620,6 +632,9 @@ def _execute_target(
                     observations
                     and candidate_ms2_evidence is not None
                     and candidate_ms2_evidence.nl_match
+                    and observations[0].content.integration.rt_left_min
+                    <= product.scan_rt
+                    <= observations[0].content.integration.rt_right_min
                 ):
                     support = resolve_dda_cid_nl_peak_support_ref(
                         processing_owners=context.owners,
@@ -654,6 +669,7 @@ def _execute_target(
         assessments.append((sample, assessment))
         if captured is not None:
             if not observations:
+                completed_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
                         candidate_id=captured.candidate_id,
@@ -678,6 +694,7 @@ def _execute_target(
                 observation=observations[0],
                 hypothesis=matches[0],
             )
+            completed_captures.append(bound)
             capture_inputs.append(
                 CaptureWorkflowArguments(
                     candidate_id=bound.candidate_id,
@@ -722,10 +739,12 @@ def _execute_target(
             )
         )
     work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
+    # RAW acquisition has already completed; this attempt acknowledges its
+    # retained artifact handoff before scientific composition begins.
     runtime = start_runtime_attempt(
         attempt=context.owners.attempt,
         work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="targeted-production-acquisition:v1",
+        owner_completeness_attestation="targeted-retained-acquisition-handoff:v1",
     )
     terminal = execute_alignment_workflow(
         TargetWorkflowRequest(
@@ -763,8 +782,8 @@ def _execute_target(
                 trajectory_policy=trajectory_policy,
                 retain_observation_only_candidates=True,
             ),
-            repair=None,
             predecessor_cell_observations=(),
+            completed_capture_handoff=tuple(completed_captures),
         ),
     )
     if type(terminal) is not CompletedTargetWorkflowResult:
@@ -966,12 +985,11 @@ def _runtime_telemetry(
     coordinator: object,
 ) -> RuntimeTelemetrySamples:
     terminal = cast(Any, coordinator)
-    event_count = runtime_observation_event_count(terminal)
     worker_keys = runtime_started_worker_keys(terminal)
     reason = "not_collected_by_targeted_foreground_runner"
     return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=tuple(range(event_count)),
-        artifact_io=RuntimeArtifactIoSample(0, 0, 0, 0),
+        event_monotonic_offsets_ns=None,
+        artifact_io=None,
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
             availability=RuntimeMetricAvailability.UNSUPPORTED,
             reason=reason,
@@ -984,6 +1002,7 @@ def _runtime_telemetry(
             )
             for worker_key in worker_keys
         ),
+        unavailable_reason=reason,
     )
 
 

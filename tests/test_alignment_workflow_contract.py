@@ -22,7 +22,6 @@ from xic_extractor.alignment.workflow import (
     CompletedUntargetWorkflowResult,
     FailedWorkflowResult,
     ModeTrackWorkflowArguments,
-    ObservationRepairWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
     UntargetWorkflowAdapter,
@@ -45,10 +44,6 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "capture",
         "mode_track_bootstrap",
         "cross_sample_mt0",
-        "observation_repair",
-        "cross_sample_repair",
-        "mode_track_mt1",
-        "cross_sample_final",
         "scientific_final",
         "pre_cell_projection",
         "cell_decision",
@@ -74,13 +69,9 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "trajectory_policy",
         "retain_observation_only_candidates",
     )
-    assert tuple(
-        field.name for field in fields(ObservationRepairWorkflowArguments)
-    ) == ("coverage", "cell_observations", "execute")
     common_adapter_fields = (
         "capture_inputs",
         "mode_track",
-        "repair",
         "predecessor_cell_observations",
         "drift_lookup",
     )
@@ -136,7 +127,7 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
         workflow_owner.AlignmentWorkflowContractError,
         match="capture inputs must be an immutable typed tuple",
     ):
-        TargetWorkflowAdapter([], object(), object(), (), None)
+        TargetWorkflowAdapter([], object(), (), None)
 
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
@@ -177,7 +168,7 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
     )
     from tests.test_cross_sample_workflow_bridges import _target_scope_and_captures
 
-    fixture, spine, coverage, cells = _authorization_population(
+    fixture, spine, coverage, _cells = _authorization_population(
         tmp_path,
         hold_samples=(),
     )
@@ -246,11 +237,6 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
                 max_interpolation_gap=10,
                 max_extrapolation_gap=10,
             ),
-        ),
-        repair=ObservationRepairWorkflowArguments(
-            coverage=coverage,
-            cell_observations=cells,
-            execute=lambda _candidate: object(),
         ),
         predecessor_cell_observations=spine.cells,
         drift_lookup=None,

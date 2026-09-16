@@ -78,13 +78,13 @@ _RUNTIME_METRIC_SPECS = {
     ),
     "trace_point_count": _RuntimeMetricSpec(RuntimeMetricScope.ATTEMPT, "count", "sum"),
     "coordinator_work_seconds": _RuntimeMetricSpec(
-        RuntimeMetricScope.ATTEMPT, "seconds", "last"
+        RuntimeMetricScope.ATTEMPT, "seconds", "last", running_must_be_measured=False
     ),
     "attempt_wall_seconds": _RuntimeMetricSpec(
-        RuntimeMetricScope.ATTEMPT, "seconds", "last"
+        RuntimeMetricScope.ATTEMPT, "seconds", "last", running_must_be_measured=False
     ),
     "stage_or_unit_elapsed_seconds": _RuntimeMetricSpec(
-        RuntimeMetricScope.WORK_UNIT, "seconds", "sum"
+        RuntimeMetricScope.WORK_UNIT, "seconds", "sum", running_must_be_measured=False
     ),
     "worker_peak_rss_bytes": _RuntimeMetricSpec(
         RuntimeMetricScope.WORKER,
@@ -99,16 +99,16 @@ _RUNTIME_METRIC_SPECS = {
         running_must_be_measured=False,
     ),
     "artifact_read_count": _RuntimeMetricSpec(
-        RuntimeMetricScope.ATTEMPT, "count", "sum"
+        RuntimeMetricScope.ATTEMPT, "count", "sum", running_must_be_measured=False
     ),
     "artifact_read_bytes": _RuntimeMetricSpec(
-        RuntimeMetricScope.ATTEMPT, "bytes", "sum"
+        RuntimeMetricScope.ATTEMPT, "bytes", "sum", running_must_be_measured=False
     ),
     "artifact_write_count": _RuntimeMetricSpec(
-        RuntimeMetricScope.ATTEMPT, "count", "sum"
+        RuntimeMetricScope.ATTEMPT, "count", "sum", running_must_be_measured=False
     ),
     "artifact_write_bytes": _RuntimeMetricSpec(
-        RuntimeMetricScope.ATTEMPT, "bytes", "sum"
+        RuntimeMetricScope.ATTEMPT, "bytes", "sum", running_must_be_measured=False
     ),
 }
 
@@ -196,14 +196,15 @@ _ACQUISITION_COUNT_METRIC_NAMES = (
 class RuntimeObservationEvent:
     attempt: ProcessingAttemptIdentity
     sequence: int
-    monotonic_offset_ns: int
+    monotonic_offset_ns: int | None
     kind: str
     subject: RuntimeObservationSubject
     subject_key: str
 
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
-        _nonnegative_integer(self.monotonic_offset_ns, "monotonic_offset_ns")
+        if self.monotonic_offset_ns is not None:
+            _nonnegative_integer(self.monotonic_offset_ns, "monotonic_offset_ns")
         if isinstance(self.sequence, bool) or not isinstance(self.sequence, int):
             raise RuntimeObservabilityContractError("sequence must be an integer")
         if self.sequence <= 0:
@@ -310,10 +311,19 @@ class RuntimeObservabilityLedger:
                 "event sequences must be contiguous from one"
             )
         offsets = tuple(event.monotonic_offset_ns for event in self.events)
-        if offsets[0] != 0 or offsets != tuple(sorted(offsets)):
-            raise RuntimeObservabilityContractError(
-                "event offsets must start at zero and be monotonic"
-            )
+        if any(offset is None for offset in offsets):
+            if any(offset is not None for offset in offsets):
+                raise RuntimeObservabilityContractError(
+                    "event offsets must be all observed or all unavailable"
+                )
+        else:
+            observed_offsets = tuple(offset for offset in offsets if offset is not None)
+            if observed_offsets[0] != 0 or observed_offsets != tuple(
+                sorted(observed_offsets)
+            ):
+                raise RuntimeObservabilityContractError(
+                    "event offsets must start at zero and be monotonic"
+                )
         if self.events[0].kind != "attempt_queued":
             raise RuntimeObservabilityContractError(
                 "attempt_queued must be the first observation"
@@ -374,6 +384,11 @@ def canonical_runtime_observability_ledger_bytes(
         raise RuntimeObservabilityContractError(
             "ledger must be a RuntimeObservabilityLedger"
         )
+    has_unavailable_telemetry = ledger.events[0].monotonic_offset_ns is None or any(
+        metric.name.startswith("artifact_")
+        and metric.availability is not RuntimeMetricAvailability.MEASURED
+        for metric in ledger.metrics
+    )
     payload = {
         "events": [
             {
@@ -404,7 +419,11 @@ def canonical_runtime_observability_ledger_bytes(
         ],
         "processing_attempt_id": ledger.attempt.processing_attempt_id,
         "processing_request_id": ledger.attempt.processing_request_id,
-        "schema_version": "execution_runtime_observability_ledger_v1",
+        "schema_version": (
+            "execution_runtime_observability_ledger_v2"
+            if has_unavailable_telemetry
+            else "execution_runtime_observability_ledger_v1"
+        ),
         "work_unit_keys": list(ledger.work_unit_keys),
     }
     return json.dumps(
@@ -950,6 +969,24 @@ def _validate_elapsed_metrics(
     *,
     preflight_failed: bool,
 ) -> None:
+    if events[0].monotonic_offset_ns is None:
+        if preflight_failed:
+            raise RuntimeObservabilityContractError(
+                "preflight elapsed metrics require observed event offsets"
+            )
+        for name in (
+            "attempt_wall_seconds",
+            "coordinator_work_seconds",
+            "stage_or_unit_elapsed_seconds",
+        ):
+            if any(
+                metric.availability is not RuntimeMetricAvailability.UNSUPPORTED
+                for metric in by_name[name]
+            ):
+                raise RuntimeObservabilityContractError(
+                    f"unobserved event offsets require unavailable metric: {name}"
+                )
+        return
     event_offsets = _index_event_offsets(events)
 
     def offset(kind: str, subject_key: str = "attempt") -> int:
@@ -1011,6 +1048,10 @@ def _index_event_offsets(
 ) -> dict[tuple[str, str], tuple[int, ...]]:
     offsets: dict[tuple[str, str], list[int]] = {}
     for event in events:
+        if event.monotonic_offset_ns is None:
+            raise RuntimeObservabilityContractError(
+                "elapsed lookup requires observed event offsets"
+            )
         offsets.setdefault((event.kind, event.subject_key), []).append(
             event.monotonic_offset_ns
         )

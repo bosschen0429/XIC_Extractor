@@ -1313,7 +1313,6 @@ def _build_production_composition_inputs(
                         trajectory_policy=trajectory_policy,
                         retain_observation_only_candidates=True,
                     ),
-                    repair=None,
                     closed_cell_coverage=coverage,
                     predecessor_cell_observations=predecessor_cells,
                 ),

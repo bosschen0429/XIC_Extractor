@@ -290,6 +290,102 @@ def test_typed_workflow_failure_never_reaches_publication(
     assert calls == ["acquire", "workflow"]
 
 
+def test_failed_raw_acquisition_preserves_reason_and_never_publishes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "SampleA.raw").write_bytes(b"sample")
+    config = replace(_config(), data_dir=data_dir)
+    acquisition = RunOutput(
+        file_results=[
+            FileResult(sample_name="SampleA", results={}, error="file locked")
+        ],
+        diagnostics=[],
+    )
+
+    def acquire(*_args, **_kwargs):
+        calls.append("acquire")
+        return acquisition
+
+    def forbid_runtime(*_args, **_kwargs):
+        calls.append("runtime")
+        raise AssertionError("failed acquisition reached runtime success recording")
+
+    def forbid_publication(*_args, **_kwargs):
+        calls.append("publish")
+        raise AssertionError("failed acquisition reached publication")
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_production_workflow.start_runtime_attempt",
+        forbid_runtime,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        forbid_publication,
+    )
+
+    with pytest.raises(RuntimeError, match="SampleA.*file locked"):
+        TargetedApplicationService(acquire).execute_application(
+            build_targeted_application_request(config, [_target()])
+        )
+
+    assert calls == ["acquire"]
+
+
+def test_cancellation_after_partial_acquisition_skips_handoff_and_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    for name in ("SampleA", "SampleB"):
+        (data_dir / f"{name}.raw").write_bytes(name.encode("utf-8"))
+    config = replace(_config(), data_dir=data_dir)
+    acquisition = RunOutput(
+        file_results=[FileResult(sample_name="SampleA", results={})],
+        diagnostics=[],
+    )
+    cancelled = False
+
+    def acquire(*_args, **kwargs):
+        nonlocal cancelled
+        assert kwargs["publish_outputs"] is False
+        calls.append("acquire")
+        cancelled = True
+        return acquisition
+
+    def forbid_handoff(*_args, **_kwargs):
+        raise AssertionError("cancelled acquisition reached the retained handoff")
+
+    def forbid_publication(*_args, **_kwargs):
+        raise AssertionError("cancelled acquisition reached publication")
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_production_workflow."
+        "prepare_targeted_production_workflow",
+        forbid_handoff,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        forbid_publication,
+    )
+
+    execution = TargetedApplicationService(acquire).execute_application(
+        build_targeted_application_request(
+            config, [_target()], should_stop=lambda: cancelled
+        )
+    )
+
+    assert execution.active_output is acquisition
+    assert execution.finalized_results == ()
+    assert execution.published_paths == ()
+    assert calls == ["acquire"]
+
+
 def test_empty_acquisition_reports_no_input_before_finalization(tmp_path: Path) -> None:
     calls: list[str] = []
     data_dir = tmp_path / "data"

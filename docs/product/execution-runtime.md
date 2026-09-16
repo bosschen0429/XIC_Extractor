@@ -508,6 +508,22 @@ bytes retain that exact detail. A successful settlement accepts only an
 owner-minted `EvidenceArtifactRef` bound to the same processing request and
 attempt; an opaque string is no longer sufficient.
 
+The foreground Targeted entry is
+`TargetedApplicationService.execute_application`, shared by Python, CLI, and
+GUI. Its acquisition runner is called with `publish_outputs=False`; partial or
+failed file populations are rejected before the retained-acquisition handoff.
+Serial/process backends own foreground scheduling and cancellation, while
+`RawFileHandle` owns vendor-handle disposal. The per-Target Runtime manifest
+acknowledges only an already acquired artifact. Its success does not acknowledge
+foreground RAW execution, scientific composition, or publication.
+
+The shared workflow performs scientific composition after that Runtime receipt.
+The service publishes only a complete owner-finalized Target population;
+cancellation after acquisition or scientific completion skips publication.
+Foreground acquisition and the handoff receipt remain separate lifecycles, so
+this path does not provide a single full-run supervisor acknowledgement or
+claim bounded terminalization of an in-flight RAW call.
+
 The bounded Targeted process adapter in
 `xic_extractor.extraction.targeted_runtime_adapter` owns one canonical
 process-result identity payload over the closed work key and exact digest/size
@@ -516,9 +532,9 @@ of owner-supplied result bytes. It does not serialize or hash legacy
 work key and owner-payload identity to the underlying `EvidenceArtifactRef`, so
 an artifact minted for one work key cannot settle another. A pickleable
 worker-result envelope carries that producer-owned reference across a true
-spawned process, and
-the full-lifecycle Targeted service consumes reordered envelopes through the
-shared runtime aggregate and settles the existing runtime in manifest order.
+spawned process. `TargetedApplicationService.execute_runtime_lifecycle` consumes
+reordered envelopes through the shared runtime aggregate and settles the
+existing runtime in manifest order.
 There is no public settlement-only service or adapter bypass. This boundary is
 `wired_no_raw` and remains `diagnostic_only`; default legacy execution and all
 product outputs are unchanged.

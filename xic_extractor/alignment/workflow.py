@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from typing import TypeAlias, cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairCandidate,
-    ObservationRepairReceipt,
-    execute_observation_repair,
-)
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
@@ -26,23 +20,15 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
     CrossSamplePostMT0Context,
-    CrossSamplePostRepairModeTrackInput,
     apply_mode_track_refinement_run_for_workflow,
     close_cross_sample_without_observation_repair,
-    consume_mode_track_final_attempt,
-    consume_observation_repair_terminal,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.refinement import (
     bootstrap_mode_track_refinement_from_cid_nl_support,
     bootstrap_mode_track_refinement_from_ms1_hypotheses,
-    run_post_repair_mode_track_final_attempt,
-)
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillPeakFactObservation,
 )
 from xic_extractor.alignment.projection.target.post_cell import (
     project_target_post_cell,
@@ -132,10 +118,6 @@ class WorkflowStage(str, Enum):
     CAPTURE = "capture"
     MODE_TRACK_BOOTSTRAP = "mode_track_bootstrap"
     CROSS_SAMPLE_MT0 = "cross_sample_mt0"
-    OBSERVATION_REPAIR = "observation_repair"
-    CROSS_SAMPLE_REPAIR = "cross_sample_repair"
-    MODE_TRACK_MT1 = "mode_track_mt1"
-    CROSS_SAMPLE_FINAL = "cross_sample_final"
     SCIENTIFIC_FINAL = "scientific_final"
     PRE_CELL_PROJECTION = "pre_cell_projection"
     CELL_DECISION = "cell_decision"
@@ -240,25 +222,6 @@ class ModeTrackWorkflowArguments:
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationRepairWorkflowArguments:
-    coverage: OwnerBackfillEvaluationCoverageBatch
-    cell_observations: tuple[CellObservationRef, ...]
-    execute: Callable[[ObservationRepairCandidate], OwnerBackfillSampleResult]
-
-    def __post_init__(self) -> None:
-        if type(self.coverage) is not OwnerBackfillEvaluationCoverageBatch:
-            raise AlignmentWorkflowContractError("repair coverage must be exact")
-        if type(self.cell_observations) is not tuple or any(
-            type(item) is not CellObservationRef for item in self.cell_observations
-        ):
-            raise AlignmentWorkflowContractError(
-                "repair cells must be exact immutable references"
-            )
-        if not callable(self.execute):
-            raise AlignmentWorkflowContractError("repair execute must be callable")
-
-
-@dataclass(frozen=True, slots=True)
 class TargetWorkflowRequest:
     scope: TargetSearchScope
     processing_request: ProcessingRequestIdentity
@@ -328,7 +291,6 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowRequest
 class _WorkflowAdapterFields:
     capture_inputs: tuple[CaptureWorkflowArguments, ...]
     mode_track: ModeTrackWorkflowArguments
-    repair: ObservationRepairWorkflowArguments | None
     predecessor_cell_observations: tuple[CellObservationRef, ...]
     drift_lookup: DriftLookupProtocol | None = None
 
@@ -346,15 +308,6 @@ class _WorkflowAdapterFields:
                 "adapter requires exact ModeTrack arguments"
             )
         self.mode_track.__post_init__()
-        if (
-            self.repair is not None
-            and type(self.repair) is not ObservationRepairWorkflowArguments
-        ):
-            raise AlignmentWorkflowContractError(
-                "adapter requires exact ObservationRepair arguments"
-            )
-        if self.repair is not None:
-            self.repair.__post_init__()
         if type(self.predecessor_cell_observations) is not tuple or any(
             type(item) is not CellObservationRef
             for item in self.predecessor_cell_observations
@@ -364,9 +317,32 @@ class _WorkflowAdapterFields:
             )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TargetWorkflowAdapter(_WorkflowAdapterFields):
-    pass
+    __slots__ = ("_completed_captures",)
+
+    completed_capture_handoff: InitVar[tuple[SampleLocalCapture, ...] | None] = None
+
+    def __post_init__(
+        self,
+        completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None,
+    ) -> None:
+        super(TargetWorkflowAdapter, self).__post_init__()
+        completed_captures = getattr(
+            self,
+            "_completed_captures",
+            completed_capture_handoff,
+        )
+        if completed_captures is not None and type(completed_captures) is not tuple:
+            raise AlignmentWorkflowContractError(
+                "completed captures require an immutable owner population"
+            )
+        if not hasattr(self, "_completed_captures"):
+            object.__setattr__(self, "_completed_captures", completed_captures)
+
+    @property
+    def completed_captures(self) -> tuple[SampleLocalCapture, ...] | None:
+        return getattr(self, "_completed_captures", None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,9 +352,9 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
 
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
-        if self.repair is None and self.closed_cell_coverage is None:
+        if self.closed_cell_coverage is None:
             raise AlignmentWorkflowContractError(
-                "Untarget adapter requires repair arguments or closed cell coverage"
+                "Untarget adapter requires closed cell coverage"
             )
         if self.closed_cell_coverage is not None:
             coverage = self.closed_cell_coverage
@@ -386,9 +362,9 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
                 raise AlignmentWorkflowContractError(
                     "closed cell coverage must be exact"
                 )
-            if self.repair is not None or self.completed_cross_sample is None:
+            if self.completed_cross_sample is None:
                 raise AlignmentWorkflowContractError(
-                    "closed cell coverage requires completed CrossSample without repair"
+                    "closed cell coverage requires completed CrossSample"
                 )
             if coverage.terminals or any(
                 position.planning_state != "not_planned"
@@ -735,7 +711,16 @@ def _execute_composition_after_runtime(
     if owners is None:
         owners = _validate_request_adapter(request, adapter)
     try:
-        result = _compose_application_result(request, adapter, owners=owners)
+        result = _compose_application_result(
+            request,
+            adapter,
+            owners=owners,
+            completed_captures=(
+                adapter.completed_captures
+                if type(adapter) is TargetWorkflowAdapter
+                else None
+            ),
+        )
         if type(result) is FinalizedTargetApplicationResult:
             return CompletedTargetWorkflowResult(runtime_receipt, result)
         return CompletedUntargetWorkflowResult(
@@ -830,6 +815,13 @@ def _compose_application_result(
                     raise AlignmentWorkflowContractError(
                         "completed capture crossed its owner binding"
                     )
+                if (
+                    item.owner_hypothesis is None
+                    and capture.selected_hypothesis is not None
+                ):
+                    raise AlignmentWorkflowContractError(
+                        "completed capture crossed its sealed selection"
+                    )
             captures = completed_captures
         stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
         ms1_only_target = (
@@ -895,129 +887,46 @@ def _compose_application_result(
                 captures=captures,
                 run=run,
             )
-        if adapter.repair is None:
-            closed_coverage = (
-                adapter.closed_cell_coverage
-                if type(adapter) is UntargetWorkflowAdapter
-                else None
-            )
-            if type(request) is not TargetWorkflowRequest and closed_coverage is None:
-                raise AlignmentWorkflowContractError(
-                    "Untarget without ObservationRepair requires closed cell coverage"
-                )
-            if (
-                closed_coverage is not None
-                and closed_coverage.epoch.processing_owners is not owners
-            ):
-                raise AlignmentWorkflowContractError(
-                    "closed cell coverage crossed exact workflow processing owners"
-                )
-            final_receipt = close_cross_sample_without_observation_repair(context)
-            handoff = None
-            if closed_coverage is not None:
-                stage = WorkflowStage.SCIENTIFIC_FINAL
-                handoff = build_cross_sample_association_lineage_handoff(
-                    coverage=closed_coverage,
-                    final_receipt=final_receipt,
-                )
-            scientific = finalize_scientific_alignment(
-                scope=request.scope,
-                captures=captures,
-                final_cross_sample_receipt=final_receipt,
-                cell_observation_handoff=handoff,
-                predecessor_cell_observations=(
-                    adapter.predecessor_cell_observations
-                    if closed_coverage is not None
-                    else ()
-                ),
-            )
-            return _finish_variant(
-                request=request,
-                scientific=scientific,
-            )
-
-        repair = adapter.repair
-        captured_results: list[OwnerBackfillSampleResult] = []
-
-        def execute_repair(
-            candidate: ObservationRepairCandidate,
-        ) -> OwnerBackfillSampleResult:
-            if captured_results:
-                raise AlignmentWorkflowContractError(
-                    "repair callback may be invoked at most once"
-                )
-            result = repair.execute(candidate)
-            if type(result) is not OwnerBackfillSampleResult:
-                raise AlignmentWorkflowContractError(
-                    "repair callback must return an exact owner result"
-                )
-            captured_results.append(result)
-            return result
-
-        stage = WorkflowStage.OBSERVATION_REPAIR
-        terminal = execute_observation_repair(
-            processing_owners=owners,
-            coverage=repair.coverage,
-            cell_observations=repair.cell_observations,
-            execute=execute_repair,
+        closed_coverage = (
+            adapter.closed_cell_coverage
+            if type(adapter) is UntargetWorkflowAdapter
+            else None
         )
-        repair_result = captured_results[0] if captured_results else None
-        stage = WorkflowStage.CROSS_SAMPLE_REPAIR
-        post_repair = consume_observation_repair_terminal(
-            context=context,
-            terminal=terminal,
-            repair_result=repair_result,
-            alignment_config=adapter.mode_track.alignment_config,
-            drift_lookup=adapter.drift_lookup,
-        )
-        if type(post_repair) is CrossSamplePostRepairModeTrackInput:
-            receipt = terminal.receipt
-            if type(receipt) is not ObservationRepairReceipt:
-                raise AlignmentWorkflowContractError(
-                    "changed repair handoff lost its exact receipt"
-                )
-            stage = WorkflowStage.MODE_TRACK_MT1
-            final_attempt = run_post_repair_mode_track_final_attempt(
-                source=run.fit_once_source,
-                repair_receipt=receipt,
-                post_repair=post_repair,
-            )
-            stage = WorkflowStage.CROSS_SAMPLE_FINAL
-            final_receipt = consume_mode_track_final_attempt(
-                context=context,
-                post_repair=post_repair,
-                terminal=terminal,
-                final_attempt=final_attempt,
-            )
-        elif type(post_repair) is CrossSampleFinalReceipt:
-            final_receipt = post_repair
-        else:
+        if type(request) is not TargetWorkflowRequest and closed_coverage is None:
             raise AlignmentWorkflowContractError(
-                "CrossSample repair consumer returned an unknown variant"
+                "Untarget requires closed cell coverage"
             )
-        repair_receipts = () if terminal.receipt is None else (terminal.receipt,)
-        repaired_observations = _repaired_observations(
-            terminal.receipt,
-            repair_result,
-        )
-        stage = WorkflowStage.SCIENTIFIC_FINAL
-        handoff = build_cross_sample_association_lineage_handoff(
-            coverage=adapter.repair.coverage,
-            final_receipt=final_receipt,
-        )
+        if (
+            closed_coverage is not None
+            and closed_coverage.epoch.processing_owners is not owners
+        ):
+            raise AlignmentWorkflowContractError(
+                "closed cell coverage crossed exact workflow processing owners"
+            )
+        final_receipt = close_cross_sample_without_observation_repair(context)
+        handoff = None
+        if closed_coverage is not None:
+            stage = WorkflowStage.SCIENTIFIC_FINAL
+            handoff = build_cross_sample_association_lineage_handoff(
+                coverage=closed_coverage,
+                final_receipt=final_receipt,
+            )
         scientific = finalize_scientific_alignment(
             scope=request.scope,
             captures=captures,
             final_cross_sample_receipt=final_receipt,
             cell_observation_handoff=handoff,
-            predecessor_cell_observations=adapter.predecessor_cell_observations,
-            repair_receipts=repair_receipts,
-            repaired_observations=repaired_observations,
+            predecessor_cell_observations=(
+                adapter.predecessor_cell_observations
+                if closed_coverage is not None
+                else ()
+            ),
         )
         return _finish_variant(
             request=request,
             scientific=scientific,
         )
+
     except _WorkflowStageFailure:
         raise
     except Exception as exc:
@@ -1311,9 +1220,7 @@ def _validate_request_adapter(
         )
     if isinstance(request, (TargetWorkflowRequest, UntargetWorkflowRequest)):
         _validate_runtime_attempt_binding(request.runtime, request.processing_attempt)
-    if adapter.repair is not None:
-        owners = adapter.repair.coverage.epoch.processing_owners
-    elif (
+    if (
         type(adapter) is UntargetWorkflowAdapter
         and adapter.closed_cell_coverage is not None
     ):
@@ -1336,7 +1243,7 @@ def _validate_request_adapter(
         or owners.attempt is not request.processing_attempt
     ):
         raise AlignmentWorkflowContractError(
-            "workflow repair population crossed exact processing owners"
+            "workflow population crossed exact processing owners"
         )
     if (
         type(adapter) is UntargetWorkflowAdapter
@@ -1417,28 +1324,6 @@ def _validate_runtime_attempt_binding(
         raise AlignmentWorkflowContractError(
             "workflow runtime crossed the exact processing attempt"
         )
-
-
-def _repaired_observations(
-    receipt: ObservationRepairReceipt | None,
-    result: OwnerBackfillSampleResult | None,
-) -> tuple[OwnerBackfillPeakFactObservation, ...]:
-    if receipt is None or receipt.evidence is None:
-        return ()
-    if result is None:
-        raise AlignmentWorkflowContractError(
-            "repaired receipt lost its exact callback result"
-        )
-    matches = tuple(
-        item
-        for item in result.peak_fact_observations
-        if item.work_unit_key == receipt.evidence.work_unit_key
-    )
-    if len(matches) != 1:
-        raise AlignmentWorkflowContractError(
-            "repaired receipt does not bind one exact live observation"
-        )
-    return matches
 
 
 def _finish_variant(
@@ -1522,7 +1407,6 @@ __all__ = (
     "CompletedUntargetWorkflowResult",
     "FailedWorkflowResult",
     "ModeTrackWorkflowArguments",
-    "ObservationRepairWorkflowArguments",
     "TargetWorkflowAdapter",
     "TargetWorkflowRequest",
     "UntargetWorkflowAdapter",

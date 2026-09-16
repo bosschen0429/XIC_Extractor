@@ -51,6 +51,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.diagnostics.process_memory import (
+    ProcessMemoryPeak,
     ProcessMemorySample,
     ProcessTreeMemorySampler,
 )
@@ -61,6 +62,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
     execute_bounded_untargeted_cid_nl,
 )
@@ -88,14 +90,19 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 
 def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xic_extractor.alignment import workflow
+    from xic_extractor.alignment import cross_sample_reconciliation
+    from xic_extractor.alignment.backfill import observation_repair
 
     def unexpected_repair(*args, **kwargs):
         raise AssertionError("closed production coverage must not authorize repair")
 
-    monkeypatch.setattr(workflow, "execute_observation_repair", unexpected_repair)
     monkeypatch.setattr(
-        workflow, "consume_observation_repair_terminal", unexpected_repair
+        observation_repair, "execute_observation_repair", unexpected_repair
+    )
+    monkeypatch.setattr(
+        cross_sample_reconciliation,
+        "consume_observation_repair_terminal",
+        unexpected_repair,
     )
 
 
@@ -669,6 +676,55 @@ def _assert_composite_no_input_exclusion_coverage(
                 for assessment in first.composite_assessments
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("peak", "expected_availability", "expected_value", "expected_reason"),
+    (
+        (
+            ProcessMemoryPeak(
+                rss_bytes=123456,
+                private_bytes=654321,
+                availability="measured",
+            ),
+            RuntimeMetricAvailability.MEASURED,
+            123456,
+            None,
+        ),
+        (
+            ProcessMemoryPeak(
+                availability="unavailable",
+                reason="process memory sampler unavailable",
+            ),
+            RuntimeMetricAvailability.UNSUPPORTED,
+            None,
+            "process memory sampler unavailable",
+        ),
+    ),
+)
+def test_alignment_runtime_telemetry_preserves_process_memory_peak(
+    monkeypatch: pytest.MonkeyPatch,
+    peak: ProcessMemoryPeak,
+    expected_availability: RuntimeMetricAvailability,
+    expected_value: int | None,
+    expected_reason: str | None,
+) -> None:
+    monkeypatch.setattr(
+        alignment_adapter,
+        "runtime_started_worker_keys",
+        lambda _coordinator: (),
+    )
+
+    samples = alignment_adapter._coarse_runtime_telemetry(object(), peak)
+
+    assert samples.event_monotonic_offsets_ns is None
+    assert samples.artifact_io is None
+    assert samples.unavailable_reason == (
+        "not_collected_by_alignment_foreground_runner"
+    )
+    assert samples.process_tree_peak_rss.availability is expected_availability
+    assert samples.process_tree_peak_rss.value == expected_value
+    assert samples.process_tree_peak_rss.reason == expected_reason
 
 
 def test_writer_projection_rejects_duplicate_physical_presentation_fact() -> None:
@@ -1597,6 +1653,35 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     ).read_optional()
     assert marker is not None and marker.observability_ledger_bytes is not None
     persisted_ledger = json.loads(marker.observability_ledger_bytes)
+    assert persisted_ledger["schema_version"] == (
+        "execution_runtime_observability_ledger_v2"
+    )
+    assert all(
+        event["monotonic_offset_ns"] is None for event in persisted_ledger["events"]
+    )
+    unavailable_metric_names = {
+        "artifact_read_count",
+        "artifact_read_bytes",
+        "artifact_write_count",
+        "artifact_write_bytes",
+        "coordinator_work_seconds",
+        "attempt_wall_seconds",
+        "stage_or_unit_elapsed_seconds",
+    }
+    unavailable_metrics = tuple(
+        metric
+        for metric in persisted_ledger["metrics"]
+        if metric["name"] in unavailable_metric_names
+    )
+    assert {metric["name"] for metric in unavailable_metrics} == (
+        unavailable_metric_names
+    )
+    assert all(
+        metric["availability"] == "unsupported"
+        and metric["value"] is None
+        and metric["reason"] == "not_collected_by_alignment_foreground_runner"
+        for metric in unavailable_metrics
+    )
     rss = [
         metric
         for metric in persisted_ledger["metrics"]

@@ -33,11 +33,9 @@ from xic_extractor.execution_engine.streamed_result_store import StreamedResultS
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
-    RuntimeArtifactIoSample,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerPeakRssSample,
-    runtime_observation_event_count,
     runtime_started_worker_keys,
 )
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
@@ -357,17 +355,12 @@ def _restore_physical_candidate(
 def _coarse_runtime_telemetry(
     coordinator: Any, peak: ProcessMemoryPeak
 ) -> RuntimeTelemetrySamples:
-    event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
     measured = peak.availability == "measured" and peak.rss_bytes is not None
+    unavailable_reason = "not_collected_by_alignment_foreground_runner"
     return RuntimeTelemetrySamples(
-        event_monotonic_offsets_ns=(0,) * event_count,
-        artifact_io=RuntimeArtifactIoSample(
-            read_count=0,
-            read_bytes=0,
-            write_count=0,
-            write_bytes=0,
-        ),
+        event_monotonic_offsets_ns=None,
+        artifact_io=None,
         process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
             availability=(
                 RuntimeMetricAvailability.MEASURED
@@ -387,6 +380,7 @@ def _coarse_runtime_telemetry(
             )
             for worker_key in worker_keys
         ),
+        unavailable_reason=unavailable_reason,
     )
 
 

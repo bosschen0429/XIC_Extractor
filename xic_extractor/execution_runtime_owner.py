@@ -997,22 +997,34 @@ class RuntimeProcessTreePeakRssSample:
 class RuntimeTelemetrySamples:
     """Narrow external samples; lifecycle topology and counts are not caller data."""
 
-    event_monotonic_offsets_ns: tuple[int, ...]
-    artifact_io: RuntimeArtifactIoSample
+    event_monotonic_offsets_ns: tuple[int, ...] | None
+    artifact_io: RuntimeArtifactIoSample | None
     process_tree_peak_rss: RuntimeProcessTreePeakRssSample
     worker_peak_rss: tuple[RuntimeWorkerPeakRssSample, ...] = ()
+    unavailable_reason: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.event_monotonic_offsets_ns, tuple) or any(
-            isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
-            for offset in self.event_monotonic_offsets_ns
+        if self.event_monotonic_offsets_ns is not None and (
+            not isinstance(self.event_monotonic_offsets_ns, tuple)
+            or any(
+                isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
+                for offset in self.event_monotonic_offsets_ns
+            )
         ):
             raise RuntimeFinalizationContractError(
                 "event_monotonic_offsets_ns must contain non-negative integers"
             )
-        if not isinstance(self.artifact_io, RuntimeArtifactIoSample):
+        if self.artifact_io is not None and not isinstance(
+            self.artifact_io, RuntimeArtifactIoSample
+        ):
             raise RuntimeFinalizationContractError(
-                "artifact_io must be a RuntimeArtifactIoSample"
+                "artifact_io must be a RuntimeArtifactIoSample when observed"
+            )
+        if self.event_monotonic_offsets_ns is None or self.artifact_io is None:
+            _required_text(self.unavailable_reason, field="unavailable_reason")
+        elif self.unavailable_reason is not None:
+            raise RuntimeFinalizationContractError(
+                "measured telemetry cannot carry an unavailable reason"
             )
         if not isinstance(
             self.process_tree_peak_rss,
@@ -1550,11 +1562,13 @@ def _derive_runtime_observability_ledger(
     attempt = state.runtime.manifest.attempt
     shapes = _runtime_observation_shapes(coordinator)
     offsets = telemetry.event_monotonic_offsets_ns
-    if len(offsets) != len(shapes):
+    if offsets is not None and len(offsets) != len(shapes):
         raise RuntimeFinalizationContractError(
             "telemetry offsets must match the owner-derived event count"
         )
-    if not offsets or offsets[0] != 0 or offsets != tuple(sorted(offsets)):
+    if offsets is not None and (
+        not offsets or offsets[0] != 0 or offsets != tuple(sorted(offsets))
+    ):
         raise RuntimeFinalizationContractError(
             "telemetry offsets must start at zero and be monotonic"
         )
@@ -1562,15 +1576,12 @@ def _derive_runtime_observability_ledger(
         RuntimeObservationEvent(
             attempt=attempt,
             sequence=index,
-            monotonic_offset_ns=offset,
+            monotonic_offset_ns=(None if offsets is None else offsets[index - 1]),
             kind=kind,
             subject=subject,
             subject_key=subject_key,
         )
-        for index, ((kind, subject, subject_key), offset) in enumerate(
-            zip(shapes, offsets, strict=True),
-            start=1,
-        )
+        for index, (kind, subject, subject_key) in enumerate(shapes, start=1)
     )
     worker_keys = _started_worker_keys(state)
     supplied_worker_keys = tuple(
@@ -1600,11 +1611,21 @@ def _derive_runtime_observability_ledger(
             for record in state.resources
         ),
         **acquisition_counts,
-        "artifact_read_count": telemetry.artifact_io.read_count,
-        "artifact_read_bytes": telemetry.artifact_io.read_bytes,
-        "artifact_write_count": telemetry.artifact_io.write_count,
-        "artifact_write_bytes": telemetry.artifact_io.write_bytes,
     }
+    artifact_io = telemetry.artifact_io
+    if artifact_io is not None:
+        count_values.update(
+            artifact_read_count=artifact_io.read_count,
+            artifact_read_bytes=artifact_io.read_bytes,
+            artifact_write_count=artifact_io.write_count,
+            artifact_write_bytes=artifact_io.write_bytes,
+        )
+    if state.runtime.manifest_preflight_failed and (
+        offsets is None or artifact_io is None
+    ):
+        raise RuntimeFinalizationContractError(
+            "manifest-preflight failure requires observed zero-work telemetry"
+        )
     if state.runtime.manifest_preflight_failed and any(count_values.values()):
         raise RuntimeFinalizationContractError(
             "manifest-preflight failure cannot report runtime work or I/O"
@@ -1616,10 +1637,6 @@ def _derive_runtime_observability_ledger(
         "xic_batch_count",
         "adapter_chromatogram_call_count",
         "trace_point_count",
-        "artifact_read_count",
-        "artifact_read_bytes",
-        "artifact_write_count",
-        "artifact_write_bytes",
     ):
         metrics.append(
             _measured_metric(
@@ -1631,6 +1648,36 @@ def _derive_runtime_observability_ledger(
                 value=count_values[name],
             )
         )
+    for name in (
+        "artifact_read_count",
+        "artifact_read_bytes",
+        "artifact_write_count",
+        "artifact_write_bytes",
+    ):
+        if artifact_io is not None:
+            metrics.append(
+                _measured_metric(
+                    name=name,
+                    scope=RuntimeMetricScope.ATTEMPT,
+                    scope_key=attempt.processing_attempt_id,
+                    unit="bytes" if name.endswith("_bytes") else "count",
+                    aggregation="sum",
+                    value=count_values[name],
+                )
+            )
+        else:
+            metrics.append(
+                _unsupported_metric(
+                    name=name,
+                    scope=RuntimeMetricScope.ATTEMPT,
+                    scope_key=attempt.processing_attempt_id,
+                    unit="bytes" if name.endswith("_bytes") else "count",
+                    aggregation="sum",
+                    reason=_required_text(
+                        telemetry.unavailable_reason, field="unavailable_reason"
+                    ),
+                )
+            )
     if state.runtime.manifest_preflight_failed:
         metrics.extend(
             _preflight_terminal_metrics(
@@ -1644,50 +1691,77 @@ def _derive_runtime_observability_ledger(
             events=events,
             metrics=tuple(metrics),
         )
-    event_offsets = _index_event_offsets(events)
-    metrics.extend(
-        (
-            _measured_metric(
-                name="coordinator_work_seconds",
-                scope=RuntimeMetricScope.ATTEMPT,
-                scope_key=attempt.processing_attempt_id,
-                unit="seconds",
-                aggregation="last",
-                value=(
-                    _event_offset(event_offsets, "terminal_proposal")
-                    - _event_offset(event_offsets, "attempt_started")
-                )
-                / 1_000_000_000,
-            ),
-            _measured_metric(
-                name="attempt_wall_seconds",
-                scope=RuntimeMetricScope.ATTEMPT,
-                scope_key=attempt.processing_attempt_id,
-                unit="seconds",
-                aggregation="last",
-                value=(
-                    _event_offset(event_offsets, "terminal_outcome")
-                    - _event_offset(event_offsets, "attempt_queued")
-                )
-                / 1_000_000_000,
-            ),
+    if offsets is None:
+        unavailable_reason = _required_text(
+            telemetry.unavailable_reason, field="unavailable_reason"
         )
-    )
-    metrics.extend(
-        _measured_metric(
-            name="stage_or_unit_elapsed_seconds",
-            scope=RuntimeMetricScope.WORK_UNIT,
-            scope_key=work_unit_key,
-            unit="seconds",
-            aggregation="sum",
-            value=(
-                _event_offset(event_offsets, "work_unit_settled", work_unit_key)
-                - _event_offset(event_offsets, "work_unit_started", work_unit_key)
+        metrics.extend(
+            _unsupported_metric(
+                name=name,
+                scope=RuntimeMetricScope.ATTEMPT,
+                scope_key=attempt.processing_attempt_id,
+                unit="seconds",
+                aggregation="last",
+                reason=unavailable_reason,
             )
-            / 1_000_000_000,
+            for name in ("coordinator_work_seconds", "attempt_wall_seconds")
         )
-        for work_unit_key in state.runtime.manifest.work_unit_keys
-    )
+        metrics.extend(
+            _unsupported_metric(
+                name="stage_or_unit_elapsed_seconds",
+                scope=RuntimeMetricScope.WORK_UNIT,
+                scope_key=work_unit_key,
+                unit="seconds",
+                aggregation="sum",
+                reason=unavailable_reason,
+            )
+            for work_unit_key in state.runtime.manifest.work_unit_keys
+        )
+    else:
+        event_offsets = _index_event_offsets(events)
+        metrics.extend(
+            (
+                _measured_metric(
+                    name="coordinator_work_seconds",
+                    scope=RuntimeMetricScope.ATTEMPT,
+                    scope_key=attempt.processing_attempt_id,
+                    unit="seconds",
+                    aggregation="last",
+                    value=(
+                        _event_offset(event_offsets, "terminal_proposal")
+                        - _event_offset(event_offsets, "attempt_started")
+                    )
+                    / 1_000_000_000,
+                ),
+                _measured_metric(
+                    name="attempt_wall_seconds",
+                    scope=RuntimeMetricScope.ATTEMPT,
+                    scope_key=attempt.processing_attempt_id,
+                    unit="seconds",
+                    aggregation="last",
+                    value=(
+                        _event_offset(event_offsets, "terminal_outcome")
+                        - _event_offset(event_offsets, "attempt_queued")
+                    )
+                    / 1_000_000_000,
+                ),
+            )
+        )
+        metrics.extend(
+            _measured_metric(
+                name="stage_or_unit_elapsed_seconds",
+                scope=RuntimeMetricScope.WORK_UNIT,
+                scope_key=work_unit_key,
+                unit="seconds",
+                aggregation="sum",
+                value=(
+                    _event_offset(event_offsets, "work_unit_settled", work_unit_key)
+                    - _event_offset(event_offsets, "work_unit_started", work_unit_key)
+                )
+                / 1_000_000_000,
+            )
+            for work_unit_key in state.runtime.manifest.work_unit_keys
+        )
     if worker_keys:
         metrics.extend(
             _rss_metric(

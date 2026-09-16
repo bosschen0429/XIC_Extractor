@@ -1,14 +1,19 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from xic_extractor.alignment import workflow as alignment_workflow
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
+from xic_extractor.execution_runtime_observability import (
+    RuntimeMetricAvailability,
+    canonical_runtime_observability_ledger_bytes,
+)
 from xic_extractor.extraction import pipeline as extraction_pipeline
 from xic_extractor.extraction import targeted_production_workflow as production_workflow
 from xic_extractor.extraction.targeted_inputs import (
@@ -113,6 +118,57 @@ def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
     assert len(finalized) == 1
 
 
+def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    original = output.file_results[0].results[target.label]
+    selected = original.selected_hypothesis
+    evidence = original.candidate_ms2_evidence
+    assert selected is not None and evidence is not None
+    product = evidence.best_product_evidence
+    assert product is not None
+    outside_rt = selected.integration.rt_right_min + 0.01
+    assert outside_rt < target.rt_max
+    output.file_results[0].results[target.label] = replace(
+        original,
+        candidate_ms2_evidence=replace(
+            evidence,
+            best_scan_rt=outside_rt,
+            best_product_evidence=replace(product, scan_rt=outside_rt),
+        ),
+    )
+    assessments = []
+    original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+
+    def record_assessment(**kwargs):
+        assessment = original_assessment(**kwargs)
+        assessments.append(assessment)
+        return assessment
+
+    monkeypatch.setattr(
+        production_workflow,
+        "mint_cid_nl_method_assessment_ref",
+        record_assessment,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    # A local MS1 value is allowed; an outside event must not become direct support.
+    assert len(assessments) == 1
+    assert assessments[0].individual_support_refs == ()
+    assert assessments[0].content.method_result != "SUPPORT"
+
+
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
     tmp_path: Path,
 ) -> None:
@@ -205,11 +261,6 @@ def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
 def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None:
     monkeypatch.setattr(
         production_workflow,
-        "runtime_observation_event_count",
-        lambda _coordinator: 3,
-    )
-    monkeypatch.setattr(
-        production_workflow,
         "runtime_started_worker_keys",
         lambda _coordinator: ("worker-a", "worker-b"),
     )
@@ -217,7 +268,9 @@ def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None
     samples = production_workflow._runtime_telemetry(object())
     reason = "not_collected_by_targeted_foreground_runner"
 
-    assert samples.event_monotonic_offsets_ns == (0, 1, 2)
+    assert samples.event_monotonic_offsets_ns is None
+    assert samples.artifact_io is None
+    assert samples.unavailable_reason == reason
     assert (
         samples.process_tree_peak_rss.availability
         is RuntimeMetricAvailability.UNSUPPORTED
@@ -234,6 +287,60 @@ def test_runtime_telemetry_marks_unobserved_rss_unsupported(monkeypatch) -> None
         and sample.reason == reason
         for sample in samples.worker_peak_rss
     )
+
+
+def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    original_execute = production_workflow.execute_alignment_workflow
+    terminals = []
+
+    def capture_terminal(request, adapter):
+        terminal = original_execute(request, adapter)
+        terminals.append(terminal)
+        return terminal
+
+    monkeypatch.setattr(
+        production_workflow,
+        "execute_alignment_workflow",
+        capture_terminal,
+    )
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    assert len(terminals) == 1
+    receipt = terminals[0].runtime_receipt
+    assert receipt.supervisor.terminal_outcome.value == "succeeded"
+    assert all(
+        event.monotonic_offset_ns is None
+        for event in receipt.observability_ledger.events
+    )
+    canonical = json.loads(
+        canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
+    )
+    assert canonical["schema_version"] == "execution_runtime_observability_ledger_v2"
+    metrics = {metric.name: metric for metric in receipt.observability_ledger.metrics}
+    for name in (
+        "artifact_read_count",
+        "artifact_read_bytes",
+        "artifact_write_count",
+        "artifact_write_bytes",
+        "coordinator_work_seconds",
+        "attempt_wall_seconds",
+        "stage_or_unit_elapsed_seconds",
+    ):
+        assert metrics[name].availability is RuntimeMetricAvailability.UNSUPPORTED
+        assert metrics[name].value is None
+        assert metrics[name].reason == "not_collected_by_targeted_foreground_runner"
 
 
 def test_diagnostic_nl_evidence_finalizes_without_strict_support(
@@ -378,6 +485,11 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
         "capture_peak_hypotheses",
         record_capture,
     )
+    monkeypatch.setattr(
+        alignment_workflow,
+        "capture_peak_hypotheses",
+        record_capture,
+    )
 
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
@@ -389,6 +501,7 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     )
 
     assert finalized[0].completed_projection.decisions[0].value == selected_area
+    assert len(captured) == 1
     assert captured[0].selected_hypothesis is not None
     captured_integration = captured[0].selected_hypothesis.integration
     assert captured_integration.rt_apex_min == selected.integration.rt_apex_min
@@ -399,12 +512,14 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     assert captured_integration.height_smoothed == expected_capture_height
 
 
+@pytest.mark.parametrize("sample_names", [("SampleA",), ("SampleA", "SampleB")])
 def test_missing_selected_peak_finalizes_as_searched_no_observation(
     tmp_path: Path,
+    sample_names: tuple[str, ...],
 ) -> None:
     config, target, output = production_case(
         tmp_path,
-        sample_names=("SampleA", "SampleB"),
+        sample_names=sample_names,
     )
     original = output.file_results[0].results[target.label]
     rt = np.linspace(1.0, 2.0, 101)
@@ -434,7 +549,7 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
         build_targeted_application_request(
             config,
             [target],
-            injection_order={"SampleA": 1, "SampleB": 2},
+            injection_order={name: index for index, name in enumerate(sample_names, 1)},
         ),
         output,
     )
@@ -442,8 +557,8 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
     projection = finalized[0].completed_projection
     assert tuple(
         subject.terminal_subject.variant for subject in projection.cell_subjects
-    ) == ("searched_no_observation", "observed")
-    assert projection.counted_detection_count == 1
+    ) == ("searched_no_observation",) + ("observed",) * (len(sample_names) - 1)
+    assert projection.counted_detection_count == len(sample_names) - 1
     assert projection.no_write_count == 1
 
 
