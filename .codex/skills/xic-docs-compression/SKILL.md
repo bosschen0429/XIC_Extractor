@@ -1,14 +1,15 @@
 ---
 name: xic-docs-compression
-description: Digest XIC documentation by combining audit facts with owner absorption, lifecycle routing, referrer-safe retirement, and optional Obsidian source-copy handling.
+description: Consolidate overlapping XIC documentation by checking current consumers, preserving useful claims in their owners, and repairing references before removal.
 ---
 
 # XIC Docs Compression
 
 Produce one compression decision per document family. Read
 `docs/project-layout.md` and `docs/agent/obsidian-handoff-contract.md`; they own
-placement, public/private boundaries, and retirement
-policy. This skill orders the work without redefining those contracts.
+placement, public/private boundaries, and maintenance policy. Use this workflow
+for document-family consolidation; ordinary edits update the existing owner
+directly. This skill orders the work without redefining those contracts.
 
 ## 1. Audit The Surface
 
@@ -53,26 +54,26 @@ the owner, retarget ordinary referrers, and retain live checker/schema/status
 anchors or support only while their current consumer requires them. Route
 unfinished construction to the owning Issue, delivered narrative to the PR
 body, and current next actions to an ignored handoff. Git history preserves
-disposable chronology; optional private source-copy follows the owner contract.
+previous versions; create a separate private copy only when requested.
 
 Read `references/bound-doc-compression.md` for XIC-specific heuristics when the
 family covers bound validation, Backfill/quant, productization, lockbox,
-docs-workflow history, or lifecycle closeout. For completed transient docs, use
-the canonical retirement-evidence and `retire_docs.py` path; unclear public
-contracts or unresolved exact referrers require the cheapest decisive repo
+docs-workflow history, or lifecycle closeout. Merges and removals use the
+owner's normal task diff and referrer checks; no separate retirement packet or
+archive is required. Unclear public contracts or unresolved exact referrers
+require the cheapest decisive repo
 evidence. Preserve the affected file while resolving ownership, absorption, or
 replacement; proceed within existing authorization when those facts are closed.
-Ask only when unavailable intent or operator-only authority changes the result,
-including retirement approval required by the owner that is not already granted.
+Ask only when unavailable intent or operator-only authority changes the result.
 
-Completion criterion: route, lifecycle, owner action, Obsidian action, referrer
-action, and retirement action agree; no public claim is left ownerless and no
+Completion criterion: owner updates, referrer repairs, and removals agree;
+no public claim is left ownerless and no
 machine dependency is silently removed.
 
 ## 4. Verify The Decision
 
 After document or referrer changes, run the docs-management or targeted referrer
-audit and apply the owner's placement/retirement checks when relevant. Reuse an
+audit and apply the owner's placement and consumer checks when relevant. Reuse an
 unchanged accepted audit for a read-only decision and check only its required
 bindings. For skill or agent-guidance changes, follow
 `docs/agent/codex-operating-system.md#change-protocol`; it selects format,
@@ -87,7 +88,7 @@ Durable payload / canonical repo owner:
 Absorption result:
 Memory consultation / repo-visible revalidation:
 Machine-anchor or support role:
-Obsidian / referrer / retirement actions:
+Owner updates / referrer repairs / removals:
 Remaining risk or human decision:
 Verification performed:
 Next action:

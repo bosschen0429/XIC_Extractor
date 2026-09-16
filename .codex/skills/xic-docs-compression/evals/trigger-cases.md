@@ -28,7 +28,7 @@
 - global `pr-closeout`: durable PR/branch narrative.
 - global `code-review`: explicit fixed-point PR diff review.
 - `agent-memory`: consult configured private context when it can change the
-  classification; source-copy follows the canonical retirement contract.
+  classification; a separate private copy is created only when requested.
 - `skill-creator`: refine this skill's instructions and trigger wording.
 
 ## Owner And Authorization Walkthroughs
@@ -44,6 +44,10 @@ behavior. Apply the current owner contract to each proposed output:
   to the owning Issue and disposable next actions to an ignored handoff.
 - Two candidate owners can be resolved from current repo consumers: inspect the
   decisive evidence and proceed under existing authorization.
-- Safe classification is complete but required operator-only retirement approval
-  is absent: produce the reviewable owner/referrer result and ask for that
-  authority before the destructive step.
+- A maintained method doc changes with the implementation: update it in place;
+  Git preserves the prior version, with no archive or retirement packet.
+- A user-authorized consolidation has absorbed useful claims and repaired its
+  referrers: remove the redundant docs through the normal diff, without asking
+  for another archival approval.
+- The user explicitly requests a private historical copy: preserve and verify
+  the requested copy, without making it a general repo-maintenance gate.

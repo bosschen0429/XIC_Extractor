@@ -2,8 +2,7 @@
 
 Use this reference after the main skill has produced mechanical audit facts.
 `docs/project-layout.md` and `docs/agent/obsidian-handoff-contract.md` remain the
-owners of placement, public/private boundaries, and
-retirement mechanics.
+owners of placement, public/private boundaries, and document maintenance.
 
 ## What A Bound Referrer Proves
 
@@ -13,7 +12,7 @@ whether the referrer needs:
 - a live checker/schema/status artifact;
 - the durable claim in a canonical owner;
 - exact-path compatibility explicitly required by its current machine contract;
-- provenance lookup that remains valid through Git or optional private history.
+- provenance lookup that remains valid through Git.
 
 Retarget ordinary referrers to the compact owner. Preserve a live machine anchor
 under its existing contract until its consumer has a validated replacement.
@@ -44,10 +43,10 @@ For each topic family, ask:
 4. Does a referrer consume the file contents, its path, or only its conclusion?
 5. What would become unsafe or unknowable if the long document disappeared?
 6. Can one owner update and referrer repair replace the family, with history
-   preserved by Git or an optional private source copy?
+   preserved by Git?
 
-If these questions reveal no unique current payload, treat the family as
-history pending the canonical absorption and retirement gates.
+If these questions reveal no unique current payload, remove the obsolete
+documents through the normal task diff after owner and referrer checks.
 
 ## Validation And Productization Families
 
@@ -61,7 +60,7 @@ Compare:
 - repeated counts, pass/fail prose, and diagnostic disclaimers.
 
 Keep current checker-readable anchors and one compact owner verdict. Preserve
-historical interpretation in Git/PRs or an optional private source copy.
+historical interpretation in Git/PRs.
 
 ## Backfill And Quant Heuristic
 
@@ -86,5 +85,5 @@ Resolve technical questions with the cheapest decisive inspection and keep the
 file while its owner or replacement remains unresolved. Private memory is a
 lead that requires repo-visible revalidation. Proceed under existing
 authorization once the current contract and referrers are preserved; ask only
-for unavailable intent or operator-only authority. The canonical retirement
-contract retains its actual approval and source-copy requirements.
+for unavailable intent or operator-only authority. A separate private copy is
+needed only when requested; it is not a document-maintenance gate.

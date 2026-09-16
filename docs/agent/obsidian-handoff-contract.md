@@ -13,21 +13,25 @@ private context; GitHub Issues and PRs own construction history.
 | GitHub PR body | Delivered diff, verification, review disposition, residual risk | a second product or architecture owner |
 | Ignored local handoff | Next 1–3 actions, current blocker, disposable execution context | tracked history or public contract |
 | Obsidian | Optional private research, reasoning, and local context | the only copy of a repo behavior or required next action |
-| Ignored `output/` | Generated audits, routing tables, retirement evidence, full validation output | maintained source of truth |
+| Ignored `output/` | Generated audits, routing tables, full validation output | maintained source of truth |
 
 The normal durable closeout surface is the PR body. Do not create a tracked
 closeout summary, PR-body seed, active plan stub, or same-path history stub.
 Git history and closed Issues/PRs preserve disposable construction history.
 
-## Source-of-truth promotion rule
+## Maintain The Current Document
 
-Before retiring a tracked historical document:
+Update the canonical document when its method or behavior changes. Git preserves
+previous versions; routine maintenance does not require document archival,
+historical copies, a retirement packet, or a separate approval.
+
+For a merge or removal, use the normal task diff:
 
 1. Identify the current canonical owner.
 2. Move only still-valid decisions, invariants, negative claims, and operator
    instructions into that owner.
-3. Retarget every exact repo referrer to the owner or to a current
-   machine-readable artifact that genuinely consumes the old path.
+3. Scan exact repo referrers and retarget them to the owner or a replacement
+   artifact. Preserve a consumed path until its consumer has been updated.
 4. Put unresolved construction work in a GitHub Issue.
 5. Verify the repo remains understandable without the retired document or a
    private vault.
@@ -35,23 +39,16 @@ Before retiring a tracked historical document:
 Do not preserve chronology merely because it once explained a decision. The
 current owner states the decision; Git and GitHub preserve how it was reached.
 
-## Retirement evidence gate
+This also applies to obsolete plans and closeouts. Their age or former lifecycle
+does not create an archival obligation. If the user requests a separate private
+copy, verify that copy at the requested destination; it is not a prerequisite
+for maintaining repo docs.
 
-Every tracked deletion requires an exact repo-referrer scan. A remaining exact
-referrer blocks deletion until it is retargeted. Retirement evidence is
-generated under ignored `output/`; it is not another permanent repo artifact.
+## Current Machine Dependencies
 
-Two history dispositions are supported:
-
-| Disposition | Use when | Required evidence |
-| --- | --- | --- |
-| `discard_git_history` | A plan, spec, closeout, cleanup inventory, or other construction record has no maintained value after owner absorption | `review_result: pass_can_retire`, source hash, empty exact referrers, durable owner locators, explicit discard reason, and operator approval |
-| `obsidian_source_copy` | Private research or reasoning still has independent long-term value | the same owner/referrer evidence plus verified source-copy readback |
-
-`tools/diagnostics/retire_docs.py --evidence <ignored-json> --execute` performs
-the local destructive step. For retired construction lanes, the staged
-placement guard accepts deletion only when the final staged tree has no exact
-repo referrers. It does not require committing a retirement packet.
+Retain schemas, fixtures, and evidence artifacts while a current checker or
+scientific claim consumes them. Their retention follows that consumer's
+contract, not a general document-archiving rule.
 
 The compatibility index at
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md` is also an
@@ -108,17 +105,16 @@ generic lifecycle metadata. New tracked `Doc kind: plan`, `spec`, `handoff`, or
 4. Current next actions: use an ignored local handoff.
 5. Long private reasoning worth retaining: use Obsidian.
 6. Generated or disposable material: use ignored `output/` or scratch.
-7. Before deletion: absorb durable claims, scan exact referrers, choose a
-   history disposition, then use the retirement tool.
+7. Before deletion: absorb durable claims, repair exact referrers, and verify
+   the affected docs and consumers through the normal task diff.
 
 Never add tracked documents under `docs/superpowers/plans/`, `specs/`,
 `closeouts/`, or `file-management/docs-cleanup/`. The exact machine exception
 named above remains a read-only compatibility surface.
 
-## Stop rules
+## Unresolved Dependencies
 
-Stop a retirement when a durable claim has no current owner, an exact referrer
-remains, a checker consumes the exact path, or the proposed replacement would
-invent a new product/semantic owner. Private-vault unavailability blocks only
-`obsidian_source_copy`; it does not justify keeping disposable construction
-history in the repo.
+Before removing the affected file, resolve any ownerless durable claim,
+remaining referrer, checker dependency, or replacement that would invent a new
+product/semantic owner. Private-vault unavailability affects only an explicitly
+requested private copy.

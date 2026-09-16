@@ -76,10 +76,11 @@ closeout、active stub 或永久歷史 stub。
 
 - `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
 
-文件的 public/private 與 retirement 規則由
+文件的 public/private 與維護、移除規則由
 [`docs/agent/obsidian-handoff-contract.md`](agent/obsidian-handoff-contract.md)
 擁有。刪除前仍須先把 durable claim 吸收到 owner 並清空 exact referrers；一次性
-audit/evidence 寫到 ignored `output/`，不再用新的 tracked 歷史檔清舊歷史檔。
+audit/evidence 寫到 ignored `output/`。方法變更直接更新現行文件，Git 保留舊版；
+不要求另行歸檔或建立 retirement packet。
 
 ### Current authority routes
 
