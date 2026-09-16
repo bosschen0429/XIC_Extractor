@@ -8,14 +8,15 @@ class OutputColumn:
     description: str = ""
 
 
-TARGETED_OUTPUT_SCHEMA_VERSION = "targeted_output_v1"
-TARGETED_LONG_CSV_SCHEMA_VERSION = "targeted_long_csv_v1"
+TARGETED_OUTPUT_SCHEMA_VERSION = "targeted_output_v2"
+TARGETED_LONG_CSV_SCHEMA_VERSION = "targeted_long_csv_v2"
 TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION = "targeted_diagnostics_csv_v1"
 TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION = "targeted_score_breakdown_csv_v1"
 
 MS1_SUFFIXES: tuple[str, ...] = (
     "RT",
     "Int",
+    "IntSmoothed",
     "Area",
     "PeakStart",
     "PeakEnd",
@@ -52,6 +53,7 @@ LONG_COLUMNS: tuple[OutputColumn, ...] = (
     ),
     OutputColumn("NL"),
     OutputColumn("Int", advanced=True, description="raw apex intensity"),
+    OutputColumn("IntSmoothed", description="selected smoothed peak apex intensity"),
     OutputColumn("PeakStart", advanced=True),
     OutputColumn("PeakEnd", advanced=True),
     OutputColumn("PeakWidth", advanced=True),

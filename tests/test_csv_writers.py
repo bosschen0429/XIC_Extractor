@@ -163,9 +163,13 @@ def test_row_builders_use_smoothed_rt_and_preserve_area() -> None:
 
     assert wide_row["WithNL_RT"] == "9.0000"
     assert wide_row["WithNL_Area"] == "123.45"
+    assert wide_row["WithNL_Int"] == "500"
+    assert wide_row["WithNL_IntSmoothed"] == "450"
     assert wide_row["WithNL_NL"] == "WARN_12.3ppm"
     assert long_row["RT"] == "9.0000"
     assert long_row["Area"] == "123.45"
+    assert long_row["Int"] == "500"
+    assert long_row["IntSmoothed"] == "450"
     assert long_row["Confidence"] == "LOW"
 
 
@@ -207,7 +211,15 @@ def test_not_counted_product_projection_blanks_matrix_peak_values() -> None:
     wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
-    for suffix in ("RT", "Int", "Area", "PeakStart", "PeakEnd", "PeakWidth"):
+    for suffix in (
+        "RT",
+        "Int",
+        "IntSmoothed",
+        "Area",
+        "PeakStart",
+        "PeakEnd",
+        "PeakWidth",
+    ):
         assert wide_row[f"WithNL_{suffix}"] == "ND"
         assert long_row[suffix if suffix != "PeakWidth" else "PeakWidth"] == "ND"
     assert wide_row["WithNL_NL"] == "NL_FAIL"
@@ -235,6 +247,7 @@ def test_write_wide_and_long_csv(tmp_path: Path) -> None:
         "Area": "123.45",
         "NL": "WARN_12.3ppm",
         "Int": "500",
+        "IntSmoothed": "450",
         "PeakStart": "8.9000",
         "PeakEnd": "9.2000",
         "PeakWidth": "0.3000",
@@ -263,10 +276,10 @@ def test_write_wide_csv_bytes_are_exact_and_deterministic(tmp_path: Path) -> Non
     ]
     expected = (
         b"\xef\xbb\xbf"
-        b"SampleName,WithNL_RT,WithNL_Int,WithNL_Area,WithNL_PeakStart,"
+        b"SampleName,WithNL_RT,WithNL_Int,WithNL_IntSmoothed,WithNL_Area,WithNL_PeakStart,"
         b"WithNL_PeakEnd,WithNL_PeakWidth,WithNL_NL\r\n"
-        b"SampleA,9.0000,500,123.45,8.9000,9.2000,0.3000,WARN_12.3ppm\r\n"
-        b"FailedSample,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR\r\n"
+        b"SampleA,9.0000,500,450,123.45,8.9000,9.2000,0.3000,WARN_12.3ppm\r\n"
+        b"FailedSample,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR\r\n"
     )
 
     write_wide_csv(config, [target], file_results)
@@ -332,6 +345,7 @@ def test_write_wide_csv_preserves_zero_nd_and_duplicate_sample_rows(
         "SampleName": "DuplicateSample",
         "WithNL_RT": "0.0000",
         "WithNL_Int": "0",
+        "WithNL_IntSmoothed": "0",
         "WithNL_Area": "0.00",
         "WithNL_PeakStart": "0.0000",
         "WithNL_PeakEnd": "0.0000",
@@ -342,6 +356,7 @@ def test_write_wide_csv_preserves_zero_nd_and_duplicate_sample_rows(
         "SampleName": "DuplicateSample",
         "WithNL_RT": "ND",
         "WithNL_Int": "ND",
+        "WithNL_IntSmoothed": "ND",
         "WithNL_Area": "ND",
         "WithNL_PeakStart": "ND",
         "WithNL_PeakEnd": "ND",
@@ -494,8 +509,7 @@ def test_long_row_confidence_follows_not_counted_projection() -> None:
             counted_detection=False,
             review_state="review_required",
             projection_reason=(
-                "decision: not_counted; "
-                "not_counted: missing_positive_ms1_peak"
+                "decision: not_counted; not_counted: missing_positive_ms1_peak"
             ),
             support_reasons=("candidate_aligned_ms2_nl",),
             not_counted_reasons=("missing_positive_ms1_peak",),
@@ -542,9 +556,7 @@ def test_score_breakdown_csv_can_emit_ms2_trace_labels_without_schema_change(
         "Negative Points",
         "Raw Score",
     }
-    assert breakdown["Support"] == (
-        "strict_nl_ok; ms2_trace_strong; local_sn_strong"
-    )
+    assert breakdown["Support"] == ("strict_nl_ok; ms2_trace_strong; local_sn_strong")
     assert breakdown["Concerns"] == "ms2_trace_weak"
 
 
@@ -619,6 +631,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
         "SampleName",
         "WithNL_RT",
         "WithNL_Int",
+        "WithNL_IntSmoothed",
         "WithNL_Area",
         "WithNL_PeakStart",
         "WithNL_PeakEnd",
@@ -628,6 +641,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert wide_row["WithNL_RT"] == "8.9500"
     assert wide_row["WithNL_Area"] == "4567.89"
     assert wide_row["WithNL_Int"] == "765"
+    assert wide_row["WithNL_IntSmoothed"] == "700"
     assert wide_row["WithNL_PeakStart"] == "8.7000"
     assert wide_row["WithNL_PeakEnd"] == "9.3000"
     assert wide_row["WithNL_PeakWidth"] == "0.4200"
@@ -635,6 +649,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert long_row["RT"] == "8.9500"
     assert long_row["Area"] == "4567.89"
     assert long_row["Int"] == "765"
+    assert long_row["IntSmoothed"] == "700"
     assert long_row["PeakStart"] == "8.7000"
     assert long_row["PeakEnd"] == "9.3000"
     assert long_row["PeakWidth"] == "0.4200"
@@ -673,6 +688,7 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
     assert long_row["RT"] == "ND"
     assert long_row["Area"] == "ND"
     assert long_row["Int"] == "ND"
+    assert long_row["IntSmoothed"] == "ND"
     assert long_row["PeakStart"] == "ND"
     assert long_row["PeakEnd"] == "ND"
     assert long_row["PeakWidth"] == "ND"

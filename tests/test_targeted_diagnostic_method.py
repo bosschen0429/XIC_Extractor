@@ -101,6 +101,7 @@ class _FrozenLegacyResult:
     reported_rt: float | None
     reported_peak_area: float | None
     reported_peak_intensity: float | None
+    reported_smoothed_peak_intensity: float | None
     reported_peak_start: float | None
     reported_peak_end: float | None
     reported_peak_width: float | None
@@ -369,6 +370,7 @@ def test_projection_values_come_from_successor_owner_not_equal_legacy_objects(
         original.reported_peak_start,
         original.reported_peak_end,
         original.reported_peak_width,
+        original.reported_smoothed_peak_intensity,
     )
     assert all(value is not None for value in legacy_values)
     substituted = replace(
@@ -379,6 +381,9 @@ def test_projection_values_come_from_successor_owner_not_equal_legacy_objects(
         reported_peak_start=_EqualLegacyFloat(original.reported_peak_start),
         reported_peak_end=_EqualLegacyFloat(original.reported_peak_end),
         reported_peak_width=_EqualLegacyFloat(original.reported_peak_width),
+        reported_smoothed_peak_intensity=_EqualLegacyFloat(
+            original.reported_smoothed_peak_intensity
+        ),
     )
     files[index] = FileResult(
         sample_name=file_result.sample_name,
@@ -394,12 +399,14 @@ def test_projection_values_come_from_successor_owner_not_equal_legacy_objects(
     cell = next(item for item in result.cells if item.sample_stem == "observed-a")
     assert cell.selected_integration is not None
     assert projection.rt is cell.selected_integration.rt_apex_min
+    assert projection.intensity_smoothed is cell.selected_integration.height_smoothed
     assert all(
         type(value) is float
         for value in (
             projection.rt,
             projection.area,
             projection.intensity,
+            projection.intensity_smoothed,
             projection.peak_start,
             projection.peak_end,
             projection.peak_width,
@@ -637,6 +644,7 @@ def _selected_file(
         reported_rt=rt,
         reported_peak_area=area,
         reported_peak_intensity=intensity,
+        reported_smoothed_peak_intensity=intensity,
         reported_peak_start=start,
         reported_peak_end=end,
         reported_peak_width=width,
@@ -660,6 +668,7 @@ def _missing_file(sample_stem: str, *, confidence: str) -> FileResult:
                 reported_rt=None,
                 reported_peak_area=None,
                 reported_peak_intensity=None,
+                reported_smoothed_peak_intensity=None,
                 reported_peak_start=None,
                 reported_peak_end=None,
                 reported_peak_width=None,

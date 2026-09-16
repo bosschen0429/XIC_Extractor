@@ -77,9 +77,10 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
         "scope": "targets_csv_bytes",
         "is_full_method_hash": False,
     }
-    assert payload["method_settings"][
-        "targeted_ms1_shape_identity_activation_policy"
-    ] == "explicit_support_tsv"
+    assert (
+        payload["method_settings"]["targeted_ms1_shape_identity_activation_policy"]
+        == "explicit_support_tsv"
+    )
     assert payload["target_summary"] == {
         "target_count": 2,
         "analyte_count": 1,
@@ -88,9 +89,9 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
         "isotope_label_type_values": ["unknown"],
     }
     assert payload["output_schema"] == {
-        "targeted_output_schema_version": "targeted_output_v1",
+        "targeted_output_schema_version": "targeted_output_v2",
         "xic_results_long_csv": {
-            "schema_version": "targeted_long_csv_v1",
+            "schema_version": "targeted_long_csv_v2",
             "headers": [
                 "SampleName",
                 "Group",
@@ -101,6 +102,7 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
                 "Area",
                 "NL",
                 "Int",
+                "IntSmoothed",
                 "PeakStart",
                 "PeakEnd",
                 "PeakWidth",
@@ -244,9 +246,7 @@ def test_write_method_manifest_overwrites_with_cli_context(tmp_path: Path) -> No
     )
 
     payload = json.loads(
-        config.output_csv.with_name("method_manifest.json").read_text(
-            encoding="utf-8"
-        )
+        config.output_csv.with_name("method_manifest.json").read_text(encoding="utf-8")
     )
     assert payload["invocation"]["entrypoint"] == "xic-extractor-cli"
     assert payload["invocation"]["argv"] == ["--skip-excel"]
