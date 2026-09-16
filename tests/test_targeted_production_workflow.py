@@ -909,11 +909,13 @@ def production_case(
     tmp_path: Path,
     *,
     sample_names: tuple[str, ...] = ("SampleA",),
+    sample_peak_scales: dict[str, float] | None = None,
 ) -> tuple[ExtractionConfig, Target, RunOutput]:
     config = _config(tmp_path)
     target = _target()
     config.data_dir.mkdir()
     file_results = []
+    scales = sample_peak_scales or {}
     for sample_name in sample_names:
         raw_path = config.data_dir / f"{sample_name}.raw"
         raw_path.write_bytes(sample_name.encode())
@@ -922,8 +924,9 @@ def production_case(
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
+        scale = scales.get(sample_name, 1.0)
         rt = np.linspace(1.0, 2.0, 101)
-        intensity = 10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)
+        intensity = (10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)) * scale
         trace = Trace.from_arrays(
             sample_name=sample_name,
             mz=target.mz,

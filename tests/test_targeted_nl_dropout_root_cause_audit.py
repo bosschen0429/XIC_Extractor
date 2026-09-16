@@ -32,32 +32,6 @@ def test_path_style_cli_help_preserves_public_script_contract() -> None:
     assert "--peak-candidates-tsv" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "_CANDIDATE_COLUMNS",
-        "_OPTIONAL_CANDIDATE_COLUMNS",
-        "_RELIABILITY_COLUMNS",
-        "_ROW_COLUMNS",
-        "_SUMMARY_COLUMNS",
-        "_classify_root_cause",
-        "_parse_args",
-        "_read_candidate_rows",
-        "_read_reliability_rows",
-        "_read_target_mz",
-        "_root_cause_rows",
-        "_summary",
-        "_write_outputs",
-        "CandidateRow",
-        "ReliabilityRow",
-        "RootCauseRow",
-        "TargetedNLDropoutRootCauseResult",
-        "run_targeted_nl_dropout_root_cause_audit",
-    ]
-
-    for name in expected_names:
-        assert hasattr(audit, name), name
-
-
 def test_root_cause_audit_classifies_review_positive_buckets(
     tmp_path: Path,
 ) -> None:

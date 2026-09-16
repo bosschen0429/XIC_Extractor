@@ -59,22 +59,7 @@ def test_sample_transaction_defers_matrix_cell_allocation_until_delivery(
     tmp_path: Path,
 ) -> None:
     live = _live_available_inputs(tmp_path)
-    allocations: list[str] = []
     median_calls = 0
-    for name in (
-        "_absent_cell",
-        "_ambiguous_cell",
-        "_feature_ambiguous_cell",
-        "_detected_cell",
-        "_rescued_cell",
-    ):
-        original = getattr(owner_matrix, name)
-
-        def counted(*args, _name=name, _original=original, **kwargs):
-            allocations.append(_name)
-            return _original(*args, **kwargs)
-
-        monkeypatch.setattr(owner_matrix, name, counted)
     original_median = owner_matrix.median_owner_area
 
     def counted_median(feature):
@@ -91,10 +76,12 @@ def test_sample_transaction_defers_matrix_cell_allocation_until_delivery(
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
 
-    assert allocations == []
-    assert transaction._builder._cells_by_sample == {}
+    with pytest.raises(
+        ValueError, match="cannot publish incomplete samples"
+    ):
+        transaction.finish()
 
-    transaction.deliver(
+    receipt = transaction.deliver(
         0,
         OwnerBackfillSampleResult(
             sample_index=2,
@@ -103,10 +90,14 @@ def test_sample_transaction_defers_matrix_cell_allocation_until_delivery(
         ),
     )
 
-    assert allocations == ["_rescued_cell"]
-    assert tuple(transaction._builder._cells_by_sample) == ("sample-b",)
-    assert len(transaction.finish().matrix.cells) == 2
-    assert allocations == ["_rescued_cell", "_detected_cell"]
+    assert receipt.cell_count == 1
+    assert receipt.sample_stem == "sample-b"
+    output = transaction.finish()
+    assert len(output.matrix.cells) == 2
+    cells_by_sample = {c.sample_stem: c for c in output.matrix.cells}
+    assert set(cells_by_sample.keys()) == {"sample-a", "sample-b"}
+    assert cells_by_sample["sample-b"].status == live.observation.cell.status
+    assert cells_by_sample["sample-a"].status == "detected"
     assert median_calls == 0
 
 

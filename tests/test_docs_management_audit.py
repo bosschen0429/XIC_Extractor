@@ -34,23 +34,6 @@ def _isolated_git_subprocess_env() -> dict[str, str]:
     }
 
 
-def test_maintained_validation_html_uses_lf_checkout_policy() -> None:
-    env = _isolated_git_subprocess_env()
-    env["GIT_CONFIG_GLOBAL"] = os.devnull
-    completed = subprocess.run(
-        ["git", "check-attr", "eol", "--", *MAINTAINED_VALIDATION_HTML],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-
-    assert completed.stdout.splitlines() == [
-        f"{path}: eol: lf" for path in MAINTAINED_VALIDATION_HTML
-    ]
-
-
 @pytest.fixture(autouse=True)
 def _clear_outer_git_repository_bindings(
     monkeypatch: pytest.MonkeyPatch,

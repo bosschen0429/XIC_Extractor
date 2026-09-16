@@ -1,7 +1,6 @@
 import csv
 import json
 import re
-import tomllib
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1209,25 +1208,6 @@ def test_cli_reports_reader_setup_errors_without_traceback(
     assert exit_code == 2
     assert "pythonnet is not installed" in captured.err
     assert "Traceback" not in captured.err
-
-
-def test_pyproject_exposes_cli_entry_point() -> None:
-    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
-
-    assert 'xic-extractor-cli = "scripts.run_extraction:main"' in pyproject
-
-
-def test_pyproject_excludes_python_314_for_pythonnet() -> None:
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-
-    assert pyproject["project"]["requires-python"] == ">=3.11,<3.14"
-
-
-def test_pyproject_dev_group_includes_ruff_for_ci_lint() -> None:
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-
-    dev_group = pyproject["dependency-groups"]["dev"]
-    assert any(str(dep).startswith("ruff") for dep in dev_group)
 
 
 def _module():

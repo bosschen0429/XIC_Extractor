@@ -32,21 +32,6 @@ def test_path_style_cli_help_preserves_public_script_contract() -> None:
     assert "--targeted-istd-benchmark-json" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "_case_status_reason",
-        "_compute_case_assertions",
-        "_int_value",
-        "_row_flags",
-        "_metrics_to_json",
-        "_write_dict_csv",
-        "compute_guardrails",
-        "compare_guardrails",
-        "targeted_istd_benchmark_guardrail_rows",
-    ]
-
-    for name in expected_names:
-        assert hasattr(guardrails, name), name
 
 
 def test_write_dict_csv_preserves_dynamic_contract(tmp_path: Path) -> None:

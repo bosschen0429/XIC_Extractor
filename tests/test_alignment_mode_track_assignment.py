@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import ast
 import json
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,11 +26,8 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignment,
-    ModeTrackCandidateObservation,
     ModeTrackContractError,
-    ModeTrackModel,
     ModeTrackPredictionAssessment,
-    ModeTrackSupportAnchor,
     ModeTrackTrajectoryPolicy,
     _global_no_write_state,
     _peak_hypothesis_family_exclusions,
@@ -1221,25 +1217,6 @@ def test_public_ingress_normalizes_invalid_owner_inputs(
         )
 
 
-def test_policy_rejects_integer_float_identity_alias() -> None:
-    with pytest.raises(ModeTrackContractError, match="canonical float"):
-        ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="piecewise-linear-injection-local-v1",
-            band_policy_version="explicit-half-width-v1",
-            prediction_half_width_min=1,  # type: ignore[arg-type]
-            max_interpolation_gap=4,
-            max_extrapolation_gap=2,
-        )
-
-
-def test_mode_track_model_retains_only_identity_bound_behavior_fields() -> None:
-    assert {field.name for field in fields(ModeTrackModel)} == {
-        "group_hypothesis_id",
-        "ordering_reference_rt_min",
-        "anchors",
-    }
-
-
 def test_model_set_identity_binds_ordering_behavior_snapshot(
     tmp_path: Path,
 ) -> None:
@@ -1551,7 +1528,7 @@ def test_duplicate_direct_support_reinforcement_is_idempotent(tmp_path: Path) ->
     assert replayed.lineage_refs == first.lineage_refs
 
 
-def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
+def test_owner_objects_cannot_be_forged() -> None:
     with pytest.raises(TypeError, match="_mint_token"):
         ModeTrackAssignment(
             assignment_id="mode-track-assignment:forged",
@@ -1576,64 +1553,6 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
             acquisition_source=None,
             candidate_observation=None,
         )
-
-    forbidden_tokens = {
-        "matrix",
-        "selected_area",
-        "numeric_value",
-        "counted_detection",
-        "writer",
-        "public_family",
-        "feature_family",
-        "method_subject",
-    }
-    assert not {
-        field.name
-        for field in fields(ModeTrackAssignment)
-        if any(token in field.name for token in forbidden_tokens)
-    }
-
-    for owner_type in (
-        ModeTrackSupportAnchor,
-        ModeTrackCandidateObservation,
-        ModeTrackAssignment,
-    ):
-        assert not {field.name for field in fields(owner_type) if "cell" in field.name}
-
-
-def test_mode_track_owner_has_no_product_or_raw_scan_dependencies() -> None:
-    package_path = (
-        Path(__file__).parents[1]
-        / "xic_extractor"
-        / "alignment"
-        / "mode_track"
-    )
-    imported = set()
-    for path in package_path.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        imported.update(
-            alias.name
-            for node in tree.body
-            if isinstance(node, ast.Import)
-            for alias in node.names
-        )
-        imported.update(
-            node.module or ""
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom)
-        )
-    forbidden = (
-        "matrix",
-        "backfill",
-        "writer",
-        "raw",
-        "thermo",
-    )
-    assert not {
-        module
-        for module in imported
-        if any(token in module.lower() for token in forbidden)
-    }
 
 
 class _Scenario:

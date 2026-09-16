@@ -4,7 +4,7 @@ import csv
 import inspect
 import json
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from dataclasses import asdict, replace
+from dataclasses import replace
 from multiprocessing import get_context
 from pathlib import Path
 from threading import Barrier
@@ -31,7 +31,6 @@ from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
-from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
 from xic_extractor.output.review_report import review_report_path_for_excel
@@ -151,23 +150,37 @@ def test_duplicate_declared_output_destinations_publish_nothing(
 
 
 def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.5},
+    )
     request = build_targeted_application_request(
         config,
         [target],
-        injection_order={"SampleA": 1},
+        injection_order={"SampleA": 1, "SampleB": 2},
     )
     finalized = execute_targeted_production_workflow(request, output)
 
     published = publish_targeted_outputs(request, finalized, output)
 
-    assert type(published.output) is RunOutput
-    assert type(published.output.file_results) is list
-    assert type(published.output.file_results[0]) is FileResult
-    extraction = published.output.file_results[0].results[target.label]
-    assert type(extraction) is ExtractionResult
-    assert replace(extraction, reason="consumer-copy").reason == "consumer-copy"
-    assert asdict(published.output)["file_results"][0]["sample_name"] == "SampleA"
+    assert len(published.output.file_results) == 2
+    by_sample = {fr.sample_name: fr for fr in published.output.file_results}
+    assert set(by_sample.keys()) == {"SampleA", "SampleB"}
+
+    ext_a = by_sample["SampleA"].results[target.label]
+    assert ext_a.targeted_product_projection is not None
+    assert ext_a.targeted_product_projection.counted_detection is True
+
+    ext_b = by_sample["SampleB"].results[target.label]
+    assert ext_b.targeted_product_projection is not None
+    assert ext_b.targeted_product_projection.counted_detection is True
+
+    # Multi-sample attribution: distinct samples carry distinct quantitative values
+    assert ext_a.reported_peak_area != ext_b.reported_peak_area
+    assert ext_b.reported_peak_area == pytest.approx(
+        ext_a.reported_peak_area * 2.5, rel=1e-2
+    )
 
 
 def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) -> None:

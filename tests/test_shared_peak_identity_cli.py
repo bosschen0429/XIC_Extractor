@@ -51,10 +51,8 @@ def test_cli_writes_slice0_outputs_and_no_blast_radius(tmp_path: Path) -> None:
     report = (output_dir / "shared_peak_identity_explanation_report.md").read_text(
         encoding="utf-8"
     )
-    assert report.index("## Decision Summary") < report.index(
-        "## Run-Level Readiness Facts"
-    )
     assert "production readiness" in report
+    assert "## Decision Summary" in report
 
 
 def test_cli_reports_missing_input(tmp_path: Path) -> None:

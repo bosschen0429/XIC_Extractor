@@ -56,47 +56,6 @@ def test_module_style_cli_help_preserves_public_module_contract() -> None:
     assert "--output-dir" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "CandidateRow",
-        "ConsistencyResult",
-        "ConsistencyRow",
-        "ConsistencySummary",
-        "CrossReportConsistencyOutputs",
-        "ReliabilityRow",
-        "_CANDIDATE_COLUMNS",
-        "_RELIABILITY_COLUMNS",
-        "_ROW_COLUMNS",
-        "_SUMMARY_COLUMNS",
-        "_bool_value",
-        "_candidate_consistency",
-        "_classify_consistency",
-        "_consistency_row",
-        "_consistency_rows",
-        "_format_value",
-        "_has_review_positive_blocker",
-        "_markdown",
-        "_optional_float",
-        "_parse_args",
-        "_read_candidate_rows",
-        "_read_reliability_rows",
-        "_read_required_tsv",
-        "_read_target_mz",
-        "_row_dicts",
-        "_split_labels",
-        "_summary",
-        "_text",
-        "_write_outputs",
-        "_write_tsv",
-        "main",
-        "run_cross_report_evidence_consistency",
-    ]
-
-    assert set(report.__all__) == set(expected_names)
-    for name in expected_names:
-        assert hasattr(report, name), name
-
-
 def test_cross_report_consistency_flags_mismatched_evidence(
     tmp_path: Path,
 ) -> None:

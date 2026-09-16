@@ -20,6 +20,17 @@ loss before fixing it. Do not freeze private helpers, temporary file layout, or
 cleanup state without a current consumer. Temporary compatibility tests name
 their removal condition.
 
+## Three Non-Negotiable Rules For Agent Testing
+
+All tests written by agents must strictly obey these three invariants:
+
+1. **Independent Oracle (No Mirror Expectations)**:
+   Never call the production calculation or helper inside the test body to generate `expected`. Name the independent oracle: an analytical mathematical formula (e.g. Gaussian integral), independent chemical standard, or confirmed business contract. Do not freeze unverified historical run numbers as golden truths.
+2. **Multi-Sample Attribution (No Proxy Metrics)**:
+   Any test for an extraction, alignment, batch, or writer pipeline must use at least two samples with distinct values to verify sample-to-result attribution. Never treat file existence (`exists()`), non-empty collections (`len > 0`), non-None (`is not None`), or mock invocation (`assert_called`) as proof of substantive correctness.
+3. **No Immortalized One-Time Verifications (No Private Implementation Locks)**:
+   One-time refactoring or retirement verifications belong in PR diffs and git history; do not write permanent tests scanning source code or AST for deleted identifiers (e.g. via `inspect.getsource()`). Never assert internal private helpers (`_foo`), openpyxl cell coordinates/colors, widget pixel geometry, or Python object memory `id()`.
+
 ## Choose The Observable
 
 | Surface | Protect |

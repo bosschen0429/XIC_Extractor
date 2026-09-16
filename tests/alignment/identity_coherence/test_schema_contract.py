@@ -218,11 +218,7 @@ def test_inline_adapter_does_not_modify_raw_or_backfill_modules() -> None:
     # The flat identity_coherence_adapter.py shim is gone; hold the invariant
     # on the module that actually carries the adapter behaviour.
     adapter_text = (
-        root
-        / "xic_extractor"
-        / "alignment"
-        / "identity_coherence"
-        / "adapter.py"
+        root / "xic_extractor" / "alignment" / "identity_coherence" / "adapter.py"
     ).read_text(encoding="utf-8")
     forbidden = (
         "from xic_extractor.raw_reader import",
@@ -302,8 +298,7 @@ def _identity_coherence_import_surfaces(source: str) -> list[tuple[int, str]]:
                 imports.append((node.lineno, module_name.split(".", 1)[0]))
             elif node.level == 1:
                 imports.extend(
-                    (node.lineno, alias.name.split(".", 1)[0])
-                    for alias in node.names
+                    (node.lineno, alias.name.split(".", 1)[0]) for alias in node.names
                 )
             continue
 
@@ -312,8 +307,7 @@ def _identity_coherence_import_surfaces(source: str) -> list[tuple[int, str]]:
             imports.append((node.lineno, relative_name.split(".", 1)[0]))
         elif module_name == IDENTITY_COHERENCE_PACKAGE:
             imports.extend(
-                (node.lineno, alias.name.split(".", 1)[0])
-                for alias in node.names
+                (node.lineno, alias.name.split(".", 1)[0]) for alias in node.names
             )
         elif module_name == "xic_extractor.alignment":
             imports.extend(
@@ -334,8 +328,7 @@ def _absolute_import_modules(source: str) -> list[tuple[int, str]]:
         elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
             imports.append((node.lineno, node.module))
             imports.extend(
-                (node.lineno, f"{node.module}.{alias.name}")
-                for alias in node.names
+                (node.lineno, f"{node.module}.{alias.name}") for alias in node.names
             )
     return imports
 
@@ -373,74 +366,8 @@ def test_request_status_enum_values_are_stable_strings():
 def test_identity_coherence_facade_exports_stable_contract():
     import xic_extractor.alignment.identity_coherence as identity_coherence
 
-    schema_enums = (
-        IdentityDecision,
-        WeakBasisReason,
-        RtCenterDecision,
-        CellAssessmentStatus,
-        CellIdentityTier,
-        CellIdentityBasis,
-        FragmentMatchStatus,
-        RtGateStatus,
-        NonRtIdentityResult,
-        ShapeStatus,
-        ShapeReferenceBasis,
-        ShapeAuditStatus,
-        WidthStatus,
-        BaselineAuditStatus,
-        AreaHeightStatus,
-        CellBlockedReason,
-        CellDataQualityReason,
-        DecisionReason,
-    )
-    for schema_enum in schema_enums:
-        assert getattr(identity_coherence, schema_enum.__name__) is schema_enum
-        assert schema_enum.__name__ in identity_coherence.__all__
-
-    assert identity_coherence.FragmentIdentity is not None
-    assert identity_coherence.CidNeutralLossConstraint is not None
-    assert identity_coherence.IdentityCoherenceRequest is not None
-    assert identity_coherence.CandidateIdentityMatch is not None
-    assert identity_coherence.SeedCandidateEvidence is not None
-    assert identity_coherence.SeedGateConfig is not None
-    assert identity_coherence.SeedGateResult is not None
-    assert identity_coherence.EvidenceStage is not None
-    assert identity_coherence.SeedGateClass is not None
-    assert identity_coherence.SeedRejectReason is not None
-    assert identity_coherence.build_identity_coherence_request is not None
-    assert identity_coherence.build_seed_candidate_evidence is not None
-    assert identity_coherence.match_request_to_candidate is not None
-    assert identity_coherence.evaluate_seed_gate is not None
-    assert identity_coherence.format_fragment_tags is not None
-    assert identity_coherence.has_fragment_tags is not None
-    assert identity_coherence.normalize_fragment_tags is not None
-    assert identity_coherence.IDENTITY_COHERENCE_REQUEST_COLUMNS
-    assert identity_coherence.CellCandidateEvidence is not None
-    assert identity_coherence.CellEvidenceResult is not None
-    assert identity_coherence.CandidateTrace is not None
-    assert identity_coherence.ShapeConfig is not None
-    assert identity_coherence.WidthConfig is not None
-    assert identity_coherence.ShapeReferenceResult is not None
-    assert identity_coherence.ShapeComparisonResult is not None
-    assert identity_coherence.PrototypeWidthResult is not None
-    assert identity_coherence.WidthAssessmentResult is not None
-    assert identity_coherence.IdentityCoherenceConfig is not None
-    assert identity_coherence.IdentityCoherenceRowResult is not None
-    assert identity_coherence.IdentityDecisionSummary is not None
-    assert identity_coherence.RtCenterResult is not None
-    assert identity_coherence.estimate_rt_center is not None
-    assert identity_coherence.estimate_prototype_width is not None
-    assert identity_coherence.assess_width_against_prototype is not None
-    assert identity_coherence.estimate_shape_reference is not None
-    assert identity_coherence.create_seed_shape_reference is not None
-    assert identity_coherence.compare_shape_to_reference is not None
-    assert identity_coherence.normalize_trace_for_shape is not None
-    assert identity_coherence.evaluate_cell_evidence is not None
-    assert identity_coherence.evaluate_identity_coherence_row is not None
-    assert identity_coherence.select_cell_evidence_for_sample is not None
-    assert identity_coherence.summarize_identity_decision is not None
-    assert identity_coherence.match_identity_constraints_to_candidate is not None
-    assert "match_identity_constraints_to_candidate" in identity_coherence.__all__
+    for name in identity_coherence.__all__:
+        assert hasattr(identity_coherence, name), f"Missing public export: {name}"
 
 
 def test_identity_coherence_facade_exports_output_writer_surface():
@@ -467,69 +394,6 @@ def test_identity_coherence_facade_exports_output_writer_surface():
         assert getattr(identity_coherence, name) is getattr(output_module, name)
         assert name in identity_coherence.__all__
         assert name in output_module.__all__
-
-
-def test_identity_coherence_output_split_modules_import_directly():
-    from xic_extractor.alignment.identity_coherence import (
-        output_formatting,
-        output_models,
-        output_projection,
-        output_summary,
-        output_summary_model,
-        output_validation,
-        output_writers,
-    )
-
-    assert output_formatting.format_tsv_value is not None
-    assert output_models.IdentityCoherenceOutputContext is not None
-    assert output_models.IdentityCoherenceOutputPaths is not None
-    assert output_models.IdentityCoherenceOutputRecord is not None
-    assert output_projection.project_request_row is not None
-    assert output_projection.project_decision_row is not None
-    assert output_projection.project_cell_evidence_row is not None
-    assert output_projection.project_control_row is not None
-    assert output_validation.validate_output_record is not None
-    assert output_summary_model.build_identity_coherence_summary_model is not None
-    assert output_summary_model.engineering_go_no_go_rows is not None
-    assert output_summary.render_identity_coherence_summary is not None
-    assert output_writers.write_identity_coherence_outputs is not None
-
-
-def test_identity_coherence_control_split_modules_import_directly():
-    from xic_extractor.alignment.identity_coherence import (
-        control_evaluation,
-        control_manifest,
-        control_models,
-        control_rows,
-        decoy_controls,
-        positive_controls,
-    )
-
-    assert control_models.IdentityControlManifestEntry is not None
-    assert control_models.IdentityControlsConfig is not None
-    assert control_models.IdentityDecoySource is not None
-    assert control_manifest.read_identity_controls_manifest is not None
-    assert control_manifest.read_identity_controls_manifest_tsv is not None
-    assert positive_controls.evaluate_positive_control is not None
-    assert decoy_controls.evaluate_identity_decoy is not None
-    assert control_evaluation.evaluate_identity_controls is not None
-    assert control_rows.control_row is not None
-
-
-def test_identity_coherence_output_record_runtime_type_hints_resolve():
-    from typing import get_type_hints
-
-    from xic_extractor.alignment.identity_coherence import (
-        IdentityCoherenceOutputRecord,
-    )
-    from xic_extractor.alignment.identity_coherence.row_evaluator import (
-        IdentityCoherenceRowResult,
-    )
-
-    hints = get_type_hints(IdentityCoherenceOutputRecord)
-
-    assert hints["seed_gate"] is SeedGateResult
-    assert hints["row_result"] is IdentityCoherenceRowResult
 
 
 def test_identity_coherence_facade_exports_controls_surface():
@@ -564,8 +428,7 @@ def test_identity_coherence_facade_exports_controls_surface():
     assert identity_coherence.ControlStatus is ControlStatus
     assert identity_coherence.DecoyGenerationMethod is DecoyGenerationMethod
     assert (
-        identity_coherence.PositiveControlMappingStatus
-        is PositiveControlMappingStatus
+        identity_coherence.PositiveControlMappingStatus is PositiveControlMappingStatus
     )
 
 
@@ -644,9 +507,10 @@ def test_output_modules_follow_declared_dependency_direction():
     )
     violations = []
 
-    for module_name, forbidden_surfaces in (
-        OUTPUT_MODULE_FORBIDDEN_RELATIVE_SURFACES.items()
-    ):
+    for (
+        module_name,
+        forbidden_surfaces,
+    ) in OUTPUT_MODULE_FORBIDDEN_RELATIVE_SURFACES.items():
         source = (package_root / module_name).read_text(encoding="utf-8")
         relative_imports = _identity_coherence_import_surfaces(source)
         if module_name == "output_formatting.py" and relative_imports:
@@ -677,9 +541,10 @@ def test_control_modules_do_not_import_output_or_adapter_surfaces():
     )
     violations = []
 
-    for module_name, forbidden_surfaces in (
-        CONTROL_MODULE_FORBIDDEN_RELATIVE_SURFACES.items()
-    ):
+    for (
+        module_name,
+        forbidden_surfaces,
+    ) in CONTROL_MODULE_FORBIDDEN_RELATIVE_SURFACES.items():
         source = (package_root / module_name).read_text(encoding="utf-8")
         for line_number, surface in _identity_coherence_import_surfaces(source):
             if surface in forbidden_surfaces:

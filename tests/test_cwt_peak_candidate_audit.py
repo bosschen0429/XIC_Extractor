@@ -7,7 +7,6 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from tools.diagnostics import cwt_peak_candidate_audit as audit
 from tools.diagnostics.cwt_peak_candidate_audit import main
 
 
@@ -49,50 +48,6 @@ def test_module_style_cli_help_preserves_public_module_contract() -> None:
     assert result.returncode == 0, result.stderr
     assert "--peak-candidates-tsv" in result.stdout
     assert "--output-dir" in result.stdout
-
-
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "CwtCandidateRow",
-        "CwtGroupAuditRow",
-        "CwtOnlyAuditRow",
-        "_CWT_ONLY_COLUMNS",
-        "_CWT_SOURCE",
-        "_DEFAULT_NEAR_RT_WINDOW_MIN",
-        "_GROUP_COLUMNS",
-        "_REQUIRED_COLUMNS",
-        "_SUMMARY_COLUMNS",
-        "_agreement_class",
-        "_audit_group",
-        "_audit_groups",
-        "_chemically_plausible",
-        "_conditioned_class",
-        "_conditioned_class_count",
-        "_cwt_only_rows",
-        "_float_value",
-        "_format_cwt_only_row",
-        "_format_group_row",
-        "_format_optional_float",
-        "_group_class_count",
-        "_markdown",
-        "_nearest_cwt",
-        "_parse_args",
-        "_read_peak_candidates",
-        "_read_target_mz",
-        "_required_indexes",
-        "_row_from_dict",
-        "_summary",
-        "_text",
-        "_write_cwt_only",
-        "_write_groups",
-        "_write_outputs",
-        "_write_summary",
-        "main",
-    ]
-
-    assert set(audit.__all__) == set(expected_names)
-    for name in expected_names:
-        assert hasattr(audit, name), name
 
 
 def test_cwt_peak_candidate_audit_classifies_agreement_and_far_alternatives(

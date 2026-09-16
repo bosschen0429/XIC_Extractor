@@ -2,7 +2,6 @@ import json
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import get_type_hints
 
 import numpy as np
 import pytest
@@ -37,12 +36,6 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
-
-
-def test_backfill_peak_config_contract_requires_extraction_config() -> None:
-    hints = get_type_hints(backfill_ms1_candidates)
-
-    assert hints["peak_config"] is ExtractionConfig
 
 
 def test_backfill_runs_real_peak_detection_with_extraction_config() -> None:

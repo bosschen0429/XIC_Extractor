@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import get_type_hints
 
 import pytest
 
@@ -14,9 +13,6 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
     compose_cid_nl_chromatographic_support_ref,
     validate_cid_nl_chromatographic_support_binding,
-)
-from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
-    CidNlChromatographicSupportRef,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
@@ -1095,16 +1091,6 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
             nl=None,
             selected_hypothesis=hypothesis,
         )
-
-
-def test_owner_backed_peak_hypothesis_type_hints_resolve_at_runtime() -> None:
-    evidence_hints = get_type_hints(EvidenceVector)
-    hypothesis_hints = get_type_hints(PeakHypothesis)
-
-    assert evidence_hints["cid_nl_chromatographic_support_ref"] == (
-        CidNlChromatographicSupportRef | None
-    )
-    assert hypothesis_hints["peak_observation_refs"] == tuple[PeakObservationRef, ...]
 
 
 def _resolve(

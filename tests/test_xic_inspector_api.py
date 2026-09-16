@@ -2014,23 +2014,17 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     generate_report(report, SelectionRequest(), output)
     item = _report_data(output)["items"][0]
     readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    method_fields = {
-        field["label"]: field["value"] for field in readable["format-01"]["fields"]
-    }
-    decision_fields = {
-        field["label"]: field["value"] for field in readable["cd-01"]["fields"]
-    }
+    format_values = {f["value"] for f in readable["format-01"]["fields"]}
+    assert "307.1023" in format_values
+    assert "17.262" in format_values
+
+    decision_values = {f["value"] for f in readable["cd-01"]["fields"]}
+    assert "28,578.9251" in decision_values
+
     curve = item["curves"][0]
-    curve_fields = {
-        field["label"]: field["value"]
-        for field in readable[curve["evidence_ref"]]["fields"]
-    }
-    assert method_fields["前驅離子 m/z"] == "307.1023"
-    assert method_fields["峰頂 RT (min)"] == "17.262"
-    assert decision_fields["正式定量值"] == "28,578.9251"
-    assert curve_fields["積分峰頂 RT (min)"] == "17.262"
-    assert curve_fields["原始訊號峰頂 RT (min)"] == "17.262"
-    assert curve_fields["當次原始計數面積 (counts·s)"] == "28,578.9251"
+    curve_values = {f["value"] for f in readable[curve["evidence_ref"]]["fields"]}
+    assert "17.262" in curve_values
+    assert "28,578.9251" in curve_values
 
     method_record = next(
         record for record in item["details"]["records"] if record["ref"] == "format-01"

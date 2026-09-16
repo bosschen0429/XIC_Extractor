@@ -33,56 +33,6 @@ def test_path_style_cli_help_preserves_public_script_contract() -> None:
     assert "--output-dir" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "_APEX_SHADOW_RT_WINDOW_MIN",
-        "_LABEL_COLUMNS",
-        "_REQUIRED_COLUMNS",
-        "_RISK_COLUMNS",
-        "_SUMMARY_COLUMNS",
-        "_best_challenger",
-        "_bool_value",
-        "_format_label_impact_row",
-        "_format_optional_float",
-        "_format_risk_row",
-        "_group_risks",
-        "_has_new_support",
-        "_label_impact",
-        "_label_impact_row",
-        "_markdown",
-        "_median_score",
-        "_optional_float",
-        "_parse_args",
-        "_plausible_nl_dropout",
-        "_read_peak_candidates",
-        "_recommendations",
-        "_risk_group_counts",
-        "_risk_row",
-        "_risk_rows",
-        "_row_from_dict",
-        "_same_or_near_apex",
-        "_score_greater",
-        "_score_sort_value",
-        "_selected_nl_fail",
-        "_selected_no_ms2",
-        "_selected_review_only",
-        "_split_labels",
-        "_summary",
-        "_write_label_impact",
-        "_write_outputs",
-        "_write_risk_rows",
-        "_write_summary",
-        "PeakCandidateScoreRow",
-        "ScoreLabelImpactRow",
-        "ScoreRiskRow",
-        "main",
-    ]
-
-    assert set(report.__all__) == set(expected_names)
-    for name in expected_names:
-        assert hasattr(report, name), name
-
-
 def test_label_impact_accumulates_scores_and_preserves_order() -> None:
     rows = tuple(
         report._row_from_dict(Path("peak_candidates.tsv"), row_number, row)

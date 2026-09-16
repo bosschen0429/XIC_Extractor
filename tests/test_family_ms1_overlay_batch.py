@@ -37,16 +37,6 @@ def _keep_string_trace_rows_as_test_doubles(monkeypatch) -> None:
     )
 
 
-def test_family_ms1_modules_document_legacy_peak_group_terminology() -> None:
-    diagnostics_dir = Path(__file__).resolve().parents[1] / "tools" / "diagnostics"
-
-    for path in diagnostics_dir.glob("family_ms1_*.py"):
-        source = path.read_text(encoding="utf-8")
-        docstring = source.split('"""', 2)[1].lower()
-        assert "peak-group" in docstring, path.name
-        assert "legacy" in docstring or "family-id" in docstring, path.name
-
-
 def test_write_tsv_preserves_exact_serialization_contract(tmp_path: Path) -> None:
     path = tmp_path / "summary.tsv"
 

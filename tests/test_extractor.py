@@ -176,6 +176,47 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     assert all(row["Product State"] for row in long_rows)
 
 
+def test_run_multi_sample_preserves_sample_attribution_and_ordering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
+    (config.data_dir / "SampleB.raw").write_text("", encoding="utf-8")
+    targets = [_target("Analyte", neutral_loss_da=None)]
+
+    monkeypatch.setattr(
+        "xic_extractor.extractor.open_raw",
+        _open_raw_factory(
+            peak_centers_by_sample={
+                "SampleA.raw": [8.50],
+                "SampleB.raw": [9.50],
+            }
+        ),
+    )
+
+    output = _run(config, targets)
+
+    assert len(output.file_results) == 2
+    res_a = output.file_results[0].results["Analyte"].peak_result.peak
+    assert res_a.rt == pytest.approx(8.50, abs=0.05)
+    assert output.file_results[1].sample_name == "SampleB"
+    res_b = output.file_results[1].results["Analyte"].peak_result.peak
+    assert res_b.rt == pytest.approx(9.50, abs=0.05)
+
+    rows = _read_csv(config.output_csv)
+    assert len(rows) == 2
+    assert rows[0]["SampleName"] == "SampleA"
+    assert float(rows[0]["Analyte_RT"]) == pytest.approx(8.50, abs=0.05)
+    assert rows[1]["SampleName"] == "SampleB"
+    assert float(rows[1]["Analyte_RT"]) == pytest.approx(9.50, abs=0.05)
+    assert float(rows[0]["Analyte_RT"]) != float(rows[1]["Analyte_RT"])
+
+    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    assert [r["SampleName"] for r in long_rows] == ["SampleA", "SampleB"]
+    assert float(long_rows[0]["RT"]) == pytest.approx(8.50, abs=0.05)
+    assert float(long_rows[1]["RT"]) == pytest.approx(9.50, abs=0.05)
+
+
 def test_run_wires_candidate_ms2_evidence_into_scoring_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2126,13 +2167,16 @@ def _open_raw_factory(
     *,
     errors: dict[str, Exception] | None = None,
     peak_centers: list[float] | None = None,
+    peak_centers_by_sample: dict[str, list[float]] | None = None,
 ):
     error_by_name = errors or {}
+    sample_centers = peak_centers_by_sample or {}
 
     def _fake_open_raw(path: Path, dll_dir: Path):
         if path.name in error_by_name:
             raise error_by_name[path.name]
-        return _FakeRaw(peak_centers=peak_centers)
+        centers = sample_centers.get(path.name, peak_centers)
+        return _FakeRaw(peak_centers=centers)
 
     return _fake_open_raw
 

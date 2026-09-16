@@ -55,53 +55,6 @@ def test_module_style_cli_help_preserves_public_module_contract() -> None:
     assert "--output-dir" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "DRIFT_MODE",
-        "DUPLICATE_MODE",
-        "MISS_MODE",
-        "PASS_MODE",
-        "PRODUCTION_STATUSES",
-        "SPLIT_MODE",
-        "AuditConfig",
-        "TargetGroundTruth",
-        "_as_output_dict",
-        "_cell_rt",
-        "_cells_by_sample_in_review_range",
-        "_classify_sample",
-        "_closest_cell",
-        "_escape_excel_formula",
-        "_failure_mode",
-        "_filter_review_by_mz",
-        "_format_float",
-        "_is_numeric_text",
-        "_is_production_cell",
-        "_is_trueish",
-        "_join_ids",
-        "_load_target_ground_truth",
-        "_load_tsv",
-        "_parse_args",
-        "_production_cells_in_gt_window",
-        "_propagate_sample_context",
-        "_rows_by_target_role",
-        "_rt_delta_sec",
-        "_status",
-        "_svg_text",
-        "_target_workbook_rows",
-        "_to_float",
-        "_to_int",
-        "_unescape_excel_formula",
-        "_write_dict_csv",
-        "_write_report",
-        "_write_svg",
-        "main",
-    ]
-
-    assert set(audit.__all__) == set(expected_names)
-    for name in expected_names:
-        assert hasattr(audit, name), name
-
-
 def test_target_role_map_groups_requested_roles_in_one_pass() -> None:
     rows: list[dict[str, object]] = [
         {"Target": "d3-A", "Role": "Analyte", "SampleName": "S2", "RT": 9.2},

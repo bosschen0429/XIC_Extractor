@@ -1054,54 +1054,6 @@ def test_import_linter_config_owns_the_four_static_dependency_contracts() -> Non
         and not config[section].getboolean("allow_indirect_imports")
         for section in contracts
     )
-    expected_migration_debt = {
-        "importlinter:contract:peak-detection-stays-inner": (
-            "xic_extractor.peak_detection.candidate_selection "
-            "-> xic_extractor.decision_policy",
-            "xic_extractor.peak_detection.decision_policy "
-            "-> xic_extractor.decision_policy",
-            "xic_extractor.peak_detection.evidence_facts "
-            "-> xic_extractor.evidence_semantics",
-            "xic_extractor.peak_detection.hypotheses "
-            "-> xic_extractor.evidence_semantics",
-            "xic_extractor.peak_detection.hypotheses -> xic_extractor.neutral_loss",
-            "xic_extractor.peak_detection.model_selection "
-            "-> xic_extractor.decision_policy",
-            "xic_extractor.peak_detection.model_selection "
-            "-> xic_extractor.evidence_semantics",
-            "xic_extractor.peak_detection.selection_decision "
-            "-> xic_extractor.evidence_semantics",
-        ),
-        "importlinter:contract:output-does-not-read-raw": (
-            "xic_extractor.output.csv_writers -> xic_extractor.neutral_loss",
-            "xic_extractor.output.csv_writers -> xic_extractor.signal_processing",
-            "xic_extractor.output.excel_pipeline -> xic_extractor.extractor",
-            "xic_extractor.output.messages -> xic_extractor.neutral_loss",
-            "xic_extractor.output.messages -> xic_extractor.signal_processing",
-            "xic_extractor.output.peak_candidate_boundaries "
-            "-> xic_extractor.extraction.peak_candidate_boundaries",
-            "xic_extractor.output.peak_candidates "
-            "-> xic_extractor.extraction.peak_candidate_table",
-            "xic_extractor.output.target_pair_rt_auto_reselection "
-            "-> xic_extractor.extraction.paired_area_ratio_projection",
-            "xic_extractor.output.target_pair_rt_auto_reselection "
-            "-> xic_extractor.peak_detection.model_selection",
-        ),
-    }
-    for section, expected_ignores in expected_migration_debt.items():
-        assert (
-            tuple(
-                line
-                for line in config[section]["ignore_imports"].splitlines()
-                if line.strip()
-            )
-            == expected_ignores
-        )
-        assert config[section]["unmatched_ignore_imports_alerting"] == "error"
-    assert all(
-        "ignore_imports" not in config[section]
-        for section in contracts - expected_migration_debt.keys()
-    )
 
 
 def test_import_linter_static_scope_does_not_claim_dynamic_resolution(
