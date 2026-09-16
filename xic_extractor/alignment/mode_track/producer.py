@@ -239,7 +239,15 @@ def bootstrap_cid_nl_initial_population(
                         hypothesis=hypothesis,
                     )
                 )
-    if not owners:
+    searched_no_observation = not owners and all(
+        assessment.content.target_snapshot_id is not None
+        and assessment.content.technical_state == "evaluated"
+        and assessment.content.evaluation_receipt.acquisition_supported
+        and assessment.content.evaluation_receipt.search_completed
+        and not assessment.content.candidate_peak_content_ids
+        for _, assessment in sample_assessments
+    )
+    if not owners and not searched_no_observation:
         raise ModeTrackProducerError("bootstrap assessments have no peak observations")
     if known_istd_reference is not None:
         if drift_lookup is not None:
@@ -264,7 +272,9 @@ def bootstrap_cid_nl_initial_population(
         injection_order=injection_order,
         drift_lookup=drift_lookup,
     )
-    if not provisional_groups or any(track.review_only for track in provisional_groups):
+    if (not provisional_groups and not searched_no_observation) or any(
+        track.review_only for track in provisional_groups
+    ):
         raise ModeTrackProducerError(
             "bootstrap observations did not produce consumable cross-sample groups"
         )
@@ -304,8 +314,7 @@ def bootstrap_cid_nl_initial_population(
         for hypothesis in hypotheses_by_sample[sample_id]
     )
     method_subject_intervals = tuple(
-        cid_nl_method_subject_resolver_interval(subject)
-        for subject in method_subjects
+        cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
     )
     family_context = mint_family_context_ref(
         mz_interval=(
@@ -313,8 +322,18 @@ def bootstrap_cid_nl_initial_population(
             max(interval[1] for interval in method_subject_intervals),
         ),
         rt_interval=(
-            min(hypothesis.integration.rt_left_min for hypothesis in hypotheses),
-            max(hypothesis.integration.rt_right_min for hypothesis in hypotheses),
+            min(hypothesis.integration.rt_left_min for hypothesis in hypotheses)
+            if hypotheses
+            else min(
+                assessment.content.evaluation_receipt.query_rt_min
+                for _, assessment in sample_assessments
+            ),
+            max(hypothesis.integration.rt_right_min for hypothesis in hypotheses)
+            if hypotheses
+            else max(
+                assessment.content.evaluation_receipt.query_rt_max
+                for _, assessment in sample_assessments
+            ),
         ),
         context_policy_version=_FAMILY_CONTEXT_POLICY_VERSION,
         source_lineage_refs=tuple(

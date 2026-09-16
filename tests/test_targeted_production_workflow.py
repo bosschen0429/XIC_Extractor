@@ -461,12 +461,14 @@ def test_finalization_preserves_the_acquisition_selected_hypothesis(
     assert captured_integration.height_smoothed == expected_capture_height
 
 
+@pytest.mark.parametrize("sample_names", [("SampleA",), ("SampleA", "SampleB")])
 def test_missing_selected_peak_finalizes_as_searched_no_observation(
     tmp_path: Path,
+    sample_names: tuple[str, ...],
 ) -> None:
     config, target, output = production_case(
         tmp_path,
-        sample_names=("SampleA", "SampleB"),
+        sample_names=sample_names,
     )
     original = output.file_results[0].results[target.label]
     rt = np.linspace(1.0, 2.0, 101)
@@ -496,7 +498,7 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
         build_targeted_application_request(
             config,
             [target],
-            injection_order={"SampleA": 1, "SampleB": 2},
+            injection_order={name: index for index, name in enumerate(sample_names, 1)},
         ),
         output,
     )
@@ -504,8 +506,8 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
     projection = finalized[0].completed_projection
     assert tuple(
         subject.terminal_subject.variant for subject in projection.cell_subjects
-    ) == ("searched_no_observation", "observed")
-    assert projection.counted_detection_count == 1
+    ) == ("searched_no_observation",) + ("observed",) * (len(sample_names) - 1)
+    assert projection.counted_detection_count == len(sample_names) - 1
     assert projection.no_write_count == 1
 
 
