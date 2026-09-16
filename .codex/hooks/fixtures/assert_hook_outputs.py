@@ -115,7 +115,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", execution_config_payload),
-        "Execution-affecting XIC agent config",
+        "docs/agent/codex-operating-system.md Change Protocol",
     )
 
     search_vcs = "g" + "it"
@@ -423,7 +423,9 @@ def main() -> int:
         },
     }
     patch_output = run_hook("xic_pre_tool_guard.py", patch_payload)
-    assert_contains(patch_output, "Execution-affecting XIC agent config")
+    assert_contains(
+        patch_output, "docs/agent/codex-operating-system.md Change Protocol"
+    )
     assert_absent(
         json.dumps(patch_output, ensure_ascii=False),
         '"permissionDecision"',
@@ -480,7 +482,9 @@ def main() -> int:
         "xic_pre_tool_guard.py",
         execpolicy_meta_payload,
     )
-    assert_contains(execpolicy_meta_output, "Execution-affecting XIC agent config")
+    assert_contains(
+        execpolicy_meta_output, "docs/agent/codex-operating-system.md Change Protocol"
+    )
     assert_absent(
         json.dumps(execpolicy_meta_output, ensure_ascii=False),
         '"permissionDecision"',

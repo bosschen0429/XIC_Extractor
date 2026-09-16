@@ -270,13 +270,19 @@ def main() -> int:
             )
             return 0
         if invocation.subcommand == "reset" and "--hard" in invocation.tail:
-            if invocation.policy_prefix is not GitPolicyPrefix.SUBCOMMAND:
+            if (
+                invocation.policy_prefix is not GitPolicyPrefix.SUBCOMMAND
+                or invocation.tail[:1] != ("--hard",)
+            ):
                 deny(
                     "git reset --hard is blocked. Do not discard user work; inspect the diff and ask for explicit rollback approval."
                 )
                 return 0
         elif invocation.subcommand == "checkout" and "--" in invocation.tail:
-            if invocation.policy_prefix is not GitPolicyPrefix.SUBCOMMAND:
+            if (
+                invocation.policy_prefix is not GitPolicyPrefix.SUBCOMMAND
+                or invocation.tail[:1] != ("--",)
+            ):
                 deny(
                     "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval."
                 )
@@ -304,7 +310,7 @@ def main() -> int:
     normalized = f"{command}\n{payload}".replace("\\", "/")
     if any(path.replace("\\", "/") in normalized for path in EXEC_CONFIG_PATHS):
         advisory_messages.append(
-            "Execution-affecting XIC agent config may be edited. After the change, run hook/script smoke checks, git diff --check, and a secret/local-path scan before closeout."
+            "XIC agent guidance or execution config is referenced. If changed, follow docs/agent/codex-operating-system.md Change Protocol and run the checks required for the affected behavior."
         )
 
     if advisory_messages:
