@@ -6,10 +6,6 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.discovery.cid_nl_oracle_contract import (
-    _ADJUDICATION_REQUIRED_FIELDS,
-    _LINEAGE_REQUIRED_FIELDS,
-    _REFERENCE_REQUIRED_FIELDS,
-    _REVIEW_REQUIRED_FIELDS,
     OracleContractError,
     canonical_row_sha256,
     canonical_tsv_bytes,
@@ -569,8 +565,11 @@ def test_reference_validator_required_fields_match_schema() -> None:
         ).read_text(encoding="utf-8")
     )
     expected = set(schema["required_columns"]) - set(schema["nullable_columns"])
-
-    assert set(_REFERENCE_REQUIRED_FIELDS) == expected
+    for field in expected:
+        row = _reference()
+        del row[field]
+        with pytest.raises(OracleContractError):
+            _validate_reference(row)
 
 
 @pytest.mark.parametrize(
@@ -833,7 +832,16 @@ def test_review_validator_required_fields_match_schema() -> None:
         schema["nullable_review_columns"]
     )
 
-    assert set(_REVIEW_REQUIRED_FIELDS) == expected
+    local = _local_review()
+    for field in expected:
+        row = _policy_review()
+        del row[field]
+        with pytest.raises(OracleContractError):
+            validate_review_event(
+                row,
+                local_record=local,
+                local_label_seal=_local_label_seal(local),
+            )
 
 
 @pytest.mark.parametrize(
@@ -1541,7 +1549,11 @@ def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
     expected_adjudication = set(
         review_schema["required_adjudication_event_columns"]
     ) - set(review_schema["nullable_adjudication_columns"])
-    assert set(_ADJUDICATION_REQUIRED_FIELDS) == expected_adjudication
+    for field in expected_adjudication:
+        row = _adjudication()
+        del row[field]
+        with pytest.raises(OracleContractError):
+            validate_adjudication_event(row)
 
     lineage_schema = json.loads(
         (
@@ -1553,7 +1565,33 @@ def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
     expected_lineage = set(lineage_schema["required_columns"]) - set(
         lineage_schema["nullable_columns"]
     )
-    assert set(_LINEAGE_REQUIRED_FIELDS) == expected_lineage
+    base_lineage = {
+        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "oracle_packet_id": "P1",
+        "binding_id": "B1",
+        "binding_role": "gate_result",
+        "processing_request_id": "REQ1",
+        "processing_attempt_id": "ATT1",
+        "evidence_artifact_id": "ART1",
+        "artifact_schema_version": "v1",
+        "artifact_semantic_role": "gate_result",
+        "artifact_sha256": "a" * 64,
+        "upstream_evidence_artifact_ids": "ART0",
+        "staleness_status": "current",
+        "source_row_sha256": "d" * 64,
+        "gate_id": "proposal_precision",
+        "gate_table_sha256": "c" * 64,
+        "gate_input_artifact_ids": "ART0",
+        "gate_status": "pass",
+        "gate_observed_value": "0.95",
+        "gate_threshold_resolved_value": "0.90",
+        "gate_verdict_dependency": "required_nonhard_gate_state",
+    }
+    for field in expected_lineage:
+        bad_row = dict(base_lineage)
+        del bad_row[field]
+        with pytest.raises(OracleContractError):
+            validate_lineage_binding_row(bad_row)
 
 
 def test_lineage_gate_result_requires_gate_specific_binding_fields() -> None:

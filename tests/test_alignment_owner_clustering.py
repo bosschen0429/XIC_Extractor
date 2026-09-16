@@ -2446,6 +2446,13 @@ def test_owner_clustering_keeps_duplicate_owner_group_outside_identity_window() 
         sample_universe=frozenset({"sample-a", "sample-b", "sample-c"}),
     )
 
+    assert len(hypotheses) == 2
+    assert hypotheses[0].owner_ids == (
+        "OWN-sample-a-a",
+        "OWN-sample-b-b",
+        "OWN-sample-c-c",
+    )
+    assert hypotheses[1].owner_ids == ("OWN-sample-a-a2", "OWN-sample-b-b2")
     assert all(not hypothesis.review_only for hypothesis in hypotheses)
     assert all(
         hypothesis.consolidation_state == "not_consolidated"

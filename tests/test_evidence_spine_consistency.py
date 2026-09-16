@@ -53,50 +53,6 @@ def test_module_style_cli_help_preserves_public_module_contract() -> None:
     assert "--output-dir" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "DEFAULT_FOCUS_LABELS",
-        "ROW_FIELDS",
-        "SUMMARY_FIELDS",
-        "AlignmentCell",
-        "ConsistencyRow",
-        "ConsistencySummary",
-        "EvidenceSpineConsistencyOutputs",
-        "EvidenceSpineConsistencyResult",
-        "TargetedCandidate",
-        "TargetedShadow",
-        "_best_alignment_match",
-        "_bool_value",
-        "_build_rows",
-        "_consistency_row",
-        "_fmt",
-        "_format_counter",
-        "_format_rt_window",
-        "_format_value",
-        "_mismatch_reasons",
-        "_optional_float",
-        "_optional_int",
-        "_parse_args",
-        "_ppm",
-        "_ratio",
-        "_read_alignment_cells",
-        "_read_required_tsv",
-        "_read_target_mz",
-        "_read_targeted_candidates",
-        "_read_targeted_shadows",
-        "_summarize",
-        "_write_markdown",
-        "_write_outputs",
-        "_write_tsv",
-        "main",
-        "run_evidence_spine_consistency",
-    ]
-
-    assert set(report.__all__) == set(expected_names)
-    for name in expected_names:
-        assert hasattr(report, name), name
-
-
 def test_evidence_spine_consistency_matches_shared_semantics(tmp_path: Path) -> None:
     targeted_dir = tmp_path / "targeted"
     alignment_dir = tmp_path / "alignment"

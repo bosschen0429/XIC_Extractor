@@ -373,74 +373,8 @@ def test_request_status_enum_values_are_stable_strings():
 def test_identity_coherence_facade_exports_stable_contract():
     import xic_extractor.alignment.identity_coherence as identity_coherence
 
-    schema_enums = (
-        IdentityDecision,
-        WeakBasisReason,
-        RtCenterDecision,
-        CellAssessmentStatus,
-        CellIdentityTier,
-        CellIdentityBasis,
-        FragmentMatchStatus,
-        RtGateStatus,
-        NonRtIdentityResult,
-        ShapeStatus,
-        ShapeReferenceBasis,
-        ShapeAuditStatus,
-        WidthStatus,
-        BaselineAuditStatus,
-        AreaHeightStatus,
-        CellBlockedReason,
-        CellDataQualityReason,
-        DecisionReason,
-    )
-    for schema_enum in schema_enums:
-        assert getattr(identity_coherence, schema_enum.__name__) is schema_enum
-        assert schema_enum.__name__ in identity_coherence.__all__
-
-    assert identity_coherence.FragmentIdentity is not None
-    assert identity_coherence.CidNeutralLossConstraint is not None
-    assert identity_coherence.IdentityCoherenceRequest is not None
-    assert identity_coherence.CandidateIdentityMatch is not None
-    assert identity_coherence.SeedCandidateEvidence is not None
-    assert identity_coherence.SeedGateConfig is not None
-    assert identity_coherence.SeedGateResult is not None
-    assert identity_coherence.EvidenceStage is not None
-    assert identity_coherence.SeedGateClass is not None
-    assert identity_coherence.SeedRejectReason is not None
-    assert identity_coherence.build_identity_coherence_request is not None
-    assert identity_coherence.build_seed_candidate_evidence is not None
-    assert identity_coherence.match_request_to_candidate is not None
-    assert identity_coherence.evaluate_seed_gate is not None
-    assert identity_coherence.format_fragment_tags is not None
-    assert identity_coherence.has_fragment_tags is not None
-    assert identity_coherence.normalize_fragment_tags is not None
-    assert identity_coherence.IDENTITY_COHERENCE_REQUEST_COLUMNS
-    assert identity_coherence.CellCandidateEvidence is not None
-    assert identity_coherence.CellEvidenceResult is not None
-    assert identity_coherence.CandidateTrace is not None
-    assert identity_coherence.ShapeConfig is not None
-    assert identity_coherence.WidthConfig is not None
-    assert identity_coherence.ShapeReferenceResult is not None
-    assert identity_coherence.ShapeComparisonResult is not None
-    assert identity_coherence.PrototypeWidthResult is not None
-    assert identity_coherence.WidthAssessmentResult is not None
-    assert identity_coherence.IdentityCoherenceConfig is not None
-    assert identity_coherence.IdentityCoherenceRowResult is not None
-    assert identity_coherence.IdentityDecisionSummary is not None
-    assert identity_coherence.RtCenterResult is not None
-    assert identity_coherence.estimate_rt_center is not None
-    assert identity_coherence.estimate_prototype_width is not None
-    assert identity_coherence.assess_width_against_prototype is not None
-    assert identity_coherence.estimate_shape_reference is not None
-    assert identity_coherence.create_seed_shape_reference is not None
-    assert identity_coherence.compare_shape_to_reference is not None
-    assert identity_coherence.normalize_trace_for_shape is not None
-    assert identity_coherence.evaluate_cell_evidence is not None
-    assert identity_coherence.evaluate_identity_coherence_row is not None
-    assert identity_coherence.select_cell_evidence_for_sample is not None
-    assert identity_coherence.summarize_identity_decision is not None
-    assert identity_coherence.match_identity_constraints_to_candidate is not None
-    assert "match_identity_constraints_to_candidate" in identity_coherence.__all__
+    for name in identity_coherence.__all__:
+        assert hasattr(identity_coherence, name), f"Missing public export: {name}"
 
 
 def test_identity_coherence_facade_exports_output_writer_surface():

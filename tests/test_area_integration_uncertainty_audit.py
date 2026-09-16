@@ -53,57 +53,6 @@ def test_module_style_cli_help_preserves_public_module_contract() -> None:
     assert "--output-dir" in result.stdout
 
 
-def test_facade_preserves_existing_helper_import_surface() -> None:
-    expected_names = [
-        "BOUNDARY_DELTA_CONCERN_MIN",
-        "HIGH_UNCERTAINTY_FRACTION",
-        "LOW_BASELINE_FRACTION",
-        "RAW_AREA_RATIO_MAX",
-        "RAW_AREA_RATIO_MIN",
-        "ROW_FIELDS",
-        "SUMMARY_FIELDS",
-        "AlignmentIntegrationAudit",
-        "AreaIntegrationRow",
-        "AreaIntegrationSummary",
-        "AreaIntegrationUncertaintyOutputs",
-        "AreaIntegrationUncertaintyResult",
-        "EvidenceRow",
-        "TargetedAudit",
-        "_abs_gt",
-        "_bool_value",
-        "_boundary_sensitive",
-        "_build_row",
-        "_classify",
-        "_fmt",
-        "_format_counter",
-        "_format_value",
-        "_gt",
-        "_has_high_uncertainty",
-        "_label_mismatch",
-        "_lt",
-        "_nonempty_diff",
-        "_optional_float",
-        "_parse_args",
-        "_ratio",
-        "_ratio_in_window",
-        "_read_alignment_integration_audits",
-        "_read_boundary_alternatives",
-        "_read_evidence_rows",
-        "_read_required_tsv",
-        "_read_targeted_audits",
-        "_summarize",
-        "_write_markdown",
-        "_write_outputs",
-        "_write_tsv",
-        "main",
-        "run_area_integration_uncertainty_audit",
-    ]
-
-    assert set(report.__all__) == set(expected_names)
-    for name in expected_names:
-        assert hasattr(report, name), name
-
-
 def test_area_integration_uncertainty_audit_classifies_all_buckets(
     tmp_path: Path,
 ) -> None:

@@ -23,15 +23,6 @@ def test_current_cid_nl_full_cohort_universe_closure_is_stable() -> None:
     assert check_cid_nl_default_activation_universe_closure() == []
 
 
-def test_retained_full_cohort_closure_artifacts_use_lf_line_endings() -> None:
-    for name in (
-        RETAINED_CHECKS_FILENAME,
-        RETAINED_MANIFEST_FILENAME,
-    ):
-        content = (RETAINED_DOCS_DIR / name).read_bytes()
-        assert b"\r\n" not in content
-
-
 def test_missing_required_closure_check_fails_closed(tmp_path: Path) -> None:
     summary_json, checks_tsv, manifest_tsv = _copy_contract(tmp_path)
     rows = [

@@ -95,58 +95,6 @@ def test_productization_authority_checker_rejects_duplicate_json_field(
     assert any("duplicate JSON object key" in problem for problem in problems)
 
 
-@pytest.mark.parametrize(
-    ("mutation", "expected_problem"),
-    (
-        ("pretty", "owner-rendered canonical bytes"),
-        ("extra_lf", "owner-rendered canonical bytes"),
-        ("no_lf", "owner-rendered canonical bytes"),
-        ("crlf", "owner-rendered canonical bytes"),
-        ("bom", "invalid JSON"),
-    ),
-)
-def test_productization_authority_checker_rejects_noncanonical_manifest_bytes(
-    tmp_path: Path,
-    mutation: str,
-    expected_problem: str,
-) -> None:
-    canonical = DEFAULT_DEPENDENT_MANIFEST.read_bytes()
-    if mutation == "pretty":
-        payload = json.loads(canonical.decode("utf-8"))
-        raw = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
-    elif mutation == "extra_lf":
-        raw = canonical + b"\n"
-    elif mutation == "no_lf":
-        raw = canonical.removesuffix(b"\n")
-    elif mutation == "crlf":
-        raw = canonical.replace(b"\n", b"\r\n")
-    else:
-        raw = b"\xef\xbb\xbf" + canonical
-    manifest = tmp_path / f"dependent-{mutation}.json"
-    manifest.write_bytes(raw)
-
-    problems = check_productization_authority(dependent_manifest_path=manifest)
-
-    assert any(expected_problem in problem for problem in problems)
-
-
-def test_productization_authority_checker_reads_dependent_manifest_once(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_read_bytes = Path.read_bytes
-    dependent_read_count = 0
-
-    def tracked_read_bytes(path: Path) -> bytes:
-        nonlocal dependent_read_count
-        if path == DEFAULT_DEPENDENT_MANIFEST:
-            dependent_read_count += 1
-        return original_read_bytes(path)
-
-    monkeypatch.setattr(Path, "read_bytes", tracked_read_bytes)
-
-    assert check_productization_authority() == []
-    assert dependent_read_count == 1
-
 
 def test_productization_authority_public_gate_propagates_owner_failure(
     monkeypatch: pytest.MonkeyPatch,

@@ -1,14 +1,8 @@
 import pickle
 from pathlib import Path
 
-from xic_extractor.alignment import AlignedCell, AlignmentMatrix, CellStatus
+from xic_extractor.alignment import AlignedCell, AlignmentMatrix
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-
-
-def test_cell_status_contract_values():
-    statuses: set[CellStatus] = {"detected", "rescued", "absent", "unchecked"}
-
-    assert statuses == {"detected", "rescued", "absent", "unchecked"}
 
 
 def test_aligned_cell_exposes_traceability_fields():
