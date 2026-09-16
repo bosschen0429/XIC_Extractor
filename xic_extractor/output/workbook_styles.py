@@ -108,7 +108,15 @@ def _nl_cell_fill(value: str) -> PatternFill:
 
 
 def _long_cell_value(header: str, raw_val: str) -> object:
-    if header in {"SampleName", "Target", "ISTD Pair", "Confidence", "Reason"}:
+    if header in {
+        "SampleName",
+        "Target",
+        "ISTD Pair",
+        "Confidence",
+        "Reason",
+        "Supporting Evidence",
+        "Conflicts / Concerns",
+    }:
         return _excel_text(raw_val)
     if header == "NL":
         return _nl_to_display(raw_val) if raw_val else ""

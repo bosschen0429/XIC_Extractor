@@ -252,7 +252,7 @@ def test_write_wide_and_long_csv(tmp_path: Path) -> None:
         "PeakEnd": "9.2000",
         "PeakWidth": "0.3000",
         "Confidence": "LOW",
-        "Reason": "decision: detected_flagged; review: local_sn_minor",
+        "Reason": "Detected; review: weak local signal-to-noise.",
         "Product State": "detected_flagged",
         "Counted Detection": "TRUE",
         "Review State": "flagged",
@@ -457,7 +457,7 @@ def test_long_and_score_breakdown_rows_use_targeted_product_projection(
     assert long_row["Confidence"] == "VERY_LOW"
     assert (
         long_row["Reason"]
-        == "decision: detected_flagged; review: plausible_dda_nl_dropout"
+        == "Detected; review: MS2/NL may be missing from DDA sampling."
     )
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
@@ -494,7 +494,7 @@ def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> No
 
     assert long_row["Counted Detection"] == "TRUE"
     assert long_row["Product State"] == "detected_flagged"
-    assert long_row["Reason"].startswith("decision: detected_flagged")
+    assert long_row["Reason"].startswith("Detected; review:")
     assert "not counted" not in long_row["Reason"]
 
 
@@ -524,7 +524,66 @@ def test_long_row_confidence_follows_not_counted_projection() -> None:
     assert long_row["Product State"] == "not_counted"
     assert long_row["Counted Detection"] == "FALSE"
     assert long_row["Confidence"] == "VERY_LOW"
-    assert long_row["Reason"].startswith("decision: not_counted")
+    assert long_row["Reason"] == "Not counted: no positive MS1 peak available."
+
+
+def test_long_reason_explains_conflict_without_repeating_support() -> None:
+    target = _target("WithNL")
+    projection = TargetedProductProjection(
+        product_state="ambiguous",
+        counted_detection=False,
+        review_state="review_required",
+        projection_reason=(
+            "decision: ambiguous; support: ms1_coherent, candidate_aligned_ms2_nl; "
+            "review: targeted_rt_review; conflict: targeted_rt_conflict"
+        ),
+        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
+        review_reasons=("targeted_rt_review",),
+        conflict_reasons=("targeted_rt_conflict",),
+    )
+    result = replace(_result(), targeted_product_projection=projection)
+    row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
+
+    assert (
+        row["Reason"]
+        == "Not counted: peak position conflicts with the RT reference/window."
+    )
+    assert row["RT"] == "ND"
+    assert row["Projection Reason"] == projection.projection_reason
+    assert row["Projection Support Reasons"] == "ms1_coherent; candidate_aligned_ms2_nl"
+    assert row["Projection Conflict Reasons"] == "targeted_rt_conflict"
+
+    result = replace(
+        result, score_breakdown=(("Concerns", "rt_centrality_borderline"),)
+    )
+    precise_row = _long_output_rows(
+        FileResult("SampleA", {target.label: result}), [target]
+    )[0]
+    assert precise_row["Reason"] == (
+        "Not counted: peak is off-centre in the RT window (borderline)."
+    )
+
+
+def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> None:
+    target = _target("WithNL")
+    projection = TargetedProductProjection(
+        product_state="not_counted",
+        counted_detection=False,
+        review_state="review_required",
+        projection_reason="decision: not_counted; review: legacy_confidence_review",
+        review_reasons=(
+            "legacy_confidence_review",
+            "selected_envelope_split_supported",
+        ),
+        not_counted_reasons=("selected_envelope_boundary_externalize",),
+    )
+    result = replace(_result(), targeted_product_projection=projection)
+    row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
+
+    assert row["Reason"] == "Not counted: peak/integration boundaries are unresolved."
+    assert row["Projection Review Reasons"] == (
+        "legacy_confidence_review; selected_envelope_split_supported"
+    )
 
 
 def test_score_breakdown_csv_can_emit_ms2_trace_labels_without_schema_change(
@@ -598,7 +657,7 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason"}:
             continue
         assert selected_long[header] == fallback_value
-    assert selected_long["Reason"].startswith("decision: detected_flagged")
+    assert selected_long["Reason"].startswith("Detected; review:")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
 
@@ -655,7 +714,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert long_row["PeakWidth"] == "0.4200"
     assert long_row["NL"] == "WARN_12.3ppm"
     assert long_row["Confidence"] == "LOW"
-    assert long_row["Reason"] == "decision: detected_flagged; review: local_sn_minor"
+    assert long_row["Reason"] == "Detected; review: weak local signal-to-noise."
 
 
 def test_csv_rows_preserve_no_peak_nd_projection() -> None:

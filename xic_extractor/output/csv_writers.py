@@ -5,6 +5,7 @@ from typing import Protocol
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.detection import is_accepted_result_detection
+from xic_extractor.output.reason_display import display_product_reason
 from xic_extractor.output.schema import (
     DIAGNOSTIC_HEADERS,
     LONG_HEADERS,
@@ -323,8 +324,15 @@ def _projection_fields(
 
 def _display_reason(result: ExtractionResultLike) -> str:
     projection = result.targeted_product_projection
-    if projection is not None and projection.projection_reason:
-        return projection.projection_reason
+    if projection is not None:
+        return display_product_reason(
+            projection.product_state,
+            review_reasons=projection.review_reasons,
+            conflict_reasons=projection.conflict_reasons,
+            not_counted_reasons=projection.not_counted_reasons,
+            exclusion_reasons=projection.exclusion_reasons,
+            concerns=dict(result.score_breakdown).get("Concerns", ""),
+        )
     return result.reason
 
 
