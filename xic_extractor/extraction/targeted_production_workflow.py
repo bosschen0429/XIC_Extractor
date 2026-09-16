@@ -416,6 +416,11 @@ def _bind_results_to_raw_paths(
 ) -> tuple[tuple[Path, FileResult], ...]:
     results_by_sample: dict[str, FileResult] = {}
     for file_result in file_results:
+        if file_result.error:
+            raise RuntimeError(
+                "Targeted RAW acquisition failed for "
+                f"{file_result.sample_name}: {file_result.error}"
+            )
         if file_result.sample_name in results_by_sample:
             raise RuntimeError(
                 "Targeted acquisition returned duplicate sample identities"
@@ -734,10 +739,12 @@ def _execute_target(
             )
         )
     work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
+    # RAW acquisition has already completed; this attempt acknowledges its
+    # retained artifact handoff before scientific composition begins.
     runtime = start_runtime_attempt(
         attempt=context.owners.attempt,
         work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="targeted-production-acquisition:v1",
+        owner_completeness_attestation="targeted-retained-acquisition-handoff:v1",
     )
     terminal = execute_alignment_workflow(
         TargetWorkflowRequest(
