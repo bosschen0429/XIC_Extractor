@@ -16,7 +16,6 @@ import hashlib
 import importlib
 import json
 import os
-import re
 import subprocess
 import sys
 import tomllib
@@ -30,113 +29,7 @@ import grimp
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOTS = ("xic_extractor", "gui", "scripts", "tools", "xic_inspector")
-DURABLE_PYTHON_ROOTS = (*REPOSITORY_ROOTS, "tests")
 STATIC_DEPENDENCY_SCOPE = "grimp_static_import_graph"
-CONSTRUCTION_COORDINATE_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])(?:"
-    r"(?i:(?:issue|ticket|pull[_ -]?request|pr|task|epic)"
-    r"(?:\s+|[_#:-])?\d+|"
-    r"(?:phase|milestone|sprint|wave|package|fix)(?:\s+|[_-])?\d+|"
-    r"(?:8[_-]?raw|85[_-]?raw|raw[_-]?(?:8|85))|"
-    r"gate(?:\s+|[_-])[a-z])|"
-    r"[Mm]\d+|[Pp][1-9][A-Za-z]?"
-    r")"
-    r"(?![A-Za-z0-9])",
-)
-_HISTORICAL_REVIEW_SCHEMA_IDENTIFIERS = frozenset(
-    {
-        "issue180_m9_gate_c_manual_review_v1",
-        "issue180_m9_gate_c_observation_replay_v1",
-    }
-)
-_CONSTRUCTION_COORDINATE_ORACLE_SAMPLES = frozenset(
-    {
-        "run_issue367_bundle.py",
-        "Issue 367",
-        "run_ticket_42_bundle.py",
-        "ticket-42",
-        "run_m7_bundle.py",
-        "M7",
-        "run_phase7_bundle.py",
-        "phase 7",
-        "run_milestone4_bundle.py",
-        "milestone-4",
-        "run_p7_bundle.py",
-        "P7",
-        "run_package2_bundle.py",
-        "package 2",
-        "run_85raw_bundle.py",
-        "85RAW",
-        "run_raw85_bundle.py",
-        "raw85",
-        "run_gate_c_bundle.py",
-        "Gate C",
-        "run_sprint4_bundle.py",
-        "sprint 4",
-        "run_wave3_bundle.py",
-        "wave 3",
-        "run_fix3_bundle.py",
-        "fix3",
-    }
-)
-_RETAINED_CID_NL_CLOSURE_IDENTIFIERS = frozenset(
-    {
-        "cid_nl_85raw_universe_closure_summary.json",
-        "cid_nl_85raw_universe_closure_checks.tsv",
-        "cid_nl_85raw_universe_closure_manifest.tsv",
-        "cid_nl_85raw_universe_closure_v1",
-        "current_cid_nl_85raw_fix3_successor_universe",
-        "85raw_fix3_input_binding",
-        "raw_or_85raw_ran",
-        "discovery_expanded_85raw_alignment_rows",
-    }
-)
-_RETAINED_QUANT_MATRIX_SOURCE_IDENTIFIERS = frozenset(
-    {"seed-guard-realdata-85raw-generated-policy-policy-observed-oracle-20260617"}
-)
-ALLOWED_CONSTRUCTION_COORDINATES_BY_PATH: Mapping[str, frozenset[str]] = {
-    "scripts/build_quant_matrix_real_bundle.py": (
-        _RETAINED_QUANT_MATRIX_SOURCE_IDENTIFIERS
-    ),
-    "scripts/check_architecture_census.py": (
-        _HISTORICAL_REVIEW_SCHEMA_IDENTIFIERS
-        | _CONSTRUCTION_COORDINATE_ORACLE_SAMPLES
-        | _RETAINED_CID_NL_CLOSURE_IDENTIFIERS
-        | _RETAINED_QUANT_MATRIX_SOURCE_IDENTIFIERS
-    ),
-    "scripts/check_cid_nl_default_activation_universe_closure.py": (
-        _RETAINED_CID_NL_CLOSURE_IDENTIFIERS
-    ),
-    "scripts/check_cid_nl_discovery_release_slice.py": frozenset(
-        {
-            "discovery_expanded_85raw_alignment_rows",
-            "raw_or_85raw_ran",
-        }
-    ),
-    "scripts/build_cid_nl_default_product_activation.py": frozenset(
-        {
-            "discovery_expanded_85raw_alignment_rows",
-            "raw_or_85raw_ran",
-        }
-    ),
-    "tests/test_docs_architecture_census.py": (
-        _HISTORICAL_REVIEW_SCHEMA_IDENTIFIERS | _CONSTRUCTION_COORDINATE_ORACLE_SAMPLES
-    ),
-    "xic_extractor/alignment/mode_track_table_finalization.py": (
-        _HISTORICAL_REVIEW_SCHEMA_IDENTIFIERS
-    ),
-}
-IMMUTABLE_PROVENANCE_PREFIXES = (
-    "docs/history/",
-    "docs/superpowers/fixtures/",
-    "docs/superpowers/validation/",
-)
-OPERATIONAL_TEST_MODULES = frozenset(
-    {
-        "tests/mode_track_raw_validation_fixture.py",
-        "tests/mode_track_closed_writer_validation_runner.py",
-    }
-)
 _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
     {
         "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -438,102 +331,7 @@ def validate_architecture_census(
         if owner is None or not owner.is_file():
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
     problems.extend(validate_runtime_boundary_authority(repo_root))
-    problems.extend(validate_durable_repository_language(repo_root))
     return problems
-
-
-def validate_durable_repository_language(
-    repo_root: Path,
-    python_paths: Sequence[Path] | None = None,
-) -> list[str]:
-    """Reject construction coordinates from durable repository language."""
-
-    paths = (
-        repository_tracked_paths(repo_root)
-        if python_paths is None
-        else tuple(python_paths)
-    )
-    problems: list[str] = []
-    for relative_path in paths:
-        path_key = relative_path.as_posix()
-        if path_key.startswith(IMMUTABLE_PROVENANCE_PREFIXES):
-            continue
-        path_match = CONSTRUCTION_COORDINATE_PATTERN.search(path_key)
-        if path_match is not None:
-            problems.append(
-                f"{path_key}: durable repository path uses construction "
-                "coordinate identity"
-            )
-        if (
-            relative_path.suffix != ".py"
-            or not relative_path.parts
-            or relative_path.parts[0] not in DURABLE_PYTHON_ROOTS
-        ):
-            continue
-        source_path = repo_root / relative_path
-        try:
-            source = source_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            problems.append(f"{path_key}: durable module language scan failed: {exc}")
-            continue
-        try:
-            tree = ast.parse(source, filename=path_key)
-        except SyntaxError as exc:
-            problems.append(
-                f"{path_key}:{exc.lineno or 1}: durable name scan could not parse "
-                f"Python source: {exc.msg}"
-            )
-            continue
-        definition_only = (
-            relative_path.parts[0] == "tests"
-            and path_key not in OPERATIONAL_TEST_MODULES
-        )
-        for node in ast.walk(tree):
-            candidates: tuple[str, ...] = ()
-            if isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef, ast.FunctionDef)):
-                candidates = (node.name,)
-            elif not definition_only and isinstance(
-                node, (ast.Name, ast.Attribute, ast.arg)
-            ):
-                candidates = (
-                    node.id
-                    if isinstance(node, ast.Name)
-                    else node.attr
-                    if isinstance(node, ast.Attribute)
-                    else node.arg,
-                )
-            elif (
-                not definition_only
-                and isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and not any(character.isspace() for character in node.value)
-                and "/" not in node.value
-                and "\\" not in node.value
-            ):
-                candidates = (node.value,)
-            for candidate in candidates:
-                durable_candidate = candidate
-                allowed_coordinates = ALLOWED_CONSTRUCTION_COORDINATES_BY_PATH.get(
-                    path_key, ()
-                )
-                for allowed_coordinate in sorted(
-                    allowed_coordinates,
-                    key=len,
-                    reverse=True,
-                ):
-                    durable_candidate = durable_candidate.replace(
-                        allowed_coordinate, ""
-                    )
-                if (
-                    CONSTRUCTION_COORDINATE_PATTERN.search(durable_candidate)
-                    is not None
-                ):
-                    problems.append(
-                        f"{path_key}:{getattr(node, 'lineno', 1)}: durable identifier "
-                        "uses construction coordinate identity; name the owned "
-                        "role instead"
-                    )
-    return sorted(set(problems))
 
 
 def validate_runtime_boundary_authority(

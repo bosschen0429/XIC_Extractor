@@ -50,6 +50,8 @@ uses the affected source, existing tests, and the relevant branch below.
 - **Final-state artifacts:** code, comments, tests, and docs describe current
   behavior and non-obvious constraints. Cleanup history and rejected options
   stay in Git/PR history unless a current consumer needs the rationale.
+- **Module naming:** name new or renamed modules for their actual capability
+  and responsibility, following [Module Naming](docs/architecture-contract.md#module-naming).
 - **Runtime owner:** use the active worktree's documented Python runner and
   bootstrap. Run-specific artifacts stay under ignored task-specific `output/`;
   tracked artifacts require a current runtime, CI, or public consumer.

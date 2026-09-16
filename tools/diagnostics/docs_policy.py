@@ -564,13 +564,6 @@ def is_superpowers_spec_lane_path(path: str) -> bool:
     return path_is_under(normalized, SUPERPOWERS_SPEC_DIR)
 
 
-def is_invalid_superpowers_spec_payload_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./")
-    return is_superpowers_spec_lane_path(normalized) and not is_markdown_path(
-        normalized
-    )
-
-
 def retired_tracked_dir_for_path(path: str) -> str:
     normalized = normalize_path_text(path).lstrip("./")
     if normalized in DOC_RETIRED_TRACKED_EXEMPTIONS:

@@ -2133,8 +2133,9 @@ Use `--routing-manifest-tsv` for file-level cleanup rows and
 `--topic-clusters-tsv` for big-direction consolidation. Use
 `--topic-index-dir output/docs-topic-indexes` to generate temporary,
 ignored index-only topic README files from the current cluster summary.
-Use `--repo-only --fail-on-completed-transient` in CI/PR closeout to fail when
-completed transient originals remain, without reading the private Obsidian vault.
+Use `--repo-only` in CI/PR closeout without reading the private Obsidian vault.
+Completed-document inventory is advisory: lifecycle status alone does not
+determine whether a document still has a useful consumer.
 **Topic group**: `docs_management_audit.py` + `docs_scan.py`
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
 **Status note**: Read-only docs governance audit. It does not move files, write

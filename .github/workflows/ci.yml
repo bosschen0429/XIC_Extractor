@@ -37,7 +37,7 @@ jobs:
       - name: Diagnostics index in sync
         run: uv run python scripts/check_diagnostics_index.py
       - name: Docs lifecycle audit
-        run: uv run python tools/diagnostics/docs_management_audit.py --repo-only --fail-on-completed-transient --json
+        run: uv run python tools/diagnostics/docs_management_audit.py --repo-only --json
 
   typecheck:
     runs-on: ubuntu-latest

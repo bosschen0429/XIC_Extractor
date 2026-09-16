@@ -153,15 +153,26 @@ architecture boundaries.
   enumeration, calibration, production candidate, or retirement.
 - Direct matrix writes require an activation/export contract, expected diff,
   and focused output oracle.
-- Name current modules and contracts after owned behavior, not an Issue or PR,
-  milestone, numbered phase/package, opaque gate label, dated attempt, or first
-  validation dataset.
 
 `xic_extractor.evidence_semantics` is role-neutral and serves both candidate
 selection and product projection. Targeted role policy belongs in the Targeted
 projection builder, not in shared semantics. Because Alignment also consumes
 the shared layer, changes there have cross-path blast radius. The complete
 resolution order is in [`decision-policy.md`](product/decision-policy.md).
+
+## Module Naming
+
+Name new or renamed modules and commands for the capability they provide and
+the responsibility they own. A reader should understand their purpose without
+knowing the development history: for example, use `quant_matrix_export` for
+matrix export rather than `phase7` or `issue367_bundle`.
+
+Issue numbers, rollout phases, and dataset labels may explain provenance, but
+must not substitute for a capability description. Domain terms such as a real
+runtime phase, schema version, or scientific name remain appropriate when they
+describe the current behavior. Judge meaning in context rather than matching
+forbidden words. Preserve compatibility when considering existing names; this
+guidance does not require unrelated renames.
 
 ## Diagnostics Contract
 
