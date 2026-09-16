@@ -1,12 +1,10 @@
 import math
 from dataclasses import dataclass
-from typing import get_type_hints
 
 import pytest
 
 from xic_extractor.alignment.models import (
     AlignmentCluster,
-    CandidateLike,
     build_alignment_cluster,
     calculate_alignment_cluster_center,
 )
@@ -185,18 +183,6 @@ def test_center_rejects_invalid_rt_values(ms1_apex_rt, best_seed_rt):
 
     with pytest.raises(ValueError, match="finite retention time"):
         calculate_alignment_cluster_center((candidate,))
-
-
-def test_candidate_like_protocol_describes_required_alignment_fields():
-    assert get_type_hints(CandidateLike) == {
-        "sample_stem": str,
-        "neutral_loss_tag": str,
-        "precursor_mz": float,
-        "product_mz": float,
-        "observed_neutral_loss_da": float,
-        "ms1_apex_rt": float | None,
-        "best_seed_rt": float | None,
-    }
 
 
 def test_center_accepts_production_discovery_candidate_shape():

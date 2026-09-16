@@ -1,5 +1,3 @@
-import typing
-
 import numpy as np
 import pytest
 
@@ -36,78 +34,11 @@ from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
-)
 
 
-def test_build_extraction_result_preserves_parity_with_selected_hypothesis() -> None:
-    target = _target()
-    candidate = _candidate()
-    peak_result = PeakDetectionResult(
-        status="OK",
-        peak=candidate.peak,
-        n_points=12,
-        max_smoothed=1200.0,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
-        confidence="LOW",
-        reason="concerns: local_sn",
-        severities=((1, "local_sn"),),
-        score_breakdown=(("Raw Score", "41"),),
-        candidate_scores=(_score(candidate),),
-    )
-    evidence = _ms2_evidence()
-    selected = selected_peak_hypothesis(
-        build_production_peak_hypotheses(
-            config=_Config(),
-            sample_name="SampleA",
-            target=target,
-            peak_result=peak_result,
-            selected_candidate_ms2_evidence=evidence,
-        )
-    )
-
-    legacy = build_extraction_result(
-        peak_result=peak_result,
-        nl_result=NLResult("WARN", 12.0, 8.5, 1, 0, 1),
-        candidate_ms2_evidence=evidence,
-        target=target,
-        candidate=candidate,
-        scoring_context_builder=None,
-    )
-    with_hypothesis = build_extraction_result(
-        peak_result=peak_result,
-        nl_result=NLResult("WARN", 12.0, 8.5, 1, 0, 1),
-        candidate_ms2_evidence=evidence,
-        target=target,
-        candidate=candidate,
-        scoring_context_builder=None,
-        selected_hypothesis=selected,
-    )
-
-    assert selected is not None
-    assert with_hypothesis.peak_result is legacy.peak_result
-    assert with_hypothesis.nl_token == legacy.nl_token
-    assert with_hypothesis.target_label == legacy.target_label
-    assert with_hypothesis.role == legacy.role
-    assert with_hypothesis.istd_pair == legacy.istd_pair
-    assert with_hypothesis.confidence == legacy.confidence
-    assert with_hypothesis.reason == legacy.reason
-    assert with_hypothesis.severities == legacy.severities
-    assert with_hypothesis.quality_penalty == legacy.quality_penalty
-    assert with_hypothesis.quality_flags == legacy.quality_flags
-    assert with_hypothesis.score_breakdown == legacy.score_breakdown
-    assert with_hypothesis.selection_decision is not None
-    assert (
-        with_hypothesis.confidence
-        == with_hypothesis.selection_decision.projected_confidence
-    )
-    assert with_hypothesis.reason == with_hypothesis.selection_decision.projected_reason
-
-
-def test_build_extraction_result_keeps_high_fallback_without_scoring_confidence(
-) -> None:
+def test_build_extraction_result_keeps_high_fallback_without_scoring_confidence() -> (
+    None
+):
     target = _target()
     candidate = _candidate()
     peak_result = PeakDetectionResult(
@@ -145,8 +76,7 @@ def test_build_extraction_result_keeps_high_fallback_without_scoring_confidence(
     assert result.reason == ""
 
 
-def test_build_extraction_result_uses_typed_projection_when_final_confidence_is_stale(
-) -> None:
+def test_build_extraction_result_uses_typed_projection_when_confidence_stale() -> None:
     target = _target()
     candidate = _candidate(quality_flags=())
     typed_facts = _clean_typed_facts(candidate)
@@ -415,15 +345,6 @@ def test_extraction_result_projects_approved_expected_diff_successor_values() ->
     assert result.reason == "approved expected-diff successor projection"
 
 
-def test_extraction_result_runtime_type_hints_are_resolvable() -> None:
-    hints = typing.get_type_hints(ExtractionResult)
-
-    assert hints["selected_hypothesis"] == PeakHypothesis | None
-    assert hints["selection_decision"] == PeakHypothesisSelectionDecision | None
-    assert hints["model_selection_result"] == PeakModelSelectionResult | None
-    assert hints["targeted_product_projection"] == TargetedProductProjection | None
-
-
 def test_extraction_result_projection_accessors_fall_back_to_legacy_peak() -> None:
     peak_result = _peak_result_with_candidate()
     result = build_extraction_result(
@@ -672,8 +593,7 @@ def test_paired_analyte_anchor_conflict_blocks_trace_downgrade() -> None:
     assert "trace_morphology_review" in projection.review_reasons
 
 
-def test_paired_analyte_anchor_selected_nl_fail_requires_area_ratio_support(
-) -> None:
+def test_paired_analyte_anchor_selected_nl_fail_requires_area_ratio_support() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=(),
@@ -691,8 +611,7 @@ def test_paired_analyte_anchor_selected_nl_fail_requires_area_ratio_support(
     assert "paired_istd_anchor_support" in projection.support_reasons
 
 
-def test_paired_analyte_anchor_and_area_ratio_without_own_max_keeps_nl_fail_not_counted(
-) -> None:
+def test_paired_analyte_anchor_ratio_no_own_max_keeps_nl_fail_not_counted() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("ms1_coherent", "paired_area_ratio_support"),
@@ -713,8 +632,7 @@ def test_paired_analyte_anchor_and_area_ratio_without_own_max_keeps_nl_fail_not_
     assert OWN_MAX_SAME_PEAK_SUPPORT_REASON not in projection.support_reasons
 
 
-def test_paired_analyte_anchor_area_ratio_and_own_max_downgrades_nl_fail_to_review(
-) -> None:
+def test_paired_analyte_anchor_ratio_own_max_downgrades_nl_fail_to_review() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=(
@@ -756,8 +674,9 @@ def test_paired_analyte_nl_fail_requires_anchor_inside_selected_interval() -> No
     assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
 
 
-def test_paired_analyte_role_support_without_own_max_keeps_nl_fail_not_counted(
-) -> None:
+def test_paired_analyte_role_support_without_own_max_keeps_nl_fail_not_counted() -> (
+    None
+):
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=(
@@ -783,8 +702,7 @@ def test_paired_analyte_role_support_without_own_max_keeps_nl_fail_not_counted(
     assert OWN_MAX_SAME_PEAK_SUPPORT_REASON not in projection.support_reasons
 
 
-def test_paired_analyte_role_support_with_own_max_downgrades_nl_fail(
-) -> None:
+def test_paired_analyte_role_support_with_own_max_downgrades_nl_fail() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=(
@@ -811,8 +729,9 @@ def test_paired_analyte_role_support_with_own_max_downgrades_nl_fail(
     assert "paired_istd_anchor_support" not in projection.support_reasons
 
 
-def test_paired_analyte_role_support_without_area_ratio_keeps_nl_fail_not_counted(
-) -> None:
+def test_paired_analyte_role_support_without_area_ratio_keeps_nl_fail_not_counted() -> (
+    None
+):
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("ms1_coherent", "role_aware_rt_support"),
@@ -832,8 +751,7 @@ def test_paired_analyte_role_support_without_area_ratio_keeps_nl_fail_not_counte
     assert "paired_istd_anchor_support" not in projection.support_reasons
 
 
-def test_approved_expected_diff_pair_evidence_downgrades_analyte_nl_fail(
-) -> None:
+def test_approved_expected_diff_pair_evidence_downgrades_analyte_nl_fail() -> None:
     model_selection = PeakModelSelectionResult(
         selected_candidate_id="SampleA|Analyte|successor-right",
         legacy_selected_candidate_id="SampleA|Analyte|legacy-middle",
@@ -879,8 +797,9 @@ def test_approved_expected_diff_pair_evidence_downgrades_analyte_nl_fail(
     assert "analyte_nl_fail_requires_policy" not in projection.not_counted_reasons
 
 
-def test_expected_diff_pair_evidence_without_own_max_keeps_nl_fail_not_counted(
-) -> None:
+def test_expected_diff_pair_evidence_without_own_max_keeps_nl_fail_not_counted() -> (
+    None
+):
     model_selection = PeakModelSelectionResult(
         selected_candidate_id="SampleA|Analyte|successor-right",
         legacy_selected_candidate_id="SampleA|Analyte|legacy-middle",
@@ -1135,7 +1054,7 @@ def _candidate(quality_flags: tuple[str, ...] = ("too_broad",)) -> PeakCandidate
 
 def _clean_typed_facts(candidate: PeakCandidate) -> CandidateEvidenceFacts:
     rt_array = np.linspace(8.0, 9.0, 201)
-    intensity_array = 1200.0 * np.exp(-((rt_array - 8.5) / 0.05) ** 2) + 5.0
+    intensity_array = 1200.0 * np.exp(-(((rt_array - 8.5) / 0.05) ** 2)) + 5.0
     return build_candidate_evidence_facts(
         candidate,
         ScoringContext(

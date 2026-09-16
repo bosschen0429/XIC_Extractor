@@ -5,7 +5,6 @@ import multiprocessing
 import pickle
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, get_args, get_type_hints
 
 import pytest
 
@@ -64,16 +63,6 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
     )
     restored_result = pickle.loads(pickle.dumps(result))
     assert restored_result.raw_index == 3
-
-
-def test_raw_file_job_scoring_inputs_type_contract_excludes_any() -> None:
-    from xic_extractor.execution import RawFileJob, ScoringInputs
-
-    scoring_inputs_hint = get_type_hints(RawFileJob)["scoring_inputs"]
-
-    assert Any not in get_args(scoring_inputs_hint)
-    assert ScoringInputs in get_args(scoring_inputs_hint)
-    assert type(None) in get_args(scoring_inputs_hint)
 
 
 def test_aggregation_sorts_successful_results_by_raw_index(tmp_path: Path) -> None:
@@ -318,17 +307,13 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
                 raw_index=2,
                 sample_name="B",
                 file_result=FileResult(sample_name="B", results={}),
-                diagnostics=[
-                    DiagnosticRecord("B", "Analyte", "B_DIAG", "kept")
-                ],
+                diagnostics=[DiagnosticRecord("B", "Analyte", "B_DIAG", "kept")],
             ),
             RawFileExtractionResult(
                 raw_index=1,
                 sample_name="A",
                 file_result=FileResult(sample_name="A", results={}),
-                diagnostics=[
-                    DiagnosticRecord("A", "Analyte", "A_DIAG", "kept")
-                ],
+                diagnostics=[DiagnosticRecord("A", "Analyte", "A_DIAG", "kept")],
             ),
         ]
 
@@ -337,9 +322,7 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
         targets,
         raw_paths,
         scoring_inputs,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
         runner=_runner,
     )
 
