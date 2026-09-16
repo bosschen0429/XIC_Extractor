@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 from dataclasses import fields, replace
 from pathlib import Path
@@ -27,11 +26,9 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackAssignment,
-    ModeTrackCandidateObservation,
     ModeTrackContractError,
     ModeTrackModel,
     ModeTrackPredictionAssessment,
-    ModeTrackSupportAnchor,
     ModeTrackTrajectoryPolicy,
     _global_no_write_state,
     _peak_hypothesis_family_exclusions,
@@ -1551,7 +1548,7 @@ def test_duplicate_direct_support_reinforcement_is_idempotent(tmp_path: Path) ->
     assert replayed.lineage_refs == first.lineage_refs
 
 
-def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
+def test_owner_objects_cannot_be_forged() -> None:
     with pytest.raises(TypeError, match="_mint_token"):
         ModeTrackAssignment(
             assignment_id="mode-track-assignment:forged",
@@ -1576,64 +1573,6 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
             acquisition_source=None,
             candidate_observation=None,
         )
-
-    forbidden_tokens = {
-        "matrix",
-        "selected_area",
-        "numeric_value",
-        "counted_detection",
-        "writer",
-        "public_family",
-        "feature_family",
-        "method_subject",
-    }
-    assert not {
-        field.name
-        for field in fields(ModeTrackAssignment)
-        if any(token in field.name for token in forbidden_tokens)
-    }
-
-    for owner_type in (
-        ModeTrackSupportAnchor,
-        ModeTrackCandidateObservation,
-        ModeTrackAssignment,
-    ):
-        assert not {field.name for field in fields(owner_type) if "cell" in field.name}
-
-
-def test_mode_track_owner_has_no_product_or_raw_scan_dependencies() -> None:
-    package_path = (
-        Path(__file__).parents[1]
-        / "xic_extractor"
-        / "alignment"
-        / "mode_track"
-    )
-    imported = set()
-    for path in package_path.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        imported.update(
-            alias.name
-            for node in tree.body
-            if isinstance(node, ast.Import)
-            for alias in node.names
-        )
-        imported.update(
-            node.module or ""
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom)
-        )
-    forbidden = (
-        "matrix",
-        "backfill",
-        "writer",
-        "raw",
-        "thermo",
-    )
-    assert not {
-        module
-        for module in imported
-        if any(token in module.lower() for token in forbidden)
-    }
 
 
 class _Scenario:

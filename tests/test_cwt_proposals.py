@@ -26,7 +26,7 @@ def test_centwave_cwt_finds_audit_candidate_on_synthetic_trace() -> None:
     result = find_peak_candidates_centwave_cwt(rt, intensity, _config())
 
     assert result.status == "OK"
-    assert result.n_prominent_peaks >= 2
+    assert result.n_prominent_peaks == 2
     assert all(
         candidate.proposal_sources == ("centwave_cwt",)
         for candidate in result.candidates
@@ -35,9 +35,17 @@ def test_centwave_cwt_finds_audit_candidate_on_synthetic_trace() -> None:
         abs(candidate.selection_apex_rt - 4.0) < 0.08
         for candidate in result.candidates
     )
-    assert all(candidate.cwt_best_scale is not None for candidate in result.candidates)
+    assert any(
+        abs(candidate.selection_apex_rt - 7.0) < 0.08
+        for candidate in result.candidates
+    )
+    assert all(
+        candidate.cwt_best_scale is not None and candidate.cwt_best_scale > 0
+        for candidate in result.candidates
+    )
     assert all(
         candidate.cwt_ridge_persistence is not None
+        and candidate.cwt_ridge_persistence > 0
         for candidate in result.candidates
     )
 
@@ -181,7 +189,7 @@ def test_cwt_evidence_reaches_peak_hypothesis_without_selection_authority() -> N
     ]
     assert len(selected_hypotheses) == 1
     assert selected_hypotheses[0].integration.rt_apex_min == selected.peak.rt
-    assert selected_hypotheses[0].evidence.cwt_best_scale is not None
+    assert selected_hypotheses[0].evidence.cwt_best_scale == 11.0
     assert cwt_only
     assert all(not item.audit.selected for item in cwt_only)
     assert all(item.evidence.cwt_ridge_persistence is not None for item in cwt_only)
