@@ -775,7 +775,6 @@ def _execute_target(
                 trajectory_policy=trajectory_policy,
                 retain_observation_only_candidates=True,
             ),
-            repair=None,
             predecessor_cell_observations=(),
             completed_capture_handoff=tuple(completed_captures),
         ),

@@ -1056,8 +1056,8 @@ request, attempt, sample, subject and acquisition bindings without reminting the
 method decision. Conservative Backfill carries its existing frozen decisions;
 position and coverage consumers do not reconstruct the proof, group facts or
 mapper result. Construction checks and current consumer cell/population bindings
-remain. Closed production cells bypass no-op repair authorization. Other
-workflow routes retain refinement when actual repair changes trajectory input.
+remain. Closed production cells pass their coverage directly to scientific
+finalization without requesting another repair epoch.
 Changed physical acquisition questions are evaluated once at the capture owner;
 same-question comparisons and persisted physical-answer revalidation remain.
 

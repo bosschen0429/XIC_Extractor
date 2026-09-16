@@ -90,14 +90,19 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 
 def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xic_extractor.alignment import workflow
+    from xic_extractor.alignment import cross_sample_reconciliation
+    from xic_extractor.alignment.backfill import observation_repair
 
     def unexpected_repair(*args, **kwargs):
         raise AssertionError("closed production coverage must not authorize repair")
 
-    monkeypatch.setattr(workflow, "execute_observation_repair", unexpected_repair)
     monkeypatch.setattr(
-        workflow, "consume_observation_repair_terminal", unexpected_repair
+        observation_repair, "execute_observation_repair", unexpected_repair
+    )
+    monkeypatch.setattr(
+        cross_sample_reconciliation,
+        "consume_observation_repair_terminal",
+        unexpected_repair,
     )
 
 
