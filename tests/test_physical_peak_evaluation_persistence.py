@@ -12,6 +12,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.peak_detection.evidence_facts import (
+    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
@@ -390,8 +391,11 @@ def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
 
 @pytest.mark.parametrize("width", [0.1, 0.5, 1.0])
 @pytest.mark.parametrize("background,slope", [(0.0, 0.0), (100000.0, 500.0)])
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
 def test_resolved_peak_on_background_keeps_its_canonical_integration(
-    width: float, background: float, slope: float,
+    width: float, background: float, slope: float, policy: str,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     if slope:
@@ -407,10 +411,69 @@ def test_resolved_peak_on_background_keeps_its_canonical_integration(
     )
     fresh = evaluate_physical_peak(
         prepared, selection_subject_id="resolved-peak", query_rt_min=5.0,
+        selection_policy_version=policy,
     )
     assert recorded.state == fresh.state == "available"
     assert fresh.integration == recorded.integration
     assert fresh.segment_universe == recorded.segment_universe
+
+
+@pytest.mark.parametrize("positive_points", [2, 3])
+def test_background_qualification_keeps_a_sparse_isolated_peak(
+    positive_points: int,
+) -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.zeros_like(rt)
+    raw[14 : 14 + positive_points] = [100.0, 120.0, 80.0][:positive_points]
+    prepared = prepare_physical_signal(rt, raw)
+    old = evaluate_physical_peak(
+        prepared, selection_subject_id="sparse-peak", query_rt_min=1.5,
+    )
+    new = evaluate_physical_peak(
+        prepared, selection_subject_id="sparse-peak", query_rt_min=1.5,
+        selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    )
+    assert old.state == new.state == "available"
+    assert new.integration == old.integration
+    assert new.segment_universe == old.segment_universe
+
+
+@pytest.mark.parametrize("background", [False, True])
+def test_discovery_qualification_policy_replays_without_reinterpreting_old_answers(
+    background: bool,
+) -> None:
+    profile = SignalProcessingProfile()
+    if background:
+        fixture = json.loads((
+            Path(__file__).parent / "fixtures/discovery_non_peak_background.json"
+        ).read_text())
+        rt = np.asarray([float.fromhex(v) for v in fixture["trace"]["rt"]])
+        raw = np.asarray([float.fromhex(v) for v in fixture["trace"]["intensity"]])
+        query = fixture["seed_rt"][0]
+    else:
+        rt = np.linspace(0.0, 3.0, 61)
+        raw = 1000.0 * np.exp(-0.5 * ((rt - 1.5) / 0.15) ** 2)
+        query = 1.5
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    for policy in (PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY):
+        answer = evaluate_physical_peak(
+            prepared, selection_subject_id="policy-replay", query_rt_min=query,
+            selection_policy_version=policy,
+        )
+        qualified = policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+        assert answer.state == (
+            "unavailable" if qualified and background else "available"
+        )
+        if qualified and background:
+            assert answer.reason == "background_like_peak_shape"
+        payload = serialize_physical_peak_evaluation(
+            rt, raw, profile=profile, evaluation=answer,
+        )
+        *_, restored = deserialize_physical_peak_evaluation(payload)
+        assert restored == answer
+        assert serialize_physical_peak_evaluation(
+            rt, raw, profile=profile, evaluation=restored,
+        ) == payload
 
 
 @pytest.mark.parametrize(

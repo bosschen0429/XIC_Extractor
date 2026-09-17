@@ -38,12 +38,15 @@ from xic_extractor.discovery.priority import (
     build_candidate_reason,
 )
 from xic_extractor.peak_detection.evidence_facts import (
+    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
     evaluate_physical_peak,
     mint_physical_trace_content_id,
     prepare_physical_signal,
 )
+from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
@@ -1353,6 +1356,11 @@ def _physical_ms1_peak_fields(
         query_rt_min=work_item.query_rt_min,
         request_context_rt_start_min=work_item.context_rt_start_min,
         request_context_rt_end_min=work_item.context_rt_end_min,
+        selection_policy_version=(
+            DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+            if profile.window_points == DEFAULT_GAUSSIAN15_WINDOW_POINTS
+            else PHYSICAL_PEAK_POINT_POLICY
+        ),
     )
     return (
         _ms1_fields_from_physical_evaluation(

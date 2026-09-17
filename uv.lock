@@ -1554,7 +1554,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8,<4" },
     { name = "pythonnet", specifier = ">=3.0" },
-    { name = "scipy", specifier = ">=1.11" },
+    { name = "scipy", specifier = ">=1.12" },
     { name = "wheel", marker = "extra == 'dev'", specifier = ">=0.45,<1" },
 ]
 provides-extras = ["dev", "parquet"]

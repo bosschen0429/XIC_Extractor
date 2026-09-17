@@ -74,6 +74,7 @@ class _OwnerBoundBatchRaw(_BatchRaw):
         ("discovery_normal_single_peak", (18.45591733148333,), 14712),
         ("discovery_same_peak_seeds", (38.190113531483334,), None),
         ("discovery_true_double_peak", (15.007716898666667, 15.25524139625), None),
+        ("discovery_non_peak_background", (), None),
     ),
 )
 def test_discovery_retained_physical_peak_cardinality(
@@ -1083,7 +1084,8 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     candidate = result.candidates[0]
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
-        "baseline_peak_contains_query_v7"
+        "background_qualified_peak_contains_query_v1"
+        if window_points == 15 else "baseline_peak_contains_query_v7"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason

@@ -35,6 +35,15 @@ lifecycle for each provider.
   universe, including samples without a local candidate, for recovery.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
+- Discovery's Gaussian15 physical point policy rejects an irregular background
+  maximum only when both the acquired trace and its existing, unclipped
+  baseline residual lack sufficient rise/fall shape or local apex relief.
+  The physical owner qualifies the already selected interval; surviving peaks
+  keep their original boundaries, apex and integrated area. Saved policies
+  retain their original answer semantics, and other callers or smoothing-window
+  settings keep their existing selection policies. This local qualification does
+  not prove chemical identity or replace cross-sample support and Backfill
+  eligibility.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/

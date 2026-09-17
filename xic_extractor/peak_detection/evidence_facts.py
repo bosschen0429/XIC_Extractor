@@ -14,6 +14,7 @@ from xic_extractor.evidence_semantics import (
     EvidenceSignalSet,
     decision_semantics_from_signal_set,
 )
+from xic_extractor.peak_detection.background_shape import is_background_like_peak
 from xic_extractor.peak_detection.baseline import (
     asls_baseline,
     bounded_trace_interval,
@@ -84,6 +85,7 @@ LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY = "baseline_peak_contains_query_v6"
 LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY = "unique_baseline_peak_in_context_v5"
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v7"
 PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v6"
+DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query_v1"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
@@ -99,6 +101,7 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
+        DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )
 _PHYSICAL_EDGE_RETURN_FRACTION = 0.001
@@ -108,6 +111,7 @@ PhysicalPeakOperation = Literal[
     "asls_baseline",
     "gaussian_smoothing",
     "segment_enumeration",
+    "background_qualification",
     "integration",
     "normalization",
     "raw_descriptor_projection",
@@ -118,6 +122,7 @@ _PHYSICAL_PEAK_OPERATION_ORDER: tuple[PhysicalPeakOperation, ...] = (
     "asls_baseline",
     "gaussian_smoothing",
     "segment_enumeration",
+    "background_qualification",
     "integration",
     "normalization",
     "raw_descriptor_projection",
@@ -599,6 +604,7 @@ def _physical_boundary_universe_schema(selection_policy_version: str) -> str:
         LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
+        DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }:
         return "physical_segment_universe_v3"
     return "physical_segment_universe_v2"
@@ -627,6 +633,12 @@ def enumerate_physical_segment_universe(
     reason = prepared_result.projection.reason
     physical_segments: tuple[PhysicalSegment, ...] = ()
     prepared = prepared_result.prepared
+    if (
+        prepared is not None
+        and selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+        and prepared.profile.window_points != DEFAULT_GAUSSIAN15_WINDOW_POINTS
+    ):
+        raise ValueError("background qualification requires a Gaussian15 profile")
     if state == "available" and prepared is not None:
         rt = np.asarray(prepared.rt, dtype=float)
         signal = np.asarray(prepared.positive_signal, dtype=float)
@@ -941,6 +953,7 @@ def answer_physical_peak_question(
     state = universe.state
     reason = universe.reason
     selected: PhysicalSegment | None = None
+    background_qualified = False
     if state == "available":
         if not question.admissible_segment_ids:
             state, reason = "unavailable", "no_selection"
@@ -970,6 +983,7 @@ def answer_physical_peak_question(
                 LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
                 PHYSICAL_PEAK_POINT_POLICY,
                 PHYSICAL_PEAK_WINDOW_POLICY,
+                DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
             }:
                 # Smoothing may spread one acquired signal point into a peak.
                 # Support belongs to the selected interval's original XIC;
@@ -979,6 +993,7 @@ def answer_physical_peak_question(
                 if question.selection_policy_version in {
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
+                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
                 }:
                     # Acquired background is not peak support. Reuse the owner
                     # baseline so adding an offset cannot rescue an impulse.
@@ -1004,6 +1019,7 @@ def answer_physical_peak_question(
                     LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
+                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
                 } and not any(
                     left > 0.0 and right > 0.0
                     for left, right in zip(original, original[1:])
@@ -1020,6 +1036,7 @@ def answer_physical_peak_question(
                     LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
+                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
                 }:
                     original_runs = sum(
                         value > 0.0 and (index == 0 or acquired[index - 1] <= 0.0)
@@ -1041,6 +1058,7 @@ def answer_physical_peak_question(
                 if selected is not None and question.selection_policy_version in {
                     PHYSICAL_PEAK_POINT_POLICY,
                     PHYSICAL_PEAK_WINDOW_POLICY,
+                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
                 }:
                     # A shallow local maximum on a background plateau must not
                     # borrow its entire residual height as peak evidence. Use
@@ -1075,6 +1093,20 @@ def answer_physical_peak_question(
                             "unavailable", "insufficient_local_peak_contrast"
                         )
                         selected = None
+                    elif (
+                        question.selection_policy_version
+                        == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+                    ):
+                        background_qualified = True
+                        if is_background_like_peak(
+                            rt, raw,
+                            np.asarray(prepared.baseline[left:right], dtype=float),
+                            apex_index=apex - left, raw_noise_mad=noise_mad,
+                        ):
+                            state, reason = (
+                                "unavailable", "background_like_peak_shape"
+                            )
+                            selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer_v1",
         "state": state,
@@ -1103,6 +1135,8 @@ def answer_physical_peak_question(
     operations = prepared_result.operations
     if prepared_result.projection.state == "available":
         operations = (*operations, "segment_enumeration")
+    if background_qualified:
+        operations = (*operations, "background_qualification")
     if selected is not None:
         prepared = prepared_result.prepared
         if prepared is None:
@@ -1336,8 +1370,21 @@ def validate_bounded_physical_peak_evaluation(
 ) -> None:
     if not isinstance(evaluation, PhysicalPeakEvaluation):
         raise TypeError("evaluation must be a PhysicalPeakEvaluation")
+    qualified_policy = (
+        evaluation.question.selection_policy_version
+        == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+    )
+    operation_order = tuple(
+        operation for operation in _PHYSICAL_PEAK_OPERATION_ORDER
+        if qualified_policy or operation != "background_qualification"
+    )
+    terminal_prefix_length = 5 if qualified_policy else 4
     allowed_operation_sequences = tuple(
-        _PHYSICAL_PEAK_OPERATION_ORDER[:count] for count in (1, 2, 3, 4, 7, 8)
+        operation_order[:count]
+        for count in (
+            1, 2, 3, 4, terminal_prefix_length,
+            len(operation_order) - 1, len(operation_order),
+        )
     )
     if evaluation.operations not in allowed_operation_sequences:
         raise ValueError("physical evaluation operations are not canonical")
@@ -1381,8 +1428,8 @@ def validate_bounded_physical_peak_evaluation(
         if not isinstance(integration, IntegrationResult):
             raise ValueError("available physical evaluation has invalid integration")
         if evaluation.operations not in {
-            _PHYSICAL_PEAK_OPERATION_ORDER[:7],
-            _PHYSICAL_PEAK_OPERATION_ORDER,
+            operation_order[:-1],
+            operation_order,
         }:
             raise ValueError("available physical evaluation lacks completed operations")
         if facts.schema_version != "physical_peak_facts_v1":
@@ -1423,7 +1470,7 @@ def validate_bounded_physical_peak_evaluation(
         or evaluation.answer.physical_segment_id is not None
     ):
         raise ValueError("non-available physical evaluation cannot carry facts")
-    elif len(evaluation.operations) > 4:
+    elif len(evaluation.operations) > terminal_prefix_length:
         raise ValueError("non-available physical evaluation claims fact operations")
 
 
