@@ -16,6 +16,7 @@ from xic_extractor.evidence_semantics import (
 )
 from xic_extractor.peak_detection.background_shape import (
     has_deficient_monotone_run,
+    has_unresolved_valley_floors,
     is_background_like_peak,
     is_unresolved_shoulder_peak,
 )
@@ -1108,6 +1109,11 @@ def answer_physical_peak_question(
                         if (
                             is_unresolved_shoulder_peak(
                                 segment_class=selected.segment_class,
+                                apex_height=apex_height,
+                                left_valley=left_valley,
+                                right_valley=right_valley,
+                            )
+                            or has_unresolved_valley_floors(
                                 apex_height=apex_height,
                                 left_valley=left_valley,
                                 right_valley=right_valley,

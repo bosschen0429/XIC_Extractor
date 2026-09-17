@@ -84,6 +84,27 @@ def has_deficient_monotone_run(
     return max(max_up, max_down) <= 1
 
 
+def has_unresolved_valley_floors(
+    *,
+    apex_height: float,
+    left_valley: float,
+    right_valley: float,
+    max_floor_ratio: float = 0.20,
+) -> bool:
+    """Determine if a peak interval fails to return near baseline on both flanks.
+
+    A resolved chromatographic peak must return near baseline (<= 20% of apex
+    height) on at least one flank. When both flanks remain elevated above 20%
+    of apex height on the baseline-corrected signal, the interval is an
+    unresolved portion of a broader feature or elevated saddle without valley return.
+    """
+    if apex_height <= 0.0:
+        return True
+    floor_ratio = min(left_valley, right_valley) / apex_height
+    return floor_ratio > max_floor_ratio
+
+
+
 def is_provisional_peak_shape(
     rt: np.ndarray,
     raw: np.ndarray,

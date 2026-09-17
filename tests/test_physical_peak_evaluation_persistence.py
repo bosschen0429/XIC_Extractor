@@ -13,6 +13,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 )
 from xic_extractor.peak_detection.background_shape import (
     has_deficient_monotone_run,
+    has_unresolved_valley_floors,
     is_background_like_peak,
     is_provisional_peak_shape,
     is_unresolved_shoulder_peak,
@@ -568,6 +569,31 @@ def test_has_deficient_monotone_run() -> None:
     # Down: 110 -> 102 -> 108 (max down run = 1)
     jitter = np.array([100.0, 95.0, 105.0, 98.0, 110.0, 102.0, 108.0])
     assert has_deficient_monotone_run(jitter, apex_index=4)
+
+
+def test_has_unresolved_valley_floors() -> None:
+    # Clean resolved peak with valley return to 0: passes
+    assert not has_unresolved_valley_floors(
+        apex_height=1000.0, left_valley=0.0, right_valley=0.0
+    )
+
+    # Asymmetric peak with one elevated flank (shoulder) but one clean baseline
+    # return: passes
+    assert not has_unresolved_valley_floors(
+        apex_height=1000.0, left_valley=500.0, right_valley=50.0
+    )
+
+    # Both flanks elevated above 20% (unresolved saddle / floating feature): rejected
+    assert has_unresolved_valley_floors(
+        apex_height=1000.0, left_valley=250.0, right_valley=210.0
+    )
+
+    # Edge cases: zero or negative apex height rejected
+    assert has_unresolved_valley_floors(
+        apex_height=0.0, left_valley=0.0, right_valley=0.0
+    )
+
+
 
 
 @pytest.mark.parametrize(
