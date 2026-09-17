@@ -25,6 +25,21 @@ def is_background_like_peak(
     )
 
 
+def is_unresolved_shoulder_peak(
+    *,
+    segment_class: str,
+    apex_height: float,
+    left_valley: float,
+    right_valley: float,
+) -> bool:
+    """Qualify whether an overlapping shoulder candidate lacks baseline return."""
+    if segment_class != "shoulder_candidate" or apex_height <= 0.0:
+        return False
+    floor_ratio = min(left_valley, right_valley) / apex_height
+    prominence_ratio = (apex_height - max(left_valley, right_valley)) / apex_height
+    return floor_ratio > 0.25 and prominence_ratio < 0.65
+
+
 def _deficient_peak_shape(
     rt: np.ndarray,
     signal: np.ndarray,
@@ -42,7 +57,7 @@ def _deficient_peak_shape(
         1.0 - float(np.sum((signal - fitted) ** 2)) / variance
         if variance > 0.0 else 0.0
     )
-    if r2 < 0.6:
+    if r2 < 0.65:
         return True
     edge_count = max(1, min(5, len(signal) // 6))
     edge = max(
@@ -50,6 +65,8 @@ def _deficient_peak_shape(
         float(np.median(signal[-edge_count:])),
     )
     centre = float(np.median(signal[max(0, apex - 1) : apex + 2]))
+    if edge > 0.0 and centre / edge < 1.2:
+        return True
     if noise_mad is None:
         if len(signal) < 3:
             noise_mad = 0.0

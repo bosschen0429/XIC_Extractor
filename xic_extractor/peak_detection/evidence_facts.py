@@ -14,7 +14,10 @@ from xic_extractor.evidence_semantics import (
     EvidenceSignalSet,
     decision_semantics_from_signal_set,
 )
-from xic_extractor.peak_detection.background_shape import is_background_like_peak
+from xic_extractor.peak_detection.background_shape import (
+    is_background_like_peak,
+    is_unresolved_shoulder_peak,
+)
 from xic_extractor.peak_detection.baseline import (
     asls_baseline,
     bounded_trace_interval,
@@ -1098,10 +1101,23 @@ def answer_physical_peak_question(
                         == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
                     ):
                         background_qualified = True
-                        if is_background_like_peak(
-                            rt, raw,
-                            np.asarray(prepared.baseline[left:right], dtype=float),
-                            apex_index=apex - left, raw_noise_mad=noise_mad,
+                        left_valley = float(np.min(signal[left : apex + 1]))
+                        right_valley = float(np.min(signal[apex : right]))
+                        apex_height = float(signal[apex])
+                        if (
+                            is_unresolved_shoulder_peak(
+                                segment_class=selected.segment_class,
+                                apex_height=apex_height,
+                                left_valley=left_valley,
+                                right_valley=right_valley,
+                            )
+                            or is_background_like_peak(
+                                rt,
+                                raw,
+                                np.asarray(prepared.baseline[left:right], dtype=float),
+                                apex_index=apex - left,
+                                raw_noise_mad=noise_mad,
+                            )
                         ):
                             state, reason = (
                                 "unavailable", "background_like_peak_shape"

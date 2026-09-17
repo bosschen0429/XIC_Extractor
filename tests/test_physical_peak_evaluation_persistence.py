@@ -11,6 +11,10 @@ from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_sidecar,
     write_discovery_physical_fact_sidecar,
 )
+from xic_extractor.peak_detection.background_shape import (
+    is_background_like_peak,
+    is_unresolved_shoulder_peak,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
@@ -474,6 +478,52 @@ def test_discovery_qualification_policy_replays_without_reinterpreting_old_answe
         assert serialize_physical_peak_evaluation(
             rt, raw, profile=profile, evaluation=restored,
         ) == payload
+
+
+def test_background_qualification_rejects_insufficient_edge_contrast() -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    # A shallow plateau whose apex is less than 1.2x above edge baseline in both views
+    raw = 100.0 + np.array([
+        0.0, 0.0, 5.0, 8.0, 10.0, 8.0, 5.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ])
+    baseline = np.full_like(raw, 50.0)
+    assert is_background_like_peak(
+        rt, raw, baseline, apex_index=4, raw_noise_mad=1.0,
+    )
+    # A resolved peak with peak-to-edge >= 1.2 in both views remains available
+    prominent_raw = 100.0 + 100.0 * np.exp(-0.5 * ((rt - 0.4) / 0.15) ** 2)
+    assert not is_background_like_peak(
+        rt, prominent_raw, baseline, apex_index=4, raw_noise_mad=1.0,
+    )
+
+
+def test_background_qualification_rejects_unresolved_shoulder_candidate() -> None:
+    assert not is_unresolved_shoulder_peak(
+        segment_class="separate_peak",
+        apex_height=100.0,
+        left_valley=40.0,
+        right_valley=30.0,
+    )
+    assert is_unresolved_shoulder_peak(
+        segment_class="shoulder_candidate",
+        apex_height=100.0,
+        left_valley=30.0,
+        right_valley=40.0,
+    )
+    assert not is_unresolved_shoulder_peak(
+        segment_class="shoulder_candidate",
+        apex_height=100.0,
+        left_valley=10.0,
+        right_valley=50.0,
+    )
+    assert not is_unresolved_shoulder_peak(
+        segment_class="shoulder_candidate",
+        apex_height=100.0,
+        left_valley=30.0,
+        right_valley=20.0,
+    )
 
 
 @pytest.mark.parametrize(
