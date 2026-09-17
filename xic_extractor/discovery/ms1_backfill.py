@@ -37,6 +37,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
+from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.evidence_facts import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
@@ -747,6 +748,10 @@ def _candidate_from_trace(
         ms2_product_max_intensity=max(seed.product_intensity for seed in group.seeds),
         review_priority=priority,
         reason=reason,
+        is_provisional=(
+            len(group.seeds) < 2
+            and ms1_fields.trace_quality == "provisional"
+        ),
     )
     candidate = _with_tag_fields(candidate, group=group, settings=settings)
     if physical_evaluation is not None:
@@ -997,6 +1002,7 @@ def _merge_candidate_pair(
             settings=settings,
         ),
         tag_evidence_json=_merge_tag_evidence_json(first, second),
+        is_provisional=(first.is_provisional and second.is_provisional),
     )
 
 
@@ -1362,14 +1368,42 @@ def _physical_ms1_peak_fields(
             else PHYSICAL_PEAK_POINT_POLICY
         ),
     )
-    return (
-        _ms1_fields_from_physical_evaluation(
-            evaluation,
-            work_item=work_item,
-            settings=settings,
-        ),
+    fields = _ms1_fields_from_physical_evaluation(
         evaluation,
+        work_item=work_item,
+        settings=settings,
     )
+    if (
+        evaluation.state == "available"
+        and evaluation.facts is not None
+        and evaluation.answer.physical_segment_id is not None
+    ):
+        selected_id = evaluation.answer.physical_segment_id
+        for seg in evaluation.segment_universe.segments:
+            if seg.physical_segment_id == selected_id:
+                raw_seg = np.asarray(
+                    intensity[seg.start_index : seg.end_index], dtype=float
+                )
+                rt_seg = np.asarray(
+                    rt[seg.start_index : seg.end_index], dtype=float
+                )
+                if len(raw_seg) >= 3:
+                    w = (rt_seg[2:] - rt_seg[1:-1]) / (rt_seg[2:] - rt_seg[:-2])
+                    res = (
+                        w * raw_seg[:-2] + (1.0 - w) * raw_seg[2:] - raw_seg[1:-1]
+                    ) / np.sqrt(1.0 + w**2 + (1.0 - w)**2)
+                    mad = float(np.median(np.abs(res - np.median(res))))
+                else:
+                    mad = 0.0
+                if is_provisional_peak_shape(
+                    rt_seg,
+                    raw_seg,
+                    apex_index=seg.apex_index - seg.start_index,
+                    raw_noise_mad=mad,
+                ):
+                    fields.trace_quality = "provisional"
+                break
+    return fields, evaluation
 
 
 def _ms1_fields_from_physical_evaluation(

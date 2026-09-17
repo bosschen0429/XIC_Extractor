@@ -13,6 +13,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 )
 from xic_extractor.peak_detection.background_shape import (
     is_background_like_peak,
+    is_provisional_peak_shape,
     is_unresolved_shoulder_peak,
 )
 from xic_extractor.peak_detection.evidence_facts import (
@@ -523,6 +524,30 @@ def test_background_qualification_rejects_unresolved_shoulder_candidate() -> Non
         apex_height=100.0,
         left_valley=30.0,
         right_valley=20.0,
+    )
+
+
+def test_is_provisional_peak_shape() -> None:
+    # Silent baseline (noise_mad == 0.0): genuine sparse peaks like C010 / C060
+    rt_sparse = np.array([8.0, 8.1, 8.2])
+    raw_sparse = np.array([0.0, 500.0, 0.0])
+    assert not is_provisional_peak_shape(
+        rt_sparse, raw_sparse, apex_index=1, raw_noise_mad=0.0
+    )
+
+    # High contrast and high SNR peak
+    rt_clear = np.linspace(8.0, 8.6, 7)
+    raw_clear = np.array([100.0, 150.0, 400.0, 1000.0, 420.0, 160.0, 95.0])
+    assert not is_provisional_peak_shape(
+        rt_clear, raw_clear, apex_index=3, raw_noise_mad=30.0
+    )
+
+    # Low contrast (< 1.5) and low SNR (< 5.0) in noisy baseline -> provisional
+    rt_noisy = np.linspace(8.0, 8.6, 7)
+    raw_noisy = np.array([100.0, 110.0, 120.0, 130.0, 115.0, 105.0, 100.0])
+    # contrast = 130 / 100 = 1.3 (< 1.5), snr = (130 - 100) / 10 = 3.0 (< 5.0)
+    assert is_provisional_peak_shape(
+        rt_noisy, raw_noisy, apex_index=3, raw_noise_mad=10.0
     )
 
 

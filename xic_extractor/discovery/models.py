@@ -360,6 +360,7 @@ class DiscoveryCandidate:
     tag_evidence_json: str = "{}"
     discovery_candidate_state: DiscoveryCandidateState = "review_only_orphan_nl"
     ms1_feature_row_id: str = ""
+    is_provisional: bool = False
 
     @classmethod
     def from_values(
@@ -399,6 +400,7 @@ class DiscoveryCandidate:
         ms2_product_max_intensity: float,
         review_priority: ReviewPriority,
         reason: str,
+        is_provisional: bool = False,
     ) -> "DiscoveryCandidate":
         discovery_candidate_state = assign_discovery_candidate_state(
             ms1_peak_found=ms1_peak_found,
@@ -467,6 +469,7 @@ class DiscoveryCandidate:
                 ms1_peak_rt_start=ms1_peak_rt_start,
                 ms1_peak_rt_end=ms1_peak_rt_end,
             ),
+            is_provisional=is_provisional,
         )
 
 

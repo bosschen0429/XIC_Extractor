@@ -789,6 +789,9 @@ def _owners_for_sample(
                     primary.quantification_exclusion_reason
                 ),
                 cross_sample_member_subject=primary.cross_sample_member_subject,
+                is_provisional=bool(
+                    getattr(primary.candidate, "is_provisional", False)
+                ),
             ),
         )
         assignments.append(
