@@ -12,6 +12,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.peak_detection.background_shape import (
+    has_deficient_monotone_run,
     is_background_like_peak,
     is_provisional_peak_shape,
     is_unresolved_shoulder_peak,
@@ -549,6 +550,24 @@ def test_is_provisional_peak_shape() -> None:
     assert is_provisional_peak_shape(
         rt_noisy, raw_noisy, apex_index=3, raw_noise_mad=10.0
     )
+
+
+def test_has_deficient_monotone_run() -> None:
+    # Sparse peak (< 6 points): exempted to preserve authentic sparse peaks
+    short_raw = np.array([0.0, 500.0, 0.0])
+    assert not has_deficient_monotone_run(short_raw, apex_index=1)
+
+    # Authentic chromatographic peak: >= 2 consecutive monotonic steps on flank
+    good_peak = np.array([10.0, 50.0, 200.0, 800.0, 300.0, 50.0, 10.0])
+    # Up flank: 10 -> 50 -> 200 -> 800 (run of 3)
+    assert not has_deficient_monotone_run(good_peak, apex_index=3)
+
+    # High-frequency alternating chatter (jitter): max consecutive run <= 1
+    # 7 points alternating back and forth around apex (index 4, 110.0):
+    # Up: 100 -> 95 -> 105 -> 98 -> 110 (max up run = 1)
+    # Down: 110 -> 102 -> 108 (max down run = 1)
+    jitter = np.array([100.0, 95.0, 105.0, 98.0, 110.0, 102.0, 108.0])
+    assert has_deficient_monotone_run(jitter, apex_index=4)
 
 
 @pytest.mark.parametrize(

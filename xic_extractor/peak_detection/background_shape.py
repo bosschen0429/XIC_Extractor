@@ -40,6 +40,50 @@ def is_unresolved_shoulder_peak(
     return floor_ratio > 0.25 and prominence_ratio < 0.65
 
 
+def has_deficient_monotone_run(
+    raw: np.ndarray,
+    *,
+    apex_index: int,
+    min_points: int = 6,
+) -> bool:
+    """Determine if a peak interval lacks consecutive monotonic trend steps.
+
+    Authentic peaks have diffusion-driven continuity (typically >= 2 consecutive
+    steps on at least one flank). High-frequency noise or baseline chatter
+    alternates back-and-forth with max consecutive run <= 1.
+    Sparse peaks (< min_points) are exempted to protect ultra-short analytes.
+    """
+    if len(raw) < min_points:
+        return False
+    apex = max(0, min(apex_index, len(raw) - 1))
+
+    # Rising flank up to apex
+    up_diffs = np.diff(raw[: apex + 1])
+    max_up = 0
+    cur_up = 0
+    for d in up_diffs:
+        if d > 0:
+            cur_up += 1
+            if cur_up > max_up:
+                max_up = cur_up
+        elif d < 0:
+            cur_up = 0
+
+    # Falling flank from apex
+    down_diffs = np.diff(raw[apex:])
+    max_down = 0
+    cur_down = 0
+    for d in down_diffs:
+        if d < 0:
+            cur_down += 1
+            if cur_down > max_down:
+                max_down = cur_down
+        elif d > 0:
+            cur_down = 0
+
+    return max(max_up, max_down) <= 1
+
+
 def is_provisional_peak_shape(
     rt: np.ndarray,
     raw: np.ndarray,

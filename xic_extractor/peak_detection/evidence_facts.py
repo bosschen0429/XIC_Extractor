@@ -15,6 +15,7 @@ from xic_extractor.evidence_semantics import (
     decision_semantics_from_signal_set,
 )
 from xic_extractor.peak_detection.background_shape import (
+    has_deficient_monotone_run,
     is_background_like_peak,
     is_unresolved_shoulder_peak,
 )
@@ -1110,6 +1111,10 @@ def answer_physical_peak_question(
                                 apex_height=apex_height,
                                 left_valley=left_valley,
                                 right_valley=right_valley,
+                            )
+                            or has_deficient_monotone_run(
+                                raw,
+                                apex_index=apex - left,
                             )
                             or is_background_like_peak(
                                 rt,
