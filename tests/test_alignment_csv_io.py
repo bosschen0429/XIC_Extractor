@@ -1,9 +1,173 @@
 import csv
+import hashlib
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+
+
+@pytest.mark.parametrize("provisional,seed_count", [(True, 1), (True, 2), (False, 2)])
+def test_owner_bound_csv_preserves_final_provisional_decision(
+    tmp_path: Path,
+    provisional: bool,
+    seed_count: int,
+) -> None:
+    from xic_extractor.alignment.csv_io import (
+        read_discovery_candidates_csv,
+        read_owner_bound_discovery_candidates_csv,
+    )
+    from xic_extractor.discovery.batch_contract import (
+        mint_discovery_candidate_universe_receipt,
+        validate_discovery_candidate_universe,
+    )
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+    from xic_extractor.processing_identity import (
+        IdentityContractError,
+        build_acquisition_source_identity,
+    )
+
+    path = tmp_path / "candidates.csv"
+    _write_csv(path, DISCOVERY_CANDIDATE_COLUMNS, [_candidate_row()])
+    (original,) = read_discovery_candidates_csv(path)
+    candidate = replace(
+        original,
+        ms1_trace_quality="provisional",
+        is_provisional=provisional,
+        seed_event_count=seed_count,
+    )
+    write_discovery_candidates_csv(path, (candidate,))
+    raw = tmp_path / "Sample_1.raw"
+    raw.write_bytes(b"synthetic acquisition")
+    source = build_acquisition_source_identity(
+        raw,
+        acquisition_format="thermo_raw",
+        observation_namespace="test",
+    )
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem="Sample_1",
+        acquisition_source=source,
+        candidate_csv=path,
+        candidates=(candidate,),
+    )
+    (restored,) = read_owner_bound_discovery_candidates_csv(path, receipt=receipt)
+    assert restored.is_provisional is provisional
+    assert restored.seed_event_count == seed_count
+    assert restored.ms1_trace_quality == "provisional"
+    with pytest.raises(IdentityContractError, match="candidate payload"):
+        validate_discovery_candidate_universe(
+            receipt,
+            acquisition_source=source,
+            candidates=(replace(restored, is_provisional=not provisional),),
+        )
+
+
+@pytest.mark.parametrize("value", ["", "true", "1", "unknown"])
+def test_candidate_csv_rejects_invalid_provisional_flag(
+    tmp_path: Path, value: str
+) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+
+    path = tmp_path / "candidates.csv"
+    columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
+    _write_csv(
+        path, (*columns, "is_provisional"), [_candidate_row(is_provisional=value)]
+    )
+    with pytest.raises(ValueError, match="is_provisional must be TRUE or FALSE"):
+        read_discovery_candidates_csv(path)
+
+
+def test_candidate_csv_rejects_ambiguous_legacy_provisional_quality(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+
+    path = tmp_path / "candidates.csv"
+    columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
+    row = _candidate_row(ms1_trace_quality="provisional")
+    row.pop("is_provisional", None)
+    _write_csv(path, columns, [row])
+    with pytest.raises(ValueError, match="provisional.*decision"):
+        read_discovery_candidates_csv(path)
+
+
+def test_owner_bound_v1_candidate_csv_remains_readable(tmp_path: Path) -> None:
+    from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
+    from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    path = tmp_path / "candidates.csv"
+    columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
+    row = _candidate_row()
+    row.pop("is_provisional", None)
+    _write_csv(path, columns, [row])
+    raw = tmp_path / "Sample_1.raw"
+    raw.write_bytes(b"synthetic acquisition")
+    source = build_acquisition_source_identity(
+        raw,
+        acquisition_format="thermo_raw",
+        observation_namespace="test",
+    )
+
+    def digest(value: object) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+
+    # Historical v1 canonical numeric formatting is supplied independently.
+    canonical = {c: row[c] for c in columns if c != "raw_file"}
+    for name in (
+        "precursor_mz",
+        "product_mz",
+        "observed_neutral_loss_da",
+        "best_seed_rt",
+        "ms1_apex_rt",
+        "ms1_area",
+        "ms2_product_max_intensity",
+        "neutral_loss_mass_error_ppm",
+        "scan_precursor_mz",
+        "scan_precursor_delta_da",
+        "max_scan_precursor_abs_delta_da",
+        "rt_seed_min",
+        "rt_seed_max",
+        "ms1_search_rt_min",
+        "ms1_search_rt_max",
+        "ms1_peak_rt_start",
+        "ms1_peak_rt_end",
+        "ms1_height",
+        "ms1_scan_support_score",
+    ):
+        canonical[name] = f"{float(canonical[name]):.6g}"
+    payload = digest(
+        {"schema_version": "discovery_candidate_payload_v1", "candidates": [canonical]}
+    )
+    data = path.read_bytes()
+    facts = dict(
+        sample_stem="Sample_1",
+        candidate_count=1,
+        candidate_artifact_schema_version="discovery_candidates_csv_v1",
+        candidate_artifact_sha256=hashlib.sha256(data).hexdigest(),
+        candidate_artifact_byte_size=len(data),
+        candidate_payload_sha256=payload,
+    )
+    receipt_id = "xic.discovery-candidate-universe.v1:" + digest(
+        {
+            "schema_version": "discovery_candidate_universe_receipt_v1",
+            "acquisition_source_id": source.acquisition_source_id,
+            **facts,
+        }
+    )
+    receipt = DiscoveryCandidateUniverseReceipt(
+        discovery_receipt_id=receipt_id,
+        acquisition_source=source,
+        **facts,
+    )
+    (restored,) = read_owner_bound_discovery_candidates_csv(path, receipt=receipt)
+    assert restored.is_provisional is False
 
 
 def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths(
@@ -387,7 +551,10 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     batch_path = tmp_path / "discovery_batch_index.csv"
     _write_csv(batch_path, ("sample_stem", "raw_file"), [])
     candidates_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(candidates_path, DISCOVERY_CANDIDATE_COLUMNS[:-1], [])
+    _write_csv(candidates_path, tuple(
+        column for column in DISCOVERY_CANDIDATE_COLUMNS
+        if column != "tag_evidence_json"
+    ), [])
 
     with pytest.raises(ValueError, match="missing required columns.*candidate_csv"):
         read_discovery_batch_index(batch_path)
@@ -734,6 +901,7 @@ def _candidate_row(**overrides: str) -> dict[str, str]:
         "ms1_peak_rt_end": "8.60",
         "ms1_height": "2222.2",
         "ms1_trace_quality": "clean",
+        "is_provisional": "FALSE",
         "ms1_scan_support_score": "0.8",
         "selected_tag_count": "1",
         "matched_tag_count": "1",

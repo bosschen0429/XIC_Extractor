@@ -251,12 +251,13 @@ def _backfill_ms1_candidates_with_acquisition(
         acquired_traces.extend(batch.traces)
 
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
+    physical_trace_qualities: dict[int, str] = {}
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
         ):
             records: list[DiscoveryPhysicalFactRecord] = []
-            _candidate_from_trace(
+            initial_candidate = _candidate_from_trace(
                 plan.group,
                 acquired.trace.rt,
                 acquired.trace.intensity,
@@ -270,6 +271,9 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_evaluation_observer=records.append,
             )
             (initial_physical_facts[physical_index],) = records
+            physical_trace_qualities[physical_index] = (
+                initial_candidate.ms1_trace_quality
+            )
         reacquisition_plans = tuple(
             (physical_index, expanded_plan)
             for physical_index, (plan, acquired) in enumerate(
@@ -308,6 +312,7 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_plans[physical_index] = expanded_plan
                 acquired_traces[physical_index] = acquired
                 del initial_physical_facts[physical_index]
+                del physical_trace_qualities[physical_index]
 
     scan_windows_by_batch = tuple(
         tuple(
@@ -357,25 +362,25 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_fact_by_index[physical_index] = existing_fact
                 physical_work_manifest.append(existing_fact.work_item)
                 physical_evaluations.append(existing_fact)
-        candidates.append(
-            _candidate_from_trace(
-                plan.group,
-                acquired.trace.rt,
-                acquired.trace.intensity,
-                settings=settings,
-                peak_config=peak_config,
-                signal_processing_profile=signal_processing_profile,
-                prepared_signal_cache=prepared_signal_cache,
-                physical_work_ordinal=physical_index,
-                physical_acquisition_source_id=(
-                    acquisition_source.acquisition_source_id
-                ),
-                physical_acquired_trace=acquired,
-                physical_fact_record=existing_fact,
-                physical_work_observer=physical_work_manifest.append,
-                physical_evaluation_observer=physical_evaluations.append,
-            )
+        candidate = _candidate_from_trace(
+            plan.group,
+            acquired.trace.rt,
+            acquired.trace.intensity,
+            settings=settings,
+            peak_config=peak_config,
+            signal_processing_profile=signal_processing_profile,
+            prepared_signal_cache=prepared_signal_cache,
+            physical_work_ordinal=physical_index,
+            physical_acquisition_source_id=acquisition_source.acquisition_source_id,
+            physical_acquired_trace=acquired,
+            physical_fact_record=existing_fact,
+            physical_trace_quality=physical_trace_qualities.get(physical_index),
+            physical_work_observer=physical_work_manifest.append,
+            physical_evaluation_observer=physical_evaluations.append,
         )
+        candidates.append(candidate)
+        if signal_processing_profile is not None:
+            physical_trace_qualities[physical_index] = candidate.ms1_trace_quality
         if signal_processing_profile is not None and existing_fact is None:
             if len(physical_evaluations) != len(physical_fact_by_index) + 1:
                 raise ValueError("Discovery physical evaluation was not recorded once")
@@ -593,6 +598,7 @@ def _candidate_from_trace(
     physical_acquisition_source_id: str | None = None,
     physical_acquired_trace: AcquiredTrace | None = None,
     physical_fact_record: DiscoveryPhysicalFactRecord | None = None,
+    physical_trace_quality: str | None = None,
     physical_work_observer: Callable[[DiscoveryPhysicalWorkItem], None] | None = None,
     physical_evaluation_observer: (
         Callable[[DiscoveryPhysicalFactRecord], None] | None
@@ -693,11 +699,16 @@ def _candidate_from_trace(
                 != (request.mz, request.rt_min, request.rt_max, request.ppm_tol)
             ):
                 raise ValueError("reused Discovery physical fact crosses its question")
+            if physical_trace_quality is None:
+                raise ValueError(
+                    "reused Discovery physical fact lost trace qualification"
+                )
             ms1_fields = _ms1_fields_from_physical_evaluation(
                 physical_evaluation,
                 work_item=physical_work,
                 settings=settings,
             )
+            ms1_fields.trace_quality = physical_trace_quality
     priority = assign_review_priority(
         seed_event_count=len(group.seeds),
         ms1_peak_found=ms1_fields.peak_found,

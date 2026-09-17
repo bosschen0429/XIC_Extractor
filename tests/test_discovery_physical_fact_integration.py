@@ -782,6 +782,61 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
 
 
+@pytest.mark.parametrize("shared_request_count", (1, 2))
+def test_provisional_qualification_survives_physical_fact_reuse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    shared_request_count: int,
+) -> None:
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.ownership import (
+        build_sample_local_owners_from_discovery_bindings,
+    )
+    from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"provisional-qualification-reuse")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    raw.rt = np.linspace(7.45, 8.15, 141)
+    raw.intensity = (
+        1000.0
+        + 50.0 * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
+        + 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
+    )
+    qualifier = Mock(wraps=is_provisional_peak_shape)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.is_provisional_peak_shape", qualifier
+    )
+    group = _group((_seed(scan_number=10, rt=7.8),))
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,) * shared_request_count,
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.ms1_trace_quality == "provisional"
+    assert candidate.is_provisional is True
+    assert result.measurements.reacquisition_request_count == 0
+    assert raw.raw_chromatogram_call_count == 1
+    assert qualifier.call_count == 1
+    ownership = build_sample_local_owners_from_discovery_bindings(
+        result.physical_bindings, alignment_config=AlignmentConfig()
+    )
+    assert len(ownership.owners) == 1
+    assert ownership.owners[0].is_provisional is True
+
+
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

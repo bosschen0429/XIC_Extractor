@@ -173,9 +173,10 @@ def test_discovery_candidate_columns_start_with_review_columns() -> None:
         == EXPECTED_SUCCESSOR_COLUMNS
     )
     assert (
-        DISCOVERY_CANDIDATE_COLUMNS[review_column_count + successor_column_count :]
+        DISCOVERY_CANDIDATE_COLUMNS[review_column_count + successor_column_count :-1]
         == DISCOVERY_PROVENANCE_COLUMNS
     )
+    assert DISCOVERY_CANDIDATE_COLUMNS[-1] == "is_provisional"
 
 def test_discovery_candidate_has_optional_scan_support_score() -> None:
     field_names = {field.name for field in fields(DiscoveryCandidate)}

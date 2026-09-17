@@ -44,6 +44,11 @@ lifecycle for each provider.
   settings keep their existing selection policies. This local qualification does
   not prove chemical identity or replace cross-sample support and Backfill
   eligibility.
+- Discovery retains provisional qualification when it reuses a physical result.
+  Candidate CSV v2 carries the final `is_provisional` decision through Alignment
+  replay, including merged candidates. Legacy CSVs without provisional evidence
+  remain readable; legacy rows marked provisional without the decision field
+  are rejected because their final qualification cannot be recovered exactly.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/

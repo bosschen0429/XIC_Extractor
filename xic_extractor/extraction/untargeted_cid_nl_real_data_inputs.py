@@ -9,6 +9,7 @@ from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS,
     DiscoveryCandidateUniverseReceipt,
     validate_discovery_candidate_universe,
 )
@@ -424,8 +425,9 @@ def validate_candidate_universe_payload(
             or not entry["discovery_receipt_id"].startswith(
                 "xic.discovery-candidate-universe.v1:"
             )
-            or entry.get("candidate_artifact_schema_version")
-            != "discovery_candidates_csv_v1"
+            or not isinstance(entry.get("candidate_artifact_schema_version"), str)
+            or entry["candidate_artifact_schema_version"]
+            not in DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS
             or not _is_digest(entry.get("candidate_artifact_sha256"))
             or isinstance(entry.get("candidate_artifact_byte_size"), bool)
             or not isinstance(entry.get("candidate_artifact_byte_size"), int)
