@@ -43,7 +43,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
 from xic_extractor.execution_runtime_owner import derive_runtime_acquisition_metrics
-from xic_extractor.peak_detection.evidence_facts import (
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -197,7 +197,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     from xic_extractor.extraction.untargeted_cid_nl_alignment import (
         _restore_physical_candidate,
     )
-    from xic_extractor.peak_detection.evidence_facts import (
+    from xic_extractor.peak_detection.physical_peak_codec import (
         serialize_physical_peak_evaluation,
     )
 
@@ -353,7 +353,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         rt=trace_rt,
         intensity=100.0 + 500.0 * np.exp(-0.5 * ((trace_rt - 7.80) / 0.08) ** 2),
     )
-    from xic_extractor.peak_detection import evidence_facts as physical_owner
+    from xic_extractor.peak_detection import physical_peak_codec as physical_owner
 
     physical_calls = {"prepare": 0, "evaluate": 0}
     real_prepare = physical_owner.prepare_physical_signal

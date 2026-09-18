@@ -39,17 +39,21 @@ from xic_extractor.discovery.priority import (
 )
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
-from xic_extractor.peak_detection.evidence_facts import (
+from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
+from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_identity import (
+    mint_physical_trace_content_id,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
-    evaluate_physical_peak,
-    mint_physical_trace_content_id,
-    prepare_physical_signal,
 )
-from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
-from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )

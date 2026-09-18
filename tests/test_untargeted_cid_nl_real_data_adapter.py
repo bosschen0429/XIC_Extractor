@@ -60,12 +60,12 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
     from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter as adapter
     from xic_extractor.peak_detection import capture as capture_owner
-    from xic_extractor.peak_detection.evidence_facts import (
-        evaluate_physical_peak,
-        prepare_physical_signal,
-    )
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
+    )
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
     )
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,

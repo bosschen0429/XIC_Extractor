@@ -21,12 +21,14 @@ from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
-    PreparedSignal,
+from xic_extractor.peak_detection.physical_peak_codec import (
     _physical_evaluation_from_payload,
     deserialize_physical_peak_evaluation,
     serialize_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakEvaluation,
+    PreparedSignal,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,

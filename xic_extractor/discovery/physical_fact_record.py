@@ -14,11 +14,13 @@ from xic_extractor.discovery.models import (
     build_discovery_physical_selection_subject_id,
     discovery_candidate_output_sort_key,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_identity import (
     validate_physical_trace_content_id,
 )
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 

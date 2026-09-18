@@ -44,9 +44,11 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_unsearched_cid_nl_discovery_assessment,
     validate_cid_nl_method_assessment_binding,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakEvaluation,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity

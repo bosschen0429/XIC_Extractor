@@ -79,7 +79,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeJob,
     build_untargeted_cid_nl_sample_runtime_jobs,
 )
-from xic_extractor.peak_detection.evidence_facts import (
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )

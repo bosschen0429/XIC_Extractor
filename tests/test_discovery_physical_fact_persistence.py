@@ -30,7 +30,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.peak_detection.evidence_facts import (
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -209,13 +209,13 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         expected_work_manifest=manifest,
     )
 
-    from xic_extractor.peak_detection import evidence_facts
+    from xic_extractor.peak_detection import physical_peak_codec as owner
 
     def unexpected_recompute(*args, **kwargs):
         raise AssertionError("evidence retrieval must not prepare or evaluate")
 
-    monkeypatch.setattr(evidence_facts, "prepare_physical_signal", unexpected_recompute)
-    monkeypatch.setattr(evidence_facts, "evaluate_physical_peak", unexpected_recompute)
+    monkeypatch.setattr(owner, "prepare_physical_signal", unexpected_recompute)
+    monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_recompute)
     retained = read_discovery_physical_fact_records(
         path, expected_run_spec=spec, expected_acquisition_input=acquisition_input
     )
@@ -615,13 +615,13 @@ def test_legacy_sidecar_does_not_claim_unretained_processed_curves(
     path.write_text(
         json.dumps(value, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
-    from xic_extractor.peak_detection import evidence_facts
+    from xic_extractor.peak_detection import physical_peak_codec as owner
 
     def unexpected_recompute(*args, **kwargs):
         raise AssertionError("a legacy evidence reader must not manufacture arrays")
 
-    monkeypatch.setattr(evidence_facts, "prepare_physical_signal", unexpected_recompute)
-    monkeypatch.setattr(evidence_facts, "evaluate_physical_peak", unexpected_recompute)
+    monkeypatch.setattr(owner, "prepare_physical_signal", unexpected_recompute)
+    monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_recompute)
     restored = read_discovery_physical_fact_records(
         path, expected_run_spec=spec, expected_acquisition_input=acquisition_input
     )

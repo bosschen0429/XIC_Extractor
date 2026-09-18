@@ -21,10 +21,10 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
-from xic_extractor.peak_detection.evidence_facts import (
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cell_decision.owner import (

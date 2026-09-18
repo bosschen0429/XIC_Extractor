@@ -9,24 +9,13 @@ import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.baseline import asls_baseline
 from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakQuestion,
-    answer_physical_peak_question,
     build_candidate_evidence_facts,
-    canonical_physical_peak_question_bytes,
     decision_semantics_from_candidate_facts,
-    enumerate_physical_segment_universe,
-    evaluate_physical_peak,
     gaussian15_trace_window_evidence,
     integration_with_trace_evidence,
-    mint_physical_peak_question,
-    mint_physical_trace_content_id,
     peak_trace_evidence,
-    prepare_physical_signal,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
-    rehydrate_physical_peak_evaluation,
-    validate_bounded_physical_peak_evaluation,
-    validate_physical_peak_question_identity,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
@@ -35,6 +24,23 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_metrics,
     gaussian15_positive_asls_residual_trace,
 )
+from xic_extractor.peak_detection.physical_peak_codec import (
+    rehydrate_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
+    enumerate_physical_segment_universe,
+    evaluate_physical_peak,
+    mint_physical_peak_question,
+    prepare_physical_signal,
+    validate_bounded_physical_peak_evaluation,
+    validate_physical_peak_question_identity,
+)
+from xic_extractor.peak_detection.physical_peak_identity import (
+    canonical_physical_peak_question_bytes,
+    mint_physical_trace_content_id,
+)
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,

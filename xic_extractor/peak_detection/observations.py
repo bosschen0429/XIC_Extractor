@@ -29,18 +29,20 @@ from xic_extractor.peak_detection.baseline import (
     bounded_trace_interval,
     integrate_with_baseline,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
-    evaluate_physical_peak,
-    prepare_physical_signal,
-    validate_bounded_physical_peak_evaluation,
-)
 from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
     gaussian15_positive_asls_residual_metrics,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+    validate_bounded_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakEvaluation,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,

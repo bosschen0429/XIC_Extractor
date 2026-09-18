@@ -18,17 +18,21 @@ from xic_extractor.peak_detection.background_shape import (
     is_provisional_peak_shape,
     is_unresolved_shoulder_peak,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-    LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
-    PHYSICAL_PEAK_POINT_POLICY,
-    PHYSICAL_PEAK_WINDOW_POLICY,
+from xic_extractor.peak_detection.physical_peak_codec import (
     deserialize_physical_peak_evaluation,
+    serialize_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
     evaluate_physical_peak,
     mint_physical_peak_question,
     prepare_physical_signal,
-    serialize_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_WINDOW_POLICY,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
 from xic_extractor.peak_detection.signal_processing_profile import (
@@ -837,7 +841,7 @@ def test_sidecar_write_is_pure_and_external_read_rehydrates_once_per_record(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.peak_detection import evidence_facts as owner
+    from xic_extractor.peak_detection import physical_peak_codec as owner
 
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)

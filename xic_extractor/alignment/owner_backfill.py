@@ -64,16 +64,20 @@ from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.evidence_facts import (
     PeakTraceEvidenceFacts,
-    PhysicalPeakEvaluation,
-    PreparedSignalResult,
     TraceWindowEvidenceFacts,
-    evaluate_physical_peak,
     peak_trace_evidence,
-    prepare_physical_signal,
-    validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+    validate_bounded_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakEvaluation,
+    PreparedSignalResult,
+)
 from xic_extractor.peak_detection.region_audit import (
     PeakRegionAuditSummary,
     build_peak_region_audit_summary,

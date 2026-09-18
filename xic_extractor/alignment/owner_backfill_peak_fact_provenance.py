@@ -27,13 +27,17 @@ from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
     production_cell_decision_projection,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
-    PhysicalPeakState,
+from xic_extractor.peak_detection.physical_peak_codec import (
+    rehydrate_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-    rehydrate_physical_peak_evaluation,
     validate_bounded_physical_peak_evaluation,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakEvaluation,
+    PhysicalPeakState,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,

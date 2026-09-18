@@ -26,11 +26,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PhysicalPeakEvaluation,
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakEvaluation,
+)
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
     canonical_signal_processing_profile_bytes,
