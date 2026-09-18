@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+import xic_extractor.alignment.cell_group_context as cell_group_context_owner
 import xic_extractor.alignment.cell_observations as cell_owner
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
@@ -277,7 +278,7 @@ def test_population_reuses_group_construction_within_each_exact_input_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sources, handoff = _outside_population_handoff(tmp_path)
-    original = cell_owner.construct_cross_sample_peak_group_hypotheses
+    original = cell_group_context_owner.construct_cross_sample_peak_group_hypotheses
     constructions = []
 
     def counted(*args, **kwargs):
@@ -285,7 +286,9 @@ def test_population_reuses_group_construction_within_each_exact_input_call(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(
-        cell_owner, "construct_cross_sample_peak_group_hypotheses", counted
+        cell_group_context_owner,
+        "construct_cross_sample_peak_group_hypotheses",
+        counted,
     )
     expected_context_count = len({id(cell.group_context) for cell in sources})
     first = compose_final_group_cell_observation_population(

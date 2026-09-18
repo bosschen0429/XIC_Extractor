@@ -12,12 +12,14 @@ import pytest
 
 import xic_extractor.alignment.backfill.observation_repair as repair_owner
 import xic_extractor.alignment.cross_sample_peak_groups as cross_sample_owner
-import xic_extractor.alignment.owner_backfill as owner_backfill_runtime
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
 from tests.test_alignment_owner_backfill import _feature
 from tests.test_alignment_owner_clustering import _owner
 from tests.test_backfill_evaluation_coverage import _coverage_fixture
+from xic_extractor.alignment import (
+    owner_backfill_acquisition as owner_backfill_acquisition_runtime,
+)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillEvaluationCoverageBatch,
     OwnerBackfillEvaluationCoverageContext,
@@ -137,7 +139,7 @@ def test_pure_association_adds_no_xic_smoothing_or_integration_work(
         return fail
 
     monkeypatch.setattr(
-        owner_backfill_runtime,
+        owner_backfill_acquisition_runtime,
         "_extract_unique_many",
         forbidden("extract_xic"),
     )
