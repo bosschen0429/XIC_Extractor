@@ -2,6 +2,7 @@ import argparse
 import math
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig
@@ -235,6 +236,28 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--resolver-mode",
         type=_resolver_mode,
     )
+    parser.add_argument(
+        "--blank-library",
+        type=Path,
+        help="Path to custom BlankBackgroundLibrary JSON file.",
+    )
+    parser.add_argument(
+        "--no-blank-qualification",
+        action="store_true",
+        help="Disable automatic blank background qualification and filtering.",
+    )
+    parser.add_argument(
+        "--blank-ppm-tol",
+        type=_positive_float,
+        default=10.0,
+        help="Tolerance in ppm for matching blank library (default: 10.0).",
+    )
+    parser.add_argument(
+        "--blank-fold-change",
+        type=_positive_float,
+        default=3.0,
+        help="Fold change above blank to protect high abundance tissue analytes.",
+    )
     args = parser.parse_args(argv)
     rt_min = args.rt_min if args.rt_min is not None else 0.0
     rt_max = args.rt_max if args.rt_max is not None else 999.0
@@ -274,11 +297,11 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
     }
     common = {key: value for key, value in common.items() if value is not None}
     if args.preset is not None:
-        return bind_cid_nl_recipe(
+        settings = bind_cid_nl_recipe(
             load_preset(args.preset), "discovery_only", recipe_overrides=common
         ).discovery_settings
-    if args.feature_list is None:
-        return DiscoverySettings(
+    elif args.feature_list is None:
+        settings = DiscoverySettings(
             neutral_loss_profile=NeutralLossProfile(
                 tag=args.neutral_loss_tag or "DNA_dR",
                 neutral_loss_da=args.neutral_loss_da
@@ -288,26 +311,43 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
             tag_combine_mode="single",
             **common,
         )
+    else:
+        selected = [
+            value.strip()
+            for value in str(args.selected_tags).split(",")
+            if value.strip()
+        ]
+        profiles = resolve_selected_tag_profiles(
+            load_feature_tag_profiles(args.feature_list),
+            selected,
+        )
+        settings = DiscoverySettings(
+            neutral_loss_profiles=tuple(
+                NeutralLossProfile(
+                    tag=profile.tag_name,
+                    neutral_loss_da=profile.parameter_mz_or_da,
+                )
+                for profile in profiles
+            ),
+            selected_tag_names=tuple(profile.tag_name for profile in profiles),
+            tag_combine_mode=args.tag_combine_mode or "union",
+            **common,
+        )
 
-    selected = [
-        value.strip() for value in str(args.selected_tags).split(",") if value.strip()
-    ]
-    profiles = resolve_selected_tag_profiles(
-        load_feature_tag_profiles(args.feature_list),
-        selected,
-    )
-    return DiscoverySettings(
-        neutral_loss_profiles=tuple(
-            NeutralLossProfile(
-                tag=profile.tag_name,
-                neutral_loss_da=profile.parameter_mz_or_da,
-            )
-            for profile in profiles
-        ),
-        selected_tag_names=tuple(profile.tag_name for profile in profiles),
-        tag_combine_mode=args.tag_combine_mode or "union",
-        **common,
-    )
+    if not args.no_blank_qualification:
+        settings = replace(
+            settings,
+            enable_blank_qualification=True,
+            blank_library_path=str(args.blank_library) if args.blank_library else None,
+            blank_ppm_tol=args.blank_ppm_tol,
+            blank_fold_change_threshold=args.blank_fold_change,
+        )
+    else:
+        settings = replace(
+            settings,
+            enable_blank_qualification=False,
+        )
+    return settings
 
 
 def _peak_config(

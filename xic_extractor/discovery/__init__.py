@@ -26,20 +26,30 @@ _EXPORT_MODULES = {
     "run_discovery_batch": "xic_extractor.discovery.pipeline",
     "assign_review_priority": "xic_extractor.discovery.priority",
     "build_candidate_reason": "xic_extractor.discovery.priority",
+    "BlankBackgroundLibrary": "xic_extractor.discovery.blank_qualification",
+    "get_default_background_library": ("xic_extractor.discovery.blank_qualification"),
+    "resolve_background_library": "xic_extractor.discovery.blank_qualification",
+    "apply_blank_qualification_to_candidates": (
+        "xic_extractor.discovery.blank_qualification"
+    ),
 }
 
 __all__ = (
-    "MS1XicSource",
-    "MS2ScanSource",
+    "BlankBackgroundLibrary",
     "DiscoveryBatchOutputs",
     "DiscoveryRawHandle",
     "DiscoveryRunOutputs",
+    "MS1XicSource",
+    "MS2ScanSource",
     "RawOpener",
+    "apply_blank_qualification_to_candidates",
     "assign_review_priority",
     "backfill_ms1_candidates",
     "build_candidate_reason",
     "collect_strict_nl_seeds",
+    "get_default_background_library",
     "group_discovery_seeds",
+    "resolve_background_library",
     "run_discovery",
     "run_discovery_batch",
     "write_discovery_candidates_csv",

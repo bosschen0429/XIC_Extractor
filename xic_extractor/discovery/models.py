@@ -154,10 +154,17 @@ class DiscoverySettings:
     rt_max: float = 999.0
     resolver_mode: str = "local_minimum"
     evidence_profile: DiscoveryEvidenceProfile = DEFAULT_EVIDENCE_PROFILE
+    enable_blank_qualification: bool = False
+    blank_library_path: str | None = None
+    blank_ppm_tol: float = 10.0
+    blank_fold_change_threshold: float = 3.0
 
     def __post_init__(self) -> None:
         profiles = self.neutral_loss_profiles
-        if self.neutral_loss_profile is not None:
+        if (
+            self.neutral_loss_profile is not None
+            and self.neutral_loss_profile not in profiles
+        ):
             profiles = (self.neutral_loss_profile,) + profiles
         if not profiles:
             raise ValueError("at least one neutral-loss profile is required")
