@@ -19,9 +19,9 @@ def test_alignment_public_api_exports_plan2_contract():
         "AlignmentMatrix",
         "CellStatus",
     )
-    assert {
-        name for name in dir(alignment) if not name.startswith("_")
-    } == set(alignment.__all__)
+    assert {name for name in dir(alignment) if not name.startswith("_")} == set(
+        alignment.__all__
+    )
     newly_imported = set(sys.modules) - before
     assert "xic_extractor.discovery.pipeline" not in newly_imported
     assert "xic_extractor.extraction" not in newly_imported
@@ -52,6 +52,29 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
     allowed_composition_imports = {
         (
             "pipeline.py",
+            "xic_extractor.extraction.untargeted_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_alignment."
+            "complete_untargeted_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_alignment."
+            "complete_untargeted_cid_nl_alignment",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_production_batch",
+        ),
+        (
+            "pipeline.py",
+            "xic_extractor.extraction.untargeted_production_batch."
+            "is_supported_alignment_discovery",
+        ),
+        (
+            "pipeline.py",
             "xic_extractor.extraction.untargeted_cid_nl_alignment",
         ),
         (
@@ -66,7 +89,7 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
         (
             "pipeline.py",
             "xic_extractor.extraction.untargeted_cid_nl_production_batch."
-            "is_pure_single_provider_cid_nl",
+            "is_supported_alignment_discovery",
         ),
     }
     banned_roots = (
@@ -94,10 +117,14 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
                     and not raw_reader_allowed
                 ):
                     violations.append((path.name, imported_name))
-                elif imported_name.startswith(banned_roots) and (
-                    path.name,
-                    imported_name,
-                ) not in allowed_composition_imports:
+                elif (
+                    imported_name.startswith(banned_roots)
+                    and (
+                        path.name,
+                        imported_name,
+                    )
+                    not in allowed_composition_imports
+                ):
                     violations.append((path.name, imported_name))
 
     assert violations == []
@@ -125,9 +152,7 @@ def _imported_module_names(node):
     if isinstance(node, ast.ImportFrom) and node.module:
         imported_names = [node.module]
         imported_names.extend(
-            f"{node.module}.{alias.name}"
-            for alias in node.names
-            if alias.name != "*"
+            f"{node.module}.{alias.name}" for alias in node.names if alias.name != "*"
         )
         return imported_names
     return []
@@ -221,6 +246,7 @@ def test_invalid_tolerance_windows_are_rejected(kwargs):
 
     with pytest.raises(ValueError):
         AlignmentConfig(**kwargs)
+
 
 @pytest.mark.parametrize(
     ("field", "value"),

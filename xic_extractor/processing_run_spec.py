@@ -6,7 +6,15 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Mapping, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    Mapping,
+    Protocol,
+    cast,
+    runtime_checkable,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.discovery.models import DiscoverySettings
@@ -140,6 +148,26 @@ class ProcessingAcquisitionInput:
             raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
 
 
+@runtime_checkable
+class DiscoveryMethodSpec(Protocol):
+    """Protocol for any method and Discovery settings identity."""
+
+    @property
+    def settings(self) -> Any: ...
+
+    @property
+    def method(self) -> str: ...
+
+    @property
+    def schema_version(self) -> str: ...
+
+    @property
+    def method_hash(self) -> str: ...
+
+    @property
+    def method_id(self) -> str: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CidNlDiscoveryMethodSpec:
     """Complete CID-NL method and Discovery settings identity."""
@@ -169,7 +197,7 @@ class ProcessingRunSpec:
     """One immutable run identity compiled before any RAW handle is opened."""
 
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...]
-    discovery_method: CidNlDiscoveryMethodSpec
+    discovery_method: DiscoveryMethodSpec | CidNlDiscoveryMethodSpec
     signal_processing_profile: SignalProcessingProfile
     schema_version: str = PROCESSING_RUN_SPEC_SCHEMA_VERSION
 
@@ -209,8 +237,18 @@ class ProcessingRunSpec:
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"duplicate ProcessingRunSpec {field}")
-        if not isinstance(self.discovery_method, CidNlDiscoveryMethodSpec):
-            raise TypeError("discovery_method must be a CidNlDiscoveryMethodSpec")
+        if not (
+            isinstance(
+                self.discovery_method,
+                (CidNlDiscoveryMethodSpec, DiscoveryMethodSpec),
+            )
+            or (
+                hasattr(self.discovery_method, "method_hash")
+                and hasattr(self.discovery_method, "method_id")
+                and hasattr(self.discovery_method, "method")
+            )
+        ):
+            raise TypeError("discovery_method must be a DiscoveryMethodSpec")
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
             raise TypeError(
                 "signal_processing_profile must be a SignalProcessingProfile"
@@ -236,14 +274,23 @@ class ProcessingRunSpec:
 def compile_processing_run_spec(
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...],
     *,
-    discovery_settings: DiscoverySettings,
+    discovery_settings: DiscoverySettings | None = None,
+    discovery_method: DiscoveryMethodSpec | None = None,
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
 ) -> ProcessingRunSpec:
     """Compile already-identified ordered inputs into one run identity."""
 
-    method = CidNlDiscoveryMethodSpec(settings=discovery_settings)
+    if discovery_method is not None:
+        method = discovery_method
+    elif discovery_settings is not None:
+        method = CidNlDiscoveryMethodSpec(settings=discovery_settings)
+    else:
+        raise ValueError(
+            "compile_processing_run_spec requires "
+            "discovery_method or discovery_settings"
+        )
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
     return ProcessingRunSpec(
@@ -345,49 +392,93 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
     }
 
 
-def _method_content(method: CidNlDiscoveryMethodSpec) -> dict[str, object]:
-    settings = method.settings
-    weights = settings.evidence_profile.weights
-    thresholds = settings.evidence_profile.thresholds
+@dataclass(frozen=True, slots=True)
+class GenericDiscoveryMethodSpec:
+    """Generic Discovery method identity for non-CID-NL or composite methods."""
+
+    settings: Any
+    method: str
+    schema_version: str
+
+    @property
+    def canonical_bytes(self) -> bytes:
+        return _canonical_json_bytes(_method_content(self))
+
+    @property
+    def method_hash(self) -> str:
+        return hashlib.sha256(self.canonical_bytes).hexdigest()
+
+    @property
+    def method_id(self) -> str:
+        return f"{self.method}-discovery-method.v1:{self.method_hash}"
+
+
+def _method_content(
+    method: DiscoveryMethodSpec | CidNlDiscoveryMethodSpec,
+) -> dict[str, object]:
+    if isinstance(method, CidNlDiscoveryMethodSpec):
+        settings = method.settings
+        weights = settings.evidence_profile.weights
+        thresholds = settings.evidence_profile.thresholds
+        return {
+            "schema_version": method.schema_version,
+            "method": method.method,
+            "settings": {
+                "neutral_loss_profiles": [
+                    {
+                        "tag": profile.tag,
+                        "neutral_loss_da": _float_text(profile.neutral_loss_da),
+                    }
+                    for profile in settings.neutral_loss_profiles
+                ],
+                "selected_tag_names": list(settings.selected_tag_names),
+                "tag_combine_mode": settings.tag_combine_mode,
+                "nl_tolerance_ppm": _float_text(settings.nl_tolerance_ppm),
+                "precursor_mz_tolerance_ppm": _float_text(
+                    settings.precursor_mz_tolerance_ppm
+                ),
+                "product_mz_tolerance_ppm": _float_text(
+                    settings.product_mz_tolerance_ppm
+                ),
+                "product_search_ppm": _float_text(settings.product_search_ppm),
+                "ms2_precursor_tol_da": _float_text(settings.ms2_precursor_tol_da),
+                "nl_min_intensity_ratio": _float_text(settings.nl_min_intensity_ratio),
+                "seed_rt_gap_min": _float_text(settings.seed_rt_gap_min),
+                "ms1_search_padding_min": _float_text(settings.ms1_search_padding_min),
+                "rt_min": _float_text(settings.rt_min),
+                "rt_max": _float_text(settings.rt_max),
+                "resolver_mode": settings.resolver_mode,
+                "evidence_profile": {
+                    "name": settings.evidence_profile.name,
+                    "weights": {key: getattr(weights, key) for key in _WEIGHT_KEYS},
+                    "thresholds": {
+                        key: (
+                            getattr(thresholds, key)
+                            if key == "scan_support_target"
+                            else _float_text(getattr(thresholds, key))
+                        )
+                        for key in _THRESHOLD_KEYS
+                    },
+                },
+            },
+        }
+    if hasattr(method, "to_content_dict"):
+        return method.to_content_dict()
+    settings_val = method.settings
+    if hasattr(settings_val, "__dataclass_fields__"):
+        from dataclasses import asdict
+
+        settings_dict = asdict(settings_val)
+    elif isinstance(settings_val, Mapping):
+        settings_dict = dict(settings_val)
+    elif isinstance(settings_val, dict):
+        settings_dict = settings_val
+    else:
+        settings_dict = dict(getattr(settings_val, "__dict__", {}))
     return {
         "schema_version": method.schema_version,
         "method": method.method,
-        "settings": {
-            "neutral_loss_profiles": [
-                {
-                    "tag": profile.tag,
-                    "neutral_loss_da": _float_text(profile.neutral_loss_da),
-                }
-                for profile in settings.neutral_loss_profiles
-            ],
-            "selected_tag_names": list(settings.selected_tag_names),
-            "tag_combine_mode": settings.tag_combine_mode,
-            "nl_tolerance_ppm": _float_text(settings.nl_tolerance_ppm),
-            "precursor_mz_tolerance_ppm": _float_text(
-                settings.precursor_mz_tolerance_ppm
-            ),
-            "product_mz_tolerance_ppm": _float_text(settings.product_mz_tolerance_ppm),
-            "product_search_ppm": _float_text(settings.product_search_ppm),
-            "ms2_precursor_tol_da": _float_text(settings.ms2_precursor_tol_da),
-            "nl_min_intensity_ratio": _float_text(settings.nl_min_intensity_ratio),
-            "seed_rt_gap_min": _float_text(settings.seed_rt_gap_min),
-            "ms1_search_padding_min": _float_text(settings.ms1_search_padding_min),
-            "rt_min": _float_text(settings.rt_min),
-            "rt_max": _float_text(settings.rt_max),
-            "resolver_mode": settings.resolver_mode,
-            "evidence_profile": {
-                "name": settings.evidence_profile.name,
-                "weights": {key: getattr(weights, key) for key in _WEIGHT_KEYS},
-                "thresholds": {
-                    key: (
-                        getattr(thresholds, key)
-                        if key == "scan_support_target"
-                        else _float_text(getattr(thresholds, key))
-                    )
-                    for key in _THRESHOLD_KEYS
-                },
-            },
-        },
+        "settings": settings_dict,
     }
 
 
@@ -464,7 +555,16 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
     )
 
 
-def _method_from_content(content: Mapping[str, object]) -> CidNlDiscoveryMethodSpec:
+def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
+    _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
+    method_name = content["method"]
+    if method_name != "cid_nl":
+        return GenericDiscoveryMethodSpec(
+            settings=content["settings"],
+            method=str(method_name),
+            schema_version=str(content["schema_version"]),
+        )
+
     from xic_extractor.discovery.evidence_config import (
         DiscoveryEvidenceProfile,
         DiscoveryEvidenceThresholds,
@@ -472,7 +572,6 @@ def _method_from_content(content: Mapping[str, object]) -> CidNlDiscoveryMethodS
     )
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 
-    _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
     settings_value = _mapping(content["settings"], label="Discovery settings")
     _require_keys(settings_value, _SETTINGS_KEYS, label="Discovery settings")
     profile_values = _list(
@@ -638,6 +737,11 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         raise ValueError("unsupported tag_combine_mode")
     if settings.tag_combine_mode == "single" and len(profiles) != 1:
         raise ValueError("single tag_combine_mode requires exactly one profile")
+    if settings.tag_combine_mode in {"union", "intersection"} and len(profiles) < 2:
+        raise ValueError(
+            f"{settings.tag_combine_mode} tag_combine_mode "
+            "requires at least two profiles"
+        )
     for profile in profiles:
         value = profile.neutral_loss_da
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -804,6 +908,8 @@ __all__ = [
     "PROCESSING_RUN_SPEC_ID_PREFIX",
     "PROCESSING_RUN_SPEC_SCHEMA_VERSION",
     "CidNlDiscoveryMethodSpec",
+    "DiscoveryMethodSpec",
+    "GenericDiscoveryMethodSpec",
     "ProcessingAcquisitionInput",
     "ProcessingRunSpec",
     "canonical_cid_nl_method_bytes",
