@@ -124,7 +124,10 @@ class BlankBackgroundLibrary:
                 data = json.load(f)
 
         ions = tuple(
-            BlankBackgroundIon.from_dict(item) for item in data.get("ions", [])
+            sorted(
+                (BlankBackgroundIon.from_dict(item) for item in data.get("ions", [])),
+                key=lambda ion: ion.mz,
+            )
         )
         return cls(
             ions=ions,
@@ -132,6 +135,48 @@ class BlankBackgroundLibrary:
             source_blanks=tuple(data.get("source_blanks", [])),
             version=str(data.get("version", "v1")),
         )
+
+
+def serialize_background_library(library: BlankBackgroundLibrary) -> str:
+    """Freeze the selected library without the export writer's m/z rounding."""
+    return json.dumps(
+        {
+            "version": library.version,
+            "min_intensity": float(library.min_intensity),
+            "source_blanks": list(library.source_blanks),
+            "ions": [
+                {
+                    "mz": float(ion.mz),
+                    "max_intensity": float(ion.max_intensity),
+                    "scan_count": ion.scan_count,
+                    "source_blank": ion.source_blank,
+                }
+                for ion in library.ions
+            ],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def deserialize_background_library(payload: str) -> BlankBackgroundLibrary:
+    """Rehydrate only the exact canonical library snapshot bound to a run."""
+    try:
+        data = json.loads(payload)
+        library = BlankBackgroundLibrary(
+            ions=tuple(BlankBackgroundIon.from_dict(item) for item in data["ions"]),
+            min_intensity=float(data["min_intensity"]),
+            source_blanks=tuple(data["source_blanks"]),
+            version=data["version"],
+        )
+        if serialize_background_library(library) != payload:
+            raise ValueError("background library snapshot is not canonical")
+        if any(a.mz > b.mz for a, b in zip(library.ions, library.ions[1:])):
+            raise ValueError("background library snapshot ions are not ordered")
+        return library
+    except (KeyError, TypeError, OverflowError) as exc:
+        raise ValueError("invalid background library snapshot") from exc
 
 
 @dataclass(frozen=True, slots=True)

@@ -12,6 +12,67 @@ from xic_extractor.discovery.blank_qualification import (
 )
 
 
+@pytest.mark.parametrize("suffix", [".json", ".json.gz"])
+def test_loaded_unordered_library_still_classifies_background(
+    tmp_path: Path, suffix: str,
+) -> None:
+    import gzip
+    import json
+
+    path = tmp_path / f"library{suffix}"
+    payload = {
+        "version": "v1", "min_intensity": 25000.0, "source_blanks": ["B1"],
+        "ions": [
+            {"mz": mz, "max_intensity": 100000.0,
+             "scan_count": 5, "source_blank": "B1"}
+            for mz in [300.0, 100.0, 200.0]
+        ],
+    }
+    if suffix.endswith(".gz"):
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    else:
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    library = BlankBackgroundLibrary.load_json(path)
+    (verdict,) = qualify_candidates_against_blank(
+        [{"candidate_id": "C1", "precursor_mz": 300.0, "ms1_height": 120000.0}],
+        library, fold_change_threshold=3.0,
+    )
+    assert verdict.category == BlankQualificationCategory.SYSTEM_BACKGROUND
+    assert verdict.is_excluded_from_review is True
+
+
+def test_background_library_snapshot_preserves_precision_and_rejects_noncanonical(
+) -> None:
+    import json
+
+    from xic_extractor.discovery.blank_qualification import (
+        deserialize_background_library,
+        serialize_background_library,
+    )
+
+    library = BlankBackgroundLibrary(
+        ions=(BlankBackgroundIon(
+            mz=300.12345678912345, max_intensity=12345.6789012345,
+            scan_count=5, source_blank="B1",
+        ),),
+        min_intensity=10000.0, source_blanks=("B1",),
+    )
+    payload = serialize_background_library(library)
+    restored = deserialize_background_library(payload)
+    assert restored.ions[0].mz == 300.12345678912345
+    assert restored.ions[0].max_intensity == 12345.6789012345
+    assert restored == library
+    with pytest.raises(ValueError):
+        deserialize_background_library(payload + " ")
+    with_extra_key = json.loads(payload)
+    with_extra_key["unexpected"] = "not part of the library"
+    with pytest.raises(ValueError):
+        deserialize_background_library(json.dumps(
+            with_extra_key, sort_keys=True, separators=(",", ":"),
+        ))
+
+
 def test_blank_library_matching():
     ions = (
         BlankBackgroundIon(
@@ -437,8 +498,9 @@ def test_run_discovery_cli_missing_blank_library_fails(tmp_path: Path) -> None:
     assert code == 2
 
 
-def test_run_discovery_cached_blank_library_rebuilds_on_mismatched_blanks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("change", ["same_path_new_content", "new_dir_same_names"])
+def test_run_discovery_blank_dir_uses_current_blank_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str,
 ) -> None:
     from scripts.run_discovery import main
 
@@ -449,8 +511,7 @@ def test_run_discovery_cached_blank_library_rebuilds_on_mismatched_blanks(
 
     blank_dir = tmp_path / "blanks"
     blank_dir.mkdir()
-    (blank_dir / "Blank_1.raw").write_bytes(b"b1")
-    (blank_dir / "Blank_2.raw").write_bytes(b"b2")
+    (blank_dir / "Blank_1.raw").write_bytes(b"100000")
 
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
@@ -458,22 +519,14 @@ def test_run_discovery_cached_blank_library_rebuilds_on_mismatched_blanks(
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    # Create cached library with different source blanks
-    stale_lib = BlankBackgroundLibrary(
-        ions=(),
-        min_intensity=25000.0,
-        source_blanks=("Old_Blank",),
-    )
     cached_file = output_dir / "blank_library.json"
-    stale_lib.save_json(cached_file)
-
-    extracted = False
 
     def mock_extract(blank_raws, dll_dir):
-        nonlocal extracted
-        extracted = True
         return BlankBackgroundLibrary(
-            ions=(),
+            ions=(BlankBackgroundIon(
+                mz=300.0, max_intensity=float(blank_raws[0].read_bytes()),
+                scan_count=5, source_blank="Blank_1",
+            ),),
             min_intensity=25000.0,
             source_blanks=tuple(sorted(p.stem for p in blank_raws)),
         )
@@ -509,10 +562,12 @@ def test_run_discovery_cached_blank_library_rebuilds_on_mismatched_blanks(
         ]
     )
     assert code == 0
-    assert extracted is True
+    assert BlankBackgroundLibrary.load_json(cached_file).ions[0].max_intensity == 100000
 
-    # Run again without changes - cache is valid and extraction should not be called
-    extracted = False
+    if change == "new_dir_same_names":
+        blank_dir = tmp_path / "other_blanks"
+        blank_dir.mkdir()
+    (blank_dir / "Blank_1.raw").write_bytes(b"200000")
     code = main(
         [
             "--raw",
@@ -526,5 +581,54 @@ def test_run_discovery_cached_blank_library_rebuilds_on_mismatched_blanks(
         ]
     )
     assert code == 0
-    assert extracted is False
+    library = BlankBackgroundLibrary.load_json(cached_file)
+    assert library.ions[0].max_intensity == 200000
+    (verdict,) = qualify_candidates_against_blank(
+        [{"candidate_id": "C1", "precursor_mz": 300.0, "ms1_height": 400000.0}],
+        library, fold_change_threshold=3.0,
+    )
+    assert verdict.category == BlankQualificationCategory.SYSTEM_BACKGROUND
 
+
+def test_run_discovery_explicit_disable_skips_blank_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from scripts.run_discovery import main
+
+    raw = tmp_path / "sample.raw"
+    raw.write_bytes(b"sample")
+    dll = tmp_path / "dll"
+    dll.mkdir()
+    blanks = tmp_path / "blanks"
+    blanks.mkdir()
+    (blanks / "Blank_1.raw").write_bytes(b"blank")
+    output = tmp_path / "output"
+    settings_seen = []
+
+    def forbidden_extraction(*args, **kwargs):
+        pytest.fail("explicit disable must not acquire blank RAWs")
+
+    def compile_spec(raw_paths, settings, peak_config):
+        settings_seen.append(settings)
+        return None
+
+    def discover(raw_path, *, settings, **kwargs):
+        settings_seen.append(settings)
+        return SimpleNamespace(candidates_csv="candidates.csv", review_csv="review.csv")
+
+    monkeypatch.setattr(
+        "scripts.run_discovery.extract_blank_background_library", forbidden_extraction,
+    )
+    monkeypatch.setattr(
+        "scripts.run_discovery._compile_processing_run_spec", compile_spec,
+    )
+    monkeypatch.setattr("scripts.run_discovery.run_discovery", discover)
+    assert main([
+        "--raw", str(raw), "--dll-dir", str(dll), "--output-dir", str(output),
+        "--blank-dir", str(blanks), "--no-blank-qualification",
+    ]) == 0
+    assert len(settings_seen) == 2
+    assert all(not settings.enable_blank_qualification for settings in settings_seen)
+    assert not (output / "blank_library.json").exists()

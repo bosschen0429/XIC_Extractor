@@ -9,7 +9,6 @@ from typing import Any
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.blank_qualification import (
-    BlankBackgroundLibrary,
     extract_blank_background_library,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
@@ -69,7 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
 
-    if args.blank_dir is not None:
+    if args.blank_dir is not None and settings.enable_blank_qualification:
         blank_dir = args.blank_dir.resolve()
         if not blank_dir.is_dir():
             print(f"{blank_dir}: blank directory does not exist", file=sys.stderr)
@@ -84,34 +83,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        cached_lib = output_dir / "blank_library.json"
-        expected_blanks = tuple(sorted(p.stem for p in blank_raws))
-        needs_extract = True
-        if cached_lib.is_file():
-            try:
-                cached_obj = BlankBackgroundLibrary.load_json(cached_lib)
-                if tuple(sorted(cached_obj.source_blanks)) == expected_blanks:
-                    needs_extract = False
-                else:
-                    print(
-                        f"Cached blank library at {cached_lib} does not match "
-                        f"input blanks, rebuilding..."
-                    )
-            except Exception:
-                needs_extract = True
-        if needs_extract:
-            print(
-                f"Extracting blank library from {len(blank_raws)} solvent blanks "
-                f"in {blank_dir}..."
-            )
-            lib = extract_blank_background_library(blank_raws, dll_dir=dll_dir)
-            cached_lib.parent.mkdir(parents=True, exist_ok=True)
-            lib.save_json(cached_lib)
-            print(f"Saved cohort blank library ({len(lib.ions)} ions) to: {cached_lib}")
+        library_path = output_dir / "blank_library.json"
+        print(
+            f"Extracting blank library from {len(blank_raws)} solvent blanks "
+            f"in {blank_dir}..."
+        )
+        lib = extract_blank_background_library(blank_raws, dll_dir=dll_dir)
+        library_path.parent.mkdir(parents=True, exist_ok=True)
+        lib.save_json(library_path)
+        print(f"Saved cohort blank library ({len(lib.ions)} ions) to: {library_path}")
         settings = replace(
             settings,
-            blank_library_path=str(cached_lib),
-            enable_blank_qualification=True,
+            blank_library_path=str(library_path),
         )
     data_dir = raw_path.parent if raw_path is not None else raw_dir
     if data_dir is None:
@@ -296,7 +279,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         help=(
             "Directory containing solvent blank RAW files for cohort background "
-            "extraction."
+            "extraction. Re-extracted on each invocation unless "
+            "--no-blank-qualification is set."
         ),
     )
     parser.add_argument(
