@@ -14,6 +14,7 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
 )
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
 
 _WRITER_ROUNDING_ABS_TOL = 5e-6
@@ -277,8 +278,7 @@ def _scan_tag_product_receipts(
     return receipts
 
 
-def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
-    return abs(observed - expected) / expected * 1_000_000.0 <= tolerance_ppm
+_within_ppm = within_ppm
 
 
 def _receipt_close(observed: float, receipt: float) -> bool:

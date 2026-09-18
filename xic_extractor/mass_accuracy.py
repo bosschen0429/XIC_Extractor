@@ -78,6 +78,37 @@ def is_within_mz_tolerance(
     return abs(observed_mz - reference_mz) <= tolerance_da + epsilon_da
 
 
+def within_ppm(
+    observed_mz: float,
+    reference_mz: float,
+    tolerance_ppm: float,
+    *,
+    minimum_da: float = 0.0,
+    boundary_epsilon_ppm: float = PPM_BOUNDARY_EPSILON,
+) -> bool:
+    """Return whether ``observed_mz`` is within ``tolerance_ppm`` of ``reference_mz``.
+
+    Uses ``reference_mz`` as denominator. Returns False if inputs are
+    non-finite, negative, or non-positive.
+    """
+    if (
+        not math.isfinite(observed_mz)
+        or not math.isfinite(reference_mz)
+        or not math.isfinite(tolerance_ppm)
+        or not math.isfinite(minimum_da)
+        or not math.isfinite(boundary_epsilon_ppm)
+        or observed_mz <= 0
+        or reference_mz <= 0
+        or tolerance_ppm < 0
+        or minimum_da < 0
+        or boundary_epsilon_ppm < 0
+    ):
+        return False
+    tolerance_da = max(reference_mz * tolerance_ppm * 1e-6, minimum_da)
+    epsilon_da = reference_mz * boundary_epsilon_ppm * 1e-6
+    return abs(observed_mz - reference_mz) <= tolerance_da + epsilon_da
+
+
 def _require_finite_mz(name: str, value: float) -> None:
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"{name} must be a finite positive m/z")

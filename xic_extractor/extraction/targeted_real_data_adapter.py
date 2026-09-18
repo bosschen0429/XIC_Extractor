@@ -45,6 +45,7 @@ from xic_extractor.extraction.cid_nl_evidence_projection import (
     mint_targeted_cid_nl_projection_ref,
 )
 from xic_extractor.extraction.rt_windows import get_rt_window
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.neutral_loss import MS2ProductEvidence
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.baseline import BaselineMethod
@@ -736,8 +737,7 @@ def _record_artifact(
         observer.record_artifact(artifact)
 
 
-def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
-    return abs(observed - expected) / expected * 1_000_000.0 <= tolerance_ppm
+_within_ppm = within_ppm
 
 
 def _receipt_close(observed: float, receipt: float) -> bool:
