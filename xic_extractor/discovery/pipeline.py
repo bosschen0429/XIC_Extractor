@@ -5,6 +5,7 @@ import pickle
 from collections.abc import Callable
 from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -24,7 +25,9 @@ from xic_extractor.discovery.batch_contract import (
     mint_discovery_candidate_universe_receipt,
 )
 from xic_extractor.discovery.blank_qualification import (
+    BlankBackgroundLibrary,
     apply_blank_qualification_to_candidates,
+    deserialize_background_library,
     resolve_background_library,
 )
 from xic_extractor.discovery.csv_writer import (
@@ -214,6 +217,11 @@ def _finalize_physical_bindings_for_output(
     )
 
 
+@lru_cache(maxsize=2)
+def _bound_background_library(content: str) -> BlankBackgroundLibrary:
+    return deserialize_background_library(content)
+
+
 def _apply_blank_qualification_if_enabled(
     candidates: tuple[DiscoveryCandidate, ...],
     *,
@@ -221,6 +229,7 @@ def _apply_blank_qualification_if_enabled(
     settings: DiscoverySettings,
     timing_recorder: TimingRecorder,
     sample_stem: str,
+    acquisition_input: ProcessingAcquisitionInput | None = None,
 ) -> tuple[DiscoveryCandidate, ...]:
     if not settings.enable_blank_qualification:
         return candidates
@@ -229,10 +238,16 @@ def _apply_blank_qualification_if_enabled(
         sample_stem=sample_stem,
         metrics={"candidate_count": len(candidates)},
     ) as stage:
-        library = resolve_background_library(
-            raw_dir=raw_path.parent,
-            library_path=settings.blank_library_path,
-        )
+        if acquisition_input is None:
+            library = resolve_background_library(
+                raw_dir=raw_path.parent, library_path=settings.blank_library_path,
+            )
+        elif acquisition_input.blank_library_sha256 is None:
+            library = None
+        elif acquisition_input.blank_library_content is None:
+            raise ValueError("bound blank library snapshot is unavailable")
+        else:
+            library = _bound_background_library(acquisition_input.blank_library_content)
         qualified = apply_blank_qualification_to_candidates(
             candidates,
             library,
@@ -315,6 +330,7 @@ def run_discovery(
         settings=settings,
         timing_recorder=recorder,
         sample_stem=sample_stem,
+        acquisition_input=acquisition_input,
     )
     return _write_dual_csvs(
         output_dir,
@@ -428,6 +444,7 @@ def run_discovery_batch(
             settings=settings,
             timing_recorder=recorder,
             sample_stem=sample_stem,
+            acquisition_input=acquisition_input,
         )
         sample_output_dir = output_dir / sample_stem
         outputs = _write_dual_csvs(
@@ -756,6 +773,7 @@ def _run_discovery_sample_process_job(
             settings=job.settings,
             timing_recorder=recorder,
             sample_stem=sample_stem,
+            acquisition_input=job.acquisition_input,
         )
         outputs = _write_dual_csvs(
             job.output_dir / sample_stem,

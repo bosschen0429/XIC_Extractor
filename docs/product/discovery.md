@@ -49,6 +49,15 @@ lifecycle for each provider.
   replay, including merged candidates. Legacy CSVs without provisional evidence
   remain readable; legacy rows marked provisional without the decision field
   are rejected because their final qualification cannot be recovered exactly.
+- Blank qualification uses the selected explicit, sample-local, or packaged
+  background library. ProcessingRunSpec v2 binds each input to that library's
+  content digest, and execution consumes the bound immutable snapshot. Reading
+  a saved v2 run for execution verifies the selected library against that digest.
+  Historical v1 run specs remain readable with their original bytes and identity;
+  an enabled v1 run without a library binding must be recompiled before execution.
+  The CLI's explicit `--no-blank-qualification` takes precedence over `--blank-dir`.
+  When qualification is enabled, an explicit blank directory is extracted anew;
+  matching filenames alone do not establish reusable blank content.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
