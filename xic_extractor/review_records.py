@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +14,10 @@ from xic_extractor.review_actions import parse_review_actions
 from xic_extractor.review_actions_models import ReviewAction, ReviewActionError
 from xic_extractor.review_actions_schema import REVIEW_ACTION_SCHEMA_VERSION
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.validation_primitives import (
+    require_lower_sha256,
+    require_owner_normalized_text,
+)
 
 _REVIEW_RECORD_ID_PREFIX = "xic.review-record.v1:"
 _REVIEW_RECORD_SNAPSHOT_PREFIX = "xic.review-record-snapshot.v1:"
@@ -23,7 +26,6 @@ _CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
 _TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
 _TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
 _PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request.v1:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ReviewRecordReferenceError(ValueError):
@@ -759,17 +761,20 @@ def _canonical_json(value: Any, *, field: str) -> str:
 
 
 def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise ReviewRecordReferenceError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
+    return require_owner_normalized_text(
+        value, field=field, error_factory=ReviewRecordReferenceError
+    )
 
 
 def _validate_sha256(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise ReviewRecordReferenceError(f"{field} must be a lower-case SHA-256 digest")
-    return value
+    return require_lower_sha256(
+        value,
+        field=field,
+        error_factory=lambda msg: ReviewRecordReferenceError(
+            f"{field} must be a lower-case SHA-256 digest"
+        ),
+    )
+
 
 
 def _validate_review_record_id(value: object, *, field: str) -> str:

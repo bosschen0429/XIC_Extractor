@@ -31,6 +31,7 @@ from xic_extractor.execution_runtime_observability import (
 )
 from xic_extractor.execution_runtime_owner import RuntimeFinalizationReceipt
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.validation_primitives import require_owner_normalized_text
 
 _MARKER_LOCK_TIMEOUT_SECONDS = 2.0
 _MARKER_LOCK_POLL_SECONDS = 0.01
@@ -590,11 +591,10 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
 
 
 def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise RuntimeFinalizationContractError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
+    return require_owner_normalized_text(
+        value, field=field, error_factory=RuntimeFinalizationContractError
+    )
+
 
 
 __all__ = [
