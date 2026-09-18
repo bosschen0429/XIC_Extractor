@@ -7,7 +7,17 @@ import json
 import math
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import TYPE_CHECKING, Literal, Mapping, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Iterator,
+    Literal,
+    Mapping,
+    Protocol,
+    cast,
+    runtime_checkable,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.discovery.models import DiscoverySettings
@@ -167,6 +177,26 @@ class ProcessingAcquisitionInput:
                 raise ValueError("blank library snapshot does not match its digest")
 
 
+@runtime_checkable
+class DiscoveryMethodSpec(Protocol):
+    """Protocol for any method and Discovery settings identity."""
+
+    @property
+    def settings(self) -> Any: ...
+
+    @property
+    def method(self) -> str: ...
+
+    @property
+    def schema_version(self) -> str: ...
+
+    @property
+    def method_hash(self) -> str: ...
+
+    @property
+    def method_id(self) -> str: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CidNlDiscoveryMethodSpec:
     """Complete CID-NL method and Discovery settings identity."""
@@ -211,7 +241,7 @@ class ProcessingRunSpec:
     """One immutable run identity compiled before any RAW handle is opened."""
 
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...]
-    discovery_method: CidNlDiscoveryMethodSpec
+    discovery_method: DiscoveryMethodSpec | CidNlDiscoveryMethodSpec
     signal_processing_profile: SignalProcessingProfile
     schema_version: str = PROCESSING_RUN_SPEC_SCHEMA_VERSION
 
@@ -254,15 +284,26 @@ class ProcessingRunSpec:
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"duplicate ProcessingRunSpec {field}")
-        if not isinstance(self.discovery_method, CidNlDiscoveryMethodSpec):
-            raise TypeError("discovery_method must be a CidNlDiscoveryMethodSpec")
-        expected_method_schema = (
-            "cid_nl_discovery_method_v1"
-            if self.schema_version == "processing_run_spec_v1"
-            else CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
-        )
-        if self.discovery_method.schema_version != expected_method_schema:
-            raise ValueError("run and method schema versions disagree")
+        if not (
+            isinstance(
+                self.discovery_method,
+                (CidNlDiscoveryMethodSpec, DiscoveryMethodSpec),
+            )
+            or (
+                hasattr(self.discovery_method, "method_hash")
+                and hasattr(self.discovery_method, "method_id")
+                and hasattr(self.discovery_method, "method")
+            )
+        ):
+            raise TypeError("discovery_method must be a DiscoveryMethodSpec")
+        if isinstance(self.discovery_method, CidNlDiscoveryMethodSpec):
+            expected_method_schema = (
+                "cid_nl_discovery_method_v1"
+                if self.schema_version == "processing_run_spec_v1"
+                else CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
+            )
+            if self.discovery_method.schema_version != expected_method_schema:
+                raise ValueError("run and method schema versions disagree")
         if self.schema_version == "processing_run_spec_v1" and any(
             item.blank_library_sha256 is not None for item in self.acquisition_inputs
         ):
@@ -292,14 +333,23 @@ class ProcessingRunSpec:
 def compile_processing_run_spec(
     acquisition_inputs: tuple[ProcessingAcquisitionInput, ...],
     *,
-    discovery_settings: DiscoverySettings,
+    discovery_settings: DiscoverySettings | None = None,
+    discovery_method: DiscoveryMethodSpec | None = None,
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
 ) -> ProcessingRunSpec:
     """Compile already-identified ordered inputs into one run identity."""
 
-    method = CidNlDiscoveryMethodSpec(settings=discovery_settings)
+    if discovery_method is not None:
+        method = discovery_method
+    elif discovery_settings is not None:
+        method = CidNlDiscoveryMethodSpec(settings=discovery_settings)
+    else:
+        raise ValueError(
+            "compile_processing_run_spec requires "
+            "discovery_method or discovery_settings"
+        )
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
     return ProcessingRunSpec(
@@ -406,64 +456,257 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
     }
 
 
-def _method_content(method: CidNlDiscoveryMethodSpec) -> dict[str, object]:
-    settings = method.settings
-    weights = settings.evidence_profile.weights
-    thresholds = settings.evidence_profile.thresholds
-    content: dict[str, object] = {
+def _normalize_generic_setting_value(value: Any) -> Any:
+    if hasattr(value, "__dataclass_fields__"):
+        from dataclasses import asdict
+
+        return GenericMethodSettings(asdict(value))
+    if isinstance(value, GenericMethodSettings):
+        return value
+    if isinstance(value, Mapping):
+        return GenericMethodSettings(value)
+    if isinstance(value, (list, tuple)):
+        return tuple(_normalize_generic_setting_value(item) for item in value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("floating-point setting values must be finite")
+        return value
+    return value
+
+
+def normalize_generic_method_settings(settings: Any) -> GenericMethodSettings:
+    """Normalize method settings into a canonical GenericMethodSettings mapping."""
+    if settings is None:
+        return GenericMethodSettings({})
+    if isinstance(settings, GenericMethodSettings):
+        return settings
+    if hasattr(settings, "__dataclass_fields__"):
+        from dataclasses import asdict
+
+        return GenericMethodSettings(asdict(settings))
+    if isinstance(settings, Mapping):
+        return GenericMethodSettings(settings)
+    raise TypeError(
+        "Discovery method settings must be a dataclass or Mapping, "
+        f"got {type(settings).__name__}"
+    )
+
+
+class GenericMethodSettings(Mapping[str, Any]):
+    """Immutable normalized settings mapping with attribute and dict access."""
+
+    __slots__ = ("_data", "_hash")
+
+    def __init__(self, data: Mapping[str, Any] | None = None, **kwargs: Any) -> None:
+        merged: dict[str, Any] = {}
+        if data is not None:
+            merged.update(data)
+        if kwargs:
+            merged.update(kwargs)
+        normalized = {
+            str(k): _normalize_generic_setting_value(v)
+            for k, v in merged.items()
+        }
+        self._data: dict[str, Any] = dict(sorted(normalized.items()))
+        self._hash: int | None = None
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        try:
+            return self._data[name]
+        except KeyError:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            ) from None
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, GenericMethodSettings):
+            return self._data == other._data
+        if isinstance(other, Mapping):
+            return self._data == dict(other)
+        if hasattr(other, "__dataclass_fields__"):
+            from dataclasses import asdict
+
+            return self._data == asdict(cast(Any, other))
+        return False
+
+    def __hash__(self) -> int:
+        if self._hash is None:
+            payload = _canonical_json_bytes(self.to_dict())
+            self._hash = hash(payload)
+        return self._hash
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for k, v in self._data.items():
+            if isinstance(v, GenericMethodSettings):
+                result[k] = v.to_dict()
+            elif isinstance(v, tuple):
+                result[k] = [
+                    item.to_dict() if isinstance(item, GenericMethodSettings) else item
+                    for item in v
+                ]
+            else:
+                result[k] = v
+        return result
+
+    def __repr__(self) -> str:
+        items = ", ".join(f"{k}={v!r}" for k, v in self._data.items())
+        return f"GenericMethodSettings({items})"
+
+
+@dataclass(frozen=True, slots=True)
+class GenericDiscoveryMethodSpec:
+    """Generic Discovery method identity for non-CID-NL or composite methods."""
+
+    settings: Any
+    method: str
+    schema_version: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "settings", normalize_generic_method_settings(self.settings)
+        )
+
+    @property
+    def canonical_bytes(self) -> bytes:
+        return _canonical_json_bytes(_method_content(self))
+
+    @property
+    def method_hash(self) -> str:
+        return hashlib.sha256(self.canonical_bytes).hexdigest()
+
+    @property
+    def method_id(self) -> str:
+        return f"{self.method}-discovery-method.v1:{self.method_hash}"
+
+
+DiscoveryMethodDecoder = Callable[[Mapping[str, object]], DiscoveryMethodSpec]
+DiscoveryMethodEncoder = Callable[[DiscoveryMethodSpec], Mapping[str, object]]
+
+_DISCOVERY_METHOD_DECODERS: dict[str, DiscoveryMethodDecoder] = {}
+_DISCOVERY_METHOD_ENCODERS: dict[str, DiscoveryMethodEncoder] = {}
+
+
+def register_discovery_method_codec(
+    method: str,
+    *,
+    decoder: DiscoveryMethodDecoder,
+    encoder: DiscoveryMethodEncoder | None = None,
+) -> None:
+    """Register custom serialization codec for a Discovery method."""
+    method_name = str(method).strip()
+    if not method_name:
+        raise ValueError("method name cannot be empty")
+    _DISCOVERY_METHOD_DECODERS[method_name] = decoder
+    if encoder is not None:
+        _DISCOVERY_METHOD_ENCODERS[method_name] = encoder
+
+
+def unregister_discovery_method_codec(method: str) -> None:
+    """Unregister custom serialization codec for a Discovery method."""
+    method_name = str(method).strip()
+    _DISCOVERY_METHOD_DECODERS.pop(method_name, None)
+    _DISCOVERY_METHOD_ENCODERS.pop(method_name, None)
+
+
+def _method_content(
+    method: DiscoveryMethodSpec | CidNlDiscoveryMethodSpec,
+) -> dict[str, object]:
+    if isinstance(method, CidNlDiscoveryMethodSpec):
+        settings = method.settings
+        weights = settings.evidence_profile.weights
+        thresholds = settings.evidence_profile.thresholds
+        content: dict[str, object] = {
+            "schema_version": method.schema_version,
+            "method": method.method,
+            "settings": {
+                "neutral_loss_profiles": [
+                    {
+                        "tag": profile.tag,
+                        "neutral_loss_da": _float_text(profile.neutral_loss_da),
+                    }
+                    for profile in settings.neutral_loss_profiles
+                ],
+                "selected_tag_names": list(settings.selected_tag_names),
+                "tag_combine_mode": settings.tag_combine_mode,
+                "nl_tolerance_ppm": _float_text(settings.nl_tolerance_ppm),
+                "precursor_mz_tolerance_ppm": _float_text(
+                    settings.precursor_mz_tolerance_ppm
+                ),
+                "product_mz_tolerance_ppm": _float_text(
+                    settings.product_mz_tolerance_ppm
+                ),
+                "product_search_ppm": _float_text(settings.product_search_ppm),
+                "ms2_precursor_tol_da": _float_text(settings.ms2_precursor_tol_da),
+                "nl_min_intensity_ratio": _float_text(settings.nl_min_intensity_ratio),
+                "seed_rt_gap_min": _float_text(settings.seed_rt_gap_min),
+                "ms1_search_padding_min": _float_text(settings.ms1_search_padding_min),
+                "rt_min": _float_text(settings.rt_min),
+                "rt_max": _float_text(settings.rt_max),
+                "resolver_mode": settings.resolver_mode,
+                "evidence_profile": {
+                    "name": settings.evidence_profile.name,
+                    "weights": {key: getattr(weights, key) for key in _WEIGHT_KEYS},
+                    "thresholds": {
+                        key: (
+                            getattr(thresholds, key)
+                            if key == "scan_support_target"
+                            else _float_text(getattr(thresholds, key))
+                        )
+                        for key in _THRESHOLD_KEYS
+                    },
+                },
+                "enable_blank_qualification": settings.enable_blank_qualification,
+                "blank_library_path": settings.blank_library_path,
+                "blank_ppm_tol": _float_text(settings.blank_ppm_tol),
+                "blank_fold_change_threshold": _float_text(
+                    settings.blank_fold_change_threshold
+                ),
+            },
+        }
+        if (
+            method.schema_version == "cid_nl_discovery_method_v1"
+            and not method._legacy_blank_settings
+        ):
+            settings_content = cast(dict[str, object], content["settings"])
+            for key in _SETTINGS_KEYS[-4:]:
+                del settings_content[key]
+        return content
+    if method.method in _DISCOVERY_METHOD_ENCODERS:
+        return dict(_DISCOVERY_METHOD_ENCODERS[method.method](method))
+    if hasattr(method, "to_content_dict"):
+        return dict(method.to_content_dict())
+    settings_val = method.settings
+    if isinstance(settings_val, GenericMethodSettings):
+        settings_dict = settings_val.to_dict()
+    elif hasattr(settings_val, "__dataclass_fields__"):
+        from dataclasses import asdict
+
+        settings_dict = asdict(settings_val)
+    elif isinstance(settings_val, Mapping):
+        settings_dict = dict(settings_val)
+    elif isinstance(settings_val, dict):
+        settings_dict = settings_val
+    else:
+        settings_dict = dict(getattr(settings_val, "__dict__", {}))
+    return {
         "schema_version": method.schema_version,
         "method": method.method,
-        "settings": {
-            "neutral_loss_profiles": [
-                {
-                    "tag": profile.tag,
-                    "neutral_loss_da": _float_text(profile.neutral_loss_da),
-                }
-                for profile in settings.neutral_loss_profiles
-            ],
-            "selected_tag_names": list(settings.selected_tag_names),
-            "tag_combine_mode": settings.tag_combine_mode,
-            "nl_tolerance_ppm": _float_text(settings.nl_tolerance_ppm),
-            "precursor_mz_tolerance_ppm": _float_text(
-                settings.precursor_mz_tolerance_ppm
-            ),
-            "product_mz_tolerance_ppm": _float_text(settings.product_mz_tolerance_ppm),
-            "product_search_ppm": _float_text(settings.product_search_ppm),
-            "ms2_precursor_tol_da": _float_text(settings.ms2_precursor_tol_da),
-            "nl_min_intensity_ratio": _float_text(settings.nl_min_intensity_ratio),
-            "seed_rt_gap_min": _float_text(settings.seed_rt_gap_min),
-            "ms1_search_padding_min": _float_text(settings.ms1_search_padding_min),
-            "rt_min": _float_text(settings.rt_min),
-            "rt_max": _float_text(settings.rt_max),
-            "resolver_mode": settings.resolver_mode,
-            "evidence_profile": {
-                "name": settings.evidence_profile.name,
-                "weights": {key: getattr(weights, key) for key in _WEIGHT_KEYS},
-                "thresholds": {
-                    key: (
-                        getattr(thresholds, key)
-                        if key == "scan_support_target"
-                        else _float_text(getattr(thresholds, key))
-                    )
-                    for key in _THRESHOLD_KEYS
-                },
-            },
-            "enable_blank_qualification": settings.enable_blank_qualification,
-            "blank_library_path": settings.blank_library_path,
-            "blank_ppm_tol": _float_text(settings.blank_ppm_tol),
-            "blank_fold_change_threshold": _float_text(
-                settings.blank_fold_change_threshold
-            ),
-        },
+        "settings": settings_dict,
     }
-    if (
-        method.schema_version == "cid_nl_discovery_method_v1"
-        and not method._legacy_blank_settings
-    ):
-        settings_content = cast(dict[str, object], content["settings"])
-        for key in _SETTINGS_KEYS[-4:]:
-            del settings_content[key]
-    return content
 
 
 def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
@@ -557,7 +800,25 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
     )
 
 
-def _method_from_content(content: Mapping[str, object]) -> CidNlDiscoveryMethodSpec:
+def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
+    _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
+    method_name = str(content["method"])
+    if method_name in _DISCOVERY_METHOD_DECODERS:
+        decoded = _DISCOVERY_METHOD_DECODERS[method_name](content)
+        if not isinstance(decoded, DiscoveryMethodSpec):
+            raise TypeError(
+                f"Registered decoder for '{method_name}' must return a "
+                "DiscoveryMethodSpec"
+            )
+        return decoded
+
+    if method_name != "cid_nl":
+        return GenericDiscoveryMethodSpec(
+            settings=content["settings"],
+            method=method_name,
+            schema_version=str(content["schema_version"]),
+        )
+
     from xic_extractor.discovery.evidence_config import (
         DiscoveryEvidenceProfile,
         DiscoveryEvidenceThresholds,
@@ -565,7 +826,6 @@ def _method_from_content(content: Mapping[str, object]) -> CidNlDiscoveryMethodS
     )
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 
-    _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
     settings_value = _mapping(content["settings"], label="Discovery settings")
     legacy_original = (
         content["schema_version"] == "cid_nl_discovery_method_v1"
@@ -759,6 +1019,11 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         raise ValueError("unsupported tag_combine_mode")
     if settings.tag_combine_mode == "single" and len(profiles) != 1:
         raise ValueError("single tag_combine_mode requires exactly one profile")
+    if settings.tag_combine_mode in {"union", "intersection"} and len(profiles) < 2:
+        raise ValueError(
+            f"{settings.tag_combine_mode} tag_combine_mode "
+            "requires at least two profiles"
+        )
     for profile in profiles:
         value = profile.neutral_loss_da
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -946,11 +1211,19 @@ __all__ = [
     "PROCESSING_RUN_SPEC_ID_PREFIX",
     "PROCESSING_RUN_SPEC_SCHEMA_VERSION",
     "CidNlDiscoveryMethodSpec",
+    "DiscoveryMethodDecoder",
+    "DiscoveryMethodEncoder",
+    "DiscoveryMethodSpec",
+    "GenericDiscoveryMethodSpec",
+    "GenericMethodSettings",
     "ProcessingAcquisitionInput",
     "ProcessingRunSpec",
     "canonical_cid_nl_method_bytes",
     "canonical_processing_run_spec_bytes",
     "compile_processing_run_spec",
     "deserialize_processing_run_spec",
+    "normalize_generic_method_settings",
+    "register_discovery_method_codec",
     "serialize_processing_run_spec",
+    "unregister_discovery_method_codec",
 ]

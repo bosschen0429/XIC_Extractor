@@ -742,11 +742,11 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
     assert observed == {
         (
             "xic_extractor.alignment.pipeline",
-            "xic_extractor.extraction.untargeted_cid_nl_alignment",
+            "xic_extractor.extraction.untargeted_alignment",
         ),
         (
             "xic_extractor.alignment.pipeline",
-            "xic_extractor.extraction.untargeted_cid_nl_production_batch",
+            "xic_extractor.extraction.untargeted_production_batch",
         ),
         (
             "xic_extractor.alignment.result.application_result",
@@ -759,7 +759,7 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
 def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
         "run_alignment": set(),
-        "complete_untargeted_cid_nl_alignment": set(),
+        "complete_untargeted_alignment": set(),
         "execute_bounded_untargeted_cid_nl": set(),
         "execute_untargeted_cid_nl_runtime_partition": set(),
     }
@@ -793,11 +793,11 @@ def test_default_production_activation_loci_are_exact() -> None:
         Path("gui/workers/discovery_worker.py"),
         Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
     }
-    assert production_calls["complete_untargeted_cid_nl_alignment"] == {
+    assert production_calls["complete_untargeted_alignment"] == {
         Path("xic_extractor/alignment/pipeline.py")
     }
     assert production_calls["execute_bounded_untargeted_cid_nl"] == {
-        Path("xic_extractor/extraction/untargeted_cid_nl_alignment.py")
+        Path("xic_extractor/extraction/untargeted_alignment.py")
     }
     assert production_calls["execute_untargeted_cid_nl_runtime_partition"] == {
         Path("xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py")

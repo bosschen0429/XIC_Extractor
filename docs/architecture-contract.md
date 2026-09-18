@@ -116,11 +116,11 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
 | `execution_engine/` | generic partition scheduling, worker-pool admission/concurrency, streamed result store, and bounded spool lifecycle | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination, and retained Untargeted CID-NL execution adapter | GUI, workbook rendering, or Alignment decisions |
+| `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination, and retained Untargeted batch execution (`untargeted_production_batch`, `untargeted_alignment`) | GUI, workbook rendering, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |
-| `diagnostics/` | reusable diagnostic models, summaries, and classification | CLI parsing, production mutation, or domain recomputation |
+| `diagnostics/` | reusable diagnostic models, summaries, classification, and alignment explanation persistence (`alignment_explanation`) | CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `gui/` and `scripts/` | interaction and thin orchestration | reusable domain behavior |
 | root facades | current public compatibility and thin orchestration | new implementation detail |
@@ -173,6 +173,13 @@ runtime phase, schema version, or scientific name remain appropriate when they
 describe the current behavior. Judge meaning in context rather than matching
 forbidden words. Preserve compatibility when considering existing names; this
 guidance does not require unrelated renames.
+
+Method specificity (e.g. CID-NL matching rules, neutral loss thresholds, scan-level
+assertions) is strictly absorbed internally within `discovery/` and method models.
+Downstream orchestration, batch execution, and diagnostic explanations are shared
+system capabilities named by capability (e.g., `untargeted_production_batch`,
+`untargeted_alignment`, `alignment_explanation`), preventing a single method from
+monopolizing or leaking into shared infrastructure.
 
 ## Diagnostics Contract
 

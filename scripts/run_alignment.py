@@ -33,7 +33,7 @@ from xic_extractor.configuration.models import ConfigError
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    is_pure_single_provider_cid_nl,
+    is_supported_alignment_discovery,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -299,11 +299,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _resolve_istd_input(args: argparse.Namespace) -> KnownIstdReference | None:
     """Resolve the CLI's normal ISTD input before any RAW acquisition."""
-    if sum((
-        args.targets_csv is not None,
-        args.known_istd_reference_workbook is not None,
-        args.allow_uncorrected,
-    )) > 1:
+    if (
+        sum(
+            (
+                args.targets_csv is not None,
+                args.known_istd_reference_workbook is not None,
+                args.allow_uncorrected,
+            )
+        )
+        > 1
+    ):
         raise ValueError(
             "--targets-csv, --known-istd-reference-workbook and "
             "--allow-uncorrected are mutually exclusive"
@@ -376,8 +381,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--known-istd-reference-workbook",
         type=Path,
-        help=("Report whose Targets ISTDs and XIC Results RT "
-              "align known SUPPORT owners."),
+        help=(
+            "Report whose Targets ISTDs and XIC Results RT align known SUPPORT owners."
+        ),
     )
     parser.add_argument(
         "--targets-csv",
@@ -427,9 +433,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--max-partition-jobs",
         type=_positive_int,
         default=100_000,
-        help=(
-            "Maximum job budget per bounded CID-NL partition (default: 100000)."
-        ),
+        help=("Maximum job budget per bounded CID-NL partition (default: 100000)."),
     )
     parser.add_argument(
         "--timing-output",
@@ -642,9 +646,9 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
     recipe = bind_cid_nl_recipe(
         preset, "align_only", recipe_overrides=recipe_overrides or None
     )
-    if not is_pure_single_provider_cid_nl(recipe.discovery_settings):
+    if not is_supported_alignment_discovery(recipe.discovery_settings):
         raise PresetError(
-            "Alignment supports only pure single-provider CID-NL; use --preset dna_dr"
+            f"Alignment does not support discovery settings in preset {preset.name}"
         )
     return preset, recipe
 

@@ -4,6 +4,7 @@ import hashlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
@@ -50,18 +51,18 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
-from xic_extractor.diagnostics.cid_nl_explanation import EvidenceLocator
-from xic_extractor.diagnostics.cid_nl_explanation_projection import (
-    write_cid_nl_explanation,
+from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
+from xic_extractor.diagnostics.alignment_explanation_projection import (
+    write_alignment_explanation as _real_write_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
-from xic_extractor.extraction.untargeted_cid_nl_alignment import (
-    complete_untargeted_cid_nl_alignment,
+from xic_extractor.extraction.untargeted_alignment import (
+    complete_untargeted_alignment as _real_complete_untargeted_alignment,
 )
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    is_pure_single_provider_cid_nl,
+from xic_extractor.extraction.untargeted_production_batch import (
+    is_supported_alignment_discovery,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -70,6 +71,11 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+complete_untargeted_alignment = _real_complete_untargeted_alignment
+complete_untargeted_cid_nl_alignment = _real_complete_untargeted_alignment
+write_alignment_explanation = _real_write_alignment_explanation
+write_cid_nl_explanation = _real_write_alignment_explanation
 
 
 def extract_batch_known_istd_reference(
@@ -168,12 +174,12 @@ def run_alignment(
         and type(discovery_settings) is not DiscoverySettings
     ):
         raise TypeError("discovery_settings must be an exact DiscoverySettings")
-    if discovery_settings is None or not is_pure_single_provider_cid_nl(
+    if discovery_settings is None or not is_supported_alignment_discovery(
         discovery_settings
     ):
         raise ValueError(
-            "run_alignment supports only pure single-provider CID-NL "
-            "discovery_settings; "
+            "run_alignment supports only supported CID-NL discovery_settings; "
+            "pure single-provider CID-NL or compatible composite settings; "
             "use scripts.run_alignment --preset dna_dr with an "
             "owner-closed discovery batch index"
         )
@@ -305,7 +311,7 @@ def run_alignment(
     )
 
 
-def _validate_untargeted_cid_nl_alignment_options(
+def _validate_untargeted_alignment_options(
     *,
     raw_workers: int = 1,
     raw_worker_backend: str = "thread",
@@ -322,7 +328,7 @@ def _validate_untargeted_cid_nl_alignment_options(
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
 ) -> None:
-    """Reject legacy Alignment options unsupported by the retained CID-NL route."""
+    """Reject legacy Alignment options unsupported by the retained untargeted route."""
     unsupported: list[str] = []
     if type(raw_workers) is not int or raw_workers < 1:
         raise ValueError("raw_workers must be a positive integer")
@@ -355,7 +361,10 @@ def _validate_untargeted_cid_nl_alignment_options(
         )
 
 
-def _run_untargeted_cid_nl_alignment(
+_validate_untargeted_cid_nl_alignment_options = _validate_untargeted_alignment_options
+
+
+def _run_untargeted_alignment(
     *,
     discovery_batch_index: Path,
     discovery_batch: DiscoveryBatchInput,
@@ -389,8 +398,8 @@ def _run_untargeted_cid_nl_alignment(
     should_cancel: Callable[[], bool] | None,
     max_partition_jobs: int = 100_000,
 ) -> AlignmentRunOutputs:
-    """Run the retained CID-NL owner and project its completed result once."""
-    _validate_untargeted_cid_nl_alignment_options(
+    """Run the retained untargeted owner and project its completed result once."""
+    _validate_untargeted_alignment_options(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         raw_xic_batch_size=raw_xic_batch_size,
@@ -405,27 +414,53 @@ def _run_untargeted_cid_nl_alignment(
         signal_processing_profile=signal_processing_profile,
     )
     if should_cancel is not None and should_cancel():
-        raise InterruptedError("Alignment cancelled before retained CID-NL execution")
-    try:
-        completed = complete_untargeted_cid_nl_alignment(
-            discovery_batch=discovery_batch,
-            candidates_by_sample=candidates_by_sample,
-            raw_dir=raw_dir,
-            dll_dir=dll_dir,
-            output_dir=output_dir,
-            settings=settings,
-            peak_config=peak_config,
-            alignment_config=alignment_config,
-            sample_metadata=sample_metadata,
-            known_istd_reference=known_istd_reference,
-            timing_recorder=timing_recorder,
-            signal_processing_profile=signal_processing_profile,
-            raw_workers=raw_workers,
-            raw_worker_backend=raw_worker_backend,
-            should_cancel=should_cancel,
-            retain_partition_memory=True,
-            max_partition_jobs=max_partition_jobs,
+        raise InterruptedError(
+            "Alignment cancelled before retained untargeted execution"
         )
+    try:
+        if (
+            complete_untargeted_cid_nl_alignment
+            is not _real_complete_untargeted_alignment
+        ):
+            completed = complete_untargeted_cid_nl_alignment(
+                discovery_batch=discovery_batch,
+                candidates_by_sample=candidates_by_sample,
+                raw_dir=raw_dir,
+                dll_dir=dll_dir,
+                output_dir=output_dir,
+                settings=settings,
+                peak_config=peak_config,
+                alignment_config=alignment_config,
+                sample_metadata=sample_metadata,
+                known_istd_reference=known_istd_reference,
+                timing_recorder=timing_recorder,
+                signal_processing_profile=signal_processing_profile,
+                raw_workers=raw_workers,
+                raw_worker_backend=raw_worker_backend,
+                should_cancel=should_cancel,
+                retain_partition_memory=True,
+                max_partition_jobs=max_partition_jobs,
+            )
+        else:
+            completed = complete_untargeted_alignment(
+                discovery_batch=discovery_batch,
+                candidates_by_sample=candidates_by_sample,
+                raw_dir=raw_dir,
+                dll_dir=dll_dir,
+                output_dir=output_dir,
+                settings=settings,
+                peak_config=peak_config,
+                alignment_config=alignment_config,
+                sample_metadata=sample_metadata,
+                known_istd_reference=known_istd_reference,
+                timing_recorder=timing_recorder,
+                signal_processing_profile=signal_processing_profile,
+                raw_workers=raw_workers,
+                raw_worker_backend=raw_worker_backend,
+                should_cancel=should_cancel,
+                retain_partition_memory=True,
+                max_partition_jobs=max_partition_jobs,
+            )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
     try:
@@ -469,8 +504,12 @@ def _run_untargeted_cid_nl_alignment(
             }
         )
         if known_istd_reference is not None:
-            metadata.update({f"known_istd_reference_{key}": value
-                             for key, value in known_istd_reference.provenance.items()})
+            metadata.update(
+                {
+                    f"known_istd_reference_{key}": value
+                    for key, value in known_istd_reference.provenance.items()
+                }
+            )
         with timing_recorder.stage("alignment.write_outputs"):
             artifact_fingerprint_batch = _write_outputs_atomic(
                 outputs,
@@ -501,8 +540,11 @@ def _run_untargeted_cid_nl_alignment(
             )
         if outputs.matrix_tsv is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
+        _write_fn = write_alignment_explanation
+        if write_cid_nl_explanation is not _real_write_alignment_explanation:
+            _write_fn = write_cid_nl_explanation
         with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-            db_path = write_cid_nl_explanation(
+            db_path = _write_fn(
                 output_dir / "cid_nl_explanation.sqlite",
                 completed=completed,
                 writer_inputs=writer_inputs,
@@ -542,6 +584,10 @@ def _run_untargeted_cid_nl_alignment(
     finally:
         if hasattr(completed, "close"):
             completed.close()
+
+
+def _run_untargeted_cid_nl_alignment(*args: Any, **kwargs: Any) -> AlignmentRunOutputs:
+    return _run_untargeted_alignment(*args, **kwargs)
 
 
 _output_paths = output_paths

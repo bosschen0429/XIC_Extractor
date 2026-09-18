@@ -1,0 +1,404 @@
+"""Alignment execution adapter for pure single-provider Untargeted CID-NL."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, replace
+from pathlib import Path
+from tempfile import mkdtemp
+from typing import Any
+
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.raw_sources import existing_raw_paths
+from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.batch_contract import (
+    DiscoveryCandidateUniverseReceipt,
+)
+from xic_extractor.discovery.csv_writer import format_discovery_csv_value
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.physical_fact_persistence import (
+    read_discovery_physical_fact_records,
+)
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
+)
+from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
+from xic_extractor.execution_runtime_owner import (
+    RuntimeProcessTreePeakRssSample,
+    RuntimeTelemetrySamples,
+    RuntimeWorkerPeakRssSample,
+    runtime_started_worker_keys,
+)
+from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+    execute_bounded_untargeted_cid_nl,
+)
+from xic_extractor.extraction.untargeted_production_batch import (
+    prepare_untargeted_production_plan,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+from xic_extractor.processing_run_spec import ProcessingAcquisitionInput
+from xic_extractor.sample_metadata import SampleMetadata
+
+_SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl-v1"
+_RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment-v1"
+_real_prepare_untargeted_production_plan = prepare_untargeted_production_plan
+prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
+
+
+@dataclass(frozen=True, slots=True)
+class _DiscoveryEvidencePartition:
+    discovery_physical_records: tuple[DiscoveryPhysicalFactRecord, ...]
+
+
+def complete_untargeted_cid_nl_alignment(
+    *,
+    discovery_batch: DiscoveryBatchInput,
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    alignment_config: AlignmentConfig,
+    sample_metadata: tuple[SampleMetadata, ...] | None = None,
+    known_istd_reference: KnownIstdReference | None = None,
+    timing_recorder: TimingRecorder | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    raw_workers: int = 1,
+    raw_worker_backend: str = "thread",
+    should_cancel: Callable[[], bool] | None = None,
+    retain_partition_memory: bool = False,
+    max_partition_jobs: int = 100_000,
+) -> CompletedUntargetBatchWorkflowResult:
+    """Execute and compose one owner-closed CID-NL batch exactly once."""
+
+    raw_paths = existing_raw_paths(
+        sample_order=discovery_batch.sample_order,
+        raw_files=discovery_batch.raw_files,
+        raw_dir=raw_dir,
+    )
+    if set(raw_paths) != set(discovery_batch.sample_order):
+        missing = sorted(set(discovery_batch.sample_order) - set(raw_paths))
+        raise ValueError(
+            "CID-NL production requires RAW for every sample: " + ", ".join(missing)
+        )
+
+    receipts: dict[str, DiscoveryCandidateUniverseReceipt] = {}
+    for sample_stem in discovery_batch.sample_order:
+        receipt = discovery_batch.candidate_receipts[sample_stem]
+        if not isinstance(receipt, DiscoveryCandidateUniverseReceipt):
+            raise ValueError(
+                "CID-NL production requires owner-closed Discovery receipts"
+            )
+        receipts[sample_stem] = receipt
+
+    ordered_raw_paths = tuple(
+        raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
+    )
+    if sample_metadata is not None:
+        retained_sample_metadata = sample_metadata
+    else:
+        try:
+            from xic_extractor.raw_reader import (
+                derive_sample_metadata_from_raw_files,
+            )
+
+            retained_sample_metadata = derive_sample_metadata_from_raw_files(
+                ordered_raw_paths,
+                dll_dir=dll_dir,
+            )
+        except Exception:
+            retained_sample_metadata = tuple(
+                SampleMetadata(
+                    sample_name=sample_stem,
+                    raw_stem=sample_stem,
+                    injection_order=index,
+                    sample_role="study_sample",
+                )
+                for index, sample_stem in enumerate(
+                    discovery_batch.sample_order,
+                    start=1,
+                )
+            )
+    recorder = timing_recorder or TimingRecorder.disabled("alignment")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    evidence_store = (
+        StreamedResultStore(
+            Path(mkdtemp(prefix=".cid_nl_discovery_evidence_", dir=output_dir)),
+            shared_objects=(),
+            individually_addressable_fields=frozenset({"discovery_physical_records"}),
+        )
+        if signal_processing_profile is not None
+        else None
+    )
+
+    def retain_records(
+        stem: str, records: tuple[DiscoveryPhysicalFactRecord, ...]
+    ) -> None:
+        assert evidence_store is not None
+        evidence_store.append(stem, _DiscoveryEvidencePartition(records))
+
+    try:
+        physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+        if signal_processing_profile is not None:
+            with recorder.stage("alignment.load_physical_facts"):
+                candidates_by_sample, physical_records = _load_physical_replay_inputs(
+                    discovery_batch=discovery_batch,
+                    candidates_by_sample=candidates_by_sample,
+                    raw_paths=ordered_raw_paths,
+                    settings=settings,
+                    profile=signal_processing_profile,
+                    raw_workers=raw_workers,
+                    retained_records_sink=retain_records,
+                )
+        _prepare_plan = prepare_untargeted_production_plan
+        if (
+            prepare_untargeted_cid_nl_production_plan
+            is not _real_prepare_untargeted_production_plan
+        ):
+            _prepare_plan = prepare_untargeted_cid_nl_production_plan
+        plan = _prepare_plan(
+            raw_paths=ordered_raw_paths,
+            sample_metadata=retained_sample_metadata,
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample=candidates_by_sample,
+            discovery_receipts_by_sample=receipts,
+            dll_dir=dll_dir,
+            sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+            signal_processing_profile=signal_processing_profile,
+            physical_records_by_candidate=physical_records,
+        )
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with (
+            recorder.stage("alignment.untargeted_cid_nl_runtime"),
+            recorder.process_memory_scope("retained_runtime") as runtime_peak,
+        ):
+            completed = execute_bounded_untargeted_cid_nl(
+                plan,
+                output_dir=output_dir,
+                telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
+                    coordinator, runtime_peak
+                ),
+                recovery_marker=OwnerPathRuntimeMarker(
+                    output_dir / ".cid_nl_runtime.json",
+                    _RUNTIME_ARTIFACT_NAMESPACE,
+                ),
+                progress_callback=recorder.heartbeat_event,
+                alignment_config=alignment_config,
+                known_istd_reference=known_istd_reference,
+                raw_workers=raw_workers,
+                raw_worker_backend=raw_worker_backend,
+                should_cancel=should_cancel,
+                retain_partition_memory=retain_partition_memory,
+                pipeline_overlap=True,
+                max_partition_jobs=max_partition_jobs,
+            )
+
+        if evidence_store is None:
+            return completed
+        evidence_store.seal()
+
+        def cleanup() -> None:
+            try:
+                completed.close()
+            finally:
+                evidence_store.cleanup()
+
+        return replace(
+            completed,
+            discovery_physical_records=evidence_store.sequence(
+                "discovery_physical_records"
+            ),
+            cleanup_action=cleanup,
+        )
+    except BaseException:
+        if evidence_store is not None:
+            evidence_store.cleanup()
+        raise
+
+
+def _load_physical_replay_inputs(
+    *,
+    discovery_batch: DiscoveryBatchInput,
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    raw_paths: tuple[Path, ...],
+    settings: DiscoverySettings,
+    profile: SignalProcessingProfile,
+    raw_workers: int = 1,
+    retained_records_sink: Callable[
+        [str, tuple[DiscoveryPhysicalFactRecord, ...]], None
+    ]
+    | None = None,
+) -> tuple[
+    dict[str, tuple[DiscoveryCandidate, ...]],
+    dict[str, DiscoveryPhysicalFactRecord],
+]:
+    spec = compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=settings,
+        signal_processing_profile=profile,
+    )
+
+    def _load_sample_input(
+        acquisition_input: ProcessingAcquisitionInput,
+    ) -> tuple[
+        str,
+        tuple[DiscoveryCandidate, ...],
+        dict[str, DiscoveryPhysicalFactRecord],
+        tuple[DiscoveryPhysicalFactRecord, ...],
+    ]:
+        stem = acquisition_input.sample_stem
+        records = read_discovery_physical_fact_records(
+            discovery_batch.candidate_csvs[stem].parent
+            / "discovery_physical_facts.v1.json",
+            expected_run_spec=spec,
+            expected_acquisition_input=acquisition_input,
+        )
+        by_id = {record.candidate_id: record for record in records}
+        if len(by_id) != len(records):
+            raise ValueError(
+                "Discovery physical sidecar has ambiguous candidate identity"
+            )
+        sample_candidates: list[DiscoveryCandidate] = []
+        sample_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+        for candidate in candidates_by_sample[stem]:
+            record = by_id.get(candidate.candidate_id)
+            if record is None:
+                raise ValueError("Discovery candidate lacks its exact physical record")
+            sample_candidates.append(_restore_physical_candidate(candidate, record))
+            if candidate.candidate_id in sample_records:
+                raise ValueError("Discovery physical candidate identity is duplicated")
+            sample_records[candidate.candidate_id] = record
+        return stem, tuple(sample_candidates), sample_records, records
+
+    restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+
+    workers = min(raw_workers, len(spec.acquisition_inputs))
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for stem, sample_candidates, sample_records, all_records in executor.map(
+                _load_sample_input, spec.acquisition_inputs
+            ):
+                if retained_records_sink is not None:
+                    retained_records_sink(stem, all_records)
+                restored[stem] = sample_candidates
+                for cid, rec in sample_records.items():
+                    if cid in selected_records:
+                        raise ValueError(
+                            "Discovery physical candidate identity is duplicated"
+                        )
+                    selected_records[cid] = rec
+    else:
+        for acquisition_input in spec.acquisition_inputs:
+            stem, sample_candidates, sample_records, all_records = _load_sample_input(
+                acquisition_input
+            )
+            if retained_records_sink is not None:
+                retained_records_sink(stem, all_records)
+            restored[stem] = sample_candidates
+            for cid, rec in sample_records.items():
+                if cid in selected_records:
+                    raise ValueError(
+                        "Discovery physical candidate identity is duplicated"
+                    )
+                selected_records[cid] = rec
+
+    return restored, selected_records
+
+
+def _restore_physical_candidate(
+    candidate: DiscoveryCandidate,
+    record: DiscoveryPhysicalFactRecord,
+) -> DiscoveryCandidate:
+    work = record.work_item
+    if (
+        record.candidate_id != candidate.candidate_id
+        or work.sample_stem != candidate.sample_stem
+        or work.best_ms2_scan_id != candidate.best_ms2_scan_id
+    ):
+        raise ValueError("physical replay crossed exact Discovery candidate identity")
+    values: dict[str, Any] = {
+        "precursor_mz": work.precursor_mz,
+        "product_mz": work.product_mz,
+        "best_seed_rt": work.query_rt_min,
+        "ms1_search_rt_min": work.xic_rt_min,
+        "ms1_search_rt_max": work.xic_rt_max,
+    }
+    facts = record.evaluation.facts
+    if facts is not None:
+        values.update(
+            ms1_apex_rt=facts.apex_rt_min,
+            ms1_peak_rt_start=facts.left_rt_min,
+            ms1_peak_rt_end=facts.right_rt_min,
+            ms1_area=facts.area_counts_seconds,
+            ms1_height=facts.height,
+            ms1_seed_delta_min=facts.apex_rt_min - work.query_rt_min,
+        )
+    for name, value in values.items():
+        candidate_val = getattr(candidate, name)
+        if candidate_val != value and (
+            format_discovery_csv_value(name, candidate_val)
+            != format_discovery_csv_value(name, value)
+        ):
+            raise ValueError(
+                f"{candidate.candidate_id}: physical {name} crossed its CSV receipt"
+            )
+    return replace(candidate, **values)
+
+
+def _coarse_runtime_telemetry(
+    coordinator: Any, peak: ProcessMemoryPeak
+) -> RuntimeTelemetrySamples:
+    worker_keys = runtime_started_worker_keys(coordinator)
+    measured = peak.availability == "measured" and peak.rss_bytes is not None
+    unavailable_reason = "not_collected_by_alignment_foreground_runner"
+    return RuntimeTelemetrySamples(
+        event_monotonic_offsets_ns=None,
+        artifact_io=None,
+        process_tree_peak_rss=RuntimeProcessTreePeakRssSample(
+            availability=(
+                RuntimeMetricAvailability.MEASURED
+                if measured
+                else RuntimeMetricAvailability.UNSUPPORTED
+            ),
+            value=peak.rss_bytes if measured else None,
+            reason=(
+                None if measured else (peak.reason or "process_tree_sample_unavailable")
+            ),
+        ),
+        worker_peak_rss=tuple(
+            RuntimeWorkerPeakRssSample(
+                worker_key=worker_key,
+                availability=RuntimeMetricAvailability.UNSUPPORTED,
+                reason="not_applicable_shared_process_partition_workers",
+            )
+            for worker_key in worker_keys
+        ),
+        unavailable_reason=unavailable_reason,
+    )
+
+
+complete_untargeted_alignment = complete_untargeted_cid_nl_alignment
+prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
+
+
+__all__ = [
+    "complete_untargeted_alignment",
+    "complete_untargeted_cid_nl_alignment",
+    "prepare_untargeted_cid_nl_production_plan",
+    "prepare_untargeted_production_plan",
+]
