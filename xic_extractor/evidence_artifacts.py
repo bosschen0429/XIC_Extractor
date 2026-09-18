@@ -10,10 +10,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from xic_extractor.validation_primitives import (
+    require_lower_sha256,
+    require_owner_normalized_text,
+)
 
 
 class EvidenceArtifactContractError(ValueError):
@@ -25,7 +29,6 @@ _ARTIFACT_SEMANTIC_CONTRACT_ID_PREFIX = "xic.artifact-semantic-contract.v1:"
 _EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact.v1:"
 _PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request.v1:"
 _PROCESSING_ATTEMPT_ID_PREFIX = "xic.processing-attempt.v1:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,19 +453,20 @@ def _canonical_json(value: Any) -> str:
 
 
 def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise EvidenceArtifactContractError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
+    return require_owner_normalized_text(
+        value, field=field, error_factory=EvidenceArtifactContractError
+    )
 
 
 def _validate_sha256(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise EvidenceArtifactContractError(
+    return require_lower_sha256(
+        value,
+        field=field,
+        error_factory=lambda msg: EvidenceArtifactContractError(
             f"{field} must be a lower-case SHA-256 digest"
-        )
-    return value
+        ),
+    )
+
 
 
 def _validate_typed_digest_id(

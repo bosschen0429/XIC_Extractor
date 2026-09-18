@@ -1,5 +1,4 @@
 import json
-import math
 from collections.abc import Iterable
 from pathlib import Path
 from typing import cast
@@ -11,6 +10,7 @@ from xic_extractor.discovery.models import (
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
 )
+from xic_extractor.mass_accuracy import within_ppm
 
 
 def group_discovery_seeds(
@@ -122,17 +122,7 @@ def _best_seed(seeds: Iterable[DiscoverySeed]) -> DiscoverySeed:
     )
 
 
-def _within_ppm(a: float, b: float, tolerance_ppm: float) -> bool:
-    if (
-        not math.isfinite(a)
-        or not math.isfinite(b)
-        or not math.isfinite(tolerance_ppm)
-        or a <= 0
-        or b <= 0
-        or tolerance_ppm < 0
-    ):
-        return False
-    return abs(a - b) / abs(b) * 1_000_000.0 <= tolerance_ppm
+_within_ppm = within_ppm
 
 
 def _merge_seed_evidence(seeds: list[DiscoverySeed]) -> str:

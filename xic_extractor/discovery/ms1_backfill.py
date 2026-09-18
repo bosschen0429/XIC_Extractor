@@ -37,6 +37,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.evidence_facts import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
@@ -1309,17 +1310,7 @@ def _optional_float(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
-def _within_ppm(a: float, b: float, tolerance_ppm: float) -> bool:
-    if (
-        not math.isfinite(a)
-        or not math.isfinite(b)
-        or not math.isfinite(tolerance_ppm)
-        or a <= 0
-        or b <= 0
-        or tolerance_ppm < 0
-    ):
-        return False
-    return abs(a - b) / abs(b) * 1_000_000.0 <= tolerance_ppm
+_within_ppm = within_ppm
 
 
 class _Ms1Fields:

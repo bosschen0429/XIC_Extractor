@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -17,13 +16,14 @@ from xic_extractor.processing_identity import (
     retry_predecessor_attempt_ids,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.validation_primitives import (
+    require_lower_sha256,
+    require_owner_normalized_text,
+)
 
 
 class DeliveryLineageContractError(ValueError):
     """Raised when synthetic Targeted delivery lineage is incomplete."""
-
-
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,19 +425,20 @@ def _canonical_sha256(basis: Mapping[str, object]) -> str:
 
 
 def _required_text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise DeliveryLineageContractError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
+    return require_owner_normalized_text(
+        value, field=field, error_factory=DeliveryLineageContractError
+    )
 
 
 def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise DeliveryLineageContractError(
+    return require_lower_sha256(
+        value,
+        field=field,
+        error_factory=lambda msg: DeliveryLineageContractError(
             f"{field} must be a lower-case SHA-256 digest"
-        )
-    return value
+        ),
+    )
+
 
 
 __all__ = [

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import secrets
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass
@@ -15,6 +14,18 @@ from typing import Protocol, final
 import numpy as np
 
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.validation_primitives import (
+    canonical_float_hex,
+    canonical_json_bytes,
+    make_unique_mapping_hook,
+    parse_canonical_float_hex,
+    require_integer,
+    require_keys,
+    require_list,
+    require_mapping,
+    require_optional_integer,
+    require_owner_normalized_text,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -692,57 +703,39 @@ def _typed_id(prefix: str, basis: dict[str, object]) -> str:
     return f"{prefix}{hashlib.sha256(payload).hexdigest()}"
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
+_canonical_json_bytes = canonical_json_bytes
 
 
 def _float_text(value: object) -> str:
-    if isinstance(value, bool) or not isinstance(value, (int, float, np.floating)):
-        raise AcquisitionContractError("trace numeric values must be numbers")
-    number = float(value)
-    if not math.isfinite(number):
-        raise AcquisitionContractError("trace numeric values must be finite")
-    return (0.0 if number == 0.0 else number).hex()
+    return canonical_float_hex(
+        value,
+        label="trace numeric values",
+        error_factory=AcquisitionContractError,
+        type_error_factory=AcquisitionContractError,
+    )
 
 
 def _float_from_text(value: object, *, field: str) -> float:
-    if not isinstance(value, str):
-        raise AcquisitionContractError(f"{field} must be hexadecimal text")
-    try:
-        number = float.fromhex(value)
-    except ValueError as exc:
-        raise AcquisitionContractError(f"{field} must be hexadecimal text") from exc
-    if not math.isfinite(number) or _float_text(number) != value:
-        raise AcquisitionContractError(f"{field} must be canonical finite text")
-    return number
+    return parse_canonical_float_hex(
+        value,
+        field=field,
+        error_factory=AcquisitionContractError,
+        type_error_factory=AcquisitionContractError,
+    )
 
 
-def _unique_mapping(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise AcquisitionContractError(
-                f"acquired trace payload has duplicate field: {key}"
-            )
-        result[key] = value
-    return result
+_unique_mapping = make_unique_mapping_hook(
+    label="acquired trace payload",
+    error_factory=AcquisitionContractError,
+)
 
 
 def _required_mapping(value: object, *, label: str) -> dict[str, object]:
-    if not isinstance(value, dict):
-        raise AcquisitionContractError(f"{label} must be one JSON object")
-    return value
+    return require_mapping(value, label=label, error_factory=AcquisitionContractError)
 
 
 def _required_list(value: object, *, label: str) -> list[object]:
-    if not isinstance(value, list):
-        raise AcquisitionContractError(f"{label} must be one JSON array")
-    return value
+    return require_list(value, label=label, error_factory=AcquisitionContractError)
 
 
 def _require_keys(
@@ -751,24 +744,23 @@ def _require_keys(
     *,
     label: str,
 ) -> None:
-    if tuple(value) != keys:
-        raise AcquisitionContractError(
-            f"{label} fields must be exactly {keys}; got {tuple(value)}"
-        )
+    require_keys(value, keys, label=label, error_factory=AcquisitionContractError)
 
 
 def _optional_integer(value: object, field: str) -> int | None:
-    if value is None:
-        return None
-    return _nonnegative_integer(value, field)
+    return require_optional_integer(
+        value,
+        field=field,
+        non_negative=True,
+        error_factory=AcquisitionContractError,
+        type_error_factory=AcquisitionContractError,
+    )
 
 
 def _required_text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise AcquisitionContractError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
+    return require_owner_normalized_text(
+        value, field=field, error_factory=AcquisitionContractError
+    )
 
 
 def _adapter_chromatogram_call_count(adapter: object) -> int:
@@ -781,9 +773,14 @@ def _adapter_chromatogram_call_count(adapter: object) -> int:
 
 
 def _nonnegative_integer(value: object, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise AcquisitionContractError(f"{field} must be a non-negative integer")
-    return value
+    return require_integer(
+        value,
+        field=field,
+        non_negative=True,
+        error_factory=AcquisitionContractError,
+        type_error_factory=AcquisitionContractError,
+    )
+
 
 
 __all__ = [

@@ -28,6 +28,11 @@ from xic_extractor.processing_identity import (
     fingerprint_file_content,
 )
 from xic_extractor.processing_run_spec import ProcessingRunSpec
+from xic_extractor.validation_primitives import (
+    require_integer,
+    require_lower_sha256,
+    require_owner_normalized_text,
+)
 
 DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_v2"
 DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v2"
@@ -467,31 +472,41 @@ def _require_receipt(value: object) -> DiscoveryCandidateUniverseReceipt:
 
 
 def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise IdentityContractError(f"{field} must be non-empty normalized text")
-    return value
+    return require_owner_normalized_text(
+        value,
+        field=field,
+        error_factory=lambda msg: IdentityContractError(
+            f"{field} must be non-empty normalized text"
+        ),
+    )
 
 
 def _validate_digest(value: object, *, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise IdentityContractError(f"{field} must be a lowercase SHA-256 digest")
-    return value
+    return require_lower_sha256(
+        value,
+        field=field,
+        error_factory=lambda msg: IdentityContractError(
+            f"{field} must be a lowercase SHA-256 digest"
+        ),
+    )
 
 
 def _nonnegative_int(value: object, *, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise IdentityContractError(f"{field} must be a non-negative integer")
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise IdentityContractError(f"{field} must be a non-negative integer") from exc
-    if parsed < 0:
-        raise IdentityContractError(f"{field} must be a non-negative integer")
-    return parsed
+    if isinstance(value, str):
+        try:
+            value = int(value)
+        except ValueError as exc:
+            raise IdentityContractError(
+                f"{field} must be a non-negative integer"
+            ) from exc
+    return require_integer(
+        value,
+        field=field,
+        non_negative=True,
+        error_factory=IdentityContractError,
+        type_error_factory=IdentityContractError,
+    )
+
 
 
 __all__ = (

@@ -8,6 +8,7 @@ from xic_extractor.mass_accuracy import (
     mz_tolerance_da,
     mz_window,
     signed_ppm_error,
+    within_ppm,
 )
 
 
@@ -63,3 +64,23 @@ def test_mass_accuracy_inputs_must_be_positive_finite() -> None:
         is_within_mz_tolerance(0.0, 100.0, tolerance_ppm=20.0)
     with pytest.raises(ValueError, match="tolerance_ppm"):
         mz_window(100.0, 0.0)
+
+
+def test_within_ppm_evaluates_accuracy_and_safely_handles_invalid_inputs() -> None:
+    reference_mz = 500.0
+    within_mz = 500.005  # 10 ppm
+    outside_mz = 500.015  # 30 ppm
+
+    assert within_ppm(within_mz, reference_mz, 20.0) is True
+    assert within_ppm(outside_mz, reference_mz, 20.0) is False
+
+    # Exact boundary absorption
+    boundary_mz = reference_mz + reference_mz * 20.0e-6
+    assert within_ppm(boundary_mz, reference_mz, 20.0) is True
+
+    # Safe handling of invalid inputs without throwing
+    assert within_ppm(-100.0, 500.0, 20.0) is False
+    assert within_ppm(500.0, -100.0, 20.0) is False
+    assert within_ppm(500.0, 500.0, -1.0) is False
+    assert within_ppm(float("nan"), 500.0, 20.0) is False
+    assert within_ppm(500.0, float("inf"), 20.0) is False

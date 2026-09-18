@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -37,6 +36,18 @@ from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,
     deserialize_processing_run_spec,
     serialize_processing_run_spec,
+)
+from xic_extractor.validation_primitives import (
+    canonical_float_hex,
+    canonical_json_bytes,
+    make_unique_mapping_hook,
+    parse_canonical_float_hex,
+    parse_json_mapping_payload,
+    require_integer,
+    require_keys,
+    require_list,
+    require_mapping,
+    require_text,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -772,88 +783,31 @@ def _validate_acquisition_input(
 
 
 def _float_text(value: object) -> str:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise TypeError("physical work numeric fields must be numbers")
-    number = float(value)
-    if not math.isfinite(number):
-        raise ValueError("physical work numeric fields must be finite")
-    return (0.0 if number == 0.0 else number).hex()
+    return canonical_float_hex(value, label="physical work numeric fields")
 
 
-def _float_from_text(value: object, *, field: str) -> float:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be canonical hexadecimal text")
-    try:
-        number = float.fromhex(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} must be canonical hexadecimal text") from exc
-    if not math.isfinite(number) or _float_text(number) != value:
-        raise ValueError(f"{field} must be canonical finite hexadecimal text")
-    return number
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
+_float_from_text = parse_canonical_float_hex
+_canonical_json_bytes = canonical_json_bytes
 
 
 def _verify_canonical_payload_bytes(payload: bytes) -> None:
-    try:
-        value = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique_mapping)
-    except UnicodeDecodeError as exc:
-        raise ValueError("Discovery physical sidecar must be UTF-8") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError("Discovery physical sidecar must be valid JSON") from exc
-    if _canonical_json_bytes(value) != payload:
-        raise ValueError("Discovery physical sidecar is not canonical")
+    parse_json_mapping_payload(
+        payload,
+        label="Discovery physical sidecar",
+        enforce_canonical=True,
+    )
 
 
-def _unique_mapping(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"Discovery physical sidecar has duplicate field: {key}")
-        result[key] = value
-    return result
-
-
-def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be one JSON object")
-    return value
-
-
-def _list(value: object, *, label: str) -> list[object]:
-    if not isinstance(value, list):
-        raise ValueError(f"{label} must be one JSON array")
-    return value
-
-
-def _require_keys(
-    value: Mapping[str, object],
-    keys: tuple[str, ...],
-    *,
-    label: str,
-) -> None:
-    actual = tuple(value)
-    if actual != keys:
-        raise ValueError(f"{label} fields must be exactly {keys}; got {actual}")
-
-
-def _text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{field} must be non-empty text")
-    return value
+_unique_mapping = make_unique_mapping_hook("Discovery physical sidecar")
+_mapping = require_mapping
+_list = require_list
+_require_keys = require_keys
+_text = require_text
 
 
 def _integer(value: object, *, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError(f"{field} must be an integer")
-    return value
+    return require_integer(value, field=field, type_error_factory=TypeError)
+
 
 
 __all__ = [

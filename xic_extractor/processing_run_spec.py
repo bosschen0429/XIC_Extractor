@@ -31,6 +31,21 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
 )
+from xic_extractor.validation_primitives import (
+    canonical_float_hex,
+    canonical_json_bytes,
+    json_unique_mapping_hook,
+    parse_canonical_float_hex,
+    parse_json_mapping_payload,
+    require_boolean,
+    require_integer,
+    require_keys,
+    require_list,
+    require_mapping,
+    require_optional_lower_sha256,
+    require_optional_text,
+    require_text,
+)
 
 PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec_v2"
 PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope_v1"
@@ -149,24 +164,14 @@ class ProcessingAcquisitionInput:
     )
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.input_ordinal, bool)
-            or not isinstance(self.input_ordinal, int)
-            or self.input_ordinal < 0
-        ):
-            raise ValueError("input_ordinal must be a non-negative integer")
+        require_integer(self.input_ordinal, field="input_ordinal", non_negative=True)
         _required_text(self.adapter_input_key, field="adapter_input_key")
         _required_text(self.sample_stem, field="sample_stem")
         if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
             raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
-        if self.blank_library_sha256 is not None:
-            digest = self.blank_library_sha256
-            if (
-                not isinstance(digest, str)
-                or len(digest) != 64
-                or any(char not in "0123456789abcdef" for char in digest)
-            ):
-                raise ValueError("blank_library_sha256 must be a lowercase SHA-256")
+        require_optional_lower_sha256(
+            self.blank_library_sha256, field="blank_library_sha256"
+        )
         if self.blank_library_content is not None:
             if not isinstance(self.blank_library_content, str):
                 raise TypeError("blank_library_content must be text or None")
@@ -1092,116 +1097,26 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         raise ValueError("scan_support_target must be positive")
 
 
-def _decode_json_object(
-    payload: bytes | str,
-    *,
-    label: str,
-) -> tuple[bytes, Mapping[str, object]]:
-    raw = payload.encode("utf-8") if isinstance(payload, str) else payload
-    if not isinstance(raw, bytes):
-        raise TypeError(f"{label} payload must be bytes or str")
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"{label} payload must be UTF-8") from exc
-    try:
-        value = json.loads(decoded, object_pairs_hook=_unique_mapping)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{label} payload must be valid JSON") from exc
-    return raw, _mapping(value, label=label)
-
-
-def _require_keys(
-    value: Mapping[str, object],
-    keys: tuple[str, ...],
-    *,
-    label: str,
-) -> None:
-    actual = tuple(value)
-    if actual != keys:
-        raise ValueError(f"{label} fields must be exactly {keys}; got {actual}")
-
-
-def _mapping(value: object, *, label: str) -> Mapping[str, object]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be one JSON object")
-    return value
-
-
-def _list(value: object, *, label: str) -> list[object]:
-    if not isinstance(value, list):
-        raise ValueError(f"{label} must be one JSON array")
-    return value
+_canonical_json_bytes = canonical_json_bytes
+_unique_mapping = json_unique_mapping_hook
+_require_keys = require_keys
+_mapping = require_mapping
+_list = require_list
+_required_text = require_text
+_optional_text = require_optional_text
+_boolean = require_boolean
+_float_text = canonical_float_hex
+_float_from_text = parse_canonical_float_hex
+_decode_json_object = parse_json_mapping_payload
 
 
 def _text(value: object, *, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    return value
-
-
-def _required_text(value: object, *, field: str) -> str:
-    text = _text(value, field=field)
-    if not text:
-        raise ValueError(f"{field} must be non-empty text")
-    return text
-
-
-def _optional_text(value: object, *, field: str) -> str | None:
-    if value is None:
-        return None
-    return _required_text(value, field=field)
-
-
-def _boolean(value: object, *, field: str) -> bool:
-    if not isinstance(value, bool):
-        raise TypeError(f"{field} must be a boolean")
-    return value
+    return require_text(value, field=field, allow_blank=True)
 
 
 def _integer(value: object, *, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError(f"{field} must be an integer")
-    return value
+    return require_integer(value, field=field, type_error_factory=TypeError)
 
-
-def _float_text(value: object) -> str:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise TypeError("canonical numeric fields must be numbers")
-    number = float(value)
-    if not math.isfinite(number):
-        raise ValueError("canonical numeric fields must be finite")
-    return (0.0 if number == 0.0 else number).hex()
-
-
-def _float_from_text(value: object, *, field: str) -> float:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be canonical hexadecimal text")
-    try:
-        number = float.fromhex(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} must be canonical hexadecimal text") from exc
-    if not math.isfinite(number) or _float_text(number) != value:
-        raise ValueError(f"{field} must be canonical finite hexadecimal text")
-    return number
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-
-def _unique_mapping(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"JSON payload has duplicate field: {key}")
-        result[key] = value
-    return result
 
 
 __all__ = [

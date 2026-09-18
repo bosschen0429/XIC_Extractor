@@ -47,6 +47,7 @@ from xic_extractor.discovery.strict_seed_receipts import (
     read_complete_discovery_scan_seeds,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationRef,
@@ -1830,8 +1831,7 @@ def _freeze_acquisition(acquisition: TraceAcquisitionBatch) -> TraceAcquisitionB
     return replace(acquisition, traces=tuple(frozen_traces))
 
 
-def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
-    return abs(observed - expected) / expected * 1_000_000.0 <= tolerance_ppm
+_within_ppm = within_ppm
 
 
 __all__ = [
