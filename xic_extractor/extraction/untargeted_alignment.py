@@ -52,6 +52,8 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl-v1"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment-v1"
+_real_prepare_untargeted_production_plan = prepare_untargeted_production_plan
+prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +162,13 @@ def complete_untargeted_cid_nl_alignment(
                     raw_workers=raw_workers,
                     retained_records_sink=retain_records,
                 )
-        plan = prepare_untargeted_production_plan(
+        _prepare_plan = prepare_untargeted_production_plan
+        if (
+            prepare_untargeted_cid_nl_production_plan
+            is not _real_prepare_untargeted_production_plan
+        ):
+            _prepare_plan = prepare_untargeted_cid_nl_production_plan
+        plan = _prepare_plan(
             raw_paths=ordered_raw_paths,
             sample_metadata=retained_sample_metadata,
             settings=settings,
