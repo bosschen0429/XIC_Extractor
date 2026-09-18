@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
+    Iterator,
     Literal,
     Mapping,
     Protocol,
@@ -392,6 +394,117 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
     }
 
 
+def _normalize_generic_setting_value(value: Any) -> Any:
+    if hasattr(value, "__dataclass_fields__"):
+        from dataclasses import asdict
+
+        return GenericMethodSettings(asdict(value))
+    if isinstance(value, GenericMethodSettings):
+        return value
+    if isinstance(value, Mapping):
+        return GenericMethodSettings(value)
+    if isinstance(value, (list, tuple)):
+        return tuple(_normalize_generic_setting_value(item) for item in value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("floating-point setting values must be finite")
+        return value
+    return value
+
+
+def normalize_generic_method_settings(settings: Any) -> GenericMethodSettings:
+    """Normalize method settings into a canonical GenericMethodSettings mapping."""
+    if settings is None:
+        return GenericMethodSettings({})
+    if isinstance(settings, GenericMethodSettings):
+        return settings
+    if hasattr(settings, "__dataclass_fields__"):
+        from dataclasses import asdict
+
+        return GenericMethodSettings(asdict(settings))
+    if isinstance(settings, Mapping):
+        return GenericMethodSettings(settings)
+    raise TypeError(
+        "Discovery method settings must be a dataclass or Mapping, "
+        f"got {type(settings).__name__}"
+    )
+
+
+class GenericMethodSettings(Mapping[str, Any]):
+    """Immutable normalized settings mapping with attribute and dict access."""
+
+    __slots__ = ("_data", "_hash")
+
+    def __init__(self, data: Mapping[str, Any] | None = None, **kwargs: Any) -> None:
+        merged: dict[str, Any] = {}
+        if data is not None:
+            merged.update(data)
+        if kwargs:
+            merged.update(kwargs)
+        normalized = {
+            str(k): _normalize_generic_setting_value(v)
+            for k, v in merged.items()
+        }
+        self._data: dict[str, Any] = dict(sorted(normalized.items()))
+        self._hash: int | None = None
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        try:
+            return self._data[name]
+        except KeyError:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            ) from None
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, GenericMethodSettings):
+            return self._data == other._data
+        if isinstance(other, Mapping):
+            return self._data == dict(other)
+        if hasattr(other, "__dataclass_fields__"):
+            from dataclasses import asdict
+
+            return self._data == asdict(cast(Any, other))
+        return False
+
+    def __hash__(self) -> int:
+        if self._hash is None:
+            payload = _canonical_json_bytes(self.to_dict())
+            self._hash = hash(payload)
+        return self._hash
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for k, v in self._data.items():
+            if isinstance(v, GenericMethodSettings):
+                result[k] = v.to_dict()
+            elif isinstance(v, tuple):
+                result[k] = [
+                    item.to_dict() if isinstance(item, GenericMethodSettings) else item
+                    for item in v
+                ]
+            else:
+                result[k] = v
+        return result
+
+    def __repr__(self) -> str:
+        items = ", ".join(f"{k}={v!r}" for k, v in self._data.items())
+        return f"GenericMethodSettings({items})"
+
+
 @dataclass(frozen=True, slots=True)
 class GenericDiscoveryMethodSpec:
     """Generic Discovery method identity for non-CID-NL or composite methods."""
@@ -399,6 +512,11 @@ class GenericDiscoveryMethodSpec:
     settings: Any
     method: str
     schema_version: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "settings", normalize_generic_method_settings(self.settings)
+        )
 
     @property
     def canonical_bytes(self) -> bytes:
@@ -411,6 +529,35 @@ class GenericDiscoveryMethodSpec:
     @property
     def method_id(self) -> str:
         return f"{self.method}-discovery-method.v1:{self.method_hash}"
+
+
+DiscoveryMethodDecoder = Callable[[Mapping[str, object]], DiscoveryMethodSpec]
+DiscoveryMethodEncoder = Callable[[DiscoveryMethodSpec], Mapping[str, object]]
+
+_DISCOVERY_METHOD_DECODERS: dict[str, DiscoveryMethodDecoder] = {}
+_DISCOVERY_METHOD_ENCODERS: dict[str, DiscoveryMethodEncoder] = {}
+
+
+def register_discovery_method_codec(
+    method: str,
+    *,
+    decoder: DiscoveryMethodDecoder,
+    encoder: DiscoveryMethodEncoder | None = None,
+) -> None:
+    """Register custom serialization codec for a Discovery method."""
+    method_name = str(method).strip()
+    if not method_name:
+        raise ValueError("method name cannot be empty")
+    _DISCOVERY_METHOD_DECODERS[method_name] = decoder
+    if encoder is not None:
+        _DISCOVERY_METHOD_ENCODERS[method_name] = encoder
+
+
+def unregister_discovery_method_codec(method: str) -> None:
+    """Unregister custom serialization codec for a Discovery method."""
+    method_name = str(method).strip()
+    _DISCOVERY_METHOD_DECODERS.pop(method_name, None)
+    _DISCOVERY_METHOD_ENCODERS.pop(method_name, None)
 
 
 def _method_content(
@@ -462,10 +609,14 @@ def _method_content(
                 },
             },
         }
+    if method.method in _DISCOVERY_METHOD_ENCODERS:
+        return dict(_DISCOVERY_METHOD_ENCODERS[method.method](method))
     if hasattr(method, "to_content_dict"):
-        return method.to_content_dict()
+        return dict(method.to_content_dict())
     settings_val = method.settings
-    if hasattr(settings_val, "__dataclass_fields__"):
+    if isinstance(settings_val, GenericMethodSettings):
+        settings_dict = settings_val.to_dict()
+    elif hasattr(settings_val, "__dataclass_fields__"):
         from dataclasses import asdict
 
         settings_dict = asdict(settings_val)
@@ -557,11 +708,20 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
 
 def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
     _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
-    method_name = content["method"]
+    method_name = str(content["method"])
+    if method_name in _DISCOVERY_METHOD_DECODERS:
+        decoded = _DISCOVERY_METHOD_DECODERS[method_name](content)
+        if not isinstance(decoded, DiscoveryMethodSpec):
+            raise TypeError(
+                f"Registered decoder for '{method_name}' must return a "
+                "DiscoveryMethodSpec"
+            )
+        return decoded
+
     if method_name != "cid_nl":
         return GenericDiscoveryMethodSpec(
             settings=content["settings"],
-            method=str(method_name),
+            method=method_name,
             schema_version=str(content["schema_version"]),
         )
 
@@ -908,13 +1068,19 @@ __all__ = [
     "PROCESSING_RUN_SPEC_ID_PREFIX",
     "PROCESSING_RUN_SPEC_SCHEMA_VERSION",
     "CidNlDiscoveryMethodSpec",
+    "DiscoveryMethodDecoder",
+    "DiscoveryMethodEncoder",
     "DiscoveryMethodSpec",
     "GenericDiscoveryMethodSpec",
+    "GenericMethodSettings",
     "ProcessingAcquisitionInput",
     "ProcessingRunSpec",
     "canonical_cid_nl_method_bytes",
     "canonical_processing_run_spec_bytes",
     "compile_processing_run_spec",
     "deserialize_processing_run_spec",
+    "normalize_generic_method_settings",
+    "register_discovery_method_codec",
     "serialize_processing_run_spec",
+    "unregister_discovery_method_codec",
 ]

@@ -9,6 +9,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Mapping
 
 from scripts.run_alignment import _resolve_preset
 from tests.test_processing_run_spec import _compile_paths, _raws
@@ -31,9 +32,12 @@ from xic_extractor.presets import PresetTag, load_preset
 from xic_extractor.processing_run_spec import (
     DiscoveryMethodSpec,
     GenericDiscoveryMethodSpec,
+    GenericMethodSettings,
     compile_processing_run_spec,
     deserialize_processing_run_spec,
+    register_discovery_method_codec,
     serialize_processing_run_spec,
+    unregister_discovery_method_codec,
 )
 
 
@@ -89,11 +93,70 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
     assert len(run_spec.run_spec_hash) == 64
     assert run_spec.run_spec_id.startswith("processing-run.v1:")
 
-    # Serialization and deserialization roundtrip
+    # Serialization and deserialization roundtrip preserves spec equality
+    # and attribute access
     serialized = serialize_processing_run_spec(run_spec)
     deserialized = deserialize_processing_run_spec(serialized)
     assert deserialized.run_spec_hash == run_spec.run_spec_hash
     assert deserialized.discovery_method.method == "delta_mass"
+    assert deserialized == run_spec
+    assert isinstance(deserialized.discovery_method.settings, GenericMethodSettings)
+    assert deserialized.discovery_method.settings.pattern_id == "pt"
+    assert deserialized.discovery_method.settings["pattern_id"] == "pt"
+    assert deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
+
+
+def test_registered_discovery_method_codec_roundtrip(tmp_path: Path):
+    raw_paths = _raws(tmp_path)
+    base_spec = _compile_paths(raw_paths)
+    inputs = base_spec.acquisition_inputs
+    signal_profile = base_spec.signal_processing_profile
+
+    custom_spec = MockDeltaMassDiscoveryMethodSpec()
+
+    def _decode(content: Mapping[str, object]) -> MockDeltaMassDiscoveryMethodSpec:
+        settings_raw = content["settings"]
+        settings = (
+            MockDeltaMassDiscoverySettings(**settings_raw)
+            if isinstance(settings_raw, dict)
+            else MockDeltaMassDiscoverySettings()
+        )
+        return MockDeltaMassDiscoveryMethodSpec(
+            settings=settings,
+            method=str(content["method"]),
+            schema_version=str(content["schema_version"]),
+        )
+
+    def _encode(spec: DiscoveryMethodSpec) -> Mapping[str, object]:
+        return {
+            "schema_version": spec.schema_version,
+            "method": spec.method,
+            "settings": {
+                "pattern_id": spec.settings.pattern_id,
+                "mz_tolerance_ppm": spec.settings.mz_tolerance_ppm,
+                "rt_tolerance_sec": spec.settings.rt_tolerance_sec,
+            },
+        }
+
+    register_discovery_method_codec("delta_mass", decoder=_decode, encoder=_encode)
+    try:
+        run_spec = compile_processing_run_spec(
+            acquisition_inputs=inputs,
+            signal_processing_profile=signal_profile,
+            discovery_method=custom_spec,
+        )
+        serialized = serialize_processing_run_spec(run_spec)
+        deserialized = deserialize_processing_run_spec(serialized)
+        assert isinstance(
+            deserialized.discovery_method, MockDeltaMassDiscoveryMethodSpec
+        )
+        assert deserialized.discovery_method.method_id == "mock_delta_mass_v1"
+        assert (
+            deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
+        )
+        assert deserialized == run_spec
+    finally:
+        unregister_discovery_method_codec("delta_mass")
 
 
 def test_is_supported_alignment_discovery_accepts_composite_and_multi_tag():
@@ -181,3 +244,37 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
     assert rows_generic == rows_legacy
     assert rows_generic["diagnostic_only"] is True
     assert rows_generic["method"] == "discovery"
+
+
+def test_sidecar_roundtrip_with_generic_discovery_method_spec(tmp_path: Path):
+    from tests.test_discovery_physical_fact_persistence import _population, _spec
+    from xic_extractor.discovery.physical_fact_persistence import (
+        read_discovery_physical_fact_sidecar,
+        write_discovery_physical_fact_sidecar,
+    )
+
+    _, base_spec, acquisition_input = _spec(tmp_path)
+    custom_method = GenericDiscoveryMethodSpec(
+        settings=MockDeltaMassDiscoverySettings(),
+        method="delta_mass",
+        schema_version="1.0.0",
+    )
+    spec = replace(base_spec, discovery_method=custom_method)
+    manifest, records = _population(spec, acquisition_input)
+    sidecar_path = tmp_path / "out" / "custom_physical_facts.v1.json"
+
+    write_discovery_physical_fact_sidecar(
+        sidecar_path,
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    )
+
+    rehydrated = read_discovery_physical_fact_sidecar(
+        sidecar_path,
+        expected_run_spec=spec,
+        expected_acquisition_input=acquisition_input,
+        expected_work_manifest=manifest,
+    )
+    assert len(rehydrated) == len(records)
