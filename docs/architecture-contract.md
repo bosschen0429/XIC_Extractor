@@ -24,6 +24,28 @@ decomposition plans belong in Issues, PRs, and Git.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
 
+## Responsibility Boundaries and Anti-Paranoia Invariants
+
+To maintain clean code and prevent cognitive overload, runaway monoliths, and defensive recomputation traps:
+
+1. **Domain Purity & I/O Isolation**:
+   - Scientific and mathematical algorithms (peak detection, alignment, hypothesis grouping, scoring) operate purely on in-memory domain models.
+   - Core domain algorithms must never import, instantiate, or invoke file handles, RAW readers, vendor DLLs, multiprocessing pools, or disk persistence.
+   - All I/O, concurrency orchestration, and batch chunking belong exclusively to outer orchestrators, worker harnesses, or dedicated adapters.
+
+2. **Certified Upstream Trust (No Defensive Paranoia)**:
+   - Objects constructed by authoritative upstream owners (e.g. frozen dataclasses, verified context models, and canonical receipts) are guaranteed valid upon creation.
+   - Downstream private functions and inner loops MUST NOT perform redundant type assertions (`isinstance`), length checks, or dictionary key lookups on trusted internal entities.
+   - No defensive recomputation: expensive evaluations (peak grouping, tolerance calculations, candidate filtering) are executed once by their designated owner. Downstream consumers read produced facts; they must not re-scan or re-evaluate unless an explicit input diff is established.
+
+3. **Orthogonality of Computation vs Auditing and Serialization**:
+   - Domain algorithms calculate domain answers and return pure result structures (e.g., `AlignmentResult`, `HypothesisGroup`).
+   - Calculating SHA-256 byte digests, serializing to JSON/TSV, and minting runtime finalization receipts are separate responsibilities owned by boundary adapters or reporting layers, never embedded within algorithmic loops.
+
+4. **Centralized Primitive Reuse (No Private Boilerplate)**:
+   - Shared mathematical arithmetic (e.g., ppm/Da mass tolerance), byte hashing, and primitive sequence validations belong to centralized utility modules (`xic_extractor.validation_primitives`, core math modules).
+   - Copy-pasting private assertions, duplicate helper routines, or local tolerance formulas across business files is strictly prohibited.
+
 ## System Shape
 
 ```text
