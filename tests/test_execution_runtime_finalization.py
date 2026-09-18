@@ -779,6 +779,7 @@ def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
             "xic_extractor.execution_runtime",
             "xic_extractor.execution_runtime_observability",
             "xic_extractor.processing_identity",
+            "xic_extractor.validation_primitives",
         ),
     }
     for filename, expected_imports in expected.items():

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import Enum
 
@@ -11,6 +9,13 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
 from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.validation_primitives import (
+    canonical_json_bytes,
+    require_lower_sha256,
+    require_owner_normalized_text,
+    require_tuple_of,
+    sha256_hexdigest,
+)
 
 
 class RuntimeFinalizationContractError(ValueError):
@@ -404,14 +409,7 @@ def _coordinator_event_digest(state: AttemptFinalizationState) -> str:
             for item in state.events
         ],
     }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return sha256_hexdigest(canonical_json_bytes(payload))
 
 
 def _require_attempt(value: object) -> ProcessingAttemptIdentity:
@@ -423,32 +421,30 @@ def _require_attempt(value: object) -> ProcessingAttemptIdentity:
 
 
 def _required_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise RuntimeFinalizationContractError(
-            f"{field} must be non-empty owner-normalized text"
-        )
-    return value
+    return require_owner_normalized_text(
+        value,
+        field=field,
+        error_factory=RuntimeFinalizationContractError,
+    )
 
 
 def _require_sha256(value: object) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise RuntimeFinalizationContractError(
+    return require_lower_sha256(
+        value,
+        field="coordinator_record_sha256",
+        error_factory=lambda _: RuntimeFinalizationContractError(
             "coordinator_record_sha256 must be a lower-case SHA-256 digest"
-        )
-    return value
+        ),
+    )
 
 
 def _require_tuple_of(value: object, item_type: type, *, field: str) -> None:
-    if not isinstance(value, tuple) or any(
-        not isinstance(item, item_type) for item in value
-    ):
-        raise RuntimeFinalizationContractError(
-            f"{field} must be a tuple of {item_type.__name__} values"
-        )
+    require_tuple_of(
+        value,
+        item_type,
+        field=field,
+        error_factory=RuntimeFinalizationContractError,
+    )
 
 
 __all__ = (
