@@ -2641,20 +2641,31 @@ untargeted_runtime_call_cost = untargeted_cid_nl_runtime_call_cost
 build_untargeted_sample_runtime_jobs = build_untargeted_cid_nl_sample_runtime_jobs
 
 
+UntargetedRuntimePartitionResult = UntargetedCidNlRuntimePartitionResult
+execute_untargeted_runtime_partition = (
+    execute_untargeted_cid_nl_runtime_partition
+)
+
+
 __all__ = (
+    "CID_NL_ALIGNMENT_CONFIG",
     "RUNTIME_CALL_COST_METRIC_NAMES",
     "UntargetedCidNlRealDataRuntimeApplicationResult",
     "UntargetedCidNlRealDataRuntimeError",
     "UntargetedCidNlRealDataRuntimeJob",
+    "UntargetedCidNlRuntimePartitionResult",
     "UntargetedCidNlRuntimeSampleResult",
     "UntargetedRealDataRuntimeApplicationResult",
     "UntargetedRealDataRuntimeError",
     "UntargetedRealDataRuntimeJob",
+    "UntargetedRuntimePartitionResult",
     "UntargetedRuntimeSampleResult",
     "build_untargeted_cid_nl_sample_runtime_jobs",
     "build_untargeted_sample_runtime_jobs",
     "execute_untargeted_cid_nl_real_data_runtime",
+    "execute_untargeted_cid_nl_runtime_partition",
     "execute_untargeted_real_data_runtime",
+    "execute_untargeted_runtime_partition",
     "untargeted_cid_nl_runtime_call_cost",
     "untargeted_runtime_call_cost",
 )
