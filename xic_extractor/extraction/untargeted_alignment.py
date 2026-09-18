@@ -385,9 +385,12 @@ def _coarse_runtime_telemetry(
 
 
 complete_untargeted_alignment = complete_untargeted_cid_nl_alignment
+prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
 
 
 __all__ = [
     "complete_untargeted_alignment",
     "complete_untargeted_cid_nl_alignment",
+    "prepare_untargeted_cid_nl_production_plan",
+    "prepare_untargeted_production_plan",
 ]
