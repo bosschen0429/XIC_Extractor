@@ -161,10 +161,7 @@ class DiscoverySettings:
 
     def __post_init__(self) -> None:
         profiles = self.neutral_loss_profiles
-        if (
-            self.neutral_loss_profile is not None
-            and self.neutral_loss_profile not in profiles
-        ):
+        if self.neutral_loss_profile is not None:
             profiles = (self.neutral_loss_profile,) + profiles
         if not profiles:
             raise ValueError("at least one neutral-loss profile is required")
