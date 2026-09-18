@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -31,10 +32,10 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
 )
 
-PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec_v1"
+PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec_v2"
 PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope_v1"
 PROCESSING_RUN_SPEC_ID_PREFIX = "processing-run.v1:"
-CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method_v1"
+CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method_v2"
 CID_NL_DISCOVERY_METHOD_ID_PREFIX = "cid-nl-discovery-method.v1:"
 
 _RUN_CONTENT_KEYS = (
@@ -88,6 +89,10 @@ _SETTINGS_KEYS = (
     "rt_max",
     "resolver_mode",
     "evidence_profile",
+    "enable_blank_qualification",
+    "blank_library_path",
+    "blank_ppm_tol",
+    "blank_fold_change_threshold",
 )
 _EVIDENCE_PROFILE_KEYS = ("name", "weights", "thresholds")
 _WEIGHT_KEYS = (
@@ -136,6 +141,12 @@ class ProcessingAcquisitionInput:
     adapter_input_key: str
     sample_stem: str
     acquisition_source: AcquisitionSourceIdentity
+    blank_library_sha256: str | None = None
+    # Runtime transport only: the canonical run binds its digest, not repeated
+    # copies of a cohort library in every sample's persisted sidecar.
+    blank_library_content: str | None = dataclass_field(
+        default=None, compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -148,6 +159,22 @@ class ProcessingAcquisitionInput:
         _required_text(self.sample_stem, field="sample_stem")
         if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
             raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
+        if self.blank_library_sha256 is not None:
+            digest = self.blank_library_sha256
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)
+            ):
+                raise ValueError("blank_library_sha256 must be a lowercase SHA-256")
+        if self.blank_library_content is not None:
+            if not isinstance(self.blank_library_content, str):
+                raise TypeError("blank_library_content must be text or None")
+            if (
+                hashlib.sha256(self.blank_library_content.encode("utf-8")).hexdigest()
+                != self.blank_library_sha256
+            ):
+                raise ValueError("blank library snapshot does not match its digest")
 
 
 @runtime_checkable
@@ -177,13 +204,28 @@ class CidNlDiscoveryMethodSpec:
     settings: DiscoverySettings
     method: str = "cid_nl"
     schema_version: str = CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
+    _legacy_blank_settings: bool = dataclass_field(default=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.schema_version != CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION:
+        if self.schema_version not in {
+            "cid_nl_discovery_method_v1",
+            CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported CID-NL Discovery method schema_version")
         if self.method != "cid_nl":
             raise ValueError("Discovery method must be 'cid_nl'")
         _validate_discovery_settings(self.settings)
+        if (
+            self.schema_version == "cid_nl_discovery_method_v1"
+            and not self._legacy_blank_settings
+        ):
+            if (
+                self.settings.enable_blank_qualification
+                or self.settings.blank_library_path is not None
+                or self.settings.blank_ppm_tol != 10.0
+                or self.settings.blank_fold_change_threshold != 3.0
+            ):
+                raise ValueError("original v1 method cannot carry blank settings")
 
     @property
     def method_hash(self) -> str:
@@ -204,7 +246,10 @@ class ProcessingRunSpec:
     schema_version: str = PROCESSING_RUN_SPEC_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
+        if self.schema_version not in {
+            "processing_run_spec_v1",
+            PROCESSING_RUN_SPEC_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported ProcessingRunSpec schema_version")
         if (
             not isinstance(self.acquisition_inputs, tuple)
@@ -251,6 +296,18 @@ class ProcessingRunSpec:
             )
         ):
             raise TypeError("discovery_method must be a DiscoveryMethodSpec")
+        if isinstance(self.discovery_method, CidNlDiscoveryMethodSpec):
+            expected_method_schema = (
+                "cid_nl_discovery_method_v1"
+                if self.schema_version == "processing_run_spec_v1"
+                else CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
+            )
+            if self.discovery_method.schema_version != expected_method_schema:
+                raise ValueError("run and method schema versions disagree")
+        if self.schema_version == "processing_run_spec_v1" and any(
+            item.blank_library_sha256 is not None for item in self.acquisition_inputs
+        ):
+            raise ValueError("v1 run cannot carry blank library bindings")
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
             raise TypeError(
                 "signal_processing_profile must be a SignalProcessingProfile"
@@ -374,6 +431,11 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
                         item.acquisition_source.observation_namespace
                     ),
                 },
+                **(
+                    {"blank_library_sha256": item.blank_library_sha256}
+                    if spec.schema_version == PROCESSING_RUN_SPEC_SCHEMA_VERSION
+                    else {}
+                ),
             }
             for item in spec.acquisition_inputs
         ],
@@ -567,7 +629,7 @@ def _method_content(
         settings = method.settings
         weights = settings.evidence_profile.weights
         thresholds = settings.evidence_profile.thresholds
-        return {
+        content: dict[str, object] = {
             "schema_version": method.schema_version,
             "method": method.method,
             "settings": {
@@ -607,8 +669,22 @@ def _method_content(
                         for key in _THRESHOLD_KEYS
                     },
                 },
+                "enable_blank_qualification": settings.enable_blank_qualification,
+                "blank_library_path": settings.blank_library_path,
+                "blank_ppm_tol": _float_text(settings.blank_ppm_tol),
+                "blank_fold_change_threshold": _float_text(
+                    settings.blank_fold_change_threshold
+                ),
             },
         }
+        if (
+            method.schema_version == "cid_nl_discovery_method_v1"
+            and not method._legacy_blank_settings
+        ):
+            settings_content = cast(dict[str, object], content["settings"])
+            for key in _SETTINGS_KEYS[-4:]:
+                del settings_content[key]
+        return content
     if method.method in _DISCOVERY_METHOD_ENCODERS:
         return dict(_DISCOVERY_METHOD_ENCODERS[method.method](method))
     if hasattr(method, "to_content_dict"):
@@ -635,13 +711,26 @@ def _method_content(
 
 def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
     _require_keys(content, _RUN_CONTENT_KEYS, label="ProcessingRunSpec content")
-    if content["schema_version"] != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
+    schema_version = _text(content["schema_version"], field="schema_version")
+    if schema_version not in {
+        "processing_run_spec_v1",
+        PROCESSING_RUN_SPEC_SCHEMA_VERSION,
+    }:
         raise ValueError("unsupported ProcessingRunSpec schema_version")
     input_values = _list(content["acquisition_inputs"], label="acquisition_inputs")
     inputs: list[ProcessingAcquisitionInput] = []
     for value in input_values:
         item = _mapping(value, label="acquisition input")
-        _require_keys(item, _ACQUISITION_INPUT_KEYS, label="acquisition input")
+        _require_keys(
+            item,
+            _ACQUISITION_INPUT_KEYS
+            + (
+                ("blank_library_sha256",)
+                if schema_version == PROCESSING_RUN_SPEC_SCHEMA_VERSION
+                else ()
+            ),
+            label="acquisition input",
+        )
         source_value = _mapping(item["acquisition_source"], label="acquisition source")
         _require_keys(
             source_value, _ACQUISITION_SOURCE_KEYS, label="acquisition source"
@@ -670,6 +759,10 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
                         source_value["observation_namespace"],
                         field="observation_namespace",
                     ),
+                ),
+                blank_library_sha256=_optional_text(
+                    item.get("blank_library_sha256"),
+                    field="blank_library_sha256",
                 ),
             )
         )
@@ -703,6 +796,7 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
         acquisition_inputs=tuple(inputs),
         discovery_method=method,
         signal_processing_profile=profile,
+        schema_version=schema_version,
     )
 
 
@@ -733,7 +827,15 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 
     settings_value = _mapping(content["settings"], label="Discovery settings")
-    _require_keys(settings_value, _SETTINGS_KEYS, label="Discovery settings")
+    legacy_original = (
+        content["schema_version"] == "cid_nl_discovery_method_v1"
+        and tuple(settings_value) == _SETTINGS_KEYS[:-4]
+    )
+    _require_keys(
+        settings_value,
+        _SETTINGS_KEYS[:-4] if legacy_original else _SETTINGS_KEYS,
+        label="Discovery settings",
+    )
     profile_values = _list(
         settings_value["neutral_loss_profiles"], label="neutral_loss_profiles"
     )
@@ -862,11 +964,31 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
         rt_max=_float_from_text(settings_value["rt_max"], field="rt_max"),
         resolver_mode=_text(settings_value["resolver_mode"], field="resolver_mode"),
         evidence_profile=evidence_profile,
+        enable_blank_qualification=_boolean(
+            settings_value.get("enable_blank_qualification", False),
+            field="enable_blank_qualification",
+        ),
+        blank_library_path=_optional_text(
+            settings_value.get("blank_library_path"),
+            field="blank_library_path",
+        ),
+        blank_ppm_tol=_float_from_text(
+            settings_value.get("blank_ppm_tol", _float_text(10.0)),
+            field="blank_ppm_tol",
+        ),
+        blank_fold_change_threshold=_float_from_text(
+            settings_value.get("blank_fold_change_threshold", _float_text(3.0)),
+            field="blank_fold_change_threshold",
+        ),
     )
     return CidNlDiscoveryMethodSpec(
         settings=settings,
         method=_text(content["method"], field="method"),
         schema_version=_text(content["schema_version"], field="schema_version"),
+        _legacy_blank_settings=(
+            content["schema_version"] == "cid_nl_discovery_method_v1"
+            and not legacy_original
+        ),
     )
 
 
@@ -924,6 +1046,8 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         "nl_min_intensity_ratio",
         "seed_rt_gap_min",
         "ms1_search_padding_min",
+        "blank_ppm_tol",
+        "blank_fold_change_threshold",
     )
     for field in positive_fields:
         value = getattr(settings, field)
@@ -931,6 +1055,13 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
             raise TypeError(f"{field} must be numeric")
         if not math.isfinite(float(value)) or float(value) <= 0.0:
             raise ValueError(f"{field} must be finite and positive")
+    if not isinstance(settings.enable_blank_qualification, bool):
+        raise TypeError("enable_blank_qualification must be a boolean")
+    if settings.blank_library_path is not None:
+        if not isinstance(settings.blank_library_path, str):
+            raise TypeError("blank_library_path must be text or None")
+        if not settings.blank_library_path:
+            raise ValueError("blank_library_path must be non-empty text or None")
     for field in ("rt_min", "rt_max"):
         value = getattr(settings, field)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -1014,6 +1145,18 @@ def _required_text(value: object, *, field: str) -> str:
     if not text:
         raise ValueError(f"{field} must be non-empty text")
     return text
+
+
+def _optional_text(value: object, *, field: str) -> str | None:
+    if value is None:
+        return None
+    return _required_text(value, field=field)
+
+
+def _boolean(value: object, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{field} must be a boolean")
+    return value
 
 
 def _integer(value: object, *, field: str) -> int:

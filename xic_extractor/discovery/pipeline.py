@@ -5,6 +5,7 @@ import pickle
 from collections.abc import Callable
 from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -22,6 +23,12 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
+)
+from xic_extractor.discovery.blank_qualification import (
+    BlankBackgroundLibrary,
+    apply_blank_qualification_to_candidates,
+    deserialize_background_library,
+    resolve_background_library,
 )
 from xic_extractor.discovery.csv_writer import (
     format_discovery_csv_value,
@@ -210,6 +217,53 @@ def _finalize_physical_bindings_for_output(
     )
 
 
+@lru_cache(maxsize=2)
+def _bound_background_library(content: str) -> BlankBackgroundLibrary:
+    return deserialize_background_library(content)
+
+
+def _apply_blank_qualification_if_enabled(
+    candidates: tuple[DiscoveryCandidate, ...],
+    *,
+    raw_path: Path,
+    settings: DiscoverySettings,
+    timing_recorder: TimingRecorder,
+    sample_stem: str,
+    acquisition_input: ProcessingAcquisitionInput | None = None,
+) -> tuple[DiscoveryCandidate, ...]:
+    if not settings.enable_blank_qualification:
+        return candidates
+    with timing_recorder.stage(
+        "discover.blank_qualification",
+        sample_stem=sample_stem,
+        metrics={"candidate_count": len(candidates)},
+    ) as stage:
+        if acquisition_input is None:
+            library = resolve_background_library(
+                raw_dir=raw_path.parent, library_path=settings.blank_library_path,
+            )
+        elif acquisition_input.blank_library_sha256 is None:
+            library = None
+        elif acquisition_input.blank_library_content is None:
+            raise ValueError("bound blank library snapshot is unavailable")
+        else:
+            library = _bound_background_library(acquisition_input.blank_library_content)
+        qualified = apply_blank_qualification_to_candidates(
+            candidates,
+            library,
+            ppm_tol=settings.blank_ppm_tol,
+            fold_change_threshold=settings.blank_fold_change_threshold,
+        )
+        excluded_count = sum(
+            1
+            for c in qualified
+            if c.discovery_candidate_state == "review_only_orphan_nl"
+            and c.reason.startswith("system background:")
+        )
+        stage.metrics["excluded_background_count"] = excluded_count
+        return qualified
+
+
 def run_discovery(
     raw_path: Path,
     *,
@@ -270,6 +324,14 @@ def run_discovery(
     ) as stage:
         candidates = assign_peak_anchors(discovered, settings=settings)
         stage.metrics["candidate_count"] = len(candidates)
+    candidates = _apply_blank_qualification_if_enabled(
+        candidates,
+        raw_path=raw_path,
+        settings=settings,
+        timing_recorder=recorder,
+        sample_stem=sample_stem,
+        acquisition_input=acquisition_input,
+    )
     return _write_dual_csvs(
         output_dir,
         candidates,
@@ -376,6 +438,14 @@ def run_discovery_batch(
         ) as stage:
             candidates = assign_peak_anchors(discovered, settings=settings)
             stage.metrics["candidate_count"] = len(candidates)
+        candidates = _apply_blank_qualification_if_enabled(
+            candidates,
+            raw_path=raw_path,
+            settings=settings,
+            timing_recorder=recorder,
+            sample_stem=sample_stem,
+            acquisition_input=acquisition_input,
+        )
         sample_output_dir = output_dir / sample_stem
         outputs = _write_dual_csvs(
             sample_output_dir,
@@ -697,6 +767,14 @@ def _run_discovery_sample_process_job(
         ) as stage:
             candidates = assign_peak_anchors(discovered, settings=job.settings)
             stage.metrics["candidate_count"] = len(candidates)
+        candidates = _apply_blank_qualification_if_enabled(
+            candidates,
+            raw_path=job.raw_path,
+            settings=job.settings,
+            timing_recorder=recorder,
+            sample_stem=sample_stem,
+            acquisition_input=job.acquisition_input,
+        )
         outputs = _write_dual_csvs(
             job.output_dir / sample_stem,
             candidates,

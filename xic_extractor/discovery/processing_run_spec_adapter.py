@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from pathlib import Path
+from typing import TypedDict
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.blank_qualification import (
+    BlankBackgroundLibrary,
+    resolve_background_library,
+    serialize_background_library,
+)
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -22,6 +30,14 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+
+
+class _BlankLibraryBinding(TypedDict):
+    blank_library_sha256: str | None
+    blank_library_content: str | None
+
+
+_LibrarySnapshots = dict[int, tuple[BlankBackgroundLibrary, str, str]]
 
 
 def compile_discovery_processing_run_spec(
@@ -44,6 +60,8 @@ def compile_discovery_processing_run_spec(
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
 
+    snapshots: dict[str, tuple[str | None, str | None]] = {}
+    libraries: _LibrarySnapshots = {}
     inputs = tuple(
         ProcessingAcquisitionInput(
             input_ordinal=ordinal,
@@ -54,6 +72,7 @@ def compile_discovery_processing_run_spec(
                 acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
                 observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
             ),
+            **_blank_library_binding(path, discovery_settings, snapshots, libraries),
         )
         for ordinal, path in enumerate(raw_paths)
     )
@@ -109,6 +128,38 @@ def processing_run_input_for_path(
     return item
 
 
+def _blank_library_binding(
+    raw_path: Path,
+    settings: DiscoverySettings,
+    cache: dict[str, tuple[str | None, str | None]],
+    libraries: _LibrarySnapshots,
+) -> _BlankLibraryBinding:
+    if not settings.enable_blank_qualification:
+        return {"blank_library_sha256": None, "blank_library_content": None}
+    key = settings.blank_library_path or str(raw_path.parent)
+    if key not in cache:
+        library = resolve_background_library(
+            raw_dir=raw_path.parent,
+            library_path=settings.blank_library_path,
+        )
+        if library is None:
+            cache[key] = None, None
+        else:
+            # Different sample directories can select the same packaged object.
+            # Retain that object so its identity cannot be recycled in this call.
+            if id(library) not in libraries:
+                content = serialize_background_library(library)
+                digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                libraries[id(library)] = library, digest, content
+            _, digest, content = libraries[id(library)]
+            cache[key] = digest, content
+    bound_digest, bound_content = cache[key]
+    return {
+        "blank_library_sha256": bound_digest,
+        "blank_library_content": bound_content,
+    }
+
+
 def validate_processing_run_spec_call(
     spec: ProcessingRunSpec,
     raw_paths: tuple[Path, ...],
@@ -130,10 +181,31 @@ def validate_processing_run_spec_call(
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
     if signal_processing_profile != spec.signal_processing_profile:
         raise ValueError("peak config conflicts with ProcessingRunSpec profile")
-    return tuple(
+    inputs = tuple(
         processing_run_input_for_path(spec, path, input_ordinal=ordinal)
         for ordinal, path in enumerate(raw_paths)
     )
+    if not discovery_settings.enable_blank_qualification:
+        return inputs
+    if spec.schema_version == "processing_run_spec_v1":
+        raise ValueError(
+            "legacy blank-enabled run has no library binding; recompile the run"
+        )
+    hydrated: list[ProcessingAcquisitionInput] = []
+    snapshots: dict[str, tuple[str | None, str | None]] = {}
+    libraries: _LibrarySnapshots = {}
+    for path, item in zip(raw_paths, inputs, strict=True):
+        # None digest is a bound absence, not permission to select a new library.
+        if item.blank_library_sha256 is None or item.blank_library_content is not None:
+            hydrated.append(item)
+            continue
+        binding = _blank_library_binding(path, discovery_settings, snapshots, libraries)
+        if binding["blank_library_sha256"] != item.blank_library_sha256:
+            raise ValueError(
+                "selected blank library content does not match ProcessingRunSpec"
+            )
+        hydrated.append(replace(item, **binding))
+    return tuple(hydrated)
 
 
 __all__ = [

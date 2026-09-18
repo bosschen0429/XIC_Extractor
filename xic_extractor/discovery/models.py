@@ -107,6 +107,7 @@ DISCOVERY_CANDIDATE_COLUMNS = (
     DISCOVERY_CANDIDATE_REVIEW_COLUMNS
     + DISCOVERY_SUCCESSOR_COLUMNS
     + DISCOVERY_PROVENANCE_COLUMNS
+    + ("is_provisional",)
 )
 
 DISCOVERY_BRIEF_COLUMNS = (
@@ -153,6 +154,10 @@ class DiscoverySettings:
     rt_max: float = 999.0
     resolver_mode: str = "local_minimum"
     evidence_profile: DiscoveryEvidenceProfile = DEFAULT_EVIDENCE_PROFILE
+    enable_blank_qualification: bool = False
+    blank_library_path: str | None = None
+    blank_ppm_tol: float = 10.0
+    blank_fold_change_threshold: float = 3.0
 
     def __post_init__(self) -> None:
         profiles = self.neutral_loss_profiles
@@ -360,6 +365,7 @@ class DiscoveryCandidate:
     tag_evidence_json: str = "{}"
     discovery_candidate_state: DiscoveryCandidateState = "review_only_orphan_nl"
     ms1_feature_row_id: str = ""
+    is_provisional: bool = False
 
     @classmethod
     def from_values(
@@ -399,6 +405,7 @@ class DiscoveryCandidate:
         ms2_product_max_intensity: float,
         review_priority: ReviewPriority,
         reason: str,
+        is_provisional: bool = False,
     ) -> "DiscoveryCandidate":
         discovery_candidate_state = assign_discovery_candidate_state(
             ms1_peak_found=ms1_peak_found,
@@ -467,6 +474,7 @@ class DiscoveryCandidate:
                 ms1_peak_rt_start=ms1_peak_rt_start,
                 ms1_peak_rt_end=ms1_peak_rt_end,
             ),
+            is_provisional=is_provisional,
         )
 
 

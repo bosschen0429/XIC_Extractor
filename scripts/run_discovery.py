@@ -2,10 +2,15 @@ import argparse
 import math
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.blank_qualification import (
+    extract_blank_background_library,
+)
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
@@ -51,12 +56,46 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not dll_dir.is_dir():
         print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
         return 2
+    if args.blank_library is not None:
+        blank_lib_path = args.blank_library.resolve()
+        if not blank_lib_path.is_file():
+            print(f"{blank_lib_path}: blank library does not exist", file=sys.stderr)
+            return 2
 
     try:
         settings = _discovery_settings(args)
     except (OSError, PresetError, ValueError) as exc:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
+
+    if args.blank_dir is not None and settings.enable_blank_qualification:
+        blank_dir = args.blank_dir.resolve()
+        if not blank_dir.is_dir():
+            print(f"{blank_dir}: blank directory does not exist", file=sys.stderr)
+            return 2
+        blank_raws = sorted(
+            p for p in blank_dir.iterdir()
+            if p.is_file() and p.suffix.lower() == ".raw"
+        )
+        if not blank_raws:
+            print(
+                f"{blank_dir}: blank directory contains no .raw files",
+                file=sys.stderr,
+            )
+            return 2
+        library_path = output_dir / "blank_library.json"
+        print(
+            f"Extracting blank library from {len(blank_raws)} solvent blanks "
+            f"in {blank_dir}..."
+        )
+        lib = extract_blank_background_library(blank_raws, dll_dir=dll_dir)
+        library_path.parent.mkdir(parents=True, exist_ok=True)
+        lib.save_json(library_path)
+        print(f"Saved cohort blank library ({len(lib.ions)} ions) to: {library_path}")
+        settings = replace(
+            settings,
+            blank_library_path=str(library_path),
+        )
     data_dir = raw_path.parent if raw_path is not None else raw_dir
     if data_dir is None:
         raise ValueError("Discovery input directory was not resolved")
@@ -235,6 +274,45 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--resolver-mode",
         type=_resolver_mode,
     )
+    parser.add_argument(
+        "--blank-dir",
+        type=Path,
+        help=(
+            "Directory containing solvent blank RAW files for cohort background "
+            "extraction. Re-extracted on each invocation unless "
+            "--no-blank-qualification is set."
+        ),
+    )
+    parser.add_argument(
+        "--blank-library",
+        type=Path,
+        help="Path to custom BlankBackgroundLibrary JSON file.",
+    )
+    parser.add_argument(
+        "--enable-blank-qualification",
+        action="store_true",
+        help="Enable blank background qualification using packaged default library.",
+    )
+    parser.add_argument(
+        "--no-blank-qualification",
+        action="store_true",
+        help="Disable automatic blank background qualification and filtering.",
+    )
+    parser.add_argument(
+        "--blank-ppm-tol",
+        type=_positive_float,
+        default=None,
+        help="Tolerance in ppm for matching blank library (default: 10.0).",
+    )
+    parser.add_argument(
+        "--blank-fold-change",
+        type=_positive_float,
+        default=None,
+        help=(
+            "Fold change above blank to protect high abundance tissue analytes "
+            "(default: 3.0)."
+        ),
+    )
     args = parser.parse_args(argv)
     rt_min = args.rt_min if args.rt_min is not None else 0.0
     rt_max = args.rt_max if args.rt_max is not None else 999.0
@@ -274,11 +352,11 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
     }
     common = {key: value for key, value in common.items() if value is not None}
     if args.preset is not None:
-        return bind_cid_nl_recipe(
+        settings = bind_cid_nl_recipe(
             load_preset(args.preset), "discovery_only", recipe_overrides=common
         ).discovery_settings
-    if args.feature_list is None:
-        return DiscoverySettings(
+    elif args.feature_list is None:
+        settings = DiscoverySettings(
             neutral_loss_profile=NeutralLossProfile(
                 tag=args.neutral_loss_tag or "DNA_dR",
                 neutral_loss_da=args.neutral_loss_da
@@ -288,26 +366,49 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
             tag_combine_mode="single",
             **common,
         )
+    else:
+        selected = [
+            value.strip()
+            for value in str(args.selected_tags).split(",")
+            if value.strip()
+        ]
+        profiles = resolve_selected_tag_profiles(
+            load_feature_tag_profiles(args.feature_list),
+            selected,
+        )
+        settings = DiscoverySettings(
+            neutral_loss_profiles=tuple(
+                NeutralLossProfile(
+                    tag=profile.tag_name,
+                    neutral_loss_da=profile.parameter_mz_or_da,
+                )
+                for profile in profiles
+            ),
+            selected_tag_names=tuple(profile.tag_name for profile in profiles),
+            tag_combine_mode=args.tag_combine_mode or "union",
+            **common,
+        )
 
-    selected = [
-        value.strip() for value in str(args.selected_tags).split(",") if value.strip()
-    ]
-    profiles = resolve_selected_tag_profiles(
-        load_feature_tag_profiles(args.feature_list),
-        selected,
-    )
-    return DiscoverySettings(
-        neutral_loss_profiles=tuple(
-            NeutralLossProfile(
-                tag=profile.tag_name,
-                neutral_loss_da=profile.parameter_mz_or_da,
-            )
-            for profile in profiles
-        ),
-        selected_tag_names=tuple(profile.tag_name for profile in profiles),
-        tag_combine_mode=args.tag_combine_mode or "union",
-        **common,
-    )
+    blank_updates: dict[str, Any] = {}
+    if args.no_blank_qualification:
+        blank_updates["enable_blank_qualification"] = False
+    elif (
+        args.enable_blank_qualification
+        or args.blank_dir is not None
+        or args.blank_library is not None
+    ):
+        blank_updates["enable_blank_qualification"] = True
+
+    if args.blank_library is not None:
+        blank_updates["blank_library_path"] = str(args.blank_library)
+    if args.blank_ppm_tol is not None:
+        blank_updates["blank_ppm_tol"] = args.blank_ppm_tol
+    if args.blank_fold_change is not None:
+        blank_updates["blank_fold_change_threshold"] = args.blank_fold_change
+
+    if blank_updates:
+        settings = replace(settings, **blank_updates)
+    return settings
 
 
 def _peak_config(

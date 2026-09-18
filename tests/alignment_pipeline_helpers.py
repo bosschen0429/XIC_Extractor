@@ -152,6 +152,7 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "ms1_peak_rt_end": "8.6",
         "ms1_height": "100.0",
         "ms1_trace_quality": "clean",
+        "is_provisional": "FALSE",
         "ms1_scan_support_score": "0.8",
         "selected_tag_count": "1",
         "matched_tag_count": "1",
