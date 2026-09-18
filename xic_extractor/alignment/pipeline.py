@@ -418,31 +418,49 @@ def _run_untargeted_alignment(
             "Alignment cancelled before retained untargeted execution"
         )
     try:
-        _complete_fn = complete_untargeted_alignment
         if (
             complete_untargeted_cid_nl_alignment
             is not _real_complete_untargeted_alignment
         ):
-            _complete_fn = complete_untargeted_cid_nl_alignment
-        completed = _complete_fn(
-            discovery_batch=discovery_batch,
-            candidates_by_sample=candidates_by_sample,
-            raw_dir=raw_dir,
-            dll_dir=dll_dir,
-            output_dir=output_dir,
-            settings=settings,
-            peak_config=peak_config,
-            alignment_config=alignment_config,
-            sample_metadata=sample_metadata,
-            known_istd_reference=known_istd_reference,
-            timing_recorder=timing_recorder,
-            signal_processing_profile=signal_processing_profile,
-            raw_workers=raw_workers,
-            raw_worker_backend=raw_worker_backend,
-            should_cancel=should_cancel,
-            retain_partition_memory=True,
-            max_partition_jobs=max_partition_jobs,
-        )
+            completed = complete_untargeted_cid_nl_alignment(
+                discovery_batch=discovery_batch,
+                candidates_by_sample=candidates_by_sample,
+                raw_dir=raw_dir,
+                dll_dir=dll_dir,
+                output_dir=output_dir,
+                settings=settings,
+                peak_config=peak_config,
+                alignment_config=alignment_config,
+                sample_metadata=sample_metadata,
+                known_istd_reference=known_istd_reference,
+                timing_recorder=timing_recorder,
+                signal_processing_profile=signal_processing_profile,
+                raw_workers=raw_workers,
+                raw_worker_backend=raw_worker_backend,
+                should_cancel=should_cancel,
+                retain_partition_memory=True,
+                max_partition_jobs=max_partition_jobs,
+            )
+        else:
+            completed = complete_untargeted_alignment(
+                discovery_batch=discovery_batch,
+                candidates_by_sample=candidates_by_sample,
+                raw_dir=raw_dir,
+                dll_dir=dll_dir,
+                output_dir=output_dir,
+                settings=settings,
+                peak_config=peak_config,
+                alignment_config=alignment_config,
+                sample_metadata=sample_metadata,
+                known_istd_reference=known_istd_reference,
+                timing_recorder=timing_recorder,
+                signal_processing_profile=signal_processing_profile,
+                raw_workers=raw_workers,
+                raw_worker_backend=raw_worker_backend,
+                should_cancel=should_cancel,
+                retain_partition_memory=True,
+                max_partition_jobs=max_partition_jobs,
+            )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
     try:
