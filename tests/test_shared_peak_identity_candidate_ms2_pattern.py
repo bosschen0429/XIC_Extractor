@@ -604,6 +604,7 @@ def _write_candidate_csv(
                 "ms1_peak_rt_end": "10.1",
                 "ms1_height": "100",
                 "ms1_trace_quality": "clean",
+                "is_provisional": "FALSE",
                 "ms1_scan_support_score": "1",
                 "selected_tag_count": "1",
                 "matched_tag_count": "1",

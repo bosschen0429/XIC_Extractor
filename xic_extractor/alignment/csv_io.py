@@ -9,6 +9,7 @@ from typing import cast
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
     DiscoveryCandidateUniverseReceipt,
     discovery_receipt_from_index_fields,
     validate_discovery_candidate_artifact,
@@ -216,6 +217,7 @@ def read_discovery_candidates_csv(
     path: Path,
     *,
     require_successor_columns: bool = False,
+    require_provisional_column: bool = False,
 ) -> tuple[DiscoveryCandidate, ...]:
     rows, fieldnames = _read_csv_rows(path)
     has_successor_columns = _candidate_has_successor_columns(path, fieldnames)
@@ -227,7 +229,12 @@ def read_discovery_candidates_csv(
         if has_successor_columns
         else _DISCOVERY_LEGACY_CANDIDATE_COLUMNS
     )
-    _require_columns(path, fieldnames, required_columns)
+    _require_columns(
+        path, fieldnames,
+        tuple(column for column in required_columns if column != "is_provisional"),
+    )
+    if require_provisional_column:
+        _require_columns(path, fieldnames, ("is_provisional",))
 
     candidates: list[DiscoveryCandidate] = []
     seen_candidate_ids: dict[str, int] = {}
@@ -270,6 +277,10 @@ def read_owner_bound_discovery_candidates_csv(
         candidates = read_discovery_candidates_csv(
             path,
             require_successor_columns=require_successor_columns,
+            require_provisional_column=(
+                receipt.candidate_artifact_schema_version
+                == DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+            ),
         )
         validate_discovery_candidate_artifact(receipt, path)
         return validate_discovery_candidate_universe(
@@ -466,6 +477,7 @@ def _parse_candidate_row(
         ms1_peak_rt_end=ms1_peak_rt_end,
         ms1_height=_parse_optional_float(path, row_number, row, "ms1_height"),
         ms1_trace_quality=_required_text(path, row_number, row, "ms1_trace_quality"),
+        is_provisional=_parse_provisional_decision(path, row_number, row),
         ms1_scan_support_score=_parse_optional_float(
             path, row_number, row, "ms1_scan_support_score"
         ),
@@ -479,6 +491,19 @@ def _parse_candidate_row(
         ),
         tag_evidence_json=_required_text(path, row_number, row, "tag_evidence_json"),
     )
+
+
+def _parse_provisional_decision(
+    path: Path, row_number: int, row: dict[str, str],
+) -> bool:
+    if "is_provisional" in row:
+        return _parse_bool(path, row_number, row, "is_provisional")
+    if row.get("ms1_trace_quality", "").lower() == "provisional":
+        raise ValueError(
+            f"{path}: row {row_number}: legacy provisional quality "
+            "lacks an exact decision"
+        )
+    return False
 
 
 def _resolve_artifact_path(parent: Path, value: str) -> Path:

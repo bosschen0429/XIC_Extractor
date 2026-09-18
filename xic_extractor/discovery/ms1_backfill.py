@@ -37,13 +37,17 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
+from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.evidence_facts import (
+    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
     evaluate_physical_peak,
     mint_physical_trace_content_id,
     prepare_physical_signal,
 )
+from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
@@ -247,12 +251,13 @@ def _backfill_ms1_candidates_with_acquisition(
         acquired_traces.extend(batch.traces)
 
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
+    physical_trace_qualities: dict[int, str] = {}
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
         ):
             records: list[DiscoveryPhysicalFactRecord] = []
-            _candidate_from_trace(
+            initial_candidate = _candidate_from_trace(
                 plan.group,
                 acquired.trace.rt,
                 acquired.trace.intensity,
@@ -266,6 +271,9 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_evaluation_observer=records.append,
             )
             (initial_physical_facts[physical_index],) = records
+            physical_trace_qualities[physical_index] = (
+                initial_candidate.ms1_trace_quality
+            )
         reacquisition_plans = tuple(
             (physical_index, expanded_plan)
             for physical_index, (plan, acquired) in enumerate(
@@ -304,6 +312,7 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_plans[physical_index] = expanded_plan
                 acquired_traces[physical_index] = acquired
                 del initial_physical_facts[physical_index]
+                del physical_trace_qualities[physical_index]
 
     scan_windows_by_batch = tuple(
         tuple(
@@ -353,25 +362,25 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_fact_by_index[physical_index] = existing_fact
                 physical_work_manifest.append(existing_fact.work_item)
                 physical_evaluations.append(existing_fact)
-        candidates.append(
-            _candidate_from_trace(
-                plan.group,
-                acquired.trace.rt,
-                acquired.trace.intensity,
-                settings=settings,
-                peak_config=peak_config,
-                signal_processing_profile=signal_processing_profile,
-                prepared_signal_cache=prepared_signal_cache,
-                physical_work_ordinal=physical_index,
-                physical_acquisition_source_id=(
-                    acquisition_source.acquisition_source_id
-                ),
-                physical_acquired_trace=acquired,
-                physical_fact_record=existing_fact,
-                physical_work_observer=physical_work_manifest.append,
-                physical_evaluation_observer=physical_evaluations.append,
-            )
+        candidate = _candidate_from_trace(
+            plan.group,
+            acquired.trace.rt,
+            acquired.trace.intensity,
+            settings=settings,
+            peak_config=peak_config,
+            signal_processing_profile=signal_processing_profile,
+            prepared_signal_cache=prepared_signal_cache,
+            physical_work_ordinal=physical_index,
+            physical_acquisition_source_id=acquisition_source.acquisition_source_id,
+            physical_acquired_trace=acquired,
+            physical_fact_record=existing_fact,
+            physical_trace_quality=physical_trace_qualities.get(physical_index),
+            physical_work_observer=physical_work_manifest.append,
+            physical_evaluation_observer=physical_evaluations.append,
         )
+        candidates.append(candidate)
+        if signal_processing_profile is not None:
+            physical_trace_qualities[physical_index] = candidate.ms1_trace_quality
         if signal_processing_profile is not None and existing_fact is None:
             if len(physical_evaluations) != len(physical_fact_by_index) + 1:
                 raise ValueError("Discovery physical evaluation was not recorded once")
@@ -589,6 +598,7 @@ def _candidate_from_trace(
     physical_acquisition_source_id: str | None = None,
     physical_acquired_trace: AcquiredTrace | None = None,
     physical_fact_record: DiscoveryPhysicalFactRecord | None = None,
+    physical_trace_quality: str | None = None,
     physical_work_observer: Callable[[DiscoveryPhysicalWorkItem], None] | None = None,
     physical_evaluation_observer: (
         Callable[[DiscoveryPhysicalFactRecord], None] | None
@@ -689,11 +699,16 @@ def _candidate_from_trace(
                 != (request.mz, request.rt_min, request.rt_max, request.ppm_tol)
             ):
                 raise ValueError("reused Discovery physical fact crosses its question")
+            if physical_trace_quality is None:
+                raise ValueError(
+                    "reused Discovery physical fact lost trace qualification"
+                )
             ms1_fields = _ms1_fields_from_physical_evaluation(
                 physical_evaluation,
                 work_item=physical_work,
                 settings=settings,
             )
+            ms1_fields.trace_quality = physical_trace_quality
     priority = assign_review_priority(
         seed_event_count=len(group.seeds),
         ms1_peak_found=ms1_fields.peak_found,
@@ -744,6 +759,10 @@ def _candidate_from_trace(
         ms2_product_max_intensity=max(seed.product_intensity for seed in group.seeds),
         review_priority=priority,
         reason=reason,
+        is_provisional=(
+            len(group.seeds) < 2
+            and ms1_fields.trace_quality == "provisional"
+        ),
     )
     candidate = _with_tag_fields(candidate, group=group, settings=settings)
     if physical_evaluation is not None:
@@ -994,6 +1013,7 @@ def _merge_candidate_pair(
             settings=settings,
         ),
         tag_evidence_json=_merge_tag_evidence_json(first, second),
+        is_provisional=(first.is_provisional and second.is_provisional),
     )
 
 
@@ -1353,15 +1373,48 @@ def _physical_ms1_peak_fields(
         query_rt_min=work_item.query_rt_min,
         request_context_rt_start_min=work_item.context_rt_start_min,
         request_context_rt_end_min=work_item.context_rt_end_min,
-    )
-    return (
-        _ms1_fields_from_physical_evaluation(
-            evaluation,
-            work_item=work_item,
-            settings=settings,
+        selection_policy_version=(
+            DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+            if profile.window_points == DEFAULT_GAUSSIAN15_WINDOW_POINTS
+            else PHYSICAL_PEAK_POINT_POLICY
         ),
-        evaluation,
     )
+    fields = _ms1_fields_from_physical_evaluation(
+        evaluation,
+        work_item=work_item,
+        settings=settings,
+    )
+    if (
+        evaluation.state == "available"
+        and evaluation.facts is not None
+        and evaluation.answer.physical_segment_id is not None
+    ):
+        selected_id = evaluation.answer.physical_segment_id
+        for seg in evaluation.segment_universe.segments:
+            if seg.physical_segment_id == selected_id:
+                raw_seg = np.asarray(
+                    intensity[seg.start_index : seg.end_index], dtype=float
+                )
+                rt_seg = np.asarray(
+                    rt[seg.start_index : seg.end_index], dtype=float
+                )
+                if len(raw_seg) >= 3:
+                    w = (rt_seg[2:] - rt_seg[1:-1]) / (rt_seg[2:] - rt_seg[:-2])
+                    res = (
+                        w * raw_seg[:-2] + (1.0 - w) * raw_seg[2:] - raw_seg[1:-1]
+                    ) / np.sqrt(1.0 + w**2 + (1.0 - w)**2)
+                    mad = float(np.median(np.abs(res - np.median(res))))
+                else:
+                    mad = 0.0
+                if is_provisional_peak_shape(
+                    rt_seg,
+                    raw_seg,
+                    apex_index=seg.apex_index - seg.start_index,
+                    raw_noise_mad=mad,
+                ):
+                    fields.trace_quality = "provisional"
+                break
+    return fields, evaluation
 
 
 def _ms1_fields_from_physical_evaluation(

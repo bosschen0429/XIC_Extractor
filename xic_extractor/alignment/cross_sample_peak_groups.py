@@ -3790,6 +3790,16 @@ def _hypothesis_from_owner_group(
     event_ids = tuple(
         event_id for owner in group for event_id in owner.event_candidate_ids
     )
+    is_singleton = len(group) == 1
+    has_definitive = any(not getattr(owner, "is_provisional", False) for owner in group)
+    has_anchor = has_definitive or not is_singleton
+    unsupported_singleton = is_singleton and not has_definitive
+    effective_review_only = review_only or unsupported_singleton
+    effective_evidence = (
+        f"{evidence};provisional_singleton_review_only"
+        if unsupported_singleton and "provisional_singleton" not in evidence
+        else evidence
+    )
     return CrossSamplePeakGroupHypothesis(
         group_hypothesis_id=group_identity.group_hypothesis_id,
         public_family_id=public_family_id,
@@ -3806,11 +3816,11 @@ def _hypothesis_from_owner_group(
         group_center_rt=center_rt,
         group_product_mz=center_product_mz,
         group_observed_neutral_loss_da=center_loss,
-        has_anchor=True,
+        has_anchor=has_anchor,
         owners=group,
-        evidence=evidence,
+        evidence=effective_evidence,
         identity_conflict=identity_conflict,
-        review_only=review_only,
+        review_only=effective_review_only,
         construction_role="successor_constructor",
         consolidation_state=consolidation_state,
         consolidation_winner_group_hypothesis_id=(

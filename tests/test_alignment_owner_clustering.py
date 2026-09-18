@@ -2214,6 +2214,7 @@ def _owner(
     evidence_score: int = 80,
     seed_event_count: int = 2,
     identity_conflict: bool = False,
+    is_provisional: bool = False,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
         candidate_id=f"{sample_stem}#{suffix}",
@@ -2270,6 +2271,7 @@ def _owner(
             physical_observation_ids=(physical_id,),
             basis_bytes=member_basis,
         ),
+        is_provisional=is_provisional,
     )
 
 
@@ -2458,3 +2460,51 @@ def test_owner_clustering_keeps_duplicate_owner_group_outside_identity_window() 
         hypothesis.consolidation_state == "not_consolidated"
         for hypothesis in hypotheses
     )
+
+
+def test_cross_sample_group_provisional_singleton_quarantined_to_review_only() -> None:
+    # Solitary single-sample provisional candidate without anchor support
+    owners = (_owner("sample-a", "p1", apex_rt=10.0, is_provisional=True),)
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+    assert len(hypotheses) == 1
+    hyp = hypotheses[0]
+    assert hyp.has_anchor is False
+    assert hyp.review_only is True
+    assert "provisional_singleton_review_only" in hyp.evidence
+
+
+def test_cross_sample_group_definitive_singleton_retains_anchor_and_active() -> None:
+    # Solitary single-sample definitive candidate (e.g. C010 sparse authentic peak)
+    owners = (_owner("sample-a", "d1", apex_rt=10.0, is_provisional=False),)
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+    assert len(hypotheses) == 1
+    hyp = hypotheses[0]
+    assert hyp.has_anchor is True
+    assert hyp.review_only is False
+    assert "provisional_singleton_review_only" not in hyp.evidence
+
+
+def test_cross_sample_group_provisional_members_corroborate_across_samples() -> None:
+    # Multi-sample provisional corroboration: 2+ samples corroborate the hypothesis
+    owners = (
+        _owner("sample-a", "p1", apex_rt=10.00, is_provisional=True),
+        _owner("sample-b", "p2", apex_rt=10.05, is_provisional=True),
+    )
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        sample_universe=frozenset({"sample-a", "sample-b"}),
+    )
+    assert len(hypotheses) == 1
+    hyp = hypotheses[0]
+    assert hyp.has_anchor is True
+    assert hyp.review_only is False
+    assert "provisional_singleton_review_only" not in hyp.evidence

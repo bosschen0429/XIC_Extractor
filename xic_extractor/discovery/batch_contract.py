@@ -30,8 +30,13 @@ from xic_extractor.processing_identity import (
 from xic_extractor.processing_run_spec import ProcessingRunSpec
 
 DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_v2"
-DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v1"
-DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION = "discovery_candidate_payload_v1"
+DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v2"
+DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION = "discovery_candidate_payload_v2"
+_LEGACY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v1"
+DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS = frozenset({
+    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
+    _LEGACY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
+})
 
 DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "discovery_receipt_id",
@@ -78,7 +83,7 @@ class DiscoveryCandidateUniverseReceipt:
             )
         if (
             self.candidate_artifact_schema_version
-            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+            not in DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS
         ):
             raise IdentityContractError(
                 "candidate artifact schema version is unsupported"
@@ -100,6 +105,7 @@ class DiscoveryCandidateUniverseReceipt:
             field="candidate_payload_sha256",
         )
         expected = _receipt_id(
+            candidate_artifact_schema_version=self.candidate_artifact_schema_version,
             sample_stem=self.sample_stem,
             acquisition_source=self.acquisition_source,
             candidate_count=self.candidate_count,
@@ -187,7 +193,9 @@ def validate_discovery_candidate_universe(
         raise IdentityContractError(
             "candidate count does not match the Discovery receipt"
         )
-    if discovery_candidate_payload_sha256(ordered) != (
+    if discovery_candidate_payload_sha256(
+        ordered, artifact_schema_version=receipt.candidate_artifact_schema_version,
+    ) != (
         receipt.candidate_payload_sha256
     ):
         raise IdentityContractError(
@@ -198,9 +206,24 @@ def validate_discovery_candidate_universe(
 
 def discovery_candidate_payload_sha256(
     candidates: Sequence[DiscoveryCandidate],
+    *,
+    artifact_schema_version: str = DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
 ) -> str:
     """Return the path-independent digest of complete candidate facts."""
 
+    legacy = artifact_schema_version == _LEGACY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+    if (
+        not legacy
+        and artifact_schema_version != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+    ):
+        raise IdentityContractError("candidate artifact schema version is unsupported")
+    if legacy and any(
+        item.is_provisional or item.ms1_trace_quality.lower() == "provisional"
+        for item in candidates
+    ):
+        raise IdentityContractError(
+            "legacy candidate payload cannot bind a provisional decision"
+        )
     canonical: list[dict[str, str]] = []
     for candidate in sorted(candidates, key=lambda item: item.candidate_id):
         canonical.append(
@@ -210,12 +233,15 @@ def discovery_candidate_payload_sha256(
                     getattr(candidate, column),
                 )
                 for column in DISCOVERY_CANDIDATE_COLUMNS
-                if column != "raw_file"
+                if column != "raw_file" and not (legacy and column == "is_provisional")
             }
         )
     encoded = json.dumps(
         {
-            "schema_version": DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION,
+            "schema_version": (
+                "discovery_candidate_payload_v1" if legacy
+                else DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION
+            ),
             "candidates": canonical,
         },
         ensure_ascii=False,
@@ -400,6 +426,9 @@ def _canonical_candidates(
 
 def _receipt_id(
     *,
+    candidate_artifact_schema_version: str = (
+        DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+    ),
     sample_stem: str,
     acquisition_source: AcquisitionSourceIdentity,
     candidate_count: int,
@@ -412,9 +441,7 @@ def _receipt_id(
         "sample_stem": sample_stem,
         "acquisition_source_id": acquisition_source.acquisition_source_id,
         "candidate_count": candidate_count,
-        "candidate_artifact_schema_version": (
-            DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-        ),
+        "candidate_artifact_schema_version": candidate_artifact_schema_version,
         "candidate_artifact_sha256": candidate_artifact_sha256,
         "candidate_artifact_byte_size": candidate_artifact_byte_size,
         "candidate_payload_sha256": candidate_payload_sha256,
@@ -471,6 +498,7 @@ __all__ = (
     "DISCOVERY_BATCH_INDEX_SCHEMA_VERSION",
     "DISCOVERY_BATCH_RECEIPT_COLUMNS",
     "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION",
+    "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS",
     "DiscoveryCandidateUniverseReceipt",
     "discovery_candidate_payload_sha256",
     "validate_discovery_candidate_physical_bindings",

@@ -22,6 +22,10 @@ authority_datas = collect_data_files(
     "xic_extractor.alignment",
     includes=["data/quantitative_projection_authority_v1.json"],
 )
+discovery_datas = collect_data_files(
+    "xic_extractor.discovery",
+    includes=["data/*"],
+)
 
 a = Analysis(
     ["gui/main.py"],
@@ -34,7 +38,8 @@ a = Analysis(
         ("scripts", "scripts"),
     ]
     + preset_datas
-    + authority_datas,
+    + authority_datas
+    + discovery_datas,
     hiddenimports=[
         "PyQt6.QtCore",
         "PyQt6.QtWidgets",

@@ -35,6 +35,29 @@ lifecycle for each provider.
   universe, including samples without a local candidate, for recovery.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
+- Discovery's Gaussian15 physical point policy rejects an irregular background
+  maximum only when both the acquired trace and its existing, unclipped
+  baseline residual lack sufficient rise/fall shape or local apex relief.
+  The physical owner qualifies the already selected interval; surviving peaks
+  keep their original boundaries, apex and integrated area. Saved policies
+  retain their original answer semantics, and other callers or smoothing-window
+  settings keep their existing selection policies. This local qualification does
+  not prove chemical identity or replace cross-sample support and Backfill
+  eligibility.
+- Discovery retains provisional qualification when it reuses a physical result.
+  Candidate CSV v2 carries the final `is_provisional` decision through Alignment
+  replay, including merged candidates. Legacy CSVs without provisional evidence
+  remain readable; legacy rows marked provisional without the decision field
+  are rejected because their final qualification cannot be recovered exactly.
+- Blank qualification uses the selected explicit, sample-local, or packaged
+  background library. ProcessingRunSpec v2 binds each input to that library's
+  content digest, and execution consumes the bound immutable snapshot. Reading
+  a saved v2 run for execution verifies the selected library against that digest.
+  Historical v1 run specs remain readable with their original bytes and identity;
+  an enabled v1 run without a library binding must be recompiled before execution.
+  The CLI's explicit `--no-blank-qualification` takes precedence over `--blank-dir`.
+  When qualification is enabled, an explicit blank directory is extracted anew;
+  matching filenames alone do not establish reusable blank content.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/

@@ -52,6 +52,7 @@ class SampleLocalMS1Owner:
     quantification_exclusion_reason: str = ""
     cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
     cid_nl_composite_assessment: CidNlMethodAssessmentRef | None = None
+    is_provisional: bool = False
 
     def __post_init__(self) -> None:
         integration = self.selected_integration
