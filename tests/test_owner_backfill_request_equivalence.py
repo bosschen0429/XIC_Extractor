@@ -5,13 +5,15 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.alignment.owner_backfill as owner_backfill_module
 import xic_extractor.alignment.owner_backfill_request_plan as request_plan_module
 from tests.test_alignment_owner_backfill import _feature, _peak_config
 from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
+)
+from xic_extractor.alignment import (
+    owner_backfill_evaluation as owner_backfill_evaluation_module,
 )
 from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
 from xic_extractor.alignment.config import AlignmentConfig
@@ -707,8 +709,8 @@ def test_canonical_preparation_cache_runs_once_per_equivalent_question(
     source = _OwnerBoundBatchSource(source_identity)
     prepare_calls: list[str] = []
     question_calls: list[str] = []
-    real_prepare = owner_backfill_module.prepare_physical_signal
-    real_evaluate = owner_backfill_module.evaluate_physical_peak
+    real_prepare = owner_backfill_evaluation_module.prepare_physical_signal
+    real_evaluate = owner_backfill_evaluation_module.evaluate_physical_peak
 
     def counted_prepare(*args, **kwargs):
         prepared = real_prepare(*args, **kwargs)
@@ -720,12 +722,12 @@ def test_canonical_preparation_cache_runs_once_per_equivalent_question(
         return real_evaluate(prepared, **kwargs)
 
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation_module,
         "prepare_physical_signal",
         counted_prepare,
     )
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation_module,
         "evaluate_physical_peak",
         counted_evaluate,
     )

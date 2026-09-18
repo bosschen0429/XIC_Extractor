@@ -9,6 +9,12 @@ from pytest import MonkeyPatch
 import xic_extractor.alignment.owner_backfill as owner_backfill_module
 import xic_extractor.alignment.owner_backfill_request_plan as request_plan_module
 from tests.test_alignment_owner_clustering import _owner
+from xic_extractor.alignment import (
+    owner_backfill_acquisition as owner_backfill_acquisition_module,
+)
+from xic_extractor.alignment import (
+    owner_backfill_evaluation as owner_backfill_evaluation_module,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_backfill import (
     build_owner_backfill_cells,
@@ -152,8 +158,8 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
         )
     assert candidate.peak_fact_unsealed_evaluation_keys == ()
     assert not hasattr(candidate, "peak_fact_cost")
-    assert owner_backfill_module._positive_elapsed(0.0) is None
-    assert owner_backfill_module._positive_elapsed(float("nan")) is None
+    assert owner_backfill_acquisition_module._positive_elapsed(0.0) is None
+    assert owner_backfill_acquisition_module._positive_elapsed(float("nan")) is None
 
 
 def test_owner_backfill_fact_receipt_drops_trace_arrays_and_worker_payload() -> None:
@@ -192,7 +198,7 @@ def test_owner_backfill_canonical_path_does_not_call_retired_local_helpers(
         "peak_trace_evidence",
         "_scan_support_score",
     ):
-        monkeypatch.setattr(owner_backfill_module, name, retired)
+        monkeypatch.setattr(owner_backfill_evaluation_module, name, retired)
 
     result = build_owner_backfill_result(
         (_feature(),),
@@ -375,7 +381,7 @@ def test_owner_backfill_region_audit_is_opt_in(monkeypatch) -> None:
         raise AssertionError("region audit should be debug/validation opt-in")
 
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation_module,
         "build_peak_region_audit_summary",
         fail_region_audit,
     )
@@ -405,7 +411,7 @@ def test_owner_backfill_audit_mode_none_skips_all_heavy_audit(monkeypatch) -> No
         raise AssertionError("heavy audit must not run when audit_evidence_mode=none")
 
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation_module,
         "build_peak_region_audit_summary",
         fail_region_audit,
     )
@@ -446,7 +452,7 @@ def test_owner_backfill_region_audit_receives_untargeted_trace_group(
         )
 
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation_module,
         "build_peak_region_audit_summary",
         fake_region_audit,
     )
@@ -482,7 +488,7 @@ def test_owner_backfill_region_audit_honors_family_allowlist(monkeypatch) -> Non
         )
 
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation_module,
         "build_peak_region_audit_summary",
         fake_region_audit,
     )
