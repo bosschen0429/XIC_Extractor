@@ -6,13 +6,6 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.discovery.cid_nl_oracle_contract import (
-    OracleContractError,
-    canonical_row_sha256,
-    canonical_tsv_bytes,
-    sha256_bytes,
-    sha256_canonical_json,
-    validate_adjudication_event,
-    validate_adjudication_event_set,
     validate_lineage_binding_row,
     validate_lineage_binding_rows,
     validate_manifest_seal,
@@ -20,13 +13,24 @@ from xic_extractor.discovery.cid_nl_oracle_contract import (
     validate_proposal_row,
     validate_reference_manifest_rows,
     validate_reference_row,
-    validate_review_event,
-    validate_review_event_set,
     validate_review_label_seal,
     validate_sampling_manifest_rows,
     validate_sampling_row,
     validate_sampling_statistical_binding,
     validate_statistical_design_row,
+)
+from xic_extractor.discovery.cid_nl_oracle_primitives import (
+    OracleContractError,
+    canonical_row_sha256,
+    canonical_tsv_bytes,
+    sha256_bytes,
+    sha256_canonical_json,
+)
+from xic_extractor.discovery.cid_nl_oracle_review import (
+    validate_adjudication_event,
+    validate_adjudication_event_set,
+    validate_review_event,
+    validate_review_event_set,
 )
 
 ROOT = Path(__file__).resolve().parents[1]

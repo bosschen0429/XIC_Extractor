@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from xic_extractor.discovery.cid_nl_oracle_contract import sha256_canonical_json
+from xic_extractor.discovery.cid_nl_oracle_primitives import sha256_canonical_json
 
 ROOT = Path(__file__).resolve().parents[1]
 SEAL = (
