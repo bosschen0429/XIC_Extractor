@@ -4,9 +4,13 @@ import sys
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.blank_qualification import (
+    extract_blank_background_library,
+)
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
@@ -58,6 +62,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, PresetError, ValueError) as exc:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
+
+    if args.blank_dir is not None:
+        blank_dir = args.blank_dir.resolve()
+        if not blank_dir.is_dir():
+            print(f"{blank_dir}: blank directory does not exist", file=sys.stderr)
+            return 2
+        blank_raws = sorted(
+            p for p in blank_dir.iterdir()
+            if p.is_file() and p.suffix.lower() == ".raw"
+        )
+        if not blank_raws:
+            print(
+                f"{blank_dir}: blank directory contains no .raw files",
+                file=sys.stderr,
+            )
+            return 2
+        cached_lib = output_dir / "blank_library.json"
+        if not cached_lib.is_file():
+            print(
+                f"Extracting blank library from {len(blank_raws)} solvent blanks "
+                f"in {blank_dir}..."
+            )
+            lib = extract_blank_background_library(blank_raws, dll_dir=dll_dir)
+            cached_lib.parent.mkdir(parents=True, exist_ok=True)
+            lib.save_json(cached_lib)
+            print(f"Saved cohort blank library ({len(lib.ions)} ions) to: {cached_lib}")
+        settings = replace(
+            settings,
+            blank_library_path=str(cached_lib),
+            enable_blank_qualification=True,
+        )
     data_dir = raw_path.parent if raw_path is not None else raw_dir
     if data_dir is None:
         raise ValueError("Discovery input directory was not resolved")
@@ -237,9 +272,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=_resolver_mode,
     )
     parser.add_argument(
+        "--blank-dir",
+        type=Path,
+        help=(
+            "Directory containing solvent blank RAW files for cohort background "
+            "extraction."
+        ),
+    )
+    parser.add_argument(
         "--blank-library",
         type=Path,
         help="Path to custom BlankBackgroundLibrary JSON file.",
+    )
+    parser.add_argument(
+        "--enable-blank-qualification",
+        action="store_true",
+        help="Enable blank background qualification using packaged default library.",
     )
     parser.add_argument(
         "--no-blank-qualification",
@@ -249,14 +297,17 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--blank-ppm-tol",
         type=_positive_float,
-        default=10.0,
+        default=None,
         help="Tolerance in ppm for matching blank library (default: 10.0).",
     )
     parser.add_argument(
         "--blank-fold-change",
         type=_positive_float,
-        default=3.0,
-        help="Fold change above blank to protect high abundance tissue analytes.",
+        default=None,
+        help=(
+            "Fold change above blank to protect high abundance tissue analytes "
+            "(default: 3.0)."
+        ),
     )
     args = parser.parse_args(argv)
     rt_min = args.rt_min if args.rt_min is not None else 0.0
@@ -334,19 +385,25 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
             **common,
         )
 
-    if not args.no_blank_qualification:
-        settings = replace(
-            settings,
-            enable_blank_qualification=True,
-            blank_library_path=str(args.blank_library) if args.blank_library else None,
-            blank_ppm_tol=args.blank_ppm_tol,
-            blank_fold_change_threshold=args.blank_fold_change,
-        )
-    else:
-        settings = replace(
-            settings,
-            enable_blank_qualification=False,
-        )
+    blank_updates: dict[str, Any] = {}
+    if args.no_blank_qualification:
+        blank_updates["enable_blank_qualification"] = False
+    elif (
+        args.enable_blank_qualification
+        or args.blank_dir is not None
+        or args.blank_library is not None
+    ):
+        blank_updates["enable_blank_qualification"] = True
+
+    if args.blank_library is not None:
+        blank_updates["blank_library_path"] = str(args.blank_library)
+    if args.blank_ppm_tol is not None:
+        blank_updates["blank_ppm_tol"] = args.blank_ppm_tol
+    if args.blank_fold_change is not None:
+        blank_updates["blank_fold_change_threshold"] = args.blank_fold_change
+
+    if blank_updates:
+        settings = replace(settings, **blank_updates)
     return settings
 
 

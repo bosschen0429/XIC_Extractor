@@ -4,6 +4,8 @@ from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundIon,
     BlankBackgroundLibrary,
     BlankQualificationCategory,
+    get_default_background_library,
+    get_default_background_library_path,
     qualify_candidates_against_blank,
 )
 
@@ -307,3 +309,94 @@ def test_apply_blank_qualification_to_candidates():
     assert qualified[2].discovery_candidate_state == "ms1_feature_nl_supported"
     assert qualified[2].review_priority == "HIGH"
     assert qualified[2].reason == "initial candidate"
+
+
+def test_blank_library_gzip_serialization(tmp_path: Path) -> None:
+    ions = (
+        BlankBackgroundIon(
+            mz=279.0960, max_intensity=1500000.0, scan_count=50, source_blank="Blank_1"
+        ),
+        BlankBackgroundIon(
+            mz=391.1110,
+            max_intensity=890000.0,
+            scan_count=45,
+            source_blank="Blank_1,Blank_3",
+        ),
+    )
+    lib = BlankBackgroundLibrary(
+        ions=ions,
+        min_intensity=25000.0,
+        source_blanks=("Blank_1", "Blank_3"),
+    )
+
+    gz_file = tmp_path / "test_library.json.gz"
+    lib.save_json(gz_file)
+    assert gz_file.exists()
+
+    loaded = BlankBackgroundLibrary.load_json(gz_file)
+    assert len(loaded.ions) == 2
+    assert loaded.min_intensity == 25000.0
+    assert loaded.source_blanks == ("Blank_1", "Blank_3")
+    assert loaded.ions[0].mz == 279.0960
+    assert loaded.ions[0].max_intensity == 1500000.0
+    assert loaded.ions[1].mz == 391.1110
+
+
+def test_packaged_default_background_library_loads_successfully() -> None:
+    path = get_default_background_library_path()
+    assert path.is_file()
+    assert path.name.endswith(".json.gz")
+    lib = get_default_background_library()
+    assert lib is not None
+    assert len(lib.ions) > 30000
+    assert lib.min_intensity >= 25000.0
+
+
+def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
+    from scripts.run_discovery import _discovery_settings, _parse_args
+
+    # 1. Default without blank flags -> enable_blank_qualification is False
+    args_default = _parse_args(["--raw", "dummy.raw", "--dll-dir", "dll"])
+    settings_default = _discovery_settings(args_default)
+    assert not settings_default.enable_blank_qualification
+
+    # 2. --enable-blank-qualification -> True
+    args_enable = _parse_args(
+        ["--raw", "dummy.raw", "--dll-dir", "dll", "--enable-blank-qualification"]
+    )
+    settings_enable = _discovery_settings(args_enable)
+    assert settings_enable.enable_blank_qualification
+    assert settings_enable.blank_library_path is None
+
+    # 3. --blank-library -> True with path
+    custom_lib = tmp_path / "custom.json"
+    custom_lib.write_text("{}", encoding="utf-8")
+    args_custom = _parse_args(
+        ["--raw", "dummy.raw", "--dll-dir", "dll", "--blank-library", str(custom_lib)]
+    )
+    settings_custom = _discovery_settings(args_custom)
+    assert settings_custom.enable_blank_qualification
+    assert settings_custom.blank_library_path == str(custom_lib)
+
+    # 4. --blank-dir -> True
+    blank_dir = tmp_path / "blanks"
+    blank_dir.mkdir()
+    args_dir = _parse_args(
+        ["--raw", "dummy.raw", "--dll-dir", "dll", "--blank-dir", str(blank_dir)]
+    )
+    settings_dir = _discovery_settings(args_dir)
+    assert settings_dir.enable_blank_qualification
+
+    # 5. --no-blank-qualification explicitly disables
+    args_no = _parse_args(
+        [
+            "--raw",
+            "dummy.raw",
+            "--dll-dir",
+            "dll",
+            "--enable-blank-qualification",
+            "--no-blank-qualification",
+        ]
+    )
+    settings_no = _discovery_settings(args_no)
+    assert not settings_no.enable_blank_qualification

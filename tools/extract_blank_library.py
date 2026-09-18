@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
         "-o",
         type=Path,
         required=True,
-        help="Target output JSON path for the background library.",
+        help="Target output JSON or JSON.GZ path for the background library.",
     )
     return parser.parse_args()
 

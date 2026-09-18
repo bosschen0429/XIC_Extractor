@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bisect
+import gzip
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -97,7 +98,7 @@ class BlankBackgroundLibrary:
         return matches
 
     def save_json(self, path: Path) -> None:
-        """Persist background library to JSON file."""
+        """Persist background library to JSON or JSON.GZ file."""
         payload = {
             "version": self.version,
             "min_intensity": self.min_intensity,
@@ -105,14 +106,22 @@ class BlankBackgroundLibrary:
             "ion_count": len(self.ions),
             "ions": [ion.to_dict() for ion in self.ions],
         }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
+        if str(path).endswith(".gz"):
+            with gzip.open(path, "wt", encoding="utf-8") as f:
+                json.dump(payload, f, separators=(",", ":"))
+        else:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
 
     @classmethod
     def load_json(cls, path: Path) -> BlankBackgroundLibrary:
-        """Load background library from JSON file."""
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        """Load background library from JSON or JSON.GZ file."""
+        if str(path).endswith(".gz"):
+            with gzip.open(path, "rt", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
 
         ions = tuple(
             BlankBackgroundIon.from_dict(item) for item in data.get("ions", [])
@@ -331,13 +340,20 @@ def qualify_candidates_against_blank(
     return tuple(qualifications)
 
 
-DEFAULT_BACKGROUND_LIBRARY_FILENAME = "default_background_library_15min.json"
+DEFAULT_BACKGROUND_LIBRARY_FILENAME = "default_background_library_15min.json.gz"
 _CACHED_DEFAULT_LIBRARY: BlankBackgroundLibrary | None = None
 
 
 def get_default_background_library_path() -> Path:
     """Return the filesystem path to the packaged default background library."""
-    return Path(__file__).parent / "data" / DEFAULT_BACKGROUND_LIBRARY_FILENAME
+    data_dir = Path(__file__).parent / "data"
+    gz_path = data_dir / DEFAULT_BACKGROUND_LIBRARY_FILENAME
+    if gz_path.is_file():
+        return gz_path
+    legacy_path = data_dir / "default_background_library_15min.json"
+    if legacy_path.is_file():
+        return legacy_path
+    return gz_path
 
 
 def get_default_background_library() -> BlankBackgroundLibrary | None:
@@ -359,12 +375,18 @@ def resolve_background_library(
     """Resolve the appropriate background library for a run.
 
     1. If library_path is explicitly provided, load it.
-    2. Fallback to the packaged default background library.
+    2. If raw_dir contains a cached blank library, load it.
+    3. Fallback to the packaged default background library.
     """
     if library_path is not None:
         p = Path(library_path)
         if p.is_file():
             return BlankBackgroundLibrary.load_json(p)
+    if raw_dir is not None:
+        for candidate_name in ("blank_library.json.gz", "blank_library.json"):
+            cached = raw_dir / candidate_name
+            if cached.is_file():
+                return BlankBackgroundLibrary.load_json(cached)
     return get_default_background_library()
 
 
