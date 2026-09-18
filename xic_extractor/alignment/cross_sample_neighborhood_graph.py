@@ -327,7 +327,8 @@ def _repair_admission_edge_facts(
         reason = "same_sample"
     elif (
         absolute_ppm_error(
-            predecessor_owner.precursor_mz, repaired_observation.precursor_mz
+            observed_mz=repaired_observation.precursor_mz,
+            reference_mz=predecessor_owner.precursor_mz,
         )
         > config.max_ppm
     ):

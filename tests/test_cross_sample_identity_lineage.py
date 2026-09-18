@@ -584,3 +584,76 @@ def test_neighborhood_edge_rejects_relabelled_owner_evidence(tmp_path) -> None:
 
     with pytest.raises(CrossSampleContractError, match="exact owner evidence"):
         replace(edge, initial_evidence=forged, disposition="excluded")
+
+
+def test_classify_repair_admission_edge_ppm_boundary_uses_predecessor_as_reference(
+    tmp_path,
+) -> None:
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        _mint_cross_sample_repaired_observation,
+        classify_cross_sample_repair_admission_edge,
+    )
+
+    fixture, (member_a, member_b) = _subjects(tmp_path, "sample-a", "sample-b")
+    del fixture
+    config = AlignmentConfig(max_ppm=20.0, preferred_rt_sec=30.0, max_rt_sec=60.0)
+
+    # Direction 1: Predecessor 500.00, Repaired 499.99
+    # (error = 20.000000 ppm <= 20.0 -> eligible)
+    pred_1 = replace(
+        _owner("sample-a", "1", precursor_mz=500.0, apex_rt=8.5),
+        cross_sample_member_subject=member_a,
+    )
+    rep_1 = _mint_cross_sample_repaired_observation(
+        repair_receipt_id="rcpt-1",
+        authorization_id="auth-1",
+        candidate_id="sample-b#1",
+        sample_stem="sample-b",
+        acquisition_source_id="src-1",
+        precursor_mz=499.99,
+        rt_left_min=8.0,
+        rt_apex_min=8.5,
+        rt_right_min=9.0,
+        height=1000.0,
+        scan_support_count=5,
+        area_counts_seconds=2000.0,
+        member_subject=member_b,
+    )
+    edge_1 = classify_cross_sample_repair_admission_edge(
+        predecessor_owner=pred_1,
+        repaired_observation=rep_1,
+        config=config,
+    )
+    assert edge_1.disposition == "eligible"
+    assert edge_1.reason == "preferred_rt_match"
+
+    # Direction 2: Predecessor 499.99, Repaired 500.00
+    # (error = 20.000400... ppm > 20.0 -> excluded)
+    pred_2 = replace(
+        _owner("sample-a", "2", precursor_mz=499.99, apex_rt=8.5),
+        cross_sample_member_subject=member_a,
+    )
+    rep_2 = _mint_cross_sample_repaired_observation(
+        repair_receipt_id="rcpt-2",
+        authorization_id="auth-2",
+        candidate_id="sample-b#2",
+        sample_stem="sample-b",
+        acquisition_source_id="src-2",
+        precursor_mz=500.0,
+        rt_left_min=8.0,
+        rt_apex_min=8.5,
+        rt_right_min=9.0,
+        height=1000.0,
+        scan_support_count=5,
+        area_counts_seconds=2000.0,
+        member_subject=member_b,
+    )
+    edge_2 = classify_cross_sample_repair_admission_edge(
+        predecessor_owner=pred_2,
+        repaired_observation=rep_2,
+        config=config,
+    )
+    assert edge_2.disposition == "excluded"
+    assert edge_2.reason == "precursor_mz_out_of_tolerance"
