@@ -420,8 +420,38 @@ def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) ->
     spec = _compile_paths(_raws(tmp_path))
 
     assert spec.discovery_method.method_hash == (
-        "a941225d663a845f4acecc8cfda602bef7e75a8ac115a471772b8f94a84726bf"
+        "32beb3945f596f859bce2b06b75aa938a96f2dd02068f828534fb33a2678294f"
     )
     assert spec.run_spec_hash == (
-        "8b2a7e362f16d62ac53e1aac132c452385edc81a30e85f1f7a6b8d392ad78778"
+        "929fd3d19db783af11c138b160e5fc019d0ce662e1022c14819998afe514582b"
     )
+
+
+def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
+    tmp_path: Path,
+) -> None:
+    raws = _raws(tmp_path)
+    custom_settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile(
+            tag="DNA_dR",
+            neutral_loss_da=116.0474,
+        ),
+        enable_blank_qualification=True,
+        blank_library_path="cohort/blank_library.json",
+        blank_ppm_tol=12.5,
+        blank_fold_change_threshold=4.5,
+    )
+    spec = compile_discovery_processing_run_spec(
+        raws,
+        discovery_settings=custom_settings,
+    )
+    serialized = serialize_processing_run_spec(spec)
+    deserialized = deserialize_processing_run_spec(serialized)
+
+    deserialized_settings = deserialized.discovery_method.settings
+    assert deserialized_settings.enable_blank_qualification is True
+    assert deserialized_settings.blank_library_path == "cohort/blank_library.json"
+    assert deserialized_settings.blank_ppm_tol == 12.5
+    assert deserialized_settings.blank_fold_change_threshold == 4.5
+    assert deserialized == spec
+

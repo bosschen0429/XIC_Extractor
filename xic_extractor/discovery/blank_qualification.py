@@ -440,6 +440,7 @@ def apply_blank_qualification_to_candidates(
                 replace(
                     candidate,
                     discovery_candidate_state="review_only_orphan_nl",
+                    ms1_peak_found=False,
                     ms1_feature_row_id="",
                     review_priority="LOW",
                     reason=reason_msg,

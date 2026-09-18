@@ -308,6 +308,7 @@ def test_apply_blank_qualification_to_candidates():
 
     # c_background demoted
     assert qualified[0].discovery_candidate_state == "review_only_orphan_nl"
+    assert qualified[0].ms1_peak_found is False
     assert qualified[0].ms1_feature_row_id == ""
     assert qualified[0].review_priority == "LOW"
     assert "system background: blank m/z 300.1000" in qualified[0].reason
@@ -434,3 +435,96 @@ def test_run_discovery_cli_missing_blank_library_fails(tmp_path: Path) -> None:
         ]
     )
     assert code == 2
+
+
+def test_run_discovery_cached_blank_library_rebuilds_on_mismatched_blanks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts.run_discovery import main
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    sample_raw = raw_dir / "sample.raw"
+    sample_raw.write_bytes(b"sample")
+
+    blank_dir = tmp_path / "blanks"
+    blank_dir.mkdir()
+    (blank_dir / "Blank_1.raw").write_bytes(b"b1")
+    (blank_dir / "Blank_2.raw").write_bytes(b"b2")
+
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    # Create cached library with different source blanks
+    stale_lib = BlankBackgroundLibrary(
+        ions=(),
+        min_intensity=25000.0,
+        source_blanks=("Old_Blank",),
+    )
+    cached_file = output_dir / "blank_library.json"
+    stale_lib.save_json(cached_file)
+
+    extracted = False
+
+    def mock_extract(blank_raws, dll_dir):
+        nonlocal extracted
+        extracted = True
+        return BlankBackgroundLibrary(
+            ions=(),
+            min_intensity=25000.0,
+            source_blanks=tuple(sorted(p.stem for p in blank_raws)),
+        )
+
+    monkeypatch.setattr(
+        "scripts.run_discovery.extract_blank_background_library", mock_extract
+    )
+
+    # Mock _compile_processing_run_spec and run_discovery to avoid running full pipeline
+    monkeypatch.setattr(
+        "scripts.run_discovery._compile_processing_run_spec",
+        lambda *args, **kwargs: None,
+    )
+    from unittest.mock import MagicMock
+
+    mock_outputs = MagicMock()
+    mock_outputs.candidates_csv = Path("dummy.csv")
+    monkeypatch.setattr(
+        "scripts.run_discovery.run_discovery",
+        lambda *args, **kwargs: mock_outputs,
+    )
+
+    code = main(
+        [
+            "--raw",
+            str(sample_raw),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(output_dir),
+            "--blank-dir",
+            str(blank_dir),
+        ]
+    )
+    assert code == 0
+    assert extracted is True
+
+    # Run again without changes - cache is valid and extraction should not be called
+    extracted = False
+    code = main(
+        [
+            "--raw",
+            str(sample_raw),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(output_dir),
+            "--blank-dir",
+            str(blank_dir),
+        ]
+    )
+    assert code == 0
+    assert extracted is False
+

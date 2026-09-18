@@ -298,6 +298,31 @@ def test_pyinstaller_collects_quantitative_projection_authority() -> None:
     }
 
 
+def test_pyinstaller_spec_includes_discovery_default_background_library() -> None:
+    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+
+    assert "discovery_datas = collect_data_files(" in spec_text
+    assert '"xic_extractor.discovery"' in spec_text
+    assert 'includes=["data/*"]' in spec_text
+    assert "+ discovery_datas" in spec_text
+
+
+def test_pyinstaller_collects_discovery_default_background_library() -> None:
+    datas = collect_data_files(
+        "xic_extractor.discovery",
+        includes=["data/*"],
+    )
+    collected = {
+        (Path(source).name, Path(destination).as_posix())
+        for source, destination in datas
+    }
+
+    assert (
+        "default_background_library_15min.json.gz",
+        "xic_extractor/discovery/data",
+    ) in collected
+
+
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
 def test_built_wheel_contains_one_byte_identical_quantitative_authority(

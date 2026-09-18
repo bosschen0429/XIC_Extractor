@@ -78,6 +78,10 @@ _SETTINGS_KEYS = (
     "rt_max",
     "resolver_mode",
     "evidence_profile",
+    "enable_blank_qualification",
+    "blank_library_path",
+    "blank_ppm_tol",
+    "blank_fold_change_threshold",
 )
 _EVIDENCE_PROFILE_KEYS = ("name", "weights", "thresholds")
 _WEIGHT_KEYS = (
@@ -387,6 +391,12 @@ def _method_content(method: CidNlDiscoveryMethodSpec) -> dict[str, object]:
                     for key in _THRESHOLD_KEYS
                 },
             },
+            "enable_blank_qualification": settings.enable_blank_qualification,
+            "blank_library_path": settings.blank_library_path,
+            "blank_ppm_tol": _float_text(settings.blank_ppm_tol),
+            "blank_fold_change_threshold": _float_text(
+                settings.blank_fold_change_threshold
+            ),
         },
     }
 
@@ -603,6 +613,22 @@ def _method_from_content(content: Mapping[str, object]) -> CidNlDiscoveryMethodS
         rt_max=_float_from_text(settings_value["rt_max"], field="rt_max"),
         resolver_mode=_text(settings_value["resolver_mode"], field="resolver_mode"),
         evidence_profile=evidence_profile,
+        enable_blank_qualification=_boolean(
+            settings_value["enable_blank_qualification"],
+            field="enable_blank_qualification",
+        ),
+        blank_library_path=_optional_text(
+            settings_value["blank_library_path"],
+            field="blank_library_path",
+        ),
+        blank_ppm_tol=_float_from_text(
+            settings_value["blank_ppm_tol"],
+            field="blank_ppm_tol",
+        ),
+        blank_fold_change_threshold=_float_from_text(
+            settings_value["blank_fold_change_threshold"],
+            field="blank_fold_change_threshold",
+        ),
     )
     return CidNlDiscoveryMethodSpec(
         settings=settings,
@@ -660,6 +686,8 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         "nl_min_intensity_ratio",
         "seed_rt_gap_min",
         "ms1_search_padding_min",
+        "blank_ppm_tol",
+        "blank_fold_change_threshold",
     )
     for field in positive_fields:
         value = getattr(settings, field)
@@ -667,6 +695,13 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
             raise TypeError(f"{field} must be numeric")
         if not math.isfinite(float(value)) or float(value) <= 0.0:
             raise ValueError(f"{field} must be finite and positive")
+    if not isinstance(settings.enable_blank_qualification, bool):
+        raise TypeError("enable_blank_qualification must be a boolean")
+    if settings.blank_library_path is not None:
+        if not isinstance(settings.blank_library_path, str):
+            raise TypeError("blank_library_path must be text or None")
+        if not settings.blank_library_path:
+            raise ValueError("blank_library_path must be non-empty text or None")
     for field in ("rt_min", "rt_max"):
         value = getattr(settings, field)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -750,6 +785,18 @@ def _required_text(value: object, *, field: str) -> str:
     if not text:
         raise ValueError(f"{field} must be non-empty text")
     return text
+
+
+def _optional_text(value: object, *, field: str) -> str | None:
+    if value is None:
+        return None
+    return _required_text(value, field=field)
+
+
+def _boolean(value: object, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{field} must be a boolean")
+    return value
 
 
 def _integer(value: object, *, field: str) -> int:

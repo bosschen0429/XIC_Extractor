@@ -9,6 +9,7 @@ from typing import Any
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.blank_qualification import (
+    BlankBackgroundLibrary,
     extract_blank_background_library,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
@@ -84,7 +85,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 2
         cached_lib = output_dir / "blank_library.json"
-        if not cached_lib.is_file():
+        expected_blanks = tuple(sorted(p.stem for p in blank_raws))
+        needs_extract = True
+        if cached_lib.is_file():
+            try:
+                cached_obj = BlankBackgroundLibrary.load_json(cached_lib)
+                if tuple(sorted(cached_obj.source_blanks)) == expected_blanks:
+                    needs_extract = False
+                else:
+                    print(
+                        f"Cached blank library at {cached_lib} does not match "
+                        f"input blanks, rebuilding..."
+                    )
+            except Exception:
+                needs_extract = True
+        if needs_extract:
             print(
                 f"Extracting blank library from {len(blank_raws)} solvent blanks "
                 f"in {blank_dir}..."
