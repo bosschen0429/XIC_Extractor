@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundIon,
     BlankBackgroundLibrary,
@@ -157,6 +159,16 @@ def test_default_background_library_packaged_and_loadable():
     # resolve_background_library fallback
     resolved = resolve_background_library()
     assert resolved is lib
+
+
+def test_resolve_background_library_missing_explicit_path_raises(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.discovery.blank_qualification import resolve_background_library
+
+    missing = tmp_path / "nonexistent_blank_lib.json"
+    with pytest.raises(FileNotFoundError, match="Blank background library not found"):
+        resolve_background_library(library_path=missing)
 
 
 def test_apply_blank_qualification_to_candidates():
@@ -400,3 +412,25 @@ def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     )
     settings_no = _discovery_settings(args_no)
     assert not settings_no.enable_blank_qualification
+
+
+def test_run_discovery_cli_missing_blank_library_fails(tmp_path: Path) -> None:
+    from scripts.run_discovery import main
+
+    dummy_raw = tmp_path / "test.raw"
+    dummy_raw.write_bytes(b"")
+    dummy_dll = tmp_path / "dll"
+    dummy_dll.mkdir()
+    missing_lib = tmp_path / "missing_lib.json"
+
+    code = main(
+        [
+            "--raw",
+            str(dummy_raw),
+            "--dll-dir",
+            str(dummy_dll),
+            "--blank-library",
+            str(missing_lib),
+        ]
+    )
+    assert code == 2

@@ -380,8 +380,9 @@ def resolve_background_library(
     """
     if library_path is not None:
         p = Path(library_path)
-        if p.is_file():
-            return BlankBackgroundLibrary.load_json(p)
+        if not p.is_file():
+            raise FileNotFoundError(f"Blank background library not found: {p}")
+        return BlankBackgroundLibrary.load_json(p)
     if raw_dir is not None:
         for candidate_name in ("blank_library.json.gz", "blank_library.json"):
             cached = raw_dir / candidate_name

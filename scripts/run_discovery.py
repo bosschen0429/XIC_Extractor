@@ -56,6 +56,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not dll_dir.is_dir():
         print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
         return 2
+    if args.blank_library is not None:
+        blank_lib_path = args.blank_library.resolve()
+        if not blank_lib_path.is_file():
+            print(f"{blank_lib_path}: blank library does not exist", file=sys.stderr)
+            return 2
 
     try:
         settings = _discovery_settings(args)
