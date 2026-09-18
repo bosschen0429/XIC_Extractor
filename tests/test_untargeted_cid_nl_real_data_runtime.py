@@ -1095,3 +1095,42 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         item.open_outcome is RuntimeResourceOpenOutcome.OPEN_FAILED
         for item in failed.worker_batch.resource_settlements
     )
+
+
+def test_untargeted_real_data_runtime_facade_and_generic_exports() -> None:
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_real_data_runtime as facade,
+    )
+    from xic_extractor.extraction import (
+        untargeted_real_data_runtime as canonical,
+    )
+
+    assert facade is canonical
+    assert (
+        canonical.execute_untargeted_real_data_runtime
+        is canonical.execute_untargeted_cid_nl_real_data_runtime
+    )
+    assert (
+        canonical.UntargetedRealDataRuntimeJob
+        is canonical.UntargetedCidNlRealDataRuntimeJob
+    )
+    assert (
+        canonical.UntargetedRealDataRuntimeError
+        is canonical.UntargetedCidNlRealDataRuntimeError
+    )
+    assert (
+        canonical.UntargetedRealDataRuntimeApplicationResult
+        is canonical.UntargetedCidNlRealDataRuntimeApplicationResult
+    )
+    assert (
+        canonical.UntargetedRuntimeSampleResult
+        is canonical.UntargetedCidNlRuntimeSampleResult
+    )
+    assert (
+        canonical.untargeted_runtime_call_cost
+        is canonical.untargeted_cid_nl_runtime_call_cost
+    )
+    assert (
+        canonical.build_untargeted_sample_runtime_jobs
+        is canonical.build_untargeted_cid_nl_sample_runtime_jobs
+    )
