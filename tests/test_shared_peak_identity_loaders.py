@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.alignment.shared_peak_identity_explanation import (
+    machine_evidence_loaders,
+)
 from xic_extractor.alignment.shared_peak_identity_explanation.machine_artifacts import (
     load_machine_matches,
 )
@@ -14,6 +17,44 @@ from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
 from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     ORACLE_COLUMNS,
 )
+
+
+def test_machine_evidence_loaders_handle_none_path() -> None:
+    assert machine_evidence_loaders.load_cwt_shape_evidence(None) == {}
+    assert machine_evidence_loaders.load_tier2_trace_evidence(None) == {}
+    assert machine_evidence_loaders.load_candidate_ms2_pattern_evidence(None) == {}
+    assert machine_evidence_loaders.load_ms1_pattern_coherence_evidence(None) == {}
+    assert machine_evidence_loaders.load_qc_ms1_pattern_reference_evidence(None) == {}
+    assert machine_evidence_loaders.load_matrix_rt_drift_policy_evidence(None) == {}
+    assert machine_evidence_loaders.load_sample_negative_evidence(None) == {}
+    assert machine_evidence_loaders.load_rt_mode_evidence(None) == {}
+    assert machine_evidence_loaders.load_peak_hypothesis_selection(None) == {}
+
+
+def test_machine_evidence_loaders_load_data(tmp_path: Path) -> None:
+    cwt_path = tmp_path / "cwt.tsv"
+    _write_tsv(
+        cwt_path,
+        machine_evidence_loaders.CWT_SHAPE_REQUIRED_COLUMNS,
+        [
+            {col: "1" for col in machine_evidence_loaders.CWT_SHAPE_REQUIRED_COLUMNS}
+            | {"feature_family_id": "FAM1", "sample_stem": "S1"}
+        ],
+    )
+    loaded_cwt = machine_evidence_loaders.load_cwt_shape_evidence(cwt_path)
+    assert ("FAM1", "S1") in loaded_cwt
+
+    tier2_path = tmp_path / "tier2.tsv"
+    _write_tsv(
+        tier2_path,
+        machine_evidence_loaders.TIER2_TRACE_REQUIRED_COLUMNS,
+        [
+            {col: "1" for col in machine_evidence_loaders.TIER2_TRACE_REQUIRED_COLUMNS}
+            | {"feature_family_id": "FAM1"}
+        ],
+    )
+    loaded_tier2 = machine_evidence_loaders.load_tier2_trace_evidence(tier2_path)
+    assert "FAM1" in loaded_tier2
 
 
 def test_machine_loader_preserves_ambiguous_source_row_ids(tmp_path: Path) -> None:
