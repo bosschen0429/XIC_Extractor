@@ -16,7 +16,7 @@ uses the affected source, existing tests, and the relevant branch below.
 | Readiness claim or validation policy | Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
 | Test selection, new regression coverage, fixture design, or `ledger_snapshot` | Read [`testing.md`](docs/agent/testing.md). |
 | Decide or change semantic ownership, Target/Untarget lifecycle, persisted schema/decision, runtime receipt, write authority, or a public contract | Choose the relevant branch in [`architecture-public-contracts.md#read-routes`](docs/agent/architecture-public-contracts.md#read-routes); use [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary changes. |
-| Issue scope, task shaping, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
+| Issue scope, task shaping, subagent work packages, Current Packet, refreeze, out-of-scope finding, or **Issue-to-PR scope firewall** | Read [`planning-workflows.md`](docs/agent/planning-workflows.md). |
 | Clean-checkout artifact, long RAW run, CI evidence, push, PR, or ready-for-review | Choose one branch in [`execution-gates.md#read-routes`](docs/agent/execution-gates.md#read-routes). |
 | Review communication or PR receipt | Read [`communication-review.md`](docs/agent/communication-review.md). |
 | Private or cross-session handoff, or Obsidian placement | Read [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md). |
@@ -43,9 +43,10 @@ uses the affected source, existing tests, and the relevant branch below.
   targeted source reads only for exact text, reported gaps, or negative claims.
 - **Necessity proof:** prefer existing owners and mechanisms. Added design must
   serve a present need worth its maintenance cost; use the
-  [design principles](docs/architecture-contract.md#design-principles), rather
-  than caller counts alone. [`testing.md`](docs/agent/testing.md) owns test worth.
-- 同一份未變更輸入，由正式 owner 完成計算或驗證後，下游重用結果，只檢查本次消費所需的身分與綁定；重算或深度重驗必須指出改變的輸入、新的信任邊界或可觸達的失效機制，不能只以「更保險」為由。
+  [design principles](docs/architecture-contract.md#design-principles).
+  Ownership, serialization, derived-fact, and internal-defense changes use
+  [Change Locality](docs/architecture-contract.md#change-locality) before
+  mutation and completion. [`testing.md`](docs/agent/testing.md) owns test worth.
 - 批次路徑將共享準備移出迴圈，先以呼叫次數與小規模量測確認成本，再放大資料量。深度診斷、全圖重驗與審計預設按需執行；只有會影響本次輸出正確性、且沒有較便宜替代檢查時，才放進正常執行路徑。
 - **Responsibility boundary & domain purity:** core domain algorithms operate purely on in-memory domain models. Never mix RAW/DLL I/O, multiprocessing, byte hashing, or finalization formatting into mathematical or alignment algorithms. Downstream internal routines must not re-validate authoritative upstream entities.
 - **Final-state artifacts:** code, comments, tests, and docs describe current

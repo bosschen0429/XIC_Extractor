@@ -6,6 +6,12 @@ Lead with the result. Separate observed facts, inference, unknowns, and the next
 decision. Report only checks actually run and link the Issue, PR, command, or
 artifact that carries detailed evidence.
 
+For ownership or refactoring changes, report what consumers no longer need to
+know, which duplicate computation/validation/conversion/tests were removed, and
+why remaining coupling is necessary. Link the
+[Change Locality](../architecture-contract.md#change-locality) evidence;
+passing tests or fewer lines alone do not establish decoupling.
+
 ## Pull Requests
 
 Use the repository PR template to describe final behavior and bounded scope,
