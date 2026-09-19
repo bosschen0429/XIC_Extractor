@@ -106,10 +106,6 @@ def project_completed_untarget_batch_writer_inputs(
 
     if type(completed) is not CompletedUntargetBatchWorkflowResult:
         raise TypeError("writer projection requires a completed Untarget batch")
-    from xic_extractor.alignment.cell_decision.owner import (
-        validate_production_cell_decision,
-    )
-
     application = completed.application_result
     canonical_samples = tuple(application.canonical_samples)
     injection_orders = tuple(
@@ -151,8 +147,6 @@ def project_completed_untarget_batch_writer_inputs(
             seen_group_ids.add(group_id)
 
             closed_decisions = tuple(projected.decisions)
-            for owner_decision in closed_decisions:
-                validate_production_cell_decision(owner_decision)
             decisions_by_sample = {
                 (
                     owner_decision.subject.canonical_sample.metadata.raw_stem

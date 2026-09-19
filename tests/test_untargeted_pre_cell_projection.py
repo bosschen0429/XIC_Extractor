@@ -488,7 +488,7 @@ def test_entry_rejects_receipt_crossed_processing_request(
         project_untarget_pre_cell(alignment)
 
 
-def test_entry_revalidates_owner_group_member_closure(
+def test_scientific_completion_rejects_substituted_owner_group_member_closure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -509,8 +509,13 @@ def test_entry_revalidates_owner_group_member_closure(
     assert group.group_hypothesis_id == original_id
     assert group.basis_bytes == original_basis
 
-    with pytest.raises(UntargetProjectionContractError, match="group|member"):
-        project_untarget_pre_cell(alignment)
+    with pytest.raises(
+        finalizer_owner.FinalizedScientificAlignmentContractError,
+        match="completion receipt",
+    ):
+        finalizer_owner._validate_finalized_scientific_alignment_completion_receipt(
+            alignment
+        )
 
 
 def test_entry_rejects_row_id_collision_with_unequal_basis(
@@ -528,7 +533,7 @@ def test_entry_rejects_row_id_collision_with_unequal_basis(
         project_untarget_pre_cell(alignment)
 
 
-def test_entry_revalidates_nested_member_closure(
+def test_scientific_completion_rejects_substituted_nested_member_closure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -541,11 +546,16 @@ def test_entry_revalidates_nested_member_closure(
     assert group.group_hypothesis_id == original_group_id
     assert group.basis_bytes == original_group_basis
 
-    with pytest.raises(UntargetProjectionContractError, match="member|group"):
-        project_untarget_pre_cell(alignment)
+    with pytest.raises(
+        finalizer_owner.FinalizedScientificAlignmentContractError,
+        match="completion receipt",
+    ):
+        finalizer_owner._validate_finalized_scientific_alignment_completion_receipt(
+            alignment
+        )
 
 
-def test_entry_revalidates_nested_lineage_closure(
+def test_scientific_completion_rejects_substituted_nested_lineage_closure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -559,8 +569,13 @@ def test_entry_revalidates_nested_lineage_closure(
     object.__setattr__(edge, "basis_bytes", b"forged-lineage-basis")
     assert edge.lineage_edge_id == original_edge_id
 
-    with pytest.raises(UntargetProjectionContractError, match="lineage"):
-        project_untarget_pre_cell(alignment)
+    with pytest.raises(
+        finalizer_owner.FinalizedScientificAlignmentContractError,
+        match="completion receipt",
+    ):
+        finalizer_owner._validate_finalized_scientific_alignment_completion_receipt(
+            alignment
+        )
 
 
 def test_row_identity_basis_is_closed_to_request_and_group_identity_only(
@@ -581,7 +596,7 @@ def test_row_identity_basis_is_closed_to_request_and_group_identity_only(
     assert row_key.group_identity_basis_bytes == group.basis_bytes
 
 
-def test_entry_rejects_incomplete_group_sample_population(
+def test_entry_builds_group_sample_population_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -589,17 +604,18 @@ def test_entry_rejects_incomplete_group_sample_population(
     original = projection_owner._build_cell_subjects
     calls = 0
 
-    def missing_one(**kwargs):
+    def record_build(**kwargs):
         nonlocal calls
         calls += 1
-        subjects = original(**kwargs)
-        return subjects[:-1] if calls == 1 else subjects
+        return original(**kwargs)
 
-    monkeypatch.setattr(projection_owner, "_build_cell_subjects", missing_one)
+    monkeypatch.setattr(projection_owner, "_build_cell_subjects", record_build)
 
-    with pytest.raises(UntargetProjectionContractError, match="Group×sample"):
-        project_untarget_pre_cell(alignment)
-    assert calls >= 2
+    projection = project_untarget_pre_cell(alignment)
+    assert len(projection.cell_subjects) == (
+        len(alignment.final_population) * len(alignment.canonical_samples)
+    )
+    assert calls == 1
 
 
 def test_projection_values_are_immutable_and_direct_result_mint_is_closed(

@@ -1307,6 +1307,28 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production, "mint_captured_peak_observation", record_captured_mint
     )
 
+    from xic_extractor.alignment.cell_decision import owner as decision_owner
+    from xic_extractor.alignment.projection.untarget import pre_cell as pre_cell_owner
+
+    projection_builds = []
+    decision_rechecks = []
+    build_subjects = pre_cell_owner._build_cell_subjects
+    validate_decision = decision_owner.validate_production_cell_decision
+
+    def record_subject_build(**kwargs):
+        result = build_subjects(**kwargs)
+        projection_builds.append(result)
+        return result
+
+    def record_decision_recheck(value):
+        decision_rechecks.append(value)
+        return validate_decision(value)
+
+    monkeypatch.setattr(pre_cell_owner, "_build_cell_subjects", record_subject_build)
+    monkeypatch.setattr(
+        decision_owner, "validate_production_cell_decision", record_decision_recheck
+    )
+
     completion_checks = {"scientific": [], "post_cell": []}
     scientific_check = (
         result_owner._validate_finalized_scientific_alignment_completion_receipt
@@ -1746,6 +1768,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
     # Global closure checks the reloaded scientific completion once.
     children = completed.application_result.children
+    # Completed owner answers flow through projection, spool and writer once.
+    assert len(projection_builds) == len(children)
+    assert not decision_rechecks
     assert tuple(completion_checks["scientific"]) == tuple(
         child.scientific_core for child in children
     )
