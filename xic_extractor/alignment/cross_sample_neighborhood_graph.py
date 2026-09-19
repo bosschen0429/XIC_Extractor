@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import InitVar, dataclass, field
 from itertools import combinations
 from typing import TypeAlias
@@ -27,6 +27,8 @@ from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     DriftPriorSource,
     OwnerEdgeEvidence,
+    _hard_gate_failure,
+    _ppm,
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -44,6 +46,48 @@ _CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX = (
     "xic.cross-sample-repair-admission-application:"
 )
 _CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN = object()
+_INITIAL_EDGE_MINT_TOKEN = object()
+INITIAL_PAIR_POLICY = "hard-gate-candidates-v1"
+
+
+def iter_cross_sample_initial_owner_pairs(
+    owners: Sequence[SampleLocalMS1Owner],
+    *,
+    config: AlignmentConfig,
+    context: CrossSampleInitialEdgeContext = "complete_link",
+) -> Iterator[tuple[SampleLocalMS1Owner, SampleLocalMS1Owner]]:
+    """Yield possible pairs in a mass sweep, preserving scoring orientation.
+
+    The larger positive mass gives the more permissive ppm denominator, so the
+    sweep cannot drop a pair accepted in either original input orientation.
+    No RT pruning is valid here: drift and continuity may admit distant peaks.
+    """
+    ordered = sorted(enumerate(owners), key=lambda item: item[1].precursor_mz)
+    start = 0
+    for position, (right_index, right) in enumerate(ordered):
+        while start < position:
+            left = ordered[start][1]
+            if left.precursor_mz <= 0 or (
+                _ppm(right.precursor_mz, left.precursor_mz) <= config.max_ppm
+            ):
+                break
+            start += 1
+        for index in range(start, position):
+            left_index, left = ordered[index]
+            first, second = (left, right) if left_index < right_index else (right, left)
+            failure = _hard_gate_failure(
+                first, second, config=config,
+                edge_depends_on_backfill=False,
+                left_detected_owner=True, right_detected_owner=True,
+                left_ambiguous_owner=False, right_ambiguous_owner=False,
+            )
+            if failure is None or (
+                context == "targeted_istd_continuity"
+                and failure in {
+                    "product_mz_out_of_tolerance", "observed_loss_out_of_tolerance"
+                }
+            ):
+                yield first, second
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,8 +105,9 @@ class CrossSampleNeighborhoodEdge:
         repr=False,
         compare=False,
     )
+    _mint_token: InitVar[object | None] = field(default=None, kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object | None) -> None:
         left = _required_text(self.left_member_subject_id, field="left member")
         right = _required_text(self.right_member_subject_id, field="right member")
         if left == right:
@@ -92,12 +137,14 @@ class CrossSampleNeighborhoodEdge:
             raise CrossSampleContractError(
                 "neighborhood evidence crossed its exact owner-member pair"
             )
-        exact_evidence = evaluate_owner_edge(
-            self.left_owner,
-            self.right_owner,
-            config=self.config,
-            drift_lookup=self.drift_lookup,
-        )
+        exact_evidence = self.initial_evidence
+        if _mint_token is not _INITIAL_EDGE_MINT_TOKEN:
+            exact_evidence = evaluate_owner_edge(
+                self.left_owner,
+                self.right_owner,
+                config=self.config,
+                drift_lookup=self.drift_lookup,
+            )
         if self.initial_evidence != exact_evidence:
             raise CrossSampleContractError(
                 "neighborhood edge does not retain exact owner evidence"
@@ -150,6 +197,7 @@ def classify_cross_sample_initial_neighborhood_edge(
         left_owner=left_owner,
         right_owner=right_owner,
         drift_lookup=drift_lookup,
+        _mint_token=_INITIAL_EDGE_MINT_TOKEN,
     )
 
 
@@ -1086,13 +1134,14 @@ def apply_coupled_successor_proposal(
         raise CrossSampleContractError(
             "successor proposal spans disconnected eligible components"
         )
-    excluded_pairs = {
+    allowed_pairs = {
         frozenset((edge.left_member_subject_id, edge.right_member_subject_id))
         for edge in edges
-        if edge.disposition == "excluded"
+        if edge.disposition != "excluded"
     }
     if any(
-        frozenset((left.member_subject_id, right.member_subject_id)) in excluded_pairs
+        frozenset((left.member_subject_id, right.member_subject_id))
+        not in allowed_pairs
         for member_set in proposed
         for left, right in combinations(member_set, 2)
     ):

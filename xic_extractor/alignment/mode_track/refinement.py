@@ -7,6 +7,9 @@ from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    iter_cross_sample_initial_owner_pairs,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleCoupledProposalContext,
     CrossSampleGroupIdentity,
@@ -887,14 +890,15 @@ def _bootstrap_mode_track_refinement(
     owners = tuple(owner for group in groups for owner in group.owners)
     classified_edges = tuple(
         classify_cross_sample_initial_neighborhood_edge(
-            left_owner=owners[left_index],
-            right_owner=owners[right_index],
+            left_owner=left,
+            right_owner=right,
             context="complete_link",
             config=alignment_config,
             drift_lookup=drift_lookup,
         )
-        for left_index in range(len(owners))
-        for right_index in range(left_index + 1, len(owners))
+        for left, right in iter_cross_sample_initial_owner_pairs(
+            owners, config=alignment_config,
+        )
     )
     injection_order = _injection_order(assignment_batches)
     owner_injection_order = {
@@ -1232,9 +1236,9 @@ def _validate_owner_derived_partition(
         raise ModeTrackRefinementContractError(
             "owner-derived proposal is not a complete trajectory partition"
         )
-    excluded_pairs = {
+    eligible_pairs = {
         frozenset((left, right))
-        for left, right, _disposition in trajectory_input.exclusions
+        for left, right in trajectory_input.eligible_member_pairs
     }
     for member_ids in successor_members_by_group.values():
         samples: set[str] = set()
@@ -1249,7 +1253,7 @@ def _validate_owner_derived_partition(
             samples.add(sample_id)
         for left_index, left in enumerate(member_ids):
             for right in member_ids[left_index + 1 :]:
-                if frozenset((left, right)) in excluded_pairs:
+                if frozenset((left, right)) not in eligible_pairs:
                     raise ModeTrackRefinementContractError(
                         "owner-derived proposal crosses a non-eligible member edge"
                     )

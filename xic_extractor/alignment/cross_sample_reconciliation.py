@@ -25,6 +25,9 @@ from xic_extractor.alignment.backfill.observation_repair import (
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    iter_cross_sample_initial_owner_pairs,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleClassifiedEdge,
     CrossSampleGroupIdentity,
@@ -324,20 +327,21 @@ def build_initial_cid_nl_cross_sample_context(
     }
     classified_edges = tuple(
         classify_cross_sample_initial_neighborhood_edge(
-            left_owner=owners[left_index],
-            right_owner=owners[right_index],
+            left_owner=left,
+            right_owner=right,
             context=(
                 "full_batch_continuity"
-                if owners[left_index].owner_id in continuity_group_by_owner
-                and continuity_group_by_owner[owners[left_index].owner_id]
-                == continuity_group_by_owner.get(owners[right_index].owner_id)
+                if left.owner_id in continuity_group_by_owner
+                and continuity_group_by_owner[left.owner_id]
+                == continuity_group_by_owner.get(right.owner_id)
                 else "complete_link"
             ),
             config=alignment_config,
             drift_lookup=drift_lookup,
         )
-        for left_index in range(len(owners))
-        for right_index in range(left_index + 1, len(owners))
+        for left, right in iter_cross_sample_initial_owner_pairs(
+            owners, config=alignment_config,
+        )
     )
     injection_order: dict[str, int] = {}
     for sample, candidates in sample_candidates:

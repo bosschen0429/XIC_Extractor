@@ -466,6 +466,10 @@ class CidNlSource:
                 "sample_status": sample_status,
                 "support_origins": origins,
                 "review_summary": review_summary,
+                "initial_edge_coverage": self.summary.get(
+                    "initial_edge_coverage",
+                    {"policy": "legacy-unspecified", "unlisted_pairs": "unrecorded"},
+                ),
                 "records": [
                     {"kind": k, "ref": r, "facts": f}
                     for (k, r), f in sorted(facts.items())

@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from xic_extractor.alignment.cross_sample_neighborhood_graph import INITIAL_PAIR_POLICY
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
@@ -809,8 +810,16 @@ def prepare_alignment_explanation(
                 "alignment_config": asdict(alignment_config),
                 "reason_counts": dict(sorted(reasons.items())),
                 "record_counts": dict(sink.record_counts),
+                "initial_edge_coverage": {
+                    "policy": INITIAL_PAIR_POLICY,
+                    "unlisted_pairs": "excluded",
+                    "rt_pruning": False,
+                },
                 "audit_availability": {
-                    name: "recorded" if getattr(completed, name) else "unavailable"
+                    name: "recorded" if (
+                        getattr(completed, name)
+                        or (name == "initial_edges" and completed.initial_groups)
+                    ) else "unavailable"
                     for name in (
                         "method_assessments",
                         "initial_groups",

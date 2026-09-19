@@ -65,6 +65,26 @@ the trajectory snapshot and initial pair evidence used by downstream diagnostics
 Other workflow routes retain their refinement behavior, including a final
 ModeTrack pass when an actual repair changes the trajectory input.
 
+Initial neighborhoods use the `hard-gate-candidates-v1` pair policy. CrossSample
+first sweeps precursor mass windows and applies its necessary compatibility
+gates, then scores only possible pairs. It preserves original ppm orientation,
+composite-subject compatibility and targeted-ISTD product/loss exceptions; RT
+alone never prunes a pair. Unlisted pairs are excluded, including when a
+transitively connected component proposes a successor group. Repair admission
+still evaluates the repaired candidate against every member of its destination.
+
+The `mode_track_trajectory_input_sparse_v1` identity binds eligible member pairs,
+explicit noneligible evidence and the implicit-exclusion policy. This changes
+trajectory and dependent refinement IDs; physical, candidate and group identity
+schemas remain unchanged. The final receipt ID is part of the association
+handoff basis; that handoff binds the final cell observation and its production
+decision. Their provenance IDs therefore migrate too, even when selected values,
+subjects and scientific evidence remain identical.
+Explanation summaries publish `initial_edge_coverage`
+with this versioned policy, so an empty retained edge set is not missing audit
+evidence. Inspector forwards that coverage with item details. Older explanation
+files remain readable with `legacy-unspecified` coverage and are not reclassified.
+
 Matrix and provisional review artifacts are projections of the finalized
 owner result. They do not run a separate Matrix-based scientific lifecycle.
 Delta Mass / Pt pattern retains its Discovery candidate, evidence, and review
