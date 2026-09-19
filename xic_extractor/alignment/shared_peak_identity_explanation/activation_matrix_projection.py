@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import csv
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 from xic_extractor.alignment.matrix_output_contract import (
     MATRIX_IDENTITY_SCHEMA_VERSION,
@@ -117,7 +115,8 @@ def _matrix_input_by_family(
     *,
     matrix_header: Sequence[str],
     matrix_rows: Sequence[Mapping[str, str]],
-    alignment_matrix_identity_tsv: Path | None,
+    identity_header: Sequence[str] | None,
+    identity_rows: Sequence[Mapping[str, str]],
     review_by_family: Mapping[str, Mapping[str, str]],
 ) -> tuple[tuple[str, ...], dict[str, dict[str, str]]]:
     if "feature_family_id" in matrix_header:
@@ -129,7 +128,7 @@ def _matrix_input_by_family(
             {row["feature_family_id"]: dict(row) for row in matrix_rows},
         )
     _require_columns(matrix_header, ("Mz", "RT"))
-    if alignment_matrix_identity_tsv is None:
+    if identity_header is None:
         raise ValueError(
             "public Mz/RT alignment_matrix.tsv requires "
             "alignment_matrix_identity_tsv"
@@ -142,7 +141,8 @@ def _matrix_input_by_family(
         _public_matrix_rows_by_family(
             matrix_rows=matrix_rows,
             sample_columns=sample_columns,
-            alignment_matrix_identity_tsv=alignment_matrix_identity_tsv,
+            identity_header=identity_header,
+            identity_rows=identity_rows,
             review_by_family=review_by_family,
         ),
     )
@@ -152,12 +152,10 @@ def _public_matrix_rows_by_family(
     *,
     matrix_rows: Sequence[Mapping[str, str]],
     sample_columns: Sequence[str],
-    alignment_matrix_identity_tsv: Path,
+    identity_header: Sequence[str],
+    identity_rows: Sequence[Mapping[str, str]],
     review_by_family: Mapping[str, Mapping[str, str]],
 ) -> dict[str, dict[str, str]]:
-    identity_header, identity_rows = _read_tsv_with_header(
-        alignment_matrix_identity_tsv
-    )
     _require_columns(identity_header, _MATRIX_IDENTITY_REQUIRED_COLUMNS)
     matrix_header = ("Mz", "RT", *sample_columns)
     validate_matrix_identity_rows(
@@ -729,37 +727,6 @@ def _legacy_projection_hypothesis_id(family_id: str) -> str:
     return f"{family_id}::family_projection"
 
 
-def _load_legacy_rt_row_oracle(
-    path: Path | None,
-) -> tuple[LegacyRtRowReference, ...]:
-    if path is None:
-        return ()
-    try:
-        from openpyxl import load_workbook
-    except ImportError as exc:  # pragma: no cover - dependency is declared.
-        raise ValueError(
-            "legacy RT-row oracle requires openpyxl; install project dependencies"
-        ) from exc
-    workbook = load_workbook(path, read_only=True, data_only=True)
-    sheet = workbook[workbook.sheetnames[0]]
-    header = tuple(cell.value for cell in next(sheet.iter_rows(max_row=1)))
-    try:
-        mz_index = header.index("Mz")
-        rt_index = header.index("RT")
-    except ValueError as exc:
-        raise ValueError(
-            "legacy RT-row oracle workbook must contain Mz and RT"
-        ) from exc
-    rows: list[LegacyRtRowReference] = []
-    for row_number, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), 2):
-        mz = _to_float(row[mz_index])
-        rt = _to_float(row[rt_index])
-        if mz is None or rt is None:
-            continue
-        rows.append(LegacyRtRowReference(row_number=row_number, mz=mz, rt=rt))
-    return tuple(rows)
-
-
 def _match_legacy_rt_row_reference(
     review_row: Mapping[str, str],
     oracle_rows: Sequence[LegacyRtRowReference],
@@ -912,15 +879,6 @@ def _require_columns(header: Sequence[str], columns: Sequence[str]) -> None:
         raise ValueError(f"missing required columns: {','.join(missing)}")
 
 
-def _read_tsv_with_header(
-    path: Path,
-) -> tuple[tuple[str, ...], tuple[dict[str, str], ...]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        header = tuple(reader.fieldnames or ())
-        return header, tuple(dict(row) for row in reader)
-
-
 __all__ = [
     "FormalMatrixStats",
     "LegacyRtRowReference",
@@ -939,7 +897,6 @@ __all__ = [
     "_identity_metadata_row",
     "_legacy_oracle_match_is_ambiguous",
     "_legacy_projection_hypothesis_id",
-    "_load_legacy_rt_row_oracle",
     "_match_legacy_rt_row_reference",
     "_matrix_center_rt",
     "_matrix_center_rt_basis",

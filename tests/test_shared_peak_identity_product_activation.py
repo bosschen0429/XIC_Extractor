@@ -20,11 +20,34 @@ from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
 )
 from xic_extractor.alignment.shared_peak_identity_explanation import (
+    activation_matrix_projection,
     product_activation,
 )
 from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     RT_MODE_EVIDENCE_COLUMNS,
 )
+
+
+def test_public_matrix_projection_consumes_loaded_identity_records() -> None:
+    sample_columns, rows = activation_matrix_projection._matrix_input_by_family(
+        matrix_header=("Mz", "RT", "S1", "S2"),
+        matrix_rows=({"Mz": "100.1", "RT": "7.15", "S1": "100", "S2": "200"},),
+        identity_header=LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        identity_rows=(
+            legacy_matrix_identity_row(
+                index=1, mz="100.1", rt="7.15", peak_hypothesis_id="FAM_BLOCK"
+            ),
+        ),
+        review_by_family={},
+    )
+
+    assert sample_columns == ("S1", "S2")
+    assert tuple(rows) == ("FAM_BLOCK",)
+    assert rows["FAM_BLOCK"]["feature_family_id"] == "FAM_BLOCK"
+    assert rows["FAM_BLOCK"]["family_center_mz"] == "100.1"
+    assert rows["FAM_BLOCK"]["family_center_rt"] == "7.15"
+    assert rows["FAM_BLOCK"]["S1"] == "100"
+    assert rows["FAM_BLOCK"]["S2"] == "200"
 
 
 def test_activation_application_blanks_wrong_peak_and_writes_auto_activation(

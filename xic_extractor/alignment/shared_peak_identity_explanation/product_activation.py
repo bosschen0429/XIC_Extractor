@@ -39,7 +39,6 @@ from .activation_matrix_projection import (
     _identity_metadata_row,
     _legacy_oracle_match_is_ambiguous,
     _legacy_projection_hypothesis_id,
-    _load_legacy_rt_row_oracle,
     _match_legacy_rt_row_reference,
     _matrix_center_rt,
     _matrix_center_rt_basis,
@@ -214,10 +213,17 @@ def apply_activation_to_alignment_outputs(
     )
     _require_columns(cells_header, ("feature_family_id", "sample_stem"))
     review_by_family = {row["feature_family_id"]: row for row in review_rows}
+    identity_header, identity_rows = (
+        _read_tsv_with_header(alignment_matrix_identity_tsv)
+        if "feature_family_id" not in matrix_header
+        and alignment_matrix_identity_tsv is not None
+        else (None, ())
+    )
     sample_columns, matrix_by_family = _matrix_input_by_family(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
-        alignment_matrix_identity_tsv=alignment_matrix_identity_tsv,
+        identity_header=identity_header,
+        identity_rows=identity_rows,
         review_by_family=review_by_family,
     )
     if _should_project_backfill_evidence(
@@ -520,10 +526,17 @@ def apply_activation_to_alignment_matrix_outputs(
         ),
     )
     review_by_family = {row["feature_family_id"]: row for row in review_rows}
+    identity_header, identity_rows = (
+        _read_tsv_with_header(alignment_matrix_identity_tsv)
+        if "feature_family_id" not in matrix_header
+        and alignment_matrix_identity_tsv is not None
+        else (None, ())
+    )
     sample_columns, matrix_by_family = _matrix_input_by_family(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
-        alignment_matrix_identity_tsv=alignment_matrix_identity_tsv,
+        identity_header=identity_header,
+        identity_rows=identity_rows,
         review_by_family=review_by_family,
     )
     original_matrix_by_family = {
@@ -1344,6 +1357,37 @@ def _require_columns(header: Sequence[str], columns: Sequence[str]) -> None:
 def _read_tsv(path: Path) -> tuple[dict[str, str], ...]:
     _header, rows = _read_tsv_with_header(path)
     return rows
+
+
+def _load_legacy_rt_row_oracle(
+    path: Path | None,
+) -> tuple[LegacyRtRowReference, ...]:
+    if path is None:
+        return ()
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:  # pragma: no cover - dependency is declared.
+        raise ValueError(
+            "legacy RT-row oracle requires openpyxl; install project dependencies"
+        ) from exc
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    sheet = workbook[workbook.sheetnames[0]]
+    header = tuple(cell.value for cell in next(sheet.iter_rows(max_row=1)))
+    try:
+        mz_index = header.index("Mz")
+        rt_index = header.index("RT")
+    except ValueError as exc:
+        raise ValueError(
+            "legacy RT-row oracle workbook must contain Mz and RT"
+        ) from exc
+    rows: list[LegacyRtRowReference] = []
+    for row_number, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), 2):
+        mz = _to_float(row[mz_index])
+        rt = _to_float(row[rt_index])
+        if mz is None or rt is None:
+            continue
+        rows.append(LegacyRtRowReference(row_number=row_number, mz=mz, rt=rt))
+    return tuple(rows)
 
 
 def _read_tsv_with_header(
