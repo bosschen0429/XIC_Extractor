@@ -21,6 +21,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection import capture as capture_owner
+from xic_extractor.peak_detection import search_scope as scope_owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment_ref,
@@ -823,14 +824,45 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
         for binding in bindings
         if binding.method_subject_id in workset_subject_ids
     )
-    workset_scope = replace(
-        parent_scope,
-        evidence_providers=workset_providers,
-        declared_candidate_ids=tuple(
-            binding.candidate_id for binding in workset_bindings
-        ),
-        capture_bindings=workset_bindings,
+    # The parent owner has already validated and indexed its immutable population.
+    # Instrument iteration without changing any values to reject per-child rescans.
+    visited = {"subjects": 0, "memberships": 0}
+
+    class CountedTuple(tuple):
+        def __new__(cls, values, field):
+            result = super().__new__(cls, values)
+            result.field = field
+            return result
+
+        def __iter__(self):
+            for value in super().__iter__():
+                visited[self.field] += 1
+                yield value
+
+    index = scope_owner._request_batch_capture_index(request)
+    pinned = scope_owner.cid_nl_method_subjects_from_request(request)
+    parent_subject_ids = index.subject_ids
+    parent_memberships = pinned.candidate_memberships
+    object.__setattr__(
+        index, "subject_ids", CountedTuple(parent_subject_ids, "subjects")
     )
+    object.__setattr__(
+        pinned, "candidate_memberships", CountedTuple(parent_memberships, "memberships")
+    )
+    try:
+        workset_scope = replace(
+            parent_scope,
+            evidence_providers=workset_providers,
+            declared_candidate_ids=tuple(
+                binding.candidate_id for binding in workset_bindings
+            ),
+            capture_bindings=workset_bindings,
+        )
+    finally:
+        object.__setattr__(index, "subject_ids", parent_subject_ids)
+        object.__setattr__(pinned, "candidate_memberships", parent_memberships)
+
+    assert visited == {"subjects": 0, "memberships": 0}
 
     assert len(workset_scope.evidence_providers) == 2
     assert len(workset_scope.evidence_providers) < len(parent_scope.evidence_providers)

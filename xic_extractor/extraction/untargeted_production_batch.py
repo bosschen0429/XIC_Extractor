@@ -899,13 +899,14 @@ def _build_production_composition_inputs(
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
     }
+    ordered_samples = tuple(
+        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
+    )
     unsupported_subjects = {}
     for subject in batch.subject_batch.subjects:
         subject_assessments = tuple(
             assessment
-            for sample in sorted(
-                batch.context.samples, key=lambda item: item.identity.sample_identity_id
-            )
+            for sample in ordered_samples
             for assessment in result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
@@ -1014,9 +1015,6 @@ def _build_production_composition_inputs(
     bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
-    ordered_samples = tuple(
-        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
-    )
     sample_by_id = {
         sample.identity.sample_identity_id: sample for sample in batch.context.samples
     }
@@ -1049,11 +1047,15 @@ def _build_production_composition_inputs(
         if bindings_by_subject.get(subject.method_subject_id)
     )
     for subject_workset in cid_nl_alignment_subject_worksets(active_subjects):
-        workset_subject_ids = {subject.method_subject_id for subject in subject_workset}
         child_bindings = tuple(
-            binding
-            for binding in bindings
-            if binding.method_subject_id in workset_subject_ids
+            sorted(
+                (
+                    binding
+                    for subject in subject_workset
+                    for binding in bindings_by_subject[subject.method_subject_id]
+                ),
+                key=lambda binding: binding.candidate_id,
+            )
         )
         child_scope = UntargetedSearchScope(
             schema_version=scope.schema_version,
