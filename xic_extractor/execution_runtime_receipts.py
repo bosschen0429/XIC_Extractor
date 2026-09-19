@@ -7,7 +7,7 @@ import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import final
+from typing import Any, final
 
 from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionCapability,
@@ -945,7 +945,7 @@ RuntimeTelemetryProvider = Callable[
     RuntimeTelemetrySamples,
 ]
 RuntimeWorkerBatchProvider = Callable[
-    [object],
+    [Any],
     RuntimeWorkerBatchReceipt,
 ]
 RuntimeFinalizationPersister = Callable[
